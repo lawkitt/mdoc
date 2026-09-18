@@ -2,11 +2,11 @@
 Type=Application
 Name=mdoc
 GenericName=Markdown Editor
-Comment=Markdown WYSIWYG editor and PDF viewer
+Comment=Markdown WYSIWYG editor with PDF and DOCX preview
 Exec=mdoc %f
 Icon=mdoc
 Terminal=false
 StartupWMClass=mdoc
 Categories=Office;Utility;TextEditor;
-Keywords=editor;markdown;pdf;
-MimeType=text/markdown;text/plain;application/pdf;
+Keywords=editor;markdown;pdf;docx;
+MimeType=text/markdown;text/plain;application/pdf;application/vnd.openxmlformats-officedocument.wordprocessingml.document;

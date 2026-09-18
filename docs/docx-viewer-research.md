@@ -185,3 +185,14 @@ The implementation should wait for an explicit decision on three points:
 3. What fidelity target is acceptable: “legible and structurally close,” “LibreOffice-equivalent,” or “Word-export-equivalent” for a defined corpus?
 
 Given mdoc's file-first, cross-platform, no-native-runtime posture, the research supports a read-only fixed-page preview with a native converter behind a narrow adapter, using LibreOffice only as an oracle or explicit fallback.
+
+## Implementation spike update
+
+The initial `rdocx` dependency spike was blocked before application code could
+use it: its `oxml-layout` 0.12.1 dependency does not compile with the resolved
+`fontdb` 0.23 API because its font source match omits `Source::SharedFile`.
+The implementation therefore selected `docxide-pdf` 0.17.1 with its CLI
+disabled. It exposes the required in-process bytes-to-PDF conversion, compiles
+in the workspace, and successfully rendered the checked-in `text.docx` fixture.
+This is an implementation qualification result, not a claim of Word parity;
+the corpus and performance checks above still apply.

@@ -18,15 +18,16 @@ License: GPL-3.0-or-later
 LicenseUrl: https://github.com/lawkitt/mdoc/blob/main/LICENSE
 Copyright: © 2026 packetThrower / Zorite contributors; © 2026 lawkitt / mdoc contributors
 CopyrightUrl: https://github.com/lawkitt/mdoc/blob/main/LICENSE
-ShortDescription: A lightweight Markdown WYSIWYG editor and PDF viewer.
+ShortDescription: A lightweight Markdown WYSIWYG editor with PDF and DOCX preview.
 Description: |-
-  Edit local Markdown files with live formatting and view PDFs alongside
-  your writing. Files stay on your machine, with no database or account.
+  Edit local Markdown files with live formatting and view PDFs or DOCX files
+  alongside your writing. Files stay on your machine, with no database or account.
 Moniker: mdoc
 Tags:
   - editor
   - markdown
   - pdf
+  - docx
   - local-first
 ReleaseNotesUrl: https://github.com/lawkitt/mdoc/releases
 Documentations:

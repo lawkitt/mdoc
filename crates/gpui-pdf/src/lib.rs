@@ -1933,7 +1933,8 @@ impl Render for PdfView {
                             .hover(|h| h.bg(hsla(0.58, 0.9, 0.55, 0.12)))
                             .on_click(cx.listener(move |this, _, _window, cx| match &target {
                                 LinkTarget::Page(p) => this.go_to_page(*p, cx),
-                                LinkTarget::Uri(u) => cx.open_url(u),
+                                LinkTarget::Uri(u) if allowed_uri(u) => cx.open_url(u),
+                                LinkTarget::Uri(_) => {}
                             })),
                     );
                 }
@@ -2703,6 +2704,16 @@ impl Render for PdfView {
     }
 }
 
+fn allowed_uri(uri: &str) -> bool {
+    let Some((scheme, _)) = uri.split_once(':') else {
+        return false;
+    };
+    matches!(
+        scheme.to_ascii_lowercase().as_str(),
+        "http" | "https" | "mailto"
+    )
+}
+
 /// The terminal-failure pane: the file name stays in the tab; the pane says
 /// why the viewer is empty (instead of an eternal "Loading PDF…").
 fn load_failed(
@@ -2799,6 +2810,16 @@ mod tests {
         assert!(super::is_pdf("https://x.test/report.pdf?v=2"));
         assert!(!super::is_pdf("report.pdf.png"));
         assert!(!super::is_pdf("a.png?name=report.pdf"));
+    }
+
+    #[test]
+    fn only_external_web_and_mail_links_are_openable() {
+        assert!(super::allowed_uri("https://example.test/file"));
+        assert!(super::allowed_uri("HTTP://example.test/file"));
+        assert!(super::allowed_uri("mailto:person@example.test"));
+        assert!(!super::allowed_uri("file:///secret"));
+        assert!(!super::allowed_uri("javascript:alert(1)"));
+        assert!(!super::allowed_uri("relative/path"));
     }
 
     use super::*;

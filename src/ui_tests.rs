@@ -162,6 +162,7 @@ fn converted(source: PathBuf) -> import::Imported {
         markdown: "# Imported\n".into(),
         warning: Some("Partial import: pages 2 of 2 require OCR and were skipped.".into()),
         is_pdf: false,
+        is_docx: false,
     }
 }
 
@@ -384,4 +385,42 @@ fn accepted_pdf_import_opens_source_pane(cx: &mut TestAppContext) {
         assert!(app.dirty(cx));
     });
     cx.run_until_parked();
+}
+
+#[gpui::test]
+fn accepted_docx_import_opens_source_pane(cx: &mut TestAppContext) {
+    let source =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/text.docx");
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        let mut imported = converted(source);
+        imported.is_docx = true;
+        app.proceed(Next::Import(imported), window, cx);
+        assert!(app.dirty(cx));
+    });
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| {
+        let app = app.read(cx);
+        app.pdf.is_some() && app.docx_preview.is_some()
+    }));
+}
+
+#[gpui::test]
+fn failed_docx_preview_keeps_retry_source(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("missing.docx");
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.open_path(source.clone(), window, cx);
+    });
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| {
+        let app = app.read(cx);
+        app.pdf.is_none()
+            && app.preview_retryable
+            && app.preview_source.as_deref() == Some(source.as_path())
+    }));
+    cx.dispatch_action(RetryPreview);
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| app.read(cx).preview_retryable));
 }

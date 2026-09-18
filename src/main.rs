@@ -1,9 +1,10 @@
-//! A file-based Markdown editor with a side-by-side PDF viewer.
+//! A file-based Markdown editor with side-by-side PDF and DOCX preview.
 #![cfg_attr(
     all(target_os = "windows", not(debug_assertions)),
     windows_subsystem = "windows"
 )]
 mod document;
+mod docx_preview;
 mod images;
 mod import;
 mod style;
@@ -18,7 +19,15 @@ use gpui::{
 };
 use gpui_pdf::PdfView;
 use mdoc_editor::{EditorEvent, EditorState};
-use std::{cell::Cell, path::PathBuf, rc::Rc};
+use std::{
+    cell::Cell,
+    path::PathBuf,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use style::Theme;
 
 actions!(
@@ -32,6 +41,7 @@ actions!(
         SaveAs,
         Close,
         ClosePdf,
+        RetryPreview,
         ToggleTheme
     ]
 );
@@ -49,11 +59,18 @@ struct Workspace {
     editor: Entity<EditorState>,
     document: Document,
     pdf: Option<Entity<PdfView>>,
+    docx_preview: Option<docx_preview::DocxPreview>,
     scroll: ScrollHandle,
     error: Option<String>,
+    preview_message: Option<String>,
+    preview_loading: bool,
+    preview_retryable: bool,
+    preview_source: Option<PathBuf>,
+    preview_cancel: Option<Arc<AtomicBool>>,
     prompting: bool,
     importing: bool,
     document_generation: u64,
+    preview_generation: u64,
     pending_import: Option<(u64, Result<import::Imported, String>)>,
     import_source: Option<PathBuf>,
     import_warning: Option<String>,
@@ -109,11 +126,18 @@ impl Workspace {
             editor,
             document: Document::default(),
             pdf: None,
+            docx_preview: None,
             scroll: ScrollHandle::new(),
             error: None,
+            preview_message: None,
+            preview_loading: false,
+            preview_retryable: false,
+            preview_source: None,
+            preview_cancel: None,
             prompting: false,
             importing: false,
             document_generation: 0,
+            preview_generation: 0,
             pending_import: None,
             import_source: None,
             import_warning: None,
@@ -191,6 +215,7 @@ impl Workspace {
         match next {
             Next::Close => {
                 self.changed_document();
+                self.close_preview(window, cx);
                 window.remove_window();
             }
             Next::New => {
@@ -217,6 +242,7 @@ impl Workspace {
             },
             Next::Import(imported) => {
                 self.changed_document();
+                self.close_preview(window, cx);
                 self.document = Document::default();
                 self.import_source = Some(imported.source.clone());
                 self.import_warning = imported.warning;
@@ -225,8 +251,14 @@ impl Workspace {
                     .update(cx, |editor, cx| editor.set_text(imported.markdown, cx));
                 window.focus(&self.editor.read(cx).focus_handle(cx), cx);
                 self.error = None;
+                self.preview_message = None;
                 if imported.is_pdf {
-                    self.open_pdf(imported.source, cx);
+                    self.open_pdf(imported.source, window, cx);
+                } else if imported.is_docx {
+                    self.open_docx(imported.source, window, cx);
+                } else {
+                    self.preview_message =
+                        Some("Source preview unavailable for this imported format.".into());
                 }
                 self.scroll.set_offset(gpui::point(px(0.), px(0.)));
                 self.update_title(window, cx);
@@ -239,6 +271,25 @@ impl Workspace {
         self.document_generation += 1;
         self.import_source = None;
         self.import_warning = None;
+    }
+
+    fn close_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.preview_generation = self.preview_generation.wrapping_add(1);
+        self.preview_loading = false;
+        self.preview_retryable = false;
+        self.preview_source = None;
+        self.cancel_preview_job();
+        self.pdf_subscription = None;
+        if let Some(pdf) = self.pdf.take() {
+            pdf.update(cx, |pdf, cx| pdf.release(window, cx));
+        }
+        self.docx_preview = None;
+    }
+
+    fn cancel_preview_job(&mut self) {
+        if let Some(cancel) = self.preview_cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
+        }
     }
 
     fn import(&mut self, _: &Import, window: &mut Window, cx: &mut Context<Self>) {
@@ -312,7 +363,7 @@ impl Workspace {
         self.document.directory()
     }
 
-    fn open_pdf(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    fn install_pdf(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         let theme = self.theme.clone();
         self.pdf = Some(cx.new(|cx| {
             PdfView::new(
@@ -328,19 +379,82 @@ impl Workspace {
             .map(|pdf| cx.observe(pdf, |_, _, cx| cx.notify()));
     }
 
+    fn open_pdf(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_preview(window, cx);
+        self.install_pdf(path, cx);
+        self.preview_message = None;
+    }
+
+    fn open_docx(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.cancel_preview_job();
+        self.preview_generation = self.preview_generation.wrapping_add(1);
+        let generation = self.preview_generation;
+        self.preview_message = None;
+        self.preview_retryable = false;
+        self.preview_source = Some(path.clone());
+        self.error = None;
+        self.preview_loading = true;
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.preview_cancel = Some(cancel.clone());
+        let source = path.clone();
+        let task = cx
+            .background_executor()
+            .spawn(async move { docx_preview::render_with_cancel(&path, cancel) });
+        cx.spawn_in(window, async move |this, cx| {
+            let result = task.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if generation != this.preview_generation {
+                    return;
+                }
+                this.preview_loading = false;
+                match result {
+                    Ok(preview) => {
+                        let path = preview.pdf_path.clone();
+                        let warnings =
+                            (!preview.warnings.is_empty()).then(|| preview.warnings.join(" "));
+                        this.close_preview(window, cx);
+                        this.docx_preview = Some(preview);
+                        this.preview_source = Some(source);
+                        this.preview_message = warnings;
+                        this.install_pdf(path, cx);
+                    }
+                    Err(error) => {
+                        this.preview_retryable = true;
+                        this.preview_message = Some(error.to_string());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn retry_preview(&mut self, _: &RetryPreview, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(path) = self.preview_source.clone() {
+            self.open_docx(path, window, cx);
+            cx.notify();
+        }
+    }
+
     fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         if path
             .extension()
             .is_some_and(|s| s.eq_ignore_ascii_case("pdf"))
         {
-            self.open_pdf(path, cx);
+            self.open_pdf(path, window, cx);
             self.error = None;
+            cx.notify();
+        } else if path
+            .extension()
+            .is_some_and(|s| s.eq_ignore_ascii_case("docx"))
+        {
+            self.open_docx(path, window, cx);
             cx.notify();
         } else if document::is_markdown(&path) {
             self.request(Next::Open(path), window, cx);
         } else {
             self.error =
-                Some("Choose a Markdown (.md, .markdown, .mdown, .txt) or PDF file.".into());
+                Some("Choose a Markdown (.md, .markdown, .mdown, .txt), PDF, or DOCX file.".into());
             cx.notify();
         }
     }
@@ -354,7 +468,7 @@ impl Workspace {
             files: true,
             directories: false,
             multiple: false,
-            prompt: Some("Open Markdown or PDF".into()),
+            prompt: Some("Open Markdown, PDF, or DOCX".into()),
         });
         cx.spawn_in(window, async move |this, cx| {
             let result = paths.await;
@@ -476,26 +590,45 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
             .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save(true, None, window, cx)))
             .on_action(cx.listener(|this, _: &Close, window, cx| this.request(Next::Close, window, cx)))
-            .on_action(cx.listener(|this, _: &ClosePdf, window, cx| { this.pdf = None; this.pdf_subscription = None; window.focus(&this.editor.read(cx).focus_handle(cx), cx); cx.notify(); }))
+            .on_action(cx.listener(|this, _: &ClosePdf, window, cx| { this.close_preview(window, cx); window.focus(&this.editor.read(cx).focus_handle(cx), cx); cx.notify(); }))
+            .on_action(cx.listener(Self::retry_preview))
             .child(div().flex().items_center().gap_2().p_2().text_size(px(13.)).border_b_1().border_color(palette.border)
                 .child(button("New", New, theme)).child(button("Open…", Open, theme)).child(button("Save", Save, theme)).child(button("Save As…", SaveAs, theme))
                 .child(if self.importing { div().child("Converting…").into_any_element() } else { button("Import as Markdown…", Import, theme).into_any_element() })
                 .child(div().flex_1())
                 .child(button(theme.toggle_label(), ToggleTheme, theme))
                 .child(if self.dirty(cx) { "Unsaved changes" } else { "Markdown · WYSIWYG" })
-                .when(self.pdf.is_some(), |bar| bar.child(button("Close PDF", ClosePdf, theme))))
+                .when(self.preview_loading, |bar| bar.child(div().child("Preparing preview…")))
+                .when(self.pdf.is_some(), |bar| bar.child(button("Close Preview", ClosePdf, theme))))
             .when_some(self.import_warning.clone(), |view, warning| view.child(div().flex().items_center().gap_2().p_2().border_b_1().border_color(palette.border)
                 .child(div().id("import-warning").flex_1().min_w_0().max_h(px(96.)).overflow_y_scroll().child(warning))
                 .child(button("Dismiss", DismissImportWarning, theme))))
             .child(div().flex().flex_1().min_h_0()
                 .child(div().id("document-scroll").flex_1().min_w_0().h_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().child(self.editor.clone()))
                 .when_some(self.pdf.clone(), |row, pdf| row.child(div().w_1_2().h_full().border_l_1().border_color(palette.border).child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))))
+            .when_some(self.preview_message.clone(), |view, message| view.child(div().flex().items_center().gap_2().p_2().bg(theme.error_bg()).child(div().flex_1().child(message)).when(self.preview_retryable, |bar| bar.child(button("Retry", RetryPreview, theme)))))
             .when_some(self.error.clone(), |view, error| view.child(div().p_2().bg(theme.error_bg()).child(error)))
     }
 }
 
 fn main() {
-    let initial = std::env::args_os().nth(1).map(PathBuf::from);
+    let args = std::env::args_os().collect::<Vec<_>>();
+    if args.get(1).is_some_and(|arg| arg == "--mdoc-docx-worker") {
+        let Some(input) = args.get(2) else {
+            eprintln!("missing DOCX worker input");
+            return;
+        };
+        let Some(output) = args.get(3) else {
+            eprintln!("missing DOCX worker output");
+            return;
+        };
+        if let Err(error) = docx_preview::run_worker(&PathBuf::from(input), &PathBuf::from(output))
+        {
+            eprintln!("{error}");
+        }
+        return;
+    }
+    let initial = args.get(1).cloned().map(PathBuf::from);
     gpui_platform::application().run(move |cx: &mut App| {
         mdoc_editor::bind_keys(cx);
         let modifier = if cfg!(target_os = "macos") {
