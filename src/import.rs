@@ -7,6 +7,7 @@ pub struct Imported {
     pub markdown: String,
     pub warning: Option<String>,
     pub is_pdf: bool,
+    pub is_docx: bool,
 }
 
 pub fn convert(path: &Path) -> Result<Imported, String> {
@@ -26,11 +27,15 @@ pub fn convert(path: &Path) -> Result<Imported, String> {
             converted.page_count
         )
     });
+    let is_docx = source
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
     Ok(Imported {
         source,
         markdown: converted.markdown,
         warning,
         is_pdf: converted.page_count > 0,
+        is_docx,
     })
 }
 
@@ -71,10 +76,13 @@ mod tests {
             let path = fixture(name);
             let original = std::fs::read(&path).unwrap();
             let imported = convert(&path).unwrap();
-            let expected = std::fs::read_to_string(fixture(&format!("{name}.md"))).unwrap();
+            let expected = std::fs::read_to_string(fixture(&format!("{name}.md")))
+                .unwrap()
+                .replace("\r\n", "\n");
+            let markdown = imported.markdown.replace("\r\n", "\n");
             // Insta's text snapshots end in a newline regardless of converter output.
             assert_eq!(
-                imported.markdown.trim_end_matches('\n'),
+                markdown.trim_end_matches('\n'),
                 expected.trim_end_matches('\n'),
                 "{name}"
             );

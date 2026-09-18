@@ -92,9 +92,12 @@ self-contained and making fidelity an explicit qualification gate.
 
 ## Confirmed: round 5 and implementation handoff
 
-13. **Converter and fonts.** Start with rdocx and its bundled fonts. Verify
-    Cyrillic, search, external-resource handling, and performance. Evaluate
-    docxide-pdf only if the spike identifies a concrete blocker.
+13. **Converter and fonts.** Start with `docxide-pdf` 0.17.1. The first
+    `rdocx` spike was blocked because its `oxml-layout` dependency does not
+    compile against the currently resolved `fontdb` API (`Source::SharedFile`).
+    `docxide-pdf` exposes the required in-process bytes-to-PDF API and compiles
+    in this workspace with its CLI disabled. Verify Cyrillic, search,
+    external-resource handling, and performance against the agreed corpus.
 14. **Responsiveness.** Target loading feedback within 100 ms and continued
     typing, scrolling, and closing responsiveness. Target first visible page
     within two seconds for a typical text-heavy ten-page DOCX on the measured

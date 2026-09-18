@@ -66,7 +66,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='mdoc — Markdown WYSIWYG editor and PDF viewer'
+            Description='mdoc — Markdown WYSIWYG editor with PDF and DOCX preview'
             Manufacturer='lawkitt'
             InstallerVersion='500'
             Languages='1033'
@@ -113,7 +113,7 @@
                 <Component Id='StartMenuShortcut' Guid='93F5CD50-96F3-44B4-9DD7-33ACA186497C'>
                     <Shortcut Id='mdocStartMenuShortcut'
                         Name='mdoc'
-                        Description='Markdown WYSIWYG editor and PDF viewer'
+                        Description='Markdown WYSIWYG editor with PDF and DOCX preview'
                         Target='[APPLICATIONFOLDER]mdoc.exe'
                         WorkingDirectory='APPLICATIONFOLDER'/>
                     <RegistryValue Root='HKCU'

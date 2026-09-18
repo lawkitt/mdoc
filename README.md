@@ -1,6 +1,6 @@
 # mdoc
 
-A lightweight desktop Markdown WYSIWYG editor with a side-by-side PDF viewer.
+A lightweight desktop Markdown WYSIWYG editor with side-by-side PDF and DOCX preview.
 Built with Rust and GPUI for macOS, Windows, and Linux.
 
 Building requires access to the pinned private `lawkitt/anydoc` dependency.
@@ -17,12 +17,15 @@ cd mdoc
 cargo run
 cargo run -- path/to/note.md
 cargo run -- path/to/reference.pdf
+cargo run -- path/to/reference.docx
 ```
 
 Write Markdown directly: headings, emphasis, lists, checkboxes, tables, links,
 quotes, and code blocks render as you edit. Syntax is revealed near the caret.
 Local images resolve relative to the Markdown file and load in the background.
-Open a PDF alongside your document to read, zoom, navigate pages, and search.
+Open a PDF or DOCX alongside your document to read, zoom, navigate pages, and
+search. DOCX preview is read-only and rendered locally with the bundled Rust
+converter; the source file is never modified.
 PDF form appearances are rendered; this is a viewer, not a PDF form editor.
 
 ## Files and shortcuts
@@ -30,12 +33,14 @@ PDF form appearances are rendered; this is a viewer, not a PDF form editor.
 Use **New**, **Open**, **Save**, and **Save As** in the toolbar or File menu.
 The corresponding shortcuts are Cmd+N/O/S/Shift+S on macOS and
 Ctrl+N/O/S/Shift+S on Windows/Linux. Cmd/Ctrl+W closes the window.
-Open accepts Markdown (.md, .markdown, .mdown, .txt) and PDF files.
+Open accepts Markdown (.md, .markdown, .mdown, .txt), PDF, and DOCX files.
 **Import as Markdown…** (Cmd/Ctrl+Shift+I) converts PDF, DOC/DOCX, XLS/XLSX,
 other supported Office/OpenDocument formats, RTF, EPUB, and CSV into an unsaved
 Markdown document. Conversion runs locally in the background, one file at a
 time. Save suggests the source name with a `.md` extension; the source is
-preserved. Imported PDFs also open in the side pane.
+preserved. Imported PDFs and DOCX files also open in the side pane. Other
+supported import formats remain text-only and show that source preview is
+unavailable.
 
 Import retains text and structure, not embedded images. Scanned pages require
 OCR in another application: mixed PDFs import their readable pages with a
@@ -43,8 +48,9 @@ persistent skipped-page warning; fully scanned PDFs produce an error. You can
 keep editing during conversion. Switching Markdown documents discards its
 pending result, and successful conversion prompts before replacing unsaved edits.
 
-Click local Markdown or PDF links to open them; web links open in your browser.
-**Close PDF** returns to a full-width editor without changing your document.
+Click local Markdown, PDF, or DOCX links to open them; web links open in your
+browser. **Close Preview** returns to a full-width editor without changing your
+document.
 Use the **☀ Light / ☾ Dark** toolbar button to switch the editor and PDF pane
 between the two themes. The app starts in dark mode; the toggle lasts for the session.
 
