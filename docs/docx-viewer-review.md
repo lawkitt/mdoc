@@ -65,7 +65,8 @@ memory cap is inferred from one synthetic document.
 - Layout is approximate. Word spacing in extracted text can be lost, affecting
   multiword search. Equations, charts, SmartArt, embedded fonts, CJK and RTL have
   warnings when detected and remain outside first-release qualification.
-- Package XML unsupported by the renderer's UTF-8 path is rejected explicitly.
+- Auxiliary XML accepts UTF-8 and BOM-marked UTF-16 for policy validation;
+  this does not extend the renderer's supported content encodings.
 - No Word/LibreOffice parity or visual approval is claimed by automated tests.
 
 ## Verification result
@@ -75,3 +76,102 @@ After the repairs: `cargo fmt --check`,
 `cargo test --workspace` (**215 passing tests**), and `git diff --check` pass.
 Cargo still emits its registry configuration warning and the existing upstream
 `block 0.1.6` future-compatibility notice; these are not new Clippy findings.
+
+## Long-document performance follow-up
+
+The uploaded DOCX corpus was converted to PDF and exercised through the actual
+`PdfView` scroll path. In an unoptimized development build, the 14-page legal
+document spent about 3.4 seconds rasterizing its initial near-viewport pages,
+and fast scrolling left roughly 873 ms of background raster work before the
+viewport settled. CPU layout for a scroll frame was already low (about 1.6 ms),
+so the measured bottleneck was PDF rasterization, not the GPUI page-column layout.
+
+The viewer now keeps a one-page raster margin, prioritizes pages intersecting the
+viewport, limits concurrent raster jobs to two, and drops obsolete results when
+the viewport or zoom generation changes. `release` also invalidates pending jobs.
+The fit-to-width path is constrained with zero-width flex children so sidebar
+measurement cannot repeatedly change the page width and trigger a render storm.
+The application starts generated DOCX previews in fit-width mode, avoiding a
+large off-pane bitmap before the first visible page is shown.
+
+The development profile optimizes `gpui-pdf`, Hayro, and Vello CPU/vector
+dependencies at level 2 while leaving the application code debuggable. Against
+the same corpus on this Apple M4, the 14-page fixture measured 142 ms initial
+viewer preparation, 1.75 ms frame p95, and 23.7 ms settle p95 in the final run.
+The other five fixtures also passed the same scroll budget; their initial
+preparation was 47–94 ms. These measurements use a fixed 550×750 test viewport and measure
+CPU layout plus raster completion, not display presentation or input latency.
+
+The ignored harness is reproducible with:
+
+```text
+cargo test -p gpui-pdf --features search,forms long_document_scroll_budget -- --ignored --nocapture
+```
+
+Set `PDF_PERF_DIR` to a directory of converted PDFs and optionally
+`PDF_PERF_FIT=1` to exercise fit-to-width. The uploaded Dubai document also
+exercised the UTF-16 auxiliary-XML decoder added to the DOCX package policy.
+
+### Performance change review
+
+A follow-up review found that enabling fit-width before loading did not itself
+prevent initial oversized rasters: the first render can precede scroll-area
+measurement. Raster scheduling now waits for that measurement when fit is active,
+requesting one follow-up frame without continually redrawing an unmeasured pane.
+`initial_fit_waits_for_measured_viewport` failed with two premature raster requests
+before the fix and passes afterward.
+
+The original benchmark only traversed about three pages and did not assert bitmap
+availability. Its earlier timing samples above are historical, not whole-document
+coverage. The harness now visits every page forwards and backwards, uses actual
+page geometry, and requires current-generation bitmaps throughout the retained
+viewport window. The rapid-scroll test also checks that the final destination
+renders and that releasing a view with queued replacements drains the jobs without
+restoring bitmaps. The throwaway cache-sharing probe was removed.
+
+With this stronger harness, all six PDFs pass. The 14-page document measured
+114.5 ms initial preparation, 1.81 ms draw p95, and 26.0 ms settle p95; other
+fixtures measured 48–94 ms initial preparation and 2.4–21.8 ms settle p95.
+These are individual local headless runs, not end-to-end DOCX opening or native
+input-latency measurements. The bounded queue and selective dev optimizations
+are retained; no renderer replacement was necessary.
+
+## Remaining lag: Markdown editor root cause (2026-09-19)
+
+The PDF-only benchmark did not cover the editor alongside it. A full-workspace
+benchmark reproduced the reported lag using Markdown imported from the 14-page
+legal document (39,138 bytes, 377 lines), at a fixed 1100×750 viewport in the
+development profile:
+
+| State | Before scroll p95 | After scroll p95 |
+| --- | ---: | ---: |
+| Markdown alone, before any preview | 217.9 ms | 9.2 ms |
+| DOCX preview open | 221.7 ms | 11.9 ms |
+| Preview closed | 219.7 ms | 9.5 ms |
+
+A three-second macOS sampling profile attributed 1,993 of 2,096 active test-thread
+samples to `EditorState::line_end` rebuilding `line_starts` from the whole source
+inside the heading/link prepaint loops. That made frame preparation proportional
+to document bytes times row count. Preview teardown was not required to reproduce
+this bottleneck. Reusing one frame-local line index for row ends and byte-to-row
+lookups removes the repeated scans without persistent cache invalidation or extra
+compiler optimization. Selection/find geometry and code-fence lookup reuse the
+same index.
+
+The initial reproducer scrolled the first 2,320 px. The final harness traverses
+the entire scroll extent in both directions, asserts actual scrolling and preview
+state, and measures text input plus redraw (18–26 ms p95 for the legal document).
+It checks the resulting Markdown bytes to ensure the input actually occurred.
+Timing remains a headless CPU measurement, not native input/presentation latency.
+The optional test requires the locally supplied DOCX fixtures; it is ignored by
+the portable workspace test gate.
+
+```sh
+cargo test -p mdoc --bin mdoc large_markdown_scroll_budget -- --ignored --nocapture
+# Select another fixture by filename:
+MD_PERF_FILE=coverage.docx cargo test -p mdoc --bin mdoc large_markdown_scroll_budget -- --ignored --nocapture
+```
+
+The asserted local budgets are 16.667 ms scroll p95 and 50 ms input-plus-redraw p95.
+The editor change is in `crates/mdoc-editor/src/element.rs`; it leaves source bytes
+and the shared PDF rendering changes intact.

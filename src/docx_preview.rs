@@ -229,6 +229,36 @@ fn render_bytes(bytes: &[u8], output: &Path) -> Result<(), PreviewError> {
     Ok(())
 }
 
+// Auxiliary OOXML parts (for example customXml) can legally use UTF-16.
+// Decode them for policy checks even when the renderer does not consume them.
+fn xml_text(bytes: &[u8]) -> Result<std::borrow::Cow<'_, str>, PreviewError> {
+    if bytes.starts_with(&[0xff, 0xfe]) || bytes.starts_with(&[0xfe, 0xff]) {
+        if !bytes.len().is_multiple_of(2) {
+            return Err(PreviewError::Package("invalid UTF-16 XML".into()));
+        }
+        let little_endian = bytes[0] == 0xff;
+        let units = bytes[2..]
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| {
+                if little_endian {
+                    u16::from_le_bytes(*b)
+                } else {
+                    u16::from_be_bytes(*b)
+                }
+            })
+            .collect::<Vec<_>>();
+        String::from_utf16(&units)
+            .map(std::borrow::Cow::Owned)
+            .map_err(|_| PreviewError::Package("invalid UTF-16 XML".into()))
+    } else {
+        std::str::from_utf8(bytes)
+            .map(std::borrow::Cow::Borrowed)
+            .map_err(|_| PreviewError::Package("unsupported XML encoding".into()))
+    }
+}
+
 fn inspect_package(bytes: &[u8]) -> Result<Vec<String>, PreviewError> {
     if bytes.starts_with(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]) {
         return Err(PreviewError::Encrypted);
@@ -297,9 +327,8 @@ fn inspect_package(bytes: &[u8]) -> Result<Vec<String>, PreviewError> {
             return Err(PreviewError::NestedArchive);
         }
         if lower.ends_with(".xml") || lower.ends_with(".rels") {
-            let text = std::str::from_utf8(&contents)
-                .map_err(|_| PreviewError::Package("XML must be UTF-8".into()))?;
-            let xml = roxmltree::Document::parse(text)
+            let text = xml_text(&contents)?;
+            let xml = roxmltree::Document::parse(&text)
                 .map_err(|_| PreviewError::Package("invalid XML".into()))?;
             if xml.descendants().filter(|n| n.is_text()).filter_map(|n| n.text()).any(|text| text.chars().any(|c| matches!(c as u32, 0x0590..=0x08ff | 0x2e80..=0x9fff | 0xac00..=0xd7af | 0xfb1d..=0xfdff | 0xfe70..=0xfeff | 0x20000..=0x3134f))) {
                 warnings.push("CJK and right-to-left text rendering has not been qualified.".into());
@@ -405,6 +434,36 @@ mod tests {
             MAX_CONVERSION_TIME,
         );
         assert!(matches!(result, Err(PreviewError::Cancelled)));
+    }
+
+    #[test]
+    fn utf16_auxiliary_parts_are_validated_without_ignoring_revisions() {
+        for little_endian in [true, false] {
+            let encode = |text: &str| {
+                let mut bytes = if little_endian {
+                    vec![0xff, 0xfe]
+                } else {
+                    vec![0xfe, 0xff]
+                };
+                for c in text.encode_utf16() {
+                    bytes.extend(if little_endian {
+                        c.to_le_bytes()
+                    } else {
+                        c.to_be_bytes()
+                    });
+                }
+                bytes
+            };
+            let clean = encode("<?xml version='1.0' encoding='UTF-16'?><data/>");
+            assert!(inspect_package(&package(&[("customXml/item1.xml", &clean)])).is_ok());
+            let changed = encode(
+                "<x:ins xmlns:x='http://schemas.openxmlformats.org/wordprocessingml/2006/main'/>",
+            );
+            assert!(matches!(
+                inspect_package(&package(&[("customXml/item1.xml", &changed)])),
+                Err(PreviewError::TrackedChangesNotSupported)
+            ));
+        }
     }
 
     #[test]

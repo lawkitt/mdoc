@@ -322,6 +322,21 @@ impl Element for EditorElement {
         cx: &mut App,
     ) -> PrepaintState {
         let editor = self.editor.read(cx);
+        // Share one source index for this frame. Calling EditorState::line_end
+        // inside the per-row hitbox loops rescans the whole document per row.
+        let line_starts = editor.line_starts();
+        let line_end = |row: usize| {
+            line_starts
+                .get(row + 1)
+                .map_or(editor.content.len(), |s| s - 1)
+        };
+        let row_col = |offset: usize| {
+            let row = line_starts
+                .partition_point(|&s| s <= offset)
+                .saturating_sub(1);
+            (row, offset - line_starts[row])
+        };
+
         // Reveal-on-caret (markers, raw-on-caret widgets, per-construct reveal)
         // applies only while the editor is focused. An unfocused editor — always
         // shown in WYSIWYG mode but not being edited — renders fully, like a
@@ -339,7 +354,7 @@ impl Element for EditorElement {
 
         // Placeholder (uniform) when empty; else shape per line so headings get
         // their own taller rows (W2) and image lines render inline (W4).
-        let caret_row = focused.then(|| editor.row_col(editor.cursor_offset()).0);
+        let caret_row = focused.then(|| row_col(editor.cursor_offset()).0);
         let selection = if focused {
             (editor.selected_range.start, editor.selected_range.end)
         } else {
@@ -411,10 +426,8 @@ impl Element for EditorElement {
                 editor.tab_indent,
                 editor.block_math_em,
                 editor.editing_block.as_ref().map(|eb| {
-                    let sr = editor.row_col(eb.range.start).0;
-                    let er = editor
-                        .row_col(eb.range.end.saturating_sub(1).max(eb.range.start))
-                        .0;
+                    let sr = row_col(eb.range.start).0;
+                    let er = row_col(eb.range.end.saturating_sub(1).max(eb.range.start)).0;
                     (sr, er, eb.height)
                 }),
                 sf,
@@ -599,7 +612,7 @@ impl Element for EditorElement {
             .as_ref()
             .filter(|_| !editor.content.is_empty())
         {
-            let starts = editor.line_starts();
+            let starts = &line_starts;
             let chip_fs = px(13.);
             let chip_h = px(20.);
             let shape = |window: &mut Window, text: &SharedString, color: Hsla| {
@@ -650,7 +663,7 @@ impl Element for EditorElement {
                 // the nearest ``` row above (hidden fences collapse to height 0).
                 let Some(fence_row) = (0..=i).rev().find(|&r| {
                     starts.get(r).is_some_and(|&s| {
-                        editor.content[s..editor.line_end(r)]
+                        editor.content[s..line_end(r)]
                             .trim_start()
                             .starts_with("```")
                     })
@@ -701,7 +714,7 @@ impl Element for EditorElement {
         let mut heading_fold_grips = Vec::new();
         let mut heading_row_rects = Vec::new();
         if editor.markdown_style.is_some() && !editor.content.is_empty() {
-            let starts = editor.line_starts();
+            let starts = &line_starts;
             for (i, line_shaped) in wrapped.iter().enumerate() {
                 // A fence's `# comment` line isn't a heading; folded rows
                 // (height 0, inside an outer fold) can't anchor a chevron.
@@ -711,7 +724,7 @@ impl Element for EditorElement {
                 let (Some(&start), Some(&lh)) = (starts.get(i), line_heights.get(i)) else {
                     continue;
                 };
-                let line = &editor.content[start..editor.line_end(i)];
+                let line = &editor.content[start..line_end(i)];
                 if markdown_syntax::line_heading_level(line).is_none() || lh == px(0.) {
                     continue;
                 }
@@ -752,7 +765,7 @@ impl Element for EditorElement {
         let mut link_rects: Vec<(Bounds<Pixels>, mdoc_markdown::syntax::LinkHit)> = Vec::new();
         let mut inline_image_grips = Vec::new();
         if editor.markdown_style.is_some() && !editor.content.is_empty() {
-            let starts = editor.line_starts();
+            let starts = &line_starts;
             for (i, line_shaped) in wrapped.iter().enumerate() {
                 if widgets.get(i).and_then(Option::as_ref).is_some()
                     || backgrounds.get(i).and_then(Option::as_ref).is_some()
@@ -763,7 +776,7 @@ impl Element for EditorElement {
                 let (Some(&start), Some(lh)) = (starts.get(i), line_heights.get(i)) else {
                     continue;
                 };
-                let line = &editor.content[start..editor.line_end(i)];
+                let line = &editor.content[start..line_end(i)];
                 let inset = row_x(i);
                 // The reference-count badge over a hidden ` ^id` anchor is
                 // clickable too (skipped on the caret's line, where the raw
@@ -772,7 +785,7 @@ impl Element for EditorElement {
                     .markdown_style
                     .as_ref()
                     .and_then(|st| st.block_ref_count.as_ref())
-                    .filter(|_| editor.row_col(editor.selected_range.start).0 != i)
+                    .filter(|_| row_col(editor.selected_range.start).0 != i)
                     .and_then(|f| {
                         mdoc_markdown::syntax::block_id(line)
                             .filter(|(_, id)| f(id) > 0)
@@ -1117,9 +1130,9 @@ impl Element for EditorElement {
         // highlights (which paint the same shapes in other colors).
         let range_quads =
             |s: usize, e: usize, color: Hsla, window: &mut Window| -> Vec<PaintQuad> {
-                let starts = editor.line_starts();
-                let (s_row, _) = editor.row_col(s);
-                let (e_row, _) = editor.row_col(e);
+                let starts = &line_starts;
+                let (s_row, _) = row_col(s);
+                let (e_row, _) = row_col(e);
                 let right = bounds.size.width;
                 let mut sels = Vec::new();
                 for row in s_row..=e_row {
@@ -1136,7 +1149,7 @@ impl Element for EditorElement {
                     let top = line_tops[row];
                     let line_start = starts[row];
                     let a = s.max(line_start) - line_start;
-                    let b = e.min(editor.line_end(row)) - line_start;
+                    let b = e.min(line_end(row)) - line_start;
                     // Table row: highlight between the cell positions of the selection
                     // ends (not raw-source geometry).
                     if let Some(t) = tables.get(row).and_then(Option::as_ref) {
@@ -1326,7 +1339,7 @@ impl Element for EditorElement {
             );
             (Some(c), Vec::new())
         } else if editor.selected_range.is_empty() {
-            let (row, col) = editor.row_col(editor.cursor_offset());
+            let (row, col) = row_col(editor.cursor_offset());
             let lh = line_heights.get(row).copied().unwrap_or(base_lh);
             let top = line_tops.get(row).copied().unwrap_or(px(0.));
             // Caret on an image row: the picture stays rendered (a Word-style

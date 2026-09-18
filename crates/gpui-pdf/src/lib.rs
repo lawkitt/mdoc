@@ -204,9 +204,13 @@ const PAGE_PAD_Y: f32 = 16.0;
 const SCROLLBAR_W: f32 = 12.0;
 /// Minimum thumb height (px) so the scrollbar stays grabbable in very long PDFs.
 const MIN_THUMB_H: f32 = 32.0;
-/// Extra pages to keep rasterized above and below the visible range, so scrolling
-/// finds them already rendered (and small wiggles don't thrash render/evict).
-const MARGIN: usize = 3;
+/// Extra pages to keep rasterized above and below the visible range. A single-page
+/// margin keeps the first visible page responsive on long documents while still
+/// covering the usual one-page scroll gesture. Raster work is also capped below.
+const MARGIN: usize = 1;
+/// Keep raster work bounded so page rendering cannot starve editor input and
+/// scrolling on a document with many pages.
+const MAX_ACTIVE_RENDERS: usize = 2;
 
 /// Geometry for painting + dragging the custom scrollbar, derived each frame from
 /// the content height, the viewport height, and the current scroll offset. `None`
@@ -359,7 +363,7 @@ struct Slot {
     /// the bitmap is stale and the page is re-rendered (while still shown).
     image_gen: u64,
     /// A background rasterization is in flight (don't spawn another).
-    loading: bool,
+    loading: Option<u64>,
 }
 
 /// Colors for the [`PdfView`] chrome. Map your theme onto this; [`PdfStyle::default`]
@@ -522,6 +526,8 @@ pub enum PdfEvent {
 /// [`release`](PdfView::release) before dropping it (e.g. when its tab closes) to
 /// free the atlas textures gpui won't free on plain drop.
 pub struct PdfView {
+    #[cfg(test)]
+    render_requests: usize,
     path: PathBuf,
     style: PdfStyleFn,
     quality: PdfQualityFn,
@@ -546,6 +552,8 @@ pub struct PdfView {
     dims: Vec<(f32, f32)>,
     /// Per-page render state; only pages near the viewport hold a bitmap.
     pages: Vec<Slot>,
+    active_renders: usize,
+    released: bool,
     scroll: ScrollHandle,
     /// While the scrollbar thumb is being dragged: the pointer's vertical offset (px)
     /// from the thumb's top at grab time, so the thumb tracks the cursor. `None` when
@@ -556,6 +564,7 @@ pub struct PdfView {
     fit: Option<FitMode>,
     /// Viewport size the fit was last computed for (so a resize re-fits once).
     fit_viewport: (f32, f32),
+    awaiting_fit_layout: bool,
     /// On-screen zoom factor (1.0 = base width). Affects layout and render scale.
     zoom: f32,
     /// The quality multiplier the pages were last rendered at; compared against the
@@ -695,6 +704,8 @@ impl PdfView {
 
         let last_quality = quality().clamp(MIN_QUALITY, MAX_QUALITY);
         Self {
+            #[cfg(test)]
+            render_requests: 0,
             path,
             style,
             quality,
@@ -706,10 +717,13 @@ impl PdfView {
             on_open_external: None,
             dims: Vec::new(),
             pages: Vec::new(),
+            active_renders: 0,
+            released: false,
             scroll: ScrollHandle::new(),
             scrollbar_drag: None,
             fit: None,
             fit_viewport: (0.0, 0.0),
+            awaiting_fit_layout: false,
             zoom: 1.0,
             last_quality,
             generation: 0,
@@ -779,12 +793,8 @@ impl PdfView {
         // stale page paints until its crisp replacement lands, the same
         // no-blanking swap zoom and quality changes use (blanking every slot
         // flashed the whole viewer black on each form-field write).
-        if self.pages.len() == n {
-            self.generation += 1;
-            for slot in &mut self.pages {
-                slot.loading = false;
-            }
-        } else {
+        self.generation = self.generation.wrapping_add(1);
+        if self.pages.len() != n {
             for slot in std::mem::replace(&mut self.pages, vec![Slot::default(); n]) {
                 if let Some(arc) = slot.image {
                     self.pending_drops.push(arc);
@@ -1361,6 +1371,8 @@ impl PdfView {
     /// paint and only frees it via `drop_image`; a raw `ImageSource::Render` is never
     /// auto-evicted, so call this before dropping the view or the textures leak.
     pub fn release(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.released = true;
+        self.generation = self.generation.wrapping_add(1);
         for arc in std::mem::take(&mut self.pending_drops) {
             cx.drop_image(arc, Some(window));
         }
@@ -1590,9 +1602,23 @@ impl PdfView {
         for arc in std::mem::take(&mut self.pending_drops) {
             cx.drop_image(arc, Some(window));
         }
-        if self.dims.is_empty() || self.pdf.is_none() {
+        if self.released || self.dims.is_empty() || self.pdf.is_none() {
             return; // not loaded yet (still reading/parsing)
         }
+
+        // Fit needs the scroll area's first layout. Let this frame measure it,
+        // then request a new frame to fit before allocating any page bitmaps.
+        let viewport = self.scroll.bounds().size;
+        if self.fit.is_some()
+            && (f32::from(viewport.width) <= 1.0 || f32::from(viewport.height) <= 1.0)
+        {
+            if !self.awaiting_fit_layout {
+                self.awaiting_fit_layout = true;
+                cx.notify();
+            }
+            return;
+        }
+        self.awaiting_fit_layout = false;
 
         // A host quality change invalidates every bitmap (new scale), like a zoom.
         let quality = (self.quality)().clamp(MIN_QUALITY, MAX_QUALITY);
@@ -1640,8 +1666,8 @@ impl PdfView {
         for (i, slot) in self.pages.iter_mut().enumerate() {
             let in_window = i >= start && i <= end;
             if in_window {
-                if !slot.loading && (slot.image.is_none() || slot.image_gen != generation) {
-                    slot.loading = true;
+                if slot.loading.is_none() && (slot.image.is_none() || slot.image_gen != generation)
+                {
                     to_render.push(i);
                 }
             } else if let Some(arc) = slot.image.take() {
@@ -1656,20 +1682,51 @@ impl PdfView {
             return;
         }
 
-        // Render the pages closest to the middle of the window first, so the page
-        // you're looking at fills in before its neighbors.
-        let center = (start + end) / 2;
-        to_render.sort_by_key(|&i| (i as i64 - center as i64).unsigned_abs());
+        // Render pages intersecting the viewport before the one-page prefetch
+        // margin, so the page you're looking at fills in before its neighbors.
+        let first_visible = current_page(&self.dims, page_width, scroll_y);
+        let last_visible = current_page(&self.dims, page_width, scroll_y + viewport_h.max(1.0));
+        to_render.sort_by_key(|&i| {
+            first_visible
+                .saturating_sub(i)
+                .max(i.saturating_sub(last_visible))
+        });
+        // Rapid scrolling/zooming must not queue a raster for every page passed.
+        // Reconsider the latest viewport after each completion, with visible
+        // pages ahead of prefetch. At most two CPU rasters compete with editing.
+        to_render.truncate(MAX_ACTIVE_RENDERS.saturating_sub(self.active_renders));
 
         let pdf = self.pdf.clone().unwrap();
         for i in to_render {
+            self.active_renders += 1;
+            self.pages[i].loading = Some(generation);
+            #[cfg(test)]
+            {
+                self.render_requests += 1;
+            }
             let pdf = pdf.clone();
             let scale = render_scale(page_width, scale_factor, quality, self.dims[i].0);
             cx.spawn(async move |this, cx| {
-                let page = cx
-                    .background_executor()
-                    .spawn(async move { render_page(&pdf, i, scale).ok() })
-                    .await;
+                let wanted = this
+                    .update(cx, |this, _| {
+                        let (start, end) = keep_window(
+                            &this.dims,
+                            this.page_width(),
+                            f32::from(-this.scroll.offset().y),
+                            f32::from(this.scroll.bounds().size.height),
+                        );
+                        !this.released
+                            && this.generation == generation
+                            && (start..=end).contains(&i)
+                    })
+                    .unwrap_or(false);
+                let page = if wanted {
+                    cx.background_executor()
+                        .spawn(async move { render_page(&pdf, i, scale).ok() })
+                        .await
+                } else {
+                    None
+                };
                 let _ = this.update(cx, |this, cx| {
                     // Store only if still wanted: same generation (scale unchanged)
                     // and still inside the viewport window. Otherwise discard — the
@@ -1681,11 +1738,15 @@ impl PdfView {
                         let (s, e) = keep_window(&this.dims, pw, sy, vh);
                         i >= s && i <= e
                     };
+                    this.active_renders = this.active_renders.saturating_sub(1);
                     let gen_now = this.generation;
                     let mut retired = None;
                     if let Some(slot) = this.pages.get_mut(i) {
-                        slot.loading = false;
-                        if gen_now == generation
+                        if slot.loading == Some(generation) {
+                            slot.loading = None;
+                        }
+                        if !this.released
+                            && gen_now == generation
                             && in_window
                             && let Some(img) = page
                         {
@@ -2240,6 +2301,7 @@ impl Render for PdfView {
         let root = div()
             .track_focus(&self.focus)
             .size_full()
+            .min_w_0()
             .flex()
             .flex_col()
             .bg(style.bg)
@@ -2669,6 +2731,7 @@ impl Render for PdfView {
             .child(
                 // Content row: the optional TOC panel beside the scrollable page column.
                 div()
+                    .min_w_0()
                     .flex_1()
                     .min_h_0()
                     .flex()
@@ -2679,11 +2742,13 @@ impl Render for PdfView {
                         // area's right edge without taking layout space (overlay scrollbar).
                         div()
                             .relative()
+                            .min_w_0()
                             .flex_1()
                             .min_h_0()
                             .child(
                                 div()
                                     .id("pdf-scroll")
+                                    .min_w_0()
                                     .size_full()
                                     .overflow_y_scroll()
                                     .track_scroll(&self.scroll)
@@ -2846,15 +2911,15 @@ mod tests {
     #[test]
     fn window_at_top_covers_first_pages_plus_margin() {
         let dims = letter_pages(10);
-        // Top of the document, ~900px viewport → page 0 visible, ±MARGIN(3).
-        assert_eq!(keep_window(&dims, PAGE_WIDTH, 0.0, 900.0), (0, 3));
+        // Top of the document, ~900px viewport → page 0 visible, ±MARGIN(1).
+        assert_eq!(keep_window(&dims, PAGE_WIDTH, 0.0, 900.0), (0, 1));
     }
 
     #[test]
     fn window_follows_scroll() {
         let dims = letter_pages(10);
         // Scrolled into page 2 (page tops ≈ 16, 1087, 2158, …).
-        assert_eq!(keep_window(&dims, PAGE_WIDTH, 2200.0, 900.0), (0, 5));
+        assert_eq!(keep_window(&dims, PAGE_WIDTH, 2200.0, 900.0), (1, 3));
     }
 
     #[test]
@@ -2912,3 +2977,6 @@ mod tests {
         assert_eq!(render_scale(PAGE_WIDTH, 2.0, 1.0, 0.0), 1.5);
     }
 }
+
+#[cfg(test)]
+mod perf_tests;
