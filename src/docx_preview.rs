@@ -2,9 +2,8 @@ use std::{
     fs,
     io::{Cursor, Read},
     path::{Path, PathBuf},
-    sync::{Arc, atomic::AtomicBool},
+    sync::{Arc, Mutex, atomic::AtomicBool},
 };
-#[cfg(not(test))]
 use std::{
     process::{Command, Stdio},
     sync::atomic::Ordering,
@@ -19,14 +18,46 @@ const MAX_INPUT_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_ENTRIES: usize = 10_000;
 const MAX_PART_UNCOMPRESSED_BYTES: u64 = 250 * 1024 * 1024;
 const MAX_TOTAL_UNCOMPRESSED_BYTES: u64 = 250 * 1024 * 1024;
-#[cfg(not(test))]
 const MAX_CONVERSION_TIME: Duration = Duration::from_secs(30);
 
 /// The temporary PDF and its directory must live as long as the PDF view.
 pub struct DocxPreview {
     pub pdf_path: PathBuf,
     pub warnings: Vec<String>,
-    _directory: TempDir,
+    directory: Option<TempDir>,
+}
+
+impl Drop for DocxPreview {
+    fn drop(&mut self) {
+        if let Some(directory) = self.directory.take() {
+            CLEANUPS.fetch_add(1, Ordering::Relaxed);
+            thread::spawn(move || {
+                drop(directory);
+                CLEANUPS.fetch_sub(1, Ordering::Release);
+            });
+        }
+    }
+}
+
+// A replacement waits for the obsolete worker to be killed and reaped.
+static WORKER: Mutex<()> = Mutex::new(());
+static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+static CLEANUPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Called off-thread by GPUI's graceful-quit hook after windows are dropped.
+pub fn shutdown_workers() {
+    SHUTTING_DOWN.store(true, Ordering::Relaxed);
+    let _lock = WORKER.lock().unwrap_or_else(|e| e.into_inner());
+    while CLEANUPS.load(Ordering::Acquire) != 0 {
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+struct Worker(std::process::Child);
+impl Drop for Worker {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -46,10 +77,8 @@ pub enum PreviewError {
     #[error("DOCX preview could not be rendered: {0}")]
     Render(String),
     #[error("DOCX preview conversion timed out after 30 seconds")]
-    #[cfg(not(test))]
     Timeout,
     #[error("DOCX preview conversion was cancelled")]
-    #[cfg(not(test))]
     Cancelled,
     #[error("DOCX preview could not create temporary storage: {0}")]
     TemporaryStorage(String),
@@ -57,11 +86,14 @@ pub enum PreviewError {
     Read(#[from] std::io::Error),
 }
 
+// Headless UI tests cannot launch the Rust test harness as an app worker.
+// Integration tests exercise the real executable and supervisor separately.
 #[cfg(test)]
 pub fn render_with_cancel(
     path: &Path,
-    _cancelled: Arc<AtomicBool>,
+    cancelled: Arc<AtomicBool>,
 ) -> Result<DocxPreview, PreviewError> {
+    check_cancel(&cancelled)?;
     render_direct(path)
 }
 
@@ -70,57 +102,81 @@ pub fn render_with_cancel(
     path: &Path,
     cancelled: Arc<AtomicBool>,
 ) -> Result<DocxPreview, PreviewError> {
-    let metadata = fs::metadata(path)?;
-    if metadata.len() > MAX_INPUT_BYTES {
-        return Err(PreviewError::InputTooLarge);
+    render_with_executable(
+        path,
+        cancelled,
+        &std::env::current_exe()?,
+        MAX_CONVERSION_TIME,
+    )
+}
+
+fn check_cancel(cancelled: &AtomicBool) -> Result<(), PreviewError> {
+    if cancelled.load(Ordering::Relaxed) || SHUTTING_DOWN.load(Ordering::Relaxed) {
+        Err(PreviewError::Cancelled)
+    } else {
+        Ok(())
     }
-    let bytes = fs::read(path)?;
-    let warnings = inspect_package(&bytes)?;
+}
+
+pub fn render_with_executable(
+    path: &Path,
+    cancelled: Arc<AtomicBool>,
+    executable: &Path,
+    timeout: Duration,
+) -> Result<DocxPreview, PreviewError> {
+    let _lock = loop {
+        check_cancel(&cancelled)?;
+        if let Ok(lock) = WORKER.try_lock() {
+            break lock;
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
     let directory = tempdir().map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
-    let mut child = Command::new(std::env::current_exe()?)
+    let started = Instant::now();
+    let mut command = Command::new(executable);
+    command
         .arg("--mdoc-docx-worker")
         .arg(path)
         .arg(&pdf_path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| PreviewError::Render(error.to_string()))?;
-    let started = Instant::now();
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let mut child = Worker(
+        command
+            .spawn()
+            .map_err(|e| PreviewError::Render(e.to_string()))?,
+    );
     loop {
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|error| PreviewError::Render(error.to_string()))?
-        {
-            if status.success() {
-                return Ok(DocxPreview {
-                    pdf_path,
-                    warnings,
-                    _directory: directory,
-                });
-            }
-            let mut message = String::new();
-            if let Some(mut stderr) = child.stderr.take() {
-                let _ = stderr.read_to_string(&mut message);
-            }
-            return Err(PreviewError::Render(if message.trim().is_empty() {
-                format!("worker exited with {status}")
-            } else {
-                message.trim().to_owned()
-            }));
-        }
-        if started.elapsed() >= MAX_CONVERSION_TIME {
-            let _ = child.kill();
-            let _ = child.wait();
+        check_cancel(&cancelled)?;
+        if started.elapsed() >= timeout {
             return Err(PreviewError::Timeout);
         }
-        if cancelled.load(Ordering::Relaxed) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(PreviewError::Cancelled);
+        if let Some(status) = child.0.try_wait()? {
+            if !status.success() {
+                let message = fs::read_to_string(pdf_path.with_extension("error"))
+                    .unwrap_or_else(|_| format!("worker exited with {status}"));
+                return Err(PreviewError::Render(message));
+            }
+            if !pdf_path.is_file() {
+                return Err(PreviewError::Render("worker produced no PDF".into()));
+            }
+            let warnings = fs::read_to_string(pdf_path.with_extension("warnings"))?
+                .lines()
+                .map(str::to_owned)
+                .collect();
+            return Ok(DocxPreview {
+                pdf_path,
+                warnings,
+                directory: Some(directory),
+            });
         }
-        thread::sleep(Duration::from_millis(20));
+        thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -135,35 +191,41 @@ pub fn run_worker(input: &Path, output: &Path) -> Result<(), PreviewError> {
 
 #[cfg(test)]
 fn render_direct(path: &Path) -> Result<DocxPreview, PreviewError> {
-    let metadata = fs::metadata(path)?;
-    if metadata.len() > MAX_INPUT_BYTES {
-        return Err(PreviewError::InputTooLarge);
-    }
-    let bytes = fs::read(path)?;
-    let warnings = inspect_package(&bytes)?;
     let directory = tempdir().map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
-    render_bytes(&bytes, &pdf_path)?;
+    run_worker(path, &pdf_path)?;
+    let warnings = fs::read_to_string(pdf_path.with_extension("warnings"))?
+        .lines()
+        .map(str::to_owned)
+        .collect();
     Ok(DocxPreview {
         pdf_path,
         warnings,
-        _directory: directory,
+        directory: Some(directory),
     })
 }
 
+// Validation and rendering share one bounded snapshot inside the terminable
+// worker. The deadline therefore includes package inflation and validation.
 fn render_direct_to(path: &Path, output: &Path) -> Result<(), PreviewError> {
-    let metadata = fs::metadata(path)?;
-    if metadata.len() > MAX_INPUT_BYTES {
+    let file = fs::File::open(path)?;
+    if file.metadata()?.len() > MAX_INPUT_BYTES {
         return Err(PreviewError::InputTooLarge);
     }
-    let bytes = fs::read(path)?;
-    inspect_package(&bytes)?;
-    render_bytes(&bytes, output)
+    let mut bytes = Vec::new();
+    file.take(MAX_INPUT_BYTES + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_INPUT_BYTES {
+        return Err(PreviewError::InputTooLarge);
+    }
+    let warnings = inspect_package(&bytes)?;
+    render_bytes(&bytes, output)?;
+    fs::write(output.with_extension("warnings"), warnings.join("\n"))?;
+    Ok(())
 }
 
 fn render_bytes(bytes: &[u8], output: &Path) -> Result<(), PreviewError> {
     docxide_pdf::convert_docx_bytes_to_pdf(bytes, output)
-        .map_err(|error| PreviewError::Render(error.to_string()))?;
+        .map_err(|_| PreviewError::Render("the renderer rejected this document".into()))?;
     Ok(())
 }
 
@@ -172,69 +234,148 @@ fn inspect_package(bytes: &[u8]) -> Result<Vec<String>, PreviewError> {
         return Err(PreviewError::Encrypted);
     }
     let mut archive = ZipArchive::new(Cursor::new(bytes))
-        .map_err(|error| PreviewError::Package(error.to_string()))?;
+        .map_err(|_| PreviewError::Package("invalid ZIP".into()))?;
     if archive.len() > MAX_ENTRIES {
         return Err(PreviewError::Package("too many ZIP entries".into()));
     }
     let mut total = 0_u64;
     let mut warnings = Vec::new();
-    let mut tracked_changes = false;
+    let mut names = std::collections::HashSet::new();
     for index in 0..archive.len() {
-        let mut entry = archive
-            .by_index(index)
-            .map_err(|error| PreviewError::Package(error.to_string()))?;
-        if entry.encrypted() {
+        if archive
+            .by_index_raw(index)
+            .map_err(|_| PreviewError::Package("invalid entry".into()))?
+            .encrypted()
+        {
             return Err(PreviewError::Encrypted);
         }
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|_| PreviewError::Package("unreadable entry".into()))?;
         let name = entry.name().replace('\\', "/");
-        if name.ends_with(".zip") || name.ends_with(".docx") || name.ends_with(".docm") {
-            return Err(PreviewError::NestedArchive);
+        if name.starts_with('/')
+            || name.contains(':')
+            || name.split('/').any(|p| p == "..")
+            || !names.insert(name.clone())
+        {
+            return Err(PreviewError::Package(
+                "unsafe or duplicate entry name".into(),
+            ));
         }
-        if name.ends_with("vbaProject.bin") || name.contains("/vbaProject.bin") {
+        let lower = name.to_ascii_lowercase();
+        if lower.ends_with("vbaproject.bin") {
             return Err(PreviewError::MacrosNotSupported);
         }
-        if (name.contains("/embeddings/")
-            || name.contains("/activeX/")
-            || name.contains("oleObject"))
-            && !warnings
-                .iter()
-                .any(|warning| warning == "Embedded objects were omitted.")
+        if [".zip", ".docx", ".docm", ".xlsx", ".pptx", ".odt", ".epub"]
+            .iter()
+            .any(|ext| lower.ends_with(ext))
         {
+            return Err(PreviewError::NestedArchive);
+        }
+        if lower.contains("/embeddings/") || lower.contains("/activex/") {
             warnings.push("Embedded objects were omitted.".into());
         }
-        let expanded = entry.size();
-        let Some(new_total) = total.checked_add(expanded) else {
-            return Err(PreviewError::Package(
-                "expanded content exceeds the preview limit".into(),
-            ));
-        };
-        if expanded > MAX_PART_UNCOMPRESSED_BYTES || new_total > MAX_TOTAL_UNCOMPRESSED_BYTES {
+        let remaining = MAX_TOTAL_UNCOMPRESSED_BYTES - total;
+        if entry.size() > remaining || entry.size() > MAX_PART_UNCOMPRESSED_BYTES {
             return Err(PreviewError::Package(
                 "expanded content exceeds the preview limit".into(),
             ));
         }
-        total = new_total;
-        let is_xml = name.ends_with(".xml") || name.ends_with(".rels");
-        if is_xml {
-            let mut contents = Vec::new();
-            entry
-                .read_to_end(&mut contents)
-                .map_err(PreviewError::Read)?;
-            let text = String::from_utf8_lossy(&contents);
-            if text.contains("<w:ins") || text.contains("<w:del") {
-                tracked_changes = true;
+        // Check actual inflation too, including binary parts and their CRCs.
+        let mut contents = Vec::new();
+        entry
+            .by_ref()
+            .take(remaining + 1)
+            .read_to_end(&mut contents)?;
+        total += contents.len() as u64;
+        if total > MAX_TOTAL_UNCOMPRESSED_BYTES {
+            return Err(PreviewError::Package(
+                "expanded content exceeds the preview limit".into(),
+            ));
+        }
+        if contents.starts_with(b"PK\x03\x04") || contents.starts_with(b"PK\x05\x06") {
+            return Err(PreviewError::NestedArchive);
+        }
+        if lower.ends_with(".xml") || lower.ends_with(".rels") {
+            let text = std::str::from_utf8(&contents)
+                .map_err(|_| PreviewError::Package("XML must be UTF-8".into()))?;
+            let xml = roxmltree::Document::parse(text)
+                .map_err(|_| PreviewError::Package("invalid XML".into()))?;
+            if xml.descendants().filter(|n| n.is_text()).filter_map(|n| n.text()).any(|text| text.chars().any(|c| matches!(c as u32, 0x0590..=0x08ff | 0x2e80..=0x9fff | 0xac00..=0xd7af | 0xfb1d..=0xfdff | 0xfe70..=0xfeff | 0x20000..=0x3134f))) {
+                warnings.push("CJK and right-to-left text rendering has not been qualified.".into());
             }
-            if name.ends_with(".rels") && text.contains("TargetMode=\"External\"") {
-                warnings.push("External resources were ignored.".into());
-            }
-            if name.contains("comments") {
-                warnings.push("Comments are omitted from the preview.".into());
+            for node in xml.descendants().filter(|n| n.is_element()) {
+                let tag = node.tag_name();
+                let ns = tag.namespace().unwrap_or_default();
+                let word = ns == "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                    || ns == "http://purl.oclc.org/ooxml/wordprocessingml/main";
+                if word
+                    && (matches!(
+                        tag.name(),
+                        "ins"
+                            | "del"
+                            | "delText"
+                            | "delInstrText"
+                            | "moveFrom"
+                            | "moveTo"
+                            | "cellIns"
+                            | "cellDel"
+                            | "cellMerge"
+                            | "numberingChange"
+                    ) || tag.name().ends_with("Change")
+                        || tag.name().starts_with("moveFromRange")
+                        || tag.name().starts_with("moveToRange"))
+                {
+                    return Err(PreviewError::TrackedChangesNotSupported);
+                }
+                if node.attributes().any(|a| {
+                    matches!(a.name(), "ContentType" | "Type")
+                        && (a.value().to_ascii_lowercase().contains("macroenabled")
+                            || a.value().to_ascii_lowercase().contains("vbaproject"))
+                }) {
+                    return Err(PreviewError::MacrosNotSupported);
+                }
+                // The pinned renderer reads resources only from ZIP entries.
+                // Hyperlinks remain usable and are not omitted resources.
+                if tag.name() == "Relationship"
+                    && node.attribute("TargetMode") == Some("External")
+                    && !node
+                        .attribute("Type")
+                        .is_some_and(|t| t.ends_with("/hyperlink"))
+                {
+                    warnings.push("External resources were ignored.".into());
+                }
+                if word
+                    && matches!(
+                        tag.name(),
+                        "comment" | "commentRangeStart" | "commentReference"
+                    )
+                {
+                    warnings.push("Comments are omitted from the preview.".into());
+                }
+                if word && matches!(tag.name(), "object" | "control") {
+                    warnings.push("Embedded objects were omitted.".into());
+                }
+                if ns.contains("/math")
+                    || ns.contains("/chart")
+                    || ns.contains("/diagram")
+                    || (word
+                        && matches!(
+                            tag.name(),
+                            "altChunk"
+                                | "embedRegular"
+                                | "embedBold"
+                                | "embedItalic"
+                                | "embedBoldItalic"
+                        ))
+                {
+                    warnings.push("Equations, charts, SmartArt, embedded fonts, or alternate content may render incompletely.".into());
+                }
             }
         }
     }
-    if tracked_changes {
-        return Err(PreviewError::TrackedChangesNotSupported);
-    }
+    warnings.sort();
+    warnings.dedup();
     Ok(warnings)
 }
 
@@ -256,13 +397,24 @@ mod tests {
     }
 
     #[test]
+    fn cancelled_job_never_starts_a_worker() {
+        let result = render_with_executable(
+            Path::new("unused"),
+            Arc::new(AtomicBool::new(true)),
+            Path::new("no-such-executable"),
+            MAX_CONVERSION_TIME,
+        );
+        assert!(matches!(result, Err(PreviewError::Cancelled)));
+    }
+
+    #[test]
     fn rejects_macro_and_tracked_change_packages_before_layout() {
         assert!(matches!(
             inspect_package(&package(&[("word/vbaProject.bin", b"macro")])),
             Err(PreviewError::MacrosNotSupported)
         ));
         assert!(matches!(
-            inspect_package(&package(&[("word/document.xml", b"<w:ins>text</w:ins>")])),
+            inspect_package(&package(&[("word/document.xml", br#"<x:ins xmlns:x="http://schemas.openxmlformats.org/wordprocessingml/2006/main">text</x:ins>"#)])),
             Err(PreviewError::TrackedChangesNotSupported)
         ));
     }
@@ -286,7 +438,7 @@ mod tests {
     #[test]
     fn reports_omitted_external_and_embedded_content() {
         let warnings = inspect_package(&package(&[
-            ("word/_rels/document.xml.rels", br#"TargetMode="External""#),
+            ("word/_rels/document.xml.rels", br#"<Relationships><Relationship TargetMode='External' Type='image'/></Relationships>"#),
             ("word/embeddings/oleObject1.bin", b"object"),
         ]))
         .unwrap();
@@ -300,6 +452,83 @@ mod tests {
                 .iter()
                 .any(|warning| warning == "Embedded objects were omitted.")
         );
+    }
+
+    #[test]
+    fn rejects_encrypted_entries_and_entry_count_limit() {
+        let mut encrypted = package(&[("data", b"x")]);
+        let central = encrypted
+            .windows(4)
+            .position(|v| v == b"PK\x01\x02")
+            .unwrap();
+        encrypted[central + 8] |= 1;
+        encrypted[6] |= 1;
+        assert!(matches!(
+            inspect_package(&encrypted),
+            Err(PreviewError::Encrypted)
+        ));
+        let names = (0..=MAX_ENTRIES)
+            .map(|i| format!("part{i}"))
+            .collect::<Vec<_>>();
+        let entries = names
+            .iter()
+            .map(|name| (name.as_str(), b"".as_slice()))
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            inspect_package(&package(&entries)),
+            Err(PreviewError::Package(_))
+        ));
+    }
+
+    #[test]
+    fn policy_uses_xml_namespaces_and_content_types() {
+        for tag in ["ins", "del", "moveFrom", "rPrChange", "cellMerge"] {
+            let xml = format!(
+                "<x:{tag} xmlns:x='http://schemas.openxmlformats.org/wordprocessingml/2006/main'/>"
+            );
+            assert!(matches!(
+                inspect_package(&package(&[("word/document.xml", xml.as_bytes())])),
+                Err(PreviewError::TrackedChangesNotSupported)
+            ));
+        }
+        let clean = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p w:rsidR="123"/><w:instrText>plain</w:instrText><!-- <w:ins/> --></w:document>"#;
+        assert!(inspect_package(&package(&[("word/document.xml", clean)])).is_ok());
+        let macros = br#"<Types><Override ContentType="application/vnd.ms-word.document.macroEnabled.main+xml"/></Types>"#;
+        assert!(matches!(
+            inspect_package(&package(&[("[Content_Types].xml", macros)])),
+            Err(PreviewError::MacrosNotSupported)
+        ));
+        let links = br#"<Relationships><Relationship TargetMode = 'External' Type='http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink' Target='https://example.com'/></Relationships>"#;
+        assert!(
+            inspect_package(&package(&[("word/_rels/document.xml.rels", links)]))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn rejects_traversal_disguised_archives_and_inflation_limits() {
+        assert!(matches!(
+            inspect_package(&package(&[("../outside", b"x")])),
+            Err(PreviewError::Package(_))
+        ));
+        let nested = package(&[("nested", b"x")]);
+        assert!(matches!(
+            inspect_package(&package(&[("word/embeddings/data.bin", &nested)])),
+            Err(PreviewError::NestedArchive)
+        ));
+        // A forged central-directory size must be rejected before inflation.
+        let mut oversized = package(&[("word/media/image.bin", b"x")]);
+        let central = oversized
+            .windows(4)
+            .position(|v| v == b"PK\x01\x02")
+            .unwrap();
+        oversized[central + 24..central + 28]
+            .copy_from_slice(&((MAX_TOTAL_UNCOMPRESSED_BYTES + 1) as u32).to_le_bytes());
+        assert!(matches!(
+            inspect_package(&oversized),
+            Err(PreviewError::Package(_))
+        ));
     }
 
     #[test]

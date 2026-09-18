@@ -20,7 +20,7 @@ use gpui::{
 use gpui_pdf::PdfView;
 use mdoc_editor::{EditorEvent, EditorState};
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     path::PathBuf,
     rc::Rc,
     sync::{
@@ -54,12 +54,19 @@ enum Next {
     Close,
 }
 
+struct PendingPreview {
+    pdf: Entity<PdfView>,
+    docx: Option<docx_preview::DocxPreview>,
+    _subscription: Subscription,
+}
+
 struct Workspace {
     theme: Rc<Cell<Theme>>,
     editor: Entity<EditorState>,
     document: Document,
     pdf: Option<Entity<PdfView>>,
     docx_preview: Option<docx_preview::DocxPreview>,
+    pending_preview: Option<PendingPreview>,
     scroll: ScrollHandle,
     error: Option<String>,
     preview_message: Option<String>,
@@ -76,6 +83,12 @@ struct Workspace {
     import_warning: Option<String>,
     _subscription: Subscription,
     pdf_subscription: Option<Subscription>,
+}
+
+impl Drop for Workspace {
+    fn drop(&mut self) {
+        self.cancel_preview_job();
+    }
 }
 
 impl Workspace {
@@ -116,6 +129,7 @@ impl Workspace {
                     this.request(Next::Close, window, cx);
                     false
                 } else {
+                    this.close_preview(window, cx);
                     true
                 }
             })
@@ -127,6 +141,7 @@ impl Workspace {
             document: Document::default(),
             pdf: None,
             docx_preview: None,
+            pending_preview: None,
             scroll: ScrollHandle::new(),
             error: None,
             preview_message: None,
@@ -257,6 +272,7 @@ impl Workspace {
                 } else if imported.is_docx {
                     self.open_docx(imported.source, window, cx);
                 } else {
+                    self.preview_source = Some(imported.source);
                     self.preview_message =
                         Some("Source preview unavailable for this imported format.".into());
                 }
@@ -278,6 +294,8 @@ impl Workspace {
         self.preview_loading = false;
         self.preview_retryable = false;
         self.preview_source = None;
+        self.preview_message = None;
+        self.pending_preview = None;
         self.cancel_preview_job();
         self.pdf_subscription = None;
         if let Some(pdf) = self.pdf.take() {
@@ -363,40 +381,85 @@ impl Workspace {
         self.document.directory()
     }
 
-    fn install_pdf(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    fn begin_preview(&mut self, path: PathBuf) -> u64 {
+        self.cancel_preview_job();
+        self.pending_preview = None;
+        self.preview_generation = self.preview_generation.wrapping_add(1);
+        self.preview_message = None;
+        self.preview_retryable = false;
+        self.preview_source = Some(path);
+        self.error = None;
+        self.preview_loading = true;
+        self.preview_generation
+    }
+
+    fn load_preview(
+        &mut self,
+        path: PathBuf,
+        docx: Option<docx_preview::DocxPreview>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let theme = self.theme.clone();
-        self.pdf = Some(cx.new(|cx| {
+        let pdf = cx.new(|cx| {
             PdfView::new(
                 path,
                 Rc::new(move || theme.get().pdf_style()),
                 Rc::new(|| 1.0),
                 cx,
             )
-        }));
-        self.pdf_subscription = self
-            .pdf
-            .as_ref()
-            .map(|pdf| cx.observe(pdf, |_, _, cx| cx.notify()));
+        });
+        let generation = self.preview_generation;
+        let subscription = cx.subscribe_in(&pdf, window, move |this, pdf, _, window, cx| {
+            if generation != this.preview_generation {
+                return;
+            }
+            if let Some(error) = pdf.read(cx).load_error() {
+                this.preview_message = Some(error.to_string());
+            } else if pdf.read(cx).is_locked() {
+                this.preview_message = Some(
+                    "This PDF is password-protected. Open an unlocked copy to view it here.".into(),
+                );
+            } else if !pdf.read(cx).is_loaded() {
+                return;
+            }
+            this.preview_loading = false;
+            this.preview_cancel = None;
+            if this.preview_message.is_some() {
+                this.preview_retryable = true;
+                this.pending_preview = None;
+            } else if let Some(pending) = this.pending_preview.take() {
+                this.pdf_subscription = None;
+                if let Some(old) = this.pdf.take() {
+                    old.update(cx, |pdf, cx| pdf.release(window, cx));
+                }
+                this.preview_message = pending
+                    .docx
+                    .as_ref()
+                    .and_then(|d| (!d.warnings.is_empty()).then(|| d.warnings.join(" ")));
+                this.docx_preview = pending.docx;
+                this.pdf_subscription = Some(cx.observe(&pending.pdf, |_, _, cx| cx.notify()));
+                this.pdf = Some(pending.pdf);
+            }
+            cx.notify();
+        });
+        self.pending_preview = Some(PendingPreview {
+            pdf,
+            docx,
+            _subscription: subscription,
+        });
+        cx.notify();
     }
 
     fn open_pdf(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        self.close_preview(window, cx);
-        self.install_pdf(path, cx);
-        self.preview_message = None;
+        self.begin_preview(path.clone());
+        self.load_preview(path, None, window, cx);
     }
 
     fn open_docx(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        self.cancel_preview_job();
-        self.preview_generation = self.preview_generation.wrapping_add(1);
-        let generation = self.preview_generation;
-        self.preview_message = None;
-        self.preview_retryable = false;
-        self.preview_source = Some(path.clone());
-        self.error = None;
-        self.preview_loading = true;
+        let generation = self.begin_preview(path.clone());
         let cancel = Arc::new(AtomicBool::new(false));
         self.preview_cancel = Some(cancel.clone());
-        let source = path.clone();
         let task = cx
             .background_executor()
             .spawn(async move { docx_preview::render_with_cancel(&path, cancel) });
@@ -406,19 +469,13 @@ impl Workspace {
                 if generation != this.preview_generation {
                     return;
                 }
-                this.preview_loading = false;
                 match result {
                     Ok(preview) => {
-                        let path = preview.pdf_path.clone();
-                        let warnings =
-                            (!preview.warnings.is_empty()).then(|| preview.warnings.join(" "));
-                        this.close_preview(window, cx);
-                        this.docx_preview = Some(preview);
-                        this.preview_source = Some(source);
-                        this.preview_message = warnings;
-                        this.install_pdf(path, cx);
+                        this.load_preview(preview.pdf_path.clone(), Some(preview), window, cx)
                     }
                     Err(error) => {
+                        this.preview_cancel = None;
+                        this.preview_loading = false;
                         this.preview_retryable = true;
                         this.preview_message = Some(error.to_string());
                     }
@@ -427,12 +484,14 @@ impl Workspace {
             });
         })
         .detach();
+        cx.notify();
     }
 
     fn retry_preview(&mut self, _: &RetryPreview, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(path) = self.preview_source.clone() {
-            self.open_docx(path, window, cx);
-            cx.notify();
+        if self.preview_retryable
+            && let Some(path) = self.preview_source.clone()
+        {
+            self.open_path(path, window, cx);
         }
     }
 
@@ -599,14 +658,14 @@ impl Render for Workspace {
                 .child(button(theme.toggle_label(), ToggleTheme, theme))
                 .child(if self.dirty(cx) { "Unsaved changes" } else { "Markdown · WYSIWYG" })
                 .when(self.preview_loading, |bar| bar.child(div().child("Preparing preview…")))
-                .when(self.pdf.is_some(), |bar| bar.child(button("Close Preview", ClosePdf, theme))))
+                .when(self.pdf.is_some() || self.preview_source.is_some(), |bar| bar.child(button("Close Preview", ClosePdf, theme))))
             .when_some(self.import_warning.clone(), |view, warning| view.child(div().flex().items_center().gap_2().p_2().border_b_1().border_color(palette.border)
                 .child(div().id("import-warning").flex_1().min_w_0().max_h(px(96.)).overflow_y_scroll().child(warning))
                 .child(button("Dismiss", DismissImportWarning, theme))))
             .child(div().flex().flex_1().min_h_0()
                 .child(div().id("document-scroll").flex_1().min_w_0().h_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().child(self.editor.clone()))
                 .when_some(self.pdf.clone(), |row, pdf| row.child(div().w_1_2().h_full().border_l_1().border_color(palette.border).child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))))
-            .when_some(self.preview_message.clone(), |view, message| view.child(div().flex().items_center().gap_2().p_2().bg(theme.error_bg()).child(div().flex_1().child(message)).when(self.preview_retryable, |bar| bar.child(button("Retry", RetryPreview, theme)))))
+            .when_some(self.preview_message.clone(), |view, message| view.child(div().flex().items_center().gap_2().p_2().bg(theme.error_bg()).child(div().flex_1().child(format!("{}: {message}", self.preview_source.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Preview".into())))).when(self.preview_retryable, |bar| bar.child(button("Retry", RetryPreview, theme)))))
             .when_some(self.error.clone(), |view, error| view.child(div().p_2().bg(theme.error_bg()).child(error)))
     }
 }
@@ -614,22 +673,56 @@ impl Render for Workspace {
 fn main() {
     let args = std::env::args_os().collect::<Vec<_>>();
     if args.get(1).is_some_and(|arg| arg == "--mdoc-docx-worker") {
-        let Some(input) = args.get(2) else {
-            eprintln!("missing DOCX worker input");
-            return;
+        let (Some(input), Some(output)) = (args.get(2), args.get(3)) else {
+            eprintln!("missing DOCX worker input or output");
+            std::process::exit(2);
         };
-        let Some(output) = args.get(3) else {
-            eprintln!("missing DOCX worker output");
-            return;
-        };
-        if let Err(error) = docx_preview::run_worker(&PathBuf::from(input), &PathBuf::from(output))
-        {
-            eprintln!("{error}");
+        let output = PathBuf::from(output);
+        if let Err(error) = docx_preview::run_worker(&PathBuf::from(input), &output) {
+            let _ = std::fs::write(output.with_extension("error"), error.to_string());
+            std::process::exit(1);
         }
         return;
     }
     let initial = args.get(1).cloned().map(PathBuf::from);
-    gpui_platform::application().run(move |cx: &mut App| {
+    let application = gpui_platform::application();
+    let open_context = Rc::new(RefCell::new(
+        None::<(gpui::WindowHandle<Workspace>, gpui::AsyncApp)>,
+    ));
+    let pending_url = Rc::new(RefCell::new(None::<PathBuf>));
+    application.on_open_urls({
+        let open_context = open_context.clone();
+        let pending_url = pending_url.clone();
+        move |urls| {
+            // This app has one document window. The last file in an OS open
+            // request follows the same latest-preview-wins policy as Open.
+            if let Some(path) = urls
+                .iter()
+                .filter_map(|url| url::Url::parse(url).ok()?.to_file_path().ok())
+                .next_back()
+            {
+                if let Some((window, cx)) = open_context.borrow_mut().as_mut() {
+                    let _ = window.update(cx, |workspace, window, cx| {
+                        workspace.open_path(path, window, cx)
+                    });
+                } else {
+                    *pending_url.borrow_mut() = Some(path);
+                }
+            }
+        }
+    });
+    application.run(move |cx: &mut App| {
+        cx.on_app_quit(|cx| {
+            let executor = cx.background_executor().clone();
+            async move {
+                executor
+                    .spawn(async {
+                        docx_preview::shutdown_workers();
+                    })
+                    .await
+            }
+        })
+        .detach();
         mdoc_editor::bind_keys(cx);
         let modifier = if cfg!(target_os = "macos") {
             "cmd"
@@ -659,23 +752,30 @@ fn main() {
             disabled: false,
         }]);
         let bounds = Bounds::centered(None, size(px(1100.), px(760.)), cx);
-        cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                ..Default::default()
-            },
-            |window, cx| {
-                cx.new(|cx| {
-                    let mut workspace = Workspace::new(window, cx);
-                    workspace.update_title(window, cx);
-                    if let Some(path) = initial {
-                        workspace.open_path(path, window, cx);
-                    }
-                    workspace
-                })
-            },
-        )
-        .expect("Could not open the editor window");
+        let handle = cx
+            .open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    cx.new(|cx| {
+                        let mut workspace = Workspace::new(window, cx);
+                        workspace.update_title(window, cx);
+                        if let Some(path) = initial {
+                            workspace.open_path(path, window, cx);
+                        }
+                        workspace
+                    })
+                },
+            )
+            .expect("Could not open the editor window");
+        if let Some(path) = pending_url.borrow_mut().take() {
+            let _ = handle.update(cx, |workspace, window, cx| {
+                workspace.open_path(path, window, cx)
+            });
+        }
+        *open_context.borrow_mut() = Some((handle, cx.to_async()));
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
                 cx.quit();
