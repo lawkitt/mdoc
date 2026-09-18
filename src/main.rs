@@ -401,6 +401,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let theme = self.theme.clone();
+        let fit_docx = docx.is_some();
         let pdf = cx.new(|cx| {
             PdfView::new(
                 path,
@@ -409,6 +410,12 @@ impl Workspace {
                 cx,
             )
         });
+        // DOCX previews always live in the side pane. Fit them to that pane before
+        // the first page raster is requested; this avoids rendering an 820 px page
+        // bitmap that would immediately be scaled down to roughly half that width.
+        if fit_docx {
+            pdf.update(cx, |pdf, cx| pdf.fit_width(cx));
+        }
         let generation = self.preview_generation;
         let subscription = cx.subscribe_in(&pdf, window, move |this, pdf, _, window, cx| {
             if generation != this.preview_generation {

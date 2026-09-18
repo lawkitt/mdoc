@@ -66,3 +66,7 @@ required-features = ["forms"]
 # docs.rs builds with every feature so the whole API is documented.
 [package.metadata.docs.rs]
 all-features = true
+
+[dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
+tempfile = "3"

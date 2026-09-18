@@ -2435,6 +2435,7 @@ dependencies = [
  "kurbo",
  "log",
  "lopdf 0.44.0",
+ "tempfile",
 ]
 
 [[package]]

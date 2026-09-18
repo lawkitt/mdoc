@@ -501,3 +501,101 @@ fn close_and_newer_request_discard_pending_completions(cx: &mut TestAppContext) 
         assert!(app.docx_preview.is_none());
     });
 }
+
+/// CPU frame budget through the real workspace, including its editor host.
+#[gpui::test]
+#[ignore]
+fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let file = std::env::var("MD_PERF_FILE")
+        .unwrap_or_else(|_| "adcourt-legal-opinion-meruna-trading-tax-and-14-pages.docx".into());
+    let source = base.join("tests/fixtures/docx-preview").join(file);
+    let imported = import::convert(&source).unwrap();
+    let (app, cx) = boot(cx);
+    cx.simulate_resize(gpui::size(px(1100.), px(750.)));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("large.md");
+    std::fs::write(&path, &imported.markdown).unwrap();
+    app.update_in(cx, |app, window, cx| {
+        app.proceed(Next::Open(path), window, cx)
+    });
+    cx.run_until_parked();
+    let mut failures = Vec::new();
+    for state in ["markdown_only", "preview_open", "preview_closed"] {
+        if state == "preview_open" {
+            app.update_in(cx, |app, window, cx| {
+                app.open_docx(source.clone(), window, cx)
+            });
+        } else if state == "preview_closed" {
+            app.update_in(cx, |app, window, cx| app.close_preview(window, cx));
+        }
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            assert_eq!(app.read(cx).pdf.is_some(), state == "preview_open");
+        });
+        let mut times = Vec::new();
+        let mut furthest = 0.0_f32;
+        for frame in 0..60 {
+            let started = std::time::Instant::now();
+            cx.update(|window, cx| {
+                app.update(cx, |app, cx| {
+                    let step = if frame < 30 { frame } else { 59 - frame };
+                    let offset = app.scroll.max_offset().y.abs() * (step as f32 / 29.);
+                    app.scroll.set_offset(gpui::point(px(0.), -offset));
+                    cx.notify();
+                });
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            let ms = started.elapsed().as_secs_f64() * 1000.;
+            furthest = furthest.max(cx.update(|_, cx| -f32::from(app.read(cx).scroll.offset().y)));
+            cx.run_until_parked();
+            if frame >= 5 {
+                times.push(ms);
+            }
+        }
+        assert!(furthest > 100., "viewport must actually scroll");
+        times.sort_by(f64::total_cmp);
+        let p95 = times[times.len() * 95 / 100];
+        eprintln!(
+            "MD_PERF state={state} bytes={} lines={} median_ms={:.2} p95_ms={p95:.2}",
+            imported.markdown.len(),
+            imported.markdown.lines().count(),
+            times[times.len() / 2]
+        );
+        if p95 > 16.667 {
+            failures.push(state);
+        }
+        // Measure actual text input followed by layout/paint, not just idle redraw.
+        app.update(cx, |app, cx| {
+            app.editor.update(cx, |e, cx| e.set_cursor(0, cx))
+        });
+        let mut typing = Vec::new();
+        for _ in 0..12 {
+            let started = std::time::Instant::now();
+            cx.simulate_input("x");
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            typing.push(started.elapsed().as_secs_f64() * 1000.);
+            cx.run_until_parked();
+        }
+        typing.sort_by(f64::total_cmp);
+        let typing_p95 = typing[typing.len() * 95 / 100];
+        eprintln!("MD_PERF state={state} typing_p95_ms={typing_p95:.2}");
+        if typing_p95 > 50. {
+            failures.push(state);
+        }
+    }
+    cx.update(|_, cx| {
+        assert_eq!(
+            app.read(cx).editor.read(cx).text(),
+            format!("{}{}", "x".repeat(36), imported.markdown)
+        );
+    });
+    assert!(
+        failures.is_empty(),
+        "editor CPU budget exceeded: {failures:?}"
+    );
+}

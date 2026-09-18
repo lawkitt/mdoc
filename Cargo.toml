@@ -96,3 +96,16 @@ include = ["packaging/windows/wix/main.wxs"]
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+
+# PDF rasterization is CPU-heavy. Keep application/editor code debuggable while
+# avoiding unoptimized pixel/vector loops during `cargo run` and tests.
+[profile.dev.package.gpui-pdf]
+opt-level = 2
+[profile.dev.package.hayro]
+opt-level = 2
+[profile.dev.package.hayro-interpret]
+opt-level = 2
+[profile.dev.package.vello_cpu]
+opt-level = 2
+[profile.dev.package.vello_common]
+opt-level = 2
