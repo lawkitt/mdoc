@@ -1,0 +1,24 @@
+/target
+.DS_Store
+# Scratch image files used while testing; real images live in the app data dir.
+/images
+# Local dev/test databases live here: the active test DB, the perf DB
+# (scripts/gen_perf_db.py), and their WAL -wal/-shm sidecars — all contained.
+/db/
+# Catch-all for any stray db file elsewhere in the tree, too.
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+# A local Logseq graph used to exercise the importer (real notes — never commit).
+/Logseq/
+/logseq/
+# The full Lucide icon set fetched by scripts/fetch-lucide.sh for dev use; debug
+# builds load any icon from here. Only the icons we actually ship get bundled
+# (committed) under assets/icons/ and compiled in.
+/assets/icons/lucide/
+
+# Obsidian test vault for importer development (not shipped)
+zorite_migration/
+mdoc_migration/
+Logseq/

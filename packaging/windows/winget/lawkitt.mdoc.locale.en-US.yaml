@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
+#
+# Default-locale manifest for the winget-pkgs entry. Mostly static
+# across versions; the per-version submission updates `PackageVersion`
+# and `ReleaseNotesUrl` to match the new tag. Copy into
+# `manifests/l/lawkitt/mdoc/<version>/` when preparing a PR.
+
+PackageIdentifier: lawkitt.mdoc
+PackageVersion: 0.0.0
+PackageLocale: en-US
+Publisher: lawkitt
+PublisherUrl: https://github.com/lawkitt
+PublisherSupportUrl: https://github.com/lawkitt/mdoc/issues
+Author: lawkitt
+PackageName: mdoc
+PackageUrl: https://github.com/lawkitt/mdoc
+License: GPL-3.0-or-later
+LicenseUrl: https://github.com/lawkitt/mdoc/blob/main/LICENSE
+Copyright: © 2026 packetThrower / Zorite contributors; © 2026 lawkitt / mdoc contributors
+CopyrightUrl: https://github.com/lawkitt/mdoc/blob/main/LICENSE
+ShortDescription: A lightweight Markdown WYSIWYG editor and PDF viewer.
+Description: |-
+  Edit local Markdown files with live formatting and view PDFs alongside
+  your writing. Files stay on your machine, with no database or account.
+Moniker: mdoc
+Tags:
+  - editor
+  - markdown
+  - pdf
+  - local-first
+ReleaseNotesUrl: https://github.com/lawkitt/mdoc/releases
+Documentations:
+  - DocumentLabel: Project page
+    DocumentUrl: https://github.com/lawkitt/mdoc
+ManifestType: defaultLocale
+ManifestVersion: 1.12.0

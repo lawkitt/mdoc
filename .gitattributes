@@ -1,0 +1,5 @@
+# PDF cross-reference tables contain fixed-width records; do not text-normalize.
+*.pdf binary
+
+# Generated license quotations retain upstream whitespace.
+THIRD-PARTY-LICENSES.html -whitespace

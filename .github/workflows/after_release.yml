@@ -1,0 +1,142 @@
+name: After Release
+
+# Fires after release.yml completes on a tag push. Separate workflow
+# from release.yml so the release job stays focused on building + uploading
+# artifacts; post-release publishing — currently the winget submission, more
+# in the future — lives here.
+#
+# `workflow_run`, NOT `release: published`: release.yml publishes the
+# Release with the default GITHUB_TOKEN, and GitHub suppresses events
+# created by that token from triggering other workflows (recursion
+# guard) — a `release` trigger here never fires (every submission
+# through v0.8.0 was a manual dispatch). `workflow_run` events are
+# exempt from that suppression. For a tag-push run, the tag name
+# arrives as `workflow_run.head_branch`.
+#
+# The workflow_dispatch trigger lets us manually re-run a winget submission
+# if the auto-triggered run flakes (rare but documented in the
+# winget-pkgs validator history).
+on:
+  workflow_run:
+    workflows: [Release]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: >-
+          Stable tag to submit (e.g. `v0.13.0`, no leading "v" optional —
+          the winget-releaser action accepts both). Lets us re-fire the
+          submission if the release-event-triggered run didn't catch
+          (race condition during a slow Release publish, transient GitHub
+          API failure during the action's fork-PR step, etc.).
+        required: true
+        type: string
+
+# Per-job permissions ceiling. The publish job only reads this repo; the
+# upstream PR against microsoft/winget-pkgs is opened via the WINGET_TOKEN
+# PAT (under the maintainer's account), not the workflow's GITHUB_TOKEN.
+permissions:
+  contents: read
+
+jobs:
+  publish_winget:
+    name: Submit to winget-pkgs
+    runs-on: windows-latest
+    # Guard against forks accidentally running the publish path. The
+    # WINGET_TOKEN secret won't be set on a fork anyway, but failing fast
+    # with a clean skip is friendlier than a mid-action 401.
+    #
+    # On the workflow_run path: only after a SUCCESSFUL Release run, and
+    # only for tag-push runs (head_branch = the tag, e.g. `v0.8.0`) —
+    # release.yml's other trigger paths carry a plain branch name here.
+    #
+    # Skip on pre-releases (tag contains `-`) — the manifest schema's
+    # `ProductVersion` field rejects alphanumeric segments (`-beta.N`),
+    # MSI builds are skipped for pre-release tags by release.yml's
+    # existing `contains('-')` gate anyway, and winget itself has no
+    # pre-release channel. Stable only.
+    if: >-
+      github.repository == 'lawkitt/mdoc' &&
+      vars.ENABLE_WINGET_PUBLISHING == 'true' &&
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          startsWith(github.event.workflow_run.head_branch, 'v') &&
+          !contains(github.event.workflow_run.head_branch, '-')
+        ) ||
+        (github.event_name == 'workflow_dispatch' && !contains(inputs.tag_name, '-'))
+      )
+    steps:
+      # Pre-step before the action runs: sync the maintainer's fork of
+      # microsoft/winget-pkgs against upstream master. wingetcreate (which
+      # the winget-releaser action wraps) opens the PR from a branch on
+      # that fork; if the fork has drifted behind upstream, the PR open
+      # fails with a merge-conflict or non-fast-forward error. The
+      # /merge-upstream endpoint does a GitHub-side fast-forward when
+      # possible, no-ops when already current, and fails benignly when
+      # the fork doesn't exist (logged + ignored — the action will
+      # surface a useful error in that case).
+      - name: Sync fork against upstream
+        shell: pwsh
+        run: |
+          $headers = @{
+            "Authorization" = "Bearer $env:WINGET_TOKEN"
+            "Accept" = "application/vnd.github+json"
+            "X-GitHub-Api-Version" = "2022-11-28"
+          }
+          $body = @{ branch = "master" } | ConvertTo-Json
+          $uri = "https://api.github.com/repos/$env:GITHUB_REPOSITORY_OWNER/winget-pkgs/merge-upstream"
+          try {
+            Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -Body $body -ContentType "application/json"
+            Write-Host "Synced winget-pkgs fork against upstream master"
+          } catch {
+            Write-Host "Fork sync skipped (already up to date or fork missing): $_"
+            Write-Host "Continuing — the winget-releaser action will surface a real error if the fork is genuinely unreachable"
+          }
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+
+      # Open the winget-pkgs PR. SHA-pinned for the same supply-chain
+      # reason ci.yml pins its third-party actions: a mutable tag could
+      # be repointed at malicious code by a token compromise on the
+      # action's repo. `# v2` is what Dependabot reads + bumps on a real
+      # release.
+      #
+      # `identifier`: the PackageIdentifier our manifest declares
+      # (`packaging/windows/winget/lawkitt.mdoc.installer.yaml.template`).
+      # `release-tag`: the tag that triggered the Release run on the
+      # auto-fire path (workflow_run.head_branch carries the tag for
+      # tag-push runs), the dispatch input on the manual path.
+      # `max-versions-to-keep`: bounds the per-version directories in
+      # `microsoft/winget-pkgs/manifests/l/lawkitt/mdoc/` so
+      # the tree doesn't accumulate every historical version. 5 gives
+      # users 4-5 releases of "downgrade target" surface before old
+      # versions roll off.
+      # `installers-regex`: narrow the asset glob to MSIs only. The
+      # action's default regex (`.(exe|msi|msix|appx)(bundle){0,1}$`)
+      # also matches the NSIS `*-setup.exe` installers in our Release
+      # artifacts, which the winget manifest doesn't declare. Feeding
+      # both NSIS and MSI URLs to komac produced four `--urls` entries
+      # against two declared architectures, and the resulting PR
+      # creation step failed with "failed to create pull request"
+      # (the malformed manifest evidently doesn't validate on komac's
+      # pre-submission check). MSI-only matches what the manifest
+      # template declares (`InstallerType: wix`).
+      #
+      # x64-only (the amd64 MSI, not arm64): winget's arm64 validator
+      # cannot validate this GPUI app — its sandbox has no usable
+      # desktop/DWM, so the launch test exits non-zero
+      # (Validation-Executable-Error) and the PR won't auto-merge. We
+      # therefore submit only the x64 MSI; arm64 Windows users get it via
+      # emulation (winget falls back to x64) or the native build on the
+      # Releases page / Scoop.
+      - name: Open winget-pkgs PR
+        uses: vedantmgoyal9/winget-releaser@b3a5dae0047c6180023acba3f548c55fdf6b7193 # v2
+        with:
+          identifier: lawkitt.mdoc
+          release-tag: ${{ github.event.workflow_run.head_branch || inputs.tag_name }}
+          max-versions-to-keep: 5
+          installers-regex: '_amd64_en-US\.msi$'
+          token: ${{ secrets.WINGET_TOKEN }}

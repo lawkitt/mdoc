@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=mdoc
+GenericName=Markdown Editor
+Comment=Markdown WYSIWYG editor and PDF viewer
+Exec=mdoc %f
+Icon=mdoc
+Terminal=false
+StartupWMClass=mdoc
+Categories=Office;Utility;TextEditor;
+Keywords=editor;markdown;pdf;
+MimeType=text/markdown;text/plain;application/pdf;
