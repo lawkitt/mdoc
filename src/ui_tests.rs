@@ -81,15 +81,7 @@ fn pdf_open_keeps_markdown_and_close_pdf_restores_editor(cx: &mut TestAppContext
     cx.simulate_input("keep me");
     app.update_in(cx, |app, window, cx| app.open_path(path, window, cx));
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| {
-        app.read(cx)
-            .pdf
-            .as_ref()
-            .unwrap()
-            .read(cx)
-            .load_error()
-            .is_some()
-    }));
+    assert!(cx.update(|_, cx| { app.read(cx).pdf.is_none() && app.read(cx).preview_retryable }));
     assert_eq!(
         cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
         "keep me"
@@ -381,7 +373,7 @@ fn accepted_pdf_import_opens_source_pane(cx: &mut TestAppContext) {
         let mut imported = converted(source);
         imported.is_pdf = true;
         app.proceed(Next::Import(imported), window, cx);
-        assert!(app.pdf.is_some());
+        assert!(app.preview_loading);
         assert!(app.dirty(cx));
     });
     cx.run_until_parked();
@@ -423,4 +415,89 @@ fn failed_docx_preview_keeps_retry_source(cx: &mut TestAppContext) {
     cx.dispatch_action(RetryPreview);
     cx.run_until_parked();
     assert!(cx.update(|_, cx| app.read(cx).preview_retryable));
+}
+
+#[gpui::test]
+fn failed_replacement_preserves_loaded_preview_and_markdown(cx: &mut TestAppContext) {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    let (app, cx) = boot(cx);
+    cx.simulate_input("unsaved text");
+    app.update_in(cx, |app, window, cx| app.open_path(source, window, cx));
+    cx.run_until_parked();
+    let old = cx.update(|_, cx| app.read(cx).pdf.clone().unwrap());
+    for missing in ["missing.pdf", "missing.docx"] {
+        app.update_in(cx, |app, window, cx| {
+            app.open_path(PathBuf::from(missing), window, cx)
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            let app = app.read(cx);
+            assert_eq!(app.pdf.as_ref(), Some(&old));
+            assert!(app.preview_retryable);
+            assert_eq!(app.editor.read(cx).text(), "unsaved text");
+            assert!(app.dirty(cx));
+        });
+    }
+}
+
+#[gpui::test]
+fn accepted_import_failure_clears_old_preview_and_pdf_retry_works(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.pdf");
+    let reference = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.open_path(reference.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let mut imported = converted(source.clone());
+        imported.is_pdf = true;
+        app.proceed(Next::Import(imported), window, cx);
+        assert!(app.pdf.is_none());
+        assert!(app.dirty(cx));
+    });
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| app.read(cx).preview_retryable));
+    std::fs::copy(reference, &source).unwrap();
+    cx.dispatch_action(RetryPreview);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        assert!(app.pdf.as_ref().unwrap().read(cx).is_loaded());
+        assert!(!app.preview_retryable);
+        assert!(app.dirty(cx));
+    });
+}
+
+#[gpui::test]
+fn close_and_newer_request_discard_pending_completions(cx: &mut TestAppContext) {
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let docx = base.join("tests/fixtures/import/text.docx");
+    let pdf = base.join("tests/fixtures/reference.pdf");
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.open_docx(docx.clone(), window, cx);
+        app.close_preview(window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        assert!(app.pdf.is_none());
+        assert!(app.preview_source.is_none());
+        assert!(app.preview_message.is_none());
+        assert!(!app.preview_loading);
+    });
+    app.update_in(cx, |app, window, cx| {
+        app.open_docx(docx, window, cx);
+        app.open_pdf(pdf.clone(), window, cx);
+        app.proceed(Next::New, window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        assert_eq!(app.preview_source.as_ref(), Some(&pdf));
+        assert!(app.pdf.as_ref().unwrap().read(cx).is_loaded());
+        assert!(app.docx_preview.is_none());
+    });
 }

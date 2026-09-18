@@ -903,6 +903,12 @@ impl PdfView {
         .detach();
     }
 
+    /// Whether parsing and page preparation completed successfully. Hosts can
+    /// keep an existing preview until a replacement reaches this state.
+    pub fn is_loaded(&self) -> bool {
+        self.pdf.is_some()
+    }
+
     /// Whether the PDF is encrypted and awaiting a password — the host should show a
     /// prompt and call [`PdfView::unlock`] rather than rendering the viewer.
     pub fn is_locked(&self) -> bool {

@@ -26,6 +26,8 @@ Local images resolve relative to the Markdown file and load in the background.
 Open a PDF or DOCX alongside your document to read, zoom, navigate pages, and
 search. DOCX preview is read-only and rendered locally with the bundled Rust
 converter; the source file is never modified.
+Layout is approximate, and extracted text can lose spaces, affecting multiword
+search. See [qualification evidence and limitations](docs/docx-viewer-review.md).
 PDF form appearances are rendered; this is a viewer, not a PDF form editor.
 
 ## Files and shortcuts

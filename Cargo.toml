@@ -21,6 +21,7 @@ anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "391b6b109b21c05
 docxide-pdf = { version = "=0.17.1", default-features = false }
 zip = { version = "8.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 thiserror = "2"
+roxmltree = "0.21"
 gpui = { workspace = true }
 gpui_platform = { workspace = true }
 mdoc-editor = { path = "crates/mdoc-editor" }
