@@ -1,5 +1,12 @@
 # AnyDoc integration decisions
 
+Current PDF integration (2026-09-19): PDFs now use the separately pinned
+OCR-capable pdf-inspector fork directly through `src/import.rs`; AnyDoc still
+handles other formats. The AnyDoc transitive PDF baseline remains pinned in
+Cargo.lock. See [local OCR decisions](local-ocr-decisions.md) and
+[qualification](local-ocr-qualification.md). The decisions and validation below
+describe the original AnyDoc integration; their OCR exclusions are superseded.
+
 Status: design confirmed by the user; implemented. Validation is recorded below.
 
 ## Confirmed decisions

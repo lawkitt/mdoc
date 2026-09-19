@@ -24,3 +24,12 @@ Regenerate that file with `cargo about generate about.hbs -o THIRD-PARTY-LICENSE
 Imported test fixtures retain their separate notices in
 [tests/fixtures/import/README.md](tests/fixtures/import/README.md) and
 [LICENSE.anydoc](tests/fixtures/import/LICENSE.anydoc).
+
+Local OCR uses the MIT-licensed pdf-inspector fork at
+<https://github.com/lawkitt/pdf-inspector>, OAR/PaddleOCR models under Apache-2.0,
+and separately downloaded PDFium and ONNX Runtime libraries. Setup installs
+the runtime licenses and third-party notices beside the libraries under the
+application's `mdoc/ocr/v1/licenses` directory. Model provenance and pinned
+artifact identities are recorded in [the OCR qualification report](docs/local-ocr-qualification.md).
+The synthetic English/Russian OCR qualification fixtures were created for mdoc;
+their text and raster PDFs may be used under CC0-1.0.

@@ -44,10 +44,19 @@ preserved. Imported PDFs and DOCX files also open in the side pane. Other
 supported import formats remain text-only and show that source preview is
 unavailable.
 
-Import retains text and structure, not embedded images. Scanned pages require
-OCR in another application: mixed PDFs import their readable pages with a
-persistent skipped-page warning; fully scanned PDFs produce an error. You can
-keep editing during conversion. Switching Markdown documents discards its
+Import retains text and structure, not embedded images. On Apple Silicon macOS,
+**Set up OCR** in the main bar downloads about 54 MB of verified components for
+printed English and Russian. Setup is also offered when importing a PDF that
+needs recognition. Once ready, scanned pages are recognized locally and offline;
+document contents are never uploaded. The original PDF remains unchanged.
+Low-confidence or incomplete pages produce a persistent review warning outside
+the Markdown. Skipping setup imports usable native text with omitted-page
+warnings; if no usable text is available, the current document is preserved.
+Other platforms currently support native-text import only. Handwriting and
+complex table reconstruction are not qualified. See [OCR qualification and
+limitations](docs/local-ocr-qualification.md).
+
+You can keep editing during conversion. Switching Markdown documents discards its
 pending result, and successful conversion prompts before replacing unsaved edits.
 
 Click local Markdown, PDF, or DOCX links to open them; web links open in your
@@ -77,7 +86,8 @@ cargo test --workspace
 ```
 
 The app shell lives in `src/main.rs`; file persistence in `src/document.rs`.
-`src/import.rs` isolates the pinned AnyDoc fork. See
+`src/import.rs` isolates the pinned AnyDoc and pdf-inspector forks; `src/ocr.rs`
+owns explicit OCR setup and offline runtime paths. See
 [the integration and upstream-update notes](docs/anydoc-integration.md).
 `mdoc-editor` supplies WYSIWYG, `gpui-pdf` supplies PDF rendering, and
 `gpui-bidi` supplies bidirectional text. `mdoc-markdown` remains because the

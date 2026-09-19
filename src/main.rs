@@ -9,6 +9,7 @@ mod docx_preview;
 mod images;
 mod import;
 mod markdown_search;
+mod ocr;
 mod style;
 #[cfg(test)]
 mod ui_tests;
@@ -38,6 +39,7 @@ actions!(
         New,
         Open,
         Import,
+        SetupOcr,
         DismissImportWarning,
         Save,
         SaveAs,
@@ -67,6 +69,32 @@ struct PendingPreview {
     _subscription: Subscription,
 }
 
+#[derive(Clone, Debug)]
+enum OcrState {
+    Checking,
+    Missing,
+    Installing,
+    Ready(ocr::Installed),
+    Failed(String),
+    Unsupported,
+}
+
+impl OcrState {
+    fn busy(&self) -> bool {
+        matches!(self, Self::Checking | Self::Installing)
+    }
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Checking => "Checking OCR…",
+            Self::Missing => "Set up OCR",
+            Self::Installing => "Setting up OCR…",
+            Self::Ready(_) => "OCR ready",
+            Self::Failed(_) => "Retry OCR setup",
+            Self::Unsupported => "OCR unavailable on this platform",
+        }
+    }
+}
+
 struct Workspace {
     theme: Rc<Cell<Theme>>,
     editor: Entity<EditorState>,
@@ -84,9 +112,12 @@ struct Workspace {
     preview_cancel: Option<Arc<AtomicBool>>,
     prompting: bool,
     importing: bool,
+    recognizing: bool,
+    ocr_state: OcrState,
+    ocr_pending_import: Option<(u64, PathBuf)>,
     document_generation: u64,
     preview_generation: u64,
-    pending_import: Option<(u64, Result<import::Imported, String>)>,
+    pending_import: Option<(u64, Result<import::Imported, import::ImportError>)>,
     import_source: Option<PathBuf>,
     import_warning: Option<String>,
     markdown_search: Entity<markdown_search::SearchInput>,
@@ -173,6 +204,22 @@ impl Workspace {
             })
             .unwrap_or(true)
         });
+        {
+            let task = cx.background_executor().spawn(async { ocr::check() });
+            cx.spawn(async move |this, cx| {
+                let result = task.await;
+                let _ = this.update(cx, |this, cx| {
+                    this.ocr_state = match result {
+                        Ok(Some(installed)) => OcrState::Ready(installed),
+                        Ok(None) if ocr::SUPPORTED => OcrState::Missing,
+                        Ok(None) => OcrState::Unsupported,
+                        Err(error) => OcrState::Failed(error),
+                    };
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
         Self {
             theme: Rc::new(Cell::new(Theme::default())),
             editor,
@@ -190,6 +237,9 @@ impl Workspace {
             preview_cancel: None,
             prompting: false,
             importing: false,
+            recognizing: false,
+            ocr_state: OcrState::Checking,
+            ocr_pending_import: None,
             document_generation: 0,
             preview_generation: 0,
             pending_import: None,
@@ -657,7 +707,7 @@ impl Workspace {
     }
 
     fn import(&mut self, _: &Import, window: &mut Window, cx: &mut Context<Self>) {
-        if self.prompting || self.importing {
+        if self.prompting || self.importing || self.ocr_state.busy() {
             return;
         }
         self.prompting = true;
@@ -682,15 +732,31 @@ impl Workspace {
     }
 
     fn start_import(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        if self.importing {
+        self.start_import_mode(path, false, window, cx);
+    }
+
+    fn start_import_mode(
+        &mut self,
+        path: PathBuf,
+        skip_ocr: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.importing || self.ocr_state.busy() {
             return;
         }
+        self.ocr_pending_import = None;
         self.importing = true;
         self.error = None;
         let generation = self.document_generation;
+        let installed = match &self.ocr_state {
+            OcrState::Ready(installed) if !skip_ocr => Some(installed.clone()),
+            _ => None,
+        };
+        self.recognizing = installed.is_some();
         let task = cx
             .background_executor()
-            .spawn(async move { import::convert(&path) });
+            .spawn(async move { import::prepare(&path, installed.as_ref(), skip_ocr) });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -710,12 +776,123 @@ impl Workspace {
             self.importing = false;
             if generation == self.document_generation {
                 match result {
-                    Ok(imported) => self.request(Next::Import(imported), window, cx),
-                    Err(error) => self.error = Some(error),
+                    Ok(imported) => {
+                        if let Some(error) = &imported.ocr_failure {
+                            self.ocr_state = OcrState::Failed(error.clone());
+                        }
+                        self.request(Next::Import(imported), window, cx);
+                    }
+                    Err(import::ImportError::OcrFailed(error)) => {
+                        self.ocr_state = OcrState::Failed(error.clone());
+                        self.error = Some(error);
+                    }
+                    Err(import::ImportError::Message(error)) => self.error = Some(error),
+                    Err(import::ImportError::NeedsOcr(path)) => {
+                        self.prompt_ocr(path, generation, window, cx)
+                    }
                 }
             }
             cx.notify();
         }
+    }
+
+    fn setup_ocr(&mut self, _: &SetupOcr, window: &mut Window, cx: &mut Context<Self>) {
+        if self.prompting || self.importing || self.ocr_state.busy() || !ocr::SUPPORTED {
+            return;
+        }
+        if matches!(self.ocr_state, OcrState::Ready(_)) {
+            return;
+        }
+        self.begin_ocr_setup(window, cx);
+    }
+
+    fn begin_ocr_setup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.ocr_state.busy() {
+            return;
+        }
+        self.ocr_state = OcrState::Installing;
+        self.error = None;
+        let task = cx.background_executor().spawn(async { ocr::install() });
+        cx.spawn_in(window, async move |this, cx| {
+            let result = task.await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.finish_ocr_setup(result, window, cx)
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn finish_ocr_setup(
+        &mut self,
+        result: Result<ocr::Installed, String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match result {
+            Ok(installed) => {
+                self.ocr_state = OcrState::Ready(installed);
+                if let Some((generation, path)) = self.ocr_pending_import.take() {
+                    self.importing = false;
+                    if generation == self.document_generation {
+                        self.start_import(path, window, cx);
+                    }
+                }
+            }
+            Err(error) => {
+                self.ocr_state = OcrState::Failed(error);
+                self.importing = false;
+            }
+        }
+        cx.notify();
+    }
+
+    fn prompt_ocr(
+        &mut self,
+        path: PathBuf,
+        generation: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.prompting = true;
+        self.importing = true;
+        let buttons = if ocr::SUPPORTED {
+            vec!["Set up local OCR", "Skip OCR", "Cancel"]
+        } else {
+            vec!["Skip OCR", "Cancel"]
+        };
+        let detail = if ocr::SUPPORTED {
+            "Download about 54 MB of OCR components once. Documents stay on this device; recognition then works offline. Skipping imports only usable native text."
+        } else {
+            "Local OCR is not yet qualified on this platform. Skipping imports only usable native text."
+        };
+        let answer = window.prompt(
+            PromptLevel::Info,
+            "This PDF needs text recognition",
+            Some(detail),
+            &buttons,
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let answer = answer.await.ok();
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.prompting = false;
+                this.importing = false;
+                if generation != this.document_generation {
+                    cx.notify();
+                    return;
+                }
+                if ocr::SUPPORTED && answer == Some(0) {
+                    this.ocr_pending_import = Some((generation, path));
+                    this.importing = true;
+                    this.begin_ocr_setup(window, cx);
+                } else if answer == Some(if ocr::SUPPORTED { 1 } else { 0 }) {
+                    this.start_import_mode(path, true, window, cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn save_directory(&self) -> PathBuf {
@@ -1240,6 +1417,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::toggle_theme))
             .on_action(cx.listener(Self::open))
             .on_action(cx.listener(Self::import))
+            .on_action(cx.listener(Self::setup_ocr))
             .on_action(cx.listener(|this, _: &DismissImportWarning, _, cx| { this.import_warning = None; cx.notify(); }))
             .on_action(cx.listener(|this, _: &New, window, cx| this.request(Next::New, window, cx)))
             .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
@@ -1253,7 +1431,10 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::retry_preview))
             .child(div().flex().items_center().gap_2().p_2().text_size(px(13.)).border_b_1().border_color(palette.border)
                 .child(button("New", New, theme)).child(button("Open…", Open, theme)).child(button("Save", Save, theme)).child(button("Save As…", SaveAs, theme))
-                .child(if self.importing { div().child("Converting…").into_any_element() } else { button("Import as Markdown…", Import, theme).into_any_element() })
+                .child(if self.importing { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.recognizing { "Recognizing text…" } else { "Converting…" }).into_any_element() } else { button("Import as Markdown…", Import, theme).into_any_element() })
+                .child(if matches!(self.ocr_state, OcrState::Missing | OcrState::Failed(_)) {
+                    button(self.ocr_state.label(), SetupOcr, theme).into_any_element()
+                } else { div().opacity(0.65).child(self.ocr_state.label()).into_any_element() })
                 .child(div().flex_1())
                 .child(button(theme.toggle_label(), ToggleTheme, theme))
                 .child(if self.dirty(cx) { "Unsaved changes" } else { "Markdown · WYSIWYG" })
@@ -1270,6 +1451,7 @@ impl Render for Workspace {
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .when_some(self.comment_panel.clone(), |pane, comments| pane.child(comments)))))
             .when_some(self.preview_message.clone(), |view, message| view.child(div().flex().items_center().gap_2().p_2().bg(theme.error_bg()).child(div().flex_1().child(format!("{}: {message}", self.preview_source.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Preview".into())))).when(self.preview_retryable, |bar| bar.child(button("Retry", RetryPreview, theme)))))
+            .when_some(match &self.ocr_state { OcrState::Failed(error) => Some(error.clone()), _ => None }, |view, error| view.child(div().p_2().bg(theme.error_bg()).child(format!("OCR setup: {error}"))))
             .when_some(self.error.clone(), |view, error| view.child(div().p_2().bg(theme.error_bg()).child(error)))
     }
 }

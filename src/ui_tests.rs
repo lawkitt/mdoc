@@ -521,12 +521,103 @@ fn opening_and_saving_preserves_markdown_bytes(cx: &mut TestAppContext) {
 
 fn converted(source: PathBuf) -> import::Imported {
     import::Imported {
+        ocr_failure: None,
         source,
         markdown: "# Imported\n".into(),
         warning: Some("Partial import: pages 2 of 2 require OCR and were skipped.".into()),
         is_pdf: false,
         is_docx: false,
     }
+}
+
+#[gpui::test]
+fn ocr_prompt_skip_imports_native_content_and_keeps_page_warning(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/import/handmade-partly-scanned.pdf");
+    app.update_in(cx, |app, window, cx| {
+        app.start_import(source.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| app.read(cx).prompting));
+    cx.simulate_prompt_answer("Skip OCR");
+    cx.run_until_parked();
+    app.update_in(cx, |app, _, cx| {
+        assert!(!app.importing);
+        assert!(!app.prompting);
+        assert!(app.editor.read(cx).text().contains("Readable page three"));
+        assert!(app.import_warning.as_ref().unwrap().contains("2, 5"));
+        assert!(app.document.path.is_none());
+        assert_eq!(app.import_source.as_ref(), Some(&source));
+    });
+}
+
+#[gpui::test]
+fn ocr_prompt_cancel_preserves_current_edits(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("keep edits", cx));
+        app.pending_import = Some((
+            app.document_generation,
+            Err(import::ImportError::NeedsOcr("scan.pdf".into())),
+        ));
+        app.resume_import(window, cx);
+    });
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    app.update_in(cx, |app, _, cx| {
+        assert_eq!(app.editor.read(cx).text(), "keep edits");
+        assert!(!app.importing);
+        assert!(!app.prompting);
+        assert!(app.import_source.is_none());
+    });
+}
+
+#[gpui::test]
+fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("keep edits", cx));
+        app.ocr_state = OcrState::Installing;
+        app.importing = true;
+        app.ocr_pending_import = Some((app.document_generation, "scan.pdf".into()));
+        app.finish_ocr_setup(Err("download interrupted".into()), window, cx);
+        assert_eq!(app.ocr_state.label(), "Retry OCR setup");
+        assert!(!app.importing);
+        assert!(app.ocr_pending_import.is_some());
+        app.document_generation += 1;
+        app.ocr_state = OcrState::Installing;
+        app.finish_ocr_setup(
+            Ok(ocr::Installed {
+                models: "models".into(),
+                pdfium: "pdfium".into(),
+                onnx: "onnx".into(),
+            }),
+            window,
+            cx,
+        );
+        assert_eq!(app.ocr_state.label(), "OCR ready");
+        assert!(!app.importing);
+        assert!(app.ocr_pending_import.is_none());
+        assert_eq!(app.editor.read(cx).text(), "keep edits");
+    });
+}
+
+#[gpui::test]
+fn ocr_runtime_failure_enables_setup_retry(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.pending_import = Some((
+            app.document_generation,
+            Err(import::ImportError::OcrFailed("runtime missing".into())),
+        ));
+        app.resume_import(window, cx);
+        assert_eq!(app.ocr_state.label(), "Retry OCR setup");
+        assert!(app.error.as_ref().unwrap().contains("runtime missing"));
+        assert!(!app.importing);
+    });
 }
 
 #[gpui::test]
