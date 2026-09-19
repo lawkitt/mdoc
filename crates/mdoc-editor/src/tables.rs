@@ -248,7 +248,8 @@ impl EditorState {
         let content = t.cells.get(cell)?;
         let cw = cell_span_width(&t.col_widths, t.cells.len(), cell);
         let cf = cell_font(&font, t.is_header);
-        let full_w = measure_width(window, content, &cf, font_size);
+        let full_w = shape_cell(window, content, &cf, font_size, None, Hsla::default())
+            .map_or(px(0.), |(line, _)| line.width());
         let avail = (cw - pad * 2.).max(px(8.));
         // Alignment shifts only unwrapped content (a wrapped cell fills its width).
         let align_off = if full_w > avail {
@@ -1078,32 +1079,21 @@ fn shape_cell(
     font_size: Pixels,
     wrap: Option<Pixels>,
     color: Hsla,
-) -> Option<WrappedLine> {
-    let run = TextRun {
-        len: content.len(),
-        font: font.clone(),
-        color,
-        background_color: None,
-        underline: None,
-        strikethrough: None,
-    };
-    let runs: &[TextRun] = if content.is_empty() {
-        &[]
-    } else {
-        std::slice::from_ref(&run)
-    };
-    window
+) -> Option<(WrappedLine, Vec<usize>)> {
+    let mut style = markdown_syntax::search_style();
+    style.code = color;
+    style.link = color;
+    style.tag = color;
+    style.mono = font.clone();
+    let (display, runs, map) =
+        markdown_syntax::hidden_runs(content, font, color, &[], None, 0, 0, false, &style);
+    let line = window
         .text_system()
-        .shape_text(
-            SharedString::from(content.to_string()),
-            font_size,
-            runs,
-            wrap,
-            None,
-        )
+        .shape_text(display.into(), font_size, &runs, wrap, None)
         .ok()?
         .into_iter()
-        .next()
+        .next()?;
+    Some((line, map))
 }
 
 /// A wide table's scroll thumb — its visual rect, (padded) grab rect, and
@@ -1214,7 +1204,9 @@ pub(crate) fn table_row_wrap_rows(
             continue;
         }
         let avail = (cw - pad * 2.).max(px(8.));
-        if let Some(wl) = shape_cell(window, cell, &cf, font_size, Some(avail), Hsla::default()) {
+        if let Some((wl, _)) =
+            shape_cell(window, cell, &cf, font_size, Some(avail), Hsla::default())
+        {
             rows = rows.max(wl.wrap_boundaries().len() + 1);
         }
     }
@@ -1257,7 +1249,7 @@ pub(crate) fn table_caret_pos(
     let cf = cell_font(font, t.is_header);
     let line_h = font_size * LINE_HEIGHT_RATIO;
     let avail = (cw - pad * 2.).max(px(8.));
-    let wl = shape_cell(
+    let (wl, source_map) = shape_cell(
         window,
         content,
         &cf,
@@ -1265,7 +1257,12 @@ pub(crate) fn table_caret_pos(
         Some(avail),
         Hsla::default(),
     )?;
-    let mut pos = wl.position_for_index(in_cell, line_h).unwrap_or_default();
+    let display_offset = source_map
+        .partition_point(|&offset| offset < in_cell)
+        .min(source_map.len().saturating_sub(1));
+    let mut pos = wl
+        .position_for_index(display_offset, line_h)
+        .unwrap_or_default();
     let wrapped = !wl.wrap_boundaries().is_empty();
     // A cell holding right-to-left text needs the same index↔x map the rest of
     // the editor uses: gpui's `position_for_index` collapses every offset in an
@@ -1273,8 +1270,8 @@ pub(crate) fn table_caret_pos(
     // Only an unwrapped cell can use it — a map's x's run along the single
     // pre-wrap line (same limit as elsewhere).
     if !wrapped && mdoc_markdown::syntax::contains_rtl(content) {
-        let map = gpui_bidi::shaped::map_of_wrapped(&wl, content.len());
-        pos.x = px(map.x_for_index(in_cell));
+        let map = gpui_bidi::shaped::map_of_wrapped(&wl, source_map.len().saturating_sub(1));
+        pos.x = px(map.x_for_index(display_offset));
     }
     let full_w = wl.width();
     // Alignment shifts only unwrapped content (a wrapped cell fills its width).
@@ -1302,7 +1299,7 @@ fn cell_offset_for_point(
     window: &mut Window,
 ) -> usize {
     let line_h = font_size * LINE_HEIGHT_RATIO;
-    let Some(wl) = shape_cell(
+    let Some((wl, source_map)) = shape_cell(
         window,
         content,
         font,
@@ -1314,8 +1311,10 @@ fn cell_offset_for_point(
     };
     if wl.wrap_boundaries().is_empty() && mdoc_markdown::syntax::contains_rtl(content) {
         // Same reason as the caret above, in reverse.
-        let map = gpui_bidi::shaped::map_of_wrapped(&wl, content.len());
-        return map.index_for_x(f32::from(target.x));
+        let map = gpui_bidi::shaped::map_of_wrapped(&wl, source_map.len().saturating_sub(1));
+        return source_map[map
+            .index_for_x(f32::from(target.x))
+            .min(source_map.len() - 1)];
     }
     match wl.closest_index_for_position(
         point(
@@ -1324,7 +1323,7 @@ fn cell_offset_for_point(
         ),
         line_h,
     ) {
-        Ok(i) | Err(i) => i,
+        Ok(i) | Err(i) => source_map[i.min(source_map.len() - 1)],
     }
 }
 
@@ -1403,7 +1402,7 @@ pub(crate) fn paint_table_row(
             // row's last cell spans the remaining columns.
             let cw = cell_span_width(&t.col_widths, t.cells.len(), c);
             let avail = (cw - pad * 2.).max(px(8.));
-            if let Some(shaped) =
+            if let Some((shaped, _)) =
                 shape_cell(window, cell, &cell_font, font_size, Some(avail), color)
             {
                 let align = match t.aligns.get(c) {

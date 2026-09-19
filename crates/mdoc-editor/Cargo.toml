@@ -18,6 +18,11 @@ gpui = { workspace = true }
 # moves as a single unit (matches gpui's own input example).
 unicode-segmentation = "1"
 
+# Unicode full default case folding for semantic search (without normalization).
+caseless = "0.2"
+# HTML named-entity data used by the Markdown search projection.
+entities = "1"
+
 # Shared markdown-construct recognition (`mdoc_markdown::syntax`): alert kinds,
 # table styles, heading scales — so WYSIWYG and the reader can never drift
 # apart on what a construct IS. The one sanctioned sibling-crate dependency

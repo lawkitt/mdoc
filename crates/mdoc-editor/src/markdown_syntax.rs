@@ -139,6 +139,8 @@ struct Style {
     /// shows ` → `): every replacement byte maps back to the span's start, so
     /// the display↔source maps stay consistent. `None` = plain removal.
     replace: Option<SharedString>,
+    /// Decoded source text, unlike generated replacement labels.
+    decoded: bool,
 }
 
 struct Span {
@@ -417,6 +419,76 @@ pub(crate) fn hidden_runs(
     (display, runs, map)
 }
 
+/// A source span as seen by the Markdown search projection. Unlike
+/// [`hidden_runs`], this deliberately has no caret-dependent reveal rules:
+/// search indexes the stable rendered text, not the transient editing view.
+#[derive(Clone, Debug)]
+pub(crate) struct SemanticSpan {
+    pub range: Range<usize>,
+    pub hidden: bool,
+    pub replacement: bool,
+    pub decoded: Option<String>,
+}
+
+/// Scan one source slice using the editor's own Markdown scanner and expose
+/// only the visibility decisions needed by the search index. Keeping this
+/// beside `scan_line` prevents the search projection from growing a second,
+/// subtly different inline-Markdown grammar.
+pub(crate) fn semantic_spans_with(
+    text: &str,
+    start: usize,
+    end: usize,
+    style: &SyntaxStyle,
+) -> Vec<SemanticSpan> {
+    let mut spans = Vec::new();
+    scan_line(text, start, end, style, &mut spans);
+    spans
+        .into_iter()
+        .map(|span| SemanticSpan {
+            range: span.range,
+            hidden: span.style.hide,
+            decoded: span
+                .style
+                .decoded
+                .then(|| span.style.replace.as_ref().unwrap().to_string()),
+            replacement: span.style.replace.is_some(),
+        })
+        .collect()
+}
+
+/// A color/font-neutral style is enough for `scan_line`: search only consumes
+/// its hidden/replacement flags. Keeping the constructor here also means the
+/// search module cannot accidentally depend on a host theme.
+pub(crate) fn search_style() -> SyntaxStyle {
+    SyntaxStyle {
+        marker: Hsla::default(),
+        code: Hsla::default(),
+        code_bg: Hsla::default(),
+        link: Hsla::default(),
+        tag: Hsla::default(),
+        quote: Hsla::default(),
+        alert_note: Hsla::default(),
+        alert_tip: Hsla::default(),
+        alert_important: Hsla::default(),
+        alert_warning: Hsla::default(),
+        alert_caution: Hsla::default(),
+        alert_icons: None,
+        rule: Hsla::default(),
+        mark_bg: Hsla::default(),
+        block_label: None,
+        block_label_gen: 0,
+        block_ref_count: None,
+        popover_bg: Hsla::default(),
+        popover_border: Hsla::default(),
+        popover_fg: Hsla::default(),
+        popover_hover: Hsla::default(),
+        popover_divider: Hsla::default(),
+        popover_danger: Hsla::default(),
+        mono: Font::default(),
+        property_icon: None,
+    }
+}
+
 /// Scan the whole document line by line for inline markdown constructs.
 fn scan(text: &str, st: &SyntaxStyle) -> Vec<Span> {
     let mut out = Vec::new();
@@ -552,16 +624,20 @@ fn apply_heading(
         marker_end += 1;
     }
     marker(out, from..marker_end, st.marker);
-    if marker_end < end {
-        push(
-            out,
-            marker_end..end,
-            Style {
-                bold: true,
-                ..Default::default()
-            },
-        );
-    }
+    let mut next_id = 1;
+    scan_styled_body(
+        text,
+        marker_end,
+        end,
+        st,
+        out,
+        Style {
+            bold: true,
+            ..Default::default()
+        },
+        0,
+        &mut next_id,
+    );
     true
 }
 
@@ -664,8 +740,36 @@ fn scan_inline(
             && b[i + 1].is_ascii_punctuation()
             && !is_backslash_escaped(b, i)
         {
-            marker(out, i..i + 1, st.marker);
+            push(
+                out,
+                i..i + 2,
+                Style {
+                    hide: true,
+                    replace: Some(text[i + 1..i + 2].to_owned().into()),
+                    decoded: true,
+                    ..Default::default()
+                }
+                .over(base),
+            );
             i += 2;
+            continue;
+        }
+        // Entities share one decoded replacement and source map with search.
+        if c == b'&'
+            && let Some((len, decoded)) = decode_entity(&text[i..end])
+        {
+            push(
+                out,
+                i..i + len,
+                Style {
+                    hide: true,
+                    replace: Some(decoded.into()),
+                    decoded: true,
+                    ..Default::default()
+                }
+                .over(base),
+            );
+            i += len;
             continue;
         }
         // Inline code: `code` — backticks are hideable markers, the body a
@@ -1830,12 +1934,36 @@ fn one_line_math(line: &str) -> Option<&str> {
 /// A whole-line image is handled as a block widget (`image_row`) before a line
 /// reaches inline shaping, so these are the mixed-line (text + image) ones.
 /// Images inside inline code aren't matched.
+// Inline objects cannot begin inside a code span. Reuse this boundary check
+// in both object scanners, which also feed rendering and hit testing.
+fn inline_code_end(line: &str, start: usize) -> Option<usize> {
+    let bytes = line.as_bytes();
+    if bytes.get(start) != Some(&b'`') || is_backslash_escaped(bytes, start) {
+        return None;
+    }
+    let width = bytes[start..].iter().take_while(|&&b| b == b'`').count();
+    let mut at = start + width;
+    while at < bytes.len() {
+        if bytes[at] == b'`' {
+            let count = bytes[at..].iter().take_while(|&&b| b == b'`').count();
+            if count == width { return Some(at + count); }
+            at += count;
+        } else { at += 1; }
+    }
+    None
+}
+
 pub(crate) fn inline_image_spans(line: &str) -> Vec<(Range<usize>, Range<usize>)> {
     let b = line.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
     while i + 1 < b.len() {
-        if b[i] == b'!'
+        if let Some(end) = inline_code_end(line, i) {
+            i = end;
+            continue;
+        }
+
+        if b[i] == b'!' && !is_backslash_escaped(b, i)
             && b[i + 1] == b'['
             && let Some(rb) = line[i + 2..].find(']')
             && line[i + 2 + rb + 1..].starts_with('(')
@@ -1867,6 +1995,11 @@ pub(crate) fn inline_math_spans(line: &str) -> Vec<Range<usize>> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
+        if let Some(end) = inline_code_end(line, i) {
+            i = end;
+            continue;
+        }
+
         if bytes[i] != b'$' || is_backslash_escaped(bytes, i) {
             i += 1;
             continue;
@@ -2254,12 +2387,52 @@ fn separator_aligns(line: &str) -> Option<Vec<Align>> {
         .collect()
 }
 
+/// Whether a table row is the Markdown alignment/separator row. Search treats
+/// it as structural chrome, just as the WYSIWYG table renderer does.
+pub(crate) fn is_table_separator(line: &str) -> bool {
+    separator_aligns(line).is_some()
+}
+
 fn is_word(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
 }
 
 // One tag grammar with the reader (namespaced `#a/b` included).
 use mdoc_markdown::syntax::is_tag_char as is_tag;
+
+fn decode_entity(source: &str) -> Option<(usize, String)> {
+    if source.as_bytes().first() != Some(&b'&') {
+        return None;
+    }
+    let relative_end = source
+        .as_bytes()
+        .iter()
+        .take(33)
+        .position(|byte| *byte == b';')?;
+    let entity_end = relative_end + 1;
+    let token = &source[..entity_end];
+    if let Some(value) = decode_numeric_entity(token) {
+        return Some((token.len(), value.to_string()));
+    }
+    entities::ENTITIES
+        .iter()
+        .find(|entity| entity.entity == token)
+        .map(|entity| (token.len(), entity.characters.to_owned()))
+}
+
+fn decode_numeric_entity(token: &str) -> Option<char> {
+    let digits = token
+        .strip_prefix("&#x")
+        .or_else(|| token.strip_prefix("&#X"))
+        .map(|digits| digits.strip_suffix(';').unwrap_or(digits))
+        .and_then(|digits| u32::from_str_radix(digits, 16).ok())
+        .or_else(|| {
+            token
+                .strip_prefix("&#")
+                .and_then(|digits| digits.strip_suffix(';').unwrap_or(digits).parse().ok())
+        })?;
+    char::from_u32(digits)
+}
 
 #[cfg(test)]
 mod tests {
@@ -2808,6 +2981,16 @@ mod tests {
         let (disp, _, map) = hidden_runs("plain text", &font, c, &[], None, 0, 0, false, &st);
         assert_eq!(disp, "plain text");
         assert_eq!(map, (0..=10).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn decoded_visible_text_agrees_with_search_and_source_map() {
+        let source = "# hello **world** &amp; \\* `&amp;`";
+        let (display, _, map) = hidden_runs(source, &gpui::font("Helvetica"), Hsla::default(), &[], None, 0, 0, false, &test_style());
+        assert_eq!(display, "hello world & * &amp;");
+        assert_eq!(crate::SearchIndex::from_markdown(source).find(&display, true).len(), 1);
+        let amp = display.find('&').unwrap();
+        assert_eq!(map[amp], source.find("&amp;").unwrap());
     }
 
     #[test]
