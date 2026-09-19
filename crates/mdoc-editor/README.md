@@ -3,25 +3,23 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A multi-line text editor for [GPUI](https://www.gpui.rs/) with live Markdown
-preview. It is the editor behind [mdoc](https://github.com/lawkitt/mdoc)'s
-notes.
+styling. It is the editor behind [mdoc](https://github.com/lawkitt/mdoc).
 
 It is built directly on GPUI's text primitives: an `EntityInputHandler` for
 keyboard and IME input, `shape_line` for per-line shaping, and a custom
 `Element` that lays out and paints the lines, caret, and selection. It depends
 on `gpui` and `unicode-segmentation`, plus one sibling crate,
 [`mdoc-markdown`](../mdoc-markdown/README.md) with default features off,
-for its dependency-free `syntax` module. That module decides what counts as a
-link, an alert, or a table style; sharing it keeps the editor and the reading
-view in agreement.
+for its dependency-free `syntax` module. That module is shared with the editor
+so Markdown recognition stays consistent.
 
 The complete API reference, including the seat/commit protocols, is in
 [API.md](API.md).
 
 ## Overview
 
-- **Auto-grows** to its content height (no inner scrollbar), so a host can stack
-  many editors in one scroll view (e.g. a journal feed).
+- **Auto-grows** to its content height (no inner scrollbar), so a host can size
+  it to its content inside a larger scroll view.
 - **Editing:** insert / backspace / delete / newline, arrow + Home/End +
   word-wise navigation, visual-row up/down, copy / cut / paste, IME, undo / redo
   (coalesced), click + drag selection, double-click word / triple-click line.

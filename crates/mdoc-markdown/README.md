@@ -11,15 +11,16 @@ clicking a `[[wiki-link]]` or `#tag`, rendering an image or a Mermaid diagram,
 syntax-highlighting code, and click-to-caret. Standard `[text](url)` links open
 externally.
 
-The crate has two layers:
+The crate has two layers, and the mdoc app itself only uses `syntax`
+indirectly through `mdoc-editor` — the reading view below is not wired into
+the app:
 
 - **`mdoc_markdown::syntax`**, always compiled and dependency-free: the
   shared recognition of constructs (links, GitHub alert kinds and fold
   characters, table styles, heading scales, `key:: value` properties,
   ` ^block-id` anchors, `#Heading` / `#^id` link targets, and `![[embed]]`
-  lines). The reading view, the [`mdoc-editor`](../mdoc-editor/README.md)
-  WYSIWYG view, and mdoc's PDF exporter all use it, so each construct is
-  defined once.
+  lines). The reading view and the [`mdoc-editor`](../mdoc-editor/README.md)
+  WYSIWYG view share it, so each construct is defined once.
 - **The reading view**, `MarkdownView`, behind the default-on `view` feature,
   which owns the `gpui` and `markdown` dependencies. Consumers that only need
   recognition depend with `default-features = false`.

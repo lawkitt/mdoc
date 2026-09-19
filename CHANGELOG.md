@@ -2,6 +2,16 @@
 
 All notable changes to **mdoc** are documented here.
 
+## Unreleased
+
+- Read-only side-by-side DOCX preview with a local Rust converter, plus a
+  read-only DOCX comment list that never enters editor text.
+- Literal Markdown find (Cmd/Ctrl+F, Cmd/Ctrl+G navigation, Match case
+  toggle) over rendered visible text.
+- Local offline OCR import for scanned PDFs on Apple Silicon macOS and
+  Windows x64, with explicit setup and review warnings.
+- Search-bar styling pass and Markdown search performance coverage.
+
 ## 0.1.0
 
 - Initial standalone mdoc repository, derived from Zorite.

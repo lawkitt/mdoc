@@ -89,9 +89,14 @@ cargo test --workspace
 ```
 
 The app shell lives in `src/main.rs`; file persistence in `src/document.rs`.
+DOCX preview and comments live in `src/docx_preview.rs`,
+`src/docx_comments.rs`, and `src/comment_panel.rs`; Markdown find lives in
+`src/markdown_search.rs` over the `mdoc-editor` search index.
 `src/import.rs` isolates the pinned AnyDoc and pdf-inspector forks; `src/ocr.rs`
 owns explicit OCR setup and offline runtime paths. See
-[the integration and upstream-update notes](docs/anydoc-integration.md).
+[the integration and upstream-update notes](docs/anydoc-integration.md),
+[Markdown search decisions](docs/markdown-search-decisions.md), and
+[local OCR decisions](docs/local-ocr-decisions.md).
 `mdoc-editor` supplies WYSIWYG, `gpui-pdf` supplies PDF rendering, and
 `gpui-bidi` supplies bidirectional text. `mdoc-markdown` remains because the
 editor uses its Markdown recognition helpers; it is not a separate app view.
