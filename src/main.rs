@@ -8,6 +8,7 @@ mod document;
 mod docx_preview;
 mod images;
 mod import;
+mod markdown_search;
 mod style;
 #[cfg(test)]
 mod ui_tests;
@@ -19,7 +20,7 @@ use gpui::{
     prelude::*, px, size,
 };
 use gpui_pdf::PdfView;
-use mdoc_editor::{EditorEvent, EditorState};
+use mdoc_editor::{EditorEvent, EditorState, SearchIndex, SearchMatch};
 use std::{
     cell::{Cell, RefCell},
     path::PathBuf,
@@ -43,7 +44,12 @@ actions!(
         Close,
         ClosePdf,
         RetryPreview,
-        ToggleTheme
+        ToggleTheme,
+        FindMarkdown,
+        FindNextMarkdown,
+        FindPreviousMarkdown,
+        CloseMarkdownSearch,
+        ToggleMarkdownMatchCase,
     ]
 );
 
@@ -83,8 +89,26 @@ struct Workspace {
     pending_import: Option<(u64, Result<import::Imported, String>)>,
     import_source: Option<PathBuf>,
     import_warning: Option<String>,
+    markdown_search: Entity<markdown_search::SearchInput>,
+    markdown_search_open: bool,
+    markdown_search_match_case: bool,
+    markdown_search_index: Option<SearchIndex>,
+    markdown_search_source: String,
+    markdown_search_matches: Vec<SearchMatch>,
+    markdown_search_active: Option<usize>,
+    markdown_search_anchor: Option<usize>,
+    markdown_search_revision: u64,
+    markdown_search_task: Option<gpui::Task<()>>,
     _subscription: Subscription,
+    _markdown_search_subscription: Subscription,
     pdf_subscription: Option<Subscription>,
+}
+
+#[derive(Clone, Copy)]
+enum SearchRefresh {
+    Open,
+    Query,
+    DocumentEdit,
 }
 
 impl Drop for Workspace {
@@ -95,6 +119,7 @@ impl Drop for Workspace {
 
 impl Workspace {
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let markdown_search = cx.new(markdown_search::SearchInput::new);
         let editor = cx.new(|cx| {
             let mut editor =
                 EditorState::new(window, cx).with_placeholder("Start writing Markdown…");
@@ -110,6 +135,7 @@ impl Workspace {
             cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
                 EditorEvent::Changed => {
                     this.update_title(window, cx);
+                    this.refresh_markdown_search(SearchRefresh::DocumentEdit, false, window, cx);
                     cx.notify();
                 }
                 EditorEvent::OpenLink(src) => {
@@ -124,6 +150,16 @@ impl Workspace {
                 }
                 _ => {}
             });
+        let markdown_search_subscription = cx.subscribe_in(
+            &markdown_search,
+            window,
+            |this, _, event, window, cx| match event {
+                markdown_search::SearchInputEvent::Changed if this.markdown_search_open => {
+                    this.refresh_markdown_search(SearchRefresh::Query, true, window, cx);
+                }
+                _ => {}
+            },
+        );
         let weak = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
             weak.update(cx, |this, cx| {
@@ -159,7 +195,18 @@ impl Workspace {
             pending_import: None,
             import_source: None,
             import_warning: None,
+            markdown_search,
+            markdown_search_open: false,
+            markdown_search_match_case: false,
+            markdown_search_index: None,
+            markdown_search_source: String::new(),
+            markdown_search_matches: Vec::new(),
+            markdown_search_active: None,
+            markdown_search_anchor: None,
+            markdown_search_revision: 0,
+            markdown_search_task: None,
             _subscription: subscription,
+            _markdown_search_subscription: markdown_search_subscription,
             pdf_subscription: None,
         }
     }
@@ -174,6 +221,295 @@ impl Workspace {
             pdf.update(cx, |_, cx| cx.notify());
         }
         cx.notify();
+    }
+
+    fn find_markdown(&mut self, _: &FindMarkdown, window: &mut Window, cx: &mut Context<Self>) {
+        self.markdown_search_open = true;
+        self.refresh_markdown_search(SearchRefresh::Open, true, window, cx);
+        self.markdown_search
+            .update(cx, |input, cx| input.select_all(cx));
+        window.focus(&self.markdown_search.read(cx).focus_handle(cx), cx);
+        cx.notify();
+    }
+
+    fn find_next_markdown(
+        &mut self,
+        _: &FindNextMarkdown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.step_markdown_search(false, window, cx);
+    }
+
+    fn find_previous_markdown(
+        &mut self,
+        _: &FindPreviousMarkdown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.step_markdown_search(true, window, cx);
+    }
+
+    fn close_markdown_search(
+        &mut self,
+        _: &CloseMarkdownSearch,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.markdown_search_open {
+            return;
+        }
+        self.markdown_search_task = None;
+        self.markdown_search_anchor = None;
+        self.markdown_search_open = false;
+        self.markdown_search_active = None;
+        self.markdown_search_matches.clear();
+        self.markdown_search_revision = self.markdown_search_revision.wrapping_add(1);
+        self.editor.update(cx, |editor, cx| {
+            editor.set_search_matches(Vec::new(), None, cx)
+        });
+        window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+        cx.notify();
+    }
+
+    fn toggle_markdown_match_case(
+        &mut self,
+        _: &ToggleMarkdownMatchCase,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.markdown_search_match_case = !self.markdown_search_match_case;
+        if self.markdown_search_open {
+            self.refresh_markdown_search(SearchRefresh::Query, true, window, cx);
+        } else {
+            cx.notify();
+        }
+    }
+
+    fn reset_markdown_search(&mut self, cx: &mut Context<Self>) {
+        self.markdown_search_task = None;
+        self.markdown_search_anchor = None;
+        self.markdown_search_open = false;
+        self.markdown_search_match_case = false;
+        self.markdown_search_index = None;
+        self.markdown_search_source.clear();
+        self.markdown_search_matches.clear();
+        self.markdown_search_active = None;
+        self.markdown_search_revision = self.markdown_search_revision.wrapping_add(1);
+        self.markdown_search.update(cx, |input, cx| input.reset(cx));
+        self.editor.update(cx, |editor, cx| {
+            editor.set_search_matches(Vec::new(), None, cx)
+        });
+    }
+
+    fn refresh_markdown_search(
+        &mut self,
+        reason: SearchRefresh,
+        should_scroll: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let source = self.editor.read(cx).text().to_owned();
+        if !self.markdown_search_open {
+            if source != self.markdown_search_source {
+                self.markdown_search_index = None;
+                self.markdown_search_source.clear();
+                self.markdown_search_matches.clear();
+                self.markdown_search_active = None;
+            }
+            return;
+        }
+
+        let old_source = self.markdown_search_source.clone();
+        let old_anchor = self
+            .markdown_search_active
+            .and_then(|index| self.markdown_search_matches.get(index))
+            .and_then(search_match_start)
+            .or(self.markdown_search_anchor);
+        let index = if self.markdown_search_source == source {
+            self.markdown_search_index.take()
+        } else {
+            None
+        };
+        let query = self.markdown_search.read(cx).value().to_owned();
+        let match_case = self.markdown_search_match_case;
+        let cursor = self.editor.read(cx).cursor();
+        let anchor = match reason {
+            SearchRefresh::DocumentEdit => old_anchor
+                .map(|offset| map_edit_offset(&old_source, &source, offset))
+                .unwrap_or(cursor),
+            SearchRefresh::Open | SearchRefresh::Query => cursor,
+        };
+        self.markdown_search_task = None;
+        self.markdown_search_revision = self.markdown_search_revision.wrapping_add(1);
+        let revision = self.markdown_search_revision;
+        self.markdown_search_anchor = Some(anchor);
+        // Multi-megabyte projection/folding takes hundreds of milliseconds in
+        // debug builds. Keep that work off the event loop, with no result cap.
+        if source.len() > 64 * 1024 {
+            self.markdown_search_matches.clear();
+            self.markdown_search_active = None;
+            self.editor.update(cx, |editor, cx| {
+                editor.set_search_matches(Vec::new(), None, cx)
+            });
+            self.markdown_search_source = source.clone();
+            self.markdown_search_index = None;
+            let work = cx.background_executor().spawn(async move {
+                let index = index.unwrap_or_else(|| SearchIndex::from_markdown(&source));
+                let matches = index.find(&query, match_case);
+                (source, index, matches)
+            });
+            self.markdown_search_task = Some(cx.spawn_in(window, async move |this, cx| {
+                let (source, index, matches) = work.await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if this.markdown_search_open && this.markdown_search_revision == revision {
+                        this.markdown_search_task = None;
+                        this.markdown_search_source = source;
+                        this.markdown_search_index = Some(index);
+                        this.publish_markdown_search(matches, anchor, should_scroll, window, cx);
+                    }
+                });
+            }));
+            cx.notify();
+            return;
+        }
+        let index = index.unwrap_or_else(|| SearchIndex::from_markdown(&source));
+        let matches = index.find(&query, match_case);
+        self.markdown_search_index = Some(index);
+        self.markdown_search_source = source;
+        self.publish_markdown_search(matches, anchor, should_scroll, window, cx);
+    }
+
+    fn publish_markdown_search(
+        &mut self,
+        matches: Vec<SearchMatch>,
+        anchor: usize,
+        should_scroll: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let active = if matches.is_empty() {
+            None
+        } else {
+            first_search_match_at_or_after(&matches, anchor).or(Some(0))
+        };
+        self.markdown_search_anchor = active.and_then(|i| search_match_start(&matches[i]));
+        self.markdown_search_matches = matches;
+        self.markdown_search_active = active;
+        let revision = self.markdown_search_revision;
+        self.editor.update(cx, |editor, cx| {
+            editor.set_search_matches(
+                self.markdown_search_matches.clone(),
+                self.markdown_search_active,
+                cx,
+            )
+        });
+        if should_scroll && self.markdown_search_active.is_some() {
+            self.schedule_markdown_search_scroll(revision, window, cx);
+        }
+        cx.notify();
+    }
+
+    fn step_markdown_search(
+        &mut self,
+        backwards: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.markdown_search_open || self.markdown_search_matches.is_empty() {
+            return;
+        }
+        let len = self.markdown_search_matches.len();
+        let current = self.markdown_search_active.unwrap_or_else(|| {
+            first_search_match_at_or_after(
+                &self.markdown_search_matches,
+                self.editor.read(cx).cursor(),
+            )
+            .unwrap_or(0)
+        });
+        self.markdown_search_active = Some(if backwards {
+            (current + len - 1) % len
+        } else {
+            (current + 1) % len
+        });
+        self.markdown_search_revision = self.markdown_search_revision.wrapping_add(1);
+        let revision = self.markdown_search_revision;
+        self.editor.update(cx, |editor, cx| {
+            editor.set_search_matches(
+                self.markdown_search_matches.clone(),
+                self.markdown_search_active,
+                cx,
+            )
+        });
+        self.schedule_markdown_search_scroll(revision, window, cx);
+        cx.notify();
+    }
+
+    fn schedule_markdown_search_scroll(
+        &self,
+        revision: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.refine_markdown_search_scroll(revision, 2, window, cx);
+    }
+
+    fn refine_markdown_search_scroll(
+        &self,
+        revision: u64,
+        remaining: u8,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let weak = cx.entity().downgrade();
+        window.on_next_frame(move |window, cx| {
+            let _ = weak.update(cx, |workspace, cx| {
+                if !workspace.markdown_search_open || workspace.markdown_search_revision != revision
+                {
+                    return;
+                }
+                if let Some(index) = workspace.markdown_search_active {
+                    workspace.scroll_to_markdown_search(index, cx);
+                    // on_next_frame runs before paint: new query highlights or
+                    // focus-dependent wrapping may only acquire bounds afterward.
+                    if remaining > 0 {
+                        workspace.refine_markdown_search_scroll(
+                            revision,
+                            remaining - 1,
+                            window,
+                            cx,
+                        );
+                        cx.notify();
+                    }
+                }
+            });
+        });
+    }
+
+    fn scroll_to_markdown_search(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(match_bounds) = self.editor.read(cx).search_match_bounds(index) else {
+            return;
+        };
+        let viewport = self.scroll.bounds();
+        let margin = px(24.);
+        let mut offset = self.scroll.offset();
+        if match_bounds.top() < viewport.top() + margin {
+            offset.y += viewport.top() + margin - match_bounds.top();
+        } else if match_bounds.bottom() > viewport.bottom() - margin {
+            offset.y -= match_bounds.bottom() - (viewport.bottom() - margin);
+        }
+        let max = self.scroll.max_offset();
+        let min_y = -max.y;
+        if offset.y > px(0.) {
+            offset.y = px(0.);
+        }
+        if offset.y < min_y {
+            offset.y = min_y;
+        }
+        if self.scroll.offset() != offset {
+            self.scroll.set_offset(offset);
+            cx.notify();
+        }
     }
 
     fn dirty(&self, cx: &App) -> bool {
@@ -233,6 +569,7 @@ impl Workspace {
         match next {
             Next::Close => {
                 self.changed_document();
+                self.reset_markdown_search(cx);
                 self.close_preview(window, cx);
                 window.remove_window();
             }
@@ -241,6 +578,7 @@ impl Workspace {
                 self.document = Document::default();
                 images::install(&self.editor, self.document.directory(), cx);
                 self.editor.update(cx, |editor, cx| editor.set_text("", cx));
+                self.reset_markdown_search(cx);
                 self.error = None;
                 self.scroll.set_offset(gpui::point(px(0.), px(0.)));
                 self.update_title(window, cx);
@@ -250,6 +588,7 @@ impl Workspace {
                     self.changed_document();
                     self.editor
                         .update(cx, |editor, cx| editor.set_text(document.saved.clone(), cx));
+                    self.reset_markdown_search(cx);
                     self.document = document;
                     images::install(&self.editor, self.document.directory(), cx);
                     self.error = None;
@@ -267,6 +606,7 @@ impl Workspace {
                 images::install(&self.editor, self.save_directory(), cx);
                 self.editor
                     .update(cx, |editor, cx| editor.set_text(imported.markdown, cx));
+                self.reset_markdown_search(cx);
                 window.focus(&self.editor.read(cx).focus_handle(cx), cx);
                 self.error = None;
                 self.preview_message = None;
@@ -644,6 +984,57 @@ impl Workspace {
     }
 }
 
+fn search_match_start(search_match: &SearchMatch) -> Option<usize> {
+    search_match.source.first().map(|range| range.start)
+}
+
+fn first_search_match_at_or_after(matches: &[SearchMatch], offset: usize) -> Option<usize> {
+    matches.iter().position(|search_match| {
+        search_match_start(search_match).is_some_and(|start| start >= offset)
+    })
+}
+
+/// Map an old source offset through the smallest changed middle region. This
+/// keeps the active occurrence stable across ordinary typing while remaining
+/// UTF-8 safe at the common-prefix/common-suffix boundaries.
+fn map_edit_offset(old: &str, new: &str, offset: usize) -> usize {
+    let old_bytes = old.as_bytes();
+    let new_bytes = new.as_bytes();
+    let mut prefix = 0;
+    while prefix < old_bytes.len()
+        && prefix < new_bytes.len()
+        && old_bytes[prefix] == new_bytes[prefix]
+    {
+        prefix += 1;
+    }
+    while prefix > 0 && (!old.is_char_boundary(prefix) || !new.is_char_boundary(prefix)) {
+        prefix -= 1;
+    }
+
+    let mut suffix = 0;
+    while suffix < old_bytes.len().saturating_sub(prefix)
+        && suffix < new_bytes.len().saturating_sub(prefix)
+        && old_bytes[old_bytes.len() - 1 - suffix] == new_bytes[new_bytes.len() - 1 - suffix]
+    {
+        suffix += 1;
+    }
+    while suffix > 0
+        && (!old.is_char_boundary(old.len() - suffix) || !new.is_char_boundary(new.len() - suffix))
+    {
+        suffix -= 1;
+    }
+
+    let offset = offset.min(old.len());
+    if offset < prefix {
+        return offset.min(new.len());
+    }
+    let old_changed_end = old.len().saturating_sub(suffix);
+    if offset >= old_changed_end {
+        return new.len().saturating_sub(old.len().saturating_sub(offset));
+    }
+    prefix.min(new.len())
+}
+
 fn button(label: &'static str, action: impl gpui::Action, theme: Theme) -> impl IntoElement {
     div()
         .id(label)
@@ -656,10 +1047,160 @@ fn button(label: &'static str, action: impl gpui::Action, theme: Theme) -> impl 
         .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
 }
 
+fn bind_markdown_search_keys(cx: &mut App) {
+    let modifier = if cfg!(target_os = "macos") {
+        "cmd"
+    } else {
+        "ctrl"
+    };
+    cx.bind_keys([
+        KeyBinding::new(&format!("{modifier}-f"), FindMarkdown, Some("Editor")),
+        KeyBinding::new(
+            &format!("{modifier}-f"),
+            FindMarkdown,
+            Some("MarkdownSearch"),
+        ),
+        KeyBinding::new(&format!("{modifier}-f"), FindMarkdown, None),
+        KeyBinding::new(&format!("{modifier}-g"), FindNextMarkdown, Some("Editor")),
+        KeyBinding::new(
+            &format!("{modifier}-g"),
+            FindNextMarkdown,
+            Some("MarkdownSearch"),
+        ),
+        KeyBinding::new(
+            &format!("{modifier}-shift-g"),
+            FindPreviousMarkdown,
+            Some("Editor"),
+        ),
+        KeyBinding::new(
+            &format!("{modifier}-shift-g"),
+            FindPreviousMarkdown,
+            Some("MarkdownSearch"),
+        ),
+        KeyBinding::new("enter", FindNextMarkdown, Some("MarkdownSearch")),
+        KeyBinding::new("shift-enter", FindPreviousMarkdown, Some("MarkdownSearch")),
+        KeyBinding::new("escape", CloseMarkdownSearch, Some("MarkdownSearch")),
+    ]);
+}
+
 impl Render for Workspace {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
+        let search_focused = self
+            .markdown_search
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window);
+        let query = self.markdown_search.read(cx).value().to_owned();
+        let count = if query.is_empty() {
+            "0 / 0".to_owned()
+        } else if self.markdown_search_task.is_some() {
+            "Searching…".to_owned()
+        } else if self.markdown_search_matches.is_empty() {
+            "0 matches".to_owned()
+        } else {
+            format!(
+                "{} / {}",
+                self.markdown_search_active.map_or(0, |index| index + 1),
+                self.markdown_search_matches.len()
+            )
+        };
+        let navigation_disabled = self.markdown_search_matches.is_empty();
+        let search_bar = div()
+            .id("markdown-search-bar")
+            .flex()
+            .items_center()
+            .gap_1()
+            .p_1()
+            .border_b_1()
+            .border_color(palette.border)
+            .bg(palette.placeholder_bg)
+            .child(
+                div()
+                    .id("markdown-search-input")
+                    .flex()
+                    .flex_1()
+                    .min_w_0()
+                    .h(px(30.))
+                    .aria_label("Search Markdown")
+                    .px_2()
+                    .items_center()
+                    .bg(palette.bg)
+                    .border_1()
+                    .border_color(if search_focused {
+                        palette.header_fg
+                    } else {
+                        palette.border
+                    })
+                    .rounded_md()
+                    .child(self.markdown_search.clone()),
+            )
+            .child(
+                div()
+                    .id("markdown-search-match-case")
+                    .aria_label("Match case")
+                    .px_2()
+                    .h(px(30.))
+                    .flex()
+                    .items_center()
+                    .cursor_pointer()
+                    .when(self.markdown_search_match_case, |view| view.bg(palette.bg))
+                    .child(if self.markdown_search_match_case {
+                        "☑ Match case"
+                    } else {
+                        "☐ Match case"
+                    })
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.toggle_markdown_match_case(&ToggleMarkdownMatchCase, window, cx)
+                    })),
+            )
+            .child(div().id("markdown-search-count").px_2().child(count))
+            .child(
+                div()
+                    .id("markdown-search-previous")
+                    .aria_label("Previous match")
+                    .px_2()
+                    .py_1()
+                    .cursor_pointer()
+                    .hover(|view| view.bg(palette.bg))
+                    .when(navigation_disabled, |view| {
+                        view.text_color(palette.header_muted)
+                    })
+                    .child("↑")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.find_previous_markdown(&FindPreviousMarkdown, window, cx)
+                    })),
+            )
+            .child(
+                div()
+                    .id("markdown-search-next")
+                    .aria_label("Next match")
+                    .px_2()
+                    .py_1()
+                    .cursor_pointer()
+                    .hover(|view| view.bg(palette.bg))
+                    .when(navigation_disabled, |view| {
+                        view.text_color(palette.header_muted)
+                    })
+                    .child("↓")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.find_next_markdown(&FindNextMarkdown, window, cx)
+                    })),
+            )
+            .child(
+                div()
+                    .id("markdown-search-close")
+                    .aria_label("Close Markdown search")
+                    .px_2()
+                    .py_1()
+                    .cursor_pointer()
+                    .hover(|view| view.bg(palette.bg))
+                    .child("×")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.close_markdown_search(&CloseMarkdownSearch, window, cx)
+                    })),
+            );
         div().size_full().flex().flex_col().bg(palette.bg).text_color(palette.header_fg).text_size(px(16.))
             .on_action(cx.listener(Self::toggle_theme))
             .on_action(cx.listener(Self::open))
@@ -670,6 +1211,10 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save(true, None, window, cx)))
             .on_action(cx.listener(|this, _: &Close, window, cx| this.request(Next::Close, window, cx)))
             .on_action(cx.listener(|this, _: &ClosePdf, window, cx| { this.close_preview(window, cx); window.focus(&this.editor.read(cx).focus_handle(cx), cx); cx.notify(); }))
+            .on_action(cx.listener(Self::find_markdown))
+            .on_action(cx.listener(Self::find_next_markdown))
+            .on_action(cx.listener(Self::find_previous_markdown))
+            .on_action(cx.listener(Self::close_markdown_search))
             .on_action(cx.listener(Self::retry_preview))
             .child(div().flex().items_center().gap_2().p_2().text_size(px(13.)).border_b_1().border_color(palette.border)
                 .child(button("New", New, theme)).child(button("Open…", Open, theme)).child(button("Save", Save, theme)).child(button("Save As…", SaveAs, theme))
@@ -683,7 +1228,9 @@ impl Render for Workspace {
                 .child(div().id("import-warning").flex_1().min_w_0().max_h(px(96.)).overflow_y_scroll().child(warning))
                 .child(button("Dismiss", DismissImportWarning, theme))))
             .child(div().flex().flex_1().min_h_0()
-                .child(div().id("document-scroll").flex_1().min_w_0().h_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().child(self.editor.clone()))
+                .child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
+                    .when(self.markdown_search_open, |column| column.child(search_bar))
+                    .child(div().id("document-scroll").flex_1().min_w_0().min_h_0().overflow_y_scroll().track_scroll(&self.scroll).p_6().child(self.editor.clone())))
                 .when_some(self.pdf.clone(), |row, pdf| row.child(div().w_1_2().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .when_some(self.comment_panel.clone(), |pane, comments| pane.child(comments)))))
@@ -746,6 +1293,8 @@ fn main() {
         })
         .detach();
         mdoc_editor::bind_keys(cx);
+        markdown_search::bind_keys(cx);
+        bind_markdown_search_keys(cx);
         let modifier = if cfg!(target_os = "macos") {
             "cmd"
         } else {

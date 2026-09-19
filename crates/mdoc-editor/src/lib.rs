@@ -48,6 +48,9 @@ use unicode_segmentation::UnicodeSegmentation;
 mod markdown_syntax;
 pub use markdown_syntax::{AlertIcons, MathAlign, PropertyIconFn, SyntaxStyle};
 
+mod search;
+pub use search::{SearchIndex, SearchMatch};
+
 mod tables;
 use tables::*;
 
@@ -705,9 +708,11 @@ pub struct EditorState {
     /// Host-supplied clipboard writer for Copy/Cut (e.g. adding an HTML
     /// flavor beside the plain text). `None` = gpui's plain-string copy.
     clipboard_writer: Option<ClipboardWriter>,
-    /// Find-in-feed highlights: match byte ranges + the active index, painted
-    /// behind the text like the selection. Host-driven ([`Self::set_search`]).
-    search: Option<(Vec<Range<usize>>, Option<usize>)>,
+    /// Find highlights: logical occurrences + the active index, painted behind
+    /// the text like the selection. A logical occurrence can contain several
+    /// source ranges when hidden Markdown syntax lies inside it.
+    search: Option<(Vec<SearchMatch>, Option<usize>)>,
+    search_bounds: Vec<Option<Bounds<Pixels>>>,
     /// Last paint's wrapped lines (one per logical line) and each line's top
     /// offset relative to the editor's top — both used for hit-testing and
     /// cursor/IME positioning.
@@ -1006,6 +1011,7 @@ impl EditorState {
             marked_range: None,
             clipboard_writer: None,
             search: None,
+            search_bounds: Vec::new(),
             wrapped: Vec::new(),
             line_tops: Vec::new(),
             line_heights: Vec::new(),
@@ -1279,24 +1285,54 @@ impl EditorState {
         self.clipboard_writer = Some(writer);
     }
 
-    /// Highlight `matches` (source byte ranges) behind the text — soft yellow,
-    /// with `active` in the stronger current-match orange (the reader's
-    /// browser-style find colors). Empty clears. Host-driven: a find bar
-    /// computes matches (see [`find_in_source`]) and steps `active`.
+    /// Highlight semantic search occurrences behind the text. Every source
+    /// range belonging to one occurrence receives the same active/inactive
+    /// color. Empty clears; this never changes the caret or selection.
+    pub fn set_search_matches(
+        &mut self,
+        matches: Vec<SearchMatch>,
+        active: Option<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        self.search_bounds.clear();
+        self.search = (!matches.is_empty()).then_some((matches, active));
+        cx.notify();
+    }
+
+    /// Compatibility adapter for hosts that still provide one contiguous range
+    /// per match. New Markdown search callers should use [`Self::set_search_matches`].
     pub fn set_search(
         &mut self,
         matches: Vec<Range<usize>>,
         active: Option<usize>,
         cx: &mut Context<Self>,
     ) {
-        self.search = (!matches.is_empty()).then_some((matches, active));
-        cx.notify();
+        self.set_search_matches(
+            matches
+                .into_iter()
+                .map(|range| SearchMatch {
+                    source: vec![range],
+                })
+                .collect(),
+            active,
+            cx,
+        );
+    }
+
+    /// Window-space bounds for the first source range of one highlighted
+    /// occurrence, taken from the same quads used to paint the highlights.
+    /// Includes wrapped prose and table cells. Unavailable until the next paint.
+    pub fn search_match_bounds(&self, index: usize) -> Option<Bounds<Pixels>> {
+        self.search_bounds.get(index).copied().flatten()
     }
 
     /// The window-space top of the row containing byte `offset` (from the
     /// last layout) — for a host scrolling a find match into view. `None`
     /// before first paint or for an out-of-range offset.
     pub fn offset_screen_top(&self, offset: usize) -> Option<Pixels> {
+        if let Some(bounds) = self.bounds_for_offset(offset) {
+            return Some(bounds.top());
+        }
         let bounds = self.last_bounds?;
         let (row, _) = self.row_col(offset.min(self.content.len()));
         Some(bounds.top() + self.line_tops.get(row).copied()?)

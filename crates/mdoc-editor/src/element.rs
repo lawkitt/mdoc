@@ -92,6 +92,7 @@ pub(crate) struct PrepaintState {
     selections: Vec<PaintQuad>,
     /// Find-match highlight quads, painted beneath the selection.
     search: Vec<PaintQuad>,
+    search_bounds: Vec<Option<Bounds<Pixels>>>,
 }
 
 impl IntoElement for EditorElement {
@@ -1175,10 +1176,10 @@ impl Element for EditorElement {
                                 ));
                             }
                         };
-                        let pa = (a > first_start && a < last_end)
+                        let pa = (a >= first_start && a <= last_end)
                             .then(|| table_caret_pos(t, a, tleft, &font, font_size, window))
                             .flatten();
-                        let pb = (b > first_start && b < last_end)
+                        let pb = (b >= first_start && b <= last_end)
                             .then(|| table_caret_pos(t, b, tleft, &font, font_size, window))
                             .flatten();
                         match (pa, pb) {
@@ -1318,14 +1319,23 @@ impl Element for EditorElement {
         // colors — soft yellow everywhere, stronger orange on the active
         // match. Behind the text, like the selection.
         let mut search = Vec::new();
-        if let Some((ranges, active)) = editor.search.as_ref() {
-            for (i, r) in ranges.iter().enumerate() {
+        let mut search_bounds = Vec::new();
+        if let Some((matches, active)) = editor.search.as_ref() {
+            for (i, search_match) in matches.iter().enumerate() {
                 let color: Hsla = if Some(i) == *active {
                     rgba(0xFF9500DD).into()
                 } else {
                     rgba(0xFFD60055).into()
                 };
-                search.extend(range_quads(r.start, r.end, color, window));
+                let mut first = None;
+                for range in &search_match.source {
+                    let quads = range_quads(range.start, range.end, color, window);
+                    if first.is_none() {
+                        first = quads.first().map(|quad| quad.bounds);
+                    }
+                    search.extend(quads);
+                }
+                search_bounds.push(first);
             }
         }
 
@@ -1462,6 +1472,7 @@ impl Element for EditorElement {
             cursor,
             selections,
             search,
+            search_bounds,
         }
     }
 
@@ -2385,6 +2396,7 @@ impl Element for EditorElement {
             window.set_cursor_style(CursorStyle::PointingHand, hb);
         }
         self.editor.update(cx, |editor, _| {
+            editor.search_bounds = std::mem::take(&mut prepaint.search_bounds);
             editor.wrapped = wrapped;
             editor.line_tops = line_tops;
             editor.line_heights = line_heights;

@@ -3,9 +3,353 @@ use gpui::{TestAppContext, VisualTestContext};
 
 fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
+    cx.update(markdown_search::bind_keys);
+    cx.update(bind_markdown_search_keys);
     let (app, cx) = cx.add_window_view(Workspace::new);
     cx.run_until_parked();
     (app, cx)
+}
+
+#[gpui::test]
+fn search_wraps_and_preserves_document_and_selection(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.document.saved = "alpha **alpha**".into();
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text("alpha **alpha**", cx);
+            editor.set_cursor(3, cx);
+            editor.focus(window, cx);
+        });
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("alpha");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search_active),
+        Some(1)
+    );
+    cx.dispatch_action(FindNextMarkdown);
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search_active),
+        Some(0)
+    );
+    cx.dispatch_action(FindPreviousMarkdown);
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search_active),
+        Some(1)
+    );
+    assert_eq!(cx.update(|_, cx| app.read(cx).editor.read(cx).cursor()), 3);
+    assert!(!cx.update(|_, cx| app.read(cx).dirty(cx)));
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
+        "alpha **alpha**"
+    );
+}
+
+#[gpui::test]
+fn search_reveals_last_wrapped_occurrence(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, _, cx| {
+        let source = format!("{}needle", "a long paragraph with spaces ".repeat(1000));
+        app.editor
+            .update(cx, |editor, cx| editor.set_text(source, cx));
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("needle");
+    cx.run_until_parked();
+    for _ in 0..3 {
+        cx.update(|window, cx| { window.simulate_next_frame(cx); });
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        let bounds = app
+            .editor
+            .read(cx)
+            .search_match_bounds(0)
+            .expect("painted match");
+        assert!(app.scroll.offset().y < px(0.), "bounds={bounds:?} viewport={:?} max={:?}", app.scroll.bounds(), app.scroll.max_offset());
+        assert!(bounds.top() >= app.scroll.bounds().top(), "{bounds:?}");
+        assert!(
+            bounds.bottom() <= app.scroll.bounds().bottom(),
+            "{bounds:?}"
+        );
+    });
+}
+
+#[gpui::test]
+fn wrapped_table_search_uses_painted_cell_geometry(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, _, cx| {
+        let source = format!("| heading | other |\n| --- | --- |\n| {}**needle** | end |", "long cell ".repeat(100));
+        app.editor.update(cx, |editor, cx| editor.set_text(source, cx));
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("needle");
+    cx.run_until_parked();
+    for _ in 0..3 {
+        cx.update(|window, cx| { window.simulate_next_frame(cx); });
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        let bounds = app.editor.read(cx).search_match_bounds(0).expect("table glyph bounds");
+        assert!(bounds.size.width > px(0.));
+        assert!(bounds.top() >= app.scroll.bounds().top());
+        assert!(bounds.bottom() <= app.scroll.bounds().bottom());
+    });
+}
+
+#[gpui::test]
+fn search_preserves_selection_undo_and_save_as_state(cx: &mut TestAppContext) {
+    use gpui::EntityInputHandler;
+    let dir = tempfile::tempdir().unwrap();
+    let (app, cx) = boot(cx);
+    cx.simulate_input("alpha beta");
+    cx.dispatch_action(mdoc_editor::SelectAll);
+    let selected = app.update_in(cx, |app, window, cx| {
+        app.editor.update(cx, |editor, cx| editor.selected_text_range(false, window, cx).unwrap().range)
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("alpha");
+    cx.run_until_parked();
+    let after = app.update_in(cx, |app, window, cx| {
+        app.editor.update(cx, |editor, cx| editor.selected_text_range(false, window, cx).unwrap().range)
+    });
+    assert_eq!(selected, after);
+    cx.dispatch_action(SaveAs);
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| Some(dir.path().join("search.md")));
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| app.read(cx).markdown_search_open));
+    assert_eq!(cx.update(|_, cx| app.read(cx).markdown_search_matches.len()), 1);
+    cx.dispatch_action(CloseMarkdownSearch);
+    cx.run_until_parked();
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| app.read(cx).editor.read(cx).text().is_empty()));
+}
+
+#[gpui::test]
+fn pending_large_search_cannot_survive_document_reset(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text("alpha ".repeat(20_000), cx)
+        });
+        app.find_markdown(&FindMarkdown, window, cx);
+        app.proceed(Next::New, window, cx);
+    });
+    cx.run_until_parked();
+    assert!(!cx.update(|_, cx| app.read(cx).markdown_search_open));
+    assert!(cx.update(|_, cx| app.read(cx).markdown_search_matches.is_empty()));
+    assert!(cx.update(|_, cx| app.read(cx).editor.read(cx).text().is_empty()));
+}
+
+#[gpui::test]
+fn large_search_publishes_latest_query(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, _, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text("alpha beta\n".repeat(7_000), cx)
+        });
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("alpha");
+    cx.dispatch_action(FindMarkdown);
+    cx.simulate_input("beta");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search_matches.len()),
+        7_000
+    );
+    assert!(cx.update(|_, cx| {
+        let app = app.read(cx);
+        app.markdown_search_matches
+            .iter()
+            .all(|m| &app.editor.read(cx).text()[m.source[0].clone()] == "beta")
+    }));
+}
+
+#[test]
+fn search_anchor_moves_after_insertion_at_occurrence_start() {
+    assert_eq!(map_edit_offset("alpha beta", "alpha NEW beta", 6), 10);
+    assert_eq!(map_edit_offset("я beta", "я 😀beta", 3), 7);
+}
+
+#[gpui::test]
+fn markdown_search_is_live_and_keeps_the_editor_caret(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text("before **World** after\nWorld", cx);
+            editor.set_cursor(4, cx);
+            editor.focus(window, cx);
+        });
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("world");
+    cx.run_until_parked();
+
+    assert!(cx.update(|_, cx| app.read(cx).markdown_search_open));
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search_matches.len()),
+        2
+    );
+    assert_eq!(cx.update(|_, cx| app.read(cx).editor.read(cx).cursor()), 4);
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search_active),
+        Some(0)
+    );
+}
+
+#[gpui::test]
+fn closing_search_clears_highlights_but_retains_query(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, _, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("alpha beta", cx));
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("beta");
+    cx.run_until_parked();
+    cx.dispatch_action(CloseMarkdownSearch);
+    cx.run_until_parked();
+
+    assert!(!cx.update(|_, cx| app.read(cx).markdown_search_open));
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().to_owned()),
+        "beta"
+    );
+    assert!(cx.update(|_, cx| app.read(cx).markdown_search_matches.is_empty()));
+}
+
+#[gpui::test]
+fn accepted_document_transition_resets_search_state(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, _, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("alpha", cx));
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("alpha");
+    cx.run_until_parked();
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+
+    assert!(cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().is_empty()));
+    assert!(!cx.update(|_, cx| app.read(cx).markdown_search_open));
+    assert!(cx.update(|_, cx| app.read(cx).markdown_search_matches.is_empty()));
+}
+
+#[gpui::test]
+fn editing_refreshes_search_without_auto_scrolling_or_moving_the_query(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        let source = "alpha beta alpha";
+        app.document.saved = source.into();
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text(source, cx);
+            editor.set_cursor(0, cx);
+            editor.focus(window, cx);
+        });
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("alpha");
+    cx.run_until_parked();
+    cx.dispatch_action(FindNextMarkdown);
+    cx.run_until_parked();
+    let before = cx.update(|_, cx| app.read(cx).scroll.offset());
+
+    app.update_in(cx, |app, window, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_cursor(0, cx);
+            editor.focus(window, cx);
+        });
+    });
+    cx.simulate_input("x");
+    cx.run_until_parked();
+
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search_matches.len()),
+        2
+    );
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search_active),
+        Some(1)
+    );
+    assert_eq!(cx.update(|_, cx| app.read(cx).scroll.offset()), before);
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().to_owned()),
+        "alpha"
+    );
+}
+
+#[gpui::test]
+fn cancelled_document_transition_preserves_search_state(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, _, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("alpha", cx));
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("alpha");
+    cx.run_until_parked();
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| app.read(cx).markdown_search_open));
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+
+    assert!(cx.update(|_, cx| app.read(cx).markdown_search_open));
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().to_owned()),
+        "alpha"
+    );
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
+        "alpha"
+    );
+}
+
+#[gpui::test]
+fn pdf_preview_does_not_change_markdown_search(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let pdf_path = dir.path().join("invalid.pdf");
+    std::fs::write(&pdf_path, b"not a PDF").unwrap();
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, _, cx| {
+        app.document.saved = "alpha".into();
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("alpha", cx));
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("alpha");
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| app.open_path(pdf_path, window, cx));
+    cx.run_until_parked();
+
+    assert!(cx.update(|_, cx| app.read(cx).markdown_search_open));
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search_matches.len()),
+        1
+    );
+    assert!(cx.update(|_, cx| app.read(cx).pdf.is_some() || app.read(cx).preview_retryable));
 }
 
 #[gpui::test]
