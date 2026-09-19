@@ -14,6 +14,10 @@ use std::{
 use tempfile::{TempDir, tempdir};
 use zip::ZipArchive;
 
+#[path = "docx_comments.rs"]
+mod comments;
+pub use comments::DocxComment;
+
 const MAX_INPUT_BYTES: u64 = 50 * 1024 * 1024;
 const MAX_ENTRIES: usize = 10_000;
 const MAX_PART_UNCOMPRESSED_BYTES: u64 = 250 * 1024 * 1024;
@@ -24,6 +28,7 @@ const MAX_CONVERSION_TIME: Duration = Duration::from_secs(30);
 pub struct DocxPreview {
     pub pdf_path: PathBuf,
     pub warnings: Vec<String>,
+    pub comments: Arc<Vec<DocxComment>>,
     directory: Option<TempDir>,
 }
 
@@ -170,7 +175,9 @@ pub fn render_with_executable(
                 .lines()
                 .map(str::to_owned)
                 .collect();
+            let comments = read_comments(&pdf_path)?;
             return Ok(DocxPreview {
+                comments,
                 pdf_path,
                 warnings,
                 directory: Some(directory),
@@ -198,7 +205,9 @@ fn render_direct(path: &Path) -> Result<DocxPreview, PreviewError> {
         .lines()
         .map(str::to_owned)
         .collect();
+    let comments = read_comments(&pdf_path)?;
     Ok(DocxPreview {
+        comments,
         pdf_path,
         warnings,
         directory: Some(directory),
@@ -218,7 +227,12 @@ fn render_direct_to(path: &Path, output: &Path) -> Result<(), PreviewError> {
         return Err(PreviewError::InputTooLarge);
     }
     let warnings = inspect_package(&bytes)?;
-    render_bytes(&bytes, output)?;
+    let (render_input, comments) = comments::prepare(&bytes)?;
+    render_bytes(render_input.as_deref().unwrap_or(&bytes), output)?;
+    fs::write(
+        output.with_extension("comments.json"),
+        serde_json::to_vec(&comments).map_err(|e| PreviewError::Render(e.to_string()))?,
+    )?;
     fs::write(output.with_extension("warnings"), warnings.join("\n"))?;
     Ok(())
 }
@@ -374,14 +388,6 @@ fn inspect_package(bytes: &[u8]) -> Result<Vec<String>, PreviewError> {
                 {
                     warnings.push("External resources were ignored.".into());
                 }
-                if word
-                    && matches!(
-                        tag.name(),
-                        "comment" | "commentRangeStart" | "commentReference"
-                    )
-                {
-                    warnings.push("Comments are omitted from the preview.".into());
-                }
                 if word && matches!(tag.name(), "object" | "control") {
                     warnings.push("Embedded objects were omitted.".into());
                 }
@@ -406,6 +412,12 @@ fn inspect_package(bytes: &[u8]) -> Result<Vec<String>, PreviewError> {
     warnings.sort();
     warnings.dedup();
     Ok(warnings)
+}
+
+fn read_comments(pdf: &Path) -> Result<Arc<Vec<DocxComment>>, PreviewError> {
+    serde_json::from_slice(&fs::read(pdf.with_extension("comments.json"))?)
+        .map(Arc::new)
+        .map_err(|e| PreviewError::Render(format!("invalid comment metadata: {e}")))
 }
 
 #[cfg(test)]

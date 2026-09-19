@@ -72,7 +72,8 @@ self-contained and making fidelity an explicit qualification gate.
     cross-platform memory cap; do not claim an unimplemented cap.
 12. **Package/content policy.** Reject encrypted or macro-bearing packages and
     tracked changes. Ignore external resources without fetching them. Warn about
-    omitted embedded objects and comments. Ordinary hyperlinks follow decision 7.
+    omitted embedded objects. Comments are shown in a read-only preview panel
+    (updated by the user request on 2026-09-19). Ordinary hyperlinks follow decision 7.
     These preview policies do not silently expand or restrict the existing
     Markdown import format contract.
 
@@ -110,3 +111,14 @@ The user confirmed shared understanding and the implementation sequence:
 converter/performance spike, preview and paired-import integration, full checks
 and human visual review. Memory limits remain an evidence-dependent engineering
 decision after spike measurements; no enforced memory cap is currently promised.
+
+## Comments follow-up (2026-09-19)
+
+The user requested comment rendering in DOCX preview. Classic OOXML comment text,
+author, date, and selected source text are displayed in a collapsible, virtualized
+panel below the PDF. Point comments use paragraph context; unanchored comments
+remain visible without a quote. Comments are read-only and never inserted into
+the Markdown editor. Extraction and temporary package rewriting run inside the
+existing terminable worker. The converter receives a copy without comment markup
+to avoid its blank/overlapping margin; source files remain unchanged. Rich comment
+formatting and modern thread/resolution metadata are not reproduced in this panel.

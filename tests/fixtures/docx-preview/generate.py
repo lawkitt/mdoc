@@ -53,3 +53,26 @@ with ZipFile(Path(__file__).with_name('coverage.docx'),'w') as archive:
         info = ZipInfo(name, date_time=(2026,1,1,0,0,0))
         info.compress_type = ZIP_DEFLATED
         archive.writestr(info, data.encode() if isinstance(data,str) else data)
+
+# Separate small comments fixture: ranges across paragraphs, overlap, a point
+# comment, and an unanchored comment. Keep the coverage document unchanged.
+comment_parts = dict(parts)
+comment_parts['word/document.xml'] = f'''<w:document xmlns:w="{W}"><w:body>
+<w:p><w:commentRangeStart w:id="0"/><w:r><w:t>First quoted paragraph.</w:t></w:r></w:p>
+<w:p><w:commentRangeStart w:id="1"/><w:r><w:t>Second quoted paragraph.</w:t></w:r><w:commentRangeEnd w:id="1"/><w:commentRangeEnd w:id="0"/><w:r><w:commentReference w:id="0"/><w:commentReference w:id="1"/></w:r></w:p>
+<w:p><w:r><w:t>Point comment context.</w:t><w:commentReference w:id="2"/></w:r></w:p>
+<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:bottom="1440" w:left="1440" w:right="1440"/></w:sectPr>
+</w:body></w:document>'''
+comment_parts['word/comments.xml'] = f'''<w:comments xmlns:w="{W}">
+<w:comment w:id="0" w:author="Reviewer" w:date="2026-09-19T10:00:00Z">{p('Please check this clause.')}{p('Second line: &amp; &lt;literal&gt;.')}</w:comment>
+<w:comment w:id="1" w:author="Ирина">{p('Проверить условия.')}</w:comment>
+<w:comment w:id="2" w:author="Point reviewer">{p('Point note.')}</w:comment>
+<w:comment w:id="3">{p('Unanchored note is still visible.')}</w:comment>
+</w:comments>'''
+comment_parts['word/_rels/document.xml.rels'] = rels([('styles','styles','styles.xml',''),('comments','comments','comments.xml','')])
+comment_parts['[Content_Types].xml'] = comment_parts['[Content_Types].xml'].replace('</Types>', '<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>')
+with ZipFile(Path(__file__).with_name('comments.docx'),'w') as archive:
+    for name, data in sorted(comment_parts.items()):
+        info = ZipInfo(name, date_time=(2026,1,1,0,0,0))
+        info.compress_type = ZIP_DEFLATED
+        archive.writestr(info, data.encode() if isinstance(data,str) else data)
