@@ -1946,9 +1946,13 @@ fn inline_code_end(line: &str, start: usize) -> Option<usize> {
     while at < bytes.len() {
         if bytes[at] == b'`' {
             let count = bytes[at..].iter().take_while(|&&b| b == b'`').count();
-            if count == width { return Some(at + count); }
+            if count == width {
+                return Some(at + count);
+            }
             at += count;
-        } else { at += 1; }
+        } else {
+            at += 1;
+        }
     }
     None
 }
@@ -1963,7 +1967,8 @@ pub(crate) fn inline_image_spans(line: &str) -> Vec<(Range<usize>, Range<usize>)
             continue;
         }
 
-        if b[i] == b'!' && !is_backslash_escaped(b, i)
+        if b[i] == b'!'
+            && !is_backslash_escaped(b, i)
             && b[i + 1] == b'['
             && let Some(rb) = line[i + 2..].find(']')
             && line[i + 2 + rb + 1..].starts_with('(')
@@ -2986,9 +2991,24 @@ mod tests {
     #[test]
     fn decoded_visible_text_agrees_with_search_and_source_map() {
         let source = "# hello **world** &amp; \\* `&amp;`";
-        let (display, _, map) = hidden_runs(source, &gpui::font("Helvetica"), Hsla::default(), &[], None, 0, 0, false, &test_style());
+        let (display, _, map) = hidden_runs(
+            source,
+            &gpui::font("Helvetica"),
+            Hsla::default(),
+            &[],
+            None,
+            0,
+            0,
+            false,
+            &test_style(),
+        );
         assert_eq!(display, "hello world & * &amp;");
-        assert_eq!(crate::SearchIndex::from_markdown(source).find(&display, true).len(), 1);
+        assert_eq!(
+            crate::SearchIndex::from_markdown(source)
+                .find(&display, true)
+                .len(),
+            1
+        );
         let amp = display.find('&').unwrap();
         assert_eq!(map[amp], source.find("&amp;").unwrap());
     }

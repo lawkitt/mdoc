@@ -510,7 +510,7 @@ impl Element for SearchInputElement {
     ) -> (LayoutId, Self::RequestLayoutState) {
         let mut style = Style::default();
         style.size.width = relative(1.).into();
-        style.size.height = px(28.).into();
+        style.size.height = px(20.).into();
         (window.request_layout(style, [], cx), ())
     }
 

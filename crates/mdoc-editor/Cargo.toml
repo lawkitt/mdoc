@@ -38,6 +38,7 @@ gpui-bidi = { path = "../gpui-bidi", version = "0.1" }
 # crate alone has no app entry point in this setup — it's split into
 # `gpui_platform`, same as the host app). Shared workspace spec, one graph.
 [dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
 gpui_platform = { workspace = true }
 
 # The demo wires the editor to the real OS spell checker (M6). Dev-only, so the

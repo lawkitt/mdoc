@@ -46,6 +46,14 @@ impl Theme {
         }
     }
 
+    pub fn search_accent(self) -> Hsla {
+        match self {
+            Self::Dark => rgb(0x82b9a7),
+            Self::Light => rgb(0x336b5c),
+        }
+        .into()
+    }
+
     pub fn error_bg(self) -> Hsla {
         match self {
             Self::Dark => rgb(0x542e32),

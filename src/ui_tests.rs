@@ -62,7 +62,9 @@ fn search_reveals_last_wrapped_occurrence(cx: &mut TestAppContext) {
     cx.simulate_input("needle");
     cx.run_until_parked();
     for _ in 0..3 {
-        cx.update(|window, cx| { window.simulate_next_frame(cx); });
+        cx.update(|window, cx| {
+            window.simulate_next_frame(cx);
+        });
         cx.run_until_parked();
     }
     cx.update(|_, cx| {
@@ -72,7 +74,12 @@ fn search_reveals_last_wrapped_occurrence(cx: &mut TestAppContext) {
             .read(cx)
             .search_match_bounds(0)
             .expect("painted match");
-        assert!(app.scroll.offset().y < px(0.), "bounds={bounds:?} viewport={:?} max={:?}", app.scroll.bounds(), app.scroll.max_offset());
+        assert!(
+            app.scroll.offset().y < px(0.),
+            "bounds={bounds:?} viewport={:?} max={:?}",
+            app.scroll.bounds(),
+            app.scroll.max_offset()
+        );
         assert!(bounds.top() >= app.scroll.bounds().top(), "{bounds:?}");
         assert!(
             bounds.bottom() <= app.scroll.bounds().bottom(),
@@ -85,20 +92,30 @@ fn search_reveals_last_wrapped_occurrence(cx: &mut TestAppContext) {
 fn wrapped_table_search_uses_painted_cell_geometry(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, _, cx| {
-        let source = format!("| heading | other |\n| --- | --- |\n| {}**needle** | end |", "long cell ".repeat(100));
-        app.editor.update(cx, |editor, cx| editor.set_text(source, cx));
+        let source = format!(
+            "| heading | other |\n| --- | --- |\n| {}**needle** | end |",
+            "long cell ".repeat(100)
+        );
+        app.editor
+            .update(cx, |editor, cx| editor.set_text(source, cx));
     });
     cx.dispatch_action(FindMarkdown);
     cx.run_until_parked();
     cx.simulate_input("needle");
     cx.run_until_parked();
     for _ in 0..3 {
-        cx.update(|window, cx| { window.simulate_next_frame(cx); });
+        cx.update(|window, cx| {
+            window.simulate_next_frame(cx);
+        });
         cx.run_until_parked();
     }
     cx.update(|_, cx| {
         let app = app.read(cx);
-        let bounds = app.editor.read(cx).search_match_bounds(0).expect("table glyph bounds");
+        let bounds = app
+            .editor
+            .read(cx)
+            .search_match_bounds(0)
+            .expect("table glyph bounds");
         assert!(bounds.size.width > px(0.));
         assert!(bounds.top() >= app.scroll.bounds().top());
         assert!(bounds.bottom() <= app.scroll.bounds().bottom());
@@ -113,14 +130,18 @@ fn search_preserves_selection_undo_and_save_as_state(cx: &mut TestAppContext) {
     cx.simulate_input("alpha beta");
     cx.dispatch_action(mdoc_editor::SelectAll);
     let selected = app.update_in(cx, |app, window, cx| {
-        app.editor.update(cx, |editor, cx| editor.selected_text_range(false, window, cx).unwrap().range)
+        app.editor.update(cx, |editor, cx| {
+            editor.selected_text_range(false, window, cx).unwrap().range
+        })
     });
     cx.dispatch_action(FindMarkdown);
     cx.run_until_parked();
     cx.simulate_input("alpha");
     cx.run_until_parked();
     let after = app.update_in(cx, |app, window, cx| {
-        app.editor.update(cx, |editor, cx| editor.selected_text_range(false, window, cx).unwrap().range)
+        app.editor.update(cx, |editor, cx| {
+            editor.selected_text_range(false, window, cx).unwrap().range
+        })
     });
     assert_eq!(selected, after);
     cx.dispatch_action(SaveAs);
@@ -128,7 +149,10 @@ fn search_preserves_selection_undo_and_save_as_state(cx: &mut TestAppContext) {
     cx.simulate_new_path_selection(|_| Some(dir.path().join("search.md")));
     cx.run_until_parked();
     assert!(cx.update(|_, cx| app.read(cx).markdown_search_open));
-    assert_eq!(cx.update(|_, cx| app.read(cx).markdown_search_matches.len()), 1);
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).markdown_search_matches.len()),
+        1
+    );
     cx.dispatch_action(CloseMarkdownSearch);
     cx.run_until_parked();
     cx.dispatch_action(mdoc_editor::Undo);
@@ -162,6 +186,9 @@ fn large_search_publishes_latest_query(cx: &mut TestAppContext) {
     });
     cx.dispatch_action(FindMarkdown);
     cx.run_until_parked();
+    // Opening an empty find bar must not build or schedule a large index.
+    assert!(cx.update(|_, cx| app.read(cx).markdown_search_index.is_none()));
+    assert!(cx.update(|_, cx| app.read(cx).markdown_search_task.is_none()));
     cx.simulate_input("alpha");
     cx.dispatch_action(FindMarkdown);
     cx.simulate_input("beta");

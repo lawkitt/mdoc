@@ -344,6 +344,12 @@ impl Workspace {
         self.markdown_search_revision = self.markdown_search_revision.wrapping_add(1);
         let revision = self.markdown_search_revision;
         self.markdown_search_anchor = Some(anchor);
+        if query.is_empty() {
+            self.markdown_search_index = index;
+            self.markdown_search_source = source;
+            self.publish_markdown_search(Vec::new(), anchor, false, window, cx);
+            return;
+        }
         // Multi-megabyte projection/folding takes hundreds of milliseconds in
         // debug builds. Keep that work off the event loop, with no result cap.
         if source.len() > 64 * 1024 {
@@ -435,11 +441,7 @@ impl Workspace {
         self.markdown_search_revision = self.markdown_search_revision.wrapping_add(1);
         let revision = self.markdown_search_revision;
         self.editor.update(cx, |editor, cx| {
-            editor.set_search_matches(
-                self.markdown_search_matches.clone(),
-                self.markdown_search_active,
-                cx,
-            )
+            editor.set_active_search_match(self.markdown_search_active, cx)
         });
         self.schedule_markdown_search_scroll(revision, window, cx);
         cx.notify();
@@ -1112,24 +1114,27 @@ impl Render for Workspace {
             .flex()
             .items_center()
             .gap_1()
-            .p_1()
+            .px_2()
+            .py_1()
+            .text_size(px(13.))
+            .flex_shrink_0()
             .border_b_1()
             .border_color(palette.border)
-            .bg(palette.placeholder_bg)
+            .bg(palette.bg)
             .child(
                 div()
                     .id("markdown-search-input")
                     .flex()
                     .flex_1()
                     .min_w_0()
-                    .h(px(30.))
+                    .h(px(28.))
                     .aria_label("Search Markdown")
                     .px_2()
                     .items_center()
                     .bg(palette.bg)
                     .border_1()
                     .border_color(if search_focused {
-                        palette.header_fg
+                        theme.search_accent()
                     } else {
                         palette.border
                     })
@@ -1139,31 +1144,51 @@ impl Render for Workspace {
             .child(
                 div()
                     .id("markdown-search-match-case")
-                    .aria_label("Match case")
+                    .aria_label(if self.markdown_search_match_case {
+                        "Match case: on"
+                    } else {
+                        "Match case: off"
+                    })
+                    .flex_shrink_0()
+                    .rounded_md()
                     .px_2()
-                    .h(px(30.))
+                    .h(px(28.))
                     .flex()
                     .items_center()
                     .cursor_pointer()
-                    .when(self.markdown_search_match_case, |view| view.bg(palette.bg))
-                    .child(if self.markdown_search_match_case {
-                        "☑ Match case"
-                    } else {
-                        "☐ Match case"
+                    .text_color(palette.header_muted)
+                    .hover(|view| view.bg(palette.placeholder_bg))
+                    .when(self.markdown_search_match_case, |view| {
+                        view.bg(palette.placeholder_bg)
+                            .text_color(theme.search_accent())
                     })
+                    .child("Aa")
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.toggle_markdown_match_case(&ToggleMarkdownMatchCase, window, cx)
                     })),
             )
-            .child(div().id("markdown-search-count").px_2().child(count))
+            .child(
+                div()
+                    .id("markdown-search-count")
+                    .flex_shrink_0()
+                    .px_2()
+                    .text_size(px(12.))
+                    .text_color(palette.header_muted)
+                    .child(count),
+            )
             .child(
                 div()
                     .id("markdown-search-previous")
                     .aria_label("Previous match")
-                    .px_2()
-                    .py_1()
+                    .w(px(28.))
+                    .h(px(28.))
+                    .flex()
+                    .flex_shrink_0()
+                    .items_center()
+                    .justify_center()
+                    .rounded_md()
                     .cursor_pointer()
-                    .hover(|view| view.bg(palette.bg))
+                    .hover(|view| view.bg(palette.placeholder_bg))
                     .when(navigation_disabled, |view| {
                         view.text_color(palette.header_muted)
                     })
@@ -1176,10 +1201,15 @@ impl Render for Workspace {
                 div()
                     .id("markdown-search-next")
                     .aria_label("Next match")
-                    .px_2()
-                    .py_1()
+                    .w(px(28.))
+                    .h(px(28.))
+                    .flex()
+                    .flex_shrink_0()
+                    .items_center()
+                    .justify_center()
+                    .rounded_md()
                     .cursor_pointer()
-                    .hover(|view| view.bg(palette.bg))
+                    .hover(|view| view.bg(palette.placeholder_bg))
                     .when(navigation_disabled, |view| {
                         view.text_color(palette.header_muted)
                     })
@@ -1192,10 +1222,15 @@ impl Render for Workspace {
                 div()
                     .id("markdown-search-close")
                     .aria_label("Close Markdown search")
-                    .px_2()
-                    .py_1()
+                    .w(px(28.))
+                    .h(px(28.))
+                    .flex()
+                    .flex_shrink_0()
+                    .items_center()
+                    .justify_center()
+                    .rounded_md()
                     .cursor_pointer()
-                    .hover(|view| view.bg(palette.bg))
+                    .hover(|view| view.bg(palette.placeholder_bg))
                     .child("×")
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.close_markdown_search(&CloseMarkdownSearch, window, cx)

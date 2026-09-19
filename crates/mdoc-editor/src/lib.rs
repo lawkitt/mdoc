@@ -1299,6 +1299,15 @@ impl EditorState {
         cx.notify();
     }
 
+    /// Change only the active occurrence, retaining the matches and their geometry.
+    /// Navigation must not clone every source range in a dense result set.
+    pub fn set_active_search_match(&mut self, active: Option<usize>, cx: &mut Context<Self>) {
+        if let Some((matches, current)) = &mut self.search {
+            *current = active.filter(|&index| index < matches.len());
+            cx.notify();
+        }
+    }
+
     /// Compatibility adapter for hosts that still provide one contiguous range
     /// per match. New Markdown search callers should use [`Self::set_search_matches`].
     pub fn set_search(
@@ -6649,6 +6658,38 @@ fn word_boundary_input(new_text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[gpui::test]
+    fn active_search_navigation_retains_allocations(cx: &mut gpui::TestAppContext) {
+        use super::*;
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update(cx, |editor, cx| {
+            let matches: Vec<_> = (0..100_000)
+                .map(|i| SearchMatch {
+                    source: std::iter::once(i..i + 1).collect(),
+                })
+                .collect();
+            editor.set_search_matches(matches, Some(0), cx);
+            let allocation = editor.search.as_ref().unwrap().0.as_ptr();
+            let ranges = editor.search.as_ref().unwrap().0[0].source.as_ptr();
+            let started = std::time::Instant::now();
+            for i in 0..10_000 {
+                editor.set_active_search_match(Some(i), cx);
+            }
+            eprintln!(
+                "10,000 active updates / 100,000 matches: {:?}",
+                started.elapsed()
+            );
+            assert_eq!(editor.search.as_ref().unwrap().0.as_ptr(), allocation);
+            assert_eq!(editor.search.as_ref().unwrap().0[0].source.as_ptr(), ranges);
+            assert_eq!(editor.search.as_ref().unwrap().1, Some(9_999));
+            editor.set_active_search_match(Some(100_000), cx);
+            assert_eq!(editor.search.as_ref().unwrap().1, None);
+            editor.set_search_matches(Vec::new(), None, cx);
+            editor.set_active_search_match(Some(0), cx);
+            assert!(editor.search.is_none());
+        });
+    }
+
     #[test]
     fn caret_off_marker_line_cases() {
         use super::caret_off_marker_line;

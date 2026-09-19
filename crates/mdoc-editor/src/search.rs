@@ -720,7 +720,10 @@ mod tests {
         assert!(index.find("first second", true).is_empty());
         let index = SearchIndex::from_markdown("before![alt](url)\nafter");
         assert!(index.find("before after", true).is_empty());
-        assert_eq!(SearchIndex::from_markdown(r"\*").find("*", true)[0].source, vec![0..2]);
+        assert_eq!(
+            SearchIndex::from_markdown(r"\*").find("*", true)[0].source,
+            vec![0..2]
+        );
     }
 
     #[test]
@@ -822,27 +825,88 @@ mod tests {
         assert_eq!(index.find("world", false).len(), 1);
     }
 
+    /// Run serially with `cargo test -p mdoc-editor search_performance_matrix
+    /// -- --ignored --nocapture --test-threads=1`. Budgets catch large regressions
+    /// even in debug builds; reported medians/p95 are the comparison evidence.
     #[test]
-    #[ignore = "manual latency measurement; run with --ignored --nocapture"]
-    fn multi_megabyte_search_latency() {
-        for repeats in [20, 50_000] {
-            let source = "A **needle** with Cyrillic Пример and an emoji 😀\n".repeat(repeats);
-            let started = std::time::Instant::now();
-            let index = SearchIndex::from_markdown(&source);
-            let build = started.elapsed();
-            let started = std::time::Instant::now();
-            assert_eq!(index.find("NEEDLE", false).len(), repeats);
-            let first_query = started.elapsed();
-            let started = std::time::Instant::now();
-            for query in ["needle", "пример", "emoji", "absent"] {
-                let _ = index.find(query, false);
+    #[ignore = "performance matrix; run separately on an idle machine"]
+    fn search_performance_matrix() {
+        use std::{
+            hint::black_box,
+            time::{Duration, Instant},
+        };
+
+        fn measure(name: &str, bytes: usize, budget_ms: u64, mut run: impl FnMut()) {
+            let mut samples = Vec::new();
+            for _ in 0..7 {
+                let start = Instant::now();
+                run();
+                samples.push(start.elapsed());
             }
-            let repeated_queries = started.elapsed();
-            let started = std::time::Instant::now();
-            let edited = format!("inserted {source}");
-            assert_eq!(SearchIndex::from_markdown(&edited).find("needle", false).len(), repeats);
-            let edit_refresh = started.elapsed();
-            eprintln!("bytes={} build={build:?} first_query={first_query:?} four_cached_queries={repeated_queries:?} edit_refresh={edit_refresh:?}", source.len());
+            samples.sort();
+            eprintln!(
+                "{bytes:>8} bytes {name:<24} median={:?} p95={:?}",
+                samples[3], samples[6]
+            );
+            assert!(
+                samples[6] < Duration::from_millis(budget_ms),
+                "{name}: {:?} exceeds {budget_ms} ms",
+                samples[6]
+            );
         }
+
+        let block = "# Heading\n\nA **needle** and Straße Пример 😀 &amp;.\n\n| Label | Value |\n| --- | --- |\n| needle | `code` |\n\n```rust\nneedle value\n```\n\n";
+        for repeats in [16, 512, 16_384] {
+            let source = block.repeat(repeats);
+            let bytes = source.len();
+            let build_budget = if repeats < 100 {
+                100
+            } else if repeats < 1_000 {
+                500
+            } else {
+                5_000
+            };
+            let query_budget = if repeats < 1_000 { 50 } else { 250 };
+            measure("cold build + fold", bytes, build_budget, || {
+                let index = SearchIndex::from_markdown(black_box(&source));
+                assert_eq!(index.find("NEEDLE", false).len(), repeats * 3);
+            });
+            let index = SearchIndex::from_markdown(&source);
+            assert_eq!(index.find("NEEDLE", false).len(), repeats * 3);
+            for (name, query, case, expected) in [
+                ("empty", "", false, 0),
+                ("absent", "not-present", false, 0),
+                ("case sensitive", "needle", true, repeats * 3),
+                ("cached folded", "NEEDLE", false, repeats * 3),
+                ("Unicode expansion", "STRASSE", false, repeats),
+                ("Cyrillic", "ПРИМЕР", false, repeats),
+                ("emoji", "😀", true, repeats),
+                ("across formatting", "A needle", true, repeats),
+            ] {
+                measure(name, bytes, query_budget, || {
+                    assert_eq!(index.find(black_box(query), case).len(), expected);
+                });
+            }
+            measure("incremental typing", bytes, query_budget * 7, || {
+                for query in ["n", "ne", "nee", "need", "needle", "need", "nee"] {
+                    black_box(index.find(black_box(query), false));
+                }
+            });
+            let edited = format!("inserted\n\n{source}");
+            measure("edit rebuild + query", bytes, build_budget, || {
+                assert_eq!(
+                    SearchIndex::from_markdown(black_box(&edited))
+                        .find("needle", false)
+                        .len(),
+                    repeats * 3
+                );
+            });
+        }
+        // A single huge segment exercises binary source mapping and dense results.
+        let source = format!("```\n{}\n```", "a ".repeat(100_000));
+        let index = SearchIndex::from_markdown(&source);
+        measure("dense single segment", source.len(), 250, || {
+            assert_eq!(index.find(black_box("a"), true).len(), 100_000);
+        });
     }
 }
