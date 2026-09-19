@@ -599,3 +599,49 @@ fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
         "editor CPU budget exceeded: {failures:?}"
     );
 }
+
+#[gpui::test]
+fn comments_follow_preview_lifecycle(cx: &mut TestAppContext) {
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let (app, cx) = boot(cx);
+    cx.simulate_input("Markdown stays unchanged");
+    app.update_in(cx, |app, window, cx| {
+        app.open_docx(
+            base.join("tests/fixtures/docx-preview/comments.docx"),
+            window,
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    let panel = cx.update(|_, cx| {
+        let app = app.read(cx);
+        assert_eq!(app.docx_preview.as_ref().unwrap().comments.len(), 4);
+        app.comment_panel.clone().unwrap()
+    });
+    app.update_in(cx, |app, window, cx| {
+        app.open_docx(base.join("missing.docx"), window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(app.read(cx).comment_panel.as_ref(), Some(&panel)));
+    app.update_in(cx, |app, window, cx| {
+        app.open_pdf(base.join("tests/fixtures/reference.pdf"), window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(app.read(cx).comment_panel.is_none()));
+    app.update_in(cx, |app, window, cx| {
+        app.open_docx(
+            base.join("tests/fixtures/docx-preview/comments.docx"),
+            window,
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    cx.dispatch_action(ClosePdf);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        assert!(app.comment_panel.is_none());
+        assert!(app.docx_preview.is_none());
+        assert_eq!(app.editor.read(cx).text(), "Markdown stays unchanged");
+    });
+}

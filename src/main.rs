@@ -3,6 +3,7 @@
     all(target_os = "windows", not(debug_assertions)),
     windows_subsystem = "windows"
 )]
+mod comment_panel;
 mod document;
 mod docx_preview;
 mod images;
@@ -66,6 +67,7 @@ struct Workspace {
     document: Document,
     pdf: Option<Entity<PdfView>>,
     docx_preview: Option<docx_preview::DocxPreview>,
+    comment_panel: Option<Entity<comment_panel::CommentPanel>>,
     pending_preview: Option<PendingPreview>,
     scroll: ScrollHandle,
     error: Option<String>,
@@ -141,6 +143,7 @@ impl Workspace {
             document: Document::default(),
             pdf: None,
             docx_preview: None,
+            comment_panel: None,
             pending_preview: None,
             scroll: ScrollHandle::new(),
             error: None,
@@ -302,6 +305,7 @@ impl Workspace {
             pdf.update(cx, |pdf, cx| pdf.release(window, cx));
         }
         self.docx_preview = None;
+        self.comment_panel = None;
     }
 
     fn cancel_preview_job(&mut self) {
@@ -444,6 +448,15 @@ impl Workspace {
                     .docx
                     .as_ref()
                     .and_then(|d| (!d.warnings.is_empty()).then(|| d.warnings.join(" ")));
+                this.comment_panel = pending
+                    .docx
+                    .as_ref()
+                    .filter(|d| !d.comments.is_empty())
+                    .map(|d| {
+                        cx.new(|_| {
+                            comment_panel::CommentPanel::new(d.comments.clone(), this.theme.clone())
+                        })
+                    });
                 this.docx_preview = pending.docx;
                 this.pdf_subscription = Some(cx.observe(&pending.pdf, |_, _, cx| cx.notify()));
                 this.pdf = Some(pending.pdf);
@@ -671,7 +684,9 @@ impl Render for Workspace {
                 .child(button("Dismiss", DismissImportWarning, theme))))
             .child(div().flex().flex_1().min_h_0()
                 .child(div().id("document-scroll").flex_1().min_w_0().h_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().child(self.editor.clone()))
-                .when_some(self.pdf.clone(), |row, pdf| row.child(div().w_1_2().h_full().border_l_1().border_color(palette.border).child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))))
+                .when_some(self.pdf.clone(), |row, pdf| row.child(div().w_1_2().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
+                    .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
+                    .when_some(self.comment_panel.clone(), |pane, comments| pane.child(comments)))))
             .when_some(self.preview_message.clone(), |view, message| view.child(div().flex().items_center().gap_2().p_2().bg(theme.error_bg()).child(div().flex_1().child(format!("{}: {message}", self.preview_source.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Preview".into())))).when(self.preview_retryable, |bar| bar.child(button("Retry", RetryPreview, theme)))))
             .when_some(self.error.clone(), |view, error| view.child(div().p_2().bg(theme.error_bg()).child(error)))
     }

@@ -205,3 +205,97 @@ fn coverage_corpus_preserves_text_links_and_landscape() {
     assert!(gpui_pdf::page_links(&pdf).iter().flatten().any(|link| matches!(&link.target, gpui_pdf::LinkTarget::Uri(uri) if uri == "https://example.com")));
     assert!(preview.warnings.is_empty(), "{:?}", preview.warnings);
 }
+
+#[test]
+fn worker_preserves_comments_and_source() {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");
+    let original = std::fs::read(&path).unwrap();
+    let preview = render_with_executable(
+        &path,
+        Arc::new(AtomicBool::new(false)),
+        Path::new(env!("CARGO_BIN_EXE_mdoc")),
+        Duration::from_secs(30),
+    )
+    .unwrap();
+    assert_eq!(preview.comments.len(), 4);
+    let c = &preview.comments[0];
+    assert_eq!(c.author, "Reviewer");
+    assert_eq!(c.date, "2026-09-19T10:00:00Z");
+    assert_eq!(
+        c.text,
+        "Please check this clause.\nSecond line: & <literal>."
+    );
+    assert_eq!(c.quote, "First quoted paragraph. Second quoted paragraph.");
+    assert_eq!(preview.comments[1].author, "Ирина");
+    assert_eq!(preview.comments[1].text, "Проверить условия.");
+    assert_eq!(preview.comments[1].quote, "Second quoted paragraph.");
+    assert_eq!(preview.comments[2].quote, "Point comment context.");
+    assert_eq!(preview.comments[3].quote, "");
+    assert!(
+        !preview
+            .warnings
+            .iter()
+            .any(|w| w.contains("Comments are omitted"))
+    );
+    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+    assert!(gpui_pdf::render_page(&pdf, 0, 1.0).is_ok());
+    let text = gpui_pdf::extract_page_text(&pdf, 0).unwrap().text();
+    assert!(text.contains("First"));
+    assert!(text.contains("Second"));
+    assert_eq!(std::fs::read(path).unwrap(), original);
+}
+
+#[test]
+#[ignore = "requires locally uploaded examples"]
+fn uploaded_comments_preserved() {
+    for (name, count) in [
+        (
+            "adcourt-legal-opinion-meruna-trading-tax-and-14-pages.docx",
+            1,
+        ),
+        ("cloud-request-double-cloud-2022-01-27.docx", 5),
+    ] {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/docx-preview")
+            .join(name);
+        let preview = render_with_executable(
+            &path,
+            Arc::new(AtomicBool::new(false)),
+            Path::new(env!("CARGO_BIN_EXE_mdoc")),
+            Duration::from_secs(30),
+        )
+        .unwrap();
+        assert_eq!(preview.comments.len(), count);
+        // Empty comments are legal (the cloud-request example contains two).
+        let mut archive =
+            zip::ZipArchive::new(std::io::Cursor::new(std::fs::read(&path).unwrap())).unwrap();
+        let mut xml = String::new();
+        std::io::Read::read_to_string(&mut archive.by_name("word/comments.xml").unwrap(), &mut xml)
+            .unwrap();
+        let original = roxmltree::Document::parse(&xml).unwrap();
+        let ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        let compact = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+        for comment in &*preview.comments {
+            let node = original
+                .descendants()
+                .find(|n| {
+                    n.has_tag_name((ns, "comment"))
+                        && n.attribute((ns, "id")) == Some(comment.id.as_str())
+                })
+                .unwrap();
+            let body = node
+                .descendants()
+                .filter(|n| n.has_tag_name((ns, "t")))
+                .filter_map(|n| n.text())
+                .collect::<String>();
+            assert_eq!(compact(&comment.text), compact(&body));
+            assert_eq!(
+                comment.author,
+                node.attribute((ns, "author")).unwrap_or_default()
+            );
+        }
+        let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+        assert!(gpui_pdf::render_page(&pdf, 0, 1.0).is_ok());
+    }
+}
