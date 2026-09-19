@@ -94,8 +94,20 @@ the user approved that replacement.
 - Setup uses application-local storage and verifies archives, libraries, and
   models. It downloads about 54 MB once, retains runtime notices, and validates
   actual runtime/model loading before marking OCR ready.
-- macOS Apple Silicon is enabled. Other desktop targets stay buildable and
+- macOS Apple Silicon and Windows x64 are enabled. Other desktop targets stay buildable and
   offer native-text import with explicit OCR omission warnings.
+
+### Windows support
+
+- Windows x64 uses the same model manifest and offline import pipeline, with
+  platform-specific, checksum-pinned PDFium and ONNX Runtime DLLs.
+- Setup reads PDFium's tar.gz and ONNX Runtime's ZIP through existing dependencies,
+  selecting only the runtime library and license files into flat destinations.
+- ONNX Runtime requires the Microsoft Visual C++ Redistributable (x64).
+  Loader failures explain how to install or repair it and retry setup.
+- The fresh-setup English/Russian smoke test passed on Windows x64. Windows
+  ARM64 remains disabled: the pinned PDFium release has no ARM64 Windows asset,
+  and that target has not been qualified.
 
 ### Publication under lawkitt
 

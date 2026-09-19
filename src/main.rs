@@ -862,14 +862,18 @@ impl Workspace {
             vec!["Skip OCR", "Cancel"]
         };
         let detail = if ocr::SUPPORTED {
-            "Download about 54 MB of OCR components once. Documents stay on this device; recognition then works offline. Skipping imports only usable native text."
+            format!(
+                "Download about {} MB of OCR components once. Documents stay on this device; recognition then works offline. Skipping imports only usable native text.",
+                ocr::download_megabytes()
+            )
         } else {
             "Local OCR is not yet qualified on this platform. Skipping imports only usable native text."
+                .to_owned()
         };
         let answer = window.prompt(
             PromptLevel::Info,
             "This PDF needs text recognition",
-            Some(detail),
+            Some(&detail),
             &buttons,
             cx,
         );

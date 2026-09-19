@@ -44,15 +44,18 @@ preserved. Imported PDFs and DOCX files also open in the side pane. Other
 supported import formats remain text-only and show that source preview is
 unavailable.
 
-Import retains text and structure, not embedded images. On Apple Silicon macOS,
-**Set up OCR** in the main bar downloads about 54 MB of verified components for
+Import retains text and structure, not embedded images. On Apple Silicon macOS
+and Windows x64, **Set up OCR** in the main bar downloads verified components
+(about 54 MB on macOS, 99 MB on Windows) for
 printed English and Russian. Setup is also offered when importing a PDF that
 needs recognition. Once ready, scanned pages are recognized locally and offline;
 document contents are never uploaded. The original PDF remains unchanged.
 Low-confidence or incomplete pages produce a persistent review warning outside
 the Markdown. Skipping setup imports usable native text with omitted-page
 warnings; if no usable text is available, the current document is preserved.
-Other platforms currently support native-text import only. Handwriting and
+Windows OCR requires the [Microsoft Visual C++ Redistributable (x64)](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
+If its runtime cannot load, setup provides installation and retry instructions.
+Windows ARM64, Linux, and Intel macOS currently support native-text import only. Handwriting and
 complex table reconstruction are not qualified. See [OCR qualification and
 limitations](docs/local-ocr-qualification.md).
 

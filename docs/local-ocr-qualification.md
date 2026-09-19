@@ -179,8 +179,58 @@ in temporary local storage, outside the repository.
   was unavailable.
 - Native UI inspection was attempted but blocked by macOS Accessibility and
   Screen Recording permissions. Headless tests are not visual or shortcut
-  approval. Windows/Linux/Intel macOS runtime qualification was not performed;
-  OCR setup stays disabled there, while native-text imports remain available.
+  approval. At that stage Windows/Linux/Intel macOS runtime qualification was not
+  performed. Windows x64 qualification is recorded below; the other targets
+  retain native-text imports with OCR setup disabled.
 
 The reviewed native-PDF snapshot changes and formatting limitation are recorded
 in `tests/fixtures/import/README.md`. Office snapshots remain unchanged.
+
+## Windows x64 qualification (2026-09-19)
+
+Windows build 26200, Rust 1.98.1, `x86_64-pc-windows-msvc`, using the same pinned pdf-inspector fork
+and Cyrillic model manifest as macOS. No additional Cargo dependencies.
+
+Runtime artifacts from the [PDFium native-v7988 release](https://github.com/firecrawl/pdfium-rs/releases/tag/native-v7988)
+and [ONNX Runtime v1.27.0 release](https://github.com/microsoft/onnxruntime/releases/tag/v1.27.0):
+
+| Artifact | Download bytes | Archive SHA-256 | Extracted DLL SHA-256 |
+| --- | ---: | --- | --- |
+| `firecrawl-pdfium-win-x64.tgz` / `bin/pdfium.dll` | 3,764,191 | `6f398552d8021a89078f64466557251a204999177287b876be49877eb8750d50` | `03cc8de22238ea9ffbbf41703f8ef8aae77faeab735583815481f5c2c70a63c7` |
+| `onnxruntime-win-x64-1.27.0.zip` / `lib/onnxruntime.dll` | 77,086,915 | `c5c81710938e68079ff1a192b04897faabe4b43830d48f39f27ecd4e16138bfc` | `fd6dd0a8b1f5562d642abdcbd36bc54251482d2ebaa3f4f88669bfdad92e7525` |
+
+Archive hashes matched GitHub release asset digests; DLL hashes were computed
+from those verified archives. Setup downloads about 99 MB including models to
+`%LOCALAPPDATA%\mdoc\ocr\v1`, verifies all artifacts, and retains notices.
+The CPU pipeline loads `onnxruntime.dll` without the optional provider DLL.
+
+`dumpbin /dependents` confirmed that ONNX Runtime requires `MSVCP140.dll`,
+`MSVCP140_1.dll`, `VCRUNTIME140.dll`, and `VCRUNTIME140_1.dll` in addition to
+Windows system DLLs. This matches the [ONNX Runtime Windows prerequisite](https://onnxruntime.ai/docs/install/#requirements).
+The [Microsoft Visual C++ Redistributable (x64)](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
+must be installed; mdoc's statically linked CRT does not supply these dependencies
+to the downloaded DLL. Setup reports an actionable loader error and retains
+verified downloads for retry. Qualification used a machine with the prerequisite
+installed; a clean Windows image without it was not tested.
+
+`cargo test -p mdoc --bin mdoc ocr::tests -- --include-ignored --nocapture`
+passed all six OCR tests, including fresh download, verification, runtime/model
+loading, repeated offline validation, and English/Russian scanned-PDF import.
+Both outputs matched the checked-in transcripts after whitespace normalization;
+neither import reported an OCR failure, and both source PDFs remained identical.
+Unit tests cover Windows ZIP selection, notices, traversal/symlink rejection,
+PDFium's `bin/` layout, and atomic replacement of a damaged DLL. The macOS tar
+selection test also runs on Windows.
+
+This is runtime and automated test evidence, not native UI or shortcut approval.
+Windows ARM64 remains disabled pending matching binaries and native qualification.
+
+Formatting and strict workspace/all-target Clippy passed. The full workspace
+test gate encountered `ui_tests::wrapped_table_search_uses_painted_cell_geometry`
+(`table glyph bounds`), the failure already documented in the macOS report above.
+Continuing with `cargo test --workspace --no-fail-fast` completed all suites:
+267 passed, one failed, and five were ignored (including the separately passed
+OCR qualification test).
+The missing `tests/fixtures/docx-preview/comments.docx` was generated with the
+repository's existing fixture generator to allow the test targets to compile;
+the existing coverage fixture was not rewritten.
