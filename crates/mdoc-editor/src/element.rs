@@ -37,10 +37,11 @@ pub(crate) struct PrepaintState {
     /// Per-line inline `$…$` formulas (image + display offset + source range), painted over
     /// their spacers in the shaped text.
     inline_maths: Vec<Vec<InlineMath>>,
-    /// Corner-grip hitbox for each painted inline image, in `widgets` order — so
-    /// paint can set the resize cursor over each (hitboxes must be inserted in
-    /// prepaint). Parallels the images paint walks, indexed by image count.
-    image_grips: Vec<Hitbox>,
+    /// Corner-grip hitbox for each painted inline image, keyed by logical line
+    /// like `checkbox_grips` — so paint can set the resize cursor over each
+    /// (hitboxes must be inserted in prepaint). Parallels the images paint
+    /// walks, looked up by line.
+    image_grips: Vec<(usize, Hitbox)>,
     /// Pointer-cursor hitboxes (`(line, hitbox)`) for clickable gutter checkboxes
     /// and file chips, so the cursor flips to a hand over them (like the image
     /// grips' resize cursor). Set in paint via `set_cursor_style`.
@@ -527,14 +528,29 @@ impl Element for EditorElement {
         };
         let bidi = |row: usize| rtl.get(row).and_then(Option::as_ref);
 
-        // Corner-grip hitboxes for each inline image, in `widgets` order (matching
-        // the order paint walks them) — hitboxes must be inserted during prepaint,
-        // but the resize cursor is set during paint via these. Mirrors the paint's
+        // Corner-grip hitboxes for each VISIBLE inline image, keyed by logical
+        // row (matching paint's viewport walk, like `checkbox_grips`) — the
+        // resize cursor is set during paint via these. Mirrors the paint's
         // image-bounds math (row inset + IMG_ROW_PAD, live drag size) exactly so
         // the grip pins to the painted corner (incl. list-item images, which inset
-        // past their bullet).
-        let mut image_grips = Vec::new();
+        // past their bullet). Paint culls offscreen rows, so prepaint must too:
+        // a whole-document list would otherwise insert a hitbox per image while
+        // only a few are visible — and the old positional `image_rects.len()`
+        // lookup handed a visible image an earlier offscreen image's hitbox.
+        let viewport_h = window.viewport_size().height;
+        // Paint culls fully-offscreen rows (see `paint`'s windowed walk); mirror
+        // it so offscreen images cost no hitbox. Slack covers pads/affordances.
+        let is_visible_row = |i: usize| {
+            let advance = line_heights.get(i).copied().unwrap_or(base_lh)
+                * wrap_rows.get(i).copied().unwrap_or(1) as f32;
+            let origin_y = bounds.origin.y + line_tops.get(i).copied().unwrap_or(px(0.));
+            !(origin_y + advance + px(64.) < px(0.) || origin_y - px(64.) > viewport_h)
+        };
+        let mut image_grips: Vec<(usize, Hitbox)> = Vec::new();
         for (i, w) in widgets.iter().enumerate() {
+            if !is_visible_row(i) {
+                continue;
+            }
             if let Some(Block::Image(img)) = w
                 && img.resizable
             {
@@ -551,7 +567,7 @@ impl Element for EditorElement {
                     size(img_w, img_h),
                 );
                 let grip = EditorState::image_grip(img_bounds);
-                image_grips.push(window.insert_hitbox(grip, HitboxBehavior::Normal));
+                image_grips.push((i, window.insert_hitbox(grip, HitboxBehavior::Normal)));
             }
         }
 
@@ -1126,6 +1142,34 @@ impl Element for EditorElement {
         let disp_col =
             |row: usize, sc: usize| display_col_in(maps.get(row).and_then(Option::as_ref), sc);
 
+        // Search can ask for thousands of positions on the same logical line.
+        // Keep this frame-local: content, wrapping, font and caret reveal are
+        // already reflected in `wrapped`, so no extra invalidation rules arise.
+        let search_positions: Vec<_> = if editor
+            .search
+            .as_ref()
+            .is_some_and(|(matches, _)| matches.len() > 8)
+        {
+            wrapped
+                .iter()
+                .enumerate()
+                .map(|(row, line)| {
+                    (line.len() > 256 && bidi(row).is_none())
+                        .then(|| crate::search_geometry::SearchLinePositions::new(line))
+                        .flatten()
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let search_position = |row: usize, line: &WrappedLine, col: usize, lh: Pixels| {
+            if let Some(Some(positions)) = search_positions.get(row) {
+                positions.position(col, lh)
+            } else {
+                line_pos(line, bidi(row), col, lh)
+            }
+        };
+
         // Quads covering source range `s..e`, one per wrap row — the
         // selection's multi-row geometry, shared with the find-match
         // highlights (which paint the same shapes in other colors).
@@ -1229,8 +1273,8 @@ impl Element for EditorElement {
                         continue;
                     }
                     let inset = row_x(row);
-                    let pa = line_pos(line, bidi(row), disp_col(row, a), lh).unwrap_or_default();
-                    let pb = line_pos(line, bidi(row), disp_col(row, b), lh).unwrap_or_default();
+                    let pa = search_position(row, line, disp_col(row, a), lh).unwrap_or_default();
+                    let pb = search_position(row, line, disp_col(row, b), lh).unwrap_or_default();
                     let pa = point(pa.x + inset, pa.y);
                     let pb = point(pb.x + inset, pb.y);
                     if pa.y == pb.y {
@@ -1977,12 +2021,14 @@ impl Element for EditorElement {
                 );
                 // A draggable corner grip (accent square) + the resize cursor over it,
                 // via the hitbox inserted in prepaint. Recorded in `image_rects` for the
-                // next frame's grip hit-testing. Skipped for non-resizable blocks (math),
-                // keeping `image_grips` parallel to `image_rects`.
+                // next frame's grip hit-testing. Skipped for non-resizable blocks (math).
+                // Keyed by logical line, like `checkbox_grips` below.
                 if w.resizable {
                     let grip = EditorState::image_grip(img_bounds);
                     window.paint_quad(fill(grip, grip_color).corner_radii(Corners::all(px(3.))));
-                    if let Some(hitbox) = prepaint.image_grips.get(image_rects.len()) {
+                    if let Some((_, hitbox)) =
+                        prepaint.image_grips.iter().find(|(line, _)| *line == i)
+                    {
                         window.set_cursor_style(CursorStyle::ResizeLeftRight, hitbox);
                     }
                     image_rects.push((i, img_bounds));
@@ -2910,10 +2956,7 @@ fn shape_document(
     // `<!-- math:ALIGN -->` marker lines to hide (revealed only when the caret lands on them),
     // like table style markers.
     let math_marker_lines: Vec<usize> = if md.is_some() {
-        markdown_syntax::math_regions(content)
-            .iter()
-            .filter_map(|r| r.marker_line)
-            .collect()
+        scan.math.iter().filter_map(|r| r.marker_line).collect()
     } else {
         Vec::new()
     };
@@ -2936,8 +2979,9 @@ fn shape_document(
         }
     }
     // Measured column widths, cached across frames: rebuilt only when the
-    // tables' source text, the wrap width, the font epoch, or a live column
-    // drag changes — measuring shaped every cell of every table per call.
+    // content generation, font size/epoch, or a live column drag changes —
+    // measuring shaped every cell of every table per call. Natural widths
+    // deliberately do not depend on the viewport width.
     let region_cols: std::rc::Rc<Vec<Vec<Pixels>>> = {
         let cols_key = {
             use std::hash::{Hash, Hasher};
@@ -3996,8 +4040,8 @@ fn shape_document(
     }
     // Cap the run cache: edits retire entries (each changed line re-keys), so
     // without a bound it grows one dead entry per keystroke. Clearing wholesale
-    // is fine — the next frame rebuilds only what's visible… which is
-    // everything today, but each rebuild re-primes the cache.
+    // can cause a cold frame. Plain rows rebuild in the shaping band; widgets,
+    // code, and table measurements still have whole-document work.
     {
         let mut cache = caches.line_runs.borrow_mut();
         if cache.len() > lines.len() * 2 + 64 {
@@ -4384,4 +4428,158 @@ fn hit_target(
     hit: &Option<mdoc_markdown::syntax::LinkHit>,
 ) -> Option<mdoc_markdown::syntax::LinkHit> {
     hit.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::{AppContext as _, TestAppContext, VisualTestContext};
+
+    fn image_editor<'a>(
+        cx: &'a mut TestAppContext,
+        source: &str,
+    ) -> (Entity<EditorState>, &'a mut VisualTestContext) {
+        // Decode an in-memory image synchronously: no host assets, filesystem,
+        // async loading, or platform-dependent natural image dimensions.
+        let image = gpui::Image::from_bytes(
+            gpui::ImageFormat::Svg,
+            br#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16"/></svg>"#.to_vec(),
+        )
+        .to_image_data(gpui::SvgRenderer::new(Arc::new(())))
+        .unwrap();
+        // Keep the window root empty so automatic refreshes cannot overwrite
+        // the geometry committed by the explicit EditorElement draw below.
+        let (_, cx) = cx.add_window_view(|_, _| gpui::Empty);
+        cx.simulate_resize(size(px(400.), px(400.)));
+        let editor = cx.update(|window, cx| cx.new(|cx| EditorState::new(window, cx)));
+        editor.update(cx, |editor, cx| {
+            editor.set_text(source, cx);
+            editor.set_markdown_style(markdown_syntax::search_style(), cx);
+            let bitmap = image.clone();
+            editor.set_block_image_provider(move |_| Some(bitmap.clone()));
+            editor.set_block_math_provider(move |_| Some((image.clone(), 80., 160.)));
+        });
+        (editor, cx)
+    }
+
+    fn draw_images(
+        editor: &Entity<EditorState>,
+        cx: &mut VisualTestContext,
+        y: Pixels,
+        expected_rows: &[usize],
+    ) -> PrepaintState {
+        // An offset root models scrolling while retaining the real measured
+        // layout, prepaint hitbox insertion, and paint/geometry publication.
+        let (_, prepaint) = cx.draw(
+            point(px(37.), y),
+            size(
+                AvailableSpace::Definite(px(320.)),
+                AvailableSpace::MinContent,
+            ),
+            |_, _| EditorElement {
+                editor: editor.clone(),
+            },
+        );
+        assert_eq!(
+            prepaint
+                .image_grips
+                .iter()
+                .map(|(row, _)| *row)
+                .collect::<Vec<_>>(),
+            expected_rows,
+            "prepaint grip rows at scroll origin {y:?}",
+        );
+        editor.read_with(cx, |editor, _| {
+            assert_eq!(
+                editor
+                    .image_rects
+                    .iter()
+                    .map(|(row, _)| *row)
+                    .collect::<Vec<_>>(),
+                expected_rows,
+                "painted image rows at scroll origin {y:?}",
+            );
+            for &(row, rect) in &editor.image_rects {
+                let (_, hitbox) = prepaint
+                    .image_grips
+                    .iter()
+                    .find(|(line, _)| *line == row)
+                    .unwrap();
+                assert_eq!(
+                    hitbox.bounds,
+                    EditorState::image_grip(rect),
+                    "grip for logical row {row}"
+                );
+                assert_eq!(rect.origin.x, px(37.) + editor.line_insets[row]);
+                assert_eq!(
+                    rect.origin.y,
+                    y + editor.line_tops[row] + px(IMG_ROW_PAD / 2.)
+                );
+            }
+        });
+        prepaint
+    }
+
+    #[gpui::test]
+    fn scrolled_image_grips_match_painted_logical_rows(cx: &mut TestAppContext) {
+        // Two early images, a non-resizable math block, and non-adjacent later
+        // images (one in a list). Wrapped text separates the viewport bands.
+        let paragraph = "wrapped text ".repeat(80);
+        let source = format!(
+            "![early](image){{width=120}}\n{paragraph}\n![early2](image){{width=80}}\n$$\nx\n$$\n- ![later](image){{width=100}}\ntext\n![last](image){{width=60}}\n{paragraph}\n![below](image){{width=40}}"
+        );
+        let (editor, cx) = image_editor(cx, &source);
+        draw_images(&editor, cx, px(0.), &[0]);
+        let scroll_y = editor.read_with(cx, |editor, _| {
+            assert!(editor.wrap_rows[1] > 1);
+            // The second early image ends one pixel beyond the upper culling
+            // margin. Later grips must retain logical rows 6/8, not indices 0/1.
+            -(editor.line_tops[2] + editor.line_heights[2]) - px(65.)
+        });
+        let prepaint = draw_images(&editor, cx, scroll_y, &[6, 8]);
+        assert!(matches!(&prepaint.widgets[3], Some(Block::Image(img)) if !img.resizable));
+        editor.read_with(cx, |editor, _| {
+            assert!(scroll_y + editor.line_tops[3] + editor.line_heights[3] > px(0.));
+            assert!(editor.line_insets[6] > px(0.));
+            assert_eq!(editor.image_rects[0].1.size, size(px(100.), px(100.)));
+            assert_eq!(editor.image_rects[1].1.size, size(px(60.), px(60.)));
+        });
+
+        // The live resize is keyed by the same logical row and reflows later
+        // images. Their hitboxes must follow the newly painted corners.
+        editor.update(cx, |editor, _| {
+            editor.image_resize = Some(ImageResize {
+                line: 6,
+                start_width: 100.,
+                start_x: px(0.),
+                width: 140.,
+            });
+        });
+        draw_images(&editor, cx, scroll_y, &[6, 8]);
+        editor.read_with(cx, |editor, _| {
+            assert_eq!(editor.image_rects[0].1.size, size(px(140.), px(140.)));
+            assert_eq!(editor.image_rects[1].1.size, size(px(60.), px(60.)));
+            assert_eq!(editor.text(), source);
+        });
+        editor.update(cx, |editor, _| editor.image_resize = None);
+        draw_images(&editor, cx, px(0.), &[0]);
+    }
+
+    #[gpui::test]
+    fn image_grips_and_paint_agree_at_viewport_margin_boundaries(cx: &mut TestAppContext) {
+        let (editor, cx) = image_editor(cx, &"![](image){width=100}\n".repeat(3));
+        draw_images(&editor, cx, px(0.), &[0, 1, 2]);
+        let (top, height) = editor.read_with(cx, |editor, _| {
+            (editor.line_tops[1], editor.line_heights[1])
+        });
+        let viewport_h = cx.update(|window, _| window.viewport_size().height);
+        // Exactly touching either 64px margin remains visible; moving one
+        // pixel farther culls that row in BOTH prepaint and paint.
+        let above = -top - height - px(64.);
+        draw_images(&editor, cx, above, &[1, 2]);
+        draw_images(&editor, cx, above - px(1.), &[2]);
+        let below = viewport_h + px(64.) - top;
+        draw_images(&editor, cx, below, &[0, 1]);
+        draw_images(&editor, cx, below + px(1.), &[0]);
+    }
 }

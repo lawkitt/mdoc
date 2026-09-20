@@ -49,6 +49,7 @@ mod markdown_syntax;
 pub use markdown_syntax::{AlertIcons, MathAlign, PropertyIconFn, SyntaxStyle};
 
 mod search;
+mod search_geometry;
 pub use search::{SearchIndex, SearchMatch};
 
 mod tables;
@@ -6557,8 +6558,8 @@ type RegionCols = Option<(u64, std::rc::Rc<Vec<Vec<Pixels>>>)>;
 /// mutable — shaping runs under a read borrow of the editor):
 /// - `line_runs`: each markdown line's built display + runs (cross-frame).
 /// - `region_cols`: the measured table column widths for the WHOLE document,
-///   one keyed entry — rebuilt when the tables' source, the wrap width, the
-///   font epoch, or a live column drag changes.
+///   one keyed entry — rebuilt on content generation, font size/epoch, or a
+///   live column drag. Viewport width does not change natural column widths.
 /// - `cell_rows`: per table row, how many wrap rows its tallest cell needs.
 #[derive(Default)]
 struct ShapeCaches {
@@ -6658,6 +6659,83 @@ fn word_boundary_input(new_text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[gpui::test]
+    fn table_width_cache_reuses_viewport_changes_and_invalidates_content_and_style(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use super::*;
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update(cx, |editor, cx| {
+            editor.set_text("| heading | other |\n| --- | --- |\n| words | text |", cx);
+            editor.set_markdown_style(markdown_syntax::search_style(), cx);
+        });
+        fn columns(
+            editor: &Entity<EditorState>,
+            cx: &mut gpui::VisualTestContext,
+        ) -> std::rc::Rc<Vec<Vec<Pixels>>> {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+                editor
+                    .read(cx)
+                    .shape_caches
+                    .region_cols
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .1
+                    .clone()
+            })
+        }
+        let first = columns(&editor, cx);
+        assert!(std::rc::Rc::ptr_eq(&first, &columns(&editor, cx)));
+        cx.simulate_resize(size(px(300.), px(400.)));
+        editor.update(cx, |editor, cx| {
+            editor.set_cursor(editor.text().len(), cx);
+            editor.set_diagnostics(Vec::new(), cx);
+        });
+        let after_resize = columns(&editor, cx);
+        assert!(std::rc::Rc::ptr_eq(&first, &after_resize));
+        editor.update(cx, |editor, cx| {
+            editor.set_text(
+                "| a much longer heading | other |\n| --- | --- |\n| words | text |",
+                cx,
+            );
+        });
+        let changed = columns(&editor, cx);
+        assert!(!std::rc::Rc::ptr_eq(&first, &changed));
+        assert!(changed[0][0] > first[0][0]);
+        editor.update(cx, |editor, cx| {
+            let mut style = markdown_syntax::search_style();
+            style.code = gpui::red();
+            editor.set_markdown_style(style, cx);
+        });
+        assert!(!std::rc::Rc::ptr_eq(&changed, &columns(&editor, cx)));
+    }
+
+    #[gpui::test]
+    fn structural_scan_reuses_content_generation_not_caret_or_diagnostics(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use super::*;
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update(cx, |editor, cx| {
+            let source = "<!-- math:center -->\n$$\nx + y\n$$\n\ntext";
+            editor.set_text(source, cx);
+            let scan = editor.scan_data();
+            assert_eq!(scan.math.len(), 1);
+            assert_eq!(scan.math[0].marker_line, Some(0));
+            editor.set_cursor(source.len(), cx);
+            editor.set_diagnostics(Vec::new(), cx);
+            assert!(std::rc::Rc::ptr_eq(&scan, &editor.scan_data()));
+            editor.set_text("ordinary text", cx);
+            let replaced = editor.scan_data();
+            assert!(!std::rc::Rc::ptr_eq(&scan, &replaced));
+            assert!(replaced.math.is_empty());
+            assert!(std::rc::Rc::ptr_eq(&replaced, &editor.scan_data()));
+        });
+    }
+
     #[gpui::test]
     fn active_search_navigation_retains_allocations(cx: &mut gpui::TestAppContext) {
         use super::*;

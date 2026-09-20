@@ -1,7 +1,8 @@
 use super::*;
+use crate::search_session::map_edit_offset;
 use gpui::{TestAppContext, VisualTestContext};
 
-fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTestContext) {
+pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(markdown_search::bind_keys);
     cx.update(bind_markdown_search_keys);
@@ -14,7 +15,7 @@ fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTestContext) 
 fn search_wraps_and_preserves_document_and_selection(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
-        app.document.saved = "alpha **alpha**".into();
+        app.session.document.saved = "alpha **alpha**".into();
         app.editor.update(cx, |editor, cx| {
             editor.set_text("alpha **alpha**", cx);
             editor.set_cursor(3, cx);
@@ -25,22 +26,13 @@ fn search_wraps_and_preserves_document_and_selection(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.simulate_input("alpha");
     cx.run_until_parked();
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).markdown_search_active),
-        Some(1)
-    );
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.active), Some(1));
     cx.dispatch_action(FindNextMarkdown);
     cx.run_until_parked();
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).markdown_search_active),
-        Some(0)
-    );
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.active), Some(0));
     cx.dispatch_action(FindPreviousMarkdown);
     cx.run_until_parked();
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).markdown_search_active),
-        Some(1)
-    );
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.active), Some(1));
     assert_eq!(cx.update(|_, cx| app.read(cx).editor.read(cx).cursor()), 3);
     assert!(!cx.update(|_, cx| app.read(cx).dirty(cx)));
     assert_eq!(
@@ -92,8 +84,12 @@ fn search_reveals_last_wrapped_occurrence(cx: &mut TestAppContext) {
 fn wrapped_table_search_uses_painted_cell_geometry(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, _, cx| {
+        // Narrow explicit widths force the long cell to wrap inside the test
+        // window. Without `cols=` the content-measured column is ~1000 chars
+        // wide, so the match lies outside the visible band and highlight
+        // clipping yields no bounds (pre-existing baseline failure).
         let source = format!(
-            "| heading | other |\n| --- | --- |\n| {}**needle** | end |",
+            "<!-- table:grid cols=200,100 -->\n| heading | other |\n| --- | --- |\n| {}**needle** | end |",
             "long cell ".repeat(100)
         );
         app.editor
@@ -148,11 +144,8 @@ fn search_preserves_selection_undo_and_save_as_state(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.simulate_new_path_selection(|_| Some(dir.path().join("search.md")));
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).markdown_search_open));
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).markdown_search_matches.len()),
-        1
-    );
+    assert!(cx.update(|_, cx| app.read(cx).search.open));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 1);
     cx.dispatch_action(CloseMarkdownSearch);
     cx.run_until_parked();
     cx.dispatch_action(mdoc_editor::Undo);
@@ -171,8 +164,8 @@ fn pending_large_search_cannot_survive_document_reset(cx: &mut TestAppContext) {
         app.proceed(Next::New, window, cx);
     });
     cx.run_until_parked();
-    assert!(!cx.update(|_, cx| app.read(cx).markdown_search_open));
-    assert!(cx.update(|_, cx| app.read(cx).markdown_search_matches.is_empty()));
+    assert!(!cx.update(|_, cx| app.read(cx).search.open));
+    assert!(cx.update(|_, cx| app.read(cx).search.matches.is_empty()));
     assert!(cx.update(|_, cx| app.read(cx).editor.read(cx).text().is_empty()));
 }
 
@@ -187,19 +180,17 @@ fn large_search_publishes_latest_query(cx: &mut TestAppContext) {
     cx.dispatch_action(FindMarkdown);
     cx.run_until_parked();
     // Opening an empty find bar must not build or schedule a large index.
-    assert!(cx.update(|_, cx| app.read(cx).markdown_search_index.is_none()));
-    assert!(cx.update(|_, cx| app.read(cx).markdown_search_task.is_none()));
+    assert!(cx.update(|_, cx| app.read(cx).search.index.is_none()));
+    assert!(cx.update(|_, cx| app.read(cx).search.task.is_none()));
     cx.simulate_input("alpha");
     cx.dispatch_action(FindMarkdown);
     cx.simulate_input("beta");
     cx.run_until_parked();
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).markdown_search_matches.len()),
-        7_000
-    );
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 7_000);
     assert!(cx.update(|_, cx| {
         let app = app.read(cx);
-        app.markdown_search_matches
+        app.search
+            .matches
             .iter()
             .all(|m| &app.editor.read(cx).text()[m.source[0].clone()] == "beta")
     }));
@@ -226,16 +217,10 @@ fn markdown_search_is_live_and_keeps_the_editor_caret(cx: &mut TestAppContext) {
     cx.simulate_input("world");
     cx.run_until_parked();
 
-    assert!(cx.update(|_, cx| app.read(cx).markdown_search_open));
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).markdown_search_matches.len()),
-        2
-    );
+    assert!(cx.update(|_, cx| app.read(cx).search.open));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 2);
     assert_eq!(cx.update(|_, cx| app.read(cx).editor.read(cx).cursor()), 4);
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).markdown_search_active),
-        Some(0)
-    );
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.active), Some(0));
 }
 
 #[gpui::test]
@@ -252,12 +237,12 @@ fn closing_search_clears_highlights_but_retains_query(cx: &mut TestAppContext) {
     cx.dispatch_action(CloseMarkdownSearch);
     cx.run_until_parked();
 
-    assert!(!cx.update(|_, cx| app.read(cx).markdown_search_open));
+    assert!(!cx.update(|_, cx| app.read(cx).search.open));
     assert_eq!(
         cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().to_owned()),
         "beta"
     );
-    assert!(cx.update(|_, cx| app.read(cx).markdown_search_matches.is_empty()));
+    assert!(cx.update(|_, cx| app.read(cx).search.matches.is_empty()));
 }
 
 #[gpui::test]
@@ -277,8 +262,8 @@ fn accepted_document_transition_resets_search_state(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     assert!(cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().is_empty()));
-    assert!(!cx.update(|_, cx| app.read(cx).markdown_search_open));
-    assert!(cx.update(|_, cx| app.read(cx).markdown_search_matches.is_empty()));
+    assert!(!cx.update(|_, cx| app.read(cx).search.open));
+    assert!(cx.update(|_, cx| app.read(cx).search.matches.is_empty()));
 }
 
 #[gpui::test]
@@ -286,7 +271,7 @@ fn editing_refreshes_search_without_auto_scrolling_or_moving_the_query(cx: &mut 
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
         let source = "alpha beta alpha";
-        app.document.saved = source.into();
+        app.session.document.saved = source.into();
         app.editor.update(cx, |editor, cx| {
             editor.set_text(source, cx);
             editor.set_cursor(0, cx);
@@ -310,14 +295,8 @@ fn editing_refreshes_search_without_auto_scrolling_or_moving_the_query(cx: &mut 
     cx.simulate_input("x");
     cx.run_until_parked();
 
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).markdown_search_matches.len()),
-        2
-    );
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).markdown_search_active),
-        Some(1)
-    );
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 2);
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.active), Some(1));
     assert_eq!(cx.update(|_, cx| app.read(cx).scroll.offset()), before);
     assert_eq!(
         cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().to_owned()),
@@ -338,11 +317,11 @@ fn cancelled_document_transition_preserves_search_state(cx: &mut TestAppContext)
     cx.run_until_parked();
     cx.dispatch_action(New);
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).markdown_search_open));
+    assert!(cx.update(|_, cx| app.read(cx).search.open));
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
 
-    assert!(cx.update(|_, cx| app.read(cx).markdown_search_open));
+    assert!(cx.update(|_, cx| app.read(cx).search.open));
     assert_eq!(
         cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().to_owned()),
         "alpha"
@@ -360,7 +339,7 @@ fn pdf_preview_does_not_change_markdown_search(cx: &mut TestAppContext) {
     std::fs::write(&pdf_path, b"not a PDF").unwrap();
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, _, cx| {
-        app.document.saved = "alpha".into();
+        app.session.document.saved = "alpha".into();
         app.editor
             .update(cx, |editor, cx| editor.set_text("alpha", cx));
     });
@@ -371,12 +350,11 @@ fn pdf_preview_does_not_change_markdown_search(cx: &mut TestAppContext) {
     app.update_in(cx, |app, window, cx| app.open_path(pdf_path, window, cx));
     cx.run_until_parked();
 
-    assert!(cx.update(|_, cx| app.read(cx).markdown_search_open));
-    assert_eq!(
-        cx.update(|_, cx| app.read(cx).markdown_search_matches.len()),
-        1
+    assert!(cx.update(|_, cx| app.read(cx).search.open));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 1);
+    assert!(
+        cx.update(|_, cx| app.read(cx).preview.pdf.is_some() || app.read(cx).preview.retryable)
     );
-    assert!(cx.update(|_, cx| app.read(cx).pdf.is_some() || app.read(cx).preview_retryable));
 }
 
 #[gpui::test]
@@ -452,14 +430,16 @@ fn pdf_open_keeps_markdown_and_close_pdf_restores_editor(cx: &mut TestAppContext
     cx.simulate_input("keep me");
     app.update_in(cx, |app, window, cx| app.open_path(path, window, cx));
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| { app.read(cx).pdf.is_none() && app.read(cx).preview_retryable }));
+    assert!(
+        cx.update(|_, cx| { app.read(cx).preview.pdf.is_none() && app.read(cx).preview.retryable })
+    );
     assert_eq!(
         cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
         "keep me"
     );
     cx.dispatch_action(ClosePdf);
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).pdf.is_none()));
+    assert!(cx.update(|_, cx| app.read(cx).preview.pdf.is_none()));
 }
 
 #[gpui::test]
@@ -470,7 +450,7 @@ fn failed_open_preserves_current_document(cx: &mut TestAppContext) {
         app.open_path(dir.path().join("missing.md"), window, cx)
     });
     assert!(cx.update(|_, cx| app.read(cx).error.is_some()));
-    assert!(cx.update(|_, cx| app.read(cx).document.path.is_none()));
+    assert!(cx.update(|_, cx| app.read(cx).session.document.path.is_none()));
 }
 
 #[gpui::test]
@@ -543,12 +523,12 @@ fn ocr_prompt_skip_imports_native_content_and_keeps_page_warning(cx: &mut TestAp
     cx.simulate_prompt_answer("Skip OCR");
     cx.run_until_parked();
     app.update_in(cx, |app, _, cx| {
-        assert!(!app.importing);
+        assert!(!app.job.busy());
         assert!(!app.prompting);
         assert!(app.editor.read(cx).text().contains("Readable page three"));
-        assert!(app.import_warning.as_ref().unwrap().contains("2, 5"));
-        assert!(app.document.path.is_none());
-        assert_eq!(app.import_source.as_ref(), Some(&source));
+        assert!(app.session.warning.as_ref().unwrap().contains("2, 5"));
+        assert!(app.session.document.path.is_none());
+        assert_eq!(app.session.source.as_ref(), Some(&source));
     });
 }
 
@@ -558,19 +538,19 @@ fn ocr_prompt_cancel_preserves_current_edits(cx: &mut TestAppContext) {
     app.update_in(cx, |app, window, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("keep edits", cx));
-        app.pending_import = Some((
-            app.document_generation,
+        app.job.complete(
+            app.session.generation,
             Err(import::ImportError::NeedsOcr("scan.pdf".into())),
-        ));
+        );
         app.resume_import(window, cx);
     });
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
     app.update_in(cx, |app, _, cx| {
         assert_eq!(app.editor.read(cx).text(), "keep edits");
-        assert!(!app.importing);
+        assert!(!app.job.busy());
         assert!(!app.prompting);
-        assert!(app.import_source.is_none());
+        assert!(app.session.source.is_none());
     });
 }
 
@@ -581,13 +561,14 @@ fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut Tes
         app.editor
             .update(cx, |editor, cx| editor.set_text("keep edits", cx));
         app.ocr_state = OcrState::Installing;
-        app.importing = true;
-        app.ocr_pending_import = Some((app.document_generation, "scan.pdf".into()));
+        assert!(app.job.begin(false));
+        app.job
+            .defer_for_setup(app.session.generation, "scan.pdf".into());
         app.finish_ocr_setup(Err("download interrupted".into()), window, cx);
         assert_eq!(app.ocr_state.label(), "Retry OCR setup");
-        assert!(!app.importing);
-        assert!(app.ocr_pending_import.is_some());
-        app.document_generation += 1;
+        assert!(!app.job.busy());
+        assert!(app.job.has_ocr_continuation());
+        app.session.generation += 1;
         app.ocr_state = OcrState::Installing;
         app.finish_ocr_setup(
             Ok(ocr::Installed {
@@ -599,8 +580,8 @@ fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut Tes
             cx,
         );
         assert_eq!(app.ocr_state.label(), "OCR ready");
-        assert!(!app.importing);
-        assert!(app.ocr_pending_import.is_none());
+        assert!(!app.job.busy());
+        assert!(!app.job.has_ocr_continuation());
         assert_eq!(app.editor.read(cx).text(), "keep edits");
     });
 }
@@ -609,14 +590,14 @@ fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut Tes
 fn ocr_runtime_failure_enables_setup_retry(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
-        app.pending_import = Some((
-            app.document_generation,
+        app.job.complete(
+            app.session.generation,
             Err(import::ImportError::OcrFailed("runtime missing".into())),
-        ));
+        );
         app.resume_import(window, cx);
         assert_eq!(app.ocr_state.label(), "Retry OCR setup");
         assert!(app.error.as_ref().unwrap().contains("runtime missing"));
-        assert!(!app.importing);
+        assert!(!app.job.busy());
     });
 }
 
@@ -634,9 +615,9 @@ fn import_action_converts_and_saves_without_touching_source(cx: &mut TestAppCont
     cx.run_until_parked();
     let markdown = cx.update(|_, cx| {
         let app = app.read(cx);
-        assert!(!app.importing);
+        assert!(!app.job.busy());
         assert!(app.dirty(cx));
-        assert!(app.document.path.is_none());
+        assert!(app.session.document.path.is_none());
         assert_eq!(app.save_directory(), dir.path());
         app.editor.read(cx).text().to_owned()
     });
@@ -660,8 +641,8 @@ fn import_completion_protects_edits_and_cancel_preserves_pdf(cx: &mut TestAppCon
     app.update_in(cx, |app, window, cx| {
         let mut result = converted(source.clone());
         result.is_pdf = true;
-        app.importing = true;
-        app.pending_import = Some((app.document_generation, Ok(result)));
+        assert!(app.job.begin(false));
+        app.job.complete(app.session.generation, Ok(result));
         app.resume_import(window, cx);
     });
     cx.run_until_parked();
@@ -671,9 +652,9 @@ fn import_completion_protects_edits_and_cancel_preserves_pdf(cx: &mut TestAppCon
     cx.update(|_, cx| {
         let app = app.read(cx);
         assert_eq!(app.editor.read(cx).text(), "edits made during conversion");
-        assert!(app.pdf.is_none());
-        assert!(app.import_source.is_none());
-        assert!(!app.importing);
+        assert!(app.preview.pdf.is_none());
+        assert!(app.session.source.is_none());
+        assert!(!app.job.busy());
     });
 }
 
@@ -700,7 +681,7 @@ fn import_save_then_replace_preserves_original_edits(cx: &mut TestAppContext) {
         let app = app.read(cx);
         assert_eq!(app.editor.read(cx).text(), "# Imported\n");
         assert!(app.dirty(cx));
-        assert!(app.document.path.is_none());
+        assert!(app.session.document.path.is_none());
     });
 }
 
@@ -709,23 +690,24 @@ fn import_waits_for_dialog_and_discards_result_after_document_change(cx: &mut Te
     let dir = tempfile::tempdir().unwrap();
     let (app, cx) = boot(cx);
     cx.simulate_input("before");
-    let generation = cx.update(|_, cx| app.read(cx).document_generation);
+    let generation = cx.update(|_, cx| app.read(cx).session.generation);
     cx.dispatch_action(New);
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
-        app.importing = true;
-        app.pending_import = Some((generation, Ok(converted(dir.path().join("source.docx")))));
+        assert!(app.job.begin(false));
+        app.job
+            .complete(generation, Ok(converted(dir.path().join("source.docx"))));
         app.resume_import(window, cx);
-        assert!(app.pending_import.is_some());
+        assert!(app.job.has_pending());
     });
     cx.simulate_prompt_answer("Discard");
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
         assert!(app.editor.read(cx).text().is_empty());
-        assert!(app.import_source.is_none());
-        assert!(!app.importing);
-        assert!(app.pending_import.is_none());
+        assert!(app.session.source.is_none());
+        assert!(!app.job.busy());
+        assert!(!app.job.has_pending());
     });
 }
 
@@ -736,21 +718,21 @@ fn import_completes_after_open_picker_cancel_and_refuses_second_job(cx: &mut Tes
     cx.dispatch_action(Open);
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
-        app.importing = true;
-        app.pending_import = Some((
-            app.document_generation,
+        assert!(app.job.begin(false));
+        app.job.complete(
+            app.session.generation,
             Ok(converted(dir.path().join("source.docx"))),
-        ));
+        );
         app.start_import(dir.path().join("missing.pdf"), window, cx);
         app.resume_import(window, cx);
-        assert!(app.pending_import.is_some());
+        assert!(app.job.has_pending());
     });
     cx.simulate_path_prompt_response(|_| None);
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
         assert_eq!(app.editor.read(cx).text(), "# Imported\n");
-        assert!(!app.importing);
+        assert!(!app.job.busy());
         assert!(app.error.is_none());
     });
 }
@@ -766,16 +748,16 @@ fn imported_warning_survives_save_and_clears_on_dismiss_or_new(cx: &mut TestAppC
             cx,
         );
         app.write(dir.path().join("output.md"), None, window, cx);
-        assert!(app.import_warning.is_some());
+        assert!(app.session.warning.is_some());
     });
     cx.dispatch_action(DismissImportWarning);
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).import_warning.is_none()));
+    assert!(cx.update(|_, cx| app.read(cx).session.warning.is_none()));
     app.update_in(cx, |app, window, cx| {
-        app.import_warning = Some("warning".into());
+        app.session.warning = Some("warning".into());
         app.request(Next::New, window, cx);
-        assert!(app.import_warning.is_none());
-        assert!(app.import_source.is_none());
+        assert!(app.session.warning.is_none());
+        assert!(app.session.source.is_none());
     });
 }
 
@@ -810,19 +792,21 @@ fn import_failure_and_stale_completion_keep_current_document(cx: &mut TestAppCon
     let (app, cx) = boot(cx);
     cx.simulate_input("keep edits");
     app.update_in(cx, |app, window, cx| {
-        app.importing = true;
-        app.pending_import = Some((app.document_generation, Err("requires OCR".into())));
+        assert!(app.job.begin(false));
+        app.job
+            .complete(app.session.generation, Err("requires OCR".into()));
         app.resume_import(window, cx);
         assert_eq!(app.editor.read(cx).text(), "keep edits");
         assert_eq!(app.error.as_deref(), Some("requires OCR"));
-        let generation = app.document_generation;
+        let generation = app.session.generation;
         app.proceed(Next::Open(path), window, cx);
-        app.importing = true;
-        app.pending_import = Some((generation, Ok(converted(dir.path().join("source.docx")))));
+        assert!(app.job.begin(false));
+        app.job
+            .complete(generation, Ok(converted(dir.path().join("source.docx"))));
         app.resume_import(window, cx);
         assert_eq!(app.editor.read(cx).text(), "other");
         assert!(app.error.is_none());
-        assert!(!app.importing);
+        assert!(!app.job.busy());
     });
 }
 
@@ -835,7 +819,7 @@ fn accepted_pdf_import_opens_source_pane(cx: &mut TestAppContext) {
         let mut imported = converted(source);
         imported.is_pdf = true;
         app.proceed(Next::Import(imported), window, cx);
-        assert!(app.preview_loading);
+        assert!(app.preview.loading);
         assert!(app.dirty(cx));
     });
     cx.run_until_parked();
@@ -855,7 +839,7 @@ fn accepted_docx_import_opens_source_pane(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.update(|_, cx| {
         let app = app.read(cx);
-        app.pdf.is_some() && app.docx_preview.is_some()
+        app.preview.pdf.is_some() && app.preview.docx.is_some()
     }));
 }
 
@@ -870,13 +854,13 @@ fn failed_docx_preview_keeps_retry_source(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.update(|_, cx| {
         let app = app.read(cx);
-        app.pdf.is_none()
-            && app.preview_retryable
-            && app.preview_source.as_deref() == Some(source.as_path())
+        app.preview.pdf.is_none()
+            && app.preview.retryable
+            && app.preview.source.as_deref() == Some(source.as_path())
     }));
     cx.dispatch_action(RetryPreview);
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).preview_retryable));
+    assert!(cx.update(|_, cx| app.read(cx).preview.retryable));
 }
 
 #[gpui::test]
@@ -886,7 +870,7 @@ fn failed_replacement_preserves_loaded_preview_and_markdown(cx: &mut TestAppCont
     cx.simulate_input("unsaved text");
     app.update_in(cx, |app, window, cx| app.open_path(source, window, cx));
     cx.run_until_parked();
-    let old = cx.update(|_, cx| app.read(cx).pdf.clone().unwrap());
+    let old = cx.update(|_, cx| app.read(cx).preview.pdf.clone().unwrap());
     for missing in ["missing.pdf", "missing.docx"] {
         app.update_in(cx, |app, window, cx| {
             app.open_path(PathBuf::from(missing), window, cx)
@@ -894,8 +878,8 @@ fn failed_replacement_preserves_loaded_preview_and_markdown(cx: &mut TestAppCont
         cx.run_until_parked();
         cx.update(|_, cx| {
             let app = app.read(cx);
-            assert_eq!(app.pdf.as_ref(), Some(&old));
-            assert!(app.preview_retryable);
+            assert_eq!(app.preview.pdf.as_ref(), Some(&old));
+            assert!(app.preview.retryable);
             assert_eq!(app.editor.read(cx).text(), "unsaved text");
             assert!(app.dirty(cx));
         });
@@ -916,18 +900,18 @@ fn accepted_import_failure_clears_old_preview_and_pdf_retry_works(cx: &mut TestA
         let mut imported = converted(source.clone());
         imported.is_pdf = true;
         app.proceed(Next::Import(imported), window, cx);
-        assert!(app.pdf.is_none());
+        assert!(app.preview.pdf.is_none());
         assert!(app.dirty(cx));
     });
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).preview_retryable));
+    assert!(cx.update(|_, cx| app.read(cx).preview.retryable));
     std::fs::copy(reference, &source).unwrap();
     cx.dispatch_action(RetryPreview);
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert!(app.pdf.as_ref().unwrap().read(cx).is_loaded());
-        assert!(!app.preview_retryable);
+        assert!(app.preview.pdf.as_ref().unwrap().read(cx).is_loaded());
+        assert!(!app.preview.retryable);
         assert!(app.dirty(cx));
     });
 }
@@ -945,10 +929,10 @@ fn close_and_newer_request_discard_pending_completions(cx: &mut TestAppContext) 
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert!(app.pdf.is_none());
-        assert!(app.preview_source.is_none());
-        assert!(app.preview_message.is_none());
-        assert!(!app.preview_loading);
+        assert!(app.preview.pdf.is_none());
+        assert!(app.preview.source.is_none());
+        assert!(app.preview.message.is_none());
+        assert!(!app.preview.loading);
     });
     app.update_in(cx, |app, window, cx| {
         app.open_docx(docx, window, cx);
@@ -958,9 +942,9 @@ fn close_and_newer_request_discard_pending_completions(cx: &mut TestAppContext) 
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert_eq!(app.preview_source.as_ref(), Some(&pdf));
-        assert!(app.pdf.as_ref().unwrap().read(cx).is_loaded());
-        assert!(app.docx_preview.is_none());
+        assert_eq!(app.preview.source.as_ref(), Some(&pdf));
+        assert!(app.preview.pdf.as_ref().unwrap().read(cx).is_loaded());
+        assert!(app.preview.docx.is_none());
     });
 }
 
@@ -993,7 +977,7 @@ fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
         }
         cx.run_until_parked();
         cx.update(|_, cx| {
-            assert_eq!(app.read(cx).pdf.is_some(), state == "preview_open");
+            assert_eq!(app.read(cx).preview.pdf.is_some(), state == "preview_open");
         });
         let mut times = Vec::new();
         let mut furthest = 0.0_f32;
@@ -1077,19 +1061,19 @@ fn comments_follow_preview_lifecycle(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let panel = cx.update(|_, cx| {
         let app = app.read(cx);
-        assert_eq!(app.docx_preview.as_ref().unwrap().comments.len(), 4);
-        app.comment_panel.clone().unwrap()
+        assert_eq!(app.preview.docx.as_ref().unwrap().comments.len(), 4);
+        app.preview.comment_panel.clone().unwrap()
     });
     app.update_in(cx, |app, window, cx| {
         app.open_docx(base.join("missing.docx"), window, cx)
     });
     cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(app.read(cx).comment_panel.as_ref(), Some(&panel)));
+    cx.update(|_, cx| assert_eq!(app.read(cx).preview.comment_panel.as_ref(), Some(&panel)));
     app.update_in(cx, |app, window, cx| {
         app.open_pdf(base.join("tests/fixtures/reference.pdf"), window, cx)
     });
     cx.run_until_parked();
-    cx.update(|_, cx| assert!(app.read(cx).comment_panel.is_none()));
+    cx.update(|_, cx| assert!(app.read(cx).preview.comment_panel.is_none()));
     app.update_in(cx, |app, window, cx| {
         app.open_docx(
             base.join("tests/fixtures/docx-preview/comments.docx"),
@@ -1102,8 +1086,55 @@ fn comments_follow_preview_lifecycle(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert!(app.comment_panel.is_none());
-        assert!(app.docx_preview.is_none());
+        assert!(app.preview.comment_panel.is_none());
+        assert!(app.preview.docx.is_none());
         assert_eq!(app.editor.read(cx).text(), "Markdown stays unchanged");
     });
+}
+
+#[gpui::test]
+fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for _ in 0..3 {
+        app.update_in(cx, |app, window, cx| {
+            app.open_docx(
+                base.join("tests/fixtures/docx-preview/comments.docx"),
+                window,
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        let (pdf, comments, backing) = cx.update(|_, cx| {
+            let preview = &app.read(cx).preview;
+            (
+                preview.pdf.as_ref().unwrap().downgrade(),
+                preview.comment_panel.as_ref().unwrap().downgrade(),
+                preview.docx.as_ref().unwrap().pdf_path.clone(),
+            )
+        });
+        assert!(backing.exists());
+        app.update_in(cx, |app, window, cx| {
+            app.open_pdf(base.join("tests/fixtures/reference.pdf"), window, cx);
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        assert!(pdf.upgrade().is_none());
+        assert!(comments.upgrade().is_none());
+        assert!(!backing.exists());
+        let pdf = cx.update(|_, cx| app.read(cx).preview.pdf.as_ref().unwrap().downgrade());
+        app.update_in(cx, |app, window, cx| {
+            app.close_preview(window, cx);
+            app.proceed(Next::New, window, cx);
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        assert!(pdf.upgrade().is_none());
+    }
 }

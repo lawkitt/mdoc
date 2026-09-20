@@ -5,11 +5,18 @@
 )]
 mod comment_panel;
 mod document;
+mod document_session;
 mod docx_preview;
 mod images;
 mod import;
+mod import_session;
 mod markdown_search;
+mod search_session;
+use search_session::SearchRefresh;
 mod ocr;
+#[cfg(test)]
+mod perf_tests;
+mod preview;
 mod style;
 #[cfg(test)]
 mod ui_tests;
@@ -63,12 +70,6 @@ enum Next {
     Close,
 }
 
-struct PendingPreview {
-    pdf: Entity<PdfView>,
-    docx: Option<docx_preview::DocxPreview>,
-    _subscription: Subscription,
-}
-
 #[derive(Clone, Debug)]
 enum OcrState {
     Checking,
@@ -98,54 +99,17 @@ impl OcrState {
 struct Workspace {
     theme: Rc<Cell<Theme>>,
     editor: Entity<EditorState>,
-    document: Document,
-    pdf: Option<Entity<PdfView>>,
-    docx_preview: Option<docx_preview::DocxPreview>,
-    comment_panel: Option<Entity<comment_panel::CommentPanel>>,
-    pending_preview: Option<PendingPreview>,
+    session: document_session::DocumentSession,
+    preview: preview::PreviewState,
     scroll: ScrollHandle,
     error: Option<String>,
-    preview_message: Option<String>,
-    preview_loading: bool,
-    preview_retryable: bool,
-    preview_source: Option<PathBuf>,
-    preview_cancel: Option<Arc<AtomicBool>>,
     prompting: bool,
-    importing: bool,
-    recognizing: bool,
+    job: import_session::ImportSession,
     ocr_state: OcrState,
-    ocr_pending_import: Option<(u64, PathBuf)>,
-    document_generation: u64,
-    preview_generation: u64,
-    pending_import: Option<(u64, Result<import::Imported, import::ImportError>)>,
-    import_source: Option<PathBuf>,
-    import_warning: Option<String>,
     markdown_search: Entity<markdown_search::SearchInput>,
-    markdown_search_open: bool,
-    markdown_search_match_case: bool,
-    markdown_search_index: Option<SearchIndex>,
-    markdown_search_source: String,
-    markdown_search_matches: Vec<SearchMatch>,
-    markdown_search_active: Option<usize>,
-    markdown_search_anchor: Option<usize>,
-    markdown_search_revision: u64,
-    markdown_search_task: Option<gpui::Task<()>>,
+    search: search_session::SearchSession,
     _subscription: Subscription,
     _markdown_search_subscription: Subscription,
-    pdf_subscription: Option<Subscription>,
-}
-
-#[derive(Clone, Copy)]
-enum SearchRefresh {
-    Open,
-    Query,
-    DocumentEdit,
-}
-
-impl Drop for Workspace {
-    fn drop(&mut self) {
-        self.cancel_preview_job();
-    }
 }
 
 impl Workspace {
@@ -185,7 +149,7 @@ impl Workspace {
             &markdown_search,
             window,
             |this, _, event, window, cx| match event {
-                markdown_search::SearchInputEvent::Changed if this.markdown_search_open => {
+                markdown_search::SearchInputEvent::Changed if this.search.open => {
                     this.refresh_markdown_search(SearchRefresh::Query, true, window, cx);
                 }
                 _ => {}
@@ -223,41 +187,17 @@ impl Workspace {
         Self {
             theme: Rc::new(Cell::new(Theme::default())),
             editor,
-            document: Document::default(),
-            pdf: None,
-            docx_preview: None,
-            comment_panel: None,
-            pending_preview: None,
+            session: document_session::DocumentSession::default(),
+            preview: preview::PreviewState::default(),
             scroll: ScrollHandle::new(),
             error: None,
-            preview_message: None,
-            preview_loading: false,
-            preview_retryable: false,
-            preview_source: None,
-            preview_cancel: None,
             prompting: false,
-            importing: false,
-            recognizing: false,
+            job: import_session::ImportSession::default(),
             ocr_state: OcrState::Checking,
-            ocr_pending_import: None,
-            document_generation: 0,
-            preview_generation: 0,
-            pending_import: None,
-            import_source: None,
-            import_warning: None,
             markdown_search,
-            markdown_search_open: false,
-            markdown_search_match_case: false,
-            markdown_search_index: None,
-            markdown_search_source: String::new(),
-            markdown_search_matches: Vec::new(),
-            markdown_search_active: None,
-            markdown_search_anchor: None,
-            markdown_search_revision: 0,
-            markdown_search_task: None,
+            search: search_session::SearchSession::default(),
             _subscription: subscription,
             _markdown_search_subscription: markdown_search_subscription,
-            pdf_subscription: None,
         }
     }
 
@@ -267,318 +207,18 @@ impl Workspace {
         self.editor.update(cx, |editor, cx| {
             editor.set_markdown_style(style::markdown_style(theme), cx)
         });
-        if let Some(pdf) = &self.pdf {
+        if let Some(pdf) = &self.preview.pdf {
             pdf.update(cx, |_, cx| cx.notify());
         }
         cx.notify();
     }
 
-    fn find_markdown(&mut self, _: &FindMarkdown, window: &mut Window, cx: &mut Context<Self>) {
-        self.markdown_search_open = true;
-        self.refresh_markdown_search(SearchRefresh::Open, true, window, cx);
-        self.markdown_search
-            .update(cx, |input, cx| input.select_all(cx));
-        window.focus(&self.markdown_search.read(cx).focus_handle(cx), cx);
-        cx.notify();
-    }
-
-    fn find_next_markdown(
-        &mut self,
-        _: &FindNextMarkdown,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.step_markdown_search(false, window, cx);
-    }
-
-    fn find_previous_markdown(
-        &mut self,
-        _: &FindPreviousMarkdown,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.step_markdown_search(true, window, cx);
-    }
-
-    fn close_markdown_search(
-        &mut self,
-        _: &CloseMarkdownSearch,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if !self.markdown_search_open {
-            return;
-        }
-        self.markdown_search_task = None;
-        self.markdown_search_anchor = None;
-        self.markdown_search_open = false;
-        self.markdown_search_active = None;
-        self.markdown_search_matches.clear();
-        self.markdown_search_revision = self.markdown_search_revision.wrapping_add(1);
-        self.editor.update(cx, |editor, cx| {
-            editor.set_search_matches(Vec::new(), None, cx)
-        });
-        window.focus(&self.editor.read(cx).focus_handle(cx), cx);
-        cx.notify();
-    }
-
-    fn toggle_markdown_match_case(
-        &mut self,
-        _: &ToggleMarkdownMatchCase,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.markdown_search_match_case = !self.markdown_search_match_case;
-        if self.markdown_search_open {
-            self.refresh_markdown_search(SearchRefresh::Query, true, window, cx);
-        } else {
-            cx.notify();
-        }
-    }
-
-    fn reset_markdown_search(&mut self, cx: &mut Context<Self>) {
-        self.markdown_search_task = None;
-        self.markdown_search_anchor = None;
-        self.markdown_search_open = false;
-        self.markdown_search_match_case = false;
-        self.markdown_search_index = None;
-        self.markdown_search_source.clear();
-        self.markdown_search_matches.clear();
-        self.markdown_search_active = None;
-        self.markdown_search_revision = self.markdown_search_revision.wrapping_add(1);
-        self.markdown_search.update(cx, |input, cx| input.reset(cx));
-        self.editor.update(cx, |editor, cx| {
-            editor.set_search_matches(Vec::new(), None, cx)
-        });
-    }
-
-    fn refresh_markdown_search(
-        &mut self,
-        reason: SearchRefresh,
-        should_scroll: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let source = self.editor.read(cx).text().to_owned();
-        if !self.markdown_search_open {
-            if source != self.markdown_search_source {
-                self.markdown_search_index = None;
-                self.markdown_search_source.clear();
-                self.markdown_search_matches.clear();
-                self.markdown_search_active = None;
-            }
-            return;
-        }
-
-        let old_source = self.markdown_search_source.clone();
-        let old_anchor = self
-            .markdown_search_active
-            .and_then(|index| self.markdown_search_matches.get(index))
-            .and_then(search_match_start)
-            .or(self.markdown_search_anchor);
-        let index = if self.markdown_search_source == source {
-            self.markdown_search_index.take()
-        } else {
-            None
-        };
-        let query = self.markdown_search.read(cx).value().to_owned();
-        let match_case = self.markdown_search_match_case;
-        let cursor = self.editor.read(cx).cursor();
-        let anchor = match reason {
-            SearchRefresh::DocumentEdit => old_anchor
-                .map(|offset| map_edit_offset(&old_source, &source, offset))
-                .unwrap_or(cursor),
-            SearchRefresh::Open | SearchRefresh::Query => cursor,
-        };
-        self.markdown_search_task = None;
-        self.markdown_search_revision = self.markdown_search_revision.wrapping_add(1);
-        let revision = self.markdown_search_revision;
-        self.markdown_search_anchor = Some(anchor);
-        if query.is_empty() {
-            self.markdown_search_index = index;
-            self.markdown_search_source = source;
-            self.publish_markdown_search(Vec::new(), anchor, false, window, cx);
-            return;
-        }
-        // Multi-megabyte projection/folding takes hundreds of milliseconds in
-        // debug builds. Keep that work off the event loop, with no result cap.
-        if source.len() > 64 * 1024 {
-            self.markdown_search_matches.clear();
-            self.markdown_search_active = None;
-            self.editor.update(cx, |editor, cx| {
-                editor.set_search_matches(Vec::new(), None, cx)
-            });
-            self.markdown_search_source = source.clone();
-            self.markdown_search_index = None;
-            let work = cx.background_executor().spawn(async move {
-                let index = index.unwrap_or_else(|| SearchIndex::from_markdown(&source));
-                let matches = index.find(&query, match_case);
-                (source, index, matches)
-            });
-            self.markdown_search_task = Some(cx.spawn_in(window, async move |this, cx| {
-                let (source, index, matches) = work.await;
-                let _ = this.update_in(cx, |this, window, cx| {
-                    if this.markdown_search_open && this.markdown_search_revision == revision {
-                        this.markdown_search_task = None;
-                        this.markdown_search_source = source;
-                        this.markdown_search_index = Some(index);
-                        this.publish_markdown_search(matches, anchor, should_scroll, window, cx);
-                    }
-                });
-            }));
-            cx.notify();
-            return;
-        }
-        let index = index.unwrap_or_else(|| SearchIndex::from_markdown(&source));
-        let matches = index.find(&query, match_case);
-        self.markdown_search_index = Some(index);
-        self.markdown_search_source = source;
-        self.publish_markdown_search(matches, anchor, should_scroll, window, cx);
-    }
-
-    fn publish_markdown_search(
-        &mut self,
-        matches: Vec<SearchMatch>,
-        anchor: usize,
-        should_scroll: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let active = if matches.is_empty() {
-            None
-        } else {
-            first_search_match_at_or_after(&matches, anchor).or(Some(0))
-        };
-        self.markdown_search_anchor = active.and_then(|i| search_match_start(&matches[i]));
-        self.markdown_search_matches = matches;
-        self.markdown_search_active = active;
-        let revision = self.markdown_search_revision;
-        self.editor.update(cx, |editor, cx| {
-            editor.set_search_matches(
-                self.markdown_search_matches.clone(),
-                self.markdown_search_active,
-                cx,
-            )
-        });
-        if should_scroll && self.markdown_search_active.is_some() {
-            self.schedule_markdown_search_scroll(revision, window, cx);
-        }
-        cx.notify();
-    }
-
-    fn step_markdown_search(
-        &mut self,
-        backwards: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if !self.markdown_search_open || self.markdown_search_matches.is_empty() {
-            return;
-        }
-        let len = self.markdown_search_matches.len();
-        let current = self.markdown_search_active.unwrap_or_else(|| {
-            first_search_match_at_or_after(
-                &self.markdown_search_matches,
-                self.editor.read(cx).cursor(),
-            )
-            .unwrap_or(0)
-        });
-        self.markdown_search_active = Some(if backwards {
-            (current + len - 1) % len
-        } else {
-            (current + 1) % len
-        });
-        self.markdown_search_revision = self.markdown_search_revision.wrapping_add(1);
-        let revision = self.markdown_search_revision;
-        self.editor.update(cx, |editor, cx| {
-            editor.set_active_search_match(self.markdown_search_active, cx)
-        });
-        self.schedule_markdown_search_scroll(revision, window, cx);
-        cx.notify();
-    }
-
-    fn schedule_markdown_search_scroll(
-        &self,
-        revision: u64,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.refine_markdown_search_scroll(revision, 2, window, cx);
-    }
-
-    fn refine_markdown_search_scroll(
-        &self,
-        revision: u64,
-        remaining: u8,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let weak = cx.entity().downgrade();
-        window.on_next_frame(move |window, cx| {
-            let _ = weak.update(cx, |workspace, cx| {
-                if !workspace.markdown_search_open || workspace.markdown_search_revision != revision
-                {
-                    return;
-                }
-                if let Some(index) = workspace.markdown_search_active {
-                    workspace.scroll_to_markdown_search(index, cx);
-                    // on_next_frame runs before paint: new query highlights or
-                    // focus-dependent wrapping may only acquire bounds afterward.
-                    if remaining > 0 {
-                        workspace.refine_markdown_search_scroll(
-                            revision,
-                            remaining - 1,
-                            window,
-                            cx,
-                        );
-                        cx.notify();
-                    }
-                }
-            });
-        });
-    }
-
-    fn scroll_to_markdown_search(&mut self, index: usize, cx: &mut Context<Self>) {
-        let Some(match_bounds) = self.editor.read(cx).search_match_bounds(index) else {
-            return;
-        };
-        let viewport = self.scroll.bounds();
-        let margin = px(24.);
-        let mut offset = self.scroll.offset();
-        if match_bounds.top() < viewport.top() + margin {
-            offset.y += viewport.top() + margin - match_bounds.top();
-        } else if match_bounds.bottom() > viewport.bottom() - margin {
-            offset.y -= match_bounds.bottom() - (viewport.bottom() - margin);
-        }
-        let max = self.scroll.max_offset();
-        let min_y = -max.y;
-        if offset.y > px(0.) {
-            offset.y = px(0.);
-        }
-        if offset.y < min_y {
-            offset.y = min_y;
-        }
-        if self.scroll.offset() != offset {
-            self.scroll.set_offset(offset);
-            cx.notify();
-        }
-    }
-
     fn dirty(&self, cx: &App) -> bool {
-        (self.document.path.is_none() && self.import_source.is_some())
-            || self.editor.read(cx).text() != self.document.saved
+        self.session.dirty(self.editor.read(cx).text())
     }
 
     fn update_title(&self, window: &mut Window, cx: &App) {
-        let suggested = self.import_source.as_ref().map(|p| p.with_extension("md"));
-        let name = self
-            .document
-            .path
-            .as_deref()
-            .or(suggested.as_deref())
-            .and_then(|p| p.file_name())
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Untitled.md".into());
+        let name = self.session.display_name();
         window.set_window_title(&format!(
             "{}{} — mdoc",
             if self.dirty(cx) { "• " } else { "" },
@@ -620,15 +260,14 @@ impl Workspace {
     fn proceed(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
         match next {
             Next::Close => {
-                self.changed_document();
+                self.session.replace(Document::default());
                 self.reset_markdown_search(cx);
                 self.close_preview(window, cx);
                 window.remove_window();
             }
             Next::New => {
-                self.changed_document();
-                self.document = Document::default();
-                images::install(&self.editor, self.document.directory(), cx);
+                self.session.replace(Document::default());
+                images::install(&self.editor, self.session.document.directory(), cx);
                 self.editor.update(cx, |editor, cx| editor.set_text("", cx));
                 self.reset_markdown_search(cx);
                 self.error = None;
@@ -637,12 +276,12 @@ impl Workspace {
             }
             Next::Open(path) => match Document::open(path) {
                 Ok(document) => {
-                    self.changed_document();
-                    self.editor
-                        .update(cx, |editor, cx| editor.set_text(document.saved.clone(), cx));
+                    self.session.replace(document);
+                    self.editor.update(cx, |editor, cx| {
+                        editor.set_text(self.session.document.saved.clone(), cx)
+                    });
                     self.reset_markdown_search(cx);
-                    self.document = document;
-                    images::install(&self.editor, self.document.directory(), cx);
+                    images::install(&self.editor, self.session.document.directory(), cx);
                     self.error = None;
                     self.scroll.set_offset(gpui::point(px(0.), px(0.)));
                     self.update_title(window, cx);
@@ -650,25 +289,23 @@ impl Workspace {
                 Err(error) => self.error = Some(format!("Could not open document: {error}")),
             },
             Next::Import(imported) => {
-                self.changed_document();
+                self.session
+                    .import(imported.source.clone(), imported.warning);
                 self.close_preview(window, cx);
-                self.document = Document::default();
-                self.import_source = Some(imported.source.clone());
-                self.import_warning = imported.warning;
                 images::install(&self.editor, self.save_directory(), cx);
                 self.editor
                     .update(cx, |editor, cx| editor.set_text(imported.markdown, cx));
                 self.reset_markdown_search(cx);
                 window.focus(&self.editor.read(cx).focus_handle(cx), cx);
                 self.error = None;
-                self.preview_message = None;
+                self.preview.message = None;
                 if imported.is_pdf {
                     self.open_pdf(imported.source, window, cx);
                 } else if imported.is_docx {
                     self.open_docx(imported.source, window, cx);
                 } else {
-                    self.preview_source = Some(imported.source);
-                    self.preview_message =
+                    self.preview.source = Some(imported.source);
+                    self.preview.message =
                         Some("Source preview unavailable for this imported format.".into());
                 }
                 self.scroll.set_offset(gpui::point(px(0.), px(0.)));
@@ -678,36 +315,8 @@ impl Workspace {
         cx.notify();
     }
 
-    fn changed_document(&mut self) {
-        self.document_generation += 1;
-        self.import_source = None;
-        self.import_warning = None;
-    }
-
-    fn close_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.preview_generation = self.preview_generation.wrapping_add(1);
-        self.preview_loading = false;
-        self.preview_retryable = false;
-        self.preview_source = None;
-        self.preview_message = None;
-        self.pending_preview = None;
-        self.cancel_preview_job();
-        self.pdf_subscription = None;
-        if let Some(pdf) = self.pdf.take() {
-            pdf.update(cx, |pdf, cx| pdf.release(window, cx));
-        }
-        self.docx_preview = None;
-        self.comment_panel = None;
-    }
-
-    fn cancel_preview_job(&mut self) {
-        if let Some(cancel) = self.preview_cancel.take() {
-            cancel.store(true, Ordering::Relaxed);
-        }
-    }
-
     fn import(&mut self, _: &Import, window: &mut Window, cx: &mut Context<Self>) {
-        if self.prompting || self.importing || self.ocr_state.busy() {
+        if self.prompting || self.job.busy() || self.ocr_state.busy() {
             return;
         }
         self.prompting = true;
@@ -742,25 +351,25 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.importing || self.ocr_state.busy() {
+        if self.ocr_state.busy() {
             return;
         }
-        self.ocr_pending_import = None;
-        self.importing = true;
-        self.error = None;
-        let generation = self.document_generation;
         let installed = match &self.ocr_state {
             OcrState::Ready(installed) if !skip_ocr => Some(installed.clone()),
             _ => None,
         };
-        self.recognizing = installed.is_some();
+        if !self.job.begin(installed.is_some()) {
+            return;
+        }
+        self.error = None;
+        let generation = self.session.generation;
         let task = cx
             .background_executor()
             .spawn(async move { import::prepare(&path, installed.as_ref(), skip_ocr) });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.pending_import = Some((generation, result));
+                this.job.complete(generation, result);
                 this.resume_import(window, cx);
             });
         })
@@ -769,35 +378,34 @@ impl Workspace {
     }
 
     fn resume_import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.prompting {
+        let generation = self.session.generation;
+        let Some(completion) = self.job.take_ready(generation, self.prompting) else {
             return;
-        }
-        if let Some((generation, result)) = self.pending_import.take() {
-            self.importing = false;
-            if generation == self.document_generation {
-                match result {
-                    Ok(imported) => {
-                        if let Some(error) = &imported.ocr_failure {
-                            self.ocr_state = OcrState::Failed(error.clone());
-                        }
-                        self.request(Next::Import(imported), window, cx);
-                    }
-                    Err(import::ImportError::OcrFailed(error)) => {
+        };
+        if let import_session::ImportCompletion::Ready(result) = completion {
+            match result {
+                Ok(imported) => {
+                    if let Some(error) = &imported.ocr_failure {
                         self.ocr_state = OcrState::Failed(error.clone());
-                        self.error = Some(error);
                     }
-                    Err(import::ImportError::Message(error)) => self.error = Some(error),
-                    Err(import::ImportError::NeedsOcr(path)) => {
-                        self.prompt_ocr(path, generation, window, cx)
-                    }
+                    self.request(Next::Import(imported), window, cx);
+                }
+                Err(import::ImportError::OcrFailed(error)) => {
+                    self.ocr_state = OcrState::Failed(error.clone());
+                    self.error = Some(error);
+                }
+                Err(import::ImportError::Message(error)) => self.error = Some(error),
+                Err(import::ImportError::NeedsOcr(path)) => {
+                    self.prompt_ocr(path, generation, window, cx)
                 }
             }
-            cx.notify();
         }
+        // A stale completion also clears the busy indicator.
+        cx.notify();
     }
 
     fn setup_ocr(&mut self, _: &SetupOcr, window: &mut Window, cx: &mut Context<Self>) {
-        if self.prompting || self.importing || self.ocr_state.busy() || !ocr::SUPPORTED {
+        if self.prompting || self.job.busy() || self.ocr_state.busy() || !ocr::SUPPORTED {
             return;
         }
         if matches!(self.ocr_state, OcrState::Ready(_)) {
@@ -832,16 +440,13 @@ impl Workspace {
         match result {
             Ok(installed) => {
                 self.ocr_state = OcrState::Ready(installed);
-                if let Some((generation, path)) = self.ocr_pending_import.take() {
-                    self.importing = false;
-                    if generation == self.document_generation {
-                        self.start_import(path, window, cx);
-                    }
+                if let Some(path) = self.job.resume_after_setup(self.session.generation) {
+                    self.start_import(path, window, cx);
                 }
             }
             Err(error) => {
                 self.ocr_state = OcrState::Failed(error);
-                self.importing = false;
+                self.job.finish();
             }
         }
         cx.notify();
@@ -855,7 +460,7 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.prompting = true;
-        self.importing = true;
+        self.job.wait_for_ocr();
         let buttons = if ocr::SUPPORTED {
             vec!["Set up local OCR", "Skip OCR", "Cancel"]
         } else {
@@ -881,14 +486,13 @@ impl Workspace {
             let answer = answer.await.ok();
             let _ = this.update_in(cx, |this, window, cx| {
                 this.prompting = false;
-                this.importing = false;
-                if generation != this.document_generation {
+                this.job.finish();
+                if generation != this.session.generation {
                     cx.notify();
                     return;
                 }
                 if ocr::SUPPORTED && answer == Some(0) {
-                    this.ocr_pending_import = Some((generation, path));
-                    this.importing = true;
+                    this.job.defer_for_setup(generation, path);
                     this.begin_ocr_setup(window, cx);
                 } else if answer == Some(if ocr::SUPPORTED { 1 } else { 0 }) {
                     this.start_import_mode(path, true, window, cx);
@@ -900,142 +504,7 @@ impl Workspace {
     }
 
     fn save_directory(&self) -> PathBuf {
-        if self.document.path.is_none()
-            && let Some(parent) = self.import_source.as_ref().and_then(|p| p.parent())
-        {
-            return parent.to_path_buf();
-        }
-        self.document.directory()
-    }
-
-    fn begin_preview(&mut self, path: PathBuf) -> u64 {
-        self.cancel_preview_job();
-        self.pending_preview = None;
-        self.preview_generation = self.preview_generation.wrapping_add(1);
-        self.preview_message = None;
-        self.preview_retryable = false;
-        self.preview_source = Some(path);
-        self.error = None;
-        self.preview_loading = true;
-        self.preview_generation
-    }
-
-    fn load_preview(
-        &mut self,
-        path: PathBuf,
-        docx: Option<docx_preview::DocxPreview>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let theme = self.theme.clone();
-        let fit_docx = docx.is_some();
-        let pdf = cx.new(|cx| {
-            PdfView::new(
-                path,
-                Rc::new(move || theme.get().pdf_style()),
-                Rc::new(|| 1.0),
-                cx,
-            )
-        });
-        // DOCX previews always live in the side pane. Fit them to that pane before
-        // the first page raster is requested; this avoids rendering an 820 px page
-        // bitmap that would immediately be scaled down to roughly half that width.
-        if fit_docx {
-            pdf.update(cx, |pdf, cx| pdf.fit_width(cx));
-        }
-        let generation = self.preview_generation;
-        let subscription = cx.subscribe_in(&pdf, window, move |this, pdf, _, window, cx| {
-            if generation != this.preview_generation {
-                return;
-            }
-            if let Some(error) = pdf.read(cx).load_error() {
-                this.preview_message = Some(error.to_string());
-            } else if pdf.read(cx).is_locked() {
-                this.preview_message = Some(
-                    "This PDF is password-protected. Open an unlocked copy to view it here.".into(),
-                );
-            } else if !pdf.read(cx).is_loaded() {
-                return;
-            }
-            this.preview_loading = false;
-            this.preview_cancel = None;
-            if this.preview_message.is_some() {
-                this.preview_retryable = true;
-                this.pending_preview = None;
-            } else if let Some(pending) = this.pending_preview.take() {
-                this.pdf_subscription = None;
-                if let Some(old) = this.pdf.take() {
-                    old.update(cx, |pdf, cx| pdf.release(window, cx));
-                }
-                this.preview_message = pending
-                    .docx
-                    .as_ref()
-                    .and_then(|d| (!d.warnings.is_empty()).then(|| d.warnings.join(" ")));
-                this.comment_panel = pending
-                    .docx
-                    .as_ref()
-                    .filter(|d| !d.comments.is_empty())
-                    .map(|d| {
-                        cx.new(|_| {
-                            comment_panel::CommentPanel::new(d.comments.clone(), this.theme.clone())
-                        })
-                    });
-                this.docx_preview = pending.docx;
-                this.pdf_subscription = Some(cx.observe(&pending.pdf, |_, _, cx| cx.notify()));
-                this.pdf = Some(pending.pdf);
-            }
-            cx.notify();
-        });
-        self.pending_preview = Some(PendingPreview {
-            pdf,
-            docx,
-            _subscription: subscription,
-        });
-        cx.notify();
-    }
-
-    fn open_pdf(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        self.begin_preview(path.clone());
-        self.load_preview(path, None, window, cx);
-    }
-
-    fn open_docx(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let generation = self.begin_preview(path.clone());
-        let cancel = Arc::new(AtomicBool::new(false));
-        self.preview_cancel = Some(cancel.clone());
-        let task = cx
-            .background_executor()
-            .spawn(async move { docx_preview::render_with_cancel(&path, cancel) });
-        cx.spawn_in(window, async move |this, cx| {
-            let result = task.await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                if generation != this.preview_generation {
-                    return;
-                }
-                match result {
-                    Ok(preview) => {
-                        this.load_preview(preview.pdf_path.clone(), Some(preview), window, cx)
-                    }
-                    Err(error) => {
-                        this.preview_cancel = None;
-                        this.preview_loading = false;
-                        this.preview_retryable = true;
-                        this.preview_message = Some(error.to_string());
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-        cx.notify();
-    }
-
-    fn retry_preview(&mut self, _: &RetryPreview, window: &mut Window, cx: &mut Context<Self>) {
-        if self.preview_retryable
-            && let Some(path) = self.preview_source.clone()
-        {
-            self.open_path(path, window, cx);
-        }
+        self.session.directory()
     }
 
     fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -1097,18 +566,13 @@ impl Workspace {
         if self.prompting {
             return;
         }
-        if !save_as && let Some(path) = self.document.path.clone() {
+        if !save_as && let Some(path) = self.session.document.path.clone() {
             self.write(path, next, window, cx);
             return;
         }
         self.prompting = true;
-        let suggested = self.import_source.as_ref().map(|p| p.with_extension("md"));
-        let name = suggested
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .and_then(|s| s.to_str())
-            .unwrap_or("Untitled.md");
-        let path = cx.prompt_for_new_path(&self.save_directory(), Some(name));
+        let name = self.session.suggested_name();
+        let path = cx.prompt_for_new_path(&self.save_directory(), Some(&name));
         cx.spawn_in(window, async move |this, cx| {
             let result = path.await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -1141,19 +605,11 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(source) = &self.import_source
-            && (std::path::absolute(&path).ok().as_ref() == Some(source)
-                || (path.exists() && path.canonicalize().ok() == source.canonicalize().ok()))
-        {
-            self.error = Some("Choose a different path to preserve the imported source.".into());
-            cx.notify();
-            return;
-        }
         let old_directory = self.save_directory();
-        match self.document.save(path, self.editor.read(cx).text()) {
+        match self.session.save(path, self.editor.read(cx).text()) {
             Ok(()) => {
-                if old_directory != self.document.directory() {
-                    images::install(&self.editor, self.document.directory(), cx);
+                if old_directory != self.session.document.directory() {
+                    images::install(&self.editor, self.session.document.directory(), cx);
                 }
                 self.error = None;
                 self.update_title(window, cx);
@@ -1165,57 +621,6 @@ impl Workspace {
         }
         cx.notify();
     }
-}
-
-fn search_match_start(search_match: &SearchMatch) -> Option<usize> {
-    search_match.source.first().map(|range| range.start)
-}
-
-fn first_search_match_at_or_after(matches: &[SearchMatch], offset: usize) -> Option<usize> {
-    matches.iter().position(|search_match| {
-        search_match_start(search_match).is_some_and(|start| start >= offset)
-    })
-}
-
-/// Map an old source offset through the smallest changed middle region. This
-/// keeps the active occurrence stable across ordinary typing while remaining
-/// UTF-8 safe at the common-prefix/common-suffix boundaries.
-fn map_edit_offset(old: &str, new: &str, offset: usize) -> usize {
-    let old_bytes = old.as_bytes();
-    let new_bytes = new.as_bytes();
-    let mut prefix = 0;
-    while prefix < old_bytes.len()
-        && prefix < new_bytes.len()
-        && old_bytes[prefix] == new_bytes[prefix]
-    {
-        prefix += 1;
-    }
-    while prefix > 0 && (!old.is_char_boundary(prefix) || !new.is_char_boundary(prefix)) {
-        prefix -= 1;
-    }
-
-    let mut suffix = 0;
-    while suffix < old_bytes.len().saturating_sub(prefix)
-        && suffix < new_bytes.len().saturating_sub(prefix)
-        && old_bytes[old_bytes.len() - 1 - suffix] == new_bytes[new_bytes.len() - 1 - suffix]
-    {
-        suffix += 1;
-    }
-    while suffix > 0
-        && (!old.is_char_boundary(old.len() - suffix) || !new.is_char_boundary(new.len() - suffix))
-    {
-        suffix -= 1;
-    }
-
-    let offset = offset.min(old.len());
-    if offset < prefix {
-        return offset.min(new.len());
-    }
-    let old_changed_end = old.len().saturating_sub(suffix);
-    if offset >= old_changed_end {
-        return new.len().saturating_sub(old.len().saturating_sub(offset));
-    }
-    prefix.min(new.len())
 }
 
 fn button(label: &'static str, action: impl gpui::Action, theme: Theme) -> impl IntoElement {
@@ -1278,18 +683,18 @@ impl Render for Workspace {
         let query = self.markdown_search.read(cx).value().to_owned();
         let count = if query.is_empty() {
             "0 / 0".to_owned()
-        } else if self.markdown_search_task.is_some() {
+        } else if self.search.task.is_some() {
             "Searching…".to_owned()
-        } else if self.markdown_search_matches.is_empty() {
+        } else if self.search.matches.is_empty() {
             "0 matches".to_owned()
         } else {
             format!(
                 "{} / {}",
-                self.markdown_search_active.map_or(0, |index| index + 1),
-                self.markdown_search_matches.len()
+                self.search.active.map_or(0, |index| index + 1),
+                self.search.matches.len()
             )
         };
-        let navigation_disabled = self.markdown_search_matches.is_empty();
+        let navigation_disabled = self.search.matches.is_empty();
         let search_bar = div()
             .id("markdown-search-bar")
             .flex()
@@ -1325,7 +730,7 @@ impl Render for Workspace {
             .child(
                 div()
                     .id("markdown-search-match-case")
-                    .aria_label(if self.markdown_search_match_case {
+                    .aria_label(if self.search.match_case {
                         "Match case: on"
                     } else {
                         "Match case: off"
@@ -1339,7 +744,7 @@ impl Render for Workspace {
                     .cursor_pointer()
                     .text_color(palette.header_muted)
                     .hover(|view| view.bg(palette.placeholder_bg))
-                    .when(self.markdown_search_match_case, |view| {
+                    .when(self.search.match_case, |view| {
                         view.bg(palette.placeholder_bg)
                             .text_color(theme.search_accent())
                     })
@@ -1422,7 +827,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::open))
             .on_action(cx.listener(Self::import))
             .on_action(cx.listener(Self::setup_ocr))
-            .on_action(cx.listener(|this, _: &DismissImportWarning, _, cx| { this.import_warning = None; cx.notify(); }))
+            .on_action(cx.listener(|this, _: &DismissImportWarning, _, cx| { this.session.warning = None; cx.notify(); }))
             .on_action(cx.listener(|this, _: &New, window, cx| this.request(Next::New, window, cx)))
             .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
             .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save(true, None, window, cx)))
@@ -1435,26 +840,26 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::retry_preview))
             .child(div().flex().items_center().gap_2().p_2().text_size(px(13.)).border_b_1().border_color(palette.border)
                 .child(button("New", New, theme)).child(button("Open…", Open, theme)).child(button("Save", Save, theme)).child(button("Save As…", SaveAs, theme))
-                .child(if self.importing { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.recognizing { "Recognizing text…" } else { "Converting…" }).into_any_element() } else { button("Import as Markdown…", Import, theme).into_any_element() })
+                .child(if self.job.busy() { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting…" }).into_any_element() } else { button("Import as Markdown…", Import, theme).into_any_element() })
                 .child(if matches!(self.ocr_state, OcrState::Missing | OcrState::Failed(_)) {
                     button(self.ocr_state.label(), SetupOcr, theme).into_any_element()
                 } else { div().opacity(0.65).child(self.ocr_state.label()).into_any_element() })
                 .child(div().flex_1())
                 .child(button(theme.toggle_label(), ToggleTheme, theme))
                 .child(if self.dirty(cx) { "Unsaved changes" } else { "Markdown · WYSIWYG" })
-                .when(self.preview_loading, |bar| bar.child(div().child("Preparing preview…")))
-                .when(self.pdf.is_some() || self.preview_source.is_some(), |bar| bar.child(button("Close Preview", ClosePdf, theme))))
-            .when_some(self.import_warning.clone(), |view, warning| view.child(div().flex().items_center().gap_2().p_2().border_b_1().border_color(palette.border)
+                .when(self.preview.loading, |bar| bar.child(div().child("Preparing preview…")))
+                .when(self.preview.pdf.is_some() || self.preview.source.is_some(), |bar| bar.child(button("Close Preview", ClosePdf, theme))))
+            .when_some(self.session.warning.clone(), |view, warning| view.child(div().flex().items_center().gap_2().p_2().border_b_1().border_color(palette.border)
                 .child(div().id("import-warning").flex_1().min_w_0().max_h(px(96.)).overflow_y_scroll().child(warning))
                 .child(button("Dismiss", DismissImportWarning, theme))))
             .child(div().flex().flex_1().min_h_0()
                 .child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
-                    .when(self.markdown_search_open, |column| column.child(search_bar))
+                    .when(self.search.open, |column| column.child(search_bar))
                     .child(div().id("document-scroll").flex_1().min_w_0().min_h_0().overflow_y_scroll().track_scroll(&self.scroll).p_6().child(self.editor.clone())))
-                .when_some(self.pdf.clone(), |row, pdf| row.child(div().w_1_2().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
+                .when_some(self.preview.pdf.clone(), |row, pdf| row.child(div().w_1_2().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
-                    .when_some(self.comment_panel.clone(), |pane, comments| pane.child(comments)))))
-            .when_some(self.preview_message.clone(), |view, message| view.child(div().flex().items_center().gap_2().p_2().bg(theme.error_bg()).child(div().flex_1().child(format!("{}: {message}", self.preview_source.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Preview".into())))).when(self.preview_retryable, |bar| bar.child(button("Retry", RetryPreview, theme)))))
+                    .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments)))))
+            .when_some(self.preview.message.clone(), |view, message| view.child(div().flex().items_center().gap_2().p_2().bg(theme.error_bg()).child(div().flex_1().child(format!("{}: {message}", self.preview.source.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Preview".into())))).when(self.preview.retryable, |bar| bar.child(button("Retry", RetryPreview, theme)))))
             .when_some(match &self.ocr_state { OcrState::Failed(error) => Some(error.clone()), _ => None }, |view, error| view.child(div().p_2().bg(theme.error_bg()).child(format!("OCR setup: {error}"))))
             .when_some(self.error.clone(), |view, error| view.child(div().p_2().bg(theme.error_bg()).child(error)))
     }
