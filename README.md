@@ -23,7 +23,7 @@ cargo run -- path/to/reference.docx
 Write Markdown directly: headings, emphasis, lists, checkboxes, tables, links,
 quotes, and code blocks render as you edit. Syntax is revealed near the caret.
 Local images resolve relative to the Markdown file and load in the background.
-Open a PDF or DOCX alongside your document to read, zoom, navigate pages, and
+Open a PDF or DOCX in its own preview tab to read, zoom, navigate pages, and
 search. DOCX preview is read-only and rendered locally with the bundled Rust
 converter; the source file is never modified.
 Layout is approximate, and extracted text can lose spaces, affecting multiword
@@ -37,28 +37,32 @@ The corresponding shortcuts are Cmd+N/O/S/Shift+S on macOS and
 Ctrl+N/O/S/Shift+S on Windows/Linux. Cmd/Ctrl+W closes the active tab;
 Cmd/Ctrl+Q quits. Ctrl+Tab and Ctrl+Shift+Tab switch tabs.
 
-The collapsible left sidebar lists open Markdown documents and their attached
-PDF/DOCX previews. Use **+** for an empty tab, drag rows to reorder them, and
-**×** to close a tab. Opening Markdown creates a tab or activates that file's
-existing tab. Opening PDF/DOCX attaches it to the active Markdown document.
-Each tab keeps its undo history, selection, search, and reading positions.
-Open accepts Markdown (.md, .markdown, .mdown, .txt), PDF, and DOCX files.
-**Import as Markdown…** (Cmd/Ctrl+Shift+I) converts PDF, DOC/DOCX, XLS/XLSX,
-other supported Office/OpenDocument formats, RTF, EPUB, and CSV into an unsaved
-Markdown document. Conversion runs locally in the background, one file at a
-time. Save suggests the source name with a `.md` extension; the source is
-preserved. Imported PDFs and DOCX files also open in the side pane. Other
-supported import formats remain text-only and show that source preview is
-unavailable.
+The collapsible left sidebar lists open files. Use **+** for an empty Markdown
+tab, drag rows to reorder them, and **×** to close a tab. **Open…** accepts one
+or more files (no folders), appends tabs in selection order, and activates the
+first selected file. Reopening a file selects its existing tab and preserves
+edits. Other tabs load when selected. Each tab keeps its undo history, selection,
+search, and reading positions; unsupported files are summarized and load failures
+can be retried on their tabs.
 
-Import retains text and structure, not embedded images. On Apple Silicon macOS
+Markdown (.md, .markdown, .mdown, .txt) opens for editing. PDF and DOCX open in
+preview mode without extracting Markdown. Other supported Office/OpenDocument
+formats, RTF, EPUB, and CSV show a filename and Preview unavailable.
+**Convert to Markdown** (Cmd/Ctrl+Shift+I) explicitly converts the active source
+into an unsaved Markdown document in the same tab, alongside its original
+preview when available. Conversion runs locally, one file at a time. Save
+suggests the source name with a `.md` extension; the source is preserved.
+Convert is hidden after success so it cannot replace subsequent edits.
+
+Conversion retains text and structure, not embedded images. On Apple Silicon macOS
 and Windows x64, **Set up OCR** in the main bar downloads verified components
 (about 54 MB on macOS, 99 MB on Windows) for
-printed English and Russian. Setup is also offered when importing a PDF that
-needs recognition. Once ready, scanned pages are recognized locally and offline;
+printed English and Russian. Setup is also offered when converting a PDF that
+needs recognition. Conversion asks before recognizing scanned pages, even when
+OCR is ready. You can run OCR, skip it, or cancel. Recognition runs locally and offline;
 document contents are never uploaded. The original PDF remains unchanged.
 Low-confidence or incomplete pages produce a persistent review warning outside
-the Markdown. Skipping setup imports usable native text with omitted-page
+the Markdown. Skipping setup converts usable native text with omitted-page
 warnings; if no usable text is available, the current document is preserved.
 Windows OCR requires the [Microsoft Visual C++ Redistributable (x64)](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
 If its runtime cannot load, setup provides installation and retry instructions.
@@ -66,13 +70,13 @@ Windows ARM64, Linux, and Intel macOS currently support native-text import only.
 complex table reconstruction are not qualified. See [OCR qualification and
 limitations](docs/local-ocr-qualification.md).
 
-Import creates a new tab. You can switch tabs while it runs; the result stays
-with the importing tab. Sidebar labels show importing, queued, and loading states.
-Closing a tab cancels its pending work. Import cancellation is cooperative between
+You can switch tabs while conversion runs; the result stays in its source tab
+without stealing focus. Sidebar labels show importing, queued, and loading states.
+Closing a tab cancels its pending work. Conversion cancellation is cooperative between
 conversion stages; an in-progress library call finishes before releasing its slot.
 DOCX preview conversions run one at a time.
 
-Click local Markdown, PDF, or DOCX links to open them; web links open in your
+Click local file links to open them; web links open in your
 browser. **Close Preview** returns to a full-width editor without changing your
 document. **Show Preview** reopens the same attachment, including for an unsaved
 Markdown tab.
@@ -85,7 +89,8 @@ a dirty tab or quitting prompts to save or discard edits; cancelling Save As
 also cancels the pending operation. Save As cannot overwrite a file open in
 another tab.
 
-Saved tabs, attachments, and reading positions reopen after restarting. A small
+Saved Markdown tabs, unconverted source tabs, and reading positions reopen after restarting.
+Unconverted source tabs close without a save prompt. A small
 `mdoc/session.json` file in the platform's local application-data directory stores
 paths and view metadata only. Unsaved text and undo history are not restored;
 untitled tabs must be saved before quitting to retain their pairing. Restored

@@ -5,7 +5,8 @@ OCR-capable pdf-inspector fork directly through `src/import.rs`; AnyDoc still
 handles other formats. The AnyDoc transitive PDF baseline remains pinned in
 Cargo.lock. See [local OCR decisions](local-ocr-decisions.md) and
 [qualification](local-ocr-qualification.md). The decisions and validation below
-describe the original AnyDoc integration; their OCR exclusions are superseded.
+describe the original AnyDoc integration; their OCR exclusions and pre-tab file
+flow are superseded by [bulk Open and explicit conversion](bulk-open-decisions.md).
 
 Status: design confirmed by the user; implemented. Validation is recorded below.
 
@@ -13,8 +14,9 @@ Status: design confirmed by the user; implemented. Validation is recorded below.
 
 ### Round 1
 
-- Add a dedicated **Import as Markdown…** action. Preserve the current Open
-  behavior, including PDFs opening in the side pane. Import produces a new
+- Keep **Convert to Markdown** as an explicit action after **Open…**. Open accepts
+  multiple files and gives each source its own tab; PDF/DOCX remain preview-only
+  until conversion is requested. Conversion changes the source tab into an
   editable Markdown document and respects unsaved-change protection.
 - Initial conversion scope is text and structure: headings, lists, and tables.
   Embedded-image preservation and OCR are outside the initial scope. Explain
@@ -24,7 +26,7 @@ Status: design confirmed by the user; implemented. Validation is recorded below.
 - Maintain our own AnyDoc fork with a small patch set, so upstream updates can
   be merged regularly.
 
-Rationale: keep importing explicit, preserve existing editor flows, and keep
+Rationale: keep conversion explicit, preserve existing editor flows, and keep
 conversion scope small while allowing focused converter improvements.
 
 ### Round 2
@@ -34,9 +36,9 @@ conversion scope small while allowing focused converter improvements.
   or reconciling our patch once upstream incorporates equivalent behavior.
 - Use Ocr::Skip for mixed PDFs. Show a visible warning listing omitted pages;
   fully scanned PDFs fail without changing the current document.
-- Open successful imports as unsaved Markdown, suggesting source-name.md on
-  Save. Never overwrite the source. For PDFs, show the source alongside the
-  imported Markdown after the document transition is accepted.
+- Convert successful sources into unsaved Markdown in the same tab, suggesting
+  source-name.md on Save. Never overwrite the source. For PDFs and DOCX, retain
+  the source preview alongside the converted Markdown.
 - Allow one background conversion at a time, with an indeterminate Converting
   indicator. The current editor remains editable. After successful conversion,
   protect then-current edits with the normal save/discard/cancel flow before
@@ -101,9 +103,9 @@ knows its types and options.
 The application holds one background conversion and a document generation.
 Successful New/Open transitions invalidate its result. Completion while a native
 dialog is open waits for that dialog to resolve, then checks the generation.
-Only an accepted import resets the editor and opens its PDF source. Imported
-empty output is still unsaved. Warning metadata survives Save and is never
-written into the Markdown. Local links in unsaved imports resolve from the
+Only an accepted conversion changes a source tab into Markdown and retains its
+PDF or DOCX source preview. Empty converted output is still unsaved. Warning metadata survives Save and is never
+written into the Markdown. Local links in unsaved conversions resolve from the
 source directory; after saving they resolve from the Markdown directory.
 
 The lockfile deliberately retains `pdf-inspector` 1.14.2, the version in
@@ -135,9 +137,9 @@ For an upstream update:
 - Conversion corpus: DOC, DOCX (including tables), XLS, XLSX, text PDF, mixed PDF
   with readable content after scanned pages, fully scanned PDF, encrypted ODT,
   corrupt DOCX, unknown content, missing files, and CSV extension fallback.
-- GPUI flows: import/save/source preservation, completion-time edit protection,
+- GPUI flows: open/convert/save/source preservation, completion-time edit protection,
   save-before-replace, stale results, dialog deferral, one-job restriction,
-  warning lifetime, empty imports, errors, and the source PDF pane.
+warning lifetime, empty conversions, errors, and the source PDF pane.
 - On macOS, `cargo fmt --check`,
   `cargo clippy --workspace --all-targets -- -D warnings`, and
   `cargo test --workspace --locked` passed (186 tests). `git diff --check` passed.

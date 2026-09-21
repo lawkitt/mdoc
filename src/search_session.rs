@@ -69,6 +69,9 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.source_only {
+            return;
+        }
         self.search.open = true;
         self.refresh_markdown_search(SearchRefresh::Open, true, window, cx);
         self.markdown_search

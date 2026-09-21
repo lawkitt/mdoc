@@ -1,15 +1,31 @@
 //! Conversion boundary for AnyDoc and PDF extraction. Conversion performs no writes.
 use std::{
+    io::Read,
     path::{Path, PathBuf},
     sync::atomic::{AtomicBool, Ordering},
 };
+
+/// Admission does not convert documents. Unknown extensions retain AnyDoc's
+/// content detection, with bounded reads performed on the background executor.
+pub fn supported_source(path: &Path) -> bool {
+    if anydoc::Format::from_path(path).is_some() {
+        return true;
+    }
+    let Ok(file) = std::fs::File::open(path) else {
+        return false;
+    };
+    let mut bytes = Vec::new();
+    const LIMIT: u64 = 256 * 1024 * 1024;
+    file.take(LIMIT + 1).read_to_end(&mut bytes).is_ok()
+        && bytes.len() as u64 <= LIMIT
+        && anydoc::Format::from_bytes(&bytes).is_some()
+}
 
 #[derive(Clone, Debug)]
 pub struct Imported {
     pub source: PathBuf,
     pub markdown: String,
     pub warning: Option<String>,
-    pub ocr_failure: Option<String>,
     pub is_pdf: bool,
     pub is_docx: bool,
 }
@@ -90,7 +106,6 @@ pub fn prepare_cancellable(
         source,
         markdown: converted.markdown,
         warning,
-        ocr_failure: None,
         is_pdf: converted.page_count > 0,
         is_docx,
     })
@@ -130,20 +145,16 @@ fn convert_pdf(
     if needs_ocr && installed.is_none() && !skip_ocr {
         return Err(ImportError::NeedsOcr(source));
     }
-    let (result, used_ocr, failure) = if needs_ocr
+    let (result, used_ocr) = if needs_ocr
         && !skip_ocr
         && let Some(installed) = installed
     {
         match process_pdf_with_ocr_mem(&bytes, installed.options()) {
-            Ok(result) => (result, true, None),
-            Err(error) => (
-                native,
-                false,
-                Some(format!("Local OCR failed: {error}. Retry OCR setup.")),
-            ),
+            Ok(result) => (result, true),
+            Err(error) => return Err(ImportError::OcrFailed(format!("Local OCR failed: {error}"))),
         }
     } else {
-        (native, false, None)
+        (native, false)
     };
     check_cancel(cancel)?;
     let mut warning_pages = if used_ocr {
@@ -164,14 +175,14 @@ fn convert_pdf(
     warning_pages.dedup();
     // Avoid importing punctuation-only failure output as a useful document.
     if !result.markdown.chars().any(char::is_alphanumeric) {
-        return Err(match failure {
-            Some(error) => ImportError::OcrFailed(error),
-            None => "This PDF requires OCR, but no usable text was extracted. Set up OCR and try again, or use a clearer scan.".into(),
+        return Err(if used_ocr {
+            ImportError::OcrFailed("Local OCR produced no usable text. Retry with a clearer scan or extract native text only.".into())
+        } else {
+            "No usable native text was extracted. Run OCR or use a clearer source.".into()
         });
     }
-    let ocr_failure = failure.clone();
     let warning = if warning_pages.is_empty() {
-        failure
+        None
     } else {
         let pages = warning_pages
             .iter()
@@ -189,16 +200,12 @@ fn convert_pdf(
                 result.page_count
             )
         };
-        Some(match failure {
-            Some(failure) => format!("{message} {failure}"),
-            None => message,
-        })
+        Some(message)
     };
     Ok(Imported {
         source,
         markdown: result.markdown,
         warning,
-        ocr_failure,
         is_pdf: true,
         is_docx: false,
     })
@@ -280,7 +287,7 @@ mod tests {
         assert!(
             convert(&fixture("handmade-scanned.pdf"))
                 .unwrap_err()
-                .contains("requires OCR")
+                .contains("Run OCR")
         );
         assert!(
             convert(&fixture("encrypted--errors.odt"))
@@ -315,6 +322,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let renamed = dir.path().join("renamed.bin");
         std::fs::copy(fixture("text.docx"), &renamed).unwrap();
+        assert!(supported_source(&renamed));
         assert_eq!(
             convert(&renamed).unwrap().markdown,
             convert(&fixture("text.docx")).unwrap().markdown
@@ -345,31 +353,27 @@ mod tests {
     }
 
     #[test]
-    fn missing_runtime_preserves_native_content_and_reports_setup_failure() {
+    fn missing_runtime_requires_explicit_fallback() {
         let installed = crate::ocr::Installed {
             models: "missing-models".into(),
             pdfium: "missing-pdfium".into(),
             onnx: "missing-onnx".into(),
         };
-        let partial = prepare(
-            &fixture("handmade-partly-scanned.pdf"),
-            Some(&installed),
-            false,
-        )
-        .unwrap();
-        assert!(partial.markdown.contains("Readable page three"));
-        assert!(partial.ocr_failure.is_some());
-        assert!(partial.warning.unwrap().contains("Local OCR failed"));
+        assert!(matches!(
+            prepare(
+                &fixture("handmade-partly-scanned.pdf"),
+                Some(&installed),
+                false,
+            ),
+            Err(ImportError::OcrFailed(_))
+        ));
         let skipped = prepare(
             &fixture("handmade-partly-scanned.pdf"),
             Some(&installed),
             true,
         )
         .unwrap();
-        assert!(
-            skipped.ocr_failure.is_none(),
-            "explicit skip must not load a runtime"
-        );
+        assert!(skipped.markdown.contains("Readable page three"));
         assert!(matches!(
             prepare(&fixture("handmade-scanned.pdf"), Some(&installed), false),
             Err(ImportError::OcrFailed(_))

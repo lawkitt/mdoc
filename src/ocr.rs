@@ -464,7 +464,6 @@ mod tests {
                 expected.split_whitespace().collect::<Vec<_>>(),
                 "{language}"
             );
-            assert!(imported.ocr_failure.is_none());
             assert_eq!(fs::read(pdf).unwrap(), original);
         }
     }

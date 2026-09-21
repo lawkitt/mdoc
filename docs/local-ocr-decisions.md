@@ -1,5 +1,11 @@
 # Local PDF OCR integration decisions
 
+The file-selection and recognition admission behavior below is defined by
+[bulk Open and explicit conversion](bulk-open-decisions.md). Open creates a
+source preview tab; conversion asks before running OCR even when its runtime is
+ready, and OCR failures require an explicit choice before falling back to native
+text. The earlier round notes remain as design history.
+
 Status: implemented; validation and remaining platform/UI limits are recorded
 in the qualification report. User approved the
 Cyrillic model replacement and external fork patch after the initial model
@@ -9,8 +15,9 @@ failed Russian acceptance.
 
 ### Round 1
 
-- Extend **Import as Markdown…** to recognize scanned PDF content locally,
-  producing editable Markdown alongside the unchanged original PDF.
+- Extend Markdown conversion to recognize scanned PDF content locally,
+  producing editable Markdown alongside the unchanged original PDF. The source
+  is opened in preview mode first; opening never extracts Markdown.
   Writing searchable PDFs is outside this scope.
 - Allow explicit first-use setup downloads of required models and runtimes.
   After setup, recognition works offline. Document contents stay on-device.
@@ -23,10 +30,10 @@ source while adding local recognition for the user's initial language needs.
 
 ### Round 2
 
-- After setup, automatically recognize scanned/incomplete pages during PDF
-  import. Retain usable native text and combine results in document order;
-  do not add a separate OCR button initially.
-- Import usable partial results with persistent, page-specific warnings for
+- After the user explicitly chooses Run OCR during Markdown conversion, recognize
+  scanned/incomplete pages locally. Retain usable native text and combine results
+  in document order. Opening a PDF never starts OCR or Markdown extraction.
+- Convert usable partial results with persistent, page-specific warnings for
   unreadable or low-confidence pages. Keep warnings outside Markdown. If no
   usable content is extracted, leave the current document untouched and fail.
 - Validate OCR on the user's Mac first, keeping macOS, Windows, and Linux
@@ -41,14 +48,15 @@ flow, and distinguish build support from verified runtime support.
 - Call pdf-inspector directly for PDFs inside the existing application import
   module; retain AnyDoc for other formats. Keep pdf-inspector external and pin
   a tested revision. Review existing PDF snapshots when upgrading the engine.
-- Offer **Set up local OCR** or **Skip OCR** when an import needs missing OCR
-  components. Also provide a **Set up OCR** action in the main UI bar so users
-  can prepare OCR before importing a document.
+- Offer **Run OCR**, **Skip OCR**, or **Cancel** when OCR is ready and needed.
+  When components are missing, offer **Set up and run OCR**, **Skip OCR**, or
+  **Cancel**. Also provide a **Set up OCR** action in the main UI bar so users
+  can prepare OCR before converting a document.
 - Download verified components into app-managed storage during explicit setup;
-  subsequent imports run offline. Skipping setup retains native text with
+  subsequent conversions run offline. Skipping setup retains native text with
   warnings; fully scanned PDFs leave the current document untouched. Setup
   failures allow retry and never fall back to cloud processing.
-- Keep one background import at a time, with a **Recognizing text…** indicator
+- Keep one background Markdown conversion at a time, with a **Recognizing text…** indicator
   and an editable current document. Preserve unsaved-change protection and
   discard stale results after document changes. Do not promise percentage
   progress or immediate cancellation with the current synchronous library API.
@@ -57,7 +65,7 @@ flow, and distinguish build support from verified runtime support.
   qualified.
 
 Rationale: keep the conversion seam small, allow advance setup, and preserve
-the existing import lifecycle without promising unsupported job controls.
+the existing file lifecycle without promising unsupported job controls.
 
 ### Final confirmation
 
@@ -95,7 +103,7 @@ the user approved that replacement.
   models. It downloads about 54 MB once, retains runtime notices, and validates
   actual runtime/model loading before marking OCR ready.
 - macOS Apple Silicon and Windows x64 are enabled. Other desktop targets stay buildable and
-  offer native-text import with explicit OCR omission warnings.
+  offer native-text conversion with explicit OCR omission warnings.
 
 ### Windows support
 

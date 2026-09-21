@@ -112,6 +112,9 @@ struct Workspace {
     loading: bool,
     load_generation: u64,
     unavailable: bool,
+    source_only: bool,
+    import_permit: Option<Arc<import_session::ImportPermit>>,
+    conversion_source: Option<PathBuf>,
     import_busy: Arc<AtomicBool>,
     import_cancel: Arc<AtomicBool>,
     theme: Rc<Cell<Theme>>,
@@ -164,7 +167,11 @@ impl Workspace {
                     {
                         cx.open_url(src);
                     } else if let Some(path) = document::local_path(src, &this.save_directory()) {
-                        this.open_path(path, window, cx);
+                        if this.owner.is_some() {
+                            cx.emit(tabs::TabEvent::Open(vec![path]));
+                        } else {
+                            this.open_path(path, window, cx);
+                        }
                     }
                 }
                 _ => {}
@@ -203,6 +210,9 @@ impl Workspace {
             loading: false,
             load_generation: 0,
             unavailable: false,
+            source_only: false,
+            import_permit: None,
+            conversion_source: None,
             import_busy: Arc::new(AtomicBool::new(false)),
             import_cancel: Arc::new(AtomicBool::new(false)),
             theme: Rc::new(Cell::new(Theme::default())),
@@ -244,18 +254,43 @@ impl Workspace {
     }
 
     fn dirty(&self, cx: &App) -> bool {
-        if self.loading || self.unavailable {
+        if self.loading || self.unavailable || self.source_only {
             return false;
         }
         self.session.dirty(self.editor.read(cx).text())
             || (self.session.document.path.is_none() && self.preview.attachment.is_some())
     }
 
+    fn display_name(&self) -> String {
+        if self.source_only {
+            self.preview
+                .source
+                .as_ref()
+                .and_then(|path| path.file_name())
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "Source".into())
+        } else {
+            self.session.display_name()
+        }
+    }
+
+    fn open_source(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.source_only = true;
+        self.preview.source = Some(path.clone());
+        self.preview.attachment = Some(path.clone());
+        self.preview.visible = true;
+        self.open_path(path, window, cx);
+        if self.active {
+            window.focus(&self.focus, cx);
+        }
+        self.update_title(window, cx);
+    }
+
     fn update_title(&self, window: &mut Window, _cx: &App) {
         if !self.active {
             return;
         }
-        let name = self.session.display_name();
+        let name = self.display_name();
         window.set_window_title(&format!(
             "{}{} — mdoc",
             if self.dirty_cached { "• " } else { "" },
@@ -271,7 +306,7 @@ impl Workspace {
                     return;
                 }
                 Next::Open(path) => {
-                    cx.emit(tabs::TabEvent::Open(path.clone()));
+                    cx.emit(tabs::TabEvent::Open(vec![path.clone()]));
                     return;
                 }
                 _ => {}
@@ -345,9 +380,14 @@ impl Workspace {
                 Err(error) => self.error = Some(format!("Could not open document: {error}")),
             },
             Next::Import(imported) => {
+                self.source_only = false;
+                let retain_preview = self.preview.source.as_ref() == Some(&imported.source)
+                    && (self.preview.pdf.is_some() || self.preview.loading);
                 self.session
                     .import(imported.source.clone(), imported.warning);
-                self.close_preview(window, cx);
+                if !retain_preview {
+                    self.close_preview(window, cx);
+                }
                 self.replace_images(self.save_directory(), window, cx);
                 self.editor
                     .update(cx, |editor, cx| editor.set_text(imported.markdown, cx));
@@ -356,12 +396,17 @@ impl Workspace {
                     window.focus(&self.editor.read(cx).focus_handle(cx), cx);
                 }
                 self.error = None;
-                self.preview.message = None;
-                if imported.is_pdf {
+                if !retain_preview {
+                    self.preview.message = None;
+                }
+                if retain_preview {
+                    self.preview.visible = true;
+                } else if imported.is_pdf {
                     self.open_pdf(imported.source, window, cx);
                 } else if imported.is_docx {
                     self.open_docx(imported.source, window, cx);
                 } else {
+                    self.preview.attachment = Some(imported.source.clone());
                     self.preview.source = Some(imported.source);
                     self.preview.message =
                         Some("Source preview unavailable for this imported format.".into());
@@ -374,36 +419,21 @@ impl Workspace {
     }
 
     fn import(&mut self, _: &Import, window: &mut Window, cx: &mut Context<Self>) {
-        if self.prompting || self.job.busy() || self.ocr_state.busy() {
+        if !self.source_only
+            || self.prompting
+            || self.job.busy()
+            || self.ocr_state.busy()
+            || self.import_busy.load(Ordering::Relaxed)
+        {
             return;
         }
-        self.prompting = true;
-        let paths = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
-            directories: false,
-            multiple: false,
-            prompt: Some("Import as Markdown — PDF, Office, OpenDocument, RTF, EPUB, CSV".into()),
-        });
-        cx.spawn_in(window, async move |this, cx| {
-            let result = paths.await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.prompting = false;
-                if let Ok(Ok(Some(paths))) = result
-                    && let Some(path) = paths.into_iter().next()
-                {
-                    if this.owner.is_some() {
-                        cx.emit(tabs::TabEvent::Import(path));
-                    } else {
-                        this.start_import(path, window, cx);
-                    }
-                }
-            });
-        })
-        .detach();
+        if let Some(path) = self.preview.source.clone() {
+            self.start_import(path, window, cx);
+        }
     }
 
     fn start_import(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        self.start_import_mode(path, false, window, cx);
+        self.start_import_run(path, false, false, window, cx);
     }
 
     fn start_import_mode(
@@ -413,24 +443,45 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.start_import_run(path, skip_ocr, !skip_ocr, window, cx);
+    }
+
+    fn start_import_run(
+        &mut self,
+        path: PathBuf,
+        skip_ocr: bool,
+        allow_ocr: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.ocr_state.busy() {
             return;
         }
         let installed = match &self.ocr_state {
-            OcrState::Ready(installed) if !skip_ocr => Some(installed.clone()),
+            OcrState::Ready(installed) if allow_ocr && !skip_ocr => Some(installed.clone()),
             _ => None,
         };
-        if self.import_busy.load(Ordering::Relaxed) || !self.job.begin(installed.is_some()) {
+        if self.job.busy() {
             return;
         }
-        self.import_busy.store(true, Ordering::Relaxed);
-        let busy = self.import_busy.clone();
+        if self.import_permit.is_none() {
+            self.import_permit = import_session::ImportPermit::acquire(&self.import_busy);
+        }
+        let Some(permit) = self.import_permit.clone() else {
+            return;
+        };
+        if !self.job.begin(installed.is_some()) {
+            return;
+        }
+        self.conversion_source = Some(path.clone());
+        cx.emit(tabs::TabEvent::ImportState);
         let cancel = self.import_cancel.clone();
+        let owner = self.owner.clone();
         self.error = None;
         let generation = self.session.generation;
         let task = cx.background_executor().spawn(async move {
             let result = import::prepare_cancellable(&path, installed.as_ref(), skip_ocr, &cancel);
-            busy.store(false, Ordering::Relaxed);
+            drop(permit);
             result
         });
         cx.spawn_in(window, async move |this, cx| {
@@ -439,6 +490,9 @@ impl Workspace {
                 this.job.complete(generation, result);
                 this.resume_import(window, cx);
             });
+            if let Some((_, owner)) = owner {
+                let _ = owner.update(cx, |owner, cx| owner.refresh_import(cx));
+            }
         })
         .detach();
         cx.notify();
@@ -460,14 +514,15 @@ impl Workspace {
         if let import_session::ImportCompletion::Ready(result) = completion {
             match result {
                 Ok(imported) => {
-                    if let Some(error) = &imported.ocr_failure {
-                        self.ocr_state = OcrState::Failed(error.clone());
-                    }
                     self.request(Next::Import(imported), window, cx);
                 }
                 Err(import::ImportError::OcrFailed(error)) => {
                     self.ocr_state = OcrState::Failed(error.clone());
+                    cx.emit(tabs::TabEvent::OcrState(self.ocr_state.clone()));
                     self.error = Some(error);
+                    if let Some(path) = self.conversion_source.clone() {
+                        self.prompt_ocr(path, generation, window, cx);
+                    }
                 }
                 Err(import::ImportError::Message(error)) => self.error = Some(error),
                 Err(import::ImportError::NeedsOcr(path)) => {
@@ -475,12 +530,21 @@ impl Workspace {
                 }
             }
         }
+        if !self.job.busy() {
+            self.import_permit = None;
+            cx.emit(tabs::TabEvent::ImportState);
+        }
         // A stale completion also clears the busy indicator.
         cx.notify();
     }
 
     fn setup_ocr(&mut self, _: &SetupOcr, window: &mut Window, cx: &mut Context<Self>) {
-        if self.prompting || self.job.busy() || self.ocr_state.busy() || !ocr::SUPPORTED {
+        if self.prompting
+            || self.job.busy()
+            || self.ocr_state.busy()
+            || self.import_busy.load(Ordering::Relaxed)
+            || !ocr::SUPPORTED
+        {
             return;
         }
         if matches!(self.ocr_state, OcrState::Ready(_)) {
@@ -527,15 +591,22 @@ impl Workspace {
             Ok(installed) => {
                 self.ocr_state = OcrState::Ready(installed);
                 if let Some(path) = self.job.resume_after_setup(self.session.generation) {
-                    self.start_import(path, window, cx);
+                    self.start_import_mode(path, false, window, cx);
                 }
             }
             Err(error) => {
                 self.ocr_state = OcrState::Failed(error);
                 self.job.finish();
+                if let Some(path) = self.job.resume_after_setup(self.session.generation) {
+                    self.prompt_ocr(path, self.session.generation, window, cx);
+                }
             }
         }
+        if !self.job.busy() {
+            self.import_permit = None;
+        }
         cx.emit(tabs::TabEvent::OcrState(self.ocr_state.clone()));
+        cx.emit(tabs::TabEvent::ImportState);
         cx.notify();
     }
 
@@ -548,19 +619,29 @@ impl Workspace {
     ) {
         self.prompting = true;
         self.job.wait_for_ocr();
-        let buttons = if ocr::SUPPORTED {
-            vec!["Set up local OCR", "Skip OCR", "Cancel"]
+        let ready = matches!(self.ocr_state, OcrState::Ready(_));
+        let supported = !matches!(self.ocr_state, OcrState::Unsupported);
+        let failed = matches!(self.ocr_state, OcrState::Failed(_));
+        let buttons = if ready {
+            vec!["Run OCR", "Skip OCR", "Cancel"]
+        } else if supported {
+            vec![
+                if failed {
+                    "Retry"
+                } else {
+                    "Set up and run OCR"
+                },
+                "Skip OCR",
+                "Cancel",
+            ]
         } else {
             vec!["Skip OCR", "Cancel"]
         };
-        let detail = if ocr::SUPPORTED {
-            format!(
-                "Download about {} MB of OCR components once. Documents stay on this device; recognition then works offline. Skipping imports only usable native text.",
-                ocr::download_megabytes()
-            )
-        } else {
-            "Local OCR is not yet qualified on this platform. Skipping imports only usable native text."
-                .to_owned()
+        let detail = match &self.ocr_state {
+            OcrState::Ready(_) => "Some or all pages need text recognition. Run local OCR, or extract native text only with omission warnings. Documents stay on this device.".into(),
+            OcrState::Failed(error) => format!("{error} Retry OCR setup and recognition, extract native text only, or cancel."),
+            _ if supported => format!("Download about {} MB of OCR components once, then run recognition locally. Skipping extracts only usable native text with omission warnings.", ocr::download_megabytes()),
+            _ => "Local OCR is unavailable on this platform. Skipping extracts only usable native text with omission warnings.".into(),
         };
         let answer = window.prompt(
             PromptLevel::Info,
@@ -574,16 +655,25 @@ impl Workspace {
             let _ = this.update_in(cx, |this, window, cx| {
                 this.prompting = false;
                 this.job.finish();
-                if generation != this.session.generation {
+                if generation != this.session.generation
+                    || this.import_cancel.load(Ordering::Relaxed)
+                {
+                    this.import_permit = None;
+                    cx.emit(tabs::TabEvent::ImportState);
                     cx.notify();
                     return;
                 }
-                if ocr::SUPPORTED && answer == Some(0) {
+                if ready && answer == Some(0) {
+                    this.start_import_mode(path, false, window, cx);
+                } else if supported && answer == Some(0) {
                     this.job.defer_for_setup(generation, path);
                     this.begin_ocr_setup(window, cx);
-                } else if answer == Some(if ocr::SUPPORTED { 1 } else { 0 }) {
+                } else if answer == Some(if supported { 1 } else { 0 }) {
                     this.start_import_mode(path, true, window, cx);
+                } else {
+                    this.import_permit = None;
                 }
+                cx.emit(tabs::TabEvent::ImportState);
                 cx.notify();
             });
         })
@@ -610,9 +700,32 @@ impl Workspace {
             cx.notify();
         } else if document::is_markdown(&path) {
             self.request(Next::Open(path), window, cx);
+        } else if self.source_only {
+            let generation = self.begin_preview(path.clone());
+            let task = cx.background_executor().spawn(async move {
+                std::fs::File::open(path)
+                    .and_then(|file| file.metadata())
+                    .map(|_| ())
+            });
+            cx.spawn_in(window, async move |this, cx| {
+                let result = task.await;
+                let _ = this.update(cx, |this, cx| {
+                    if this.preview.generation != generation {
+                        return;
+                    }
+                    this.preview.loading = false;
+                    this.preview.retryable = result.is_err();
+                    this.preview.message = Some(match result {
+                        Ok(()) => "Preview unavailable for this format.".into(),
+                        Err(error) => format!("Could not open source: {error}"),
+                    });
+                    cx.notify();
+                });
+            })
+            .detach();
+            cx.notify();
         } else {
-            self.error =
-                Some("Choose a Markdown (.md, .markdown, .mdown, .txt), PDF, or DOCX file.".into());
+            self.error = Some("Choose a Markdown or supported source document.".into());
             cx.notify();
         }
     }
@@ -626,17 +739,17 @@ impl Workspace {
             files: true,
             directories: false,
             multiple: true,
-            prompt: Some("Open Markdown, PDF, or DOCX".into()),
+            prompt: Some("Open one or more files".into()),
         });
         cx.spawn_in(window, async move |this, cx| {
             let result = paths.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.prompting = false;
                 if let Ok(Ok(Some(paths))) = result {
-                    for path in paths {
-                        if this.owner.is_some() {
-                            cx.emit(tabs::TabEvent::Open(path));
-                        } else {
+                    if this.owner.is_some() {
+                        cx.emit(tabs::TabEvent::Open(paths));
+                    } else {
+                        for path in paths {
                             this.open_path(path, window, cx);
                         }
                     }
@@ -654,7 +767,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.prompting || self.loading || self.unavailable {
+        if self.prompting || self.loading || self.unavailable || self.source_only {
             cx.emit(tabs::TabEvent::CloseCancelled);
             return;
         }
@@ -952,34 +1065,38 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
             .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save(true, None, window, cx)))
             .on_action(cx.listener(|this, _: &Close, window, cx| { if this.owner.is_some() { cx.emit(tabs::TabEvent::CloseRequested); } else { this.request(Next::Close, window, cx); } }))
-            .on_action(cx.listener(|this, _: &ClosePdf, window, cx| { this.toggle_preview(window, cx); window.focus(&this.editor.read(cx).focus_handle(cx), cx); cx.notify(); }))
+            .on_action(cx.listener(|this, _: &ClosePdf, window, cx| { this.toggle_preview(window, cx); if this.source_only { window.focus(&this.focus, cx); } else { window.focus(&this.editor.read(cx).focus_handle(cx), cx); } cx.notify(); }))
             .on_action(cx.listener(Self::find_markdown))
             .on_action(cx.listener(Self::find_next_markdown))
             .on_action(cx.listener(Self::find_previous_markdown))
             .on_action(cx.listener(Self::close_markdown_search))
             .on_action(cx.listener(Self::retry_preview))
             .child(div().flex().flex_wrap().items_center().gap_2().p_2().text_size(px(13.)).border_b_1().border_color(palette.border)
-                .child(button("New", New, theme)).child(button("Open…", Open, theme)).child(button("Save", Save, theme)).child(button("Save As…", SaveAs, theme))
-                .child(if self.job.busy() { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting…" }).into_any_element() } else { button("Import as Markdown…", Import, theme).into_any_element() })
+                .child(button("New", New, theme)).child(button("Open…", Open, theme))
+                .when(!self.source_only, |bar| bar.child(button("Save", Save, theme)).child(button("Save As…", SaveAs, theme)))
+                .when(self.source_only || self.job.busy(), |bar| bar.child(if self.job.busy() { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting…" }).into_any_element() } else if self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy() { div().opacity(0.5).child("Convert to Markdown").into_any_element() } else { button("Convert to Markdown", Import, theme).into_any_element() }))
                 .child(if matches!(self.ocr_state, OcrState::Missing | OcrState::Failed(_)) {
                     button(self.ocr_state.label(), SetupOcr, theme).into_any_element()
                 } else { div().opacity(0.65).child(self.ocr_state.label()).into_any_element() })
                 .child(div().flex_1())
                 .child(button(theme.toggle_label(), ToggleTheme, theme))
-                .child(if self.dirty_cached { "Unsaved changes" } else { "Markdown · WYSIWYG" })
+                .child(if self.dirty_cached { "Unsaved changes" } else if self.source_only { "Source preview" } else { "Markdown · WYSIWYG" })
                 .when(self.preview.loading, |bar| bar.child(div().child("Preparing preview…")))
                 .when(self.preview.pdf.is_some() || self.preview.source.is_some(), |bar| bar.child(button(if self.preview.visible { "Close Preview" } else { "Show Preview" }, TogglePreview, theme))))
             .when_some(self.session.warning.clone(), |view, warning| view.child(div().flex().items_center().gap_2().p_2().border_b_1().border_color(palette.border)
                 .child(div().id("import-warning").flex_1().min_w_0().max_h(px(96.)).overflow_y_scroll().child(warning))
                 .child(button("Dismiss", DismissImportWarning, theme))))
             .child(div().flex().flex_1().min_h_0()
-                .child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
+                .when(!self.source_only, |row| row.child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
                     .when(self.search.open, |column| column.child(search_bar))
                     .child(if self.loading || self.unavailable {
                         div().p_6().child(if self.loading { "Loading Markdown…" } else { "Markdown unavailable" })
                             .when(self.unavailable, |view| view.child(button("Retry", RetryDocument, theme))).into_any_element()
-                    } else { div().id("document-scroll").flex_1().min_w_0().min_h_0().overflow_y_scroll().track_scroll(&self.scroll).p_6().child(self.editor.clone()).into_any_element() }))
-                .when_some(self.preview.pdf.clone().filter(|_| self.preview.visible), |row, pdf| row.child(div().w_1_2().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
+                    } else { div().id("document-scroll").flex_1().min_w_0().min_h_0().overflow_y_scroll().track_scroll(&self.scroll).p_6().child(self.editor.clone()).into_any_element() })))
+                .when(self.source_only && (!self.preview.visible || self.preview.pdf.is_none()), |row| row.child(div().flex_1().p_6()
+                    .child(self.display_name())
+                    .child(div().child(if self.preview.loading { "Preparing preview…" } else if !self.preview.visible { "Preview hidden" } else { "Preview unavailable" }))))
+                .when_some(self.preview.pdf.clone().filter(|_| self.preview.visible), |row, pdf| row.child(div().when(self.source_only, |pane| pane.flex_1()).when(!self.source_only, |pane| pane.w_1_2()).min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments)))))
             .when_some(self.preview.message.clone(), |view, message| view.child(div().flex().items_center().gap_2().p_2().bg(theme.error_bg()).child(div().flex_1().child(format!("{}: {message}", self.preview.source.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Preview".into())))).when(self.preview.retryable, |bar| bar.child(button("Retry", RetryPreview, theme)))))
@@ -1012,17 +1129,16 @@ fn main() {
         let open_context = open_context.clone();
         let pending_url = pending_url.clone();
         move |urls| {
-            for path in urls
+            let paths = urls
                 .iter()
                 .filter_map(|url| url::Url::parse(url).ok()?.to_file_path().ok())
-            {
-                if let Some((window, cx)) = open_context.borrow_mut().as_mut() {
-                    let _ = window.update(cx, |workspace, window, cx| {
-                        workspace.open_path(path, window, cx)
-                    });
-                } else {
-                    pending_url.borrow_mut().push(path);
-                }
+                .collect();
+            if let Some((window, cx)) = open_context.borrow_mut().as_mut() {
+                let _ = window.update(cx, |workspace, window, cx| {
+                    workspace.open_paths(paths, window, cx)
+                });
+            } else {
+                pending_url.borrow_mut().extend(paths);
             }
         }
     });
@@ -1062,7 +1178,7 @@ fn main() {
             items: vec![
                 MenuItem::action("New", New),
                 MenuItem::action("Open…", Open),
-                MenuItem::action("Import as Markdown…", Import),
+                MenuItem::action("Convert to Markdown", Import),
                 MenuItem::action("Save", Save),
                 MenuItem::action("Save As…", SaveAs),
                 MenuItem::separator(),
@@ -1080,17 +1196,16 @@ fn main() {
                 |window, cx| {
                     cx.new(|cx| {
                         let mut workspace = tabs::Tabs::new(window, cx);
-                        for path in initial {
-                            workspace.open_path(path, window, cx);
-                        }
+                        workspace.open_paths(initial, window, cx);
                         workspace
                     })
                 },
             )
             .expect("Could not open the editor window");
-        for path in std::mem::take(&mut *pending_url.borrow_mut()) {
+        let pending = std::mem::take(&mut *pending_url.borrow_mut());
+        if !pending.is_empty() {
             let _ = handle.update(cx, |workspace, window, cx| {
-                workspace.open_path(path, window, cx)
+                workspace.open_paths(pending, window, cx)
             });
         }
         *open_context.borrow_mut() = Some((handle, cx.to_async()));

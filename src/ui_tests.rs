@@ -501,7 +501,6 @@ fn opening_and_saving_preserves_markdown_bytes(cx: &mut TestAppContext) {
 
 fn converted(source: PathBuf) -> import::Imported {
     import::Imported {
-        ocr_failure: None,
         source,
         markdown: "# Imported\n".into(),
         warning: Some("Partial import: pages 2 of 2 require OCR and were skipped.".into()),
@@ -558,18 +557,24 @@ fn ocr_prompt_cancel_preserves_current_edits(cx: &mut TestAppContext) {
 fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
-        app.editor
-            .update(cx, |editor, cx| editor.set_text("keep edits", cx));
         app.ocr_state = OcrState::Installing;
-        assert!(app.job.begin(false));
         app.job
             .defer_for_setup(app.session.generation, "scan.pdf".into());
         app.finish_ocr_setup(Err("download interrupted".into()), window, cx);
         assert_eq!(app.ocr_state.label(), "Retry OCR setup");
+        assert!(app.job.busy());
+        assert!(app.prompting);
+    });
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
         assert!(!app.job.busy());
-        assert!(app.job.has_ocr_continuation());
+        assert!(!app.import_busy.load(Ordering::Relaxed));
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("keep edits", cx));
+        app.job
+            .defer_for_setup(app.session.generation, "scan.pdf".into());
         app.session.generation += 1;
-        app.ocr_state = OcrState::Installing;
         app.finish_ocr_setup(
             Ok(ocr::Installed {
                 models: "models".into(),
@@ -579,7 +584,6 @@ fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut Tes
             window,
             cx,
         );
-        assert_eq!(app.ocr_state.label(), "OCR ready");
         assert!(!app.job.busy());
         assert!(!app.job.has_ocr_continuation());
         assert_eq!(app.editor.read(cx).text(), "keep edits");
@@ -609,9 +613,11 @@ fn import_action_converts_and_saves_without_touching_source(cx: &mut TestAppCont
     let original = "Name,Count\nApples,2\n";
     std::fs::write(&source, original).unwrap();
     let (app, cx) = boot(cx);
-    cx.dispatch_action(Import);
+    app.update_in(cx, |app, window, cx| {
+        app.open_source(source.clone(), window, cx)
+    });
     cx.run_until_parked();
-    cx.simulate_path_prompt_response(|_| Some(vec![source.clone()]));
+    cx.dispatch_action(Import);
     cx.run_until_parked();
     let markdown = cx.update(|_, cx| {
         let app = app.read(cx);

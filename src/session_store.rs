@@ -19,6 +19,7 @@ pub enum PreviewFit {
 #[serde(default)]
 pub struct TabRecord {
     pub markdown: PathBuf,
+    pub source_only: bool,
     pub attachment: Option<PathBuf>,
     pub preview_visible: bool,
     pub caret: usize,
@@ -63,7 +64,18 @@ pub fn load(path: &Path) -> io::Result<Session> {
         return Err(io::Error::other("Unsupported session version"));
     }
     if session.tabs.iter().any(|tab| {
-        !tab.markdown.is_absolute()
+        !(if tab.source_only {
+            tab.markdown.as_os_str().is_empty()
+                && tab
+                    .attachment
+                    .as_ref()
+                    .is_some_and(|path| path.is_absolute())
+        } else {
+            tab.markdown.is_absolute()
+        }) || tab
+            .attachment
+            .as_ref()
+            .is_some_and(|path| !path.is_absolute())
             || !tab.scroll_y.is_finite()
             || tab.preview_zoom.is_some_and(|z| !z.is_finite())
     }) {
@@ -111,6 +123,7 @@ mod tests {
         let mut session = Session::default();
         session.tabs.push(TabRecord {
             markdown: dir.path().join("note.md"),
+            source_only: false,
             attachment: Some(dir.path().join("source.docx")),
             preview_visible: false,
             caret: 8,

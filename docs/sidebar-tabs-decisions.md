@@ -2,10 +2,15 @@
 
 Status: implemented; automated validation recorded below. Native visual/shortcut checks remain manual.
 
+The Open/import and source-only persistence behavior below is defined by
+[bulk Open and explicit conversion](bulk-open-decisions.md). Open gives each
+source its own tab; conversion is an explicit action within that tab.
+
 ## Confirmed
 
-- One tab owns one Markdown document, saved or untitled, and at most one attached
-  PDF/DOCX. Switching selects the whole pair.
+- One tab owns either a source preview or a Markdown document with at most one
+  attached PDF/DOCX. A source tab becomes the Markdown tab when conversion is
+  accepted; switching selects the whole pair.
 - Each live tab retains text, undo history, selection, scroll, search, and preview
   state. Switching tabs never prompts to save.
 - Closing the preview hides it without forgetting its attachment. The user can
@@ -14,22 +19,29 @@ Status: implemented; automated validation recorded below. Native visual/shortcut
 - Collapsible left sidebar lists open tabs only, with close buttons, dirty
   indicators, drag reordering, and a plus icon for a new empty Markdown tab.
   No filesystem tree, recent-files list, or horizontal tab strip.
-- Opening Markdown creates a tab; reopening the same file activates its existing
-  tab. Opening PDF/DOCX attaches it to the active tab. Import as Markdown creates
-  a new paired tab.
-- Restore tabs from the previous session. Keep persistence simple and performant;
-  restore saved paths only, not unsaved buffer contents. Quitting still requires
-  Save/Discard/Cancel for dirty or untitled documents. No draft recovery in v1.
+- Open accepts one or more files, never folders, and appends supported files in
+  picker order. Markdown opens for editing; PDF/DOCX opens as its own preview
+  tab; other supported source formats open with Preview unavailable. Reopening a
+  source activates its existing tab. Convert to Markdown changes that source tab
+  into an unsaved Markdown document and preserves its source preview when one is
+  available.
+- Restore tabs from the previous session, including unconverted source paths and
+  preview positions. Keep persistence simple and performant; restore saved paths
+  only, not unsaved buffer contents. Unconverted source tabs close without a save
+  prompt. Quitting still requires Save/Discard/Cancel for converted or dirty
+  Markdown documents. No draft recovery in v1.
 - Across restart preserve tab order, active tab, attachments, sidebar visibility,
   preview visibility, editor caret/scroll, and preview page/zoom. Undo and search
   survive live switching but reset after restart. Hidden previews load on demand.
-- Closing the last tab leaves one empty Markdown tab. Closing a dirty tab prompts
-  Save/Discard/Cancel.
-- Attaching another PDF/DOCX replaces the old attachment only after the new preview
-  loads successfully. Closing the preview hides it; its attachment remains.
-- Imports and DOCX conversion continue across tab switches, with completion bound
-  to the originating tab. Closing that tab cancels its work. One import at a time
-  globally; DOCX conversions are serialized.
+- Closing the last tab leaves one empty Markdown tab. Closing a converted or dirty
+  tab prompts Save/Discard/Cancel; closing an unconverted source tab does not.
+- Opening another source creates or activates its own tab. Within a converted
+  Markdown tab, replacing a PDF/DOCX still waits for the new preview to load
+  successfully. Closing the preview hides it; its attachment remains.
+- Markdown conversions and DOCX preview conversion continue across tab switches,
+  with completion bound to the originating tab. Closing that tab cancels its work.
+  One Markdown conversion runs at a time globally; DOCX conversions are
+  serialized.
 - Busy tabs show a spinner or other loading indicator, including inactive tabs.
   Queued work must be distinguishable from running work. Errors remain visible on
   the affected tab and never replace another tab's content.
@@ -59,9 +71,10 @@ Zorite upstream revision: `3f14fafba120386b058e3cde24ced55f23dd653e`.
 
 Adapt interaction patterns to vertical tabs. Do not import notebook/database
 ownership or page-editor reconstruction on activation: unsaved buffers and undo
-history must survive switching. Current mdoc `Workspace` owns a single editor,
-document session, preview, and search; these need per-tab ownership. Its current
-preview close clears the source, so hiding and detaching need distinct semantics.
+history must survive switching. Each live tab owns its `Workspace` editor,
+document session, preview, and search. Source identity, preview visibility, and
+Markdown conversion state are separate so a source can be hidden, reopened, or
+converted without losing its attachment.
 
 ## Persistence
 
@@ -69,9 +82,9 @@ preview close clears the source, so hiding and detaching need distinct semantics
 - Atomic replacement through a temporary file; serialize writes and coalesce
   metadata changes. Existing `serde_json`, `dirs`, and `tempfile` dependencies
   suffice; no database or new framework.
-- Ordered tab records, active tab, Markdown path, attachment path, preview
-  visibility, sidebar visibility, and agreed reading positions. Store original
-  DOCX path, never temporary PDF.
+- Ordered tab records, active tab, source-only state, Markdown path, source or
+  attachment path, preview visibility, sidebar visibility, and agreed reading
+  positions. Store original DOCX path, never temporary PDF.
 - Restore sidebar records first; load editor/preview resources on first activation.
 - Save/Discard/Cancel remains necessary on quitting. A path list does not preserve
   unsaved edits; untitled tabs discarded on quit cannot restore their attachments.
@@ -110,13 +123,13 @@ preview close clears the source, so hiding and detaching need distinct semantics
 - Session snapshots are sampled every two seconds and written only when metadata
   differs; close/quit also checkpoint. Writes are serialized with one latest
   pending snapshot. Normal quit waits for the final checkpoint before teardown.
-- Import cancellation is cooperative at conversion-stage boundaries because the
+- Markdown conversion cancellation is cooperative at conversion-stage boundaries because the
   underlying conversion calls are synchronous. Closing a tab immediately rejects
   its result; the global import slot stays occupied until the call returns.
   DOCX worker cancellation also terminates/reaps its child process.
-- Saving a previously untitled pair retains its attachment. An empty untitled tab
-  with an attached preview prompts on close/quit, so its pairing is not silently
-  discarded. Empty unattached tabs close without prompting.
+- Saving a previously untitled converted pair retains its attachment. An
+  unconverted source tab has no save obligation. Empty unattached Markdown tabs
+  close without prompting.
 
 Measured on this macOS host, debug profile, headless GPUI, 1280×800 viewport;
 24 session records, six initialized tabs, including two 127.5 kB Markdown files
@@ -148,13 +161,15 @@ cargo test -p mdoc tabs_host_performance -- --ignored --nocapture --test-threads
 
 Final gate: `cargo fmt --check`,
 `cargo clippy --workspace --all-targets -- -D warnings`, and
-`cargo test --workspace` passed (304 passed, 8 ignored). The ignored tab
-performance test was also run explicitly and passed.
+`cargo test --workspace` passed (314 passed, 8 ignored). Clippy retains the
+repository's existing future-compatibility and registry-age warnings.
 
-Automated cases cover tab switching/undo/search, ordering, close/cancel, last-tab
-replacement, missing-file retry, duplicate-path save protection, lazy restoration,
-hidden preview reopening, attachment replacement failure, background import
-routing/focus, queued conversions, final checkpoints, and DOCX resource release.
+Automated cases cover tab switching/undo/search, bulk picker ordering and
+deduplication, source-only restoration/close, same-tab conversion, OCR consent
+and fallback, close/cancel, last-tab replacement, missing-file retry,
+duplicate-path save protection, lazy restoration, hidden preview reopening,
+attachment replacement failure, background conversion routing/focus, queued
+conversions, final checkpoints, and DOCX resource release.
 Native drag/keyboard interaction, GPU presentation, and Windows/Linux execution
 still require platform checks; headless coverage is not visual acceptance.
 

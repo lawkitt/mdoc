@@ -7,8 +7,8 @@ use std::{collections::VecDeque, time::Duration};
 
 pub(super) enum TabEvent {
     New,
-    Open(PathBuf),
-    Import(PathBuf),
+    Open(Vec<PathBuf>),
+    ImportState,
     CloseRequested,
     CloseResolved,
     ToggleTheme,
@@ -202,11 +202,13 @@ impl Tabs {
         // Session paths were normalized when opened/saved. Do not stat every file
         // during startup; missing files are diagnosed when activated.
         for record in session.tabs {
-            if self
-                .tabs
-                .iter()
-                .any(|tab| tab.record.markdown == record.markdown)
-            {
+            if self.tabs.iter().any(|tab| {
+                if record.source_only {
+                    tab.record.attachment == record.attachment
+                } else {
+                    !tab.record.source_only && tab.record.markdown == record.markdown
+                }
+            }) {
                 continue;
             }
             self.push(record);
@@ -217,8 +219,9 @@ impl Tabs {
         }
         let active = self.tabs[selected.min(self.tabs.len() - 1)].id;
         self.activate(active, window, cx);
-        for path in std::mem::take(&mut self.pending_open) {
-            self.open_path(path, window, cx);
+        let pending = std::mem::take(&mut self.pending_open);
+        if !pending.is_empty() {
+            self.open_paths(pending, window, cx);
         }
         cx.notify();
     }
@@ -262,6 +265,7 @@ impl Tabs {
             view.active = id == self.active;
             view.theme = theme;
             view.import_busy = import_busy;
+            view.source_only = record.source_only;
             view.loading = !record.markdown.as_os_str().is_empty();
             view.editor.update(cx, |editor, cx| {
                 editor.set_markdown_style(style::markdown_style(view.theme.get()), cx)
@@ -289,6 +293,11 @@ impl Tabs {
         self.tabs[index].subscriptions = vec![events, changes];
         if !record.markdown.as_os_str().is_empty() {
             self.load_document(id, record, window, cx);
+        } else if record.source_only
+            && record.preview_visible
+            && let Some(path) = record.attachment
+        {
+            view.update(cx, |view, cx| view.open_source(path, window, cx));
         }
     }
 
@@ -390,7 +399,9 @@ impl Tabs {
             view.update(cx, |view, cx| {
                 view.active = true;
                 view.update_title(window, cx);
-                if view.loading || view.unavailable {
+                if view.source_only {
+                    window.focus(&view.focus, cx);
+                } else if view.loading || view.unavailable {
                     window.focus(&self.focus, cx);
                 } else {
                     window.focus(&view.editor.read(cx).focus_handle(cx), cx);
@@ -424,28 +435,108 @@ impl Tabs {
             .map(|tab| tab.id)
     }
 
+    #[cfg(test)]
     pub fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_paths(vec![path], window, cx);
+    }
+
+    pub fn open_paths(&mut self, paths: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
         if !self.ready {
-            self.pending_open.push(path);
+            self.pending_open.extend(paths);
             return;
         }
         if self.quitting.is_some() || self.finishing {
             return;
         }
-        if document::is_markdown(&path) {
-            let identity = session_store::identity(&path);
-            if let Some(id) = self.find_path(&identity, None, cx) {
-                self.activate(id, window, cx);
-                return;
-            }
-            let id = self.push(TabRecord {
-                markdown: identity,
-                ..TabRecord::default()
-            });
-            self.activate(id, window, cx);
-        } else if let Some(view) = self.active_view() {
-            view.update(cx, |view, cx| view.open_path(path, window, cx));
+        let task = cx.background_executor().spawn(async move {
+            paths
+                .into_iter()
+                .map(|path| {
+                    let supported = !path.is_dir()
+                        && (document::is_markdown(&path) || import::supported_source(&path));
+                    (session_store::identity(&path), supported)
+                })
+                .collect::<Vec<_>>()
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let paths = task.await;
+            let _ = this.update_in(cx, |this, window, cx| this.finish_open(paths, window, cx));
+        })
+        .detach();
+    }
+
+    fn finish_open(
+        &mut self,
+        paths: Vec<(PathBuf, bool)>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.quitting.is_some() || self.finishing {
+            return;
         }
+        let mut first = None;
+        let mut unsupported = Vec::new();
+        for (path, supported) in paths {
+            if !supported {
+                unsupported.push(path.display().to_string());
+                continue;
+            }
+            let existing = self.find_path(&path, None, cx).or_else(|| {
+                self.tabs
+                    .iter()
+                    .find(|tab| {
+                        let source = tab
+                            .view
+                            .as_ref()
+                            .and_then(|view| {
+                                let view = view.read(cx);
+                                view.session
+                                    .source
+                                    .as_ref()
+                                    .or(view.preview.attachment.as_ref())
+                                    .or(view.preview.source.as_ref())
+                            })
+                            .or(tab.record.attachment.as_ref());
+                        source == Some(&path)
+                    })
+                    .map(|tab| tab.id)
+            });
+            let id = existing.unwrap_or_else(|| {
+                if document::is_markdown(&path) {
+                    self.push(TabRecord {
+                        markdown: path,
+                        ..TabRecord::default()
+                    })
+                } else {
+                    self.push(TabRecord {
+                        source_only: true,
+                        attachment: Some(path),
+                        preview_visible: true,
+                        ..TabRecord::default()
+                    })
+                }
+            });
+            first.get_or_insert(id);
+        }
+        if !unsupported.is_empty() {
+            self.notice = Some(format!(
+                "Unsupported files skipped: {}",
+                unsupported.join(", ")
+            ));
+        }
+        if let Some(first) = first {
+            self.activate(first, window, cx);
+        }
+        cx.notify();
+    }
+
+    pub fn refresh_import(&self, cx: &mut Context<Self>) {
+        for tab in &self.tabs {
+            if let Some(view) = &tab.view {
+                view.update(cx, |_, cx| cx.notify());
+            }
+        }
+        cx.notify();
     }
 
     fn event(&mut self, id: u64, event: &TabEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -456,34 +547,8 @@ impl Tabs {
             TabEvent::New if self.quitting.is_none() => {
                 self.new_tab(window, cx);
             }
-            TabEvent::Open(path) => self.open_path(path.clone(), window, cx),
-            TabEvent::Import(path) if self.quitting.is_none() => {
-                if self.import_busy.load(Ordering::Relaxed)
-                    || self.tabs.iter().any(|tab| {
-                        tab.view
-                            .as_ref()
-                            .is_some_and(|view| view.read(cx).job.busy())
-                    })
-                {
-                    self.notice = Some("An import is already in progress.".into());
-                } else {
-                    let ocr = self
-                        .tabs
-                        .iter()
-                        .find(|tab| tab.id == id)
-                        .and_then(|tab| tab.view.as_ref())
-                        .map(|view| view.read(cx).ocr_state.clone());
-                    self.new_tab(window, cx);
-                    if let Some(view) = self.active_view() {
-                        view.update(cx, |view, cx| {
-                            if let Some(ocr) = ocr {
-                                view.ocr_state = ocr;
-                            }
-                            view.start_import(path.clone(), window, cx);
-                        });
-                    }
-                }
-            }
+            TabEvent::Open(paths) => self.open_paths(paths.clone(), window, cx),
+            TabEvent::ImportState => self.refresh_import(cx),
             TabEvent::CloseRequested => self.close_tab(id, window, cx),
             TabEvent::OcrState(state) => self.set_ocr(state.clone(), cx),
             TabEvent::Saved => {
@@ -646,6 +711,8 @@ impl Tabs {
     fn release(view: &Entity<Workspace>, window: &mut Window, cx: &mut App) {
         view.update(cx, |view, cx| {
             view.import_cancel.store(true, Ordering::Relaxed);
+            view.session.generation = view.session.generation.wrapping_add(1);
+            view.import_permit = None;
             view.close_preview(window, cx);
             view.images.release(window, cx);
         });
@@ -735,6 +802,7 @@ impl Tabs {
             let mut record = tab.record.clone();
             if let Some(view) = &tab.view {
                 let view = view.read(cx);
+                record.source_only = view.source_only;
                 if let Some(path) = &view.session.document.path {
                     record.markdown = path.clone();
                 }
@@ -759,7 +827,7 @@ impl Tabs {
                     };
                 }
             }
-            if record.markdown.as_os_str().is_empty() {
+            if record.markdown.as_os_str().is_empty() && !record.source_only {
                 continue;
             }
             if tab.id == self.active {
@@ -953,6 +1021,11 @@ impl Tabs {
                     .view
                     .as_ref()
                     .and_then(|view| view.read(cx).session.document.path.as_ref())
+                    .or(tab
+                        .record
+                        .attachment
+                        .as_ref()
+                        .filter(|_| tab.record.source_only))
                     .unwrap_or(&tab.record.markdown);
                 *filenames.entry(path.file_name()).or_insert(0usize) += 1;
             }
@@ -961,13 +1034,19 @@ impl Tabs {
                 let view = tab.view.as_ref().map(|view| view.read(cx));
                 let name = view
                     .filter(|view| !view.loading && !view.unavailable)
-                    .map(|view| view.session.display_name())
+                    .map(|view| view.display_name())
                     .unwrap_or_else(|| {
-                        tab.record
-                            .markdown
-                            .file_name()
-                            .map(|name| name.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| "Untitled.md".into())
+                        (if tab.record.source_only {
+                            tab.record
+                                .attachment
+                                .as_ref()
+                                .unwrap_or(&tab.record.markdown)
+                        } else {
+                            &tab.record.markdown
+                        })
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Untitled.md".into())
                     });
                 let busy = view.and_then(|view| {
                     if view.loading {
@@ -994,6 +1073,11 @@ impl Tabs {
                     .or(tab.record.attachment.as_ref());
                 let path = view
                     .and_then(|view| view.session.document.path.as_ref())
+                    .or(tab
+                        .record
+                        .attachment
+                        .as_ref()
+                        .filter(|_| tab.record.source_only))
                     .unwrap_or(&tab.record.markdown);
                 let duplicate = filenames.get(&path.file_name()).copied().unwrap_or(0) > 1;
                 let selected = self.active == id;

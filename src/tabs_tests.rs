@@ -31,6 +31,247 @@ fn click_toolbar(cx: &mut VisualTestContext, label: &'static str) {
 }
 
 #[gpui::test]
+fn ocr_failure_requires_explicit_native_fallback_and_blocks_other_conversions(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let csv = dir.path().join("other.csv");
+    std::fs::write(&csv, "name,count\npears,3\n").unwrap();
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/import/handmade-partly-scanned.pdf");
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![source, csv], window, cx)
+    });
+    cx.run_until_parked();
+    let first = active(&tabs, cx);
+    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    first.update(cx, |view, _| {
+        view.ocr_state = OcrState::Ready(ocr::Installed {
+            models: "missing-models".into(),
+            pdfium: "missing-pdfium".into(),
+            onnx: "missing-onnx".into(),
+        })
+    });
+    cx.dispatch_action(Import);
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Run OCR");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = first.read(cx);
+        assert!(view.prompting);
+        assert!(view.job.busy());
+        assert!(view.source_only);
+        assert!(view.editor.read(cx).text().is_empty());
+        assert!(view.error.as_ref().unwrap().contains("Local OCR failed"));
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    cx.run_until_parked();
+    let second = active(&tabs, cx);
+    second.update_in(cx, |view, window, cx| view.import(&Import, window, cx));
+    cx.update(|_, cx| assert!(!second.read(cx).job.busy()));
+    cx.simulate_prompt_answer("Skip OCR");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_ne!(tabs.read(cx).active, first_id);
+        assert!(!first.read(cx).source_only);
+        assert!(
+            first
+                .read(cx)
+                .session
+                .warning
+                .as_ref()
+                .unwrap()
+                .contains("2, 5")
+        );
+        assert!(!first.read(cx).import_busy.load(Ordering::Relaxed));
+    });
+    second.update_in(cx, |view, window, cx| view.import(&Import, window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(second.read(cx).editor.read(cx).text().contains("pears")));
+}
+
+#[gpui::test]
+fn closing_source_rejects_conversion_even_when_view_is_retained(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.csv");
+    std::fs::write(&source, "name,count\napples,2\n").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(source, window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    tabs.update_in(cx, |tabs, window, cx| {
+        view.update(cx, |view, cx| view.import(&Import, window, cx));
+        assert!(view.read(cx).job.busy());
+        tabs.close_tab(tabs.active, window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).tabs.len(), 1);
+        assert!(view.read(cx).source_only);
+        assert!(view.read(cx).editor.read(cx).text().is_empty());
+        assert!(!view.read(cx).job.busy());
+        assert!(!tabs.read(cx).import_busy.load(Ordering::Relaxed));
+    });
+}
+
+#[gpui::test]
+fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let markdown = dir.path().join("note.md");
+    let csv = dir.path().join("table.csv");
+    let unknown = dir.path().join("unknown.bin");
+    std::fs::write(&markdown, "# Existing\r\n").unwrap();
+    std::fs::write(&csv, "name,count\napples,2\n").unwrap();
+    std::fs::write(&unknown, "unknown").unwrap();
+    let pdf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    let (tabs, cx) = boot(cx, Session::default());
+    let original = active(&tabs, cx);
+    cx.simulate_input("keep edits");
+    cx.dispatch_action(Open);
+    cx.run_until_parked();
+    cx.simulate_path_prompt_response(|_| {
+        Some(vec![
+            pdf.clone(),
+            markdown.clone(),
+            csv.clone(),
+            pdf.clone(),
+            unknown,
+        ])
+    });
+    cx.run_until_parked();
+    let source = active(&tabs, cx);
+    let source_id = cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.tabs.len(), 4);
+        assert!(tabs.tabs[2].view.is_none());
+        assert!(tabs.tabs[3].view.is_none());
+        assert_eq!(
+            tabs.tabs[2].record.markdown,
+            session_store::identity(&markdown)
+        );
+        assert!(tabs.notice.as_ref().unwrap().contains("unknown.bin"));
+        assert!(source.read(cx).source_only);
+        assert!(!source.read(cx).dirty(cx));
+        assert!(source.read(cx).preview.pdf.is_some());
+        assert!(source.read(cx).editor.read(cx).text().is_empty());
+        assert_eq!(original.read(cx).editor.read(cx).text(), "keep edits");
+        tabs.active
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![pdf, markdown], window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).tabs.len(), 4);
+        assert_eq!(tabs.read(cx).active, source_id);
+        assert!(tabs.read(cx).tabs[2].view.is_none());
+    });
+    cx.dispatch_action(Close);
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 3));
+}
+
+#[gpui::test]
+fn source_only_manifest_restores_multiple_sources_and_missing_source_is_retryable(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let csv = dir.path().join("missing.csv");
+    let pdf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    let session = Session {
+        tabs: vec![pdf, csv.clone()]
+            .into_iter()
+            .map(|source| TabRecord {
+                source_only: true,
+                attachment: Some(source),
+                preview_visible: true,
+                ..TabRecord::default()
+            })
+            .collect(),
+        ..Session::default()
+    };
+    let manifest = dir.path().join("session.json");
+    session_store::save(&manifest, &session).unwrap();
+    let (tabs, cx) = boot(cx, session_store::load(&manifest).unwrap());
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).tabs.len(), 2);
+        assert!(tabs.read(cx).tabs[1].view.is_none());
+        assert_eq!(tabs.read(cx).snapshot(cx).tabs.len(), 2);
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| assert!(view.read(cx).preview.retryable));
+    std::fs::write(csv, "name,count\napples,2\n").unwrap();
+    cx.dispatch_action(RetryPreview);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(!view.read(cx).preview.retryable);
+        assert!(!view.read(cx).dirty(cx));
+    });
+}
+
+#[gpui::test]
+fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAppContext) {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/import/handmade-partly-scanned.pdf");
+    let original = std::fs::read(&source).unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(source.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    view.update(cx, |view, _| {
+        view.ocr_state = OcrState::Ready(ocr::Installed {
+            models: "must-not-load".into(),
+            pdfium: "must-not-load".into(),
+            onnx: "must-not-load".into(),
+        })
+    });
+    cx.dispatch_action(Import);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(view.read(cx).prompting);
+        assert!(view.read(cx).source_only);
+        assert!(view.read(cx).import_busy.load(Ordering::Relaxed));
+        assert!(matches!(view.read(cx).ocr_state, OcrState::Ready(_)));
+    });
+    cx.simulate_prompt_answer("Skip OCR");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(!view.source_only);
+        assert!(view.dirty(cx));
+        assert!(view.editor.read(cx).text().contains("Readable page three"));
+        assert!(view.session.warning.as_ref().unwrap().contains("2, 5"));
+        assert_eq!(view.preview.pdf.as_ref(), Some(&pdf));
+        assert!(!view.import_busy.load(Ordering::Relaxed));
+        assert_eq!(tabs.read(cx).tabs.len(), 2);
+        assert!(
+            tabs.read(cx).snapshot(cx).tabs.is_empty(),
+            "unsaved conversion is not persisted as a source-only tab"
+        );
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(source.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    assert_eq!(active(&tabs, cx), view);
+    cx.simulate_input("preserve edits");
+    let text = cx.update(|_, cx| view.read(cx).editor.read(cx).text().to_owned());
+    cx.dispatch_action(Import);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), text));
+    assert_eq!(std::fs::read(source).unwrap(), original);
+}
+
+#[gpui::test]
 fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
@@ -56,13 +297,7 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     click_toolbar(cx, "Close Preview");
     cx.update(|window, cx| {
         assert!(!view.read(cx).preview.visible);
-        assert!(
-            view.read(cx)
-                .editor
-                .read(cx)
-                .focus_handle(cx)
-                .is_focused(window)
-        );
+        assert!(view.read(cx).focus.is_focused(window));
     });
     click_toolbar(cx, "Show Preview");
     cx.update(|_, cx| {
@@ -187,8 +422,8 @@ fn paired_preview_hides_reopens_and_failed_replacement_preserves_attachment(
     let view = active(&tabs, cx);
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let pdf = base.join("tests/fixtures/reference.pdf");
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_path(pdf.clone(), window, cx)
+    view.update_in(cx, |view, window, cx| {
+        view.open_path(pdf.clone(), window, cx)
     });
     cx.run_until_parked();
     let entity = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
@@ -202,8 +437,8 @@ fn paired_preview_hides_reopens_and_failed_replacement_preserves_attachment(
     cx.dispatch_action(TogglePreview);
     cx.run_until_parked();
     cx.update(|_, cx| assert_eq!(view.read(cx).preview.pdf.as_ref(), Some(&entity)));
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_path(base.join("missing.pdf"), window, cx)
+    view.update_in(cx, |view, window, cx| {
+        view.open_path(base.join("missing.pdf"), window, cx)
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
@@ -312,9 +547,11 @@ fn queued_docx_jobs_are_serial_and_closed_tabs_cannot_receive_results(cx: &mut T
     let first_id = cx.update(|_, cx| tabs.read(cx).active);
     // Admit both jobs in one update before the background executor runs.
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.open_path(source.clone(), window, cx);
+        first.update(cx, |view, cx| view.open_docx(source.clone(), window, cx));
         tabs.new_tab(window, cx);
-        tabs.open_path(source, window, cx);
+        tabs.active_view()
+            .unwrap()
+            .update(cx, |view, cx| view.open_docx(source, window, cx));
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
@@ -354,7 +591,12 @@ fn background_import_finishes_in_its_own_tab_without_stealing_focus(cx: &mut Tes
     let original = active(&tabs, cx);
     let id = cx.update(|_, cx| tabs.read(cx).active);
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.event(id, &TabEvent::Import(source), window, cx);
+        tabs.open_path(source, window, cx);
+    });
+    cx.run_until_parked();
+    let imported = active(&tabs, cx);
+    imported.update_in(cx, |view, window, cx| view.import(&Import, window, cx));
+    tabs.update_in(cx, |tabs, window, cx| {
         tabs.activate(id, window, cx);
     });
     cx.run_until_parked();
@@ -619,11 +861,11 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
         crate::perf_tests::rss_kib()
     );
     for cycle in 0..5 {
-        let id = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
         tabs.update_in(cx, |tabs, window, cx| {
             tabs.open_path(docx.clone(), window, cx)
         });
         cx.run_until_parked();
+        let id = cx.update(|_, cx| tabs.read(cx).active);
         draw(cx);
         let (weak, backing) = cx.update(|_, cx| {
             let view = tabs.read(cx).active_view().unwrap();

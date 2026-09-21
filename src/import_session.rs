@@ -2,6 +2,28 @@
 //! and the OCR continuation that resumes a conversion after setup.
 use crate::import;
 use std::path::PathBuf;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
+/// Held by both the tab and its worker, including while OCR dialogs are open.
+/// Closing a tab cannot admit new work until its synchronous worker exits.
+pub(super) struct ImportPermit(Arc<AtomicBool>);
+
+impl ImportPermit {
+    pub fn acquire(busy: &Arc<AtomicBool>) -> Option<Arc<Self>> {
+        busy.compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .ok()
+            .map(|_| Arc::new(Self(busy.clone())))
+    }
+}
+
+impl Drop for ImportPermit {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
 
 #[derive(Default)]
 pub(super) struct ImportSession {
@@ -98,6 +120,19 @@ impl ImportSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn worker_keeps_global_slot_until_it_exits_after_tab_closes() {
+        let busy = Arc::new(AtomicBool::new(false));
+        let tab = ImportPermit::acquire(&busy).unwrap();
+        let worker = tab.clone();
+        assert!(ImportPermit::acquire(&busy).is_none());
+        drop(tab);
+        assert!(ImportPermit::acquire(&busy).is_none());
+        drop(worker);
+        assert!(ImportPermit::acquire(&busy).is_some());
+        assert!(!busy.load(Ordering::Relaxed));
+    }
 
     #[test]
     fn completion_waits_for_dialog_and_refuses_second_job() {

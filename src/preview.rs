@@ -148,7 +148,11 @@ impl Workspace {
     pub(super) fn toggle_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.preview.visible = !self.preview.visible;
         if !self.preview.visible && self.active && !self.loading && !self.unavailable {
-            window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+            if self.source_only {
+                window.focus(&self.focus, cx);
+            } else {
+                window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+            }
         }
         if self.preview.visible
             && self.preview.pdf.is_none()
