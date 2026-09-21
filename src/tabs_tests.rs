@@ -1,0 +1,797 @@
+use super::*;
+use gpui::{TestAppContext, VisualTestContext};
+
+fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Tabs>, &mut VisualTestContext) {
+    cx.update(mdoc_editor::bind_keys);
+    cx.update(markdown_search::bind_keys);
+    cx.update(bind_markdown_search_keys);
+    let (tabs, cx) = cx.add_window_view(|window, cx| {
+        let mut tabs = Tabs::empty(cx);
+        tabs.restore(session, window, cx);
+        tabs
+    });
+    cx.run_until_parked();
+    (tabs, cx)
+}
+
+fn active(tabs: &Entity<Tabs>, cx: &mut VisualTestContext) -> Entity<Workspace> {
+    cx.update(|_, cx| tabs.read(cx).active_view().unwrap())
+}
+
+fn click_toolbar(cx: &mut VisualTestContext, label: &'static str) {
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    let bounds = cx
+        .debug_bounds(label)
+        .expect("toolbar button must be rendered");
+    cx.simulate_click(bounds.center(), gpui::Modifiers::none());
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    let original = cx.update(|_, cx| tabs.read(cx).theme.get());
+    click_toolbar(cx, original.toggle_label());
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).theme.get(), original.toggle()));
+    cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
+    click_toolbar(cx, original.toggle().toggle_label());
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).theme.get(), original));
+}
+
+#[gpui::test]
+fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(path.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    click_toolbar(cx, "Close Preview");
+    cx.update(|window, cx| {
+        assert!(!view.read(cx).preview.visible);
+        assert!(
+            view.read(cx)
+                .editor
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+    });
+    click_toolbar(cx, "Show Preview");
+    cx.update(|_, cx| {
+        assert!(view.read(cx).preview.visible);
+        assert_eq!(view.read(cx).preview.pdf.as_ref(), Some(&pdf));
+    });
+    cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
+    click_toolbar(cx, "Close Preview");
+    cx.update(|_, cx| {
+        assert!(!view.read(cx).preview.visible);
+        assert_eq!(view.read(cx).preview.attachment.as_ref(), Some(&path));
+    });
+}
+
+#[gpui::test]
+fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let first = active(&tabs, cx);
+    cx.simulate_input("original **Markdown**");
+    cx.run_until_parked();
+    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    let second = active(&tabs, cx);
+    assert_ne!(first, second);
+    cx.simulate_input("second document");
+    cx.run_until_parked();
+    let second_id = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.reorder(first_id, second_id, cx);
+        tabs.activate(first_id, window, cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(active(&tabs, cx), first);
+    cx.update(|_, cx| {
+        assert_eq!(
+            first.read(cx).editor.read(cx).text(),
+            "original **Markdown**"
+        );
+        assert!(first.read(cx).dirty(cx));
+        assert_eq!(second.read(cx).editor.read(cx).text(), "second document");
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(first.read(cx).editor.read(cx).text().is_empty()));
+    cx.dispatch_action(Close);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 1));
+    assert_eq!(active(&tabs, cx), second);
+    cx.dispatch_action(Close);
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert_eq!(active(&tabs, cx), second);
+    cx.dispatch_action(Close);
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).tabs.len(), 1);
+        assert!(
+            tabs.read(cx)
+                .active_view()
+                .unwrap()
+                .read(cx)
+                .editor
+                .read(cx)
+                .text()
+                .is_empty()
+        );
+    });
+}
+
+#[gpui::test]
+fn restoration_is_lazy_and_missing_files_remain_retryable(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.md");
+    let missing = dir.path().join("missing.md");
+    std::fs::write(&first, "Привет").unwrap();
+    let session = Session {
+        tabs: vec![
+            TabRecord {
+                markdown: first.clone(),
+                caret: usize::MAX,
+                ..TabRecord::default()
+            },
+            TabRecord {
+                markdown: missing.clone(),
+                ..TabRecord::default()
+            },
+        ],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot(cx, session);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.tabs[1].view.is_none());
+        let view = tabs.active_view().unwrap();
+        assert_eq!(view.read(cx).editor.read(cx).cursor(), "Привет".len());
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| assert!(view.read(cx).unavailable));
+    std::fs::write(missing, "now present").unwrap();
+    cx.dispatch_action(RetryDocument);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(!view.read(cx).unavailable);
+        assert_eq!(view.read(cx).editor.read(cx).text(), "now present");
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(first, window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 2));
+}
+
+#[gpui::test]
+fn paired_preview_hides_reopens_and_failed_replacement_preserves_attachment(
+    cx: &mut TestAppContext,
+) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let view = active(&tabs, cx);
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let pdf = base.join("tests/fixtures/reference.pdf");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(pdf.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let entity = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    cx.dispatch_action(TogglePreview);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(!view.read(cx).preview.visible);
+        assert_eq!(view.read(cx).preview.attachment.as_ref(), Some(&pdf));
+        assert!(view.read(cx).session.document.path.is_none());
+    });
+    cx.dispatch_action(TogglePreview);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(view.read(cx).preview.pdf.as_ref(), Some(&entity)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(base.join("missing.pdf"), window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(view.read(cx).preview.pdf.as_ref(), Some(&entity));
+        assert_eq!(view.read(cx).preview.attachment.as_ref(), Some(&pdf));
+        assert!(view.read(cx).preview.retryable);
+    });
+}
+
+#[gpui::test]
+fn snapshot_keeps_saved_pairs_and_omits_unsaved_buffers(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let note = dir.path().join("note.md");
+    std::fs::write(&note, "saved").unwrap();
+    let attachment = dir.path().join("not-loaded.docx");
+    let session = Session {
+        tabs: vec![TabRecord {
+            markdown: note,
+            attachment: Some(attachment.clone()),
+            preview_visible: false,
+            ..TabRecord::default()
+        }],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot(cx, session);
+    cx.simulate_input("dirty text");
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    cx.simulate_input("untitled secret");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let snapshot = tabs.read(cx).snapshot(cx);
+        assert_eq!(snapshot.tabs.len(), 1);
+        assert_eq!(snapshot.tabs[0].attachment.as_ref(), Some(&attachment));
+        assert!(!snapshot.tabs[0].preview_visible);
+        let serialized = serde_json::to_string(&snapshot).unwrap();
+        assert!(!serialized.contains("dirty text"));
+        assert!(!serialized.contains("untitled secret"));
+        assert!(
+            tabs.read(cx).tabs[0]
+                .view
+                .as_ref()
+                .unwrap()
+                .read(cx)
+                .preview
+                .pdf
+                .is_none()
+        );
+    });
+}
+
+#[gpui::test]
+fn quit_cancel_keeps_all_tabs_and_save_as_collision_never_overwrites(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let note = dir.path().join("saved.md");
+    std::fs::write(&note, "disk original").unwrap();
+    let (tabs, cx) = boot(
+        cx,
+        Session {
+            tabs: vec![TabRecord {
+                markdown: note.clone(),
+                ..TabRecord::default()
+            }],
+            ..Session::default()
+        },
+    );
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    cx.simulate_input("unsaved");
+    cx.dispatch_action(SaveAs);
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| Some(note.clone()));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert_eq!(std::fs::read_to_string(note).unwrap(), "disk original");
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    cx.simulate_input("other unsaved");
+    cx.dispatch_action(Quit);
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.tabs.len(), 3);
+        assert!(tabs.quitting.is_none());
+        assert_eq!(
+            tabs.tabs
+                .iter()
+                .filter(|tab| tab.view.as_ref().unwrap().read(cx).dirty(cx))
+                .count(),
+            2
+        );
+    });
+}
+
+#[gpui::test]
+fn queued_docx_jobs_are_serial_and_closed_tabs_cannot_receive_results(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let source = base.join("tests/fixtures/docx-preview/comments.docx");
+    let first = active(&tabs, cx);
+    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    // Admit both jobs in one update before the background executor runs.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(source.clone(), window, cx);
+        tabs.new_tab(window, cx);
+        tabs.open_path(source, window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.docx_running.is_none());
+        assert!(tabs.docx_queue.is_empty());
+        assert!(first.read(cx).preview.pdf.is_some());
+        assert!(tabs.active_view().unwrap().read(cx).preview.pdf.is_some());
+    });
+    let (weak, backing) = cx.update(|_, cx| {
+        let view = first.read(cx);
+        (
+            view.preview.pdf.as_ref().unwrap().downgrade(),
+            view.preview.docx.as_ref().unwrap().pdf_path.clone(),
+        )
+    });
+    drop(first);
+    tabs.update_in(cx, |tabs, window, cx| tabs.remove(first_id, window, cx));
+    cx.run_until_parked();
+    assert!(!backing.exists());
+    cx.update(|_, _| {
+        assert!(
+            weak.upgrade().is_none(),
+            "closed PDF entity must be released"
+        )
+    });
+}
+
+#[gpui::test]
+fn background_import_finishes_in_its_own_tab_without_stealing_focus(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("source.csv");
+    std::fs::write(&source, "name,value\nalpha,42\n").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_input("keep original");
+    cx.run_until_parked();
+    let original = active(&tabs, cx);
+    let id = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.event(id, &TabEvent::Import(source), window, cx);
+        tabs.activate(id, window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert_eq!(tabs.read(cx).active, id);
+        assert!(
+            original
+                .read(cx)
+                .editor
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+        assert_eq!(original.read(cx).editor.read(cx).text(), "keep original");
+        let imported = tabs.read(cx).tabs[1].view.as_ref().unwrap().read(cx);
+        assert!(imported.editor.read(cx).text().contains("alpha"));
+        assert!(imported.dirty(cx));
+        assert!(!imported.job.busy());
+    });
+}
+
+#[gpui::test]
+fn retained_search_selection_and_preview_position_survive_switch(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_input("alpha beta alpha");
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("alpha");
+    cx.run_until_parked();
+    let first = active(&tabs, cx);
+    let id = cx.update(|_, cx| tabs.read(cx).active);
+    let count = cx.update(|_, cx| first.read(cx).search.matches.len());
+    let cursor = cx.update(|_, cx| first.read(cx).editor.read(cx).cursor());
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(id, window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(first.read(cx).search.open);
+        assert_eq!(first.read(cx).search.matches.len(), count);
+        assert_eq!(first.read(cx).markdown_search.read(cx).value(), "alpha");
+        assert_eq!(first.read(cx).editor.read(cx).cursor(), cursor);
+    });
+}
+
+#[gpui::test]
+fn checkpoint_serializes_latest_state_and_restores_pdf_position(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session.json");
+    let note = dir.path().join("note.md");
+    std::fs::write(&note, "markdown").unwrap();
+    let pdf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    let (tabs, cx) = boot(
+        cx,
+        Session {
+            tabs: vec![TabRecord {
+                markdown: note,
+                attachment: Some(pdf),
+                preview_visible: true,
+                preview_page: 0,
+                preview_zoom: Some(1.5),
+                preview_fit: session_store::PreviewFit::Manual,
+                ..TabRecord::default()
+            }],
+            ..Session::default()
+        },
+    );
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        let pdf = view.read(cx).preview.pdf.as_ref().unwrap().read(cx);
+        assert_eq!(pdf.reading_position(), (0, 1.5));
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.session_path = Some(path.clone());
+        tabs.checkpoint(window, cx);
+        tabs.sidebar_visible = false;
+        tabs.checkpoint(window, cx);
+    });
+    cx.run_until_parked();
+    let saved = session_store::load(&path).unwrap();
+    assert!(!saved.sidebar_visible);
+    assert_eq!(saved.tabs[0].preview_zoom, Some(1.5));
+    assert_eq!(saved.tabs.len(), 1);
+    cx.dispatch_action(Quit);
+    cx.run_until_parked();
+    assert_eq!(
+        session_store::load(&path).unwrap().tabs.len(),
+        1,
+        "window teardown must not persist an empty session"
+    );
+}
+
+#[gpui::test]
+fn closing_queued_conversion_rejects_it_without_affecting_other_tabs(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let id = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.docx_running = Some((999, 1));
+        let view = tabs.active_view().unwrap();
+        view.update(cx, |view, cx| {
+            view.open_docx("queued.docx".into(), window, cx)
+        });
+        tabs.event(
+            id,
+            &TabEvent::Docx {
+                path: "queued.docx".into(),
+                generation: 1,
+                cancel: cancelled.clone(),
+            },
+            window,
+            cx,
+        );
+        tabs.remove(id, window, cx);
+        tabs.docx_finished(999, 1, window, cx);
+        assert!(tabs.docx_queue.is_empty());
+        assert!(tabs.docx_running.is_none());
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).tabs.len(), 1);
+        assert!(
+            tabs.read(cx)
+                .active_view()
+                .unwrap()
+                .read(cx)
+                .preview
+                .source
+                .is_none()
+        );
+    });
+}
+
+#[gpui::test]
+#[ignore = "host CPU measurements; run serially on an idle machine"]
+fn tabs_host_performance(cx: &mut TestAppContext) {
+    use std::time::Instant;
+    fn draw(cx: &mut VisualTestContext) {
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+    }
+    fn report(label: &str, values: &mut [f64]) {
+        values.sort_by(f64::total_cmp);
+        eprintln!(
+            "TABS_PERF {label} median_ms={:.3} p95_ms={:.3}",
+            values[values.len() / 2],
+            values[(values.len() * 95).div_ceil(100) - 1]
+        );
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let pdf = base.join("tests/fixtures/reference.pdf");
+    let docx = base.join("tests/fixtures/docx-preview/comments.docx");
+    let mut session = Session::default();
+    for index in 0..24 {
+        let path = dir.path().join(format!("note-{index}.md"));
+        let source = if index % 3 == 0 {
+            "# Heading\n\nalpha **beta** words for a long document.\n\n".repeat(2500)
+        } else {
+            "# Short\n\nhello world\n".repeat(30)
+        };
+        std::fs::write(&path, source).unwrap();
+        session.tabs.push(TabRecord {
+            markdown: path,
+            attachment: match index % 3 {
+                0 => None,
+                1 => Some(pdf.clone()),
+                _ => Some(docx.clone()),
+            },
+            preview_visible: index % 3 != 0,
+            ..TabRecord::default()
+        });
+    }
+    let start = Instant::now();
+    let (tabs, cx) = boot(cx, session);
+    cx.simulate_resize(size(px(1280.), px(800.)));
+    draw(cx);
+    eprintln!(
+        "TABS_PERF restore_24_tabs_ms={:.3}",
+        start.elapsed().as_secs_f64() * 1000.
+    );
+    let ids = cx.update(|_, cx| {
+        tabs.read(cx)
+            .tabs
+            .iter()
+            .map(|tab| tab.id)
+            .collect::<Vec<_>>()
+    });
+    cx.update(|_, cx| {
+        assert_eq!(
+            tabs.read(cx)
+                .tabs
+                .iter()
+                .filter(|tab| tab.view.is_some())
+                .count(),
+            1
+        )
+    });
+    for id in &ids[..6] {
+        tabs.update_in(cx, |tabs, window, cx| tabs.activate(*id, window, cx));
+        cx.run_until_parked();
+        draw(cx);
+    }
+    let mut switching = Vec::new();
+    let mut handlers = Vec::new();
+    let mut frames = Vec::new();
+    let mut long_frames = Vec::new();
+    let mut short_frames = Vec::new();
+    for round in 0..24 {
+        let id = ids[round % 6];
+        let start = Instant::now();
+        let handler = tabs.update_in(cx, |tabs, window, cx| {
+            let start = Instant::now();
+            tabs.activate(id, window, cx);
+            start.elapsed().as_secs_f64() * 1000.
+        });
+        handlers.push(handler);
+        switching.push(start.elapsed().as_secs_f64() * 1000.);
+        let start = Instant::now();
+        draw(cx);
+        let elapsed = start.elapsed().as_secs_f64() * 1000.;
+        frames.push(elapsed);
+        if round % 3 == 0 {
+            long_frames.push(elapsed);
+        } else {
+            short_frames.push(elapsed);
+        }
+    }
+    report("switch_handler", &mut handlers);
+    report("switch_with_implicit_test_frame", &mut switching);
+    report("switch_frame", &mut frames);
+    report("long_markdown_frame", &mut long_frames);
+    report("short_markdown_with_preview_frame", &mut short_frames);
+    // Same document, same viewport, no tab change: distinguish inherited editor
+    // layout cost from the sidebar/activation overhead.
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(ids[0], window, cx));
+    let mut unchanged = Vec::new();
+    for _ in 0..8 {
+        let start = Instant::now();
+        draw(cx);
+        unchanged.push(start.elapsed().as_secs_f64() * 1000.);
+    }
+    report("unchanged_long_markdown_frame", &mut unchanged);
+    assert!(
+        handlers.iter().all(|ms| *ms < 16.7),
+        "tab activation alone exceeded one CPU frame"
+    );
+    let mut snapshots = Vec::new();
+    for _ in 0..30 {
+        let start = Instant::now();
+        cx.update(|_, cx| {
+            let _ = tabs.read(cx).snapshot(cx);
+        });
+        snapshots.push(start.elapsed().as_secs_f64() * 1000.);
+    }
+    report("metadata_snapshot_24_tabs", &mut snapshots);
+    // Repeated DOCX pairs exercise temporary files and retained viewer release.
+    eprintln!(
+        "TABS_PERF before_close_cycles_rss_kib={:?}",
+        crate::perf_tests::rss_kib()
+    );
+    for cycle in 0..5 {
+        let id = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+        tabs.update_in(cx, |tabs, window, cx| {
+            tabs.open_path(docx.clone(), window, cx)
+        });
+        cx.run_until_parked();
+        draw(cx);
+        let (weak, backing) = cx.update(|_, cx| {
+            let view = tabs.read(cx).active_view().unwrap();
+            let view = view.read(cx);
+            (
+                view.preview.pdf.as_ref().unwrap().downgrade(),
+                view.preview.docx.as_ref().unwrap().pdf_path.clone(),
+            )
+        });
+        tabs.update_in(cx, |tabs, window, cx| tabs.remove(id, window, cx));
+        cx.run_until_parked();
+        assert!(weak.upgrade().is_none());
+        assert!(!backing.exists());
+        eprintln!(
+            "TABS_PERF close_cycle={cycle} rss_kib={:?}",
+            crate::perf_tests::rss_kib()
+        );
+    }
+    eprintln!("TABS_PERF close_cycles=5 all_viewers_and_docx_files_released=true");
+}
+
+#[gpui::test]
+fn production_shell_queues_startup_opens_and_close_hook_keeps_dirty_tabs(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("startup.md");
+    std::fs::write(&path, "startup").unwrap();
+    cx.update(mdoc_editor::bind_keys);
+    let (tabs, cx) = cx.add_window_view(|window, cx| {
+        let mut tabs = Tabs::new(window, cx);
+        tabs.open_path(path, window, cx);
+        tabs
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert_eq!(view.read(cx).editor.read(cx).text(), "startup");
+        assert!(!view.read(cx).ocr_state.busy());
+    });
+    cx.simulate_input(" edited");
+    cx.dispatch_action(Quit);
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(view.read(cx).dirty(cx)));
+}
+
+#[gpui::test]
+fn failed_final_checkpoint_can_cancel_quit_without_losing_tabs(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let parent_file = dir.path().join("not-a-directory");
+    std::fs::write(&parent_file, "preserve").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.session_path = Some(parent_file.join("session.json"))
+    });
+    cx.dispatch_action(Quit);
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).tabs.len(), 1);
+        assert!(!tabs.read(cx).finishing);
+        assert!(tabs.read(cx).notice.is_some());
+    });
+    assert_eq!(std::fs::read_to_string(parent_file).unwrap(), "preserve");
+}
+
+#[gpui::test]
+fn pdf_preview_refits_when_sidebar_changes(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update(cx, |tabs, cx| {
+        tabs.sidebar_visible = false;
+        cx.notify();
+    });
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    let settle = |cx: &mut VisualTestContext| {
+        for _ in 0..3 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            cx.run_until_parked();
+        }
+    };
+    settle(cx);
+    let wide = cx.update(|_, cx| {
+        view.read(cx)
+            .preview
+            .pdf
+            .as_ref()
+            .unwrap()
+            .read(cx)
+            .reading_position()
+            .1
+    });
+    cx.dispatch_action(ToggleSidebar);
+    settle(cx);
+    let narrow = cx.update(|_, cx| {
+        view.read(cx)
+            .preview
+            .pdf
+            .as_ref()
+            .unwrap()
+            .read(cx)
+            .reading_position()
+            .1
+    });
+    assert!(
+        narrow < wide - 0.05,
+        "PDF must refit when sidebar opens: wide={wide}, narrow={narrow}"
+    );
+    cx.dispatch_action(ToggleSidebar);
+    settle(cx);
+    let expanded = cx.update(|_, cx| {
+        view.read(cx)
+            .preview
+            .pdf
+            .as_ref()
+            .unwrap()
+            .read(cx)
+            .reading_position()
+            .1
+    });
+    assert!((expanded - wide).abs() < 0.01);
+}
+
+#[gpui::test]
+fn restored_pdf_keeps_auto_fit_and_manual_zoom_remains_manual(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let markdown = dir.path().join("note.md");
+    std::fs::write(&markdown, "note").unwrap();
+    let attachment = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    let (tabs, cx) = boot(
+        cx,
+        Session {
+            tabs: vec![TabRecord {
+                markdown,
+                attachment: Some(attachment),
+                preview_visible: true,
+                preview_zoom: Some(1.0),
+                ..TabRecord::default()
+            }],
+            ..Session::default()
+        },
+    );
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    let view = active(&tabs, cx);
+    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    cx.update(|_, cx| {
+        assert_eq!(pdf.read(cx).fit_mode(), Some(gpui_pdf::FitMode::Width));
+        assert_eq!(
+            tabs.read(cx).snapshot(cx).tabs[0].preview_fit,
+            session_store::PreviewFit::Width
+        );
+    });
+    pdf.update(cx, |pdf, cx| pdf.set_zoom(1.2, cx));
+    cx.dispatch_action(ToggleSidebar);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(pdf.read(cx).reading_position().1, 1.2);
+        assert_eq!(pdf.read(cx).fit_mode(), None);
+        assert_eq!(
+            tabs.read(cx).snapshot(cx).tabs[0].preview_fit,
+            session_store::PreviewFit::Manual
+        );
+    });
+}

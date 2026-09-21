@@ -35,7 +35,7 @@ fn budget(name: &str) -> Option<[f64; 4]> {
     }
 }
 
-fn rss_kib() -> Option<u64> {
+pub(super) fn rss_kib() -> Option<u64> {
     // Optional observation only: allocators and global text/GPU caches retain
     // memory, so RSS is not an assertion about document-owned resource release.
     #[cfg(unix)]

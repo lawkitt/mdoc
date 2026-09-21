@@ -17,7 +17,9 @@ mod ocr;
 #[cfg(test)]
 mod perf_tests;
 mod preview;
+mod session_store;
 mod style;
+mod tabs;
 #[cfg(test)]
 mod ui_tests;
 
@@ -54,6 +56,12 @@ actions!(
         ClosePdf,
         RetryPreview,
         ToggleTheme,
+        ToggleSidebar,
+        NextTab,
+        PreviousTab,
+        Quit,
+        TogglePreview,
+        RetryDocument,
         FindMarkdown,
         FindNextMarkdown,
         FindPreviousMarkdown,
@@ -97,8 +105,18 @@ impl OcrState {
 }
 
 struct Workspace {
+    focus: gpui::FocusHandle,
+    owner: Option<(u64, gpui::WeakEntity<tabs::Tabs>)>,
+    active: bool,
+    dirty_cached: bool,
+    loading: bool,
+    load_generation: u64,
+    unavailable: bool,
+    import_busy: Arc<AtomicBool>,
+    import_cancel: Arc<AtomicBool>,
     theme: Rc<Cell<Theme>>,
     editor: Entity<EditorState>,
+    images: images::ImageCache,
     session: document_session::DocumentSession,
     preview: preview::PreviewState,
     scroll: ScrollHandle,
@@ -113,7 +131,12 @@ struct Workspace {
 }
 
 impl Workspace {
+    #[cfg(test)]
     fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        Self::new_with_ocr(None, window, cx)
+    }
+
+    fn new_with_ocr(ocr: Option<OcrState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let markdown_search = cx.new(markdown_search::SearchInput::new);
         let editor = cx.new(|cx| {
             let mut editor =
@@ -124,11 +147,12 @@ impl Workspace {
             });
             editor
         });
-        images::install(&editor, Document::default().directory(), cx);
+        let images = images::install(&editor, Document::default().directory(), cx);
         window.focus(&editor.read(cx).focus_handle(cx), cx);
         let subscription =
             cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
                 EditorEvent::Changed => {
+                    this.dirty_cached = this.dirty(cx);
                     this.update_title(window, cx);
                     this.refresh_markdown_search(SearchRefresh::DocumentEdit, false, window, cx);
                     cx.notify();
@@ -155,20 +179,7 @@ impl Workspace {
                 _ => {}
             },
         );
-        let weak = cx.entity().downgrade();
-        window.on_window_should_close(cx, move |window, cx| {
-            weak.update(cx, |this, cx| {
-                if this.dirty(cx) {
-                    this.request(Next::Close, window, cx);
-                    false
-                } else {
-                    this.close_preview(window, cx);
-                    true
-                }
-            })
-            .unwrap_or(true)
-        });
-        {
+        if ocr.is_none() {
             let task = cx.background_executor().spawn(async { ocr::check() });
             cx.spawn(async move |this, cx| {
                 let result = task.await;
@@ -185,15 +196,25 @@ impl Workspace {
             .detach();
         }
         Self {
+            focus: cx.focus_handle(),
+            owner: None,
+            active: true,
+            dirty_cached: false,
+            loading: false,
+            load_generation: 0,
+            unavailable: false,
+            import_busy: Arc::new(AtomicBool::new(false)),
+            import_cancel: Arc::new(AtomicBool::new(false)),
             theme: Rc::new(Cell::new(Theme::default())),
             editor,
+            images,
             session: document_session::DocumentSession::default(),
             preview: preview::PreviewState::default(),
             scroll: ScrollHandle::new(),
             error: None,
             prompting: false,
             job: import_session::ImportSession::default(),
-            ocr_state: OcrState::Checking,
+            ocr_state: ocr.unwrap_or(OcrState::Checking),
             markdown_search,
             search: search_session::SearchSession::default(),
             _subscription: subscription,
@@ -202,6 +223,10 @@ impl Workspace {
     }
 
     fn toggle_theme(&mut self, _: &ToggleTheme, _: &mut Window, cx: &mut Context<Self>) {
+        if self.owner.is_some() {
+            cx.emit(tabs::TabEvent::ToggleTheme);
+            return;
+        }
         let theme = self.theme.get().toggle();
         self.theme.set(theme);
         self.editor.update(cx, |editor, cx| {
@@ -213,20 +238,45 @@ impl Workspace {
         cx.notify();
     }
 
-    fn dirty(&self, cx: &App) -> bool {
-        self.session.dirty(self.editor.read(cx).text())
+    fn replace_images(&mut self, directory: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.images.release(window, cx);
+        self.images = images::install(&self.editor, directory, cx);
     }
 
-    fn update_title(&self, window: &mut Window, cx: &App) {
+    fn dirty(&self, cx: &App) -> bool {
+        if self.loading || self.unavailable {
+            return false;
+        }
+        self.session.dirty(self.editor.read(cx).text())
+            || (self.session.document.path.is_none() && self.preview.attachment.is_some())
+    }
+
+    fn update_title(&self, window: &mut Window, _cx: &App) {
+        if !self.active {
+            return;
+        }
         let name = self.session.display_name();
         window.set_window_title(&format!(
             "{}{} — mdoc",
-            if self.dirty(cx) { "• " } else { "" },
+            if self.dirty_cached { "• " } else { "" },
             name
         ));
     }
 
     fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
+        if self.owner.is_some() {
+            match &next {
+                Next::New => {
+                    cx.emit(tabs::TabEvent::New);
+                    return;
+                }
+                Next::Open(path) => {
+                    cx.emit(tabs::TabEvent::Open(path.clone()));
+                    return;
+                }
+                _ => {}
+            }
+        }
         if self.prompting {
             return;
         }
@@ -249,7 +299,9 @@ impl Workspace {
                 match answer {
                     Some(0) => this.save(false, Some(next), window, cx),
                     Some(2) => this.proceed(next, window, cx),
-                    _ => {}
+                    _ => {
+                        cx.emit(tabs::TabEvent::CloseCancelled);
+                    }
                 }
                 this.resume_import(window, cx);
             });
@@ -260,6 +312,10 @@ impl Workspace {
     fn proceed(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
         match next {
             Next::Close => {
+                if self.owner.is_some() {
+                    cx.emit(tabs::TabEvent::CloseResolved);
+                    return;
+                }
                 self.session.replace(Document::default());
                 self.reset_markdown_search(cx);
                 self.close_preview(window, cx);
@@ -267,7 +323,7 @@ impl Workspace {
             }
             Next::New => {
                 self.session.replace(Document::default());
-                images::install(&self.editor, self.session.document.directory(), cx);
+                self.replace_images(self.session.document.directory(), window, cx);
                 self.editor.update(cx, |editor, cx| editor.set_text("", cx));
                 self.reset_markdown_search(cx);
                 self.error = None;
@@ -281,7 +337,7 @@ impl Workspace {
                         editor.set_text(self.session.document.saved.clone(), cx)
                     });
                     self.reset_markdown_search(cx);
-                    images::install(&self.editor, self.session.document.directory(), cx);
+                    self.replace_images(self.session.document.directory(), window, cx);
                     self.error = None;
                     self.scroll.set_offset(gpui::point(px(0.), px(0.)));
                     self.update_title(window, cx);
@@ -292,11 +348,13 @@ impl Workspace {
                 self.session
                     .import(imported.source.clone(), imported.warning);
                 self.close_preview(window, cx);
-                images::install(&self.editor, self.save_directory(), cx);
+                self.replace_images(self.save_directory(), window, cx);
                 self.editor
                     .update(cx, |editor, cx| editor.set_text(imported.markdown, cx));
                 self.reset_markdown_search(cx);
-                window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+                if self.active {
+                    window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+                }
                 self.error = None;
                 self.preview.message = None;
                 if imported.is_pdf {
@@ -333,7 +391,11 @@ impl Workspace {
                 if let Ok(Ok(Some(paths))) = result
                     && let Some(path) = paths.into_iter().next()
                 {
-                    this.start_import(path, window, cx);
+                    if this.owner.is_some() {
+                        cx.emit(tabs::TabEvent::Import(path));
+                    } else {
+                        this.start_import(path, window, cx);
+                    }
                 }
             });
         })
@@ -358,14 +420,19 @@ impl Workspace {
             OcrState::Ready(installed) if !skip_ocr => Some(installed.clone()),
             _ => None,
         };
-        if !self.job.begin(installed.is_some()) {
+        if self.import_busy.load(Ordering::Relaxed) || !self.job.begin(installed.is_some()) {
             return;
         }
+        self.import_busy.store(true, Ordering::Relaxed);
+        let busy = self.import_busy.clone();
+        let cancel = self.import_cancel.clone();
         self.error = None;
         let generation = self.session.generation;
-        let task = cx
-            .background_executor()
-            .spawn(async move { import::prepare(&path, installed.as_ref(), skip_ocr) });
+        let task = cx.background_executor().spawn(async move {
+            let result = import::prepare_cancellable(&path, installed.as_ref(), skip_ocr, &cancel);
+            busy.store(false, Ordering::Relaxed);
+            result
+        });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -378,6 +445,14 @@ impl Workspace {
     }
 
     fn resume_import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .owner
+            .as_ref()
+            .and_then(|(_, owner)| owner.upgrade())
+            .is_some_and(|owner| owner.read(cx).resolving_close())
+        {
+            return;
+        }
         let generation = self.session.generation;
         let Some(completion) = self.job.take_ready(generation, self.prompting) else {
             return;
@@ -419,10 +494,21 @@ impl Workspace {
             return;
         }
         self.ocr_state = OcrState::Installing;
+        cx.emit(tabs::TabEvent::OcrState(self.ocr_state.clone()));
         self.error = None;
+        let owner = self.owner.clone();
         let task = cx.background_executor().spawn(async { ocr::install() });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
+            // Installation belongs to the application even if its initiating
+            // tab has closed. Only the import continuation belongs to the tab.
+            if let Some((_, owner)) = owner {
+                let state = match &result {
+                    Ok(installed) => OcrState::Ready(installed.clone()),
+                    Err(error) => OcrState::Failed(error.clone()),
+                };
+                let _ = owner.update(cx, |owner, cx| owner.set_ocr(state, cx));
+            }
             let _ = this.update_in(cx, |this, window, cx| {
                 this.finish_ocr_setup(result, window, cx)
             });
@@ -449,6 +535,7 @@ impl Workspace {
                 self.job.finish();
             }
         }
+        cx.emit(tabs::TabEvent::OcrState(self.ocr_state.clone()));
         cx.notify();
     }
 
@@ -538,17 +625,21 @@ impl Workspace {
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
-            multiple: false,
+            multiple: true,
             prompt: Some("Open Markdown, PDF, or DOCX".into()),
         });
         cx.spawn_in(window, async move |this, cx| {
             let result = paths.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.prompting = false;
-                if let Ok(Ok(Some(paths))) = result
-                    && let Some(path) = paths.into_iter().next()
-                {
-                    this.open_path(path, window, cx);
+                if let Ok(Ok(Some(paths))) = result {
+                    for path in paths {
+                        if this.owner.is_some() {
+                            cx.emit(tabs::TabEvent::Open(path));
+                        } else {
+                            this.open_path(path, window, cx);
+                        }
+                    }
                 }
                 this.resume_import(window, cx);
             });
@@ -563,7 +654,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.prompting {
+        if self.prompting || self.loading || self.unavailable {
+            cx.emit(tabs::TabEvent::CloseCancelled);
             return;
         }
         if !save_as && let Some(path) = self.session.document.path.clone() {
@@ -586,11 +678,14 @@ impl Workspace {
                             "Save Markdown with a .md, .markdown, .mdown, or .txt extension."
                                 .into(),
                         );
+                        cx.emit(tabs::TabEvent::CloseCancelled);
                         cx.notify();
                         this.resume_import(window, cx);
                         return;
                     }
                     this.write(path, next, window, cx);
+                } else {
+                    cx.emit(tabs::TabEvent::CloseCancelled);
                 }
                 this.resume_import(window, cx);
             });
@@ -605,11 +700,29 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if let Some((id, owner)) = &self.owner {
+            let identity = session_store::identity(&path);
+            let other = owner
+                .upgrade()
+                .and_then(|owner| owner.read(cx).find_path(&identity, Some(*id), cx));
+            if let Some(other) = other {
+                cx.emit(tabs::TabEvent::SaveConflict(other));
+                cx.emit(tabs::TabEvent::CloseCancelled);
+                return;
+            }
+        }
+        let path = if self.owner.is_some() {
+            session_store::identity(&path)
+        } else {
+            path
+        };
         let old_directory = self.save_directory();
         match self.session.save(path, self.editor.read(cx).text()) {
             Ok(()) => {
+                self.dirty_cached = false;
+                cx.emit(tabs::TabEvent::Saved);
                 if old_directory != self.session.document.directory() {
-                    images::install(&self.editor, self.session.document.directory(), cx);
+                    self.replace_images(self.session.document.directory(), window, cx);
                 }
                 self.error = None;
                 self.update_title(window, cx);
@@ -617,7 +730,10 @@ impl Workspace {
                     self.proceed(next, window, cx);
                 }
             }
-            Err(error) => self.error = Some(format!("Could not save: {error}")),
+            Err(error) => {
+                self.error = Some(format!("Could not save: {error}"));
+                cx.emit(tabs::TabEvent::CloseCancelled);
+            }
         }
         cx.notify();
     }
@@ -626,6 +742,7 @@ impl Workspace {
 fn button(label: &'static str, action: impl gpui::Action, theme: Theme) -> impl IntoElement {
     div()
         .id(label)
+        .when(cfg!(test), |view| view.debug_selector(move || label.into()))
         .px_3()
         .py_1()
         .rounded_md()
@@ -823,7 +940,10 @@ impl Render for Workspace {
                     })),
             );
         div().size_full().flex().flex_col().bg(palette.bg).text_color(palette.header_fg).text_size(px(16.))
+            // Toolbar clicks must dispatch inside this workspace, not the outer tab shell.
+            .track_focus(&self.focus)
             .on_action(cx.listener(Self::toggle_theme))
+            .on_action(cx.listener(|this, _: &TogglePreview, window, cx| this.toggle_preview(window, cx)))
             .on_action(cx.listener(Self::open))
             .on_action(cx.listener(Self::import))
             .on_action(cx.listener(Self::setup_ocr))
@@ -831,14 +951,14 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &New, window, cx| this.request(Next::New, window, cx)))
             .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
             .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save(true, None, window, cx)))
-            .on_action(cx.listener(|this, _: &Close, window, cx| this.request(Next::Close, window, cx)))
-            .on_action(cx.listener(|this, _: &ClosePdf, window, cx| { this.close_preview(window, cx); window.focus(&this.editor.read(cx).focus_handle(cx), cx); cx.notify(); }))
+            .on_action(cx.listener(|this, _: &Close, window, cx| { if this.owner.is_some() { cx.emit(tabs::TabEvent::CloseRequested); } else { this.request(Next::Close, window, cx); } }))
+            .on_action(cx.listener(|this, _: &ClosePdf, window, cx| { this.toggle_preview(window, cx); window.focus(&this.editor.read(cx).focus_handle(cx), cx); cx.notify(); }))
             .on_action(cx.listener(Self::find_markdown))
             .on_action(cx.listener(Self::find_next_markdown))
             .on_action(cx.listener(Self::find_previous_markdown))
             .on_action(cx.listener(Self::close_markdown_search))
             .on_action(cx.listener(Self::retry_preview))
-            .child(div().flex().items_center().gap_2().p_2().text_size(px(13.)).border_b_1().border_color(palette.border)
+            .child(div().flex().flex_wrap().items_center().gap_2().p_2().text_size(px(13.)).border_b_1().border_color(palette.border)
                 .child(button("New", New, theme)).child(button("Open…", Open, theme)).child(button("Save", Save, theme)).child(button("Save As…", SaveAs, theme))
                 .child(if self.job.busy() { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting…" }).into_any_element() } else { button("Import as Markdown…", Import, theme).into_any_element() })
                 .child(if matches!(self.ocr_state, OcrState::Missing | OcrState::Failed(_)) {
@@ -846,17 +966,20 @@ impl Render for Workspace {
                 } else { div().opacity(0.65).child(self.ocr_state.label()).into_any_element() })
                 .child(div().flex_1())
                 .child(button(theme.toggle_label(), ToggleTheme, theme))
-                .child(if self.dirty(cx) { "Unsaved changes" } else { "Markdown · WYSIWYG" })
+                .child(if self.dirty_cached { "Unsaved changes" } else { "Markdown · WYSIWYG" })
                 .when(self.preview.loading, |bar| bar.child(div().child("Preparing preview…")))
-                .when(self.preview.pdf.is_some() || self.preview.source.is_some(), |bar| bar.child(button("Close Preview", ClosePdf, theme))))
+                .when(self.preview.pdf.is_some() || self.preview.source.is_some(), |bar| bar.child(button(if self.preview.visible { "Close Preview" } else { "Show Preview" }, TogglePreview, theme))))
             .when_some(self.session.warning.clone(), |view, warning| view.child(div().flex().items_center().gap_2().p_2().border_b_1().border_color(palette.border)
                 .child(div().id("import-warning").flex_1().min_w_0().max_h(px(96.)).overflow_y_scroll().child(warning))
                 .child(button("Dismiss", DismissImportWarning, theme))))
             .child(div().flex().flex_1().min_h_0()
                 .child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
                     .when(self.search.open, |column| column.child(search_bar))
-                    .child(div().id("document-scroll").flex_1().min_w_0().min_h_0().overflow_y_scroll().track_scroll(&self.scroll).p_6().child(self.editor.clone())))
-                .when_some(self.preview.pdf.clone(), |row, pdf| row.child(div().w_1_2().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
+                    .child(if self.loading || self.unavailable {
+                        div().p_6().child(if self.loading { "Loading Markdown…" } else { "Markdown unavailable" })
+                            .when(self.unavailable, |view| view.child(button("Retry", RetryDocument, theme))).into_any_element()
+                    } else { div().id("document-scroll").flex_1().min_w_0().min_h_0().overflow_y_scroll().track_scroll(&self.scroll).p_6().child(self.editor.clone()).into_any_element() }))
+                .when_some(self.preview.pdf.clone().filter(|_| self.preview.visible), |row, pdf| row.child(div().w_1_2().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments)))))
             .when_some(self.preview.message.clone(), |view, message| view.child(div().flex().items_center().gap_2().p_2().bg(theme.error_bg()).child(div().flex_1().child(format!("{}: {message}", self.preview.source.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Preview".into())))).when(self.preview.retryable, |bar| bar.child(button("Retry", RetryPreview, theme)))))
@@ -879,29 +1002,26 @@ fn main() {
         }
         return;
     }
-    let initial = args.get(1).cloned().map(PathBuf::from);
+    let initial: Vec<_> = args.into_iter().skip(1).map(PathBuf::from).collect();
     let application = gpui_platform::application();
     let open_context = Rc::new(RefCell::new(
-        None::<(gpui::WindowHandle<Workspace>, gpui::AsyncApp)>,
+        None::<(gpui::WindowHandle<tabs::Tabs>, gpui::AsyncApp)>,
     ));
-    let pending_url = Rc::new(RefCell::new(None::<PathBuf>));
+    let pending_url = Rc::new(RefCell::new(Vec::<PathBuf>::new()));
     application.on_open_urls({
         let open_context = open_context.clone();
         let pending_url = pending_url.clone();
         move |urls| {
-            // This app has one document window. The last file in an OS open
-            // request follows the same latest-preview-wins policy as Open.
-            if let Some(path) = urls
+            for path in urls
                 .iter()
                 .filter_map(|url| url::Url::parse(url).ok()?.to_file_path().ok())
-                .next_back()
             {
                 if let Some((window, cx)) = open_context.borrow_mut().as_mut() {
                     let _ = window.update(cx, |workspace, window, cx| {
                         workspace.open_path(path, window, cx)
                     });
                 } else {
-                    *pending_url.borrow_mut() = Some(path);
+                    pending_url.borrow_mut().push(path);
                 }
             }
         }
@@ -933,7 +1053,9 @@ fn main() {
             KeyBinding::new(&format!("{modifier}-s"), Save, None),
             KeyBinding::new(&format!("{modifier}-shift-s"), SaveAs, None),
             KeyBinding::new(&format!("{modifier}-w"), Close, None),
-            KeyBinding::new(&format!("{modifier}-q"), Close, None),
+            KeyBinding::new(&format!("{modifier}-q"), Quit, None),
+            KeyBinding::new("ctrl-tab", NextTab, None),
+            KeyBinding::new("ctrl-shift-tab", PreviousTab, None),
         ]);
         cx.set_menus(vec![Menu {
             name: "File".into(),
@@ -944,7 +1066,7 @@ fn main() {
                 MenuItem::action("Save", Save),
                 MenuItem::action("Save As…", SaveAs),
                 MenuItem::separator(),
-                MenuItem::action("Quit", Close),
+                MenuItem::action("Quit", Quit),
             ],
             disabled: false,
         }]);
@@ -957,9 +1079,8 @@ fn main() {
                 },
                 |window, cx| {
                     cx.new(|cx| {
-                        let mut workspace = Workspace::new(window, cx);
-                        workspace.update_title(window, cx);
-                        if let Some(path) = initial {
+                        let mut workspace = tabs::Tabs::new(window, cx);
+                        for path in initial {
                             workspace.open_path(path, window, cx);
                         }
                         workspace
@@ -967,7 +1088,7 @@ fn main() {
                 },
             )
             .expect("Could not open the editor window");
-        if let Some(path) = pending_url.borrow_mut().take() {
+        for path in std::mem::take(&mut *pending_url.borrow_mut()) {
             let _ = handle.update(cx, |workspace, window, cx| {
                 workspace.open_path(path, window, cx)
             });

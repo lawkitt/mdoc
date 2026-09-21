@@ -1086,8 +1086,9 @@ fn comments_follow_preview_lifecycle(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert!(app.preview.comment_panel.is_none());
-        assert!(app.preview.docx.is_none());
+        assert!(!app.preview.visible);
+        assert!(app.preview.comment_panel.is_some());
+        assert!(app.preview.docx.is_some());
         assert_eq!(app.editor.read(cx).text(), "Markdown stays unchanged");
     });
 }

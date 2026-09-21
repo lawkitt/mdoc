@@ -34,7 +34,14 @@ PDF form appearances are rendered; this is a viewer, not a PDF form editor.
 
 Use **New**, **Open**, **Save**, and **Save As** in the toolbar or File menu.
 The corresponding shortcuts are Cmd+N/O/S/Shift+S on macOS and
-Ctrl+N/O/S/Shift+S on Windows/Linux. Cmd/Ctrl+W closes the window.
+Ctrl+N/O/S/Shift+S on Windows/Linux. Cmd/Ctrl+W closes the active tab;
+Cmd/Ctrl+Q quits. Ctrl+Tab and Ctrl+Shift+Tab switch tabs.
+
+The collapsible left sidebar lists open Markdown documents and their attached
+PDF/DOCX previews. Use **+** for an empty tab, drag rows to reorder them, and
+**×** to close a tab. Opening Markdown creates a tab or activates that file's
+existing tab. Opening PDF/DOCX attaches it to the active Markdown document.
+Each tab keeps its undo history, selection, search, and reading positions.
 Open accepts Markdown (.md, .markdown, .mdown, .txt), PDF, and DOCX files.
 **Import as Markdown…** (Cmd/Ctrl+Shift+I) converts PDF, DOC/DOCX, XLS/XLSX,
 other supported Office/OpenDocument formats, RTF, EPUB, and CSV into an unsaved
@@ -59,19 +66,30 @@ Windows ARM64, Linux, and Intel macOS currently support native-text import only.
 complex table reconstruction are not qualified. See [OCR qualification and
 limitations](docs/local-ocr-qualification.md).
 
-You can keep editing during conversion. Switching Markdown documents discards its
-pending result, and successful conversion prompts before replacing unsaved edits.
+Import creates a new tab. You can switch tabs while it runs; the result stays
+with the importing tab. Sidebar labels show importing, queued, and loading states.
+Closing a tab cancels its pending work. Import cancellation is cooperative between
+conversion stages; an in-progress library call finishes before releasing its slot.
+DOCX preview conversions run one at a time.
 
 Click local Markdown, PDF, or DOCX links to open them; web links open in your
 browser. **Close Preview** returns to a full-width editor without changing your
-document.
+document. **Show Preview** reopens the same attachment, including for an unsaved
+Markdown tab.
 Use the **☀ Light / ☾ Dark** toolbar button to switch the editor and PDF pane
 between the two themes. The app starts in dark mode; the toggle lasts for the session.
 
 Documents are ordinary UTF-8 files. Saves use atomic replacement, and an external
-change to the current file is reported instead of silently overwritten. New,
-Open, and Close prompt to save or discard unsaved edits; cancelling Save As
-also cancels the pending operation.
+change to the current file is reported instead of silently overwritten. Closing
+a dirty tab or quitting prompts to save or discard edits; cancelling Save As
+also cancels the pending operation. Save As cannot overwrite a file open in
+another tab.
+
+Saved tabs, attachments, and reading positions reopen after restarting. A small
+`mdoc/session.json` file in the platform's local application-data directory stores
+paths and view metadata only. Unsaved text and undo history are not restored;
+untitled tabs must be saved before quitting to retain their pairing. Restored
+content loads when first selected; hidden previews load when shown.
 
 This fork removes journals, notebooks, SQLite/encryption, graph views,
 whiteboards, notebook importers, settings/theme packs, localization, and update checks.
@@ -88,7 +106,10 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-The app shell lives in `src/main.rs`; file persistence in `src/document.rs`.
+The tab/sidebar owner lives in `src/tabs.rs`, with paths-only restoration in
+`src/session_store.rs`. Each tab retains the document view in `src/main.rs`;
+file persistence lives in `src/document.rs`. See
+[tab decisions and measured validation](docs/sidebar-tabs-decisions.md).
 DOCX preview and comments live in `src/docx_preview.rs`,
 `src/docx_comments.rs`, and `src/comment_panel.rs`; Markdown find lives in
 `src/markdown_search.rs` over the `mdoc-editor` search index.

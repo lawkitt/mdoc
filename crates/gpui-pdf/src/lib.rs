@@ -1399,6 +1399,16 @@ impl PdfView {
         }
     }
 
+    /// Current reading position for a host's lightweight session restoration.
+    pub fn reading_position(&self) -> (usize, f32) {
+        (self.current_page_index(), self.zoom)
+    }
+
+    /// Current automatic sizing policy, or `None` for manual zoom.
+    pub fn fit_mode(&self) -> Option<FitMode> {
+        self.fit
+    }
+
     /// Set the zoom factor (clamped), keeping the current page in view. Visible pages
     /// re-render crisp at the new scale; their current bitmaps stay on screen
     /// (rescaled) until the fresh ones land, so nothing blanks.

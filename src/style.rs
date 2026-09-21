@@ -54,6 +54,22 @@ impl Theme {
         .into()
     }
 
+    pub fn sidebar_bg(self) -> Hsla {
+        match self {
+            Self::Dark => rgb(0x1b1b1f),
+            Self::Light => rgb(0xf3f3f2),
+        }
+        .into()
+    }
+
+    pub fn sidebar_selected(self) -> Hsla {
+        match self {
+            Self::Dark => rgb(0x293630),
+            Self::Light => rgb(0xe2ece7),
+        }
+        .into()
+    }
+
     pub fn error_bg(self) -> Hsla {
         match self {
             Self::Dark => rgb(0x542e32),

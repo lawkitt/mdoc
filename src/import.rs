@@ -1,5 +1,8 @@
 //! Conversion boundary for AnyDoc and PDF extraction. Conversion performs no writes.
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 #[derive(Clone, Debug)]
 pub struct Imported {
@@ -37,11 +40,22 @@ pub fn convert(path: &Path) -> Result<Imported, String> {
     })
 }
 
+#[cfg(test)]
 pub fn prepare(
     path: &Path,
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
 ) -> Result<Imported, ImportError> {
+    prepare_cancellable(path, installed, skip_ocr, &AtomicBool::new(false))
+}
+
+pub fn prepare_cancellable(
+    path: &Path,
+    installed: Option<&crate::ocr::Installed>,
+    skip_ocr: bool,
+    cancel: &AtomicBool,
+) -> Result<Imported, ImportError> {
+    check_cancel(cancel)?;
     let source = std::path::absolute(path).map_err(|e| format!("Could not read document: {e}"))?;
     // Detect PDFs by their header, preserving renamed-file import support.
     // Only PDF conversion reads the complete buffer here; AnyDoc retains its
@@ -51,11 +65,12 @@ pub fn prepare(
     let mut header = [0; 1024];
     let n = std::io::Read::read(&mut file, &mut header).map_err(|e| e.to_string())?;
     if header[..n].windows(5).any(|bytes| bytes == b"%PDF-") {
-        return convert_pdf(source, installed, skip_ocr);
+        return convert_pdf(source, installed, skip_ocr, cancel);
     }
     let converted =
         anydoc::to_markdown_with(&source, anydoc::Options::default().ocr(anydoc::Ocr::Skip))
             .map_err(message)?;
+    check_cancel(cancel)?;
     let warning = (!converted.pages_needing_ocr.is_empty()).then(|| {
         let pages = converted
             .pages_needing_ocr
@@ -81,10 +96,19 @@ pub fn prepare(
     })
 }
 
+fn check_cancel(cancel: &AtomicBool) -> Result<(), ImportError> {
+    if cancel.load(Ordering::Relaxed) {
+        Err("Import cancelled".into())
+    } else {
+        Ok(())
+    }
+}
+
 fn convert_pdf(
     source: PathBuf,
     installed: Option<&crate::ocr::Installed>,
     skip_ocr: bool,
+    cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
     const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
@@ -101,6 +125,7 @@ fn convert_pdf(
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(|e| {
         format!("Could not import PDF. If password-protected, import an unlocked copy: {e}")
     })?;
+    check_cancel(cancel)?;
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
         return Err(ImportError::NeedsOcr(source));
@@ -120,6 +145,7 @@ fn convert_pdf(
     } else {
         (native, false, None)
     };
+    check_cancel(cancel)?;
     let mut warning_pages = if used_ocr {
         result.pages_recommending_hosted.clone()
     } else {

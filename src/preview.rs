@@ -11,6 +11,11 @@ struct PendingPreview {
 
 #[derive(Default)]
 pub(super) struct PreviewState {
+    pub visible: bool,
+    pub queued: bool,
+    /// Committed attachment; source is the current request/retry target.
+    pub attachment: Option<PathBuf>,
+    pub restore_position: Option<(usize, f32, session_store::PreviewFit)>,
     pub pdf: Option<Entity<PdfView>>,
     pub docx: Option<docx_preview::DocxPreview>,
     pub comment_panel: Option<Entity<comment_panel::CommentPanel>>,
@@ -37,12 +42,17 @@ impl PreviewState {
         self.generation = self.generation.wrapping_add(1);
         self.message = None;
         self.retryable = false;
+        self.queued = false;
     }
 
     fn begin(&mut self, path: PathBuf) -> u64 {
+        if self.attachment.as_ref() != Some(&path) {
+            self.restore_position = None;
+        }
         self.invalidate();
         self.source = Some(path);
         self.loading = true;
+        self.visible = true;
         self.generation
     }
 
@@ -57,6 +67,7 @@ impl PreviewState {
         self.cancel_job();
         self.pending = None;
         self.loading = false;
+        self.queued = false;
         self.retryable = true;
         self.message = Some(message);
         true
@@ -78,6 +89,8 @@ impl PreviewState {
         self.release_loaded(window, cx);
         self.cancel = None;
         self.loading = false;
+        self.queued = false;
+        self.attachment = self.source.clone();
         self.retryable = false;
         self.message = pending
             .docx
@@ -90,6 +103,17 @@ impl PreviewState {
             .map(|d| cx.new(|_| comment_panel::CommentPanel::new(d.comments.clone(), theme)));
         self.docx = pending.docx;
         self.subscription = Some(cx.observe(&pending.pdf, |_, _, cx| cx.notify()));
+        if let Some((page, zoom, fit)) = self.restore_position.take() {
+            pending.pdf.update(cx, |pdf, cx| {
+                pdf.set_zoom(zoom, cx);
+                match fit {
+                    session_store::PreviewFit::Width => pdf.fit_width(cx),
+                    session_store::PreviewFit::Page => pdf.fit_page(cx),
+                    session_store::PreviewFit::Manual => {}
+                }
+                pdf.go_to_page(page, cx);
+            });
+        }
         self.pdf = Some(pending.pdf);
         true
     }
@@ -107,6 +131,9 @@ impl PreviewState {
         self.invalidate();
         self.loading = false;
         self.source = None;
+        self.attachment = None;
+        self.visible = false;
+        self.queued = false;
         self.release_loaded(window, cx);
     }
 }
@@ -118,6 +145,25 @@ impl Drop for PreviewState {
 }
 
 impl Workspace {
+    pub(super) fn toggle_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.preview.visible = !self.preview.visible;
+        if !self.preview.visible && self.active && !self.loading && !self.unavailable {
+            window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+        }
+        if self.preview.visible
+            && self.preview.pdf.is_none()
+            && !self.preview.loading
+            && let Some(path) = self
+                .preview
+                .attachment
+                .clone()
+                .or(self.preview.source.clone())
+        {
+            self.open_path(path, window, cx);
+        }
+        cx.notify();
+    }
+
     pub(super) fn close_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.preview.close(window, cx);
     }
@@ -135,7 +181,6 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let theme = self.theme.clone();
-        let fit_docx = docx.is_some();
         let pdf = cx.new(|cx| {
             PdfView::new(
                 path,
@@ -144,12 +189,9 @@ impl Workspace {
                 cx,
             )
         });
-        // DOCX previews always live in the side pane. Fit them to that pane before
-        // the first page raster is requested; this avoids rendering an 820 px page
-        // bitmap that would immediately be scaled down to roughly half that width.
-        if fit_docx {
-            pdf.update(cx, |pdf, cx| pdf.fit_width(cx));
-        }
+        // Both source PDFs and converted DOCX previews follow the pane width.
+        // Sticky fit responds to sidebar/window resizing until manually zoomed.
+        pdf.update(cx, |pdf, cx| pdf.fit_width(cx));
         let generation = self.preview.generation;
         let subscription = cx.subscribe_in(&pdf, window, move |this, pdf, _, window, cx| {
             if !this.preview.is_current(generation) {
@@ -168,6 +210,8 @@ impl Workspace {
             } else {
                 return;
             }
+            this.dirty_cached = this.dirty(cx);
+            this.update_title(window, cx);
             cx.notify();
         });
         self.preview.pending = Some(PendingPreview {
@@ -187,11 +231,39 @@ impl Workspace {
         let generation = self.begin_preview(path.clone());
         let cancel = Arc::new(AtomicBool::new(false));
         self.preview.cancel = Some(cancel.clone());
+        if self.owner.is_some() {
+            self.preview.queued = true;
+            cx.emit(tabs::TabEvent::Docx {
+                path,
+                generation,
+                cancel,
+            });
+            cx.notify();
+            return;
+        }
+        self.run_docx(path, generation, cancel, window, cx);
+    }
+
+    pub(super) fn run_docx(
+        &mut self,
+        path: PathBuf,
+        generation: u64,
+        cancel: Arc<AtomicBool>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.preview.queued = false;
+        let owner = self.owner.clone();
         let task = cx
             .background_executor()
             .spawn(async move { docx_preview::render_with_cancel(&path, cancel) });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
+            if let Some((id, owner)) = owner {
+                let _ = owner.update_in(cx, |owner, window, cx| {
+                    owner.docx_finished(id, generation, window, cx)
+                });
+            }
             let _ = this.update_in(cx, |this, window, cx| {
                 if !this.preview.is_current(generation) {
                     return;
