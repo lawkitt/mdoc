@@ -1,5 +1,9 @@
 # AnyDoc integration decisions
 
+Opening, automatic PDF/DOCX conversion, inline OCR consent, blank placeholders,
+and chrome refinements are superseded where applicable by
+[sidebar and opening UI decisions](opening-ui-decisions.md).
+
 Current PDF integration (2026-09-19): PDFs now use the separately pinned
 OCR-capable pdf-inspector fork directly through `src/import.rs`; AnyDoc still
 handles other formats. The AnyDoc transitive PDF baseline remains pinned in

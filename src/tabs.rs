@@ -43,9 +43,9 @@ impl SidebarStatus {
             source: view.preview.source.clone(),
             dirty: view.dirty_cached,
             loading: view.loading || view.preview.loading,
-            queued: view.preview.queued,
+            queued: view.preview.queued || view.auto_convert_pending,
             importing: view.job.busy(),
-            error: view.error.is_some() || view.preview.retryable,
+            error: view.error.is_some() || view.preview.retryable || view.ocr_required.is_some(),
         }
     }
 }
@@ -86,6 +86,8 @@ pub(super) struct Tabs {
     ocr_state: OcrState,
     pending_open: Vec<PathBuf>,
     notice: Option<String>,
+    notice_expanded: bool,
+    tab_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
     import_busy: Arc<AtomicBool>,
     docx_queue: VecDeque<DocxJob>,
     docx_running: Option<(u64, u64)>,
@@ -181,6 +183,8 @@ impl Tabs {
             },
             pending_open: Vec::new(),
             notice: None,
+            notice_expanded: false,
+            tab_menu: None,
             import_busy: Arc::new(AtomicBool::new(false)),
             docx_queue: VecDeque::new(),
             docx_running: None,
@@ -206,7 +210,9 @@ impl Tabs {
                 if record.source_only {
                     tab.record.attachment == record.attachment
                 } else {
-                    !tab.record.source_only && tab.record.markdown == record.markdown
+                    !record.markdown.as_os_str().is_empty()
+                        && !tab.record.source_only
+                        && tab.record.markdown == record.markdown
                 }
             }) {
                 continue;
@@ -215,7 +221,11 @@ impl Tabs {
         }
         self.ready = true;
         if self.tabs.is_empty() {
-            self.push(TabRecord::default());
+            self.push(TabRecord {
+                blank: true,
+                blank_disposable: true,
+                ..TabRecord::default()
+            });
         }
         let active = self.tabs[selected.min(self.tabs.len() - 1)].id;
         self.activate(active, window, cx);
@@ -266,6 +276,13 @@ impl Tabs {
             view.theme = theme;
             view.import_busy = import_busy;
             view.source_only = record.source_only;
+            view.blank_disposable = record.blank_disposable;
+            view.auto_convert_pending = record.source_only
+                && record.attachment.as_ref().is_some_and(|path| {
+                    path.extension().is_some_and(|ext| {
+                        ext.eq_ignore_ascii_case("pdf") || ext.eq_ignore_ascii_case("docx")
+                    })
+                });
             view.loading = !record.markdown.as_os_str().is_empty();
             view.editor.update(cx, |editor, cx| {
                 editor.set_markdown_style(style::markdown_style(view.theme.get()), cx)
@@ -294,7 +311,6 @@ impl Tabs {
         if !record.markdown.as_os_str().is_empty() {
             self.load_document(id, record, window, cx);
         } else if record.source_only
-            && record.preview_visible
             && let Some(path) = record.attachment
         {
             view.update(cx, |view, cx| view.open_source(path, window, cx));
@@ -398,6 +414,7 @@ impl Tabs {
         if let Some(view) = self.active_view() {
             view.update(cx, |view, cx| {
                 view.active = true;
+                view.try_auto_convert(window, cx);
                 view.update_title(window, cx);
                 if view.source_only {
                     window.focus(&view.focus, cx);
@@ -412,7 +429,16 @@ impl Tabs {
     }
 
     fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> u64 {
-        let id = self.push(TabRecord::default());
+        for tab in &mut self.tabs {
+            tab.record.blank_disposable = false;
+            if let Some(view) = &tab.view {
+                view.update(cx, |view, _| view.blank_disposable = false);
+            }
+        }
+        let id = self.push(TabRecord {
+            blank: true,
+            ..TabRecord::default()
+        });
         self.activate(id, window, cx);
         id
     }
@@ -525,15 +551,42 @@ impl Tabs {
             ));
         }
         if let Some(first) = first {
+            let disposable: Vec<_> = self
+                .tabs
+                .iter()
+                .filter(|tab| {
+                    tab.id != first
+                        && tab
+                            .view
+                            .as_ref()
+                            .map_or(tab.record.blank_disposable, |view| {
+                                let view = view.read(cx);
+                                view.blank_disposable
+                                    && view.editor.read(cx).text().is_empty()
+                                    && view.session.document.path.is_none()
+                                    && view.preview.source.is_none()
+                            })
+                })
+                .map(|tab| tab.id)
+                .collect();
             self.activate(first, window, cx);
+            for id in disposable {
+                self.remove(id, window, cx);
+            }
         }
         cx.notify();
     }
 
-    pub fn refresh_import(&self, cx: &mut Context<Self>) {
+    pub fn refresh_import(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.resolving_close() || self.finishing {
+            return;
+        }
         for tab in &self.tabs {
             if let Some(view) = &tab.view {
-                view.update(cx, |_, cx| cx.notify());
+                view.update(cx, |view, cx| {
+                    view.try_auto_convert(window, cx);
+                    cx.notify();
+                });
             }
         }
         cx.notify();
@@ -548,7 +601,7 @@ impl Tabs {
                 self.new_tab(window, cx);
             }
             TabEvent::Open(paths) => self.open_paths(paths.clone(), window, cx),
-            TabEvent::ImportState => self.refresh_import(cx),
+            TabEvent::ImportState => self.refresh_import(window, cx),
             TabEvent::CloseRequested => self.close_tab(id, window, cx),
             TabEvent::OcrState(state) => self.set_ocr(state.clone(), cx),
             TabEvent::Saved => {
@@ -590,10 +643,12 @@ impl Tabs {
                     .iter()
                     .filter_map(|tab| tab.view.clone())
                     .collect();
+                let owner = cx.entity().downgrade();
                 window.defer(cx, move |window, cx| {
                     for view in views {
                         view.update(cx, |view, cx| view.resume_import(window, cx));
                     }
+                    let _ = owner.update(cx, |this, cx| this.refresh_import(window, cx));
                 });
             }
             TabEvent::SaveConflict(other) => {
@@ -728,7 +783,12 @@ impl Tabs {
         self.tabs.remove(index);
         self.docx_queue.retain(|job| job.id != id);
         if self.tabs.is_empty() {
-            self.new_tab(window, cx);
+            let id = self.push(TabRecord {
+                blank: true,
+                blank_disposable: true,
+                ..TabRecord::default()
+            });
+            self.activate(id, window, cx);
         } else if self.active == id {
             self.activate(self.tabs[index.min(self.tabs.len() - 1)].id, window, cx);
         }
@@ -802,7 +862,12 @@ impl Tabs {
             let mut record = tab.record.clone();
             if let Some(view) = &tab.view {
                 let view = view.read(cx);
-                record.source_only = view.source_only;
+                record.source_only = view.source_only || view.generated_unedited;
+                record.blank = !record.source_only
+                    && view.session.document.path.is_none()
+                    && view.preview.source.is_none()
+                    && view.editor.read(cx).text().is_empty();
+                record.blank_disposable = record.blank && view.blank_disposable;
                 if let Some(path) = &view.session.document.path {
                     record.markdown = path.clone();
                 }
@@ -827,7 +892,7 @@ impl Tabs {
                     };
                 }
             }
-            if record.markdown.as_os_str().is_empty() && !record.source_only {
+            if record.markdown.as_os_str().is_empty() && !record.source_only && !record.blank {
                 continue;
             }
             if tab.id == self.active {
@@ -944,6 +1009,7 @@ impl Tabs {
                            action: Box<dyn gpui::Action>| {
             div()
                 .id(id)
+                .when(cfg!(test), |v| v.debug_selector(move || id.into()))
                 .aria_label(aria)
                 .w(px(28.))
                 .h(px(28.))
@@ -974,7 +1040,8 @@ impl Tabs {
             .border_color(palette.border)
             .child(
                 div()
-                    .h(px(44.))
+                    .h(px(if self.sidebar_visible { 44. } else { 76. }))
+                    .when(!self.sidebar_visible, |v| v.flex_col().justify_center())
                     .flex_shrink_0()
                     .px(px(6.))
                     .flex()
@@ -990,6 +1057,14 @@ impl Tabs {
                         },
                         Box::new(ToggleSidebar),
                     ))
+                    .when(!self.sidebar_visible, |view| {
+                        view.child(icon_button(
+                            "sidebar-new-collapsed",
+                            "+",
+                            "New Markdown tab",
+                            Box::new(New),
+                        ))
+                    })
                     .when(self.sidebar_visible, |view| {
                         view.child(
                             div()
@@ -1007,7 +1082,7 @@ impl Tabs {
                         ))
                     }),
             );
-        if self.sidebar_visible {
+        {
             let mut rows = div()
                 .id("sidebar-tabs")
                 .flex_1()
@@ -1056,13 +1131,17 @@ impl Tabs {
                     } else if view.preview.loading {
                         Some("Preparing preview…")
                     } else if view.job.busy() {
-                        Some("Importing…")
+                        Some("Converting…")
+                    } else if view.auto_convert_pending {
+                        Some("Waiting to convert…")
                     } else {
                         None
                     }
                 });
                 let dirty = view.is_some_and(|view| view.dirty_cached);
-                let error = view.is_some_and(|view| view.error.is_some() || view.preview.retryable);
+                let error = view.is_some_and(|view| {
+                    view.error.is_some() || view.preview.retryable || view.ocr_required.is_some()
+                });
                 let attachment = view
                     .and_then(|view| {
                         view.preview
@@ -1155,6 +1234,104 @@ impl Tabs {
                             .text_color(palette.header_muted)
                             .child("Needs attention"),
                     );
+                }
+                if !self.sidebar_visible {
+                    let kind = attachment
+                        .and_then(|p| p.extension())
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("md")
+                        .to_ascii_uppercase();
+                    rows = rows.child(
+                        div()
+                            .id(("compact-tab", id))
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(move || format!("compact-tab-{id}"))
+                            })
+                            .relative()
+                            .w(px(28.))
+                            .h(px(36.))
+                            .my_1()
+                            .rounded_md()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .cursor_pointer()
+                            .text_size(px(9.))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(if selected {
+                                accent
+                            } else {
+                                palette.header_muted
+                            })
+                            .when(selected, |v| v.bg(theme.sidebar_selected()))
+                            .hover(|v| v.bg(palette.placeholder_bg))
+                            .child(
+                                div()
+                                    .border_1()
+                                    .border_color(if selected { accent } else { palette.border })
+                                    .rounded_sm()
+                                    .px(px(2.))
+                                    .py(px(4.))
+                                    .child(kind),
+                            )
+                            .when(dirty || busy.is_some() || error, |v| {
+                                v.child(
+                                    div()
+                                        .absolute()
+                                        .right_0()
+                                        .top_0()
+                                        .text_size(px(10.))
+                                        .text_color(accent)
+                                        .child(if error {
+                                            "!"
+                                        } else if busy.is_some() {
+                                            "◌"
+                                        } else {
+                                            "•"
+                                        }),
+                                )
+                            })
+                            .tooltip(style::tooltip(
+                                format!(
+                                    "{name}{}{}",
+                                    if path.as_os_str().is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!("\n{}", path.display())
+                                    },
+                                    if error { " — Needs attention" } else { "" }
+                                ),
+                                theme,
+                            ))
+                            .on_click(
+                                cx.listener(move |this, _, window, cx| {
+                                    this.activate(id, window, cx)
+                                }),
+                            )
+                            .on_mouse_down(
+                                gpui::MouseButton::Right,
+                                cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
+                                    this.tab_menu = Some((id, e.position));
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                }),
+                            )
+                            .on_drag(
+                                TabDrag {
+                                    id,
+                                    label: name.clone(),
+                                },
+                                |drag, _, _, cx| {
+                                    cx.stop_propagation();
+                                    cx.new(|_| drag.clone())
+                                },
+                            )
+                            .drag_over::<TabDrag>(move |v, _, _, _| v.bg(theme.sidebar_selected()))
+                            .on_drop(cx.listener(move |this, drag: &TabDrag, _, cx| {
+                                this.reorder(drag.id, id, cx)
+                            })),
+                    );
+                    continue;
                 }
                 rows = rows.child(
                     div()
@@ -1284,24 +1461,111 @@ impl Render for Tabs {
                     this.load_document(tab.id, tab.record.clone(), window, cx);
                 }
             }))
+            .when_some(self.tab_menu, |view, (id, position)| {
+                view.child(gpui::deferred(
+                    gpui::anchored().position(position).snap_to_window().child(
+                        div()
+                            .id("tab-context-menu")
+                            .occlude()
+                            .p_1()
+                            .rounded_md()
+                            .shadow_md()
+                            .bg(self.theme.get().sidebar_bg())
+                            .border_1()
+                            .border_color(self.theme.get().pdf_style().border)
+                            .text_size(px(13.))
+                            .on_mouse_down_out(cx.listener(
+                                |this, _: &gpui::MouseDownEvent, _, cx| {
+                                    this.tab_menu = None;
+                                    cx.notify();
+                                },
+                            ))
+                            .child(
+                                div()
+                                    .id("context-close-tab")
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "context-close-tab".into())
+                                    })
+                                    .px_3()
+                                    .py_1()
+                                    .rounded_sm()
+                                    .cursor_pointer()
+                                    .hover(|v| v.bg(self.theme.get().pdf_style().placeholder_bg))
+                                    .child("Close tab")
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.tab_menu = None;
+                                        this.close_tab(id, window, cx);
+                                    })),
+                            ),
+                    ),
+                ))
+            })
             .when_some(self.notice.clone(), |view, notice| {
+                let palette = self.theme.get().pdf_style();
+                let accent = style::markdown_style(self.theme.get()).alert_warning;
                 view.child(
                     div()
                         .flex()
-                        .items_center()
-                        .p_2()
-                        .child(div().flex_1().child(notice))
+                        .flex_col()
+                        .text_size(px(12.))
+                        .bg(gpui::Hsla { a: 0.07, ..accent })
+                        .border_b_1()
+                        .border_color(palette.border)
                         .child(
                             div()
-                                .id("dismiss-session-notice")
-                                .px_2()
-                                .cursor_pointer()
-                                .child("×")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.notice = None;
-                                    cx.notify();
-                                })),
-                        ),
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .px_3()
+                                .py_1()
+                                .child(div().text_color(accent).child("ⓘ"))
+                                .child(div().flex_1().min_w_0().truncate().child(notice.clone()))
+                                .child(
+                                    div()
+                                        .id("session-notice-details")
+                                        .px_2()
+                                        .py_1()
+                                        .rounded_md()
+                                        .cursor_pointer()
+                                        .hover(|v| v.bg(palette.placeholder_bg))
+                                        .child(if self.notice_expanded {
+                                            "Less"
+                                        } else {
+                                            "Details"
+                                        })
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.notice_expanded = !this.notice_expanded;
+                                            cx.notify();
+                                        })),
+                                )
+                                .child(
+                                    div()
+                                        .id("dismiss-session-notice")
+                                        .aria_label("Dismiss notice")
+                                        .px_2()
+                                        .py_1()
+                                        .rounded_md()
+                                        .cursor_pointer()
+                                        .hover(|v| v.bg(palette.placeholder_bg))
+                                        .child("×")
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.notice = None;
+                                            this.notice_expanded = false;
+                                            cx.notify();
+                                        })),
+                                ),
+                        )
+                        .when(self.notice_expanded, |v| {
+                            v.child(
+                                div()
+                                    .id("session-notice-body")
+                                    .max_h(px(120.))
+                                    .overflow_y_scroll()
+                                    .px_3()
+                                    .pb_2()
+                                    .child(notice),
+                            )
+                        }),
                 )
             })
             .child(

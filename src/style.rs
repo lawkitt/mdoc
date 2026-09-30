@@ -69,14 +69,6 @@ impl Theme {
         }
         .into()
     }
-
-    pub fn error_bg(self) -> Hsla {
-        match self {
-            Self::Dark => rgb(0x542e32),
-            Self::Light => rgb(0xffe4e6),
-        }
-        .into()
-    }
 }
 
 pub fn markdown_style(theme: Theme) -> SyntaxStyle {
@@ -130,4 +122,43 @@ pub fn markdown_style(theme: Theme) -> SyntaxStyle {
     style.popover_hover = palette.placeholder_bg;
     style.popover_divider = palette.border;
     style
+}
+
+/// Lightweight tooltip using the same palette as the host chrome.
+struct Tip {
+    text: String,
+    theme: Theme,
+}
+impl gpui::Render for Tip {
+    fn render(
+        &mut self,
+        _: &mut gpui::Window,
+        _: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+        use gpui::{div, prelude::*, px};
+        let palette = self.theme.pdf_style();
+        div()
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .text_size(px(12.))
+            .bg(palette.placeholder_bg)
+            .text_color(palette.header_fg)
+            .border_1()
+            .border_color(palette.border)
+            .child(self.text.clone())
+    }
+}
+pub fn tooltip(
+    text: String,
+    theme: Theme,
+) -> impl Fn(&mut gpui::Window, &mut gpui::App) -> gpui::AnyView {
+    use gpui::AppContext;
+    move |_, cx| {
+        cx.new(|_| Tip {
+            text: text.clone(),
+            theme,
+        })
+        .into()
+    }
 }

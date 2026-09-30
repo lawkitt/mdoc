@@ -32,7 +32,7 @@ pub struct Imported {
 
 #[derive(Debug)]
 pub enum ImportError {
-    NeedsOcr(PathBuf),
+    NeedsOcr(PathBuf, Vec<u32>),
     Message(String),
     OcrFailed(String),
 }
@@ -52,7 +52,7 @@ impl From<&str> for ImportError {
 pub fn convert(path: &Path) -> Result<Imported, String> {
     prepare(path, None, true).map_err(|error| match error {
         ImportError::Message(message) | ImportError::OcrFailed(message) => message,
-        ImportError::NeedsOcr(_) => "This PDF requires OCR.".into(),
+        ImportError::NeedsOcr(..) => "This PDF requires OCR.".into(),
     })
 }
 
@@ -143,7 +143,10 @@ fn convert_pdf(
     check_cancel(cancel)?;
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
-        return Err(ImportError::NeedsOcr(source));
+        return Err(ImportError::NeedsOcr(
+            source,
+            native.pages_recommended_for_ocr.clone(),
+        ));
     }
     let (result, used_ocr) = if needs_ocr
         && !skip_ocr
@@ -337,7 +340,7 @@ mod tests {
         let path = fixture("handmade-partly-scanned.pdf");
         assert!(matches!(
             prepare(&path, None, false),
-            Err(ImportError::NeedsOcr(_))
+            Err(ImportError::NeedsOcr(..))
         ));
         let imported = prepare(&path, None, true).unwrap();
         assert!(imported.markdown.contains("Readable page three"));
@@ -347,7 +350,7 @@ mod tests {
         std::fs::copy(fixture("handmade-scanned.pdf"), &renamed).unwrap();
         assert!(matches!(
             prepare(&renamed, None, false),
-            Err(ImportError::NeedsOcr(_))
+            Err(ImportError::NeedsOcr(..))
         ));
         assert!(prepare(&renamed, None, true).is_err());
     }

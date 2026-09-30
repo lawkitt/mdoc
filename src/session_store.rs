@@ -20,6 +20,8 @@ pub enum PreviewFit {
 pub struct TabRecord {
     pub markdown: PathBuf,
     pub source_only: bool,
+    pub blank: bool,
+    pub blank_disposable: bool,
     pub attachment: Option<PathBuf>,
     pub preview_visible: bool,
     pub caret: usize,
@@ -70,6 +72,8 @@ pub fn load(path: &Path) -> io::Result<Session> {
                     .attachment
                     .as_ref()
                     .is_some_and(|path| path.is_absolute())
+        } else if tab.blank {
+            tab.markdown.as_os_str().is_empty() && tab.attachment.is_none()
         } else {
             tab.markdown.is_absolute()
         }) || tab
@@ -124,6 +128,8 @@ mod tests {
         session.tabs.push(TabRecord {
             markdown: dir.path().join("note.md"),
             source_only: false,
+            blank: false,
+            blank_disposable: false,
             attachment: Some(dir.path().join("source.docx")),
             preview_visible: false,
             caret: 8,

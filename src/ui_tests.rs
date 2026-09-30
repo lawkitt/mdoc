@@ -510,7 +510,7 @@ fn converted(source: PathBuf) -> import::Imported {
 }
 
 #[gpui::test]
-fn ocr_prompt_skip_imports_native_content_and_keeps_page_warning(cx: &mut TestAppContext) {
+fn inline_ocr_skip_imports_native_content_and_keeps_page_warning(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/import/handmade-partly-scanned.pdf");
@@ -518,8 +518,9 @@ fn ocr_prompt_skip_imports_native_content_and_keeps_page_warning(cx: &mut TestAp
         app.start_import(source.clone(), window, cx)
     });
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).prompting));
-    cx.simulate_prompt_answer("Skip OCR");
+    assert!(cx.update(|_, cx| app.read(cx).ocr_required.is_some()));
+    assert!(!cx.has_pending_prompt());
+    app.update_in(cx, |app, window, cx| app.ocr_action(true, window, cx));
     cx.run_until_parked();
     app.update_in(cx, |app, _, cx| {
         assert!(!app.job.busy());
@@ -532,18 +533,18 @@ fn ocr_prompt_skip_imports_native_content_and_keeps_page_warning(cx: &mut TestAp
 }
 
 #[gpui::test]
-fn ocr_prompt_cancel_preserves_current_edits(cx: &mut TestAppContext) {
+fn inline_ocr_wait_preserves_current_edits(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("keep edits", cx));
         app.job.complete(
             app.session.generation,
-            Err(import::ImportError::NeedsOcr("scan.pdf".into())),
+            Err(import::ImportError::NeedsOcr("scan.pdf".into(), vec![1])),
         );
         app.resume_import(window, cx);
     });
-    cx.simulate_prompt_answer("Cancel");
+    assert!(!cx.has_pending_prompt());
     cx.run_until_parked();
     app.update_in(cx, |app, _, cx| {
         assert_eq!(app.editor.read(cx).text(), "keep edits");
@@ -562,10 +563,11 @@ fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut Tes
             .defer_for_setup(app.session.generation, "scan.pdf".into());
         app.finish_ocr_setup(Err("download interrupted".into()), window, cx);
         assert_eq!(app.ocr_state.label(), "Retry OCR setup");
-        assert!(app.job.busy());
-        assert!(app.prompting);
+        assert!(!app.job.busy());
+        assert!(app.ocr_required.is_some());
+        assert!(!app.prompting);
     });
-    cx.simulate_prompt_answer("Cancel");
+    assert!(!cx.has_pending_prompt());
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
         assert!(!app.job.busy());

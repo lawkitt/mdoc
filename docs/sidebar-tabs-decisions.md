@@ -1,5 +1,9 @@
 # Sidebar tabs
 
+Opening, automatic PDF/DOCX conversion, inline OCR consent, blank placeholders,
+and chrome refinements are superseded where applicable by
+[sidebar and opening UI decisions](opening-ui-decisions.md).
+
 Status: implemented; automated validation recorded below. Native visual/shortcut checks remain manual.
 
 The Open/import and source-only persistence behavior below is defined by

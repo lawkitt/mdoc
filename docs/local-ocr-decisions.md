@@ -1,5 +1,9 @@
 # Local PDF OCR integration decisions
 
+Opening, automatic PDF/DOCX conversion, inline OCR consent, blank placeholders,
+and chrome refinements are superseded where applicable by
+[sidebar and opening UI decisions](opening-ui-decisions.md).
+
 The file-selection and recognition admission behavior below is defined by
 [bulk Open and explicit conversion](bulk-open-decisions.md). Open creates a
 source preview tab; conversion asks before running OCR even when its runtime is

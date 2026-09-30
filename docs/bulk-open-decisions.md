@@ -1,5 +1,9 @@
 # Bulk Open and explicit Markdown conversion
 
+Opening, automatic PDF/DOCX conversion, inline OCR consent, blank placeholders,
+and chrome refinements are superseded where applicable by
+[sidebar and opening UI decisions](opening-ui-decisions.md).
+
 Status: implementation authorized and implemented; verification recorded below.
 
 ## Confirmed — round 1

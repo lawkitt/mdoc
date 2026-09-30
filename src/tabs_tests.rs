@@ -31,7 +31,7 @@ fn click_toolbar(cx: &mut VisualTestContext, label: &'static str) {
 }
 
 #[gpui::test]
-fn ocr_failure_requires_explicit_native_fallback_and_blocks_other_conversions(
+fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
     cx: &mut TestAppContext,
 ) {
     let dir = tempfile::tempdir().unwrap();
@@ -53,14 +53,13 @@ fn ocr_failure_requires_explicit_native_fallback_and_blocks_other_conversions(
             onnx: "missing-onnx".into(),
         })
     });
-    cx.dispatch_action(Import);
-    cx.run_until_parked();
-    cx.simulate_prompt_answer("Run OCR");
+    first.update_in(cx, |view, window, cx| view.ocr_action(false, window, cx));
     cx.run_until_parked();
     cx.update(|_, cx| {
         let view = first.read(cx);
-        assert!(view.prompting);
-        assert!(view.job.busy());
+        assert!(!view.prompting);
+        assert!(!view.job.busy());
+        assert!(view.ocr_required.is_some());
         assert!(view.source_only);
         assert!(view.editor.read(cx).text().is_empty());
         assert!(view.error.as_ref().unwrap().contains("Local OCR failed"));
@@ -69,8 +68,9 @@ fn ocr_failure_requires_explicit_native_fallback_and_blocks_other_conversions(
     cx.run_until_parked();
     let second = active(&tabs, cx);
     second.update_in(cx, |view, window, cx| view.import(&Import, window, cx));
-    cx.update(|_, cx| assert!(!second.read(cx).job.busy()));
-    cx.simulate_prompt_answer("Skip OCR");
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(!second.read(cx).source_only));
+    first.update_in(cx, |view, window, cx| view.ocr_action(true, window, cx));
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_ne!(tabs.read(cx).active, first_id);
@@ -153,10 +153,10 @@ fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
             session_store::identity(&markdown)
         );
         assert!(tabs.notice.as_ref().unwrap().contains("unknown.bin"));
-        assert!(source.read(cx).source_only);
+        assert!(!source.read(cx).source_only);
         assert!(!source.read(cx).dirty(cx));
         assert!(source.read(cx).preview.pdf.is_some());
-        assert!(source.read(cx).editor.read(cx).text().is_empty());
+        assert!(!source.read(cx).editor.read(cx).text().is_empty());
         assert_eq!(original.read(cx).editor.read(cx).text(), "keep edits");
         tabs.active
     });
@@ -237,12 +237,13 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
     cx.dispatch_action(Import);
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert!(view.read(cx).prompting);
+        assert!(!view.read(cx).prompting);
+        assert_eq!(view.read(cx).ocr_required, Some(vec![2, 5]));
         assert!(view.read(cx).source_only);
-        assert!(view.read(cx).import_busy.load(Ordering::Relaxed));
+        assert!(!view.read(cx).import_busy.load(Ordering::Relaxed));
         assert!(matches!(view.read(cx).ocr_state, OcrState::Ready(_)));
     });
-    cx.simulate_prompt_answer("Skip OCR");
+    view.update_in(cx, |view, window, cx| view.ocr_action(true, window, cx));
     cx.run_until_parked();
     cx.update(|_, cx| {
         let view = view.read(cx);
@@ -252,7 +253,7 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
         assert!(view.session.warning.as_ref().unwrap().contains("2, 5"));
         assert_eq!(view.preview.pdf.as_ref(), Some(&pdf));
         assert!(!view.import_busy.load(Ordering::Relaxed));
-        assert_eq!(tabs.read(cx).tabs.len(), 2);
+        assert_eq!(tabs.read(cx).tabs.len(), 1);
         assert!(
             tabs.read(cx).snapshot(cx).tabs.is_empty(),
             "unsaved conversion is not persisted as a source-only tab"
@@ -297,7 +298,13 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     click_toolbar(cx, "Close Preview");
     cx.update(|window, cx| {
         assert!(!view.read(cx).preview.visible);
-        assert!(view.read(cx).focus.is_focused(window));
+        assert!(
+            view.read(cx)
+                .editor
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        );
     });
     click_toolbar(cx, "Show Preview");
     cx.update(|_, cx| {
@@ -1035,5 +1042,286 @@ fn restored_pdf_keeps_auto_fit_and_manual_zoom_remains_manual(cx: &mut TestAppCo
             tabs.read(cx).snapshot(cx).tabs[0].preview_fit,
             session_store::PreviewFit::Manual
         );
+    });
+}
+
+#[gpui::test]
+fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("note.md");
+    std::fs::write(&file, "note").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let placeholder = cx.update(|_, cx| tabs.read(cx).active);
+    // Rejected selections and canceled pickers cannot consume the placeholder.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.finish_open(vec![(dir.path().join("bad.bin"), false)], window, cx)
+    });
+    cx.dispatch_action(Open);
+    cx.run_until_parked();
+    cx.simulate_path_prompt_response(|_| None);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).active, placeholder));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(file.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).tabs.len(), 1);
+        assert_ne!(tabs.read(cx).active, placeholder);
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.close_tab(tabs.active, window, cx)
+    });
+    cx.run_until_parked();
+    let fallback = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+    });
+    cx.run_until_parked();
+    let manifest = dir.path().join("session.json");
+    cx.update(|_, cx| session_store::save(&manifest, &tabs.read(cx).snapshot(cx)).unwrap());
+    let session = session_store::load(&manifest).unwrap();
+    assert_eq!(session.tabs.len(), 2);
+    assert!(
+        session
+            .tabs
+            .iter()
+            .all(|tab| tab.blank && !tab.blank_disposable)
+    );
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.close_tab(tabs.active, window, cx)
+    });
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(file.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(tabs.read(cx).tabs.iter().any(|tab| tab.id == fallback)));
+    // Restore both intentional blanks without deduplicating their empty paths.
+    tabs.update_in(cx, |tabs, window, cx| {
+        for tab in &tabs.tabs {
+            if let Some(view) = &tab.view {
+                Tabs::release(view, window, cx);
+            }
+        }
+        tabs.tabs.clear();
+        tabs.restore(session, window, cx);
+        tabs.open_path(file, window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 3));
+}
+
+#[gpui::test]
+fn edited_then_emptied_placeholder_is_not_disposable(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let id = cx.update(|_, cx| tabs.read(cx).active);
+    cx.simulate_input("temporary text");
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = tabs.read(cx).active_view().unwrap();
+        assert!(view.read(cx).editor.read(cx).text().is_empty());
+        assert!(!view.read(cx).blank_disposable);
+        assert!(!tabs.read(cx).snapshot(cx).tabs[0].blank_disposable);
+    });
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/text.pdf");
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(tabs.read(cx).tabs.iter().any(|tab| tab.id == id)));
+}
+
+#[gpui::test]
+fn automatic_conversion_is_disposable_until_edited_but_can_be_saved(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/text.docx");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(source.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert!(!view.read(cx).source_only);
+        assert!(view.read(cx).generated_unedited);
+        assert!(!view.read(cx).dirty(cx));
+        assert!(!view.read(cx).editor.read(cx).text().is_empty());
+        assert!(view.read(cx).preview.pdf.is_some());
+        let snapshot = tabs.read(cx).snapshot(cx);
+        assert!(snapshot.tabs[0].source_only);
+        assert_eq!(snapshot.tabs[0].attachment.as_ref(), Some(&source));
+    });
+    cx.dispatch_action(Close);
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(source, window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.simulate_input("edited ");
+    cx.run_until_parked();
+    cx.dispatch_action(Close);
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    let dir = tempfile::tempdir().unwrap();
+    let saved = dir.path().join("converted.md");
+    cx.dispatch_action(Save);
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| Some(saved.clone()));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(!view.read(cx).dirty(cx));
+        assert_eq!(
+            std::fs::read_to_string(saved).unwrap(),
+            view.read(cx).editor.read(cx).text()
+        );
+    });
+}
+
+#[gpui::test]
+fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
+    cx: &mut TestAppContext,
+) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import");
+    let permit = cx
+        .update(|_, cx| import_session::ImportPermit::acquire(&tabs.read(cx).import_busy).unwrap());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(
+            vec![
+                base.join("text.pdf"),
+                base.join("text.docx"),
+                base.join("handmade-partly-scanned.pdf"),
+            ],
+            window,
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    let first = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert!(first.read(cx).auto_convert_pending);
+        assert!(tabs.read(cx).tabs[1].view.is_none());
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    cx.run_until_parked();
+    let closed = active(&tabs, cx);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.close_tab(tabs.active, window, cx)
+    });
+    cx.run_until_parked();
+    let selected = cx.update(|_, cx| tabs.read(cx).active);
+    drop(permit);
+    tabs.update_in(cx, |tabs, window, cx| tabs.refresh_import(window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).active, selected);
+        assert!(!first.read(cx).source_only);
+        assert!(closed.read(cx).editor.read(cx).text().is_empty());
+        assert!(closed.read(cx).import_cancel.load(Ordering::Relaxed));
+        let view = tabs.read(cx).active_view().unwrap();
+        assert_eq!(view.read(cx).ocr_required, Some(vec![2, 5]));
+        assert!(!tabs.read(cx).import_busy.load(Ordering::Relaxed));
+    });
+    assert!(!cx.has_pending_prompt());
+}
+
+#[gpui::test]
+fn collapsed_rail_keeps_new_and_tab_controls_and_context_close(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(900.), px(700.)));
+    tabs.update(cx, |tabs, cx| {
+        tabs.sidebar_visible = false;
+        cx.notify();
+    });
+    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    let draw = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        })
+    };
+    draw(cx);
+    let plus = cx.debug_bounds("sidebar-new-collapsed").unwrap();
+    cx.simulate_click(plus.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 2));
+    let first = cx
+        .debug_bounds(Box::leak(
+            format!("compact-tab-{first_id}").into_boxed_str(),
+        ))
+        .unwrap();
+    cx.simulate_click(first.center(), Default::default());
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).active, first_id));
+    draw(cx);
+    cx.simulate_mouse_down(first.center(), gpui::MouseButton::Right, Default::default());
+    cx.simulate_mouse_up(first.center(), gpui::MouseButton::Right, Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    let close = cx.debug_bounds("context-close-tab").unwrap();
+    cx.simulate_click(close.center(), Default::default());
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).tabs.len(), 1);
+        assert!(tabs.read(cx).tab_menu.is_none());
+    });
+    // New remains fixed above the scrollable list even with many tabs.
+    tabs.update_in(cx, |tabs, window, cx| {
+        for _ in 0..25 {
+            tabs.new_tab(window, cx);
+        }
+    });
+    draw(cx);
+    assert_eq!(cx.debug_bounds("sidebar-new-collapsed").unwrap(), plus);
+}
+
+#[gpui::test]
+fn markdown_scrollbar_drags_without_changing_preview_scroll(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1200.), px(800.)));
+    let view = active(&tabs, cx);
+    let pdf = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    view.update_in(cx, |view, window, cx| {
+        view.editor.update(cx, |editor, cx| {
+            editor.set_text("# Heading\n\nA paragraph with words.\n\n".repeat(200), cx)
+        });
+        view.open_path(pdf, window, cx);
+    });
+    cx.run_until_parked();
+    let draw = |cx: &mut VisualTestContext| {
+        for _ in 0..3 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            cx.run_until_parked();
+        }
+    };
+    draw(cx);
+    let preview = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    let before = cx.update(|_, cx| preview.read(cx).reading_position());
+    let thumb = cx
+        .debug_bounds("markdown-scrollbar")
+        .expect("overflowing Markdown scrollbar");
+    cx.simulate_mouse_down(thumb.center(), gpui::MouseButton::Left, Default::default());
+    for y in [40., 100.] {
+        cx.simulate_mouse_move(
+            thumb.center() + gpui::point(px(0.), px(y)),
+            Some(gpui::MouseButton::Left),
+            Default::default(),
+        );
+    }
+    cx.simulate_mouse_up(
+        thumb.center() + gpui::point(px(0.), px(100.)),
+        gpui::MouseButton::Left,
+        Default::default(),
+    );
+    draw(cx);
+    cx.update(|_, cx| {
+        assert!(view.read(cx).scroll.offset().y < px(-100.));
+        assert_eq!(view.read(cx).scroll.offset().x, px(0.));
+        assert_eq!(preview.read(cx).reading_position(), before);
     });
 }

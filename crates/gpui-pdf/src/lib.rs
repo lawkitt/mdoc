@@ -30,6 +30,9 @@
 //! # }
 //! ```
 
+pub mod scrollbar;
+use gpui::prelude::FluentBuilder;
+
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -202,8 +205,6 @@ const PAGE_PAD_Y: f32 = 16.0;
 /// Width of the custom vertical scrollbar gutter (px). The thumb floats over the
 /// right edge of the viewport (overlay-style), so it doesn't shift the page column.
 const SCROLLBAR_W: f32 = 12.0;
-/// Minimum thumb height (px) so the scrollbar stays grabbable in very long PDFs.
-const MIN_THUMB_H: f32 = 32.0;
 /// Extra pages to keep rasterized above and below the visible range. A single-page
 /// margin keeps the first visible page responsive on long documents while still
 /// covering the usual one-page scroll gesture. Raster work is also capped below.
@@ -211,39 +212,6 @@ const MARGIN: usize = 1;
 /// Keep raster work bounded so page rendering cannot starve editor input and
 /// scrolling on a document with many pages.
 const MAX_ACTIVE_RENDERS: usize = 2;
-
-/// Geometry for painting + dragging the custom scrollbar, derived each frame from
-/// the content height, the viewport height, and the current scroll offset. `None`
-/// when there's nothing to scroll (everything fits, or the viewport isn't laid out
-/// yet). All values are px in the scroll area's coordinate frame.
-struct ScrollbarMetrics {
-    /// Top of the scroll area (track) in window coordinates.
-    track_top: f32,
-    /// Track height (= viewport height).
-    track_h: f32,
-    /// Thumb height.
-    thumb_h: f32,
-    /// Thumb top, relative to the track top.
-    thumb_top: f32,
-    /// Maximum scrollable distance (content_h − viewport_h).
-    max_scroll: f32,
-    /// Maximum thumb travel within the track (track_h − thumb_h).
-    thumb_max_travel: f32,
-}
-
-/// Drag payload for the scrollbar thumb. gpui's `on_drag`/`on_drag_move` is the only
-/// move tracking that keeps firing once the cursor leaves the element — or the window —
-/// mid-drag (a plain `on_mouse_move` is bounds-gated, which froze the scroll the moment
-/// the pointer left the viewer). A scrollbar has no drag "ghost", so the payload renders
-/// nothing; the grab offset lives on `PdfView::scrollbar_drag`.
-#[derive(Clone)]
-struct ScrollbarDrag;
-
-impl Render for ScrollbarDrag {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        gpui::Empty
-    }
-}
 
 /// A page's on-screen height for a given column width, preserving aspect ratio.
 fn display_height((w, h): (f32, f32), page_width: f32) -> f32 {
@@ -555,10 +523,6 @@ pub struct PdfView {
     active_renders: usize,
     released: bool,
     scroll: ScrollHandle,
-    /// While the scrollbar thumb is being dragged: the pointer's vertical offset (px)
-    /// from the thumb's top at grab time, so the thumb tracks the cursor. `None` when
-    /// not dragging the scrollbar.
-    scrollbar_drag: Option<f32>,
     /// Active zoom-to-fit mode: re-fits on every viewport resize until a
     /// manual zoom clears it.
     fit: Option<FitMode>,
@@ -720,7 +684,6 @@ impl PdfView {
             active_renders: 0,
             released: false,
             scroll: ScrollHandle::new(),
-            scrollbar_drag: None,
             fit: None,
             fit_viewport: (0.0, 0.0),
             awaiting_fit_layout: false,
@@ -834,7 +797,7 @@ impl PdfView {
         }
         Some(Bounds::new(
             point(
-                cb.origin.x + px(nx * w),
+                cb.origin.x + self.scroll.offset().x + px(nx * w),
                 cb.origin.y + self.scroll.offset().y + px(ny * h),
             ),
             gpui::size(px(nw * w), px(nh * h)),
@@ -886,9 +849,21 @@ impl PdfView {
         }
         let max = f32::from(self.scroll.max_offset().y);
         let new_off = new_off.clamp(-max.max(0.0), 0.0);
-        if (new_off - off).abs() > 0.5 {
-            self.scroll
-                .set_offset(point(self.scroll.offset().x, px(new_off)));
+        let field_left = f32::from(cb.origin.x) + nrect.0 * f32::from(cb.size.width);
+        let field_w = nrect.2 * f32::from(cb.size.width);
+        let off_x = f32::from(self.scroll.offset().x);
+        let left = f32::from(vp.left()) + 12.;
+        let right = f32::from(vp.right()) - 12.;
+        let new_x = if field_left + off_x < left {
+            left - field_left
+        } else if field_left + field_w + off_x > right {
+            right - field_left - field_w
+        } else {
+            off_x
+        }
+        .clamp(-f32::from(self.scroll.max_offset().x).max(0.), 0.);
+        if (new_off - off).abs() > 0.5 || (new_x - off_x).abs() > 0.5 {
+            self.scroll.set_offset(point(px(new_x), px(new_off)));
             cx.notify();
         }
         self.field_screen_bounds(field.page, nrect)
@@ -1106,7 +1081,8 @@ impl PdfView {
             let disp_h = display_height(self.dims[page], pw);
             y = (page_top_y(&self.dims, pw, page) + r.y * disp_h - 48.0).max(0.0);
         }
-        self.scroll.set_offset(point(px(0.0), px(-y)));
+        self.scroll
+            .set_offset(point(self.scroll.offset().x, px(-y)));
         // Flash, then clear after a beat (unless a newer reveal supersedes this one).
         self.flash = Some(page);
         self.flash_gen = self.flash_gen.wrapping_add(1);
@@ -1286,7 +1262,8 @@ impl PdfView {
         let viewport_h = f32::from(self.scroll.bounds().size.height).max(1.0);
         if top < scroll_y + 8.0 || bottom > scroll_y + viewport_h - 8.0 {
             let y = (top - 80.0).max(0.0);
-            self.scroll.set_offset(point(px(0.0), px(-y)));
+            self.scroll
+                .set_offset(point(self.scroll.offset().x, px(-y)));
         }
         cx.notify();
     }
@@ -1314,7 +1291,8 @@ impl PdfView {
                 return Some((
                     i,
                     NormPoint {
-                        x: ((f32::from(pos.x) - left) / w).clamp(0.0, 1.0),
+                        x: ((f32::from(pos.x) - f32::from(self.scroll.offset().x) - left) / w)
+                            .clamp(0.0, 1.0),
                         y: ((probe - top) / h).clamp(0.0, 1.0),
                     },
                 ));
@@ -1516,7 +1494,8 @@ impl PdfView {
         } else {
             page_top_y(&self.dims, self.page_width(), i)
         };
-        self.scroll.set_offset(point(px(0.0), px(-y)));
+        self.scroll
+            .set_offset(point(self.scroll.offset().x, px(-y)));
         cx.notify();
     }
 
@@ -1544,56 +1523,6 @@ impl PdfView {
     /// On-screen column width at the current zoom.
     fn page_width(&self) -> f32 {
         PAGE_WIDTH * self.zoom
-    }
-
-    /// Scrollbar geometry for the current frame, or `None` when the whole document
-    /// fits the viewport (no scrollbar needed) or the viewport hasn't been laid out
-    /// yet. Shared by `render` (to paint the thumb) and the drag handlers (to map the
-    /// pointer back to a scroll offset), so they can't disagree.
-    fn scrollbar_metrics(&self) -> Option<ScrollbarMetrics> {
-        if self.dims.is_empty() {
-            return None;
-        }
-        let bounds = self.scroll.bounds();
-        let viewport_h = f32::from(bounds.size.height);
-        if viewport_h < 1.0 {
-            return None; // not laid out yet (first frame)
-        }
-        let page_width = self.page_width();
-        // Mirror the page column's layout: `py(PAGE_PAD_Y)` top + bottom, each page's
-        // display height, and `PAGE_GAP` between pages.
-        let content_h = 2.0 * PAGE_PAD_Y
-            + self
-                .dims
-                .iter()
-                .map(|d| display_height(*d, page_width))
-                .sum::<f32>()
-            + (self.dims.len().saturating_sub(1)) as f32 * PAGE_GAP;
-        if content_h <= viewport_h + 1.0 {
-            return None; // everything fits — no scrollbar
-        }
-        let max_scroll = content_h - viewport_h;
-        let scroll_y = f32::from(-self.scroll.offset().y).clamp(0.0, max_scroll);
-        let track_h = viewport_h;
-        // `.max().min()` rather than `.clamp()`: in a viewport shorter than the minimum
-        // thumb, `MIN_THUMB_H > track_h` would make `clamp` panic.
-        let thumb_h = (viewport_h / content_h * track_h)
-            .max(MIN_THUMB_H)
-            .min(track_h);
-        let thumb_max_travel = (track_h - thumb_h).max(0.0);
-        let thumb_top = if max_scroll > 0.0 {
-            scroll_y / max_scroll * thumb_max_travel
-        } else {
-            0.0
-        };
-        Some(ScrollbarMetrics {
-            track_top: f32::from(bounds.origin.y),
-            track_h,
-            thumb_h,
-            thumb_top,
-            max_scroll,
-            thumb_max_travel,
-        })
     }
 
     /// The topmost visible page index for the current scroll position.
@@ -2315,18 +2244,23 @@ impl Render for PdfView {
             .flex()
             .flex_col()
             .bg(style.bg)
-            // Click the viewer to focus it (so keyboard shortcuts work); in highlight
-            // mode a mouse-down also starts a drag selection.
+            // Capture focus before scrollbar thumbs consume the click; keyboard
+            // navigation must still belong to the viewport after a thumb drag.
+            .capture_any_mouse_down(cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                if event.button == MouseButton::Left {
+                    window.focus(&this.focus, cx);
+                }
+            }))
+            // In highlight mode a mouse-down also starts a drag selection.
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|this, _ev: &MouseDownEvent, window, cx| {
-                    window.focus(&this.focus, cx);
+                cx.listener(|_this, _ev: &MouseDownEvent, _window, _cx| {
                     #[cfg(feature = "markup")]
-                    if this.selecting
-                        && let Some((pg, n)) = this.point_to_page(_ev.position)
+                    if _this.selecting
+                        && let Some((pg, n)) = _this.point_to_page(_ev.position)
                     {
-                        this.sel_drag = Some((pg, n, n));
-                        cx.notify();
+                        _this.sel_drag = Some((pg, n, n));
+                        _cx.notify();
                     }
                 }),
             )
@@ -2587,79 +2521,20 @@ impl Render for PdfView {
             root
         };
 
-        // Custom overlay scrollbar: a draggable thumb floating over the viewport's
-        // right edge. `None` when the whole document fits (or before first layout), so
-        // it only appears when there's something to scroll. The track is transparent
-        // and event-transparent (no id/handlers) — only the thumb is grabbable.
-        let scrollbar = self.scrollbar_metrics().map(|m| {
-            let thumb_bg = Hsla {
-                a: 0.45,
-                ..style.header_muted
-            };
-            let thumb_hover = Hsla {
-                a: 0.75,
-                ..style.header_muted
-            };
-            div()
-                .absolute()
-                .top_0()
-                .right_0()
-                .w(px(SCROLLBAR_W))
-                .h(px(m.track_h))
-                .child(
-                    div()
-                        .id("pdf-scrollbar-thumb")
-                        .absolute()
-                        .top(px(m.thumb_top))
-                        .right(px(2.0))
-                        .w(px(SCROLLBAR_W - 4.0))
-                        .h(px(m.thumb_h))
-                        .rounded(px((SCROLLBAR_W - 4.0) / 2.0))
-                        .bg(thumb_bg)
-                        .hover(|h| h.bg(thumb_hover))
-                        .cursor_pointer()
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(|this, ev: &MouseDownEvent, window, cx| {
-                                // Remember where on the thumb we grabbed so it tracks the
-                                // cursor without jumping; stop propagation so the viewer's
-                                // root mouse-down doesn't also start a highlight selection.
-                                if let Some(m) = this.scrollbar_metrics() {
-                                    window.focus(&this.focus, cx);
-                                    this.scrollbar_drag =
-                                        Some(f32::from(ev.position.y) - m.track_top - m.thumb_top);
-                                }
-                                cx.stop_propagation();
-                            }),
-                        )
-                        // `on_drag` + `on_drag_move` (not a bounds-gated root
-                        // `on_mouse_move`) so the thumb keeps following the cursor even
-                        // when it leaves the element — or the window — mid-drag.
-                        .on_drag(ScrollbarDrag, |_, _, _, cx| {
-                            cx.stop_propagation();
-                            cx.new(|_| ScrollbarDrag)
-                        })
-                        .on_drag_move(cx.listener(
-                            |this, e: &gpui::DragMoveEvent<ScrollbarDrag>, _window, cx| {
-                                let Some(grab) = this.scrollbar_drag else {
-                                    return;
-                                };
-                                let Some(m) = this.scrollbar_metrics() else {
-                                    return;
-                                };
-                                if m.thumb_max_travel <= 0.0 {
-                                    return;
-                                }
-                                let pointer = f32::from(e.event.position.y);
-                                let thumb_top =
-                                    (pointer - m.track_top - grab).clamp(0.0, m.thumb_max_travel);
-                                let scroll_y = thumb_top / m.thumb_max_travel * m.max_scroll;
-                                this.scroll.set_offset(point(px(0.0), px(-scroll_y)));
-                                cx.notify();
-                            },
-                        )),
-                )
-        });
+        let scrollbar = scrollbar::overlay_scrollbar(
+            "pdf-scrollbar-thumb",
+            &self.scroll,
+            false,
+            style.header_muted,
+            cx,
+        );
+        let horizontal_scrollbar = scrollbar::overlay_scrollbar(
+            "pdf-horizontal-scrollbar",
+            &self.scroll,
+            true,
+            style.header_muted,
+            cx,
+        );
 
         // "Scroll to top": a floating button over the page area, shown once scrolled
         // down past half a viewport. Jumps to the document top (also bound to Home).
@@ -2760,24 +2635,27 @@ impl Render for PdfView {
                                     .id("pdf-scroll")
                                     .min_w_0()
                                     .size_full()
-                                    .overflow_y_scroll()
+                                    .overflow_scroll()
                                     .track_scroll(&self.scroll)
                                     // The page column lives directly on the scroll element
                                     // (not nested) so each page is a tracked scroll item —
                                     // `point_to_page` reads real bounds via `bounds_for_item`.
                                     .flex()
                                     .flex_col()
-                                    .items_center()
+                                    .items_start()
+                                    .when(
+                                        page_width <= f32::from(self.scroll.bounds().size.width),
+                                        |v| v.items_center(),
+                                    )
                                     .gap(px(PAGE_GAP))
                                     .py(px(PAGE_PAD_Y))
                                     // Scrolling doesn't re-run render on its own; notify so
                                     // the next frame re-runs `ensure_window` + page counter.
-                                    .on_scroll_wheel(cx.listener(|_this, _ev, _window, cx| {
-                                        cx.notify();
-                                    }))
+                                    .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
                                     .children(slots),
                             )
-                            .children(scrollbar)
+                            .child(scrollbar)
+                            .child(horizontal_scrollbar)
                             .children(scroll_top_btn),
                     ),
             )
@@ -2990,3 +2868,102 @@ mod tests {
 
 #[cfg(test)]
 mod perf_tests;
+
+#[cfg(test)]
+mod scrolling_tests {
+    use super::*;
+    fn draw(cx: &mut gpui::VisualTestContext) {
+        for _ in 0..3 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            cx.run_until_parked();
+        }
+    }
+    #[gpui::test]
+    fn horizontal_gestures_thumb_and_page_navigation_preserve_geometry(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/reference.pdf");
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            PdfView::new(path, Rc::new(PdfStyle::default), Rc::new(|| 1.), cx)
+        });
+        cx.simulate_resize(gpui::size(px(500.), px(600.)));
+        cx.run_until_parked();
+        view.update(cx, |view, cx| view.set_zoom(1.5, cx));
+        draw(cx);
+        let viewport = cx.update(|_, cx| view.read(cx).scroll.bounds());
+        cx.update(|_, cx| assert!(view.read(cx).scroll.max_offset().x > px(100.)));
+        cx.simulate_event(gpui::ScrollWheelEvent {
+            position: viewport.center(),
+            delta: gpui::ScrollDelta::Pixels(point(px(-80.), px(0.))),
+            modifiers: Default::default(),
+            touch_phase: gpui::TouchPhase::Moved,
+        });
+        draw(cx);
+        cx.update(|_, cx| assert!(view.read(cx).scroll.offset().x < px(-10.)));
+        let before = cx.update(|_, cx| view.read(cx).scroll.offset());
+        cx.simulate_event(gpui::ScrollWheelEvent {
+            position: viewport.center(),
+            delta: gpui::ScrollDelta::Pixels(point(px(0.), px(-60.))),
+            modifiers: gpui::Modifiers {
+                shift: true,
+                ..Default::default()
+            },
+            touch_phase: gpui::TouchPhase::Moved,
+        });
+        draw(cx);
+        cx.update(|_, cx| {
+            let after = view.read(cx).scroll.offset();
+            assert!(after.x < before.x);
+            assert_eq!(after.y, before.y);
+        });
+        let thumb = cx
+            .debug_bounds("pdf-horizontal-scrollbar")
+            .expect("horizontal thumb");
+        cx.simulate_mouse_down(thumb.center(), MouseButton::Left, Default::default());
+        cx.simulate_mouse_move(
+            thumb.center() + point(px(60.), px(0.)),
+            Some(MouseButton::Left),
+            Default::default(),
+        );
+        cx.simulate_mouse_move(
+            thumb.center() + point(px(100.), px(0.)),
+            Some(MouseButton::Left),
+            Default::default(),
+        );
+        cx.simulate_mouse_up(
+            thumb.center() + point(px(100.), px(0.)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        draw(cx);
+        cx.update(|window, cx| assert!(view.read(cx).focus.is_focused(window)));
+        view.update(cx, |v, cx| {
+            assert!(v.scroll.offset().x < before.x - px(80.));
+            assert_eq!(
+                v.scroll.offset().y,
+                before.y,
+                "horizontal drag must not move the vertical thumb"
+            );
+            let x = v.scroll.offset().x;
+            v.go_to_page(0, cx);
+            assert_eq!(v.scroll.offset().x, x);
+            #[cfg(feature = "forms")]
+            {
+                let cb = v.scroll.bounds_for_item(0).unwrap();
+                let bounds = v.field_screen_bounds(0, (0.5, 0.2, 0.1, 0.1)).unwrap();
+                assert_eq!(bounds.origin.x, cb.origin.x + x + cb.size.width * 0.5);
+                #[cfg(feature = "markup")]
+                {
+                    let (page, normalized) = v.point_to_page(bounds.origin).unwrap();
+                    assert_eq!(page, 0);
+                    assert!((normalized.x - 0.5).abs() < 0.001);
+                    assert!((normalized.y - 0.2).abs() < 0.001);
+                }
+            }
+        });
+    }
+}

@@ -37,29 +37,36 @@ The corresponding shortcuts are Cmd+N/O/S/Shift+S on macOS and
 Ctrl+N/O/S/Shift+S on Windows/Linux. Cmd/Ctrl+W closes the active tab;
 Cmd/Ctrl+Q quits. Ctrl+Tab and Ctrl+Shift+Tab switch tabs.
 
-The collapsible left sidebar lists open files. Use **+** for an empty Markdown
-tab, drag rows to reorder them, and **×** to close a tab. **Open…** accepts one
-or more files (no folders), appends tabs in selection order, and activates the
-first selected file. Reopening a file selects its existing tab and preserves
-edits. Other tabs load when selected. Each tab keeps its undo history, selection,
-search, and reading positions; unsupported files are summarized and load failures
-can be retried on their tabs.
+The collapsible left sidebar lists open files. Tabs and **+** remain visible in
+its compact rail, with filename tooltips and status indicators. Use **+** for an
+empty Markdown tab, drag tabs to reorder them, and **×** or the compact tab's
+context menu to close one. **Open…** accepts one or more files (no folders),
+appends tabs in selection order, and activates the first selected file. Reopening
+a file selects its existing tab and preserves edits. Other tabs load when
+selected. Each tab keeps its undo history, selection, search, and reading
+positions; unsupported files are summarized and load failures can be retried.
+Opening files removes only the automatic untouched blank placeholder. Creating
+another blank intentionally preserves both blanks, including across restart.
 
-Markdown (.md, .markdown, .mdown, .txt) opens for editing. PDF and DOCX open in
-preview mode without extracting Markdown. Other supported Office/OpenDocument
-formats, RTF, EPUB, and CSV show a filename and Preview unavailable.
-**Convert to Markdown** (Cmd/Ctrl+Shift+I) explicitly converts the active source
-into an unsaved Markdown document in the same tab, alongside its original
-preview when available. Conversion runs locally, one file at a time. Save
-suggests the source name with a `.md` extension; the source is preserved.
-Convert is hidden after success so it cannot replace subsequent edits.
+Markdown (.md, .markdown, .mdown, .txt) opens for editing. PDF and DOCX open with
+the original preview on the right and convert to Markdown automatically on first
+selection. A PDF with any pages requiring OCR waits for an explicit inline
+choice; incomplete native text is never silently imported. Other supported
+Office/OpenDocument formats, RTF, EPUB, and CSV retain **Convert to Markdown**
+(Cmd/Ctrl+Shift+I). Conversion runs locally, one file at a time, in the source's
+tab. Save suggests the source name with a `.md` extension and preserves the
+original. An untouched automatic conversion closes without a save prompt;
+editing enables normal unsaved-change protection. Converted tabs cannot be
+converted again over subsequent edits.
 
 Conversion retains text and structure, not embedded images. On Apple Silicon macOS
 and Windows x64, **Set up OCR** in the main bar downloads verified components
 (about 54 MB on macOS, 99 MB on Windows) for
 printed English and Russian. Setup is also offered when converting a PDF that
-needs recognition. Conversion asks before recognizing scanned pages, even when
-OCR is ready. You can run OCR, skip it, or cancel. Recognition runs locally and offline;
+needs recognition. The Markdown pane highlights affected pages and offers
+**Run OCR** or **Set up OCR**, plus **Extract native text only**. Recognition
+requires an explicit choice even when OCR is ready; you can keep reading the
+preview without converting. Recognition runs locally and offline;
 document contents are never uploaded. The original PDF remains unchanged.
 Low-confidence or incomplete pages produce a persistent review warning outside
 the Markdown. Skipping setup converts usable native text with omitted-page
@@ -79,7 +86,10 @@ DOCX preview conversions run one at a time.
 Click local file links to open them; web links open in your
 browser. **Close Preview** returns to a full-width editor without changing your
 document. **Show Preview** reopens the same attachment, including for an unsaved
-Markdown tab.
+Markdown tab. Slim draggable scrollbars appear when content overflows. PDF/DOCX
+previews initially fit their pane; after zooming, use the trackpad, Shift+wheel,
+or the horizontal scrollbar to move sideways. Conversion warnings and errors
+use compact notices with expandable details and dismissal controls.
 Use the **☀ Light / ☾ Dark** toolbar button to switch the editor and PDF pane
 between the two themes. The app starts in dark mode; the toggle lasts for the session.
 

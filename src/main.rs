@@ -49,6 +49,8 @@ actions!(
         Open,
         Import,
         SetupOcr,
+        RunOcr,
+        ExtractNative,
         DismissImportWarning,
         Save,
         SaveAs,
@@ -113,6 +115,11 @@ struct Workspace {
     load_generation: u64,
     unavailable: bool,
     source_only: bool,
+    auto_convert_pending: bool,
+    automatic_import: bool,
+    generated_unedited: bool,
+    blank_disposable: bool,
+    ocr_required: Option<Vec<u32>>,
     import_permit: Option<Arc<import_session::ImportPermit>>,
     conversion_source: Option<PathBuf>,
     import_busy: Arc<AtomicBool>,
@@ -124,6 +131,9 @@ struct Workspace {
     preview: preview::PreviewState,
     scroll: ScrollHandle,
     error: Option<String>,
+    expanded_notice: Option<&'static str>,
+    ocr_notice_dismissed: bool,
+    setup_error_dismissed: bool,
     prompting: bool,
     job: import_session::ImportSession,
     ocr_state: OcrState,
@@ -155,6 +165,8 @@ impl Workspace {
         let subscription =
             cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
                 EditorEvent::Changed => {
+                    this.generated_unedited = false;
+                    this.blank_disposable = false;
                     this.dirty_cached = this.dirty(cx);
                     this.update_title(window, cx);
                     this.refresh_markdown_search(SearchRefresh::DocumentEdit, false, window, cx);
@@ -211,6 +223,11 @@ impl Workspace {
             load_generation: 0,
             unavailable: false,
             source_only: false,
+            auto_convert_pending: false,
+            automatic_import: false,
+            generated_unedited: false,
+            blank_disposable: false,
+            ocr_required: None,
             import_permit: None,
             conversion_source: None,
             import_busy: Arc::new(AtomicBool::new(false)),
@@ -222,6 +239,9 @@ impl Workspace {
             preview: preview::PreviewState::default(),
             scroll: ScrollHandle::new(),
             error: None,
+            expanded_notice: None,
+            ocr_notice_dismissed: false,
+            setup_error_dismissed: false,
             prompting: false,
             job: import_session::ImportSession::default(),
             ocr_state: ocr.unwrap_or(OcrState::Checking),
@@ -254,7 +274,7 @@ impl Workspace {
     }
 
     fn dirty(&self, cx: &App) -> bool {
-        if self.loading || self.unavailable || self.source_only {
+        if self.loading || self.unavailable || self.source_only || self.generated_unedited {
             return false;
         }
         self.session.dirty(self.editor.read(cx).text())
@@ -381,6 +401,8 @@ impl Workspace {
             },
             Next::Import(imported) => {
                 self.source_only = false;
+                self.generated_unedited = self.automatic_import;
+                self.ocr_required = None;
                 let retain_preview = self.preview.source.as_ref() == Some(&imported.source)
                     && (self.preview.pdf.is_some() || self.preview.loading);
                 self.session
@@ -391,6 +413,7 @@ impl Workspace {
                 self.replace_images(self.save_directory(), window, cx);
                 self.editor
                     .update(cx, |editor, cx| editor.set_text(imported.markdown, cx));
+                self.dirty_cached = self.dirty(cx);
                 self.reset_markdown_search(cx);
                 if self.active {
                     window.focus(&self.editor.read(cx).focus_handle(cx), cx);
@@ -427,6 +450,8 @@ impl Workspace {
         {
             return;
         }
+        self.automatic_import = false;
+        self.auto_convert_pending = false;
         if let Some(path) = self.preview.source.clone() {
             self.start_import(path, window, cx);
         }
@@ -454,7 +479,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.ocr_state.busy() {
+        if allow_ocr && self.ocr_state.busy() {
             return;
         }
         let installed = match &self.ocr_state {
@@ -491,7 +516,7 @@ impl Workspace {
                 this.resume_import(window, cx);
             });
             if let Some((_, owner)) = owner {
-                let _ = owner.update(cx, |owner, cx| owner.refresh_import(cx));
+                let _ = owner.update_in(cx, |owner, window, cx| owner.refresh_import(window, cx));
             }
         })
         .detach();
@@ -521,12 +546,13 @@ impl Workspace {
                     cx.emit(tabs::TabEvent::OcrState(self.ocr_state.clone()));
                     self.error = Some(error);
                     if let Some(path) = self.conversion_source.clone() {
-                        self.prompt_ocr(path, generation, window, cx);
+                        self.await_ocr(path, cx);
                     }
                 }
                 Err(import::ImportError::Message(error)) => self.error = Some(error),
-                Err(import::ImportError::NeedsOcr(path)) => {
-                    self.prompt_ocr(path, generation, window, cx)
+                Err(import::ImportError::NeedsOcr(path, pages)) => {
+                    self.ocr_required = Some(pages);
+                    self.await_ocr(path, cx)
                 }
             }
         }
@@ -557,6 +583,7 @@ impl Workspace {
         if self.ocr_state.busy() {
             return;
         }
+        self.setup_error_dismissed = false;
         self.ocr_state = OcrState::Installing;
         cx.emit(tabs::TabEvent::OcrState(self.ocr_state.clone()));
         self.error = None;
@@ -598,7 +625,7 @@ impl Workspace {
                 self.ocr_state = OcrState::Failed(error);
                 self.job.finish();
                 if let Some(path) = self.job.resume_after_setup(self.session.generation) {
-                    self.prompt_ocr(path, self.session.generation, window, cx);
+                    self.await_ocr(path, cx);
                 }
             }
         }
@@ -610,74 +637,155 @@ impl Workspace {
         cx.notify();
     }
 
-    fn prompt_ocr(
-        &mut self,
-        path: PathBuf,
-        generation: u64,
-        window: &mut Window,
+    // Consent lives in the source pane. Waiting for a decision must not hold
+    // the global conversion slot or interrupt another tab with a modal dialog.
+    fn await_ocr(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        self.conversion_source = Some(path);
+        self.ocr_required.get_or_insert_with(Vec::new);
+        self.ocr_notice_dismissed = false;
+        self.job.finish();
+        self.import_permit = None;
+        cx.emit(tabs::TabEvent::ImportState);
+        cx.notify();
+    }
+
+    fn ocr_action(&mut self, skip: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.job.busy()
+            || self.import_busy.load(Ordering::Relaxed)
+            || self.ocr_state.busy()
+            || self.ocr_required.is_none()
+        {
+            return;
+        }
+        let Some(path) = self.conversion_source.clone() else {
+            return;
+        };
+        self.automatic_import = false;
+        if skip || matches!(self.ocr_state, OcrState::Ready(_)) {
+            self.start_import_mode(path, skip, window, cx);
+        } else if ocr::SUPPORTED {
+            self.import_permit = import_session::ImportPermit::acquire(&self.import_busy);
+            if self.import_permit.is_none() {
+                return;
+            }
+            self.job.defer_for_setup(self.session.generation, path);
+            self.begin_ocr_setup(window, cx);
+        }
+    }
+
+    fn try_auto_convert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.auto_convert_pending
+            || self.job.busy()
+            || self.import_busy.load(Ordering::Relaxed)
+            || self.import_cancel.load(Ordering::Relaxed)
+        {
+            return;
+        }
+        let Some(path) = self.preview.source.clone() else {
+            return;
+        };
+        self.automatic_import = true;
+        self.auto_convert_pending = false;
+        self.start_import(path, window, cx);
+    }
+
+    fn notice(
+        &self,
+        id: &'static str,
+        title: &'static str,
+        detail: String,
+        failure: bool,
         cx: &mut Context<Self>,
-    ) {
-        self.prompting = true;
-        self.job.wait_for_ocr();
-        let ready = matches!(self.ocr_state, OcrState::Ready(_));
-        let supported = !matches!(self.ocr_state, OcrState::Unsupported);
-        let failed = matches!(self.ocr_state, OcrState::Failed(_));
-        let buttons = if ready {
-            vec!["Run OCR", "Skip OCR", "Cancel"]
-        } else if supported {
-            vec![
-                if failed {
-                    "Retry"
-                } else {
-                    "Set up and run OCR"
-                },
-                "Skip OCR",
-                "Cancel",
-            ]
+    ) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let accent = if failure {
+            style::markdown_style(theme).alert_caution
         } else {
-            vec!["Skip OCR", "Cancel"]
+            style::markdown_style(theme).alert_warning
         };
-        let detail = match &self.ocr_state {
-            OcrState::Ready(_) => "Some or all pages need text recognition. Run local OCR, or extract native text only with omission warnings. Documents stay on this device.".into(),
-            OcrState::Failed(error) => format!("{error} Retry OCR setup and recognition, extract native text only, or cancel."),
-            _ if supported => format!("Download about {} MB of OCR components once, then run recognition locally. Skipping extracts only usable native text with omission warnings.", ocr::download_megabytes()),
-            _ => "Local OCR is unavailable on this platform. Skipping extracts only usable native text with omission warnings.".into(),
-        };
-        let answer = window.prompt(
-            PromptLevel::Info,
-            "This PDF needs text recognition",
-            Some(&detail),
-            &buttons,
-            cx,
-        );
-        cx.spawn_in(window, async move |this, cx| {
-            let answer = answer.await.ok();
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.prompting = false;
-                this.job.finish();
-                if generation != this.session.generation
-                    || this.import_cancel.load(Ordering::Relaxed)
-                {
-                    this.import_permit = None;
-                    cx.emit(tabs::TabEvent::ImportState);
-                    cx.notify();
-                    return;
-                }
-                if ready && answer == Some(0) {
-                    this.start_import_mode(path, false, window, cx);
-                } else if supported && answer == Some(0) {
-                    this.job.defer_for_setup(generation, path);
-                    this.begin_ocr_setup(window, cx);
-                } else if answer == Some(if supported { 1 } else { 0 }) {
-                    this.start_import_mode(path, true, window, cx);
-                } else {
-                    this.import_permit = None;
-                }
-                cx.emit(tabs::TabEvent::ImportState);
-                cx.notify();
-            });
-        })
-        .detach();
+        let expanded = self.expanded_notice == Some(id);
+        div()
+            .id(id)
+            .flex()
+            .flex_col()
+            .flex_shrink_0()
+            .text_size(px(12.))
+            .bg(gpui::Hsla { a: 0.07, ..accent })
+            .border_b_1()
+            .border_color(palette.border)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px_3()
+                    .py_1()
+                    .child(
+                        div()
+                            .text_color(accent)
+                            .child(if failure { "!" } else { "ⓘ" }),
+                    )
+                    .child(div().text_color(palette.header_fg).child(title))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_color(palette.header_muted)
+                            .child(detail.clone()),
+                    )
+                    .when(id == "preview-notice" && self.preview.retryable, |v| {
+                        v.child(button("Retry", RetryPreview, theme))
+                    })
+                    .child(
+                        div()
+                            .id((id, 0usize))
+                            .cursor_pointer()
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .hover(|v| v.bg(palette.placeholder_bg))
+                            .child(if expanded { "Less" } else { "Details" })
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.expanded_notice = if expanded { None } else { Some(id) };
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        div()
+                            .id((id, 1usize))
+                            .aria_label("Dismiss notice")
+                            .cursor_pointer()
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .hover(|v| v.bg(palette.placeholder_bg))
+                            .child("×")
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                match id {
+                                    "import-notice" => this.session.warning = None,
+                                    "ocr-notice" => this.ocr_notice_dismissed = true,
+                                    "preview-notice" => this.preview.message = None,
+                                    "setup-notice" => this.setup_error_dismissed = true,
+                                    _ => this.error = None,
+                                }
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .when(expanded, |v| {
+                v.child(
+                    div()
+                        .id((id, 2usize))
+                        .max_h(px(120.))
+                        .overflow_y_scroll()
+                        .px_3()
+                        .pb_2()
+                        .child(detail),
+                )
+            })
+            .into_any_element()
     }
 
     fn save_directory(&self) -> PathBuf {
@@ -832,6 +940,8 @@ impl Workspace {
         let old_directory = self.save_directory();
         match self.session.save(path, self.editor.read(cx).text()) {
             Ok(()) => {
+                self.generated_unedited = false;
+                self.blank_disposable = false;
                 self.dirty_cached = false;
                 cx.emit(tabs::TabEvent::Saved);
                 if old_directory != self.session.document.directory() {
@@ -1052,6 +1162,55 @@ impl Render for Workspace {
                         this.close_markdown_search(&CloseMarkdownSearch, window, cx)
                     })),
             );
+        let markdown_scrollbar = gpui_pdf::scrollbar::overlay_scrollbar(
+            "markdown-scrollbar",
+            &self.scroll,
+            false,
+            palette.header_muted,
+            cx,
+        );
+        let import_notice = self
+            .session
+            .warning
+            .clone()
+            .map(|detail| self.notice("import-notice", "Review conversion", detail, false, cx));
+        let ocr_notice = (self.ocr_required.is_some() && !self.ocr_notice_dismissed).then(|| {
+            self.notice(
+                "ocr-notice",
+                "Text recognition required",
+                "Choose an action in the Markdown pane to continue.".into(),
+                false,
+                cx,
+            )
+        });
+        let preview_notice = self.preview.message.clone().map(|detail| {
+            self.notice(
+                "preview-notice",
+                "Preview",
+                detail,
+                self.preview.retryable,
+                cx,
+            )
+        });
+        let setup_notice = match &self.ocr_state {
+            OcrState::Failed(error) if !self.setup_error_dismissed => {
+                Some(self.notice("setup-notice", "OCR setup", error.clone(), true, cx))
+            }
+            _ => None,
+        };
+        let error_notice = self
+            .error
+            .clone()
+            .map(|detail| self.notice("error-notice", "Needs attention", detail, true, cx));
+        let ocr_pages = self.ocr_required.as_ref().map(|pages| {
+            pages
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        });
+        let ocr_disabled =
+            self.job.busy() || self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy();
         div().size_full().flex().flex_col().bg(palette.bg).text_color(palette.header_fg).text_size(px(16.))
             // Toolbar clicks must dispatch inside this workspace, not the outer tab shell.
             .track_focus(&self.focus)
@@ -1060,6 +1219,8 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::open))
             .on_action(cx.listener(Self::import))
             .on_action(cx.listener(Self::setup_ocr))
+            .on_action(cx.listener(|this, _: &RunOcr, window, cx| this.ocr_action(false, window, cx)))
+            .on_action(cx.listener(|this, _: &ExtractNative, window, cx| this.ocr_action(true, window, cx)))
             .on_action(cx.listener(|this, _: &DismissImportWarning, _, cx| { this.session.warning = None; cx.notify(); }))
             .on_action(cx.listener(|this, _: &New, window, cx| this.request(Next::New, window, cx)))
             .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
@@ -1074,7 +1235,7 @@ impl Render for Workspace {
             .child(div().flex().flex_wrap().items_center().gap_2().p_2().text_size(px(13.)).border_b_1().border_color(palette.border)
                 .child(button("New", New, theme)).child(button("Open…", Open, theme))
                 .when(!self.source_only, |bar| bar.child(button("Save", Save, theme)).child(button("Save As…", SaveAs, theme)))
-                .when(self.source_only || self.job.busy(), |bar| bar.child(if self.job.busy() { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting…" }).into_any_element() } else if self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy() { div().opacity(0.5).child("Convert to Markdown").into_any_element() } else { button("Convert to Markdown", Import, theme).into_any_element() }))
+                .when((self.source_only && self.ocr_required.is_none() && !self.auto_convert_pending) || self.job.busy(), |bar| bar.child(if self.job.busy() { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting…" }).into_any_element() } else if self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy() { div().opacity(0.5).child("Convert to Markdown").into_any_element() } else { button("Convert to Markdown", Import, theme).into_any_element() }))
                 .child(if matches!(self.ocr_state, OcrState::Missing | OcrState::Failed(_)) {
                     button(self.ocr_state.label(), SetupOcr, theme).into_any_element()
                 } else { div().opacity(0.65).child(self.ocr_state.label()).into_any_element() })
@@ -1083,25 +1244,39 @@ impl Render for Workspace {
                 .child(if self.dirty_cached { "Unsaved changes" } else if self.source_only { "Source preview" } else { "Markdown · WYSIWYG" })
                 .when(self.preview.loading, |bar| bar.child(div().child("Preparing preview…")))
                 .when(self.preview.pdf.is_some() || self.preview.source.is_some(), |bar| bar.child(button(if self.preview.visible { "Close Preview" } else { "Show Preview" }, TogglePreview, theme))))
-            .when_some(self.session.warning.clone(), |view, warning| view.child(div().flex().items_center().gap_2().p_2().border_b_1().border_color(palette.border)
-                .child(div().id("import-warning").flex_1().min_w_0().max_h(px(96.)).overflow_y_scroll().child(warning))
-                .child(button("Dismiss", DismissImportWarning, theme))))
+            .children(import_notice).children(ocr_notice)
             .child(div().flex().flex_1().min_h_0()
                 .when(!self.source_only, |row| row.child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
                     .when(self.search.open, |column| column.child(search_bar))
                     .child(if self.loading || self.unavailable {
                         div().p_6().child(if self.loading { "Loading Markdown…" } else { "Markdown unavailable" })
                             .when(self.unavailable, |view| view.child(button("Retry", RetryDocument, theme))).into_any_element()
-                    } else { div().id("document-scroll").flex_1().min_w_0().min_h_0().overflow_y_scroll().track_scroll(&self.scroll).p_6().child(self.editor.clone()).into_any_element() })))
-                .when(self.source_only && (!self.preview.visible || self.preview.pdf.is_none()), |row| row.child(div().flex_1().p_6()
-                    .child(self.display_name())
-                    .child(div().child(if self.preview.loading { "Preparing preview…" } else if !self.preview.visible { "Preview hidden" } else { "Preview unavailable" }))))
-                .when_some(self.preview.pdf.clone().filter(|_| self.preview.visible), |row, pdf| row.child(div().when(self.source_only, |pane| pane.flex_1()).when(!self.source_only, |pane| pane.w_1_2()).min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
+                    } else { div().relative().flex_1().min_w_0().min_h_0()
+                        .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6()
+                            .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))
+                        .child(markdown_scrollbar).into_any_element() })))
+                .when(self.source_only, |row| row.child(div().flex_1().min_w_0().p_6().flex().flex_col().justify_center().gap_2()
+                    .child(div().text_size(px(18.)).child(self.display_name()))
+                    .child(div().text_color(palette.header_muted).child(if self.job.busy() {
+                        if self.ocr_state.busy() { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }
+                    } else if self.ocr_required.is_some() { "Text recognition required" }
+                    else if self.auto_convert_pending { "Waiting to convert…" }
+                    else if self.error.is_some() { "Conversion could not be completed" } else { "Convert this document to begin editing" }))
+                    .when_some(ocr_pages, |v, pages| v
+                        .child(div().text_size(px(13.)).text_color(palette.header_muted).child(if pages.is_empty() { "Recognition needs your attention.".into() } else { format!("Pages {pages} need OCR. The original remains available on the right.") }))
+                        .when(ocr::SUPPORTED && !matches!(self.ocr_state, OcrState::Ready(_)), |v| v.child(div().text_size(px(12.)).text_color(palette.header_muted)
+                            .child(format!("Setup downloads about {} MB once. Recognition runs locally on this device.", ocr::download_megabytes()))))
+                        .child(div().flex().flex_wrap().gap_2().text_size(px(13.)).when(!ocr_disabled, |v| v
+                            .when(ocr::SUPPORTED, |v| v.child(button(if matches!(self.ocr_state, OcrState::Ready(_)) { "Run OCR" } else { "Set up OCR" }, RunOcr, theme)))
+                            .child(button("Extract native text only", ExtractNative, theme))))
+                        .when(!ocr::SUPPORTED, |v| v.child(div().text_size(px(12.)).text_color(palette.header_muted).child("Local OCR is unavailable on this platform."))))))
+                .when(self.source_only && self.preview.visible && self.preview.pdf.is_none(), |row| row.child(div().w_1_2().h_full().border_l_1().border_color(palette.border)
+                    .flex().items_center().justify_center().text_color(palette.header_muted)
+                    .child(if self.preview.loading { "Preparing preview…" } else { "Preview unavailable" })))
+                .when_some(self.preview.pdf.clone().filter(|_| self.preview.visible), |row, pdf| row.child(div().w_1_2().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments)))))
-            .when_some(self.preview.message.clone(), |view, message| view.child(div().flex().items_center().gap_2().p_2().bg(theme.error_bg()).child(div().flex_1().child(format!("{}: {message}", self.preview.source.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "Preview".into())))).when(self.preview.retryable, |bar| bar.child(button("Retry", RetryPreview, theme)))))
-            .when_some(match &self.ocr_state { OcrState::Failed(error) => Some(error.clone()), _ => None }, |view, error| view.child(div().p_2().bg(theme.error_bg()).child(format!("OCR setup: {error}"))))
-            .when_some(self.error.clone(), |view, error| view.child(div().p_2().bg(theme.error_bg()).child(error)))
+            .children(preview_notice).children(setup_notice).children(error_notice)
     }
 }
 
