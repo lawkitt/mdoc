@@ -2,12 +2,17 @@
 
 Read `/Users/tebriz/.codex/RTK.md` when available; prefix shell commands with `rtk`.
 
-mdoc is a lightweight, file-based Markdown WYSIWYG editor with a side-by-side
-PDF/DOCX preview, Import-as-Markdown conversion, Markdown find, and optional
-local OCR. Rust edition 2024 + GPUI; no database or notebook model.
+mdoc is a local document-preparation utility for lawyers, producing editable
+Markdown for AI agents in other tools. It has PDF/DOCX previews, Markdown find,
+and optional local OCR. Rust edition 2024 + GPUI; no database or notebook model.
+Read `CONTEXT.md` for domain terms, `ROADMAP.md` for accepted priorities and
+deferred work, and `docs/adr/` for durable behavior/architecture decisions.
 
 - `src/main.rs`: native window, file actions, unsaved-change prompts, preview pane, OCR status, Markdown find bar.
 - `src/document.rs`: UTF-8 loading and atomic saves with external-change detection.
+- `src/document_session.rs`: accepted document identity and import provenance.
+- `src/tabs.rs` + `src/session_store.rs`: lazy multi-file opening, retained tab views, paths/view metadata restoration.
+- `src/import_session.rs` + `src/preview.rs` + `src/search_session.rs`: pending jobs, preview ownership, revision-aware search scheduling.
 - `src/docx_preview.rs`: local DOCX-to-PDF conversion worker (size/time caps; rejects macros, tracked changes, encrypted files).
 - `src/docx_comments.rs` + `src/comment_panel.rs`: DOCX comment extraction + read-only side list; never enters editor text.
 - `src/import.rs`: conversion boundary (AnyDoc for office formats, pdf-inspector for PDFs); performs no writes.
@@ -27,6 +32,13 @@ Crates remain host-agnostic and cross-platform. Resolve assets relative to the
 Markdown document, never a journal data directory. Do not touch old notebook DBs.
 Do not add back journal, graph, whiteboard, or account features.
 Preserve Markdown source when rendering; do not rewrite it on load or save.
+Keep extraction/OCR algorithms in the AnyDoc/pdf-inspector forks. Planned
+pseudonymization uses Rust-only integration and existing libraries/models;
+keep detection/review policy in the app and editor extensions generic.
+Preserve compilation speed and warm rebuilds. Cache cleanup is manual:
+`rtk cargo clean --workspace` retains dependency artifacts; `rtk cargo clean`
+resets the whole target directory. Do not add automatic eviction or profile
+changes solely to meet an arbitrary cache-size limit.
 
 Before committing, run the full gate:
 

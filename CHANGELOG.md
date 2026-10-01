@@ -4,6 +4,13 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- Multi-file opening with lazy retained tabs, paths-only session restoration,
+  compact sidebar navigation, and automatic PDF/DOCX conversion when OCR is
+  unnecessary; explicit inline OCR choices preserve the original source.
+- Slim Markdown and PDF/DOCX overflow scrollbars, horizontal preview scrolling,
+  and quieter expandable conversion notices.
+- Product direction, roadmap, domain glossary, and consolidated architecture
+  decisions; manual build-cache cleanup instructions.
 - Read-only side-by-side DOCX preview with a local Rust converter, plus a
   read-only DOCX comment list that never enters editor text.
 - Literal Markdown find (Cmd/Ctrl+F, Cmd/Ctrl+G navigation, Match case

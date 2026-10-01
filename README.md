@@ -1,7 +1,13 @@
 # mdoc
 
-A lightweight desktop Markdown WYSIWYG editor with side-by-side PDF and DOCX preview.
+A local document-preparation utility for lawyers: convert PDF, DOCX, and other
+popular formats into editable Markdown for AI agents in other tools. Local OCR,
+source previews, and WYSIWYG editing support review before handoff.
 Built with Rust and GPUI for macOS, Windows, and Linux.
+
+See [ROADMAP.md](ROADMAP.md) for planned features and priorities,
+[CONTEXT.md](CONTEXT.md) for domain terms, and [ADRs](docs/adr/) for durable decisions.
+Full-Markdown copying and pseudonymization are planned, not yet implemented.
 
 Building requires access to the pinned private `lawkitt/anydoc` dependency.
 Authenticate Git with an account that has access before running Cargo.
@@ -26,8 +32,11 @@ Local images resolve relative to the Markdown file and load in the background.
 Open a PDF or DOCX in its own preview tab to read, zoom, navigate pages, and
 search. DOCX preview is read-only and rendered locally with the bundled Rust
 converter; the source file is never modified.
-Layout is approximate, and extracted text can lose spaces, affecting multiword
-search. See [qualification evidence and limitations](docs/docx-viewer-review.md).
+Layout is approximate, and extracted preview text can lose spaces, affecting
+multiword search. DOCX comments appear in a read-only side list and never enter
+the Markdown. Preview rejects encrypted, macro-bearing, and tracked-change files;
+it caps input at 50 MiB, expanded content at 250 MiB, and its worker at 30 seconds.
+These preview limits are separate from Markdown conversion support.
 PDF form appearances are rendered; this is a viewer, not a PDF form editor.
 
 ## Files and shortcuts
@@ -71,17 +80,24 @@ document contents are never uploaded. The original PDF remains unchanged.
 Low-confidence or incomplete pages produce a persistent review warning outside
 the Markdown. Skipping setup converts usable native text with omitted-page
 warnings; if no usable text is available, the current document is preserved.
+Image-only DOCX content currently has no app OCR path; DOCX conversion skips OCR.
 Windows OCR requires the [Microsoft Visual C++ Redistributable (x64)](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
 If its runtime cannot load, setup provides installation and retry instructions.
 Windows ARM64, Linux, and Intel macOS currently support native-text import only. Handwriting and
 complex table reconstruction are not qualified. See [OCR qualification and
-limitations](docs/local-ocr-qualification.md).
+limitations](tests/fixtures/ocr-qualification/README.md).
 
 You can switch tabs while conversion runs; the result stays in its source tab
 without stealing focus. Sidebar labels show importing, queued, and loading states.
 Closing a tab cancels its pending work. Conversion cancellation is cooperative between
 conversion stages; an in-progress library call finishes before releasing its slot.
 DOCX preview conversions run one at a time.
+Multi-file opening retains this lazy, bounded workflow; it does not eagerly
+convert and save the whole selection. Bulk-conversion redesign is deferred.
+
+Cmd/Ctrl+F opens Markdown find, Cmd/Ctrl+G moves to the next occurrence, and
+Shift+Cmd/Ctrl+G moves to the previous one. Match case is optional. Find searches
+rendered visible text; PDF/DOCX search stays in its preview pane.
 
 Click local file links to open them; web links open in your
 browser. **Close Preview** returns to a full-width editor without changing your
@@ -106,10 +122,8 @@ paths and view metadata only. Unsaved text and undo history are not restored;
 untitled tabs must be saved before quitting to retain their pairing. Restored
 content loads when first selected; hidden previews load when shown.
 
-This fork removes journals, notebooks, SQLite/encryption, graph views,
-whiteboards, notebook importers, settings/theme packs, localization, and update checks.
-It does not access or migrate an existing Zorite notebook. Export any notes you
-need from the original app as Markdown before opening them here.
+Documents remain ordinary local files; there is no notebook database or account.
+mdoc does not access or migrate old Zorite notebooks.
 There is no separate reader/raw mode, Markdown-to-PDF export, math/diagram
 engine, or remote-image fetching. Password-protected PDFs are not supported.
 
@@ -121,22 +135,64 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-The tab/sidebar owner lives in `src/tabs.rs`, with paths-only restoration in
-`src/session_store.rs`. Each tab retains the document view in `src/main.rs`;
-file persistence lives in `src/document.rs`. See
-[tab decisions and measured validation](docs/sidebar-tabs-decisions.md).
-DOCX preview and comments live in `src/docx_preview.rs`,
-`src/docx_comments.rs`, and `src/comment_panel.rs`; Markdown find lives in
-`src/markdown_search.rs` over the `mdoc-editor` search index.
-`src/import.rs` isolates the pinned AnyDoc and pdf-inspector forks; `src/ocr.rs`
-owns explicit OCR setup and offline runtime paths. See
-[the integration and upstream-update notes](docs/anydoc-integration.md),
-[Markdown search decisions](docs/markdown-search-decisions.md), and
-[local OCR decisions](docs/local-ocr-decisions.md).
-`mdoc-editor` supplies WYSIWYG, `gpui-pdf` supplies PDF rendering, and
-`gpui-bidi` supplies bidirectional text. `mdoc-markdown` remains because the
-editor uses its Markdown recognition helpers; it is not a separate app view.
-`os-spellcheck` is retained only for the standalone editor demo.
+Keep build caches for fast warm rebuilds. For occasional cleanup from the
+repository root, use `rtk cargo clean --workspace` to remove workspace artifacts
+while retaining dependency artifacts. Use `rtk cargo clean` for a full reset;
+the next build will be cold. Cleanup is manual; no automatic size limit applies.
+See [Cargo clean](https://doc.rust-lang.org/cargo/commands/cargo-clean.html).
+
+Keep the current app/reusable-crate layout. Extract ownership only for a concrete
+problem; conversion and OCR algorithm changes belong in the dependency forks.
+
+| Location | Responsibility |
+| --- | --- |
+| `src/main.rs`, `src/tabs.rs` | Document views, native actions, tab identity, admission, scheduling, and chrome |
+| `src/document.rs`, `src/document_session.rs` | Atomic saves, external-change checks, accepted document identity and provenance |
+| `src/session_store.rs` | Paths and view metadata restoration; no document text |
+| `src/import.rs`, `src/import_session.rs`, `src/ocr.rs` | Library integration, pending jobs, explicit verified setup and offline OCR |
+| `src/preview.rs`, `src/docx_preview.rs` | Preview ownership and supervised local DOCX worker |
+| `src/docx_comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
+| `src/markdown_search.rs`, `src/search_session.rs` | Markdown find controls and revision-aware search scheduling |
+| `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
+| `src/ui_tests.rs`, `src/tabs_tests.rs`, `src/perf_tests.rs` | Headless flows, ownership/lifetime checks, and opt-in performance measurements |
+| `crates/mdoc-editor`, `crates/mdoc-markdown` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |
+| `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |
+| `crates/os-spellcheck` | Standalone editor demo dependency only |
+
+Cargo.toml and Cargo.lock define dependency revisions; `src/ocr.rs` defines
+runtime URLs/digests, and the pinned pdf-inspector manifest defines OCR model
+artifacts. Avoid copying these into another configuration. AnyDoc supplies
+non-PDF conversion; pdf-inspector handles PDFs directly.
+
+For fork updates, test the fork first, review lockfile/transitive changes, then
+run the full gate above and compare outputs against the source before changing
+fixture expectations. AnyDoc's PR 153 port is attributed in its fork; the fork
+began as a snapshot with unrelated upstream history, so port reviewed upstream
+changes rather than assuming a normal merge. Its transitive pdf-inspector 1.14.2
+baseline is distinct from the app's direct OCR-capable fork. If Cargo's Git fetch
+cannot authenticate, use `CARGO_NET_GIT_FETCH_WITH_CLI=true` with existing Git
+credentials; do not change global Cargo configuration.
+
+Use [import](tests/fixtures/import/README.md),
+[DOCX](tests/fixtures/docx-preview/README.md), and
+[OCR](tests/fixtures/ocr-qualification/README.md) fixture notes for reproduction
+and qualification limits. Native appearance, shortcuts, IME, GPU presentation,
+and execution on other platforms require native checks; headless tests do not
+establish them. Do not distribute local user-provided fixtures.
+
+Measure runtime hotspots separately from the routine gate:
+
+```sh
+rtk cargo test -p mdoc host_performance_matrix -- --ignored --nocapture --test-threads=1
+rtk cargo test -p mdoc tabs_host_performance -- --ignored --nocapture --test-threads=1
+rtk cargo test -p mdoc-editor search_performance_matrix -- --ignored --nocapture --test-threads=1
+```
+
+Use a fixed viewport, representative legal/OCR Markdown, and actual scroll/search
+positions; report profile, machine, latency, peak memory, and lifecycle results.
+Historical tab measurements found roughly 292 ms long-document redraws in
+debug/headless mode despite a 0.007 ms tab activation handler. Reproduce before
+optimizing; those timings are not current results or native presentation latency.
 
 Release packaging uses the `mdoc` identity on all platforms. Automatic winget
 submission is disabled until `ENABLE_WINGET_PUBLISHING=true` and a `WINGET_TOKEN`

@@ -29,7 +29,9 @@ Local OCR uses the MIT-licensed pdf-inspector fork at
 <https://github.com/lawkitt/pdf-inspector>, OAR/PaddleOCR models under Apache-2.0,
 and separately downloaded PDFium and ONNX Runtime libraries. Setup installs
 the runtime licenses and third-party notices beside the libraries under the
-application's `mdoc/ocr/v1/licenses` directory. Model provenance and pinned
-artifact identities are recorded in [the OCR qualification report](docs/local-ocr-qualification.md).
+application's `mdoc/ocr/v1/licenses` directory. Model provenance and qualification
+are recorded in [the OCR fixture notes](tests/fixtures/ocr-qualification/README.md).
+Pinned runtime identities/digests live in [src/ocr.rs](src/ocr.rs); model identities
+live in the pinned pdf-inspector manifest referenced by Cargo.toml and Cargo.lock.
 The synthetic English/Russian OCR qualification fixtures were created for mdoc;
 their text and raster PDFs may be used under CC0-1.0.
