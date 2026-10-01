@@ -2,8 +2,8 @@
 
 mdoc prepares local documents as editable Markdown for lawyers using AI agents
 in other tools. Direction and milestone order are agreed as of 2026-10-01.
-The review contract is agreed; features remain planned and model qualification
-has not been performed.
+The review contract is agreed; pseudonymization remains planned and model
+qualification has not been performed.
 
 ## Next steps
 
@@ -11,9 +11,9 @@ has not been performed.
    selective ADRs, and fixture READMEs. Keep compilation speed and warm rebuilds;
    manual cache cleanup is documented in README. No automatic size limit or
    profile reduction is adopted.
-2. **Copy Markdown** — copy the complete current source, including unsaved edits
-   and regardless of selection. Add no wrapper or metadata. Give brief success
-   feedback and retain visible extraction warnings near the action.
+2. **Copy Markdown — complete** — copies the complete current source, including
+   unsaved edits and regardless of selection, without wrapper or metadata.
+   Shows brief success feedback and keeps extraction warnings near the action.
 3. **Pseudonymization qualification** — compare existing models through Rust-only
    local inference. Measure EN/RU legal and OCR text, per-category misses/false
    positives, Unicode offsets, long-document behavior, latency, peak memory,
@@ -86,4 +86,4 @@ Design interview complete: the user confirmed shared understanding on 2026-10-01
 All active decisions are recorded in the glossary and ADRs. Exact model/runtime
 selection and numerical acceptance targets await the qualification milestone;
 bulk redesign and online processing await their future grilling sessions.
-Product implementation is a separate next task.
+Copy Markdown is implemented; pseudonymization implementation follows qualification.

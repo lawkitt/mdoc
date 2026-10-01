@@ -12,6 +12,119 @@ pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTe
 }
 
 #[gpui::test]
+fn copy_markdown_preserves_source_selection_undo_and_warning(cx: &mut TestAppContext) {
+    use gpui::EntityInputHandler;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("legal.md");
+    let saved =
+        "# Договор\r\n\r\n3. **Текст** [link](local.md)\r\n\r\n```rust\r\nlet x = 1;\r\n```\r\n";
+    std::fs::write(&path, saved).unwrap();
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.proceed(Next::Open(path.clone()), window, cx);
+        app.session.warning = Some("Partial import: page 2 was skipped.".into());
+        app.editor.update(cx, |editor, cx| {
+            let end = editor.text().len();
+            editor.replace_range(end..end, "Unsaved edit\n", cx);
+            editor.set_cursor(2, cx);
+        });
+    });
+    cx.dispatch_action(mdoc_editor::SelectRight);
+    let selected = app.update_in(cx, |app, window, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.selected_text_range(false, window, cx).unwrap().range
+        })
+    });
+    let generation = cx.update(|_, cx| app.read(cx).session.generation);
+    cx.dispatch_action(CopyMarkdown);
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let current = format!("{saved}Unsaved edit\n");
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text(),
+            Some(current.clone())
+        );
+        assert!(cx.read_from_clipboard().unwrap().metadata().is_none());
+        assert_eq!(app.editor.read(cx).text(), current);
+        assert!(app.dirty(cx));
+        assert_eq!(app.session.document.saved, saved);
+        assert_eq!(app.session.document.path.as_ref(), Some(&path));
+        assert_eq!(app.session.generation, generation);
+        assert!(app.session.warning.as_ref().unwrap().contains("page 2"));
+        assert!(app.copy_feedback.is_some());
+        app.editor.update(cx, |editor, cx| {
+            assert!(editor.focus_handle(cx).is_focused(window));
+            assert_eq!(
+                editor.selected_text_range(false, window, cx).unwrap().range,
+                selected
+            );
+        });
+    });
+    assert_eq!(std::fs::read_to_string(path).unwrap(), saved);
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(app.read(cx).editor.read(cx).text(), saved);
+        assert!(!app.read(cx).dirty(cx));
+    });
+}
+
+#[gpui::test]
+fn copy_markdown_feedback_restarts_expires_and_clears_on_new(cx: &mut TestAppContext) {
+    use std::time::Duration;
+    let (app, cx) = boot(cx);
+    cx.dispatch_action(CopyMarkdown);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let item = cx.read_from_clipboard().unwrap();
+        let [gpui::ClipboardEntry::String(text)] = item.entries() else {
+            panic!("expected a single plain text entry");
+        };
+        assert!(text.text().is_empty());
+        assert!(item.metadata().is_none());
+    });
+    cx.executor().advance_clock(Duration::from_secs(1));
+    cx.dispatch_action(CopyMarkdown);
+    cx.run_until_parked();
+    cx.executor().advance_clock(Duration::from_secs(1));
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| app.read(cx).copy_feedback.is_some()));
+    cx.executor().advance_clock(Duration::from_secs(1));
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| app.read(cx).copy_feedback.is_none()));
+    cx.dispatch_action(CopyMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("x");
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| app.read(cx).copy_feedback.is_none()));
+    app.update_in(cx, |app, window, cx| app.proceed(Next::New, window, cx));
+    cx.dispatch_action(CopyMarkdown);
+    cx.run_until_parked();
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| app.read(cx).copy_feedback.is_none()));
+}
+
+#[gpui::test]
+fn copy_markdown_refuses_loading_unavailable_and_source_only_views(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    for state in 0..3 {
+        app.update_in(cx, |app, window, cx| {
+            app.loading = state == 0;
+            app.unavailable = state == 1;
+            app.source_only = state == 2;
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string("keep clipboard".into()));
+            app.copy_markdown(&CopyMarkdown, window, cx);
+            assert_eq!(
+                cx.read_from_clipboard().unwrap().text().as_deref(),
+                Some("keep clipboard")
+            );
+            assert!(app.copy_feedback.is_none());
+        });
+    }
+}
+
+#[gpui::test]
 fn search_wraps_and_preserves_document_and_selection(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {

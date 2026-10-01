@@ -54,6 +54,7 @@ actions!(
         DismissImportWarning,
         Save,
         SaveAs,
+        CopyMarkdown,
         Close,
         ClosePdf,
         RetryPreview,
@@ -131,6 +132,7 @@ struct Workspace {
     preview: preview::PreviewState,
     scroll: ScrollHandle,
     error: Option<String>,
+    copy_feedback: Option<gpui::Task<()>>,
     expanded_notice: Option<&'static str>,
     ocr_notice_dismissed: bool,
     setup_error_dismissed: bool,
@@ -165,6 +167,7 @@ impl Workspace {
         let subscription =
             cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
                 EditorEvent::Changed => {
+                    this.copy_feedback = None;
                     this.generated_unedited = false;
                     this.blank_disposable = false;
                     this.dirty_cached = this.dirty(cx);
@@ -239,6 +242,7 @@ impl Workspace {
             preview: preview::PreviewState::default(),
             scroll: ScrollHandle::new(),
             error: None,
+            copy_feedback: None,
             expanded_notice: None,
             ocr_notice_dismissed: false,
             setup_error_dismissed: false,
@@ -279,6 +283,30 @@ impl Workspace {
         }
         self.session.dirty(self.editor.read(cx).text())
             || (self.session.document.path.is_none() && self.preview.attachment.is_some())
+    }
+
+    fn can_copy_markdown(&self) -> bool {
+        !self.loading && !self.unavailable && !self.source_only
+    }
+
+    fn copy_markdown(&mut self, _: &CopyMarkdown, _: &mut Window, cx: &mut Context<Self>) {
+        if !self.can_copy_markdown() {
+            return;
+        }
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+            self.editor.read(cx).text().to_owned(),
+        ));
+        // Replacing the task restarts feedback; typing and document transitions cancel it.
+        self.copy_feedback = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(2))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.copy_feedback = None;
+                cx.notify();
+            });
+        }));
+        cx.notify();
     }
 
     fn display_name(&self) -> String {
@@ -365,6 +393,7 @@ impl Workspace {
     }
 
     fn proceed(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
+        self.copy_feedback = None;
         match next {
             Next::Close => {
                 if self.owner.is_some() {
@@ -1218,6 +1247,7 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &TogglePreview, window, cx| this.toggle_preview(window, cx)))
             .on_action(cx.listener(Self::open))
             .on_action(cx.listener(Self::import))
+            .on_action(cx.listener(Self::copy_markdown))
             .on_action(cx.listener(Self::setup_ocr))
             .on_action(cx.listener(|this, _: &RunOcr, window, cx| this.ocr_action(false, window, cx)))
             .on_action(cx.listener(|this, _: &ExtractNative, window, cx| this.ocr_action(true, window, cx)))
@@ -1235,6 +1265,10 @@ impl Render for Workspace {
             .child(div().flex().flex_wrap().items_center().gap_2().p_2().text_size(px(13.)).border_b_1().border_color(palette.border)
                 .child(button("New", New, theme)).child(button("Open…", Open, theme))
                 .when(!self.source_only, |bar| bar.child(button("Save", Save, theme)).child(button("Save As…", SaveAs, theme)))
+                .when(!self.source_only, |bar| bar.child(if self.can_copy_markdown() {
+                    button("Copy Markdown", CopyMarkdown, theme).into_any_element()
+                } else { div().px_3().py_1().opacity(0.5).child("Copy Markdown").into_any_element() })
+                    .when(self.copy_feedback.is_some(), |bar| bar.child(div().text_color(palette.header_muted).child("Copied"))))
                 .when((self.source_only && self.ocr_required.is_none() && !self.auto_convert_pending) || self.job.busy(), |bar| bar.child(if self.job.busy() { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting…" }).into_any_element() } else if self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy() { div().opacity(0.5).child("Convert to Markdown").into_any_element() } else { button("Convert to Markdown", Import, theme).into_any_element() }))
                 .child(if matches!(self.ocr_state, OcrState::Missing | OcrState::Failed(_)) {
                     button(self.ocr_state.label(), SetupOcr, theme).into_any_element()
@@ -1356,6 +1390,7 @@ fn main() {
                 MenuItem::action("Convert to Markdown", Import),
                 MenuItem::action("Save", Save),
                 MenuItem::action("Save As…", SaveAs),
+                MenuItem::action("Copy Markdown", CopyMarkdown),
                 MenuItem::separator(),
                 MenuItem::action("Quit", Quit),
             ],

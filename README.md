@@ -7,7 +7,7 @@ Built with Rust and GPUI for macOS, Windows, and Linux.
 
 See [ROADMAP.md](ROADMAP.md) for planned features and priorities,
 [CONTEXT.md](CONTEXT.md) for domain terms, and [ADRs](docs/adr/) for durable decisions.
-Full-Markdown copying and pseudonymization are planned, not yet implemented.
+Pseudonymization is planned, not yet implemented.
 
 Building requires access to the pinned private `lawkitt/anydoc` dependency.
 Authenticate Git with an account that has access before running Cargo.
@@ -45,6 +45,11 @@ Use **New**, **Open**, **Save**, and **Save As** in the toolbar or File menu.
 The corresponding shortcuts are Cmd+N/O/S/Shift+S on macOS and
 Ctrl+N/O/S/Shift+S on Windows/Linux. Cmd/Ctrl+W closes the active tab;
 Cmd/Ctrl+Q quits. Ctrl+Tab and Ctrl+Shift+Tab switch tabs.
+
+**Copy Markdown** in the toolbar or File menu copies the complete current
+Markdown source, including unsaved edits, regardless of selection. It adds no
+wrapper or metadata. Brief **Copied** feedback confirms the handoff; conversion
+warnings remain visible below the toolbar for review.
 
 The collapsible left sidebar lists open files. Tabs and **+** remain visible in
 its compact rail, with filename tooltips and status indicators. Use **+** for an

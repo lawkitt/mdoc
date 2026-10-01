@@ -273,6 +273,39 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
 }
 
 #[gpui::test]
+fn copy_markdown_toolbar_uses_active_tab_without_editor_focus(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    let first = active(&tabs, cx);
+    cx.simulate_input("first tab");
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    let second = active(&tabs, cx);
+    cx.simulate_input("second tab");
+    cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
+    click_toolbar(cx, "Copy Markdown");
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("second tab")
+        );
+        assert!(first.read(cx).copy_feedback.is_none());
+        assert!(second.read(cx).copy_feedback.is_some());
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(-1, window, cx));
+    cx.run_until_parked();
+    cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
+    click_toolbar(cx, "Copy Markdown");
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("first tab")
+        );
+        assert_eq!(second.read(cx).editor.read(cx).text(), "second tab");
+    });
+}
+
+#[gpui::test]
 fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
