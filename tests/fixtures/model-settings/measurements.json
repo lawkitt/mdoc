@@ -1,0 +1,30 @@
+[
+  {
+    "model": "ocr-cyrillic",
+    "english_ms": 1448,
+    "russian_ms": 1383,
+    "peak_rss_bytes": 736034816,
+    "peak_rss_mib": 701.9
+  },
+  {
+    "model": "ocr-v6",
+    "english_ms": 1606,
+    "russian_ms": 1354,
+    "peak_rss_bytes": 835420160,
+    "peak_rss_mib": 796.7
+  },
+  {
+    "model": "pii-fp16",
+    "english_ms": 5686,
+    "russian_ms": 5852,
+    "peak_rss_bytes": 2112651264,
+    "peak_rss_mib": 2014.8
+  },
+  {
+    "model": "pii-fp32",
+    "english_ms": 8164,
+    "russian_ms": 8218,
+    "peak_rss_bytes": 2713010176,
+    "peak_rss_mib": 2587.3
+  }
+]

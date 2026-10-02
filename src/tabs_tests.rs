@@ -6,7 +6,7 @@ fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Tabs>, &mut Visual
     cx.update(markdown_search::bind_keys);
     cx.update(bind_markdown_search_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
-        let mut tabs = Tabs::empty(cx);
+        let mut tabs = Tabs::empty(window, cx);
         tabs.restore(session, window, cx);
         tabs
     });
@@ -96,6 +96,7 @@ fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
     let first_id = cx.update(|_, cx| tabs.read(cx).active);
     first.update(cx, |view, _| {
         view.ocr_state = OcrState::Ready(ocr::Installed {
+            config: crate::settings::OcrConfig::default(),
             models: "missing-models".into(),
             pdfium: "missing-pdfium".into(),
             onnx: "missing-onnx".into(),
@@ -277,6 +278,7 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
     let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
     view.update(cx, |view, _| {
         view.ocr_state = OcrState::Ready(ocr::Installed {
+            config: crate::settings::OcrConfig::default(),
             models: "must-not-load".into(),
             pdfium: "must-not-load".into(),
             onnx: "must-not-load".into(),

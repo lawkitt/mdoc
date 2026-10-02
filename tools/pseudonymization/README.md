@@ -110,7 +110,8 @@ implementation of the app's future revision/tab review lifecycle.
 
 ## Same-process OCR compatibility
 
-The opt-in probe shares the exact pinned `pdf-inspector` fork and `ort` rc.13
+The opt-in probe retains the original qualification `pdf-inspector` fork pin
+(`620afae42eac4b92fffa2437b89e10a912bb93ee`) and shares `ort` rc.13
 with GLiNER2. It checks EN/RU scanned-PDF transcripts before PII loading, while
 both engines coexist, and after PII is dropped. It compares source PDF hashes
 and validates PII byte offsets. No OCR download is attempted.

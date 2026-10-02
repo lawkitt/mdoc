@@ -1,0 +1,233 @@
+//! Application preferences only. No document text, QA results or replacement maps.
+use pdf_inspector::vision::{ModelManifest, PP_OCR_CYRILLIC, PP_OCR_V6_SMALL};
+use serde::{Deserialize, Serialize};
+use std::{
+    cell::RefCell,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    rc::Rc,
+};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OcrModel {
+    #[default]
+    Cyrillic,
+    V6Small,
+}
+impl OcrModel {
+    pub const ALL: [Self; 2] = [Self::Cyrillic, Self::V6Small];
+    pub fn manifest(self) -> &'static ModelManifest {
+        match self {
+            Self::Cyrillic => &PP_OCR_CYRILLIC,
+            Self::V6Small => &PP_OCR_V6_SMALL,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Cyrillic => "PP-OCRv5 Cyrillic + v6 detector",
+            Self::V6Small => "PP-OCRv6 Small",
+        }
+    }
+    pub fn evidence(self) -> &'static str {
+        match self {
+            Self::Cyrillic => {
+                "EN/RU synthetic transcripts passed on macOS and Windows; real scans require review."
+            }
+            Self::V6Small => {
+                "QA alternative: English synthetic transcript passed; Russian recognition failed."
+            }
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PiiModel {
+    #[default]
+    Fp16,
+    Fp32,
+}
+impl PiiModel {
+    pub const ALL: [Self; 2] = [Self::Fp16, Self::Fp32];
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Fp16 => "GLiNER2 PII FP16",
+            Self::Fp32 => "GLiNER2 PII FP32",
+        }
+    }
+    pub fn folder(self) -> &'static str {
+        match self {
+            Self::Fp16 => "fp16_v2",
+            Self::Fp32 => "fp32_v2",
+        }
+    }
+    pub fn precision(self) -> gliner2_rs::Precision {
+        match self {
+            Self::Fp16 => gliner2_rs::Precision::Fp16,
+            Self::Fp32 => gliner2_rs::Precision::Fp32,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Model {
+    Ocr(OcrModel),
+    Pii(PiiModel),
+}
+impl Model {
+    pub const ALL: [Self; 4] = [
+        Self::Ocr(OcrModel::Cyrillic),
+        Self::Ocr(OcrModel::V6Small),
+        Self::Pii(PiiModel::Fp16),
+        Self::Pii(PiiModel::Fp32),
+    ];
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Ocr(m) => m.name(),
+            Self::Pii(m) => m.name(),
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OcrConfig {
+    pub model: OcrModel,
+    pub dpi: u16,
+    pub minimum_confidence: f32,
+}
+impl Default for OcrConfig {
+    fn default() -> Self {
+        Self {
+            model: OcrModel::default(),
+            dpi: 150,
+            minimum_confidence: 0.,
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PiiConfig {
+    pub model: PiiModel,
+    pub threshold: f32,
+}
+impl Default for PiiConfig {
+    fn default() -> Self {
+        Self {
+            model: PiiModel::default(),
+            threshold: 0.5,
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Preferences {
+    pub version: u32,
+    pub ocr: OcrConfig,
+    pub pseudonymization: PiiConfig,
+}
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            ocr: OcrConfig::default(),
+            pseudonymization: PiiConfig::default(),
+        }
+    }
+}
+pub fn unit_interval(value: f32) -> bool {
+    value.is_finite() && (0. ..=1.).contains(&value)
+}
+impl Preferences {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != 1
+            || ![150, 200, 300].contains(&self.ocr.dpi)
+            || !unit_interval(self.ocr.minimum_confidence)
+            || !unit_interval(self.pseudonymization.threshold)
+        {
+            return Err("Invalid or obsolete settings. Open Settings and explicitly reset or choose supported values.".into());
+        }
+        Ok(())
+    }
+}
+pub type Shared = Rc<RefCell<Store>>;
+pub struct Store {
+    pub current: Option<Preferences>,
+    pub error: Option<String>,
+    pub path: Option<PathBuf>,
+}
+impl Store {
+    pub fn new() -> Shared {
+        let path = if cfg!(test) {
+            None
+        } else {
+            dirs::data_local_dir().map(|p| p.join("mdoc/settings.json"))
+        };
+        let loaded = match &path {
+            Some(path) => load(path),
+            None if cfg!(test) => Ok(Preferences::default()),
+            None => Err("Could not find local application storage for settings.".into()),
+        };
+        let (current, error) = match loaded {
+            Ok(p) => (Some(p), None),
+            Err(e) => (None, Some(e)),
+        };
+        Rc::new(RefCell::new(Self {
+            current,
+            error,
+            path,
+        }))
+    }
+    pub fn snapshot(&self) -> Result<Preferences, String> {
+        self.current.clone().ok_or_else(|| {
+            self.error
+                .clone()
+                .unwrap_or_else(|| "Open Settings to select supported preferences.".into())
+        })
+    }
+}
+pub fn load(path: &Path) -> Result<Preferences, String> {
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Preferences::default()),
+        Err(e) => return Err(e.to_string()),
+    };
+    let mut bytes = Vec::new();
+    file.take(65537)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > 65536 {
+        return Err("Settings file is too large. Reset explicitly in Settings.".into());
+    }
+    let prefs: Preferences = serde_json::from_slice(&bytes)
+        .map_err(|e| format!("Could not read settings: {e}. Reset explicitly in Settings."))?;
+    prefs.validate()?;
+    Ok(prefs)
+}
+pub fn save(path: &Path, prefs: &Preferences) -> Result<(), String> {
+    prefs.validate()?;
+    let parent = path.parent().ok_or("Settings path has no parent.")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    serde_json::to_writer_pretty(&mut file, prefs).map_err(|e| e.to_string())?;
+    file.flush().map_err(|e| e.to_string())?;
+    file.as_file().sync_all().map_err(|e| e.to_string())?;
+    file.persist(path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn settings_roundtrip_and_invalid_values_preserve_previous_file() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("settings.json");
+        assert_eq!(load(&path).unwrap(), Preferences::default());
+        let mut p = Preferences::default();
+        p.ocr.model = OcrModel::V6Small;
+        p.ocr.dpi = 300;
+        save(&path, &p).unwrap();
+        assert_eq!(load(&path).unwrap(), p);
+        p.pseudonymization.threshold = f32::NAN;
+        assert!(save(&path, &p).is_err());
+        assert_eq!(load(&path).unwrap().ocr.dpi, 300);
+        std::fs::write(&path, b"{\"version\":9}").unwrap();
+        assert!(load(&path).is_err());
+    }
+}

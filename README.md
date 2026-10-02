@@ -55,12 +55,39 @@ Markdown source, including unsaved edits, regardless of selection. It adds no
 wrapper or metadata. Brief **Copied** feedback confirms the handoff; conversion
 warnings remain visible below the toolbar for review.
 
+**Settings** (Cmd/Ctrl+comma) opens application defaults, including with no
+document open. Choose the Cyrillic or original v6 OCR bundle, or GLiNER2 FP16/FP32
+at the same pinned revision. FP16 and Cyrillic remain the defaults. Installation,
+language evidence and experimental status are shown separately. Selection never
+downloads a model: use **Download**, **Repair** or **Remove** explicitly. Shared
+runtimes are retained and model files cannot be removed during model work.
+
+**Advanced** exposes OCR resolution (150/200/300 DPI), minimum recognition
+confidence (0–1), and detection threshold (0–1). Explicit OCR recognizes every
+selected page using fixed Force routing. **Apply** atomically persists defaults
+for future runs; **Close/Escape** discards drafts. **Reset to defaults** restores
+the default models, 150 DPI, confidence 0 and threshold 0.5. Existing results keep
+their captured configuration. Setup continues after the dialog closes;
+cancellation retains completed verified artifacts.
+
+**Compare OCR / Compare pseudonymization** opens an isolated read-only window.
+It captures the original PDF or the complete current Markdown once. Runs execute
+sequentially on that snapshot, with an optional OCR page range frozen on the
+first run. **New comparison** captures fresh input. Recognition output is
+separate from Prepared Markdown; detected spans include source byte offsets and
+confidence. Counts and timing are measurements, not accuracy scores. Overrides
+never change defaults or the editor. **Export report** writes JSON explicitly,
+without replacement mappings; OCR Markdown can be saved separately. Exports
+protect the document/source paths and their aliases. Comparisons stay in memory
+until close, and cancellation holds the model slot until the native call stops.
+See [model settings verification](tests/fixtures/model-settings/README.md).
+
 **Pseudonymize** (Cmd/Ctrl+Shift+P) explicitly scans the complete current
 Markdown source in the background, including link destinations, image paths,
 code and HTML. Automatic scanning is experimental on Apple Silicon macOS and
 Windows x64; manual review remains available on every platform. The first use
-offers a separate **Download experimental model** action (up to 709 MB including
-the native runtime if absent). Setup verifies pinned sizes and SHA-256 digests;
+offers a separate **Download experimental model** action (default FP16: up to
+709 MB including the native runtime if absent; FP32: up to 1,323 MB). Setup verifies pinned sizes and SHA-256 digests;
 subsequent scans run offline. Ordinary opening and editing need no model.
 
 Candidates have subtle highlights; hidden source receives a marker beside its

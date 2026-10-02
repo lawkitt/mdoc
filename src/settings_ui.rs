@@ -1,0 +1,518 @@
+use crate::{markdown_search::SearchInput, model_download::Progress, settings::*, style::Theme, *};
+use gpui::{AnyElement, FocusHandle, MouseButton, actions};
+use std::time::Duration;
+
+actions!(
+    model_settings,
+    [CloseSettings, NextSettingsField, PreviousSettingsField]
+);
+pub enum Event {
+    Applied,
+    Checked,
+    Compare(Model),
+    Finished(Model, Result<Option<ocr::Installed>, String>),
+}
+#[derive(Clone, Debug)]
+pub enum Status {
+    Unknown,
+    Missing,
+    Ready,
+    Damaged(String),
+    Unavailable(String),
+}
+impl Status {
+    fn label(&self) -> String {
+        match self {
+            Self::Unknown => "Not checked".into(),
+            Self::Missing => "Not installed".into(),
+            Self::Ready => "Installed · runtime checked".into(),
+            Self::Damaged(e) => format!("Repair needed: {e}"),
+            Self::Unavailable(e) => format!("Unavailable: {e}"),
+        }
+    }
+}
+pub struct Panel {
+    pub open: bool,
+    pub shared: Shared,
+    pub statuses: Vec<Status>,
+    pub ocr_installations: Vec<ocr::Installed>,
+    pub draft: Preferences,
+    pub threshold: Entity<SearchInput>,
+    pub confidence: Entity<SearchInput>,
+    pub error: Option<String>,
+    pub applying: bool,
+    pub working: Option<Model>,
+    progress: Option<Progress>,
+    pub advanced: bool,
+    pub details: Option<Model>,
+    theme: Rc<Cell<Theme>>,
+    focus: FocusHandle,
+    previous: Option<FocusHandle>,
+    checks: u64,
+}
+impl gpui::EventEmitter<Event> for Panel {}
+pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("escape", CloseSettings, Some("ModelSettings")),
+        KeyBinding::new("tab", NextSettingsField, Some("ModelSettings")),
+        KeyBinding::new("shift-tab", PreviousSettingsField, Some("ModelSettings")),
+    ]);
+}
+fn field(value: &str, cx: &mut Context<Panel>) -> Entity<SearchInput> {
+    cx.new(|cx| {
+        let mut input = SearchInput::new(cx)
+            .with_key_context("SettingsInput")
+            .with_placeholder("0–1");
+        input.set_value(value.into(), cx);
+        input
+    })
+}
+pub fn control(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    theme: Theme,
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .px_3()
+        .py_1()
+        .rounded_md()
+        .border_1()
+        .border_color(theme.pdf_style().border)
+        .text_size(px(12.))
+        .child(label.into())
+        .when(enabled, |v| {
+            v.cursor_pointer()
+                .hover(|v| v.bg(theme.pdf_style().placeholder_bg))
+        })
+        .when(!enabled, |v| v.opacity(0.45))
+}
+impl Panel {
+    pub fn new(shared: Shared, theme: Rc<Cell<Theme>>, cx: &mut Context<Self>) -> Self {
+        let draft = shared.borrow().current.clone().unwrap_or_default();
+        Self {
+            open: false,
+            shared,
+            statuses: vec![Status::Unknown; 4],
+            ocr_installations: Vec::new(),
+            threshold: field(&draft.pseudonymization.threshold.to_string(), cx),
+            confidence: field(&draft.ocr.minimum_confidence.to_string(), cx),
+            draft,
+            error: None,
+            applying: false,
+            working: None,
+            progress: None,
+            advanced: false,
+            details: None,
+            theme,
+            focus: cx.focus_handle(),
+            previous: None,
+            checks: 0,
+        }
+    }
+    pub fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.open {
+            return;
+        }
+        self.draft = self.shared.borrow().current.clone().unwrap_or_default();
+        self.error = self.shared.borrow().error.clone();
+        self.update_fields(cx);
+        self.previous = window.focused(cx);
+        self.open = true;
+        window.focus(&self.focus, cx);
+        self.refresh(cx);
+        cx.notify();
+    }
+    pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open = false;
+        if let Some(focus) = self.previous.take() {
+            window.focus(&focus, cx);
+        }
+        cx.notify();
+    }
+    fn update_fields(&mut self, cx: &mut Context<Self>) {
+        self.threshold.update(cx, |i, cx| {
+            i.set_value(self.draft.pseudonymization.threshold.to_string(), cx)
+        });
+        self.confidence.update(cx, |i, cx| {
+            i.set_value(self.draft.ocr.minimum_confidence.to_string(), cx)
+        });
+    }
+    pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        if self.working.is_some() || model_work::busy() {
+            return;
+        }
+        let Ok(permit) = model_work::Permit::acquire() else {
+            return;
+        };
+        self.checks += 1;
+        let generation = self.checks;
+        let task = cx.background_executor().spawn(async move {
+            let _permit = permit;
+            let mut installed = Vec::new();
+            let statuses = Model::ALL
+                .into_iter()
+                .map(|model| {
+                    let result = match model {
+                        Model::Ocr(m) => ocr::check_reserved(&OcrConfig {
+                            model: m,
+                            ..Default::default()
+                        })
+                        .map(|v| {
+                            let ready = v.is_some();
+                            if let Some(v) = v {
+                                installed.push(v);
+                            }
+                            ready
+                        }),
+                        Model::Pii(m) => pseudonymization_detector::check_reserved(m),
+                    };
+                    if !ocr::SUPPORTED {
+                        Status::Unavailable(
+                            "Automatic inference supports Apple Silicon macOS and Windows x64."
+                                .into(),
+                        )
+                    } else {
+                        match result {
+                            Ok(true) => Status::Ready,
+                            Ok(false) => Status::Missing,
+                            Err(e) => Status::Unavailable(e),
+                        }
+                    }
+                })
+                .collect::<Vec<_>>();
+            (statuses, installed)
+        });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let _ = this.update(cx, |this, cx| {
+                if this.checks == generation && this.working.is_none() {
+                    this.statuses = result.0;
+                    this.ocr_installations = result.1;
+                    cx.emit(Event::Checked);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+    pub fn apply(&mut self, cx: &mut Context<Self>) {
+        if self.applying {
+            return;
+        }
+        let parsed = (|| {
+            self.draft.ocr.minimum_confidence = self
+                .confidence
+                .read(cx)
+                .value()
+                .parse()
+                .map_err(|_| "OCR confidence must be a number from 0 to 1.")?;
+            self.draft.pseudonymization.threshold = self
+                .threshold
+                .read(cx)
+                .value()
+                .parse()
+                .map_err(|_| "Detection threshold must be a number from 0 to 1.")?;
+            self.draft.validate()
+        })();
+        if let Err(e) = parsed {
+            self.error = Some(e);
+            cx.notify();
+            return;
+        }
+        for model in [
+            Model::Ocr(self.draft.ocr.model),
+            Model::Pii(self.draft.pseudonymization.model),
+        ] {
+            let index = Model::ALL.iter().position(|m| *m == model).unwrap();
+            let previous = self.shared.borrow().current.clone().unwrap_or_default();
+            let changed = match model {
+                Model::Ocr(m) => previous.ocr.model != m,
+                Model::Pii(m) => previous.pseudonymization.model != m,
+            };
+            if let Status::Unavailable(e) = &self.statuses[index]
+                && ocr::SUPPORTED
+                && changed
+            {
+                self.error = Some(e.clone());
+                cx.notify();
+                return;
+            }
+        }
+        let prefs = self.draft.clone();
+        let path = self.shared.borrow().path.clone();
+        self.applying = true;
+        let task = cx.background_executor().spawn({
+            let prefs = prefs.clone();
+            async move { path.map_or(Ok(()), |path| save(&path, &prefs)) }
+        });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let _ = this.update(cx, |this, cx| {
+                this.applying = false;
+                match result {
+                    Ok(()) => {
+                        this.shared.borrow_mut().current = Some(prefs);
+                        this.shared.borrow_mut().error = None;
+                        this.error = None;
+                        cx.emit(Event::Applied);
+                    }
+                    Err(e) => {
+                        this.error = Some(format!(
+                            "Could not apply settings: {e}. Previous defaults remain active."
+                        ))
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+    pub fn setup(&mut self, model: Model, remove: bool, cx: &mut Context<Self>) {
+        if self.working.is_some() || model_work::busy() {
+            self.error = Some("Another model job is running. Retry when it finishes.".into());
+            cx.notify();
+            return;
+        }
+        self.checks += 1;
+        self.working = Some(model);
+        self.error = None;
+        let progress = Progress::default();
+        self.progress = Some(progress.clone());
+        let task = cx.background_executor().spawn({
+            let progress = progress.clone();
+            async move {
+                if remove {
+                    match model {
+                        Model::Ocr(m) => ocr::remove_model(m),
+                        Model::Pii(m) => pseudonymization_detector::remove_model(m),
+                    }
+                    .map(|_| None)
+                } else {
+                    match model {
+                        Model::Ocr(m) => ocr::install_config(
+                            &OcrConfig {
+                                model: m,
+                                ..Default::default()
+                            },
+                            &progress,
+                        )
+                        .map(Some),
+                        Model::Pii(m) => pseudonymization_detector::setup_config(
+                            &PiiConfig {
+                                model: m,
+                                ..Default::default()
+                            },
+                            &progress,
+                        )
+                        .map(|_| None),
+                    }
+                }
+            }
+        });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let _ = this.update(cx, |this, cx| {
+                let index = Model::ALL.iter().position(|m| *m == model).unwrap();
+                this.statuses[index] = match &result {
+                    Ok(_) if remove => Status::Missing,
+                    Ok(_) => Status::Ready,
+                    Err(_) if progress.cancel.load(Ordering::Relaxed) => Status::Unknown,
+                    Err(e) if progress.state.lock().unwrap().phase == "Checking runtime" => {
+                        Status::Unavailable(e.clone())
+                    }
+                    Err(e) => Status::Damaged(e.clone()),
+                };
+                if let Model::Ocr(m) = model {
+                    this.ocr_installations.retain(|i| i.config.model != m);
+                    if let Ok(Some(i)) = &result {
+                        this.ocr_installations.push(i.clone());
+                    }
+                }
+                cx.emit(Event::Finished(model, result.clone()));
+                this.error = result.err();
+                this.working = None;
+                this.progress = None;
+                cx.notify();
+            });
+        })
+        .detach();
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(250))
+                    .await;
+                if this
+                    .update(cx, |this, cx| {
+                        if this.working.is_some() {
+                            cx.notify();
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                break;
+            }
+        })
+        .detach();
+        cx.notify();
+    }
+    fn row(&self, model: Model, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let index = Model::ALL.iter().position(|m| *m == model).unwrap();
+        let status = &self.statuses[index];
+        let selected = match model {
+            Model::Ocr(m) => self.draft.ocr.model == m,
+            Model::Pii(m) => self.draft.pseudonymization.model == m,
+        };
+        let selectable = !matches!(status, Status::Unavailable(_));
+        let idle = self.working.is_none() && !model_work::busy();
+        let removable = idle && !matches!(status, Status::Missing | Status::Unknown);
+        let bytes = match model {
+            Model::Ocr(m) => m.manifest().artifacts.iter().map(|a| a.size).sum::<u64>(),
+            Model::Pii(m) => pseudonymization_detector::manifest_for(m)
+                .files
+                .iter()
+                .map(|a| a.bytes)
+                .sum::<u64>(),
+        };
+        let evidence = match model {
+            Model::Ocr(m) => m.evidence(),
+            Model::Pii(_) => {
+                "Experimental · Detector has known EN/RU misses; neither precision is qualified. Review the complete document."
+            }
+        };
+        div().flex().flex_col().gap_1().py_2().border_b_1().border_color(theme.pdf_style().border)
+            .child(div().flex().items_center().gap_2()
+                .child(control(("settings-model",index*4),if selected {format!("● {}",model.name())}else{format!("○ {}",model.name())},theme,selectable)
+                    .on_click(cx.listener(move |this,_,_,cx| {if selectable {match model {Model::Ocr(m)=>this.draft.ocr.model=m,Model::Pii(m)=>this.draft.pseudonymization.model=m};cx.notify();}})))
+                .child(control(("settings-model",index*4+3),"Details",theme,true).on_click(cx.listener(move |this,_,_,cx| {this.details=if this.details==Some(model){None}else{Some(model)};cx.notify();})))
+                .child(div().flex_1())
+                .child(control(("settings-model",index*4+1),if matches!(status,Status::Missing|Status::Unknown){"Download"}else{"Repair"},theme,idle&&ocr::SUPPORTED).on_click(cx.listener(move |this,_,_,cx|this.setup(model,false,cx))))
+                .child(control(("settings-model",index*4+2),"Remove",theme,removable).on_click(cx.listener(move |_,_,window,cx| {
+                    if !removable {return;}
+                    let prompt=window.prompt(PromptLevel::Warning,&format!("Remove {} model files?",model.name()),Some("Shared runtimes and documents are retained."),&["Remove","Cancel"],cx);
+                    cx.spawn(async move |this,cx| {if prompt.await.ok()==Some(0){let _=this.update(cx,|this,cx|this.setup(model,true,cx));}}).detach();
+                }))))
+            .child(div().text_size(px(11.)).child(format!("{} · {} MB model artifacts",status.label(),bytes.div_ceil(1_000_000))))
+            .child(div().text_size(px(11.)).child(evidence))
+            .when(self.details==Some(model),|v| {
+                let (revision,path)=match model {Model::Ocr(m)=>(m.manifest().revision.to_string(),ocr::root().map(|root|ocr::model_root(&root,m))),Model::Pii(m)=>(pseudonymization_detector::manifest_for(m).revision,pseudonymization_detector::root_for(m))};
+                v.child(div().text_size(px(11.)).child(format!("Revision: {revision}\nCPU · ONNX Runtime 1.27.0{}\nLicenses: {}\nStorage: {}",if matches!(model,Model::Ocr(_)){" · PDFium native-v7988\nPrecision: fixed upstream ONNX weights\nThreads: converter-managed, 1–3 pipelines, up to 4 intra-op threads\nLimits: 256 MiB PDF input; 4-page raster batches; 256 MiB bitmap/page"}else{" · 4 threads · 2 MiB source · 512 tokens/window · 120 s cooperative deadline"},if matches!(model,Model::Ocr(_)){"Apache-2.0"}else{"Apache-2.0; encoder MIT"},path.map(|p|p.display().to_string()).unwrap_or_else(|e|e))))
+            }).into_any_element()
+    }
+}
+impl Render for Panel {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        div().id("settings-overlay").absolute().inset_0().flex().items_center().justify_center().occlude().bg(gpui::Hsla{a:0.35,..p.bg})
+            .on_mouse_down(MouseButton::Left,|_,_,cx|cx.stop_propagation())
+            .child(div().id("settings-dialog").key_context("ModelSettings").track_focus(&self.focus).w(px(740.)).max_w_full().max_h_full().flex().flex_col().p_4().gap_3().rounded_lg().shadow_lg().bg(p.bg).border_1().border_color(p.border)
+                .on_action(cx.listener(|this,_:&CloseSettings,w,cx|this.close(w,cx)))
+                .on_action(|_: &New, _, cx| cx.stop_propagation())
+                .on_action(|_: &Open, _, cx| cx.stop_propagation())
+                .on_action(|_: &Close, _, cx| cx.stop_propagation())
+                .on_action(|_: &NextTab, _, cx| cx.stop_propagation())
+                .on_action(|_: &PreviousTab, _, cx| cx.stop_propagation())
+                .on_action(|_: &Save, _, cx| cx.stop_propagation())
+                .on_action(|_: &SaveAs, _, cx| cx.stop_propagation())
+                .on_action(|_: &Import, _, cx| cx.stop_propagation())
+                .on_action(cx.listener(|this,_:&NextSettingsField,w,cx| {this.advanced=true;cx.notify();let target=if this.confidence.read(cx).focus_handle(cx).is_focused(w){this.threshold.read(cx).focus_handle(cx)}else{this.confidence.read(cx).focus_handle(cx)};w.focus(&target,cx);}))
+                .on_action(cx.listener(|this,_:&PreviousSettingsField,w,cx| {this.advanced=true;cx.notify();let target=if this.threshold.read(cx).focus_handle(cx).is_focused(w){this.confidence.read(cx).focus_handle(cx)}else{this.threshold.read(cx).focus_handle(cx)};w.focus(&target,cx);}))
+                .child(div().text_size(px(18.)).child("Settings"))
+                .child(div().text_size(px(11.)).child("Apply defaults for future runs. Existing results keep the settings they used."))
+                .child(div().id("settings-scroll").overflow_y_scroll().min_h_0().flex_1()
+                    .child(div().text_size(px(14.)).child("OCR"))
+                    .children(OcrModel::ALL.into_iter().map(|m|self.row(Model::Ocr(m),cx)))
+                    .child(div().mt_3().text_size(px(14.)).child("Pseudonymization"))
+                    .children(PiiModel::ALL.into_iter().map(|m|self.row(Model::Pii(m),cx)))
+                    .child(control("advanced-settings","Advanced",theme,true).mt_3().on_click(cx.listener(|this,_,_,cx|{this.advanced = !this.advanced;cx.notify();})))
+                    .when(self.advanced,|v|v.child(div().flex().flex_col().gap_2().mt_2()
+                        .child(div().flex().flex_wrap().items_center().gap_2().child("OCR resolution").children([150,200,300].map(|dpi|control(("dpi",dpi as usize),format!("{}{} DPI",if self.draft.ocr.dpi==dpi{"● "}else{""},dpi),theme,true).on_click(cx.listener(move |this,_,_,cx|{this.draft.ocr.dpi=dpi;cx.notify();})))))
+                        .child(div().flex().gap_3().child("OCR minimum confidence").child(div().w(px(100.)).border_1().border_color(p.border).px_2().child(self.confidence.clone())))
+                        .child(div().flex().gap_3().child("Detection threshold").child(div().w(px(100.)).border_1().border_color(p.border).px_2().child(self.threshold.clone())))
+                        .child(div().text_size(px(11.)).child("Higher thresholds discard more predictions. OCR recognizes every selected page. CPU execution and resource limits are fixed."))))
+                )
+                .when_some(self.error.clone(),|v,e|v.child(div().text_size(px(12.)).text_color(style::markdown_style(theme).alert_warning).child(e)))
+                .when_some(self.progress.clone(),|v,progress| {let state=progress.state.lock().unwrap().clone();v.child(div().flex().items_center().gap_2().child(div().flex_1().child(format!("{}{}",state.phase,if state.phase.starts_with("Downloading"){format!(" · {} / {} MB",state.received/1_000_000,state.total.div_ceil(1_000_000))}else{String::new()}))).child(control("cancel-model-download","Cancel download",theme,true).on_click(cx.listener(|this,_,_,cx|{if let Some(p)=&this.progress{p.cancel.store(true,Ordering::Relaxed);}cx.notify();}))))})
+                .child(div().flex().flex_wrap().gap_2().items_center()
+                    .child(control("reset-settings","Reset to defaults",theme,!self.applying).on_click(cx.listener(|this,_,_,cx|{if !this.applying{this.draft=Preferences::default();this.update_fields(cx);this.error=None;cx.notify();}})))
+                    .child(control("compare-ocr","Compare OCR",theme,true).on_click(cx.listener(|_,_,_,cx|cx.emit(Event::Compare(Model::Ocr(OcrModel::Cyrillic))))))
+                    .child(control("compare-pii","Compare pseudonymization",theme,true).on_click(cx.listener(|_,_,_,cx|cx.emit(Event::Compare(Model::Pii(PiiModel::Fp16))))))
+                    .child(div().flex_1())
+                    .child(control("apply-settings",if self.applying{"Applying"}else{"Apply"},theme,!self.applying).on_click(cx.listener(|this,_,_,cx|this.apply(cx))))
+                    .child(control("close-settings","Close",theme,true).on_click(cx.listener(|this,_,w,cx|this.close(w,cx))))
+                ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui::TestAppContext;
+    #[gpui::test]
+    fn apply_is_explicit_and_close_discards_draft(cx: &mut TestAppContext) {
+        let shared = Store::new();
+        let theme = Rc::new(Cell::new(Theme::default()));
+        let (panel, cx) = cx.add_window_view(|_, cx| Panel::new(shared.clone(), theme, cx));
+        panel.update_in(cx, |panel, w, cx| {
+            panel.show(w, cx);
+            panel.draft.ocr.dpi = 300;
+            panel
+                .threshold
+                .update(cx, |i, cx| i.set_value("0.3".into(), cx));
+            assert_eq!(shared.borrow().snapshot().unwrap().ocr.dpi, 150);
+            panel.close(w, cx);
+            panel.show(w, cx);
+            assert_eq!(panel.draft.ocr.dpi, 150);
+            assert_eq!(panel.threshold.read(cx).value(), "0.5");
+            panel.draft.ocr.dpi = 200;
+            panel.apply(cx);
+        });
+        cx.run_until_parked();
+        assert_eq!(shared.borrow().snapshot().unwrap().ocr.dpi, 200);
+    }
+    #[gpui::test]
+    fn failed_apply_preserves_active_defaults(cx: &mut TestAppContext) {
+        let shared = Store::new();
+        let dir = tempfile::tempdir().unwrap();
+        let invalid = dir.path().join("not-a-directory");
+        std::fs::write(&invalid, b"blocked").unwrap();
+        shared.borrow_mut().path = Some(invalid.join("settings.json"));
+        let (panel, cx) = cx.add_window_view(|_, cx| {
+            Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
+        });
+        panel.update(cx, |panel, cx| {
+            panel.draft.ocr.dpi = 300;
+            panel.apply(cx);
+        });
+        cx.run_until_parked();
+        assert_eq!(shared.borrow().snapshot().unwrap().ocr.dpi, 150);
+        panel.update(cx, |panel, _| {
+            assert!(panel.error.as_ref().unwrap().contains("Previous defaults"))
+        });
+        panel.update(cx, |panel, cx| {
+            panel
+                .threshold
+                .update(cx, |i, cx| i.set_value("NaN".into(), cx));
+            panel.apply(cx);
+        });
+        panel.update(cx, |p, _| assert!(p.error.is_some()));
+        assert_eq!(
+            shared
+                .borrow()
+                .snapshot()
+                .unwrap()
+                .pseudonymization
+                .threshold,
+            0.5
+        );
+    }
+}

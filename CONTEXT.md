@@ -25,6 +25,29 @@ placeholders while retaining useful relationships in the text. It does not
 guarantee that the document's subjects cannot be identified.
 _Avoid_: Guaranteed anonymization
 
+**Model bundle**:
+A pinned set of mutually compatible model artifacts, including the required
+dictionary or tokenizer, offered as one selectable configuration. Availability
+and installation do not establish recognition or detection quality.
+
+**Configuration snapshot**:
+The model identity and settings captured for one processing run. Later changes
+to application defaults do not change the configuration attributed to that run.
+
+**Model comparison**:
+Isolated, sequential QA runs against the same captured input with separate
+read-only results. Comparison overrides do not edit the document or change
+application defaults.
+
+**Recognition output**:
+Text and recognition evidence produced by the OCR model before native-text fusion
+and final Markdown preparation. Model confidence is not measured accuracy.
+
+**Prepared Markdown**:
+The converter's final Markdown output, which may combine native extraction and
+OCR recognition. In model comparisons it is shown separately from recognition
+output and does not replace the working document.
+
 **Replacement mapping**:
 The local association between original identifying information and its
 placeholders, separate from the Markdown being handed off.

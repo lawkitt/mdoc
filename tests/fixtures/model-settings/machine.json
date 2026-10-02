@@ -1,0 +1,10 @@
+{
+  "chip_type": "Apple M4",
+  "machine_model": "Mac16,13",
+  "number_processors": "proc 10:4:6",
+  "physical_memory": "24 GB",
+  "macOS": "15.7.7",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "profile": "debug opt-level=0; GPUI test executable",
+  "pdf_inspector_revision": "7a11f9f3f2423edd0035f87e7152b49c08a7ce1a"
+}

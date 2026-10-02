@@ -1,6 +1,8 @@
 # Require explicit offline OCR with qualified pinned models
 
-Status: accepted current behavior, consolidated 2026-10-01.
+Status: accepted, consolidated 2026-10-01. [ADR 0006](0006-local-model-settings.md)
+adds model selection and fixes explicit OCR to Force on every selected page;
+native opening and explicit recognition consent remain separate.
 
 OCR recognition requires an explicit inline choice, including when a runtime is
 already installed. Only explicit setup downloads pinned, checksum-verified

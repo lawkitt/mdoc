@@ -13,6 +13,10 @@ mod import_session;
 mod markdown_search;
 mod search_session;
 use search_session::SearchRefresh;
+mod comparison;
+mod comparison_ui;
+mod model_download;
+mod model_work;
 mod ocr;
 #[cfg(test)]
 mod perf_tests;
@@ -21,6 +25,8 @@ mod pseudonymization;
 mod pseudonymization_detector;
 mod pseudonymization_ui;
 mod session_store;
+mod settings;
+mod settings_ui;
 mod style;
 mod tabs;
 #[cfg(test)]
@@ -52,6 +58,7 @@ actions!(
         Open,
         Import,
         SetupOcr,
+        Settings,
         RunOcr,
         ExtractNative,
         DismissImportWarning,
@@ -136,6 +143,8 @@ struct Workspace {
     conversion_source: Option<PathBuf>,
     import_busy: Arc<AtomicBool>,
     import_cancel: Arc<AtomicBool>,
+    preferences: settings::Shared,
+    model_panel: Option<Entity<settings_ui::Panel>>,
     theme: Rc<Cell<Theme>>,
     editor: Entity<EditorState>,
     images: images::ImageCache,
@@ -153,6 +162,7 @@ struct Workspace {
     ocr_state: OcrState,
     markdown_search: Entity<markdown_search::SearchInput>,
     search: search_session::SearchSession,
+    ocr_setup_subscription: Option<Subscription>,
     _subscription: Subscription,
     _markdown_search_subscription: Subscription,
 }
@@ -249,6 +259,8 @@ impl Workspace {
             conversion_source: None,
             import_busy: Arc::new(AtomicBool::new(false)),
             import_cancel: Arc::new(AtomicBool::new(false)),
+            preferences: settings::Store::new(),
+            model_panel: None,
             theme: Rc::new(Cell::new(Theme::default())),
             editor,
             images,
@@ -266,6 +278,7 @@ impl Workspace {
             ocr_state: ocr.unwrap_or(OcrState::Checking),
             markdown_search,
             search: search_session::SearchSession::default(),
+            ocr_setup_subscription: None,
             _subscription: subscription,
             _markdown_search_subscription: markdown_search_subscription,
         }
@@ -455,6 +468,7 @@ impl Workspace {
                     && (self.preview.pdf.is_some() || self.preview.loading);
                 self.session
                     .import(imported.source.clone(), imported.warning);
+                self.session.ocr_configuration = imported.ocr_configuration;
                 self.reset_pseudonymization(cx);
                 if !retain_preview {
                     self.close_preview(window, cx);
@@ -531,10 +545,39 @@ impl Workspace {
         if allow_ocr && self.ocr_state.busy() {
             return;
         }
+        let config = if allow_ocr && !skip_ocr {
+            match self.preferences.borrow().snapshot() {
+                Ok(p) => Some(p.ocr),
+                Err(e) => {
+                    self.error = Some(e);
+                    cx.notify();
+                    return;
+                }
+            }
+        } else {
+            None
+        };
         let installed = match &self.ocr_state {
-            OcrState::Ready(installed) if allow_ocr && !skip_ocr => Some(installed.clone()),
+            OcrState::Ready(installed)
+                if allow_ocr
+                    && !skip_ocr
+                    && config
+                        .as_ref()
+                        .is_some_and(|c| c.model == installed.config.model) =>
+            {
+                let mut installed = installed.clone();
+                installed.config = config.clone().unwrap();
+                Some(installed)
+            }
             _ => None,
         };
+        if allow_ocr && installed.is_none() {
+            self.error = Some(
+                "Selected OCR model is not ready. Open Settings to download or repair it.".into(),
+            );
+            cx.notify();
+            return;
+        }
         if self.job.busy() {
             return;
         }
@@ -632,12 +675,65 @@ impl Workspace {
         if self.ocr_state.busy() {
             return;
         }
+        let config = match self.preferences.borrow().snapshot() {
+            Ok(p) => p.ocr,
+            Err(e) => {
+                self.error = Some(e);
+                cx.notify();
+                return;
+            }
+        };
+        if let Some(panel) = self.model_panel.clone() {
+            // The inline consent continuation remains document-owned. Settings downloads never create one.
+            if self.job.has_ocr_continuation() {
+                let config = config.clone();
+                let subscription =
+                    cx.subscribe_in(&panel, window, move |this, _, event, window, cx| {
+                        if let settings_ui::Event::Finished(settings::Model::Ocr(model), result) =
+                            event
+                            && *model == config.model
+                            && this.job.has_ocr_continuation()
+                        {
+                            match result {
+                                Ok(Some(installed)) => {
+                                    let mut installed = installed.clone();
+                                    installed.config = config.clone();
+                                    this.finish_ocr_setup(Ok(installed), window, cx);
+                                }
+                                Ok(None) => {}
+                                Err(e) => this.finish_ocr_setup(Err(e.clone()), window, cx),
+                            }
+                        }
+                    });
+                self.ocr_setup_subscription = Some(subscription);
+            }
+            let started = panel.update(cx, |panel, cx| {
+                panel.setup(settings::Model::Ocr(config.model), false, cx);
+                let started = panel.working == Some(settings::Model::Ocr(config.model));
+                panel.show(window, cx);
+                started
+            });
+            if started {
+                self.ocr_state = OcrState::Installing;
+                cx.emit(tabs::TabEvent::OcrState(self.ocr_state.clone()));
+                cx.notify();
+            } else if self.job.has_ocr_continuation() {
+                self.finish_ocr_setup(
+                    Err("Another model job is running. Retry when it finishes.".into()),
+                    window,
+                    cx,
+                );
+            }
+            return;
+        }
         self.setup_error_dismissed = false;
         self.ocr_state = OcrState::Installing;
         cx.emit(tabs::TabEvent::OcrState(self.ocr_state.clone()));
         self.error = None;
         let owner = self.owner.clone();
-        let task = cx.background_executor().spawn(async { ocr::install() });
+        let task = cx.background_executor().spawn(async move {
+            ocr::install_config(&config, &model_download::Progress::default())
+        });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             // Installation belongs to the application even if its initiating
@@ -710,9 +806,21 @@ impl Workspace {
             return;
         };
         self.automatic_import = false;
-        if skip || matches!(self.ocr_state, OcrState::Ready(_)) {
+        if skip {
             self.start_import_mode(path, skip, window, cx);
+        } else if matches!(self.ocr_state, OcrState::Ready(_)) {
+            self.start_import_mode(path, false, window, cx);
         } else if ocr::SUPPORTED {
+            if model_work::busy()
+                || self
+                    .model_panel
+                    .as_ref()
+                    .is_some_and(|p| p.read(cx).working.is_some())
+            {
+                self.error = Some("Another model job is running. Retry when it finishes.".into());
+                cx.notify();
+                return;
+            }
             self.import_permit = import_session::ImportPermit::acquire(&self.import_busy);
             if self.import_permit.is_none() {
                 return;
@@ -1299,11 +1407,13 @@ impl Render for Workspace {
                 .child(if matches!(self.ocr_state, OcrState::Missing | OcrState::Failed(_)) {
                     button(self.ocr_state.label(), SetupOcr, theme).into_any_element()
                 } else { div().opacity(0.65).child(self.ocr_state.label()).into_any_element() })
+                .child(button("Settings", Settings, theme))
                 .child(div().flex_1())
                 .child(button(theme.toggle_label(), ToggleTheme, theme))
                 .child(if self.dirty_cached { "Unsaved changes" } else if self.source_only { "Source preview" } else { "Markdown · WYSIWYG" })
                 .when(self.preview.loading, |bar| bar.child(div().child("Preparing preview…")))
                 .when(self.preview.pdf.is_some() || self.preview.source.is_some(), |bar| bar.child(button(if self.preview.visible { "Close Preview" } else { "Show Preview" }, TogglePreview, theme))))
+            .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
             .children(import_notice).children(ocr_notice)
             .children(self.pseudonym_bar(cx))
             .child(div().flex().flex_1().min_h_0()
@@ -1400,6 +1510,12 @@ fn main() {
         mdoc_editor::bind_keys(cx);
         markdown_search::bind_keys(cx);
         pseudonymization_ui::bind_keys(cx);
+        settings_ui::bind_keys(cx);
+        cx.bind_keys([KeyBinding::new(
+            "escape",
+            comparison_ui::CloseComparison,
+            Some("ModelComparison"),
+        )]);
         bind_markdown_search_keys(cx);
         let modifier = if cfg!(target_os = "macos") {
             "cmd"
@@ -1407,6 +1523,7 @@ fn main() {
             "ctrl"
         };
         cx.bind_keys([
+            KeyBinding::new(&format!("{modifier}-,"), Settings, None),
             KeyBinding::new(&format!("{modifier}-n"), New, None),
             KeyBinding::new(&format!("{modifier}-o"), Open, None),
             KeyBinding::new(&format!("{modifier}-shift-i"), Import, None),
@@ -1427,6 +1544,7 @@ fn main() {
                 MenuItem::action("Save As…", SaveAs),
                 MenuItem::action("Copy Markdown", CopyMarkdown),
                 MenuItem::action("Pseudonymize", Pseudonymize),
+                MenuItem::action("Settings", Settings),
                 MenuItem::separator(),
                 MenuItem::action("Quit", Quit),
             ],

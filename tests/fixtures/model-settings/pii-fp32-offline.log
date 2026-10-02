@@ -1,0 +1,26 @@
+
+running 1 test
+GLiNER2 PII FP32 english: 8164 ms
+GLiNER2 PII FP32 russian: 8218 ms
+test comparison::tests::settings_model_offline_probe ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 144 filtered out; finished in 16.40s
+
+       16.41 real        17.07 user         1.01 sys
+          2713010176  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              435055  page reclaims
+                   2  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                  24  voluntary context switches
+                4065  involuntary context switches
+        198484719706  instructions retired
+         72247211292  cycles elapsed
+          2279901848  peak memory footprint

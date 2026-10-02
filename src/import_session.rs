@@ -44,7 +44,6 @@ impl ImportSession {
         self.pending.is_some()
     }
 
-    #[cfg(test)]
     pub fn has_ocr_continuation(&self) -> bool {
         self.ocr_continuation.is_some()
     }

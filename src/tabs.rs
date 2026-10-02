@@ -81,6 +81,9 @@ pub(super) struct Tabs {
     active: u64,
     next_id: u64,
     sidebar_visible: bool,
+    preferences: settings::Shared,
+    settings: Entity<settings_ui::Panel>,
+    settings_subscription: Option<Subscription>,
     theme: Rc<Cell<Theme>>,
     ready: bool,
     ocr_state: OcrState,
@@ -104,7 +107,7 @@ pub(super) struct Tabs {
 
 impl Tabs {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let mut this = Self::empty(cx);
+        let mut this = Self::empty(window, cx);
         this.ocr_state = OcrState::Checking;
         let weak = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
@@ -139,10 +142,17 @@ impl Tabs {
         .detach();
         // Reading positions can change without document notifications. Sampling
         // metadata is cheap; unchanged snapshots never touch disk.
-        let check = cx.background_executor().spawn(async { ocr::check() });
+        let config = this.preferences.borrow().snapshot().map(|p| p.ocr);
+        let captured = config.clone();
+        let check = cx
+            .background_executor()
+            .spawn(async move { config.and_then(|c| ocr::check_config(&c)) });
         cx.spawn(async move |this, cx| {
             let result = check.await;
             let _ = this.update(cx, |this, cx| {
+                if this.preferences.borrow().snapshot().map(|p| p.ocr) != captured {
+                    return;
+                }
                 let state = match result {
                     Ok(Some(installed)) => OcrState::Ready(installed),
                     Ok(None) if ocr::SUPPORTED => OcrState::Missing,
@@ -167,14 +177,20 @@ impl Tabs {
         this
     }
 
-    fn empty(cx: &mut Context<Self>) -> Self {
-        Self {
+    fn empty(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let preferences = settings::Store::new();
+        let theme = Rc::new(Cell::new(Theme::default()));
+        let panel = cx.new(|cx| settings_ui::Panel::new(preferences.clone(), theme.clone(), cx));
+        let mut this = Self {
             focus: cx.focus_handle(),
             tabs: Vec::new(),
             active: 0,
             next_id: 1,
             sidebar_visible: true,
-            theme: Rc::new(Cell::new(Theme::default())),
+            preferences,
+            settings: panel.clone(),
+            settings_subscription: None,
+            theme,
             ready: false,
             ocr_state: if ocr::SUPPORTED {
                 OcrState::Missing
@@ -197,7 +213,242 @@ impl Tabs {
             writing: false,
             pending_write: None,
             _checkpoint: None,
+        };
+        this.settings_subscription =
+            Some(
+                cx.subscribe_in(&panel, window, |this, _, event, window, cx| match event {
+                    settings_ui::Event::Applied | settings_ui::Event::Checked => {
+                        this.refresh_model_settings(cx)
+                    }
+                    settings_ui::Event::Finished(settings::Model::Ocr(model), result) => {
+                        let selected = this.preferences.borrow().snapshot().map(|p| p.ocr);
+                        if let Ok(config) = selected
+                            && config.model == *model
+                        {
+                            let state = match result {
+                                Ok(Some(installed)) => {
+                                    let mut installed = installed.clone();
+                                    installed.config = config;
+                                    OcrState::Ready(installed)
+                                }
+                                Ok(None) => OcrState::Missing,
+                                Err(e) => OcrState::Failed(e.clone()),
+                            };
+                            this.set_ocr(state, cx);
+                        }
+                    }
+                    settings_ui::Event::Finished(_, _) => {}
+                    settings_ui::Event::Compare(model) => {
+                        this.open_comparison(*model, window, cx);
+                    }
+                }),
+            );
+        this
+    }
+
+    fn refresh_model_settings(&mut self, cx: &mut Context<Self>) {
+        let config = match self.preferences.borrow().snapshot() {
+            Ok(p) => p.ocr,
+            Err(e) => {
+                self.notice = Some(e);
+                cx.notify();
+                return;
+            }
+        };
+        let model = settings::Model::Ocr(config.model);
+        let status = self.settings.read(cx).statuses[settings::Model::ALL
+            .iter()
+            .position(|m| *m == model)
+            .unwrap()]
+        .clone();
+        match status {
+            settings_ui::Status::Missing => {
+                self.set_ocr(OcrState::Missing, cx);
+                return;
+            }
+            settings_ui::Status::Damaged(e) | settings_ui::Status::Unavailable(e) => {
+                self.set_ocr(
+                    if ocr::SUPPORTED {
+                        OcrState::Failed(e)
+                    } else {
+                        OcrState::Unsupported
+                    },
+                    cx,
+                );
+                return;
+            }
+            _ => {}
         }
+        // Parameter-only changes reuse the already checked model; setup publishes
+        // its checked paths directly, so it cannot race a consent continuation.
+        if let OcrState::Ready(installed) = &self.ocr_state
+            && installed.config.model == config.model
+        {
+            let mut installed = installed.clone();
+            installed.config = config;
+            self.set_ocr(OcrState::Ready(installed), cx);
+            return;
+        }
+        let cached = self
+            .settings
+            .read(cx)
+            .ocr_installations
+            .iter()
+            .find(|i| i.config.model == config.model)
+            .cloned();
+        if let Some(mut installed) = cached {
+            installed.config = config;
+            self.set_ocr(OcrState::Ready(installed), cx);
+            return;
+        }
+        if model_work::busy() {
+            return;
+        }
+        let captured = config.clone();
+        let task = cx
+            .background_executor()
+            .spawn(async move { ocr::check_config(&config) });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let _ = this.update(cx, |this, cx| {
+                if this
+                    .preferences
+                    .borrow()
+                    .snapshot()
+                    .is_ok_and(|p| p.ocr != captured)
+                {
+                    return;
+                }
+                let state = match result {
+                    Ok(Some(i)) => OcrState::Ready(i),
+                    Ok(None) if ocr::SUPPORTED => OcrState::Missing,
+                    Ok(None) => OcrState::Unsupported,
+                    Err(e) => OcrState::Failed(e),
+                };
+                this.set_ocr(state, cx);
+            });
+        })
+        .detach();
+    }
+    pub(super) fn show_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.activate_window();
+        self.settings.update(cx, |panel, cx| panel.show(window, cx));
+    }
+    pub(super) fn open_comparison(
+        &mut self,
+        model: settings::Model,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(view) = self.active_view() else {
+            self.notice = Some("Open a document before comparing models.".into());
+            cx.notify();
+            return;
+        };
+        let defaults = match self.preferences.borrow().snapshot() {
+            Ok(p) => p,
+            Err(e) => {
+                self.notice = Some(e);
+                cx.notify();
+                return;
+            }
+        };
+        let mut protected: Vec<_> = [
+            view.read(cx).session.document.path.clone(),
+            view.read(cx).session.source.clone(),
+            view.read(cx).preview.attachment.clone(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let (source, input) = match model {
+            settings::Model::Ocr(_) => {
+                let source = view
+                    .read(cx)
+                    .preview
+                    .attachment
+                    .clone()
+                    .or_else(|| view.read(cx).session.source.clone());
+                let Some(source) = source else {
+                    self.notice = Some("OCR comparison requires an attached original PDF.".into());
+                    cx.notify();
+                    return;
+                };
+                (Some(source), None)
+            }
+            settings::Model::Pii(_) => {
+                if !view.read(cx).can_copy_markdown() {
+                    self.notice =
+                        Some("Convert the document to Markdown before comparing detection.".into());
+                    cx.notify();
+                    return;
+                }
+                (
+                    None,
+                    Some(comparison::Input::Markdown(Arc::new(
+                        view.read(cx).editor.read(cx).text().to_string(),
+                    ))),
+                )
+            }
+        };
+        self.settings
+            .update(cx, |panel, cx| panel.close(window, cx));
+        let owner = cx.entity().downgrade();
+        let theme = self.theme.clone();
+        let panel = self.settings.clone();
+        let source_for_worker = source.clone();
+        if let Some(source) = source {
+            protected.insert(0, source);
+        }
+        let task = cx.background_executor().spawn(async move {
+            let input = match input {
+                Some(i) => i,
+                None => comparison::Input::pdf(source_for_worker.as_ref().unwrap())?,
+            };
+            let hash = input.hash();
+            Ok::<_, String>((input, hash))
+        });
+        let bounds = Bounds::centered(None, size(px(1000.), px(750.)), cx);
+        cx.spawn(async move |this, cx| match task.await {
+            Ok((input, hash)) => {
+                if this.upgrade().is_none() {
+                    return;
+                }
+                let _ = cx.open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(bounds)),
+                        ..Default::default()
+                    },
+                    move |window, cx| {
+                        window.set_window_title(if matches!(input, comparison::Input::Pdf(_)) {
+                            "Compare OCR models — mdoc"
+                        } else {
+                            "Compare pseudonymization models — mdoc"
+                        });
+                        let view = cx.new(|cx| {
+                            comparison_ui::View::new(
+                                (input, hash),
+                                defaults,
+                                theme,
+                                owner,
+                                panel,
+                                protected,
+                                cx,
+                            )
+                        });
+                        window.focus(&view.read(cx).focus_handle(cx), cx);
+                        view
+                    },
+                );
+            }
+            Err(e) => {
+                let _ = this.update(cx, |this, cx| {
+                    this.notice = Some(e);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
     fn restore(&mut self, session: Session, window: &mut Window, cx: &mut Context<Self>) {
@@ -274,6 +525,8 @@ impl Tabs {
             view.owner = Some((id, owner));
             view.active = id == self.active;
             view.theme = theme;
+            view.preferences = self.preferences.clone();
+            view.model_panel = Some(self.settings.clone());
             view.import_busy = import_busy;
             view.source_only = record.source_only;
             view.blank_disposable = record.blank_disposable;
@@ -801,7 +1054,7 @@ impl Tabs {
         cx.notify();
     }
 
-    fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.ready || self.quitting.is_some() || self.finishing {
             return;
         }
@@ -854,6 +1107,13 @@ impl Tabs {
             if let Some(view) = &tab.view {
                 Self::release(view, window, cx);
             }
+        }
+        for handle in cx
+            .windows()
+            .into_iter()
+            .filter_map(|w| w.downcast::<comparison_ui::View>())
+        {
+            let _ = handle.update(cx, |_, window, _| window.remove_window());
         }
         window.remove_window();
     }
@@ -1431,11 +1691,15 @@ impl Render for Tabs {
         let palette = self.theme.get().pdf_style();
         div()
             .track_focus(&self.focus)
+            .relative()
             .size_full()
             .flex()
             .flex_col()
             .bg(palette.bg)
             .text_color(palette.header_fg)
+            .on_action(cx.listener(|this, _: &Settings, window, cx| {
+                this.show_settings(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &New, window, cx| {
                 if this.ready && this.quitting.is_none() {
                     this.new_tab(window, cx);
@@ -1587,6 +1851,9 @@ impl Render for Tabs {
                             .when_some(self.active_view(), |view, active| view.child(active)),
                     ),
             )
+            .when(self.settings.read(cx).open, |v| {
+                v.child(self.settings.clone())
+            })
     }
 }
 

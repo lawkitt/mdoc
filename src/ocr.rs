@@ -1,13 +1,13 @@
 //! Explicit, app-managed OCR setup. Only `install` is allowed to use the network.
 use std::{
     fs::{self, File},
-    io::{Read, Seek, SeekFrom, Write},
+    io::Read,
     path::{Path, PathBuf},
 };
 
 use pdf_inspector::vision::{
-    HttpModelDownloader, ModelArtifactKind, ModelDownloadPolicy, ModelStore, OarOcrEngine, OcrMode,
-    OcrOptions, OcrPdfOptions, PP_OCR_CYRILLIC, PdfiumRenderer,
+    ModelArtifactKind, ModelDownloadPolicy, ModelStore, OarOcrEngine, OcrMode, OcrOptions,
+    OcrPdfOptions, PP_OCR_CYRILLIC, PdfiumRenderer,
 };
 use sha2::{Digest, Sha256};
 
@@ -19,6 +19,7 @@ pub const SUPPORTED: bool = cfg!(any(
 
 #[derive(Clone, Debug)]
 pub struct Installed {
+    pub config: crate::settings::OcrConfig,
     pub models: PathBuf,
     pub pdfium: PathBuf,
     pub onnx: PathBuf,
@@ -27,13 +28,15 @@ pub struct Installed {
 impl Installed {
     pub fn options(&self) -> OcrPdfOptions {
         OcrPdfOptions {
-            model_manifest: &PP_OCR_CYRILLIC,
+            model_manifest: self.config.model.manifest(),
             pdfium_library: Some(self.pdfium.clone()),
             onnx_runtime_library: Some(self.onnx.clone()),
             ocr: OcrOptions::new()
-                .mode(OcrMode::Auto)
+                .mode(OcrMode::Force)
+                .minimum_confidence(self.config.minimum_confidence)
                 .model_directory(&self.models)
                 .model_downloads(ModelDownloadPolicy::Offline),
+            render: pdf_inspector::vision::RenderOptions::new().dpi(self.config.dpi as f32),
             ..OcrPdfOptions::default()
         }
     }
@@ -108,7 +111,7 @@ pub fn download_megabytes() -> u64 {
     (runtimes + models).div_ceil(1_000_000)
 }
 
-fn root() -> Result<PathBuf, String> {
+pub(crate) fn root() -> Result<PathBuf, String> {
     dirs::data_local_dir()
         .map(|path| path.join("mdoc/ocr/v1"))
         .ok_or_else(|| "Could not find local application storage for OCR.".into())
@@ -119,10 +122,38 @@ pub fn check() -> Result<Option<Installed>, String> {
     if !SUPPORTED || cfg!(test) {
         return Ok(None);
     }
-    let root = root()?;
-    check_in(&root)
+    check_config(&crate::settings::OcrConfig::default())
 }
 
+pub fn check_config(config: &crate::settings::OcrConfig) -> Result<Option<Installed>, String> {
+    if !SUPPORTED || cfg!(test) {
+        return Ok(None);
+    }
+    let _permit = crate::model_work::Permit::acquire()?;
+    check_reserved(config)
+}
+
+/// The caller owns model admission, including for the complete catalog check.
+pub fn check_reserved(config: &crate::settings::OcrConfig) -> Result<Option<Installed>, String> {
+    if !SUPPORTED || cfg!(test) {
+        return Ok(None);
+    }
+    let root = root()?;
+    let model = model_root(&root, config.model);
+    if !model.exists() {
+        return Ok(None);
+    }
+    validate_config(&root, config).map(Some)
+}
+
+pub fn model_root(root: &Path, model: crate::settings::OcrModel) -> PathBuf {
+    let manifest = model.manifest();
+    root.join("models")
+        .join(manifest.id)
+        .join(manifest.revision)
+}
+
+#[cfg(test)]
 fn check_in(root: &Path) -> Result<Option<Installed>, String> {
     // Pseudonymization may install only the shared ONNX library. That is not
     // an incomplete OCR installation: OCR still needs its own explicit setup.
@@ -133,14 +164,20 @@ fn check_in(root: &Path) -> Result<Option<Installed>, String> {
     validate(root).map(Some)
 }
 
+#[cfg(test)]
 fn validate(root: &Path) -> Result<Installed, String> {
+    validate_config(root, &crate::settings::OcrConfig::default())
+}
+
+fn validate_config(root: &Path, config: &crate::settings::OcrConfig) -> Result<Installed, String> {
     for runtime in RUNTIMES {
         verify(&root.join(runtime.library), runtime.library_sha)?;
     }
     let models = ModelStore::new(root.join("models"))
-        .resolve(&PP_OCR_CYRILLIC)
+        .resolve(config.model.manifest())
         .map_err(|e| format!("OCR models are missing or damaged: {e}"))?;
     let installed = Installed {
+        config: config.clone(),
         models: models
             .get(ModelArtifactKind::TextDetection)
             .and_then(Path::parent)
@@ -164,6 +201,11 @@ fn validate(root: &Path) -> Result<Installed, String> {
     Ok(installed)
 }
 
+/// Called by a worker that already owns model admission.
+pub fn installed_config(config: &crate::settings::OcrConfig) -> Result<Installed, String> {
+    validate_config(&root()?, config)
+}
+
 /// Share the pinned native runtime without installing OCR models/PDFium.
 /// The pseudonymization model has its own setup and never invokes OCR setup.
 pub(crate) fn onnx_runtime(install: bool) -> Result<PathBuf, String> {
@@ -181,38 +223,88 @@ pub(crate) fn onnx_runtime(install: bool) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-pub fn install() -> Result<Installed, String> {
+pub(crate) fn onnx_runtime_with_progress(
+    progress: &crate::model_download::Progress,
+) -> Result<PathBuf, String> {
+    let root = root()?;
+    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let runtime = &RUNTIMES[1];
+    let path = root.join(runtime.library);
+    if verify(&path, runtime.library_sha).is_err() {
+        install_runtime_progress(&root, runtime, progress)?;
+    }
+    verify(&path, runtime.library_sha)?;
+    Ok(path)
+}
+
+#[cfg(test)]
+fn install_in(root: &Path) -> Result<Installed, String> {
+    install_config_in(
+        root,
+        &crate::settings::OcrConfig::default(),
+        &crate::model_download::Progress::default(),
+    )
+}
+
+pub fn install_config(
+    config: &crate::settings::OcrConfig,
+    progress: &crate::model_download::Progress,
+) -> Result<Installed, String> {
     if !SUPPORTED {
         return Err("Local OCR supports Apple Silicon macOS and Windows x64.".into());
     }
-    install_in(&root()?)
+    let _permit = crate::model_work::Permit::acquire()?;
+    install_config_in(&root()?, config, progress)
 }
-
-fn install_in(root: &Path) -> Result<Installed, String> {
+fn install_config_in(
+    root: &Path,
+    config: &crate::settings::OcrConfig,
+    progress: &crate::model_download::Progress,
+) -> Result<Installed, String> {
     fs::create_dir_all(root).map_err(|e| e.to_string())?;
     for runtime in RUNTIMES {
+        progress.check()?;
         if verify(&root.join(runtime.library), runtime.library_sha).is_ok() {
             continue;
         }
-        install_runtime(root, runtime)
-            .map_err(|e| format!("{} setup failed: {e}", runtime.name))?;
+        install_runtime_progress(root, runtime, progress)?;
     }
-    ModelStore::new(root.join("models"))
-        .resolve_or_download(
-            &PP_OCR_CYRILLIC,
-            ModelDownloadPolicy::IfMissing,
-            &HttpModelDownloader::default(),
-        )
-        .map_err(|e| format!("OCR model download failed. Retry setup: {e}"))?;
-    let notices = root.join("licenses/models");
+    let manifest = config.model.manifest();
+    let model_root = model_root(root, config.model);
+    for artifact in manifest.artifacts {
+        crate::model_download::fetch(
+            artifact.url,
+            artifact.size,
+            artifact.sha256,
+            &model_root.join(artifact.filename),
+            progress,
+        )?;
+    }
+    let notices = model_root.join("licenses");
     fs::create_dir_all(&notices).map_err(|e| e.to_string())?;
     fs::write(
         notices.join("LICENSE"),
         include_str!("../resources/ocr-model-license.txt"),
     )
     .map_err(|e| e.to_string())?;
-    fs::write(notices.join("NOTICE"), "PP-OCRv6 Small detection and PP-OCRv5 Cyrillic mobile recognition.\nPaddleOCR / PaddlePaddle authors; ONNX artifacts distributed by GreatV/oar-ocr.\nhttps://github.com/PaddlePaddle/PaddleOCR\nhttps://github.com/GreatV/oar-ocr\nModel files are unmodified; artifact versions and checksums are pinned by pdf-inspector.\n").map_err(|e| e.to_string())?;
-    validate(root)
+    fs::write(notices.join("NOTICE"), format!("{}; {}.\nPaddleOCR / PaddlePaddle authors; unmodified ONNX artifacts from GreatV/oar-ocr.\nhttps://github.com/PaddlePaddle/PaddleOCR\nhttps://github.com/GreatV/oar-ocr\n", manifest.id,manifest.revision)).map_err(|e|e.to_string())?;
+    progress.check()?;
+    progress.phase("Checking runtime");
+    let installed = validate_config(root, config)?;
+    progress.check()?;
+    Ok(installed)
+}
+
+pub fn remove_model(model: crate::settings::OcrModel) -> Result<(), String> {
+    let _permit = crate::model_work::Permit::acquire()?;
+    remove_model_files(&root()?, model)
+}
+fn remove_model_files(root: &Path, model: crate::settings::OcrModel) -> Result<(), String> {
+    let path = model_root(root, model);
+    if path.exists() {
+        fs::remove_dir_all(path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn verify(path: &Path, expected: &str) -> Result<(), String> {
@@ -242,30 +334,25 @@ fn verify(path: &Path, expected: &str) -> Result<(), String> {
 }
 
 fn install_runtime(root: &Path, runtime: &Runtime) -> Result<(), String> {
-    let agent = ureq::Agent::new_with_config(
-        ureq::Agent::config_builder()
-            .https_only(true)
-            .timeout_global(Some(std::time::Duration::from_secs(300)))
-            .build(),
-    );
-    let mut response = agent.get(runtime.url).call().map_err(|e| e.to_string())?;
-    let mut archive = tempfile::NamedTempFile::new_in(root).map_err(|e| e.to_string())?;
-    let size = std::io::copy(
-        &mut response.body_mut().as_reader().take(runtime.size + 1),
-        &mut archive,
-    )
-    .map_err(|e| e.to_string())?;
-    if size != runtime.size {
-        return Err(
-            "Runtime download was incomplete or had an unexpected size. Retry setup.".into(),
-        );
-    }
-    archive.flush().map_err(|e| e.to_string())?;
-    verify(archive.path(), runtime.archive_sha)?;
-    archive
-        .seek(SeekFrom::Start(0))
-        .map_err(|e| e.to_string())?;
-    extract_runtime(root, runtime, archive.as_file())?;
+    install_runtime_progress(root, runtime, &crate::model_download::Progress::default())
+}
+fn install_runtime_progress(
+    root: &Path,
+    runtime: &Runtime,
+    progress: &crate::model_download::Progress,
+) -> Result<(), String> {
+    let temporary = tempfile::tempdir_in(root).map_err(|e| e.to_string())?;
+    let path = temporary.path().join("runtime.archive");
+    crate::model_download::fetch(
+        runtime.url,
+        runtime.size,
+        runtime.archive_sha,
+        &path,
+        progress,
+    )?;
+    let file = File::open(path).map_err(|e| e.to_string())?;
+    progress.check()?;
+    extract_runtime(root, runtime, &file)?;
     verify(&root.join(runtime.library), runtime.library_sha)
 }
 
@@ -335,6 +422,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn removing_a_bundle_preserves_other_bundles_and_shared_runtimes() {
+        use crate::settings::OcrModel;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for model in OcrModel::ALL {
+            let path = model_root(root, model);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("weights.onnx"), b"pinned fixture").unwrap();
+        }
+        for runtime in RUNTIMES {
+            fs::write(root.join(runtime.library), b"shared fixture").unwrap();
+        }
+        remove_model_files(root, OcrModel::V6Small).unwrap();
+        assert!(!model_root(root, OcrModel::V6Small).exists());
+        assert!(
+            model_root(root, OcrModel::Cyrillic)
+                .join("weights.onnx")
+                .exists()
+        );
+        for runtime in RUNTIMES {
+            assert!(root.join(runtime.library).exists());
+        }
+    }
+    use std::io::{Seek, Write};
+
+    #[test]
     fn shared_inference_runtime_does_not_claim_or_break_ocr_setup() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join(RUNTIMES[1].library), b"shared-runtime").unwrap();
@@ -354,6 +467,7 @@ mod tests {
     #[test]
     fn import_options_never_download_and_select_qualified_model() {
         let installed = Installed {
+            config: crate::settings::OcrConfig::default(),
             models: "models".into(),
             pdfium: "pdfium".into(),
             onnx: "onnx".into(),

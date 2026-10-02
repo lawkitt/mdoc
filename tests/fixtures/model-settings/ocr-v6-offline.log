@@ -1,0 +1,26 @@
+
+running 1 test
+PP-OCRv6 Small english: 1606 ms
+PP-OCRv6 Small russian: 1354 ms
+test comparison::tests::settings_model_offline_probe ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 144 filtered out; finished in 2.98s
+
+        3.00 real         3.70 user         0.16 sys
+           835420160  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               61671  page reclaims
+                   1  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                  10  voluntary context switches
+                3239  involuntary context switches
+         53886597615  instructions retired
+         15116061751  cycles elapsed
+           415532112  peak memory footprint

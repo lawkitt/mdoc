@@ -709,6 +709,7 @@ fn opening_and_saving_preserves_markdown_bytes(cx: &mut TestAppContext) {
 
 fn converted(source: PathBuf) -> import::Imported {
     import::Imported {
+        ocr_configuration: None,
         source,
         markdown: "# Imported\n".into(),
         warning: Some("Partial import: pages 2 of 2 require OCR and were skipped.".into()),
@@ -787,6 +788,7 @@ fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut Tes
         app.session.generation += 1;
         app.finish_ocr_setup(
             Ok(ocr::Installed {
+                config: crate::settings::OcrConfig::default(),
                 models: "models".into(),
                 pdfium: "pdfium".into(),
                 onnx: "onnx".into(),

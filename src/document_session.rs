@@ -9,6 +9,7 @@ pub(super) struct DocumentSession {
     pub generation: u64,
     pub source: Option<PathBuf>,
     pub warning: Option<String>,
+    pub ocr_configuration: Option<crate::settings::OcrConfig>,
 }
 
 impl DocumentSession {
@@ -17,6 +18,7 @@ impl DocumentSession {
         self.document = document;
         self.source = None;
         self.warning = None;
+        self.ocr_configuration = None;
     }
 
     pub fn import(&mut self, source: PathBuf, warning: Option<String>) {

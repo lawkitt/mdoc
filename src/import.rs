@@ -23,6 +23,7 @@ pub fn supported_source(path: &Path) -> bool {
 
 #[derive(Clone, Debug)]
 pub struct Imported {
+    pub ocr_configuration: Option<crate::settings::OcrConfig>,
     pub source: PathBuf,
     pub markdown: String,
     pub warning: Option<String>,
@@ -103,6 +104,7 @@ pub fn prepare_cancellable(
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("docx"));
     Ok(Imported {
+        ocr_configuration: None,
         source,
         markdown: converted.markdown,
         warning,
@@ -148,10 +150,8 @@ fn convert_pdf(
             native.pages_recommended_for_ocr.clone(),
         ));
     }
-    let (result, used_ocr) = if needs_ocr
-        && !skip_ocr
-        && let Some(installed) = installed
-    {
+    let (result, used_ocr) = if !skip_ocr && let Some(installed) = installed {
+        let _permit = crate::model_work::Permit::acquire().map_err(ImportError::OcrFailed)?;
         match process_pdf_with_ocr_mem(&bytes, installed.options()) {
             Ok(result) => (result, true),
             Err(error) => return Err(ImportError::OcrFailed(format!("Local OCR failed: {error}"))),
@@ -206,6 +206,11 @@ fn convert_pdf(
         Some(message)
     };
     Ok(Imported {
+        ocr_configuration: if used_ocr {
+            installed.map(|i| i.config.clone())
+        } else {
+            None
+        },
         source,
         markdown: result.markdown,
         warning,
@@ -358,6 +363,7 @@ mod tests {
     #[test]
     fn missing_runtime_requires_explicit_fallback() {
         let installed = crate::ocr::Installed {
+            config: crate::settings::OcrConfig::default(),
             models: "missing-models".into(),
             pdfium: "missing-pdfium".into(),
             onnx: "missing-onnx".into(),

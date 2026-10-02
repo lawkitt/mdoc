@@ -1,0 +1,376 @@
+{
+  "version": 1,
+  "application": "mdoc",
+  "build": "0.1.0",
+  "profile": "debug",
+  "platform": "macos",
+  "architecture": "aarch64",
+  "runs": [
+    {
+      "configuration": {
+        "Pii": {
+          "model": "Fp32",
+          "threshold": 0.5
+        }
+      },
+      "identity": {
+        "model": "gliner2-pii-fp32",
+        "revision": "e594898629d452e8311796f5f329c7edbeda907c",
+        "repository": "jugaadsrl/gliner2-privacy-filter-PII-multi-onnx",
+        "runtime": "ONNX Runtime 1.27.0",
+        "engine": "gliner2-rs 0.9.6",
+        "execution": "CPU",
+        "threads": 4,
+        "artifacts": [
+          {
+            "file": "fp32_v2/classifier_fp32.onnx",
+            "sha256": "a59406b58c7bb448174c8df32b46d82e1b77b64bcb497da5b481836600ff3ad9"
+          },
+          {
+            "file": "fp32_v2/count_lstm_fixed_fp32.onnx",
+            "sha256": "17710c32f639f28f3193ea286226b92757dbfa4a67d86432cf252d479ed86f7d"
+          },
+          {
+            "file": "fp32_v2/count_pred_argmax_fp32.onnx",
+            "sha256": "c67fe0b5b1d1d6b1832a82ccb88153e571033e39f7d46434e661e7befd38294c"
+          },
+          {
+            "file": "fp32_v2/encoder_fp32.onnx",
+            "sha256": "7cd07f04235f5c9e879f69e361088be3b07bb6930bf05340050088f7994f638e"
+          },
+          {
+            "file": "fp32_v2/schema_gather_fp32.onnx",
+            "sha256": "24ceb4ae477e36a4291f8a29636e56cfe435d857c71b9248245d4eed62d67ab7"
+          },
+          {
+            "file": "fp32_v2/scorer_fp32.onnx",
+            "sha256": "8fd9305a1d393d0eb9551c2dabaf7707aeea80910d246588b6ff8576bcab8cce"
+          },
+          {
+            "file": "fp32_v2/span_rep_fp32.onnx",
+            "sha256": "a526d00a3ef794223b8683f2ede9b15bda6a5190485539ecec661ef78194d4a1"
+          },
+          {
+            "file": "fp32_v2/token_gather_fp32.onnx",
+            "sha256": "739b66e91492ba6cdcf779497bdc9c322eaa141a9a1e2200c1db1c02ef63133b"
+          },
+          {
+            "file": "fp32_v2/tokenizer.json",
+            "sha256": "f6df10ec83bea993035b2dd7c39345a3d4fcf23421c2adb6cb4ffc1e6d1bc4b5"
+          },
+          {
+            "file": "README.md",
+            "sha256": "240b8eed6ddf54b4e42e9ee2838b7ffebea482cec932968d0eb37f6caf60bbae"
+          }
+        ]
+      },
+      "input_sha256": "4bd7d34cb2bd127033ce2bb6c001245a0591e5ce2ad88df7980f764cf0ee9f28",
+      "pages": null,
+      "elapsed_ms": 8164,
+      "output": {
+        "predictions": [
+          {
+            "text": "Alice Morgan",
+            "category": "Person",
+            "start": 116,
+            "end": 128,
+            "confidence": 0.9950836896896362
+          },
+          {
+            "text": "Alice Morgan",
+            "category": "Person",
+            "start": 0,
+            "end": 12,
+            "confidence": 0.9947395324707031
+          },
+          {
+            "text": "Alice Morgan",
+            "category": "Person",
+            "start": 232,
+            "end": 244,
+            "confidence": 0.9944123029708862
+          },
+          {
+            "text": "Alice Morgan",
+            "category": "Person",
+            "start": 348,
+            "end": 360,
+            "confidence": 0.9906672239303589
+          },
+          {
+            "text": "Northbridge Legal Ltd.",
+            "category": "Organization",
+            "start": 140,
+            "end": 162,
+            "confidence": 0.9997129440307617
+          },
+          {
+            "text": "Northbridge Legal Ltd.",
+            "category": "Organization",
+            "start": 372,
+            "end": 394,
+            "confidence": 0.9997096657752991
+          },
+          {
+            "text": "Northbridge Legal Ltd.",
+            "category": "Organization",
+            "start": 256,
+            "end": 278,
+            "confidence": 0.9996861219406128
+          },
+          {
+            "text": "Northbridge Legal Ltd.",
+            "category": "Organization",
+            "start": 24,
+            "end": 46,
+            "confidence": 0.999584436416626
+          },
+          {
+            "text": "alice@example.invalid",
+            "category": "Email",
+            "start": 169,
+            "end": 190,
+            "confidence": 0.9995898008346558
+          },
+          {
+            "text": "alice@example.invalid",
+            "category": "Email",
+            "start": 285,
+            "end": 306,
+            "confidence": 0.9995200037956238
+          },
+          {
+            "text": "alice@example.invalid",
+            "category": "Email",
+            "start": 53,
+            "end": 74,
+            "confidence": 0.9995104074478149
+          },
+          {
+            "text": "alice@example.invalid",
+            "category": "Email",
+            "start": 401,
+            "end": 422,
+            "confidence": 0.999244749546051
+          },
+          {
+            "text": "alice@example.invalid",
+            "category": "Email",
+            "start": 441,
+            "end": 462,
+            "confidence": 0.9979891777038574
+          },
+          {
+            "text": "alice@example.invalid",
+            "category": "Email",
+            "start": 325,
+            "end": 346,
+            "confidence": 0.9926900863647461
+          },
+          {
+            "text": "alice@example.invalid",
+            "category": "Email",
+            "start": 209,
+            "end": 230,
+            "confidence": 0.9899869561195374
+          },
+          {
+            "text": "alice@example.invalid",
+            "category": "Email",
+            "start": 93,
+            "end": 114,
+            "confidence": 0.9885702133178711
+          }
+        ],
+        "count": 16,
+        "warnings": [
+          "Experimental review assistance. Confidence and candidate count are not accuracy scores."
+        ]
+      },
+      "error": null
+    },
+    {
+      "configuration": {
+        "Pii": {
+          "model": "Fp32",
+          "threshold": 0.5
+        }
+      },
+      "identity": {
+        "model": "gliner2-pii-fp32",
+        "revision": "e594898629d452e8311796f5f329c7edbeda907c",
+        "repository": "jugaadsrl/gliner2-privacy-filter-PII-multi-onnx",
+        "runtime": "ONNX Runtime 1.27.0",
+        "engine": "gliner2-rs 0.9.6",
+        "execution": "CPU",
+        "threads": 4,
+        "artifacts": [
+          {
+            "file": "fp32_v2/classifier_fp32.onnx",
+            "sha256": "a59406b58c7bb448174c8df32b46d82e1b77b64bcb497da5b481836600ff3ad9"
+          },
+          {
+            "file": "fp32_v2/count_lstm_fixed_fp32.onnx",
+            "sha256": "17710c32f639f28f3193ea286226b92757dbfa4a67d86432cf252d479ed86f7d"
+          },
+          {
+            "file": "fp32_v2/count_pred_argmax_fp32.onnx",
+            "sha256": "c67fe0b5b1d1d6b1832a82ccb88153e571033e39f7d46434e661e7befd38294c"
+          },
+          {
+            "file": "fp32_v2/encoder_fp32.onnx",
+            "sha256": "7cd07f04235f5c9e879f69e361088be3b07bb6930bf05340050088f7994f638e"
+          },
+          {
+            "file": "fp32_v2/schema_gather_fp32.onnx",
+            "sha256": "24ceb4ae477e36a4291f8a29636e56cfe435d857c71b9248245d4eed62d67ab7"
+          },
+          {
+            "file": "fp32_v2/scorer_fp32.onnx",
+            "sha256": "8fd9305a1d393d0eb9551c2dabaf7707aeea80910d246588b6ff8576bcab8cce"
+          },
+          {
+            "file": "fp32_v2/span_rep_fp32.onnx",
+            "sha256": "a526d00a3ef794223b8683f2ede9b15bda6a5190485539ecec661ef78194d4a1"
+          },
+          {
+            "file": "fp32_v2/token_gather_fp32.onnx",
+            "sha256": "739b66e91492ba6cdcf779497bdc9c322eaa141a9a1e2200c1db1c02ef63133b"
+          },
+          {
+            "file": "fp32_v2/tokenizer.json",
+            "sha256": "f6df10ec83bea993035b2dd7c39345a3d4fcf23421c2adb6cb4ffc1e6d1bc4b5"
+          },
+          {
+            "file": "README.md",
+            "sha256": "240b8eed6ddf54b4e42e9ee2838b7ffebea482cec932968d0eb37f6caf60bbae"
+          }
+        ]
+      },
+      "input_sha256": "8bb7ae5a9456611c5d8773cd55828585f452f6952a8fd2186dc257cc15db4056",
+      "pages": null,
+      "elapsed_ms": 8218,
+      "output": {
+        "predictions": [
+          {
+            "text": "Анна Ёлкина",
+            "category": "Person",
+            "start": 296,
+            "end": 317,
+            "confidence": 0.9971855878829956
+          },
+          {
+            "text": "Анна Ёлкина",
+            "category": "Person",
+            "start": 148,
+            "end": 169,
+            "confidence": 0.9968231320381165
+          },
+          {
+            "text": "Анна Ёлкина",
+            "category": "Person",
+            "start": 0,
+            "end": 21,
+            "confidence": 0.9967420697212219
+          },
+          {
+            "text": "Анна Ёлкина",
+            "category": "Person",
+            "start": 444,
+            "end": 465,
+            "confidence": 0.9964510202407837
+          },
+          {
+            "text": "ООО Северный мост",
+            "category": "Organization",
+            "start": 195,
+            "end": 227,
+            "confidence": 0.9925698041915894
+          },
+          {
+            "text": "ООО Северный мост",
+            "category": "Organization",
+            "start": 343,
+            "end": 375,
+            "confidence": 0.9923485517501831
+          },
+          {
+            "text": "ООО Северный мост",
+            "category": "Organization",
+            "start": 491,
+            "end": 523,
+            "confidence": 0.9919688701629639
+          },
+          {
+            "text": "ООО Северный мост",
+            "category": "Organization",
+            "start": 47,
+            "end": 79,
+            "confidence": 0.9899318218231201
+          },
+          {
+            "text": "+7 (999) 123-45-67",
+            "category": "Phone",
+            "start": 96,
+            "end": 114,
+            "confidence": 0.999998927116394
+          },
+          {
+            "text": "+7 (999) 123-45-67",
+            "category": "Phone",
+            "start": 540,
+            "end": 558,
+            "confidence": 0.999998927116394
+          },
+          {
+            "text": "+7 (999) 123-45-67",
+            "category": "Phone",
+            "start": 392,
+            "end": 410,
+            "confidence": 0.9999986886978149
+          },
+          {
+            "text": "+7 (999) 123-45-67",
+            "category": "Phone",
+            "start": 244,
+            "end": 262,
+            "confidence": 0.9999978542327881
+          },
+          {
+            "text": "anna@example.invalid",
+            "category": "Email",
+            "start": 571,
+            "end": 591,
+            "confidence": 0.9999937415122986
+          },
+          {
+            "text": "anna@example.invalid",
+            "category": "Email",
+            "start": 127,
+            "end": 147,
+            "confidence": 0.9999936819076538
+          },
+          {
+            "text": "anna@example.invalid",
+            "category": "Email",
+            "start": 423,
+            "end": 443,
+            "confidence": 0.9999845027923584
+          },
+          {
+            "text": "anna@example.invalid",
+            "category": "Email",
+            "start": 275,
+            "end": 295,
+            "confidence": 0.9999780654907227
+          }
+        ],
+        "count": 16,
+        "warnings": [
+          "Experimental review assistance. Confidence and candidate count are not accuracy scores."
+        ]
+      },
+      "error": null
+    }
+  ]
+}

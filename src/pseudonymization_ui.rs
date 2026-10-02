@@ -14,6 +14,7 @@ struct ScanJob {
     cancel: Arc<AtomicBool>,
     revision: u64,
     generation: u64,
+    config: settings::PiiConfig,
 }
 pub(super) struct ReviewUi {
     pub review: Review,
@@ -24,6 +25,7 @@ pub(super) struct ReviewUi {
     job: Option<ScanJob>,
     pub installing: bool,
     model_ready: bool,
+    pub scans: Vec<settings::PiiConfig>,
     pub error: Option<String>,
     generation: u64,
 }
@@ -45,6 +47,7 @@ impl ReviewUi {
             job: None,
             installing: false,
             model_ready: false,
+            scans: Vec::new(),
             error: None,
             generation: 0,
         }
@@ -86,6 +89,7 @@ impl Workspace {
     pub(super) fn reset_pseudonymization(&mut self, cx: &mut Context<Self>) {
         self.pseudonymization.cancel();
         self.pseudonymization.review = Review::default();
+        self.pseudonymization.scans.clear();
         self.pseudonymization.popup = None;
         self.pseudonymization.error = None;
         self.sync_annotations(cx);
@@ -169,6 +173,14 @@ impl Workspace {
         let editor = self.editor.read(cx);
         let revision = editor.revision();
         let source = editor.text().to_owned();
+        let config = match self.preferences.borrow().snapshot() {
+            Ok(p) => p.pseudonymization,
+            Err(e) => {
+                self.pseudonymization.error = Some(e);
+                cx.notify();
+                return;
+            }
+        };
         let generation = self.pseudonymization.generation;
         let identity = self.session.generation;
         let cancel = Arc::new(AtomicBool::new(false));
@@ -176,10 +188,11 @@ impl Workspace {
             cancel: cancel.clone(),
             revision,
             generation,
+            config: config.clone(),
         });
         let task = cx
             .background_executor()
-            .spawn(async move { detector::scan(&source, &cancel) });
+            .spawn(async move { detector::scan_config(&source, &cancel, &config) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {
@@ -208,6 +221,7 @@ impl Workspace {
         {
             return;
         }
+        let config = job.config.clone();
         self.pseudonymization.job = None;
         let source = self.editor.read(cx).text().to_owned();
         match result.and_then(|detections| self.pseudonymization.review.ingest(&source, detections))
@@ -215,6 +229,7 @@ impl Workspace {
             Ok(()) => {
                 self.pseudonymization.error = None;
                 self.pseudonymization.model_ready = true;
+                self.pseudonymization.scans.push(config);
                 self.sync_annotations(cx);
             }
             Err(error) => {
@@ -227,14 +242,31 @@ impl Workspace {
         cx.notify();
     }
 
-    fn setup_pseudonyms(&mut self, cx: &mut Context<Self>) {
+    fn setup_pseudonyms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.pseudonymization.installing || !detector::SUPPORTED {
+            return;
+        }
+        let config = match self.preferences.borrow().snapshot() {
+            Ok(p) => p.pseudonymization,
+            Err(e) => {
+                self.pseudonymization.error = Some(e);
+                cx.notify();
+                return;
+            }
+        };
+        if let Some(panel) = self.model_panel.clone() {
+            panel.update(cx, |panel, cx| {
+                panel.setup(settings::Model::Pii(config.model), false, cx);
+                panel.show(window, cx);
+            });
             return;
         }
         self.pseudonymization.cancel();
         self.pseudonymization.installing = true;
         self.pseudonymization.error = None;
-        let task = cx.background_executor().spawn(async { detector::setup() });
+        let task = cx.background_executor().spawn(async move {
+            detector::setup_config(&config, &model_download::Progress::default())
+        });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {
@@ -448,11 +480,34 @@ impl Workspace {
             return None;
         }
         let palette = self.theme.get().pdf_style();
+        let selected = self
+            .preferences
+            .borrow()
+            .snapshot()
+            .map(|p| settings::Model::Pii(p.pseudonymization.model));
+        let installing = self.pseudonymization.installing
+            || self.model_panel.as_ref().is_some_and(|p| {
+                selected
+                    .as_ref()
+                    .is_ok_and(|m| p.read(cx).working == Some(*m))
+            });
+        let model_ready =
+            self.model_panel
+                .as_ref()
+                .map_or(self.pseudonymization.model_ready, |p| {
+                    selected.as_ref().is_ok_and(|m| {
+                        matches!(
+                            p.read(cx).statuses
+                                [settings::Model::ALL.iter().position(|v| v == m).unwrap()],
+                            settings_ui::Status::Ready
+                        )
+                    })
+                });
         Some(div().flex().flex_col().gap_1().px_3().py_2().text_size(px(12.)).border_b_1().border_color(palette.border)
             .child(div().flex().flex_wrap().items_center().gap_2()
                 .child(format!("Pseudonymize · {} candidates", self.pseudonymization.review.remaining()))
-                .child(if self.pseudonymization.installing { "Downloading model…" } else if self.pseudonymization.scanning() { "Scanning…" } else { "" })
-                .when(!self.pseudonymization.scanning() && !self.pseudonymization.installing && detector::SUPPORTED, |bar| bar.child(
+                .child(if installing { "Downloading model…" } else if self.pseudonymization.scanning() { "Scanning…" } else { "" })
+                .when(!self.pseudonymization.scanning() && !installing && detector::SUPPORTED, |bar| bar.child(
                     div().id("scan-pseudonyms").cursor_pointer().px_2().py_1().rounded_md().hover(|v| v.bg(palette.placeholder_bg)).child("Rescan").on_click(cx.listener(|this, _, _, cx| this.scan_pseudonyms(cx)))))
                 .when(self.pseudonymization.scanning(), |bar| bar.child(div().id("cancel-pseudonyms").cursor_pointer().px_2().py_1().child("Cancel").on_click(cx.listener(|this, _, _, cx| { this.pseudonymization.cancel(); cx.notify(); }))))
                 .child(div().id("pseudonym-category").cursor_pointer().px_2().py_1().child(format!("Selection type: {} ↻", self.pseudonymization.category.token())).on_click(cx.listener(|this, _, _, cx| {
@@ -464,11 +519,13 @@ impl Workspace {
                 .child(div().flex_1())
                 .child(div().id("leave-pseudonyms").cursor_pointer().px_2().py_1().child("Done").on_click(cx.listener(|this, _, _, cx| this.leave_pseudonyms(cx)))))
             .child(div().text_color(palette.header_muted).child("Experimental · May miss identifying information, especially Russian and hidden source. Review the complete Markdown before sharing."))
+            .child(button("Settings",Settings,self.theme.get()))
+            .when(!self.pseudonymization.scans.is_empty(),|bar|bar.child(div().text_color(palette.header_muted).child(format!("Completed scans: {}",self.pseudonymization.scans.iter().map(|c|format!("{} (threshold {})",c.model.name(),c.threshold)).collect::<Vec<_>>().join(", ")))))
             .when(self.pseudonymization.review.skipped_syntax_spans > 0, |bar| bar.child(div().text_color(palette.header_muted).child("Some detector spans cross source syntax. Add a narrower selection manually.")))
             .when_some(self.pseudonymization.error.clone(), |bar, error| bar.child(div().child(error)))
-            .when(!self.pseudonymization.installing && !self.pseudonymization.scanning() && detector::SUPPORTED && !self.pseudonymization.model_ready, |bar| bar.child(div().id("setup-pseudonyms").cursor_pointer().py_1()
-                .child(format!("Download experimental model (up to {} MB) · local scans afterwards", detector::download_megabytes()))
-                .on_click(cx.listener(|this, _, _, cx| this.setup_pseudonyms(cx)))))
+            .when(!installing && !self.pseudonymization.scanning() && detector::SUPPORTED && !model_ready, |bar| bar.child(div().id("setup-pseudonyms").cursor_pointer().py_1()
+                .child(format!("Download experimental model (up to {} MB) · local scans afterwards", detector::download_megabytes(self.preferences.borrow().snapshot().map(|p|p.pseudonymization.model).unwrap_or_default())))
+                .on_click(cx.listener(|this, _, window, cx| this.setup_pseudonyms(window,cx)))))
             .into_any_element())
     }
     pub(super) fn pseudonym_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -662,6 +719,7 @@ mod tests {
                     cancel: Arc::new(AtomicBool::new(false)),
                     revision,
                     generation: 7,
+                    config: settings::PiiConfig::default(),
                 });
             };
             install_job(app);
@@ -680,6 +738,7 @@ mod tests {
                 cancel: Arc::new(AtomicBool::new(false)),
                 revision,
                 generation: 9,
+                config: settings::PiiConfig::default(),
             });
             app.session.replace(Document::default());
             app.complete_pseudonym_scan(9, identity, revision, result(), cx);

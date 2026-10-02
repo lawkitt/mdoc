@@ -2,14 +2,13 @@
 //! explicit setup. One bounded scan runs at a time; each scan drops its engine.
 use crate::pseudonymization::{Category, Detection};
 use gliner2_rs::{
-    Chunker, ExecutionMode, InferenceParams, Precision, SchemaTask, SpanConfig, SpanEngine,
+    Chunker, ExecutionMode, InferenceParams, SchemaTask, SpanConfig, SpanEngine,
     processor::SchemaTransformer,
 };
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
+
 use std::{
-    fs::{self, File},
-    io::{Read, Write},
+    fs,
     path::{Path, PathBuf},
     sync::{
         Mutex,
@@ -23,7 +22,6 @@ const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_INPUT_TOKENS: usize = 512;
 const MAX_SCAN_TIME: Duration = Duration::from_secs(120);
 static INFERENCE: Mutex<()> = Mutex::new(());
-static SETUP: Mutex<()> = Mutex::new(());
 
 const FAMILIES: &[&[(&str, Category)]] = &[
     &[
@@ -49,118 +47,140 @@ const FAMILIES: &[&[(&str, Category)]] = &[
 ];
 
 #[derive(Deserialize)]
-struct Manifest {
-    files: Vec<Artifact>,
+pub struct Manifest {
+    pub id: String,
+    pub revision: String,
+    pub repository: String,
+    pub files: Vec<Artifact>,
 }
 #[derive(Deserialize)]
-struct Artifact {
-    path: String,
-    bytes: u64,
-    sha256: String,
-    url: String,
+pub struct Artifact {
+    pub path: String,
+    pub bytes: u64,
+    pub sha256: String,
+    pub url: String,
 }
-fn manifest() -> Manifest {
-    serde_json::from_str(include_str!("../resources/pseudonymization-model.json"))
-        .expect("pinned model manifest")
+pub fn manifest_for(model: crate::settings::PiiModel) -> Manifest {
+    let source = match model {
+        crate::settings::PiiModel::Fp16 => include_str!("../resources/pseudonymization-model.json"),
+        crate::settings::PiiModel::Fp32 => {
+            include_str!("../resources/pseudonymization-fp32-model.json")
+        }
+    };
+    serde_json::from_str(source).expect("pinned model manifest")
 }
-fn root() -> Result<PathBuf, String> {
+pub fn root_for(model: crate::settings::PiiModel) -> Result<PathBuf, String> {
     dirs::data_local_dir()
-        .map(|root| root.join("mdoc/pseudonymization/gliner2-pii-fp16-e5948986"))
+        .map(|root| {
+            root.join(format!(
+                "mdoc/pseudonymization/{}-e5948986",
+                manifest_for(model).id
+            ))
+        })
         .ok_or_else(|| "Could not find local application storage.".into())
 }
-pub fn download_megabytes() -> u64 {
+pub fn download_megabytes(model: crate::settings::PiiModel) -> u64 {
     // Model + the larger Windows runtime archive, if not already installed.
-    (manifest().files.iter().map(|file| file.bytes).sum::<u64>() + 77_086_915).div_ceil(1_000_000)
-}
-fn verify(path: &Path, artifact: &Artifact) -> Result<(), String> {
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
-    if file.metadata().map_err(|e| e.to_string())?.len() != artifact.bytes {
-        return Err("Model file has an unexpected size. Retry setup.".into());
-    }
-    let mut digest = Sha256::new();
-    let mut buffer = [0; 64 * 1024];
-    loop {
-        let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
-        if count == 0 {
-            break;
-        }
-        digest.update(&buffer[..count]);
-    }
-    let actual: String = digest
-        .finalize()
+    (manifest_for(model)
+        .files
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
-    if actual != artifact.sha256 {
-        return Err("Model integrity check failed. Retry setup.".into());
+        .map(|file| file.bytes)
+        .sum::<u64>()
+        + 77_086_915)
+        .div_ceil(1_000_000)
+}
+fn verify_model(root: &Path, model: crate::settings::PiiModel) -> Result<(), String> {
+    for artifact in manifest_for(model).files {
+        crate::model_download::verify(
+            &root.join(&artifact.path),
+            artifact.bytes,
+            &artifact.sha256,
+        )?;
     }
     Ok(())
 }
-fn verify_model(root: &Path) -> Result<(), String> {
-    for artifact in manifest().files {
-        verify(&root.join(&artifact.path), &artifact)?;
-    }
-    Ok(())
-}
-
-pub fn setup() -> Result<(), String> {
+pub fn setup_config(
+    config: &crate::settings::PiiConfig,
+    progress: &crate::model_download::Progress,
+) -> Result<(), String> {
     if !SUPPORTED {
         return Err(
             "Automatic scanning is unavailable on this platform. Manual review is available."
                 .into(),
         );
     }
-    let _setup = SETUP.lock().map_err(|_| "Model setup was interrupted.")?;
-    let root = root()?;
+    let _permit = crate::model_work::Permit::acquire()?;
+    let root = root_for(config.model)?;
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
-    let agent = ureq::Agent::new_with_config(
-        ureq::Agent::config_builder()
-            .https_only(true)
-            .timeout_global(Some(Duration::from_secs(600)))
-            .build(),
-    );
-    for artifact in manifest().files {
-        let path = root.join(&artifact.path);
-        if verify(&path, &artifact).is_ok() {
-            continue;
-        }
-        let parent = path.parent().ok_or("Invalid model path.")?;
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        let mut response = agent
-            .get(&artifact.url)
-            .call()
-            .map_err(|e| format!("Model download failed: {e}"))?;
-        let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
-        std::io::copy(
-            &mut response.body_mut().as_reader().take(artifact.bytes + 1),
-            &mut file,
-        )
-        .map_err(|e| e.to_string())?;
-        file.flush().map_err(|e| e.to_string())?;
-        verify(file.path(), &artifact)?;
-        file.as_file().sync_all().map_err(|e| e.to_string())?;
-        file.persist(path).map_err(|e| e.to_string())?;
+    for artifact in manifest_for(config.model).files {
+        crate::model_download::fetch(
+            &artifact.url,
+            artifact.bytes,
+            &artifact.sha256,
+            &root.join(&artifact.path),
+            progress,
+        )?;
     }
-    crate::ocr::onnx_runtime(true)?;
+    progress.check()?;
+    crate::ocr::onnx_runtime_with_progress(progress)?;
     let licenses = root.join("licenses");
     fs::create_dir_all(&licenses).map_err(|e| e.to_string())?;
-    fs::write(
-        licenses.join("Apache-2.0.txt"),
-        include_str!("../resources/gliner2-license.txt"),
+    for (name, text) in [
+        (
+            "Apache-2.0.txt",
+            include_str!("../resources/gliner2-license.txt"),
+        ),
+        (
+            "gliner2-NOTICE.txt",
+            include_str!("../resources/gliner2-notice.txt"),
+        ),
+        (
+            "Microsoft-MIT.txt",
+            include_str!("../resources/pseudonymization-microsoft-license.txt"),
+        ),
+    ] {
+        fs::write(licenses.join(name), text).map_err(|e| e.to_string())?;
+    }
+    fs::write(licenses.join("MODEL-NOTICE.txt"),format!("Experimental unmodified {}.\nExport: Jugaad s.r.l., e594898629d452e8311796f5f329c7edbeda907c, Apache-2.0.\nBase: Fastino GLiNER2 privacy PII, 1cb4166094dc58fa8d836429f060d6c95f62b495, Apache-2.0.\nEncoder: Microsoft mDeBERTa-v3-base, MIT.\nPinned model card retained in README.md. Shared ONNX notices: mdoc/ocr/v1/licenses/onnx.\n",config.model.name())).map_err(|e|e.to_string())?;
+    progress.phase("Checking runtime");
+    progress.check()?;
+    check_engine(&root, config.model)?;
+    progress.check()
+}
+fn check_engine(root: &Path, model: crate::settings::PiiModel) -> Result<(), String> {
+    verify_model(root, model)?;
+    let runtime = crate::ocr::onnx_runtime(false)?;
+    ort::init_from(runtime)
+        .map_err(|e| e.to_string())?
+        .with_name("mdoc")
+        .commit();
+    let _engine = SpanEngine::new(
+        SpanConfig::new(root)
+            .with_precision(model.precision())
+            .with_execution(ExecutionMode::Standard)
+            .with_intra_threads(4),
     )
     .map_err(|e| e.to_string())?;
-    fs::write(
-        licenses.join("gliner2-NOTICE.txt"),
-        include_str!("../resources/gliner2-notice.txt"),
-    )
-    .map_err(|e| e.to_string())?;
-    fs::write(
-        licenses.join("Microsoft-MIT.txt"),
-        include_str!("../resources/pseudonymization-microsoft-license.txt"),
-    )
-    .map_err(|e| e.to_string())?;
-    fs::write(licenses.join("MODEL-NOTICE.txt"), "Experimental unmodified GLiNER2 privacy PII FP16 export.\nExport: Jugaad s.r.l., e594898629d452e8311796f5f329c7edbeda907c, Apache-2.0.\nBase: Fastino GLiNER2 privacy PII, 1cb4166094dc58fa8d836429f060d6c95f62b495, Apache-2.0.\nEncoder lineage: Microsoft mDeBERTa-v3-base, MIT.\nPinned artifact model card is retained in README.md.\nNative ONNX Runtime notices are retained alongside the shared runtime in mdoc/ocr/v1/licenses/onnx.\n").map_err(|e| e.to_string())?;
-    verify_model(&root)
+    Ok(())
+}
+pub fn check_reserved(model: crate::settings::PiiModel) -> Result<bool, String> {
+    if !SUPPORTED || cfg!(test) {
+        return Ok(false);
+    }
+    let root = root_for(model)?;
+    if !root.exists() {
+        return Ok(false);
+    }
+    check_engine(&root, model)?;
+    Ok(true)
+}
+pub fn remove_model(model: crate::settings::PiiModel) -> Result<(), String> {
+    let _permit = crate::model_work::Permit::acquire()?;
+    let root = root_for(model)?;
+    if root.exists() {
+        fs::remove_dir_all(root).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 fn checkpoint(cancel: &AtomicBool, started: Instant) -> Result<(), String> {
@@ -178,16 +198,32 @@ fn checkpoint(cancel: &AtomicBool, started: Instant) -> Result<(), String> {
 
 /// Full immutable Markdown source in, verified UTF-8 byte spans out. A scan
 /// never writes a document or uses the network, including when setup is absent.
-pub fn scan(source: &str, cancel: &AtomicBool) -> Result<Vec<Detection>, String> {
+pub fn scan_config(
+    source: &str,
+    cancel: &AtomicBool,
+    config: &crate::settings::PiiConfig,
+) -> Result<Vec<Detection>, String> {
+    let _permit = crate::model_work::Permit::acquire()?;
+    scan_reserved(source, cancel, config)
+}
+pub fn scan_reserved(
+    source: &str,
+    cancel: &AtomicBool,
+    config: &crate::settings::PiiConfig,
+) -> Result<Vec<Detection>, String> {
+    if !crate::settings::unit_interval(config.threshold) {
+        return Err("Detection threshold must be finite and between 0 and 1.".into());
+    }
     if !SUPPORTED {
         return Err("Automatic scanning is unavailable on this platform.".into());
     }
     scan_in(
         source,
         cancel,
-        &root()?,
+        &root_for(config.model)?,
         crate::ocr::onnx_runtime(false)
             .map_err(|_| "Set up the experimental model before scanning.".to_string())?,
+        config,
     )
 }
 
@@ -196,6 +232,7 @@ fn scan_in(
     cancel: &AtomicBool,
     root: &Path,
     runtime: PathBuf,
+    config: &crate::settings::PiiConfig,
 ) -> Result<Vec<Detection>, String> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(
@@ -208,7 +245,8 @@ fn scan_in(
     let _inference = INFERENCE
         .try_lock()
         .map_err(|_| "Another document is scanning. Retry when it finishes.".to_string())?;
-    verify_model(root).map_err(|_| "Set up the experimental model before scanning.".to_string())?;
+    verify_model(root, config.model)
+        .map_err(|_| "Set up the experimental model before scanning.".to_string())?;
     checkpoint(cancel, started)?;
     ort::init_from(runtime)
         .map_err(|e| e.to_string())?
@@ -220,18 +258,20 @@ fn scan_in(
             SchemaTask::Entities(family.iter().map(|(label, _)| (*label).into()).collect())
         })
         .collect();
-    let transformer = SchemaTransformer::from_tokenizer_file(&root.join("fp16_v2/tokenizer.json"))
-        .map_err(|e| e.to_string())?;
+    let transformer = SchemaTransformer::from_tokenizer_file(
+        &root.join(config.model.folder()).join("tokenizer.json"),
+    )
+    .map_err(|e| e.to_string())?;
     let windows = bounded_windows(source, &transformer, &tasks, cancel, started)?;
     let mut engine = SpanEngine::new(
         SpanConfig::new(root)
-            .with_precision(Precision::Fp16)
+            .with_precision(config.model.precision())
             .with_execution(ExecutionMode::Standard)
             .with_intra_threads(4),
     )
     .map_err(|e| e.to_string())?;
     let params = InferenceParams {
-        threshold: 0.5,
+        threshold: config.threshold,
         flat_ner: true,
         ..Default::default()
     };
@@ -315,6 +355,10 @@ fn bounded_windows(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
+    fn verify(path: &Path, artifact: &Artifact) -> Result<(), String> {
+        crate::model_download::verify(path, artifact.bytes, &artifact.sha256)
+    }
     #[test]
     #[ignore = "requires preverified qualification cache and installed native runtime; no downloads"]
     fn experimental_model_offline_scan() {
@@ -327,6 +371,7 @@ mod tests {
             &AtomicBool::new(false),
             &root,
             crate::ocr::onnx_runtime(false).unwrap(),
+            &crate::settings::PiiConfig::default(),
         )
         .unwrap();
         assert!(!detected.is_empty());
@@ -358,6 +403,7 @@ mod tests {
                 &cancel,
                 &root,
                 crate::ocr::onnx_runtime(false).unwrap(),
+                &crate::settings::PiiConfig::default(),
             );
             assert_eq!(result.unwrap_err(), "Scan cancelled.");
         });
@@ -370,7 +416,8 @@ mod tests {
                 "Alice",
                 &AtomicBool::new(true),
                 &root,
-                crate::ocr::onnx_runtime(false).unwrap()
+                crate::ocr::onnx_runtime(false).unwrap(),
+                &crate::settings::PiiConfig::default(),
             )
             .is_err()
         );

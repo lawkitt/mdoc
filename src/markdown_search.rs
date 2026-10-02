@@ -32,7 +32,7 @@ actions!(
 
 /// Bind the editing keys used by the compact Markdown find field.
 pub fn bind_keys(cx: &mut App) {
-    let context = Some("MarkdownSearch || PseudonymReplacement");
+    let context = Some("MarkdownSearch || PseudonymReplacement || SettingsInput");
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, context),
         KeyBinding::new("delete", Delete, context),
@@ -61,6 +61,7 @@ pub enum SearchInputEvent {
 
 /// A small single-line GPUI input used by the Markdown find bar.
 pub struct SearchInput {
+    placeholder: &'static str,
     focus_handle: FocusHandle,
     key_context: &'static str,
     content: String,
@@ -76,6 +77,7 @@ pub struct SearchInput {
 impl SearchInput {
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
+            placeholder: "Search Markdown",
             focus_handle: cx.focus_handle(),
             key_context: CONTEXT,
             content: String::new(),
@@ -91,6 +93,11 @@ impl SearchInput {
 
     pub fn with_key_context(mut self, context: &'static str) -> Self {
         self.key_context = context;
+        self
+    }
+
+    pub fn with_placeholder(mut self, placeholder: &'static str) -> Self {
+        self.placeholder = placeholder;
         self
     }
 
@@ -539,7 +546,7 @@ impl Element for SearchInputElement {
     ) -> Self::PrepaintState {
         let input = self.input.read(cx);
         let display: SharedString = if input.content.is_empty() {
-            "Search Markdown".into()
+            input.placeholder.into()
         } else {
             input.content.clone().into()
         };

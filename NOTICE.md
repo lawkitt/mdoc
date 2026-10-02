@@ -43,5 +43,6 @@ published by Jugaad s.r.l. (Apache-2.0). Its license and NOTICE are retained in
 installs the pinned Jugaad/Fastino GLiNER2 privacy PII model (Apache-2.0), its
 model card, lineage attribution and Microsoft MIT terms alongside the model;
 shared ONNX Runtime notices remain beside the runtime. Model identities/digests
-live in [resources/pseudonymization-model.json](resources/pseudonymization-model.json).
+live in the pinned [FP16 manifest](resources/pseudonymization-model.json) and
+[FP32 manifest](resources/pseudonymization-fp32-model.json), at the same export revision.
 No model weights are included in source or default packaging.

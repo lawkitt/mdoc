@@ -35,6 +35,17 @@ The user authorized the pinned GLiNER2 option experimentally despite its blocker
    Native popup/shortcut/IME acceptance and Windows operation remain unverified;
    experimental authorization does not qualify this checkpoint or accept the
    proposed numerical targets.
+5. **OCR/pseudonymization Settings and QA comparisons — implemented** —
+   [Settings ADR](docs/adr/0006-local-model-settings.md) and
+   [complete specification](docs/design/local-model-settings.md) were confirmed on
+   2026-10-02. Application-wide persisted defaults, curated model bundles, explicit
+   artifact management, advanced thresholds/resolution and fixed forced OCR.
+   Isolated same-input comparisons expose raw recognition separately from prepared
+   Markdown and support explicit report export. Alternatives require runtime/resource
+   evidence; failed options remain visibly disabled on the affected platform.
+   All four bundles passed offline runtime probes on Apple Silicon macOS; FP32
+   retains experimental status and the FP16 default is unchanged. See
+   [verification and remaining native/Windows checks](tests/fixtures/model-settings/README.md).
 
 A measured responsiveness/resource blocker moves ahead of features. Keep the
 app and reusable crates; refactor only where concrete ownership or testing
@@ -103,3 +114,8 @@ bulk redesign and online processing await their future grilling sessions.
 Copy Markdown and experimental inline pseudonymization are implemented.
 The GLiNER2 experimental exception was explicitly authorized on 2026-10-01;
 qualified adoption still requires the evidence above.
+The Settings/model-comparison interview was completed and shared understanding
+confirmed on 2026-10-02. Its accepted scope and completion criteria are recorded
+in ADR 0006 and the linked specification. Implementation, offline model probes
+and the repository gate are complete; human native acceptance and new Windows
+runtime checks remain outstanding.

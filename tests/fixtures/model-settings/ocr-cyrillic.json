@@ -1,0 +1,374 @@
+{
+  "version": 1,
+  "application": "mdoc",
+  "build": "0.1.0",
+  "profile": "debug",
+  "platform": "macos",
+  "architecture": "aarch64",
+  "runs": [
+    {
+      "configuration": {
+        "Ocr": {
+          "model": "Cyrillic",
+          "dpi": 150,
+          "minimum_confidence": 0.0
+        }
+      },
+      "identity": {
+        "model": "pp-ocr-cyrillic",
+        "revision": "oar-det-v0.7.0-rec-v0.3.0",
+        "mode": "Force",
+        "runtime": "ONNX Runtime 1.27.0",
+        "renderer": "PDFium native-v7988",
+        "artifacts": [
+          {
+            "file": "pp-ocrv6_small_det.onnx",
+            "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e"
+          },
+          {
+            "file": "cyrillic_pp-ocrv5_mobile_rec.onnx",
+            "sha256": "a18d96d7c8d73d90f2ed056549caa1de3a8e6cb744cccba16cd593ea8cd2d569"
+          },
+          {
+            "file": "ppocrv5_cyrillic_dict.txt",
+            "sha256": "db40aa52ceb112055be80c694afdf655d5d2c4f7873704524cc16a447ca913ba"
+          }
+        ]
+      },
+      "input_sha256": "3f936b02163ad88f956f8b7a5f51d090626588f189ae0e81b907477ea1087ffd",
+      "pages": null,
+      "elapsed_ms": 1448,
+      "output": {
+        "recognition_text": "Page 1\nLOCAL OCR ACCEPTANCE TEST\nThis document contains printed English text.\nThe agreement was signed on 19 September 2026.\nPayment must arrive within thirty working days.\nReference number: 1234567890.",
+        "recognition": [
+          {
+            "page": 1,
+            "confidence": 0.9876531362533569,
+            "elapsed_ms": 847,
+            "warnings": [],
+            "spans": [
+              {
+                "text": "LOCAL OCR ACCEPTANCE TEST",
+                "confidence": 0.9793708324432373,
+                "polygon": [
+                  [
+                    83.0,
+                    130.0
+                  ],
+                  [
+                    568.0,
+                    130.0
+                  ],
+                  [
+                    568.0,
+                    173.0
+                  ],
+                  [
+                    83.0,
+                    173.0
+                  ]
+                ]
+              },
+              {
+                "text": "This document contains printed English text.",
+                "confidence": 0.9949920773506165,
+                "polygon": [
+                  [
+                    85.0,
+                    214.0
+                  ],
+                  [
+                    677.0,
+                    214.0
+                  ],
+                  [
+                    677.0,
+                    257.0
+                  ],
+                  [
+                    85.0,
+                    257.0
+                  ]
+                ]
+              },
+              {
+                "text": "The agreement was signed on 19 September 2026.",
+                "confidence": 0.9816154837608337,
+                "polygon": [
+                  [
+                    85.0,
+                    300.0
+                  ],
+                  [
+                    767.0,
+                    300.0
+                  ],
+                  [
+                    767.0,
+                    338.0
+                  ],
+                  [
+                    85.0,
+                    338.0
+                  ]
+                ]
+              },
+              {
+                "text": "Payment must arrive within thirty working days.",
+                "confidence": 0.9911051988601685,
+                "polygon": [
+                  [
+                    82.0,
+                    380.0
+                  ],
+                  [
+                    714.0,
+                    380.0
+                  ],
+                  [
+                    714.0,
+                    424.0
+                  ],
+                  [
+                    82.0,
+                    424.0
+                  ]
+                ]
+              },
+              {
+                "text": "Reference number: 1234567890.",
+                "confidence": 0.9911822080612183,
+                "polygon": [
+                  [
+                    82.0,
+                    461.0
+                  ],
+                  [
+                    529.0,
+                    461.0
+                  ],
+                  [
+                    529.0,
+                    504.0
+                  ],
+                  [
+                    82.0,
+                    504.0
+                  ]
+                ]
+              }
+            ]
+          }
+        ],
+        "prepared_markdown": "## LOCAL OCR ACCEPTANCE TEST\n\n## This document contains printed English text.\n\nThe agreement was signed on 19 September 2026.\n\nPayment must arrive within thirty working days.\n\n## Reference number: 1234567890.\n",
+        "pages": [
+          {
+            "page": 1,
+            "source": "Ocr",
+            "warnings": [],
+            "render_ms": 71,
+            "ocr_ms": 847,
+            "assembly_ms": 40
+          }
+        ],
+        "warnings": "EN/RU synthetic transcripts passed on macOS and Windows; real scans require review.",
+        "render_ms": 71,
+        "ocr_ms": 847
+      },
+      "error": null
+    },
+    {
+      "configuration": {
+        "Ocr": {
+          "model": "Cyrillic",
+          "dpi": 150,
+          "minimum_confidence": 0.0
+        }
+      },
+      "identity": {
+        "model": "pp-ocr-cyrillic",
+        "revision": "oar-det-v0.7.0-rec-v0.3.0",
+        "mode": "Force",
+        "runtime": "ONNX Runtime 1.27.0",
+        "renderer": "PDFium native-v7988",
+        "artifacts": [
+          {
+            "file": "pp-ocrv6_small_det.onnx",
+            "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e"
+          },
+          {
+            "file": "cyrillic_pp-ocrv5_mobile_rec.onnx",
+            "sha256": "a18d96d7c8d73d90f2ed056549caa1de3a8e6cb744cccba16cd593ea8cd2d569"
+          },
+          {
+            "file": "ppocrv5_cyrillic_dict.txt",
+            "sha256": "db40aa52ceb112055be80c694afdf655d5d2c4f7873704524cc16a447ca913ba"
+          }
+        ]
+      },
+      "input_sha256": "d4408bcc23d2924d5527e1511ecc5223b7cc0729b486bbabb743e093360056cf",
+      "pages": null,
+      "elapsed_ms": 1383,
+      "output": {
+        "recognition_text": "Page 1\nПРОВЕРКА РАСПОЗНАВАНИЯ ТЕКСТА\nЭтот документ содержит печатный русский текст.\nДоговор подписан 19 сентября 2026 года.\nОплата должна поступить в течение тридцати дней.\nНомер документа: 1234567890.\nСъёмка, объём, ёжик, щука, юрист, заявление.",
+        "recognition": [
+          {
+            "page": 1,
+            "confidence": 0.985421359539032,
+            "elapsed_ms": 937,
+            "warnings": [],
+            "spans": [
+              {
+                "text": "ПРОВЕРКА РАСПОЗНАВАНИЯ ТЕКСТА",
+                "confidence": 0.9962801933288574,
+                "polygon": [
+                  [
+                    85.0,
+                    134.0
+                  ],
+                  [
+                    660.0,
+                    134.0
+                  ],
+                  [
+                    660.0,
+                    171.0
+                  ],
+                  [
+                    85.0,
+                    171.0
+                  ]
+                ]
+              },
+              {
+                "text": "Этот документ содержит печатный русский текст.",
+                "confidence": 0.9871147871017456,
+                "polygon": [
+                  [
+                    83.0,
+                    214.0
+                  ],
+                  [
+                    784.0,
+                    214.0
+                  ],
+                  [
+                    784.0,
+                    257.0
+                  ],
+                  [
+                    83.0,
+                    257.0
+                  ]
+                ]
+              },
+              {
+                "text": "Договор подписан 19 сентября 2026 года.",
+                "confidence": 0.9955645799636841,
+                "polygon": [
+                  [
+                    83.0,
+                    296.0
+                  ],
+                  [
+                    675.0,
+                    296.0
+                  ],
+                  [
+                    675.0,
+                    339.0
+                  ],
+                  [
+                    83.0,
+                    339.0
+                  ]
+                ]
+              },
+              {
+                "text": "Оплата должна поступить в течение тридцати дней.",
+                "confidence": 0.9955465793609619,
+                "polygon": [
+                  [
+                    84.0,
+                    379.0
+                  ],
+                  [
+                    820.0,
+                    376.0
+                  ],
+                  [
+                    820.0,
+                    423.0
+                  ],
+                  [
+                    84.0,
+                    426.0
+                  ]
+                ]
+              },
+              {
+                "text": "Номер документа: 1234567890.",
+                "confidence": 0.9982549548149109,
+                "polygon": [
+                  [
+                    84.0,
+                    463.0
+                  ],
+                  [
+                    529.0,
+                    463.0
+                  ],
+                  [
+                    529.0,
+                    506.0
+                  ],
+                  [
+                    84.0,
+                    506.0
+                  ]
+                ]
+              },
+              {
+                "text": "Съёмка, объём, ёжик, щука, юрист, заявление.",
+                "confidence": 0.939767062664032,
+                "polygon": [
+                  [
+                    85.0,
+                    545.0
+                  ],
+                  [
+                    746.0,
+                    548.0
+                  ],
+                  [
+                    746.0,
+                    588.0
+                  ],
+                  [
+                    84.0,
+                    585.0
+                  ]
+                ]
+              }
+            ]
+          }
+        ],
+        "prepared_markdown": "ПРОВЕРКА РАСПОЗНАВАНИЯ ТЕКСТА\n\nЭтот документ содержит печатный русский текст.\n\nДоговор подписан 19 сентября 2026 года.\n\nОплата должна поступить в течение тридцати дней.\n\nНомер документа: 1234567890.\n\nСъёмка, объём, ёжик, щука, юрист, заявление.\n",
+        "pages": [
+          {
+            "page": 1,
+            "source": "Ocr",
+            "warnings": [],
+            "render_ms": 72,
+            "ocr_ms": 937,
+            "assembly_ms": 14
+          }
+        ],
+        "warnings": "EN/RU synthetic transcripts passed on macOS and Windows; real scans require review.",
+        "render_ms": 72,
+        "ocr_ms": 937
+      },
+      "error": null
+    }
+  ]
+}
