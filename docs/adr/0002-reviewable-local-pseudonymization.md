@@ -56,6 +56,46 @@ exact model selection requires qualification.
 Model/runtime selection and numerical quality/performance targets follow measured
 English/Russian legal/OCR evidence, including per-category misses, false positives,
 Unicode/source fidelity, long text, CPU latency, memory, download size, offline
-behavior, and compatibility with the OCR runtime. This is a planned qualification
-milestone; no library/model is selected by the design record. The agreed behavior
+behavior, and compatibility with the OCR runtime. Qualification provides evidence;
+no library/model is selected by the design record. The agreed behavior
 above is the product contract for that evaluation and subsequent implementation.
+
+The [2026-10-01 qualification](../../tests/fixtures/pseudonymization/README.md)
+implements a reproducible Rust harness and records an initial macOS comparison.
+No candidate is adopted: required RU/hidden-source coverage remains insufficient,
+and gline-rs has an OCR binding conflict. GLiNER2 passes same-process runtime
+coexistence. Proposed numerical targets and unmeasured platform/lifecycle checks
+remain separate from this accepted review contract.
+
+## Experimental implementation exception — 2026-10-01
+
+When implementing the inline milestone, the user explicitly chose “Use the pinned
+GLiNER2 model experimentally despite its documented quality/resource blockers.”
+This authorizes gliner2-rs 0.9.6 (Hub feature disabled) and the unmodified FP16
+privacy PII export at `e594898629d452e8311796f5f329c7edbeda907c`, threshold 0.5,
+CPU only, as experimental review assistance. The failed qualification and
+proposed quality/performance targets remain unchanged. Windows operation and
+native visual/shortcut/IME acceptance are still outstanding.
+
+Setup is a separate explicit download action. Inference shares the existing
+pinned ONNX Runtime without requiring OCR models or PDFium. One scan runs at a
+time; each scan loads and drops its engine. Scans inspect full Markdown source,
+use adaptive overlapping windows checked against actual schema/text token counts,
+and reject rather than silently truncate pathological windows. Limits are 2 MiB
+source, 512 tokens per inference window and a two-minute cooperative deadline.
+Cancel rejects results immediately and stops at the next bounded checkpoint;
+model load/native inference cannot be interrupted mid-call.
+
+Review annotations and atomic revision-checked multi-range edits are generic
+editor extensions, separate from find. The app owns review groups, exact-repeat
+and single-occurrence exclusions, manual additions/linking, and stable mappings.
+Conservative source revalidation prevents stale replacements. Tokens start with
+a letter, end with a letter/number and use ASCII letters, numbers, underscores
+and hyphens. HTML tag/attribute names, attribute quotes, list prefixes and link
+delimiters are protected; spans crossing syntax or line boundaries require
+manual narrowing. Original files and filenames
+remain outside replacement scope. Mappings are never serialized.
+
+[Inline verification](../../tests/fixtures/pseudonymization/inline-review.md)
+records implementation checks and their limits. This exception permits
+experimental use; it does not establish anonymization or qualified model adoption.

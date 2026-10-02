@@ -7,7 +7,11 @@ Built with Rust and GPUI for macOS, Windows, and Linux.
 
 See [ROADMAP.md](ROADMAP.md) for planned features and priorities,
 [CONTEXT.md](CONTEXT.md) for domain terms, and [ADRs](docs/adr/) for durable decisions.
-Pseudonymization is planned, not yet implemented.
+Inline pseudonymization is available experimentally using the pinned GLiNER2
+model. The [initial qualification](tests/fixtures/pseudonymization/README.md)
+found significant English/Russian and hidden-source misses; experimental use
+was explicitly authorized despite those blockers. This is review assistance,
+not guaranteed anonymization.
 
 Building requires access to the pinned private `lawkitt/anydoc` dependency.
 Authenticate Git with an account that has access before running Cargo.
@@ -50,6 +54,48 @@ Cmd/Ctrl+Q quits. Ctrl+Tab and Ctrl+Shift+Tab switch tabs.
 Markdown source, including unsaved edits, regardless of selection. It adds no
 wrapper or metadata. Brief **Copied** feedback confirms the handoff; conversion
 warnings remain visible below the toolbar for review.
+
+**Pseudonymize** (Cmd/Ctrl+Shift+P) explicitly scans the complete current
+Markdown source in the background, including link destinations, image paths,
+code and HTML. Automatic scanning is experimental on Apple Silicon macOS and
+Windows x64; manual review remains available on every platform. The first use
+offers a separate **Download experimental model** action (up to 709 MB including
+the native runtime if absent). Setup verifies pinned sizes and SHA-256 digests;
+subsequent scans run offline. Ordinary opening and editing need no model.
+
+Candidates have subtle highlights; hidden source receives a marker beside its
+containing element. Click a candidate, or use Alt+Enter at its caret, to open one
+review popup. Enter accepts, Alt+K keeps, and Escape closes it.
+Alt+Up/Down and **Previous / Next** navigate candidates. Shift-click
+bypasses review to edit normally; hover strengthens the highlight without opening
+a popup. The popup shows original text, its source fragment, a stable placeholder
+and occurrence count. **Accept** replaces all exact occurrences as one undo step;
+**Keep** changes no text. Both offer an explicit single-occurrence option. Edit
+the replacement field or explicitly link a variant to an existing placeholder;
+tokens start with a letter, end with a letter/number and use ASCII letters,
+numbers, underscores and hyphens to remain safe inside
+Markdown, URLs and HTML. Exact repeats exclude substrings inside longer words;
+initials and inflected variants stay separate until linked by the lawyer.
+
+Use **Selection type** to choose a category, then **Add selection**
+(Cmd/Ctrl+Alt+P) for missed spans or information you choose to replace manually.
+Selections crossing Markdown delimiters, line breaks or more than 1,024 bytes
+must be narrowed. Find and review highlights coexist. Edits revalidate candidates
+and cancel a pending scan; undo restores accepted text and makes it reviewable
+again. **Rescan** retains mappings and exclusions. **Done** hides highlights and
+retains edits. **Cancel** rejects pending results without undoing accepted edits;
+an in-progress bounded native call finishes before releasing the inference slot.
+Only one scan runs at a time, engines are dropped after each scan, and oversized
+inputs or elapsed deadlines produce an error rather than accepting partial scans
+(2 MiB source, 512 actual schema/text tokens per adaptive window, two-minute
+cooperative deadline). These limits are experimental safeguards, not accuracy or
+responsiveness guarantees.
+
+Mappings and review decisions stay only in the live document, survive tab switches,
+and disappear on tab close; restart/save/copy never export them. Save and copy
+still transfer only Markdown. The remaining count does not establish that all
+identifying information was detected. See [inline verification](tests/fixtures/pseudonymization/inline-review.md)
+for measured checks and outstanding native/platform acceptance.
 
 The collapsible left sidebar lists open files. Tabs and **+** remain visible in
 its compact rail, with filename tooltips and status indicators. Use **+** for an
@@ -158,6 +204,7 @@ problem; conversion and OCR algorithm changes belong in the dependency forks.
 | `src/preview.rs`, `src/docx_preview.rs` | Preview ownership and supervised local DOCX worker |
 | `src/docx_comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
 | `src/markdown_search.rs`, `src/search_session.rs` | Markdown find controls and revision-aware search scheduling |
+| `src/pseudonymization.rs`, `src/pseudonymization_detector.rs`, `src/pseudonymization_ui.rs` | In-memory review/mapping policy, experimental offline detection/setup, inline controls |
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
 | `src/ui_tests.rs`, `src/tabs_tests.rs`, `src/perf_tests.rs` | Headless flows, ownership/lifetime checks, and opt-in performance measurements |
 | `crates/mdoc-editor`, `crates/mdoc-markdown` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |

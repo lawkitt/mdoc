@@ -1,0 +1,13 @@
+warning: ignoring `registry.global-min-publish-age` without `-Zmin-publish-age`
+error: failed to select a version for `ort`.
+    ... required by package `pdf-inspector v1.21.0 (https://github.com/lawkitt/pdf-inspector.git?rev=620afae42eac4b92fffa2437b89e10a912bb93ee#620afae4)`
+    ... which satisfies git dependency `pdf-inspector` of package `mdoc-gline-ocr-resolution v0.0.0 (/tmp/mdoc-pseudonymization-research/ocr-resolution)`
+versions that meet the requirements `=2.0.0-rc.13` are: 2.0.0-rc.13
+
+all possible versions conflict with previously selected packages
+
+  previously selected package `ort v2.0.0-rc.9`
+    ... which satisfies dependency `ort = "=2.0.0-rc.9"` of package `gline-rs v1.1.0`
+    ... which satisfies dependency `gline-rs = "=1.1.0"` of package `mdoc-gline-ocr-resolution v0.0.0 (/tmp/mdoc-pseudonymization-research/ocr-resolution)`
+
+failed to select a version for `ort` which could resolve this conflict

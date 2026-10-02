@@ -1,0 +1,16 @@
+[package]
+name = "mdoc-qualify-gline"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+# ort rc.9 and rc.13 cannot share one Cargo dependency graph (links=onnxruntime).
+[workspace]
+
+[dependencies]
+mdoc-pseudonymization-qualification = { path = ".." }
+anyhow = "1"
+gline-rs = { version = "=1.1.0", features = ["load-dynamic"] }
+orp = "=1.0.0"
+serde_json = "1"

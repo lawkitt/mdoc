@@ -1,0 +1,24 @@
+[package]
+name = "mdoc-qualify-gliner2"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+publish = false
+
+[workspace]
+
+[features]
+ocr-compat = ["dep:pdf-inspector"]
+
+[[bin]]
+name = "mdoc-qualify-ocr-compat"
+path = "src/ocr_compat.rs"
+required-features = ["ocr-compat"]
+
+[dependencies]
+mdoc-pseudonymization-qualification = { path = ".." }
+anyhow = "1"
+gliner2-rs = { version = "=0.9.6", default-features = false }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
+serde_json = "1"
+pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "620afae42eac4b92fffa2437b89e10a912bb93ee", features = ["ocr"], optional = true }

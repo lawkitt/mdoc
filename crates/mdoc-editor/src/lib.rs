@@ -431,6 +431,16 @@ impl TableMenuAction {
 
 /// Events the editor emits so a host can react. Subscribe with
 /// `cx.subscribe(&editor, …)` — e.g. to re-run spell-check after an edit.
+/// Host-owned source annotation, independent of Markdown find. Byte ranges
+/// are valid only for the revision passed to `set_annotations`.
+#[derive(Clone, Debug)]
+pub struct SourceAnnotation {
+    pub id: u64,
+    pub range: Range<usize>,
+    pub color: Hsla,
+    pub active_color: Hsla,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum EditorEvent {
     /// The document text changed via a user edit (typing, delete, paste, IME,
@@ -446,6 +456,8 @@ pub enum EditorEvent {
     /// The caret / selection moved without a text change — so a host can update a
     /// caret-anchored affordance (e.g. the table-alignment toolbar).
     SelectionChanged,
+    /// Explicit activation of a host annotation; no text or selection change.
+    ActivateAnnotation(u64),
     /// The caret entered a `$$…$$` math block (by click, or by arrowing into it): its byte
     /// `range` in the document (covering both fences) and the LaTeX `source` between them, so
     /// the host can open a structural editor and replace the block's text on commit. `at_end`
@@ -714,6 +726,10 @@ pub struct EditorState {
     /// source ranges when hidden Markdown syntax lies inside it.
     search: Option<(Vec<SearchMatch>, Option<usize>)>,
     search_bounds: Vec<Option<Bounds<Pixels>>>,
+    annotations: Vec<SourceAnnotation>,
+    annotation_revision: u64,
+    annotation_bounds: Vec<(u64, Bounds<Pixels>)>,
+    annotation_hover: Option<u64>,
     /// Last paint's wrapped lines (one per logical line) and each line's top
     /// offset relative to the editor's top — both used for hit-testing and
     /// cursor/IME positioning.
@@ -1013,6 +1029,10 @@ impl EditorState {
             clipboard_writer: None,
             search: None,
             search_bounds: Vec::new(),
+            annotations: Vec::new(),
+            annotation_revision: 0,
+            annotation_bounds: Vec::new(),
+            annotation_hover: None,
             wrapped: Vec::new(),
             line_tops: Vec::new(),
             line_heights: Vec::new(),
@@ -1121,6 +1141,98 @@ impl EditorState {
         &self.content
     }
 
+    /// Monotonic content revision, including load, edit, undo and redo.
+    pub fn revision(&self) -> u64 {
+        self.content_gen
+    }
+
+    /// Selected UTF-8 source range, including source revealed by caret editing.
+    pub fn selection(&self) -> Range<usize> {
+        self.selected_range.clone()
+    }
+
+    /// Replace sorted, non-overlapping source ranges atomically as one undo step.
+    /// Refuses stale revisions and invalid UTF-8 geometry without touching text.
+    /// Selection is remapped; the operation never resets the existing undo history.
+    pub fn replace_ranges(
+        &mut self,
+        revision: u64,
+        edits: &[(Range<usize>, String)],
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if revision != self.content_gen || edits.is_empty() {
+            return false;
+        }
+        let mut end = 0;
+        for (range, _) in edits {
+            if range.start < end
+                || range.start >= range.end
+                || range.end > self.content.len()
+                || !self.content.is_char_boundary(range.start)
+                || !self.content.is_char_boundary(range.end)
+            {
+                return false;
+            }
+            end = range.end;
+        }
+        self.undo_stack.push(self.snapshot());
+        if self.undo_stack.len() > UNDO_LIMIT {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+        let remap = |offset: usize| {
+            let mut delta = 0isize;
+            for (range, replacement) in edits {
+                if offset < range.start {
+                    break;
+                }
+                if offset <= range.end {
+                    return (range.start as isize + delta) as usize + replacement.len();
+                }
+                delta += replacement.len() as isize - range.len() as isize;
+            }
+            (offset as isize + delta) as usize
+        };
+        let selection = remap(self.selected_range.start)..remap(self.selected_range.end);
+        for (range, replacement) in edits.iter().rev() {
+            self.content.replace_range(range.clone(), replacement);
+            self.remap_diagnostics(range, replacement.len());
+        }
+        self.selected_range = selection;
+        self.marked_range = None;
+        self.content_gen += 1;
+        self.last_edit = EditKind::Other;
+        self.last_edit_keystroke = false;
+        self.annotation_bounds.clear();
+        cx.emit(EditorEvent::Changed);
+        cx.notify();
+        true
+    }
+
+    pub fn set_annotations(
+        &mut self,
+        revision: u64,
+        annotations: Vec<SourceAnnotation>,
+        cx: &mut Context<Self>,
+    ) {
+        self.annotation_bounds.clear();
+        self.annotations = annotations;
+        self.annotation_revision = revision;
+        self.annotation_hover = None;
+        cx.notify();
+    }
+
+    pub fn annotation_bounds(&self, id: u64) -> Option<Bounds<Pixels>> {
+        (self.annotation_revision == self.content_gen)
+            .then(|| {
+                self.annotation_bounds
+                    .iter()
+                    .find(|(key, _)| *key == id)
+                    .map(|(_, bounds)| *bounds)
+            })
+            .flatten()
+    }
+
     /// Replace byte `range` with `text` as ONE recorded (undoable) edit, leaving the caret
     /// after the inserted text. Unlike [`Self::set_text`] this preserves — and extends — the
     /// undo history, so a host writing back a structural edit (e.g. a committed `$$…$$`
@@ -1147,6 +1259,7 @@ impl EditorState {
         self.marked_range = None;
         // Don't coalesce a following keystroke into this structural replacement.
         self.last_edit = EditKind::Other;
+        cx.emit(EditorEvent::Changed);
         cx.notify();
     }
 
@@ -2717,6 +2830,7 @@ impl EditorState {
         if let Some(prev) = self.undo_stack.pop() {
             self.redo_stack.push(self.snapshot());
             self.restore(prev);
+            cx.emit(EditorEvent::Changed);
             self.last_edit = EditKind::Other;
             cx.notify();
         }
@@ -2726,6 +2840,7 @@ impl EditorState {
         if let Some(next) = self.redo_stack.pop() {
             self.undo_stack.push(self.snapshot());
             self.restore(next);
+            cx.emit(EditorEvent::Changed);
             self.last_edit = EditKind::Other;
             cx.notify();
         }
@@ -2949,6 +3064,18 @@ impl EditorState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.annotation_revision == self.content_gen
+            && !event.modifiers.shift
+            && event.click_count == 1
+            && let Some((id, _)) = self
+                .annotation_bounds
+                .iter()
+                .find(|(_, bounds)| bounds.contains(&event.position))
+        {
+            cx.emit(EditorEvent::ActivateAnnotation(*id));
+            cx.stop_propagation();
+            return;
+        }
         // A press on an image's corner grip starts a resize drag — this takes
         // precedence over placing the caret on the image row (which the press
         // would otherwise do). The image keeps its bounds; the drag previews a new
@@ -3364,6 +3491,19 @@ impl EditorState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let annotation = if self.annotation_revision == self.content_gen {
+            self.annotation_bounds
+                .iter()
+                .find(|(_, bounds)| bounds.contains(&event.position))
+                .map(|(id, _)| *id)
+        } else {
+            None
+        };
+        if annotation != self.annotation_hover {
+            self.annotation_hover = annotation;
+            cx.notify();
+        }
+
         // Link under the pointer → `HoverLink` on change (a host shows a preview
         // card there). Painted boxes from the last frame, like the hand cursor.
         let over_link = self
@@ -7049,5 +7189,97 @@ mod tests {
             let (l, r) = table_visible_band(px(O), px(W), rtl);
             assert_eq!(r - l, px(W - g));
         }
+    }
+}
+
+#[cfg(test)]
+mod annotation_tests {
+    use super::*;
+    #[gpui::test]
+    fn grouped_replacements_are_atomic_revision_checked_and_one_undo(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update_in(cx, |editor, window, cx| {
+            editor.set_text("Анна and Анна", cx);
+            let revision = editor.revision();
+            assert!(!editor.replace_ranges(revision, &[(1..8, "bad".into())], cx));
+            assert!(!editor.replace_ranges(
+                revision,
+                &[(0..8, "x".into()), (4..8, "y".into())],
+                cx
+            ));
+            assert_eq!(editor.text(), "Анна and Анна");
+            editor.set_cursor(editor.text().len(), cx);
+            assert!(editor.replace_ranges(
+                revision,
+                &[(0..8, "PERSON_1".into()), (13..21, "PERSON_1".into())],
+                cx
+            ));
+            assert_eq!(editor.text(), "PERSON_1 and PERSON_1");
+            assert!(!editor.replace_ranges(revision, &[(0..8, "bad".into())], cx));
+            editor.undo(&Undo, window, cx);
+            assert_eq!(editor.text(), "Анна and Анна");
+            editor.redo(&Redo, window, cx);
+            assert_eq!(editor.text(), "PERSON_1 and PERSON_1");
+        });
+    }
+    #[gpui::test]
+    fn annotations_coexist_with_find_and_discard_stale_geometry(cx: &mut gpui::TestAppContext) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        let activated = std::rc::Rc::new(std::cell::Cell::new(None));
+        let observed = activated.clone();
+        let _subscription = cx.update(|_, cx| {
+            cx.subscribe(&editor, move |_, event, _| {
+                if let EditorEvent::ActivateAnnotation(id) = event {
+                    observed.set(Some(*id));
+                }
+            })
+        });
+        editor.update(cx, |editor, cx| {
+            editor.set_text("Alice and Bob\n\n[link](https://alice.invalid)", cx);
+            editor.set_markdown_style(markdown_syntax::search_style(), cx);
+            editor.set_search(std::iter::once(10..13).collect(), Some(0), cx);
+            editor.set_annotations(
+                editor.revision(),
+                vec![
+                    SourceAnnotation {
+                        id: 7,
+                        range: 0..5,
+                        color: rgba(0xffaa0022).into(),
+                        active_color: rgba(0xffaa0055).into(),
+                    },
+                    SourceAnnotation {
+                        id: 8,
+                        range: 30..35,
+                        color: rgba(0xffaa0022).into(),
+                        active_color: rgba(0xffaa0055).into(),
+                    },
+                ],
+                cx,
+            );
+        });
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        let hidden = cx.update(|_, cx| editor.read(cx).annotation_bounds(8).unwrap());
+        cx.simulate_click(hidden.center(), gpui::Modifiers::none());
+        cx.run_until_parked();
+        assert_eq!(
+            activated.get(),
+            Some(8),
+            "hidden source gutter activates review"
+        );
+        editor.update(cx, |editor, cx| {
+            assert!(editor.annotation_bounds(7).is_some());
+            assert!(
+                editor.annotation_bounds(8).is_some(),
+                "hidden source has a containing-element marker"
+            );
+            assert!(editor.search_match_bounds(0).is_some());
+            editor.replace_range(0..5, "Other", cx);
+            assert!(editor.annotation_bounds(7).is_none());
+        });
     }
 }

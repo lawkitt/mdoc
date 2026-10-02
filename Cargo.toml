@@ -38,6 +38,8 @@ tempfile = "3"
 url = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 unicode-segmentation = "1"
+gliner2-rs = { version = "=0.9.6", default-features = false }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
 
 [build-dependencies]
 embed-resource = "3"

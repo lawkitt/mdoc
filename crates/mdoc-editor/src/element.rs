@@ -94,6 +94,9 @@ pub(crate) struct PrepaintState {
     /// Find-match highlight quads, painted beneath the selection.
     search: Vec<PaintQuad>,
     search_bounds: Vec<Option<Bounds<Pixels>>>,
+    annotations: Vec<PaintQuad>,
+    annotation_bounds: Vec<(u64, Bounds<Pixels>)>,
+    hidden_annotation_hits: Vec<(u64, Hitbox)>,
 }
 
 impl IntoElement for EditorElement {
@@ -1383,6 +1386,63 @@ impl Element for EditorElement {
             }
         }
 
+        let mut annotations = Vec::new();
+        let mut annotation_bounds = Vec::new();
+        let mut hidden_annotation_hits = Vec::new();
+        let mut hidden_annotations: std::collections::BTreeMap<usize, Vec<(u64, Hsla)>> =
+            std::collections::BTreeMap::new();
+        if editor.annotation_revision == editor.content_gen {
+            for annotation in &editor.annotations {
+                if annotation.range.start >= annotation.range.end
+                    || annotation.range.end > editor.content.len()
+                    || !editor.content.is_char_boundary(annotation.range.start)
+                    || !editor.content.is_char_boundary(annotation.range.end)
+                {
+                    continue;
+                }
+                let color = if editor.annotation_hover == Some(annotation.id) {
+                    annotation.active_color
+                } else {
+                    annotation.color
+                };
+                let mut quads =
+                    range_quads(annotation.range.start, annotation.range.end, color, window);
+                quads.retain(|quad| quad.bounds.size.width > px(1.));
+                // Hidden source (URL/image/HTML etc.) receives a gutter marker
+                // beside its containing row, with the same click/keyboard identity.
+                if quads.is_empty() {
+                    let (row, _) = row_col(annotation.range.start);
+                    hidden_annotations
+                        .entry(row)
+                        .or_default()
+                        .push((annotation.id, color));
+                }
+                for quad in quads {
+                    annotation_bounds.push((annotation.id, quad.bounds));
+                    annotations.push(quad);
+                }
+            }
+        }
+
+        for (row, markers) in hidden_annotations {
+            if let Some(top) = line_tops.get(row) {
+                let height = base_lh / markers.len() as f32;
+                for (index, (id, color)) in markers.into_iter().enumerate() {
+                    let marker = Bounds::new(
+                        point(
+                            bounds.left() - px(12.),
+                            bounds.top() + *top + height * index as f32,
+                        ),
+                        size(px(8.), (height - px(1.)).max(px(1.))),
+                    );
+                    annotation_bounds.push((id, marker));
+                    hidden_annotation_hits
+                        .push((id, window.insert_hitbox(marker, HitboxBehavior::Normal)));
+                    annotations.push(fill(marker, color));
+                }
+            }
+        }
+
         let (cursor, selections) = if editor.content.is_empty() {
             let c = fill(
                 Bounds::new(
@@ -1517,6 +1577,9 @@ impl Element for EditorElement {
             selections,
             search,
             search_bounds,
+            annotations,
+            annotation_bounds,
+            hidden_annotation_hits,
         }
     }
 
@@ -1537,6 +1600,9 @@ impl Element for EditorElement {
             cx,
         );
 
+        for quad in prepaint.annotations.drain(..) {
+            window.paint_quad(quad);
+        }
         for quad in prepaint.search.drain(..) {
             window.paint_quad(quad);
         }
@@ -2430,6 +2496,52 @@ impl Element for EditorElement {
             });
         }
 
+        // Hidden-source markers sit in the gutter outside the editor div.
+        // Use real hitboxes so clipping and occluding popups block activation.
+        if !prepaint.hidden_annotation_hits.is_empty() {
+            let hits = prepaint.hidden_annotation_hits.clone();
+            for (_, hit) in &hits {
+                window.set_cursor_style(CursorStyle::PointingHand, hit);
+            }
+            let editor = self.editor.clone();
+            window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
+                if phase == gpui::DispatchPhase::Bubble
+                    && event.button == MouseButton::Left
+                    && !event.modifiers.shift
+                    && event.click_count == 1
+                    && let Some((id, _)) = hits.iter().find(|(_, hit)| hit.is_hovered(window))
+                {
+                    editor.update(cx, |editor, cx| {
+                        if editor.annotation_revision == editor.content_gen {
+                            cx.emit(EditorEvent::ActivateAnnotation(*id));
+                        }
+                    });
+                    cx.stop_propagation();
+                }
+            });
+            let hits = prepaint.hidden_annotation_hits.clone();
+            let editor = self.editor.clone();
+            window.on_mouse_event(move |_: &MouseMoveEvent, phase, window, cx| {
+                if phase == gpui::DispatchPhase::Bubble {
+                    let id = hits
+                        .iter()
+                        .find(|(_, hit)| hit.is_hovered(window))
+                        .map(|(id, _)| *id);
+                    let current = editor.read(cx).annotation_hover;
+                    // Visible annotations use the div's existing move listener.
+                    if (id.is_some()
+                        || current.is_some_and(|id| hits.iter().any(|(key, _)| *key == id)))
+                        && id != current
+                    {
+                        editor.update(cx, |editor, cx| {
+                            editor.annotation_hover = id;
+                            cx.notify();
+                        });
+                    }
+                }
+            });
+        }
+
         // Hovering an inline link shows a hand, like the reading view (the
         // hitboxes come from prepaint; cursor styles must be set during paint).
         for hb in &prepaint.link_grips {
@@ -2443,6 +2555,7 @@ impl Element for EditorElement {
         }
         self.editor.update(cx, |editor, _| {
             editor.search_bounds = std::mem::take(&mut prepaint.search_bounds);
+            editor.annotation_bounds = std::mem::take(&mut prepaint.annotation_bounds);
             editor.wrapped = wrapped;
             editor.line_tops = line_tops;
             editor.line_heights = line_heights;

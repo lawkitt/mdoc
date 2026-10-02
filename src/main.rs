@@ -17,6 +17,9 @@ mod ocr;
 #[cfg(test)]
 mod perf_tests;
 mod preview;
+mod pseudonymization;
+mod pseudonymization_detector;
+mod pseudonymization_ui;
 mod session_store;
 mod style;
 mod tabs;
@@ -55,6 +58,14 @@ actions!(
         Save,
         SaveAs,
         CopyMarkdown,
+        Pseudonymize,
+        AddPseudonymCandidate,
+        ReviewCandidate,
+        NextCandidate,
+        PreviousCandidate,
+        AcceptPseudonymCandidate,
+        KeepPseudonymCandidate,
+        ClosePseudonymPopup,
         Close,
         ClosePdf,
         RetryPreview,
@@ -129,6 +140,7 @@ struct Workspace {
     editor: Entity<EditorState>,
     images: images::ImageCache,
     session: document_session::DocumentSession,
+    pseudonymization: pseudonymization_ui::ReviewUi,
     preview: preview::PreviewState,
     scroll: ScrollHandle,
     error: Option<String>,
@@ -168,6 +180,7 @@ impl Workspace {
             cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
                 EditorEvent::Changed => {
                     this.copy_feedback = None;
+                    this.pseudonymization_edited(cx);
                     this.generated_unedited = false;
                     this.blank_disposable = false;
                     this.dirty_cached = this.dirty(cx);
@@ -175,6 +188,7 @@ impl Workspace {
                     this.refresh_markdown_search(SearchRefresh::DocumentEdit, false, window, cx);
                     cx.notify();
                 }
+                EditorEvent::ActivateAnnotation(id) => this.activate_annotation(*id, window, cx),
                 EditorEvent::OpenLink(src) => {
                     if src.starts_with("https://")
                         || src.starts_with("http://")
@@ -239,6 +253,7 @@ impl Workspace {
             editor,
             images,
             session: document_session::DocumentSession::default(),
+            pseudonymization: pseudonymization_ui::ReviewUi::new(cx),
             preview: preview::PreviewState::default(),
             scroll: ScrollHandle::new(),
             error: None,
@@ -266,6 +281,7 @@ impl Workspace {
         self.editor.update(cx, |editor, cx| {
             editor.set_markdown_style(style::markdown_style(theme), cx)
         });
+        self.sync_pseudonym_theme(cx);
         if let Some(pdf) = &self.preview.pdf {
             pdf.update(cx, |_, cx| cx.notify());
         }
@@ -401,12 +417,14 @@ impl Workspace {
                     return;
                 }
                 self.session.replace(Document::default());
+                self.reset_pseudonymization(cx);
                 self.reset_markdown_search(cx);
                 self.close_preview(window, cx);
                 window.remove_window();
             }
             Next::New => {
                 self.session.replace(Document::default());
+                self.reset_pseudonymization(cx);
                 self.replace_images(self.session.document.directory(), window, cx);
                 self.editor.update(cx, |editor, cx| editor.set_text("", cx));
                 self.reset_markdown_search(cx);
@@ -417,6 +435,7 @@ impl Workspace {
             Next::Open(path) => match Document::open(path) {
                 Ok(document) => {
                     self.session.replace(document);
+                    self.reset_pseudonymization(cx);
                     self.editor.update(cx, |editor, cx| {
                         editor.set_text(self.session.document.saved.clone(), cx)
                     });
@@ -436,6 +455,7 @@ impl Workspace {
                     && (self.preview.pdf.is_some() || self.preview.loading);
                 self.session
                     .import(imported.source.clone(), imported.warning);
+                self.reset_pseudonymization(cx);
                 if !retain_preview {
                     self.close_preview(window, cx);
                 }
@@ -1248,6 +1268,11 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::open))
             .on_action(cx.listener(Self::import))
             .on_action(cx.listener(Self::copy_markdown))
+            .on_action(cx.listener(Self::pseudonymize))
+            .on_action(cx.listener(Self::add_pseudonym))
+            .on_action(cx.listener(|this, _: &ReviewCandidate, window, cx| this.step_pseudonym(false, true, window, cx)))
+            .on_action(cx.listener(|this, _: &NextCandidate, window, cx| this.step_pseudonym(false, false, window, cx)))
+            .on_action(cx.listener(|this, _: &PreviousCandidate, window, cx| this.step_pseudonym(true, false, window, cx)))
             .on_action(cx.listener(Self::setup_ocr))
             .on_action(cx.listener(|this, _: &RunOcr, window, cx| this.ocr_action(false, window, cx)))
             .on_action(cx.listener(|this, _: &ExtractNative, window, cx| this.ocr_action(true, window, cx)))
@@ -1268,7 +1293,8 @@ impl Render for Workspace {
                 .when(!self.source_only, |bar| bar.child(if self.can_copy_markdown() {
                     button("Copy Markdown", CopyMarkdown, theme).into_any_element()
                 } else { div().px_3().py_1().opacity(0.5).child("Copy Markdown").into_any_element() })
-                    .when(self.copy_feedback.is_some(), |bar| bar.child(div().text_color(palette.header_muted).child("Copied"))))
+                    .when(self.copy_feedback.is_some(), |bar| bar.child(div().text_color(palette.header_muted).child("Copied")))
+                    .when(self.can_copy_markdown(), |bar| bar.child(button("Pseudonymize", Pseudonymize, theme))))
                 .when((self.source_only && self.ocr_required.is_none() && !self.auto_convert_pending) || self.job.busy(), |bar| bar.child(if self.job.busy() { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting…" }).into_any_element() } else if self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy() { div().opacity(0.5).child("Convert to Markdown").into_any_element() } else { button("Convert to Markdown", Import, theme).into_any_element() }))
                 .child(if matches!(self.ocr_state, OcrState::Missing | OcrState::Failed(_)) {
                     button(self.ocr_state.label(), SetupOcr, theme).into_any_element()
@@ -1279,6 +1305,7 @@ impl Render for Workspace {
                 .when(self.preview.loading, |bar| bar.child(div().child("Preparing preview…")))
                 .when(self.preview.pdf.is_some() || self.preview.source.is_some(), |bar| bar.child(button(if self.preview.visible { "Close Preview" } else { "Show Preview" }, TogglePreview, theme))))
             .children(import_notice).children(ocr_notice)
+            .children(self.pseudonym_bar(cx))
             .child(div().flex().flex_1().min_h_0()
                 .when(!self.source_only, |row| row.child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
                     .when(self.search.open, |column| column.child(search_bar))
@@ -1311,10 +1338,17 @@ impl Render for Workspace {
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments)))))
             .children(preview_notice).children(setup_notice).children(error_notice)
+            .children(self.pseudonym_popup(cx))
     }
 }
 
 fn main() {
+    // The pinned engine chooses providers through this variable. Set it once,
+    // before starting GPUI, executors or native worker threads; never mutate it
+    // while the application is running. Experimental inference is CPU only.
+    unsafe {
+        std::env::set_var("GLINER2_DEVICE", "cpu");
+    }
     let args = std::env::args_os().collect::<Vec<_>>();
     if args.get(1).is_some_and(|arg| arg == "--mdoc-docx-worker") {
         let (Some(input), Some(output)) = (args.get(2), args.get(3)) else {
@@ -1365,6 +1399,7 @@ fn main() {
         .detach();
         mdoc_editor::bind_keys(cx);
         markdown_search::bind_keys(cx);
+        pseudonymization_ui::bind_keys(cx);
         bind_markdown_search_keys(cx);
         let modifier = if cfg!(target_os = "macos") {
             "cmd"
@@ -1391,6 +1426,7 @@ fn main() {
                 MenuItem::action("Save", Save),
                 MenuItem::action("Save As…", SaveAs),
                 MenuItem::action("Copy Markdown", CopyMarkdown),
+                MenuItem::action("Pseudonymize", Pseudonymize),
                 MenuItem::separator(),
                 MenuItem::action("Quit", Quit),
             ],

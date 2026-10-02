@@ -1,0 +1,17 @@
+en-contract: 179 ms, 6 candidates
+ru-contract: 152 ms, 5 candidates
+en-identifiers: 113 ms, 5 candidates
+ru-identifiers: 128 ms, 6 candidates
+en-variants: 116 ms, 4 candidates
+ru-variants: 133 ms, 5 candidates
+en-ocr: 122 ms, 8 candidates
+ru-ocr: 144 ms, 7 candidates
+en-markdown: 152 ms, 6 candidates
+ru-markdown: 158 ms, 5 candidates
+mixed-unicode: 117 ms, 5 candidates
+en-negative: 123 ms, 3 candidates
+ru-negative: 133 ms, 2 candidates
+en-long: 7910 ms, 193 candidates
+ru-long: 8738 ms, 192 candidates
+en-subwords: 1703 ms, 2 candidates
+ru-subwords: 1248 ms, 2 candidates

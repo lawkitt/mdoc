@@ -1,0 +1,31 @@
+Verification date: 2026-10-02 (Europe/Moscow); implementation authorized 2026-10-01
+Profile: debug test (unoptimized + debuginfo), CPU, Apple M4, 24 GiB RAM
+Network: denied by macOS sandbox-exec
+Scope: synthetic 8640-byte repeated EN/RU source; not quality qualification
+
+
+running 1 test
+test pseudonymization_detector::tests::experimental_model_offline_scan ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 133 filtered out; finished in 10.93s
+
+offline experimental scan: 8640 bytes, 333 spans, 7.76s
+active scan cancellation returned after 2.86s; no partial result accepted
+       12.13 real        20.38 user         0.43 sys
+          1975844864  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              165042  page reclaims
+                   2  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                   1  voluntary context switches
+                4189  involuntary context switches
+        237007753164  instructions retired
+         77596046272  cycles elapsed
+          1361577640  peak memory footprint

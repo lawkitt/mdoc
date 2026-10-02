@@ -35,3 +35,13 @@ Pinned runtime identities/digests live in [src/ocr.rs](src/ocr.rs); model identi
 live in the pinned pdf-inspector manifest referenced by Cargo.toml and Cargo.lock.
 The synthetic English/Russian OCR qualification fixtures were created for mdoc;
 their text and raster PDFs may be used under CC0-1.0.
+
+Experimental inline pseudonymization uses gliner2-rs 0.9.6 by Dario Finardi,
+published by Jugaad s.r.l. (Apache-2.0). Its license and NOTICE are retained in
+[resources/gliner2-license.txt](resources/gliner2-license.txt) and
+[resources/gliner2-notice.txt](resources/gliner2-notice.txt). Optional setup
+installs the pinned Jugaad/Fastino GLiNER2 privacy PII model (Apache-2.0), its
+model card, lineage attribution and Microsoft MIT terms alongside the model;
+shared ONNX Runtime notices remain beside the runtime. Model identities/digests
+live in [resources/pseudonymization-model.json](resources/pseudonymization-model.json).
+No model weights are included in source or default packaging.

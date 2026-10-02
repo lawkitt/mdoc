@@ -32,7 +32,7 @@ actions!(
 
 /// Bind the editing keys used by the compact Markdown find field.
 pub fn bind_keys(cx: &mut App) {
-    let context = Some(CONTEXT);
+    let context = Some("MarkdownSearch || PseudonymReplacement");
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, context),
         KeyBinding::new("delete", Delete, context),
@@ -62,6 +62,7 @@ pub enum SearchInputEvent {
 /// A small single-line GPUI input used by the Markdown find bar.
 pub struct SearchInput {
     focus_handle: FocusHandle,
+    key_context: &'static str,
     content: String,
     selected_range: Range<usize>,
     selection_reversed: bool,
@@ -76,6 +77,7 @@ impl SearchInput {
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             focus_handle: cx.focus_handle(),
+            key_context: CONTEXT,
             content: String::new(),
             selected_range: 0..0,
             selection_reversed: false,
@@ -87,8 +89,20 @@ impl SearchInput {
         }
     }
 
+    pub fn with_key_context(mut self, context: &'static str) -> Self {
+        self.key_context = context;
+        self
+    }
+
     pub fn value(&self) -> &str {
         &self.content
+    }
+
+    /// Reuse the native single-line input for a host-owned editable token.
+    pub fn set_value(&mut self, value: String, cx: &mut Context<Self>) {
+        self.reset(cx);
+        self.content = value;
+        self.select_all(cx);
     }
 
     pub fn select_all(&mut self, cx: &mut Context<Self>) {
@@ -653,7 +667,7 @@ impl Render for SearchInput {
             .flex_1()
             .min_w_0()
             .overflow_hidden()
-            .key_context(CONTEXT)
+            .key_context(self.key_context)
             .track_focus(&self.focus_handle(cx))
             .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::backspace))

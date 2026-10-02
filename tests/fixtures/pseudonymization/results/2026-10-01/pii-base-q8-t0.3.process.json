@@ -1,0 +1,9 @@
+{
+  "deadline_exceeded": false,
+  "elapsed_ms": 12090.544417000001,
+  "exit_code": 0,
+  "machine": "Apple M4; 24 GiB; macOS 15.7.7; rustc 1.98.1",
+  "report_written": true,
+  "stderr": ".qualification/final/pii-base-q8-t0.3.stderr.log",
+  "success": true
+}

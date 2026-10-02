@@ -1,0 +1,196 @@
+{
+  "code": [
+    {
+      "adapter": "gline",
+      "name": "gline-rs",
+      "version": "1.1.0",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/fbilhaut/gline-rs",
+      "source_revision": "f1f8923a7af972855909302a843063d958f69d95",
+      "license_files": [
+        {
+          "file": "LICENSE.txt",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
+    {
+      "adapter": "gline",
+      "name": "orp",
+      "version": "1.0.0",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/fbilhaut/orp",
+      "source_revision": "38be24841ec04e0e3351e22aee3b3817dfd890c3",
+      "license_files": [
+        {
+          "file": "LICENSE.txt",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
+    {
+      "adapter": "gline",
+      "name": "ort",
+      "version": "2.0.0-rc.9",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/pykeio/ort",
+      "source_revision": "123c449e9a4a3249d92ac16262b08ab11eda5668",
+      "license_files": [
+        {
+          "file": "LICENSE-APACHE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "file": "LICENSE-MIT",
+          "sha256": "635f28d9da6a4c247837abf3e8a1fdbaff196e57ca8389ae14f220f3daecb137"
+        }
+      ]
+    },
+    {
+      "adapter": "gline",
+      "name": "ort-sys",
+      "version": "2.0.0-rc.9",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/pykeio/ort",
+      "source_revision": "123c449e9a4a3249d92ac16262b08ab11eda5668",
+      "license_files": [
+        {
+          "file": "LICENSE-APACHE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "file": "LICENSE-MIT",
+          "sha256": "635f28d9da6a4c247837abf3e8a1fdbaff196e57ca8389ae14f220f3daecb137"
+        }
+      ]
+    },
+    {
+      "adapter": "gline",
+      "name": "tokenizers",
+      "version": "0.21.4",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/huggingface/tokenizers",
+      "source_revision": "e892882fd4608b468dcf9dc33ea95283882b8e6d",
+      "license_files": [
+        {
+          "file": "LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    },
+    {
+      "adapter": "gliner2",
+      "name": "gliner2-rs",
+      "version": "0.9.6",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/dariofinardi/gliner2-rs",
+      "source_revision": "7626d237d8c58f0fcfadd094e8360e7d5ae9c8ee",
+      "license_files": [
+        {
+          "file": "LICENSE",
+          "sha256": "bb28c48e3e078166e91cfc2b6db7ffebb8a0973b9e23b3df060561292d8d69ec"
+        },
+        {
+          "file": "NOTICE",
+          "sha256": "cf4457bc2f10f8f0430eff42032c4d07fbbb8309fc7d2b9a569124491cdc0391"
+        }
+      ]
+    },
+    {
+      "adapter": "gliner2",
+      "name": "ort",
+      "version": "2.0.0-rc.13",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/pykeio/ort",
+      "source_revision": "002f41a8e175eac7f6695ff361d2e51a50874c48",
+      "license_files": [
+        {
+          "file": "LICENSE-APACHE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "file": "LICENSE-MIT",
+          "sha256": "6bba08de46289c40986a2e6b310e2da61fcea33b3c112c8320f6093f8f9cb71b"
+        }
+      ]
+    },
+    {
+      "adapter": "gliner2",
+      "name": "ort-sys",
+      "version": "2.0.0-rc.13",
+      "license": "MIT OR Apache-2.0",
+      "repository": "https://github.com/pykeio/ort",
+      "source_revision": "002f41a8e175eac7f6695ff361d2e51a50874c48",
+      "license_files": [
+        {
+          "file": "LICENSE-APACHE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "file": "LICENSE-MIT",
+          "sha256": "6bba08de46289c40986a2e6b310e2da61fcea33b3c112c8320f6093f8f9cb71b"
+        }
+      ]
+    },
+    {
+      "adapter": "gliner2",
+      "name": "tokenizers",
+      "version": "0.23.2",
+      "license": "Apache-2.0",
+      "repository": "https://github.com/huggingface/tokenizers",
+      "source_revision": "88a4498ad4ea1a9487b0a9b0ff881383fd5a06a3",
+      "license_files": [
+        {
+          "file": "LICENSE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      ]
+    }
+  ],
+  "upstream_models": [
+    {
+      "repository": "urchade/gliner_multi-v2.1",
+      "revision": "443d26d654e0324125a96bebd8e796c14ff2efe6",
+      "declared_license": "apache-2.0",
+      "card_sha256": "820125f2ea897716cc38645d94f73f390ec9dfd392980c436be1d25c2e106b55",
+      "card_url": "https://huggingface.co/urchade/gliner_multi-v2.1/blob/443d26d654e0324125a96bebd8e796c14ff2efe6/README.md"
+    },
+    {
+      "repository": "fastino/gliner2-privacy-filter-PII-multi",
+      "revision": "1cb4166094dc58fa8d836429f060d6c95f62b495",
+      "declared_license": "apache-2.0",
+      "card_sha256": "e932bd007f5b386ecf88f28058c6a96ef001c4fc8ba8175f10671db2539f51a1",
+      "card_url": "https://huggingface.co/fastino/gliner2-privacy-filter-PII-multi/blob/1cb4166094dc58fa8d836429f060d6c95f62b495/README.md"
+    },
+    {
+      "repository": "microsoft/mdeberta-v3-base",
+      "revision": "a0484667b22365f84929a935b5e50a51f71f159d",
+      "declared_license": "mit",
+      "card_sha256": "90d5e535e04fc9ac4f39336ed33c1adc7d0136b8ce3bbe211c18a0d47b72342f",
+      "card_url": "https://huggingface.co/microsoft/mdeberta-v3-base/blob/a0484667b22365f84929a935b5e50a51f71f159d/README.md"
+    },
+    {
+      "repository": "microsoft/deberta-v3-small",
+      "revision": "a36c739020e01763fe789b4b85e2df55d6180012",
+      "declared_license": "mit",
+      "card_sha256": "9aa2d47666370a87d20422ed68a1ee80d79d66b4447b6f9925d97d11f4605d24",
+      "card_url": "https://huggingface.co/microsoft/deberta-v3-small/blob/a36c739020e01763fe789b4b85e2df55d6180012/README.md"
+    }
+  ],
+  "runtime": {
+    "version": "1.27.0",
+    "license": "MIT",
+    "library_sha256": "299e5a2c6ea00531ecd6bf3217e23798c1fcba1698bb386d313c8e16d7317d60",
+    "url": "https://github.com/microsoft/onnxruntime/releases/tag/v1.27.0",
+    "license_files": [
+      {
+        "file": "ThirdPartyNotices.txt",
+        "sha256": "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2"
+      },
+      {
+        "file": "LICENSE",
+        "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+      }
+    ]
+  }
+}

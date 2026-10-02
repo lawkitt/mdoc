@@ -6,9 +6,104 @@ pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTe
     cx.update(mdoc_editor::bind_keys);
     cx.update(markdown_search::bind_keys);
     cx.update(bind_markdown_search_keys);
+    cx.update(pseudonymization_ui::bind_keys);
     let (app, cx) = cx.add_window_view(Workspace::new);
     cx.run_until_parked();
     (app, cx)
+}
+
+#[gpui::test]
+fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppContext) {
+    use crate::pseudonymization::{Category, Detection};
+    let dir = tempfile::tempdir().unwrap();
+    let source_path = dir.path().join("legal.md");
+    let source = "# Contract\n\nAlice Morgan represents **Alice Morgan**. [contact](https://x.invalid/Alice_Morgan)\n";
+    std::fs::write(&source_path, source).unwrap();
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.proceed(Next::Open(source_path.clone()), window, cx);
+        app.session.warning = Some("Review extraction".into());
+        app.pseudonymization.review.open = true;
+        app.pseudonymization.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9 }]).unwrap();
+        app.sync_pseudonym_theme(cx);
+        let id = app.pseudonymization.review.groups[0].id;
+        app.activate_annotation(id << 32, window, cx);
+        app.accept_pseudonym(&AcceptPseudonymCandidate, window, cx);
+        assert_eq!(app.editor.read(cx).text(), "# Contract\n\nPERSON_1 represents **PERSON_1**. [contact](https://x.invalid/Alice_Morgan)\n");
+        assert_eq!(app.pseudonymization.review.remaining(), 0);
+        assert_eq!(app.session.document.path.as_ref(), Some(&source_path));
+        assert!(app.session.warning.is_some());
+        assert!(app.dirty(cx));
+        app.copy_markdown(&CopyMarkdown, window, cx);
+        assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), app.editor.read(cx).text());
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert_eq!(app.editor.read(cx).text(), source);
+        assert_eq!(app.pseudonymization.review.remaining(), 2);
+        assert!(!app.dirty(cx));
+        let id = app.pseudonymization.review.groups[0].id;
+        app.activate_annotation(id << 32, window, cx);
+        app.pseudonymization.popup.as_mut().unwrap().all = false;
+        app.accept_pseudonym(&AcceptPseudonymCandidate, window, cx);
+        assert_eq!(app.pseudonymization.review.remaining(), 1);
+        let text = app.editor.read(cx).text().to_owned();
+        app.session
+            .save(dir.path().join("prepared.md"), &text)
+            .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("prepared.md")).unwrap(),
+            text
+        );
+        assert_eq!(std::fs::read_to_string(&source_path).unwrap(), source);
+        app.proceed(Next::New, window, cx);
+        assert!(app.pseudonymization.review.groups.is_empty());
+        assert!(app.pseudonymization.popup.is_none());
+    });
+}
+
+#[gpui::test]
+fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut TestAppContext) {
+    use crate::pseudonymization::{Category, Detection};
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("Alice Alice", cx));
+        app.pseudonymization.review.open = true;
+        app.pseudonymization
+            .review
+            .ingest(
+                "Alice Alice",
+                vec![Detection {
+                    range: 0..5,
+                    category: Category::Person,
+                    score: 0.9,
+                }],
+            )
+            .unwrap();
+        let id = app.pseudonymization.review.groups[0].id;
+        app.activate_annotation(id << 32, window, cx);
+        app.keep_pseudonym(&KeepPseudonymCandidate, window, cx);
+        assert_eq!(app.editor.read(cx).text(), "Alice Alice");
+        assert_eq!(app.pseudonymization.review.remaining(), 0);
+        app.pseudonymization
+            .review
+            .add_manual("Alice Alice", 0..5, Category::Person)
+            .unwrap();
+        app.activate_annotation(id << 32, window, cx);
+        app.editor.update(cx, |editor, cx| {
+            let revision = editor.revision();
+            editor.replace_ranges(revision, &[(0..5, "Betty".into())], cx);
+        });
+    });
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert!(app.pseudonymization.popup.is_none());
+        app.accept_pseudonym(&AcceptPseudonymCandidate, window, cx);
+        assert_eq!(app.editor.read(cx).text(), "Betty Alice");
+        assert_eq!(app.pseudonymization.review.remaining(), 1);
+    });
 }
 
 #[gpui::test]

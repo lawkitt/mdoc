@@ -1,0 +1,93 @@
+{
+  "after_pii_drop": [
+    {
+      "elapsed_ms": 183.03225,
+      "language": "english",
+      "matches_expected": true,
+      "source_preserved": true,
+      "source_sha256": "3f936b02163ad88f956f8b7a5f51d090626588f189ae0e81b907477ea1087ffd"
+    },
+    {
+      "elapsed_ms": 198.33575000000002,
+      "language": "russian",
+      "matches_expected": true,
+      "source_preserved": true,
+      "source_sha256": "d4408bcc23d2924d5527e1511ecc5223b7cc0729b486bbabb743e093360056cf"
+    }
+  ],
+  "before_pii": [
+    {
+      "elapsed_ms": 303.184,
+      "language": "english",
+      "matches_expected": true,
+      "source_preserved": true,
+      "source_sha256": "3f936b02163ad88f956f8b7a5f51d090626588f189ae0e81b907477ea1087ffd"
+    },
+    {
+      "elapsed_ms": 279.44849999999997,
+      "language": "russian",
+      "matches_expected": true,
+      "source_preserved": true,
+      "source_sha256": "d4408bcc23d2924d5527e1511ecc5223b7cc0729b486bbabb743e093360056cf"
+    }
+  ],
+  "detected": [
+    {
+      "end": 46,
+      "label": "organization",
+      "start": 24,
+      "text": "Northbridge Legal Ltd."
+    },
+    {
+      "end": 75,
+      "label": "email",
+      "start": 54,
+      "text": "alice@example.invalid"
+    },
+    {
+      "end": 12,
+      "label": "person",
+      "start": 0,
+      "text": "Alice Morgan"
+    },
+    {
+      "end": 100,
+      "label": "email",
+      "start": 80,
+      "text": "anna@example.invalid"
+    },
+    {
+      "end": 21,
+      "label": "person",
+      "start": 0,
+      "text": "Анна Ёлкина"
+    },
+    {
+      "end": 64,
+      "label": "organization",
+      "start": 56,
+      "text": "Ёлка"
+    }
+  ],
+  "pdf_inspector_revision": "620afae42eac4b92fffa2437b89e10a912bb93ee",
+  "peak_rss_bytes": 2271543296,
+  "platform": "macos-aarch64",
+  "runtime_sha256": "299e5a2c6ea00531ecd6bf3217e23798c1fcba1698bb386d313c8e16d7317d60",
+  "success": true,
+  "while_pii_loaded": [
+    {
+      "elapsed_ms": 186.211333,
+      "language": "english",
+      "matches_expected": true,
+      "source_preserved": true,
+      "source_sha256": "3f936b02163ad88f956f8b7a5f51d090626588f189ae0e81b907477ea1087ffd"
+    },
+    {
+      "elapsed_ms": 209.15720900000002,
+      "language": "russian",
+      "matches_expected": true,
+      "source_preserved": true,
+      "source_sha256": "d4408bcc23d2924d5527e1511ecc5223b7cc0729b486bbabb743e093360056cf"
+    }
+  ]
+}

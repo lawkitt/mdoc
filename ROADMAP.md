@@ -2,8 +2,10 @@
 
 mdoc prepares local documents as editable Markdown for lawyers using AI agents
 in other tools. Direction and milestone order are agreed as of 2026-10-01.
-The review contract is agreed; pseudonymization remains planned and model
-qualification has not been performed.
+The review contract is agreed; inline pseudonymization is implemented experimentally. The
+[initial Rust/model qualification](tests/fixtures/pseudonymization/README.md)
+has been performed on Apple Silicon macOS; no candidate passed qualification.
+The user authorized the pinned GLiNER2 option experimentally despite its blockers.
 
 ## Next steps
 
@@ -14,15 +16,25 @@ qualification has not been performed.
 2. **Copy Markdown — complete** — copies the complete current source, including
    unsaved edits and regardless of selection, without wrapper or metadata.
    Shows brief success feedback and keeps extraction warnings near the action.
-3. **Pseudonymization qualification** — compare existing models through Rust-only
-   local inference. Measure EN/RU legal and OCR text, per-category misses/false
-   positives, Unicode offsets, long-document behavior, latency, peak memory,
-   download size, and compatibility with the installed OCR runtime. Review exact
-   code/model/tokenizer/runtime licenses and revisions before adoption.
-4. **Inline pseudonymization** — implement the qualified option using the
+3. **Pseudonymization qualification — initial baseline complete; adoption blocked** —
+   [Rust evaluation tooling](tools/pseudonymization/README.md) compares three pinned
+   exports on synthetic EN/RU legal/OCR and full Markdown source. Recorded category
+   misses/false positives, Unicode offsets, long/stress behavior, latency, peak
+   memory, download size, licenses/revisions and offline OCR-runtime compatibility.
+   GLiNER2 passes same-process OCR checks but misses required RU/hidden-source spans;
+   gline-rs also conflicts with OCR's Rust binding. Larger holdout and Windows
+   qualification, reviewed numerical targets, and a suitable model/export remain
+   prerequisites for adoption. See the [measured result](tests/fixtures/pseudonymization/README.md).
+4. **Inline pseudonymization — experimental implementation** — the user explicitly
+   authorized the pinned GLiNER2 model despite its quality/resource blockers. Uses the
    [accepted review contract](docs/adr/0002-reviewable-local-pseudonymization.md):
    explicit scan, subtle highlights, click/keyboard popup, exact-repeat grouping,
-   immediate undoable acceptance, and in-memory document mappings.
+   immediate undoable acceptance, and in-memory document mappings. Explicit verified
+   setup, whole-source offline scans, manual candidates/linking, cancellation and
+   revision/identity checks are implemented. See [inline verification](tests/fixtures/pseudonymization/inline-review.md).
+   Native popup/shortcut/IME acceptance and Windows operation remain unverified;
+   experimental authorization does not qualify this checkpoint or accept the
+   proposed numerical targets.
 
 A measured responsiveness/resource blocker moves ahead of features. Keep the
 app and reusable crates; refactor only where concrete ownership or testing
@@ -49,8 +61,9 @@ a baseline. Do not treat debug/headless timings as product guarantees.
 
 ## Model/library research — 2026-10-01
 
-Primary-source discovery only; no models downloaded or mdoc inference/accuracy
-measurements performed. Exact exports and runtime compatibility remain untested.
+The discovery below led to the [measured qualification](tests/fixtures/pseudonymization/README.md).
+Exact downloaded exports, runtime checks and results are recorded there; these
+discovery descriptions alone do not establish suitability.
 
 | Candidate | Reason to evaluate | Qualification concern |
 | --- | --- | --- |
@@ -83,7 +96,10 @@ stale-result protection. No detector establishes guaranteed anonymization.
 ## Design status
 
 Design interview complete: the user confirmed shared understanding on 2026-10-01.
-All active decisions are recorded in the glossary and ADRs. Exact model/runtime
-selection and numerical acceptance targets await the qualification milestone;
+All active decisions are recorded in the glossary and ADRs. Initial qualification
+produced measured blockers and proposed targets; model adoption and final numerical
+acceptance targets remain open;
 bulk redesign and online processing await their future grilling sessions.
-Copy Markdown is implemented; pseudonymization implementation follows qualification.
+Copy Markdown and experimental inline pseudonymization are implemented.
+The GLiNER2 experimental exception was explicitly authorized on 2026-10-01;
+qualified adoption still requires the evidence above.

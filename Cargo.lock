@@ -2197,6 +2197,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fancy-regex"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72cf461f865c862bb7dc573f643dd6a2b6842f7c30b07882b56bd148cc2761b8"
+dependencies = [
+ "bit-set 0.8.0",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2664,6 +2675,20 @@ dependencies = [
  "skrifa 0.42.1",
  "smallvec",
  "vello_common 0.0.9",
+]
+
+[[package]]
+name = "gliner2-rs"
+version = "0.9.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8979d13e16a0e0af39c171f5784fa3e9bf54a1eb731b81fa41397cde471de414"
+dependencies = [
+ "anyhow",
+ "half",
+ "ndarray",
+ "ort",
+ "regex",
+ "tokenizers",
 ]
 
 [[package]]
@@ -4403,11 +4428,13 @@ dependencies = [
  "docxide-pdf",
  "embed-resource",
  "flate2",
+ "gliner2-rs",
  "gpui-pdf",
  "gpui-pre",
  "gpui-pre-platform",
  "image",
  "mdoc-editor",
+ "ort",
  "pdf-inspector 1.21.0",
  "roxmltree 0.21.1",
  "serde",
@@ -5340,6 +5367,7 @@ version = "2.0.0-rc.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4336a1e2b38848325241c72889086886004e589b7c74f335e60a8e8db5138a0b"
 dependencies = [
+ "half",
  "libloading 0.9.0",
  "ndarray",
  "ort-sys",
@@ -7488,6 +7516,7 @@ dependencies = [
  "dary_heap",
  "derive_builder",
  "esaxx-rs",
+ "fancy-regex",
  "getrandom 0.3.4",
  "indicatif",
  "itertools 0.14.0",

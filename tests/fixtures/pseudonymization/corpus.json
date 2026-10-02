@@ -1,0 +1,106 @@
+[
+  {
+    "id": "en-contract",
+    "language": "en",
+    "kind": "legal",
+    "annotated": "# Services Agreement\n⟦ORG|Northbridge Legal Ltd⟧ appoints ⟦PERSON|Alice Morgan⟧ as counsel. Notices to ⟦PERSON|Alice Morgan⟧ shall be sent to ⟦EMAIL|alice.morgan@example.invalid⟧ or ⟦PHONE|+1 (202) 555-0147⟧ at ⟦ADDRESS|42 Cedar Lane, Boston, MA 02110⟧.\nThe fee is USD 12,500, due on 12 October 2026 under section 4.2."
+  },
+  {
+    "id": "ru-contract",
+    "language": "ru",
+    "kind": "legal",
+    "annotated": "# Договор оказания услуг\n⟦ORG|ООО «Северный Вектор»⟧ в лице директора ⟦PERSON|Анны Сергеевны Ёлкиной⟧ заключает договор с ⟦PERSON|Иваном Петровичем Соколовым⟧. Уведомления: ⟦EMAIL|elkinа@example.invalid⟧, ⟦PHONE|+7 (495) 555-01-47⟧. Адрес: ⟦ADDRESS|г. Москва, ул. Кедровая, д. 42, кв. 7⟧.\nЦена 125 000 руб., срок 12 октября 2026 года; применяется статья 309 ГК РФ."
+  },
+  {
+    "id": "en-identifiers",
+    "language": "en",
+    "kind": "legal",
+    "annotated": "Client ⟦PERSON|Robert Hayes⟧, passport no. ⟦IDENTITY|XK0427819⟧, tax identification number ⟦TAX|12-3456789⟧, bank account ⟦BANK|GB29 NWBK 6016 1331 9268 19⟧. The invoice total is 12345.67; proceedings are numbered 2026/314."
+  },
+  {
+    "id": "ru-identifiers",
+    "language": "ru",
+    "kind": "legal",
+    "annotated": "Заказчик: ⟦PERSON|Анна Сергеевна Ёлкина⟧. Паспорт: ⟦IDENTITY|4510 123456⟧. ИНН: ⟦TAX|7701234567⟧. СНИЛС: ⟦IDENTITY|123-456-789 00⟧. Расчётный счёт: ⟦BANK|40702810900000001234⟧. БИК: ⟦BANK|044525225⟧. Цена 407 028 рублей; дело № А40-123456/2026."
+  },
+  {
+    "id": "en-variants",
+    "language": "en",
+    "kind": "legal",
+    "annotated": "⟦PERSON|Alice Morgan⟧ signed for ⟦ORG|Northbridge Legal Ltd⟧. ⟦PERSON|A. Morgan⟧ confirmed receipt. Counsel ⟦PERSON|Morgan⟧ agreed, and ⟦PERSON|Alice Morgan⟧ signed again."
+  },
+  {
+    "id": "ru-variants",
+    "language": "ru",
+    "kind": "legal",
+    "annotated": "⟦PERSON|Анна Сергеевна Ёлкина⟧ подписала акт. Письмо направлено ⟦PERSON|Анне Сергеевне Ёлкиной⟧. Представитель ⟦PERSON|А. С. Ёлкина⟧ уведомлена. От ⟦PERSON|Ёлкиной⟧ получен ответ. ⟦ORG|ООО «Северный Вектор»⟧ подтвердило его."
+  },
+  {
+    "id": "en-ocr",
+    "language": "en",
+    "kind": "ocr",
+    "annotated": "SERVICE AGREEM ENT\nClient: ⟦PERSON|A1ice M0rgan⟧\nCompany: ⟦ORG|N0rthbridge Legal Ltd⟧\nE-maiI: ⟦EMAIL|alice.morgan@examp1e.invalid⟧\nTeI: ⟦PHONE|+1 202 555 O147⟧\nPassport No: ⟦IDENTITY|XK O427819⟧\nTax ID: ⟦TAX|12-3456789⟧\nAddress: ⟦ADDRESS|42 Cedar Lane, B0ston⟧\nBank account: ⟦BANK|GB29 NWBK 6016 1331 9268 19⟧\nSecti0n 4.2; price $12,500."
+  },
+  {
+    "id": "ru-ocr",
+    "language": "ru",
+    "kind": "ocr",
+    "annotated": "ДОГОВ0Р\nЗаказчик: ⟦PERSON|Анна Сергее вна Ёлкина⟧\nОрганизация: ⟦ORG|ООО «Северньй Вектор»⟧\nПасп0рт: ⟦IDENTITY|45I0 123456⟧\nИНН: ⟦TAX|77O1234567⟧\nСчёт: ⟦BANK|407028I0900000001234⟧\nТе лефон: ⟦PHONE|+7 (495) 555-О1-47⟧\nАдрес: ⟦ADDRESS|г. М0сква, ул. Кедровая, д. 42⟧\nЭл. почта: ⟦EMAIL|anna.elkina@example.invalid⟧\nЦена 125 000 руб.; ст. 309 ГК РФ."
+  },
+  {
+    "id": "en-markdown",
+    "language": "en",
+    "kind": "source",
+    "annotated": "| Counsel | Contact |\n| --- | --- |\n| ⟦PERSON|Alice Morgan⟧ | ⟦EMAIL|alice@example.invalid⟧ |\n\n[Write](mailto:⟦EMAIL|alice@example.invalid⟧) [Contact](https://example.invalid/clients/⟦PERSON|Alice_Morgan⟧)\n![Signature](images/⟦PERSON|Alice_Morgan⟧.png)\n`client = \"⟦PERSON|Alice Morgan⟧\"`\n```json\n{\"email\": \"⟦EMAIL|alice@example.invalid⟧\"}\n```\n<span data-client=\"⟦PERSON|Alice Morgan⟧\">Private</span>\n"
+  },
+  {
+    "id": "ru-markdown",
+    "language": "ru",
+    "kind": "source",
+    "annotated": "| Заказчик | ИНН |\n| --- | --- |\n| ⟦ORG|ООО «Северный Вектор»⟧ | ⟦TAX|7701234567⟧ |\n\n[Письмо](mailto:⟦EMAIL|anna@example.invalid⟧)\n[Клиент](clients/⟦PERSON|Анна_Ёлкина⟧.md)\n![Подпись](images/⟦PERSON|Анна_Ёлкина⟧.png)\n`директор = \"⟦PERSON|Анна Ёлкина⟧\"`\n<div data-client=\"⟦PERSON|Анна Ёлкина⟧\">Договор</div>\n"
+  },
+  {
+    "id": "mixed-unicode",
+    "language": "mixed",
+    "kind": "source",
+    "annotated": "🙂 é — Client ⟦PERSON|Zoë O’Connor⟧ met ⟦PERSON|Анна Ёлкина⟧. Email: ⟦EMAIL|zoe@example.invalid⟧. Представитель ⟦ORG|ООО «Ёлка»⟧ ответил. Контакт: ⟦PHONE|+7 495 555 0147⟧."
+  },
+  {
+    "id": "en-negative",
+    "language": "en",
+    "kind": "negative",
+    "annotated": "# Applicable law\nSection 4.2 requires payment of USD 12,500 on 12 October 2026. Civil Code article 309 applies. References [1] and [2] are annexes. The words person, organization, account and address name categories, not client data. `invoice_total = 12500`\n"
+  },
+  {
+    "id": "ru-negative",
+    "language": "ru",
+    "kind": "negative",
+    "annotated": "# Применимое право\nСтатья 309 ГК РФ; пункт 4.2 договора. Цена 125 000 руб., аванс 30%, срок 12 октября 2026 года. Приложения № 1 и № 2. Слова паспорт, ИНН, счёт, организация и адрес — названия полей без значений. `цена = 125000`\n"
+  },
+  {
+    "id": "en-long",
+    "language": "en",
+    "kind": "long",
+    "repeat": 64,
+    "annotated": "Under section 4.2 the contractor shall provide services with reasonable care and skill. Payment follows acceptance of the report and review of the relevant supporting documents. The parties retain their remedies under applicable law. Counsel ⟦PERSON|Alice Morgan⟧ represents ⟦ORG|Northbridge Legal Ltd⟧; notices go to ⟦EMAIL|alice@example.invalid⟧. No amendment is effective until signed by both parties.\n\n"
+  },
+  {
+    "id": "ru-long",
+    "language": "ru",
+    "kind": "long",
+    "repeat": 64,
+    "annotated": "В соответствии с пунктом 4.2 исполнитель оказывает услуги добросовестно и с должной осмотрительностью. Оплата производится после приёмки отчёта и проверки подтверждающих документов. Стороны сохраняют средства защиты по применимому праву. Представитель ⟦PERSON|Анна Сергеевна Ёлкина⟧ действует от имени ⟦ORG|ООО «Северный Вектор»⟧; письма направляются на ⟦EMAIL|anna@example.invalid⟧. Изменения вступают в силу после подписания обеими сторонами.\n\n"
+  },
+  {
+    "id": "en-subwords",
+    "language": "en",
+    "kind": "stress",
+    "annotated": "Technical annex: pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis pneumonoultramicroscopicsilicovolcanoconiosis  Contact ⟦PERSON|Alice Morgan⟧ at ⟦EMAIL|alice@example.invalid⟧."
+  },
+  {
+    "id": "ru-subwords",
+    "language": "ru",
+    "kind": "stress",
+    "annotated": "Техническое приложение: электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический электрофотополупроводниковыймикроскопический  Представитель ⟦PERSON|Анна Ёлкина⟧, ⟦EMAIL|anna@example.invalid⟧."
+  }
+]

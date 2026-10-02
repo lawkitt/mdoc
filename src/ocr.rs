@@ -120,10 +120,17 @@ pub fn check() -> Result<Option<Installed>, String> {
         return Ok(None);
     }
     let root = root()?;
-    if !root.exists() {
+    check_in(&root)
+}
+
+fn check_in(root: &Path) -> Result<Option<Installed>, String> {
+    // Pseudonymization may install only the shared ONNX library. That is not
+    // an incomplete OCR installation: OCR still needs its own explicit setup.
+    let has_ocr = root.join(RUNTIMES[0].library).exists() || root.join("models").exists();
+    if !root.exists() || !has_ocr {
         return Ok(None);
     }
-    validate(&root).map(Some)
+    validate(root).map(Some)
 }
 
 fn validate(root: &Path) -> Result<Installed, String> {
@@ -155,6 +162,23 @@ fn validate(root: &Path) -> Result<Installed, String> {
         e.to_string()
     })?;
     Ok(installed)
+}
+
+/// Share the pinned native runtime without installing OCR models/PDFium.
+/// The pseudonymization model has its own setup and never invokes OCR setup.
+pub(crate) fn onnx_runtime(install: bool) -> Result<PathBuf, String> {
+    if !SUPPORTED {
+        return Err("Local inference supports Apple Silicon macOS and Windows x64.".into());
+    }
+    let root = root()?;
+    let runtime = &RUNTIMES[1];
+    let path = root.join(runtime.library);
+    if verify(&path, runtime.library_sha).is_err() && install {
+        fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+        install_runtime(&root, runtime)?;
+    }
+    verify(&path, runtime.library_sha)?;
+    Ok(path)
 }
 
 pub fn install() -> Result<Installed, String> {
@@ -309,6 +333,15 @@ fn copy_runtime_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_inference_runtime_does_not_claim_or_break_ocr_setup() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(RUNTIMES[1].library), b"shared-runtime").unwrap();
+        assert!(check_in(dir.path()).unwrap().is_none());
+        fs::write(dir.path().join(RUNTIMES[0].library), b"corrupt-pdfium").unwrap();
+        assert!(check_in(dir.path()).is_err());
+    }
 
     #[test]
     fn incomplete_or_modified_installations_are_not_ready() {

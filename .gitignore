@@ -1,4 +1,8 @@
 /target
+/.qualification/
+/tools/pseudonymization/target/
+/tools/pseudonymization/gline/target/
+/tools/pseudonymization/gliner2/target/
 .DS_Store
 # Scratch image files used while testing; real images live in the app data dir.
 /images

@@ -31,6 +31,54 @@ fn click_toolbar(cx: &mut VisualTestContext, label: &'static str) {
 }
 
 #[gpui::test]
+fn pseudonymization_mappings_survive_switches_and_end_with_the_tab(cx: &mut TestAppContext) {
+    use crate::pseudonymization::Category;
+    let dir = tempfile::tempdir().unwrap();
+    let first_path = dir.path().join("first.md");
+    let second_path = dir.path().join("second.md");
+    std::fs::write(&first_path, "Alice Alice").unwrap();
+    std::fs::write(&second_path, "Bob").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![first_path, second_path], window, cx)
+    });
+    cx.run_until_parked();
+    let first = active(&tabs, cx);
+    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    first.update(cx, |view, cx| {
+        view.pseudonymization.review.open = true;
+        let id = view
+            .pseudonymization
+            .review
+            .add_manual("Alice Alice", 0..5, Category::Person)
+            .unwrap();
+        view.pseudonymization.review.keep(id, None);
+        view.sync_pseudonym_theme(cx);
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
+    cx.run_until_parked();
+    let second = active(&tabs, cx);
+    cx.update(|_, cx| assert!(second.read(cx).pseudonymization.review.groups.is_empty()));
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(first_id, window, cx));
+    cx.update(|_, cx| {
+        let view = first.read(cx);
+        assert_eq!(
+            view.pseudonymization.review.mappings(),
+            vec![("Alice".into(), "PERSON_1".into())]
+        );
+        assert_eq!(view.pseudonymization.review.remaining(), 0);
+    });
+    let weak = first.downgrade();
+    drop(first);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(first_id, window, cx));
+    cx.run_until_parked();
+    assert!(
+        weak.upgrade().is_none(),
+        "closing a clean tab releases live review and mappings"
+    );
+}
+
+#[gpui::test]
 fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
     cx: &mut TestAppContext,
 ) {
