@@ -1,0 +1,1 @@
+New clause ~~Ordinary strike~~

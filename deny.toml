@@ -91,7 +91,10 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # scap, wgpu, xim-rs, zed itself), and pinning the list per-URL
 # would break on every Zed bump. Org-level allow is the right
 # granularity.
-allow-git = ["https://github.com/lawkitt/anydoc.git"]
+allow-git = [
+    "https://github.com/lawkitt/anydoc.git",
+    "https://github.com/lawkitt/pdf-inspector.git",
+]
 
 [sources.allow-org]
 github = ["zed-industries", "longbridge"]
