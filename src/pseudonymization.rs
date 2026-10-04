@@ -335,6 +335,28 @@ impl Review {
             occupied.extend(group.mentions.iter().cloned());
         }
     }
+    /// Rebase Keep decisions using the exact batch just committed by the editor.
+    /// A broad source diff would discard unchanged exclusions between edits.
+    pub fn refresh_after_edits(&mut self, source: &str, edits: &[(Range<usize>, String)]) {
+        self.exclusions.retain_mut(|excluded| {
+            if edits
+                .iter()
+                .any(|(range, _)| overlaps(range, &excluded.range))
+            {
+                return false;
+            }
+            let delta: isize = edits
+                .iter()
+                .filter(|(range, _)| range.end <= excluded.range.start)
+                .map(|(range, replacement)| replacement.len() as isize - range.len() as isize)
+                .sum();
+            excluded.range = excluded.range.start.saturating_add_signed(delta)
+                ..excluded.range.end.saturating_add_signed(delta);
+            source.get(excluded.range.clone()) == Some(excluded.original.as_str())
+        });
+        self.source = source.to_owned();
+        self.refresh(source);
+    }
     pub fn ingest(&mut self, source: &str, mut detections: Vec<Detection>) -> Result<(), String> {
         if detections.iter().any(|detected| {
             detected.range.start >= detected.range.end
@@ -462,6 +484,31 @@ impl Review {
             group.replacement = replacement.into();
         }
     }
+    /// Plan all pending mentions against one source snapshot. Kept candidates
+    /// have no mentions; each group retains its proposed or edited replacement.
+    pub fn plan_all(
+        &self,
+        source: &str,
+        draft: Option<(u64, &str)>,
+    ) -> Result<Vec<(Range<usize>, String)>, String> {
+        if source != self.source {
+            return Err("The document changed. Review the candidates again.".into());
+        }
+        let mut edits = Vec::new();
+        for group in &self.groups {
+            if !group.mentions.is_empty() {
+                let replacement = draft
+                    .filter(|(id, _)| *id == group.id)
+                    .map_or(group.replacement.as_str(), |(_, replacement)| replacement);
+                edits.extend(self.plan(source, group.id, None, replacement)?);
+            }
+        }
+        edits.sort_by_key(|(range, _)| range.start);
+        if edits.windows(2).any(|pair| pair[0].0.end > pair[1].0.start) {
+            return Err("Candidate offsets overlap. Review the candidates again.".into());
+        }
+        Ok(edits)
+    }
     pub fn keep(&mut self, id: u64, single: Option<Range<usize>>) {
         if let Some(group) = self.groups.iter_mut().find(|group| group.id == id) {
             if let Some(range) = single {
@@ -530,6 +577,65 @@ mod tests {
             .ingest("prefix Ann Ann", vec![detection(7..10, Category::Person)])
             .unwrap();
         assert_eq!(review.remaining(), 0);
+    }
+    #[test]
+    fn batch_refresh_preserves_a_kept_mention_between_replacements() {
+        let source = "Ann Acme Ann Bob";
+        let mut review = Review::default();
+        let ann = review.add_manual(source, 0..3, Category::Person).unwrap();
+        review
+            .add_manual(source, 4..8, Category::Organization)
+            .unwrap();
+        review.add_manual(source, 13..16, Category::Person).unwrap();
+        review.keep(ann, Some(9..12));
+        let edits = review.plan_all(source, None).unwrap();
+        let mut changed = source.to_owned();
+        for (range, replacement) in edits.iter().rev() {
+            changed.replace_range(range.clone(), replacement);
+        }
+        review.refresh_after_edits(&changed, &edits);
+        assert_eq!(changed, "PERSON_1 ORG_1 Ann PERSON_2");
+        assert_eq!(review.remaining(), 0);
+    }
+    #[test]
+    fn batch_plan_preserves_kept_mentions_custom_tokens_and_hidden_source() {
+        let source = "**Анна** Acme Анна [mail](anna@example.invalid) Bob";
+        let mut review = Review::default();
+        let anna = review.add_manual(source, 2..10, Category::Person).unwrap();
+        let acme = source.find("Acme").unwrap();
+        let org = review
+            .add_manual(source, acme..acme + 4, Category::Organization)
+            .unwrap();
+        let email = source.find("anna@example.invalid").unwrap();
+        review
+            .add_manual(source, email..email + 20, Category::Email)
+            .unwrap();
+        let bob = source.find("Bob").unwrap();
+        let kept = review
+            .add_manual(source, bob..bob + 3, Category::Person)
+            .unwrap();
+        review.keep(anna, Some(2..10));
+        review.keep(kept, None);
+        review.set_replacement(org, "CLIENT_1");
+        let edits = review
+            .plan_all(source, Some((anna, "PERSON_CUSTOM")))
+            .unwrap();
+        assert_eq!(edits.len(), 3);
+        let mut changed = source.to_owned();
+        for (range, replacement) in edits.iter().rev() {
+            changed.replace_range(range.clone(), replacement);
+        }
+        assert_eq!(
+            changed,
+            "**Анна** CLIENT_1 PERSON_CUSTOM [mail](EMAIL_1) Bob"
+        );
+        assert!(review.plan_all("changed", None).is_err());
+        assert!(
+            review
+                .plan_all(source, Some((anna, "invalid token")))
+                .is_err()
+        );
+        assert_eq!(review.remaining(), 3);
     }
     #[test]
     fn plans_refuse_stale_or_invalid_ranges_and_syntax_replacements() {

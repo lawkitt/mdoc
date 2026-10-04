@@ -107,3 +107,17 @@ input does not establish those results. Windows x64 runtime/inference and native
 operation remain unmeasured; Linux and Intel macOS keep manual review only.
 The checkpoint still has known EN/RU/hidden-source misses and false positives;
 experimental use must review the complete Markdown before sharing.
+
+
+## Bulk acceptance — 2026-10-04
+
+The review bar offers **Accept all** for pending suggestions. It applies one
+validated, sorted source batch as one undo step, preserving full-group and
+single-occurrence Keep decisions, including kept mentions between edits. The
+open popup's edited token is included and validated before any edit commits.
+The action is disabled while scanning or with no pending candidates.
+
+Regression coverage includes an actual GPUI mouse click without editor focus,
+Unicode and hidden destinations, custom tokens, one-step undo/redo, empty-batch
+no-op, stale source, invalid tokens, scan admission, and explicit rebasing of
+Keep decisions. Native input and Windows acceptance remain separate.

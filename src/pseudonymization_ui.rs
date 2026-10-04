@@ -19,12 +19,14 @@ struct ScanJob {
 pub(super) struct ReviewUi {
     pub review: Review,
     pub popup: Option<Popup>,
+    accept_all_bounds: Rc<Cell<Option<gpui::Bounds<Pixels>>>>,
     pub input: Entity<markdown_search::SearchInput>,
     pub focus: FocusHandle,
     pub category: Category,
     job: Option<ScanJob>,
     pub installing: bool,
-    model_ready: bool,
+    ready_model: Option<settings::PiiModel>,
+    details: bool,
     pub scans: Vec<settings::PiiConfig>,
     pub error: Option<String>,
     generation: u64,
@@ -39,6 +41,7 @@ impl ReviewUi {
         Self {
             review: Review::default(),
             popup: None,
+            accept_all_bounds: Rc::new(Cell::new(None)),
             input: cx.new(|cx| {
                 markdown_search::SearchInput::new(cx).with_key_context("PseudonymReplacement")
             }),
@@ -46,7 +49,8 @@ impl ReviewUi {
             category: Category::Person,
             job: None,
             installing: false,
-            model_ready: false,
+            ready_model: None,
+            details: false,
             scans: Vec::new(),
             error: None,
             generation: 0,
@@ -90,6 +94,7 @@ impl Workspace {
         self.pseudonymization.cancel();
         self.pseudonymization.review = Review::default();
         self.pseudonymization.scans.clear();
+        self.pseudonymization.details = false;
         self.pseudonymization.popup = None;
         self.pseudonymization.error = None;
         self.sync_annotations(cx);
@@ -228,13 +233,26 @@ impl Workspace {
         {
             Ok(()) => {
                 self.pseudonymization.error = None;
-                self.pseudonymization.model_ready = true;
+                self.pseudonymization.ready_model = Some(config.model);
+                if let Some(panel) = self.model_panel.clone() {
+                    panel.update(cx, |panel, cx| {
+                        let model = settings::Model::Pii(config.model);
+                        let index = settings::Model::ALL
+                            .iter()
+                            .position(|m| *m == model)
+                            .unwrap();
+                        panel.statuses[index] = settings_ui::Status::Ready;
+                        cx.notify();
+                    });
+                }
                 self.pseudonymization.scans.push(config);
                 self.sync_annotations(cx);
             }
             Err(error) => {
-                if error.contains("Set up") {
-                    self.pseudonymization.model_ready = false;
+                if error.contains("Set up")
+                    && self.pseudonymization.ready_model == Some(config.model)
+                {
+                    self.pseudonymization.ready_model = None;
                 }
                 self.pseudonymization.error = Some(error);
             }
@@ -264,6 +282,7 @@ impl Workspace {
         self.pseudonymization.cancel();
         self.pseudonymization.installing = true;
         self.pseudonymization.error = None;
+        let model = config.model;
         let task = cx.background_executor().spawn(async move {
             detector::setup_config(&config, &model_download::Progress::default())
         });
@@ -271,7 +290,7 @@ impl Workspace {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {
                 this.pseudonymization.installing = false;
-                this.pseudonymization.model_ready = result.is_ok();
+                this.pseudonymization.ready_model = result.is_ok().then_some(model);
                 this.pseudonymization.error = result.err();
                 cx.notify();
             });
@@ -449,6 +468,55 @@ impl Workspace {
         }
         cx.notify();
     }
+    pub(super) fn accept_all_pseudonyms(
+        &mut self,
+        _: &AcceptAllPseudonyms,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.pseudonymization.review.open
+            || !self.can_copy_markdown()
+            || self.pseudonymization.scanning()
+            || self.pseudonymization.review.remaining() == 0
+        {
+            return;
+        }
+        let editor = self.editor.read(cx);
+        let revision = editor.revision();
+        let draft = self.pseudonymization.popup.as_ref().map(|popup| {
+            (
+                popup.group,
+                self.pseudonymization.input.read(cx).value().to_owned(),
+            )
+        });
+        match self.pseudonymization.review.plan_all(
+            editor.text(),
+            draft
+                .as_ref()
+                .map(|(id, replacement)| (*id, replacement.as_str())),
+        ) {
+            Ok(edits) => {
+                if self
+                    .editor
+                    .update(cx, |editor, cx| editor.replace_ranges(revision, &edits, cx))
+                {
+                    if let Some((id, replacement)) = draft {
+                        self.pseudonymization
+                            .review
+                            .set_replacement(id, &replacement);
+                    }
+                    self.pseudonymization
+                        .review
+                        .refresh_after_edits(self.editor.read(cx).text(), &edits);
+                    self.pseudonymization_edited(cx);
+                    self.pseudonymization.error = None;
+                    window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+                }
+            }
+            Err(error) => self.pseudonymization.error = Some(error),
+        }
+        cx.notify();
+    }
     pub(super) fn keep_pseudonym(
         &mut self,
         _: &KeepPseudonymCandidate,
@@ -479,7 +547,8 @@ impl Workspace {
         if !self.pseudonymization.review.open || !self.can_copy_markdown() {
             return None;
         }
-        let palette = self.theme.get().pdf_style();
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
         let selected = self
             .preferences
             .borrow()
@@ -491,41 +560,69 @@ impl Workspace {
                     .as_ref()
                     .is_ok_and(|m| p.read(cx).working == Some(*m))
             });
-        let model_ready =
-            self.model_panel
-                .as_ref()
-                .map_or(self.pseudonymization.model_ready, |p| {
-                    selected.as_ref().is_ok_and(|m| {
-                        matches!(
-                            p.read(cx).statuses
-                                [settings::Model::ALL.iter().position(|v| v == m).unwrap()],
-                            settings_ui::Status::Ready
-                        )
-                    })
-                });
-        Some(div().flex().flex_col().gap_1().px_3().py_2().text_size(px(12.)).border_b_1().border_color(palette.border)
+        let model_ready = selected.as_ref().is_ok_and(|m| {
+            let settings::Model::Pii(model) = m else {
+                return false;
+            };
+            self.model_panel.as_ref().map_or(
+                self.pseudonymization.ready_model == Some(*model),
+                |p| {
+                    matches!(
+                        p.read(cx).statuses
+                            [settings::Model::ALL.iter().position(|v| v == m).unwrap()],
+                        settings_ui::Status::Ready
+                    )
+                },
+            )
+        });
+        let scanning = self.pseudonymization.scanning();
+        let remaining = self.pseudonymization.review.remaining();
+        let can_accept_all = remaining > 0 && !scanning;
+        let accept_all_bounds = self.pseudonymization.accept_all_bounds.clone();
+        Some(div().id("pseudonym-review-bar").flex().flex_col().gap_1().px_3().py_2().text_size(px(12.)).border_b_1().border_color(palette.border)
             .child(div().flex().flex_wrap().items_center().gap_2()
-                .child(format!("Pseudonymize · {} candidates", self.pseudonymization.review.remaining()))
-                .child(if installing { "Downloading model…" } else if self.pseudonymization.scanning() { "Scanning…" } else { "" })
-                .when(!self.pseudonymization.scanning() && !installing && detector::SUPPORTED, |bar| bar.child(
-                    div().id("scan-pseudonyms").cursor_pointer().px_2().py_1().rounded_md().hover(|v| v.bg(palette.placeholder_bg)).child("Rescan").on_click(cx.listener(|this, _, _, cx| this.scan_pseudonyms(cx)))))
-                .when(self.pseudonymization.scanning(), |bar| bar.child(div().id("cancel-pseudonyms").cursor_pointer().px_2().py_1().child("Cancel").on_click(cx.listener(|this, _, _, cx| { this.pseudonymization.cancel(); cx.notify(); }))))
-                .child(div().id("pseudonym-category").cursor_pointer().px_2().py_1().child(format!("Selection type: {} ↻", self.pseudonymization.category.token())).on_click(cx.listener(|this, _, _, cx| {
-                    let index = Category::ALL.iter().position(|category| *category == this.pseudonymization.category).unwrap_or(0);
-                    this.pseudonymization.category = Category::ALL[(index + 1) % Category::ALL.len()]; cx.notify();
-                })))
-                .child(button("Add selection", AddPseudonymCandidate, self.theme.get()))
-                .child(button("Previous", PreviousCandidate, self.theme.get())).child(button("Next", NextCandidate, self.theme.get()))
+                .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child(format!("{remaining} {}", if remaining == 1 { "candidate" } else { "candidates" })))
+                .when(installing || scanning, |bar| bar.child(div().text_color(palette.header_muted).child(if installing { "Downloading…" } else { "Scanning…" })))
+                .when(!scanning && !installing && detector::SUPPORTED && model_ready, |bar| bar.child(
+                    div().id("scan-pseudonyms").cursor_pointer().px_2().py_1().rounded_md().hover(|v| v.bg(palette.placeholder_bg))
+                        .child("Rescan").on_click(cx.listener(|this, _, _, cx| this.scan_pseudonyms(cx)))))
+                .when(scanning, |bar| bar.child(div().id("cancel-pseudonyms").cursor_pointer().px_2().py_1().rounded_md()
+                    .hover(|v| v.bg(palette.placeholder_bg)).child("Cancel").on_click(cx.listener(|this, _, _, cx| { this.pseudonymization.cancel(); cx.notify(); }))))
+                .when(!installing && !scanning && detector::SUPPORTED && !model_ready && selected.is_ok(), |bar| bar.child(
+                    div().id("setup-pseudonyms").when(cfg!(test), |v| v.debug_selector(|| "setup-pseudonyms".into()))
+                        .cursor_pointer().px_2().py_1().rounded_md().hover(|v| v.bg(palette.placeholder_bg))
+                        .child(format!("Download model · up to {} MB", detector::download_megabytes(self.preferences.borrow().snapshot().unwrap().pseudonymization.model)))
+                        .on_click(cx.listener(|this, _, window, cx| this.setup_pseudonyms(window, cx)))))
+                .child(div().w(px(1.)).h(px(16.)).bg(palette.border))
+                .child(div().id("pseudonym-category").aria_label("Selection type").cursor_pointer().px_2().py_1().rounded_md()
+                    .hover(|v| v.bg(palette.placeholder_bg)).child(format!("{} ↻", self.pseudonymization.category.token()))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let index = Category::ALL.iter().position(|category| *category == this.pseudonymization.category).unwrap_or(0);
+                        this.pseudonymization.category = Category::ALL[(index + 1) % Category::ALL.len()]; cx.notify();
+                    })))
+                .child(button("Add selection", AddPseudonymCandidate, theme))
                 .child(div().flex_1())
-                .child(div().id("leave-pseudonyms").cursor_pointer().px_2().py_1().child("Done").on_click(cx.listener(|this, _, _, cx| this.leave_pseudonyms(cx)))))
-            .child(div().text_color(palette.header_muted).child("Experimental · May miss identifying information, especially Russian and hidden source. Review the complete Markdown before sharing."))
-            .child(button("Settings",Settings,self.theme.get()))
-            .when(!self.pseudonymization.scans.is_empty(),|bar|bar.child(div().text_color(palette.header_muted).child(format!("Completed scans: {}",self.pseudonymization.scans.iter().map(|c|format!("{} (threshold {})",c.model.name(),c.threshold)).collect::<Vec<_>>().join(", ")))))
-            .when(self.pseudonymization.review.skipped_syntax_spans > 0, |bar| bar.child(div().text_color(palette.header_muted).child("Some detector spans cross source syntax. Add a narrower selection manually.")))
-            .when_some(self.pseudonymization.error.clone(), |bar, error| bar.child(div().child(error)))
-            .when(!installing && !self.pseudonymization.scanning() && detector::SUPPORTED && !model_ready, |bar| bar.child(div().id("setup-pseudonyms").cursor_pointer().py_1()
-                .child(format!("Download experimental model (up to {} MB) · local scans afterwards", detector::download_megabytes(self.preferences.borrow().snapshot().map(|p|p.pseudonymization.model).unwrap_or_default())))
-                .on_click(cx.listener(|this, _, window, cx| this.setup_pseudonyms(window,cx)))))
+                .child(button("Previous", PreviousCandidate, theme)).child(button("Next", NextCandidate, theme))
+                .child(div().id("accept-all-pseudonyms").aria_label("Accept all replacements")
+                    .when(cfg!(test), |v| v.debug_selector(|| "accept-all-pseudonyms".into()))
+                    .relative().px_2().py_1().rounded_md().text_color(theme.search_accent()).child("Accept all")
+                    .child(gpui::canvas(move |bounds, _, _| accept_all_bounds.set(Some(bounds)), |_, _, _, _| {}).absolute().inset_0())
+                    .when(can_accept_all, |v| v.cursor_pointer().hover(|v| v.bg(palette.placeholder_bg)))
+                    .when(!can_accept_all, |v| v.opacity(0.45))
+                    .on_click(cx.listener(|this, _, window, cx| this.accept_all_pseudonyms(&AcceptAllPseudonyms, window, cx))))
+                .child(div().id("leave-pseudonyms").cursor_pointer().px_2().py_1().rounded_md().hover(|v| v.bg(palette.placeholder_bg))
+                    .text_color(theme.search_accent()).child("Done").on_click(cx.listener(|this, _, _, cx| this.leave_pseudonyms(cx)))))
+            .child(div().flex().flex_wrap().items_center().gap_2().text_color(palette.header_muted)
+                .child(div().flex_1().min_w(px(160.)).text_size(px(11.)).child("Experimental · May miss identifying details, especially Russian or hidden source. Review the complete Markdown before sharing."))
+                .when(!self.pseudonymization.scans.is_empty() || self.pseudonymization.review.skipped_syntax_spans > 0, |bar| bar.child(
+                    div().id("pseudonym-details").cursor_pointer().px_2().py_1().rounded_md().hover(|v| v.bg(palette.placeholder_bg))
+                        .child(if self.pseudonymization.details { "Details ↑" } else { "Details ↓" })
+                        .on_click(cx.listener(|this, _, _, cx| { this.pseudonymization.details = !this.pseudonymization.details; cx.notify(); })))))
+            .when(self.pseudonymization.review.skipped_syntax_spans > 0, |bar| bar.child(div().text_size(px(11.)).text_color(palette.header_muted)
+                .child("Some spans cross Markdown syntax. Add a narrower selection manually.")))
+            .when(self.pseudonymization.details, |bar| bar.child(div().text_size(px(11.)).text_color(palette.header_muted)
+                .child(format!("Completed scans: {}", self.pseudonymization.scans.iter().map(|c| format!("{} (threshold {})", c.model.name(), c.threshold)).collect::<Vec<_>>().join(", ")))))
+            .when_some(self.pseudonymization.error.clone(), |bar, error| bar.child(div().text_color(style::markdown_style(theme).alert_warning).child(error)))
             .into_any_element())
     }
     pub(super) fn pseudonym_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -567,10 +664,22 @@ impl Workspace {
                         .on_action(cx.listener(Self::accept_pseudonym))
                         .on_action(cx.listener(Self::keep_pseudonym))
                         .on_action(cx.listener(Self::close_pseudonym_popup))
-                        .on_mouse_down_out(cx.listener(|this, _: &gpui::MouseDownEvent, _, cx| {
-                            this.pseudonymization.popup = None;
-                            cx.notify();
-                        }))
+                        .on_mouse_down_out(cx.listener(
+                            |this, event: &gpui::MouseDownEvent, _, cx| {
+                                // Keep the replacement draft until the bulk button's
+                                // click handler can validate and apply it.
+                                if this
+                                    .pseudonymization
+                                    .accept_all_bounds
+                                    .get()
+                                    .is_some_and(|bounds| bounds.contains(&event.position))
+                                {
+                                    return;
+                                }
+                                this.pseudonymization.popup = None;
+                                cx.notify();
+                            },
+                        ))
                         .child(
                             div()
                                 .flex()
@@ -699,6 +808,209 @@ fn source_fragment(source: &str, range: &Range<usize>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[gpui::test]
+    fn accept_all_button_applies_pending_replacements_as_one_undo_step(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (app, cx) = crate::ui_tests::boot(cx);
+        let source = "**Анна** Acme Анна [mail](anna@example.invalid) Bob";
+        app.update(cx, |app, cx| {
+            app.editor
+                .update(cx, |editor, cx| editor.set_text(source, cx));
+        });
+        cx.run_until_parked();
+        app.update_in(cx, |app, window, cx| {
+            let review = &mut app.pseudonymization.review;
+            review.open = true;
+            let anna = review.add_manual(source, 2..10, Category::Person).unwrap();
+            let acme = source.find("Acme").unwrap();
+            review
+                .add_manual(source, acme..acme + 4, Category::Organization)
+                .unwrap();
+            let email = source.find("anna@example.invalid").unwrap();
+            review
+                .add_manual(source, email..email + 20, Category::Email)
+                .unwrap();
+            let bob = source.find("Bob").unwrap();
+            let kept = review
+                .add_manual(source, bob..bob + 3, Category::Person)
+                .unwrap();
+            review.keep(anna, Some(2..10));
+            review.keep(kept, None);
+            app.sync_annotations(cx);
+            app.activate_annotation(anna << 32, window, cx);
+            app.pseudonymization
+                .input
+                .update(cx, |input, cx| input.set_value("PERSON_CUSTOM".into(), cx));
+            window.focus(&app.focus, cx);
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let bounds = cx.debug_bounds("accept-all-pseudonyms").unwrap();
+        cx.simulate_click(bounds.center(), gpui::Modifiers::none());
+        cx.run_until_parked();
+        app.update(cx, |app, cx| {
+            assert_eq!(
+                app.editor.read(cx).text(),
+                "**Анна** ORG_1 PERSON_CUSTOM [mail](EMAIL_1) Bob"
+            );
+            assert_eq!(app.pseudonymization.review.remaining(), 0);
+            assert!(app.pseudonymization.popup.is_none());
+            assert!(app.dirty(cx));
+            assert!(app.pseudonymization.error.is_none());
+        });
+        // With no pending suggestions, another click must not add an undo step.
+        let revision = app.read_with(cx, |app, cx| app.editor.read(cx).revision());
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let bounds = cx.debug_bounds("accept-all-pseudonyms").unwrap();
+        cx.simulate_click(bounds.center(), gpui::Modifiers::none());
+        cx.run_until_parked();
+        app.update_in(cx, |app, window, cx| {
+            assert_eq!(app.editor.read(cx).revision(), revision);
+            window.focus(&app.editor.read(cx).focus_handle(cx), cx);
+        });
+        cx.dispatch_action(mdoc_editor::Undo);
+        cx.run_until_parked();
+        app.update(cx, |app, cx| {
+            assert_eq!(app.editor.read(cx).text(), source);
+            assert_eq!(app.pseudonymization.review.remaining(), 3);
+        });
+        cx.dispatch_action(mdoc_editor::Redo);
+        cx.run_until_parked();
+        app.update(cx, |app, cx| {
+            assert_eq!(
+                app.editor.read(cx).text(),
+                "**Анна** ORG_1 PERSON_CUSTOM [mail](EMAIL_1) Bob"
+            );
+            assert_eq!(app.pseudonymization.review.remaining(), 0);
+        });
+    }
+    #[gpui::test]
+    fn accept_all_refuses_pending_scans_and_invalid_popup_tokens(cx: &mut gpui::TestAppContext) {
+        let (app, cx) = crate::ui_tests::boot(cx);
+        let source = "Alice Acme";
+        app.update(cx, |app, cx| {
+            app.editor
+                .update(cx, |editor, cx| editor.set_text(source, cx));
+        });
+        cx.run_until_parked();
+        app.update_in(cx, |app, window, cx| {
+            app.pseudonymization.review.open = true;
+            let alice = app
+                .pseudonymization
+                .review
+                .add_manual(source, 0..5, Category::Person)
+                .unwrap();
+            app.pseudonymization
+                .review
+                .add_manual(source, 6..10, Category::Organization)
+                .unwrap();
+            let revision = app.editor.read(cx).revision();
+            app.pseudonymization.job = Some(ScanJob {
+                cancel: Arc::new(AtomicBool::new(false)),
+                revision,
+                generation: 1,
+                config: settings::PiiConfig::default(),
+            });
+            app.accept_all_pseudonyms(&AcceptAllPseudonyms, window, cx);
+            assert_eq!(app.editor.read(cx).revision(), revision);
+            assert_eq!(app.editor.read(cx).text(), source);
+            app.pseudonymization.cancel();
+            app.activate_annotation(alice << 32, window, cx);
+            app.pseudonymization
+                .input
+                .update(cx, |input, cx| input.set_value("invalid token".into(), cx));
+            app.accept_all_pseudonyms(&AcceptAllPseudonyms, window, cx);
+            assert_eq!(app.editor.read(cx).revision(), revision);
+            assert_eq!(app.editor.read(cx).text(), source);
+            assert_eq!(app.pseudonymization.review.remaining(), 2);
+            assert!(app.pseudonymization.error.is_some());
+        });
+    }
+    #[gpui::test]
+    fn successful_scan_removes_setup_prompt_only_for_the_scanned_model(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (app, cx) = crate::ui_tests::boot(cx);
+        let panel = cx.new(|cx| {
+            settings_ui::Panel::new(
+                settings::Store::new(),
+                Rc::new(Cell::new(style::Theme::default())),
+                cx,
+            )
+        });
+        app.update(cx, |app, cx| {
+            app.model_panel = Some(panel.clone());
+            app.editor
+                .update(cx, |editor, cx| editor.set_text("Alice", cx));
+            app.pseudonymization.review.open = true;
+            let revision = app.editor.read(cx).revision();
+            app.pseudonymization.job = Some(ScanJob {
+                cancel: Arc::new(AtomicBool::new(false)),
+                revision,
+                generation: 7,
+                config: settings::PiiConfig::default(),
+            });
+            app.complete_pseudonym_scan(
+                7,
+                app.session.generation,
+                revision,
+                Ok(vec![pseudonymization::Detection {
+                    range: 0..5,
+                    category: Category::Person,
+                    score: 0.9,
+                }]),
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(cx.debug_bounds("setup-pseudonyms").is_none());
+        cx.update(|_, cx| {
+            let index = settings::Model::ALL
+                .iter()
+                .position(|m| *m == settings::Model::Pii(settings::PiiModel::Fp16))
+                .unwrap();
+            assert!(matches!(
+                panel.read(cx).statuses[index],
+                settings_ui::Status::Ready
+            ));
+        });
+        app.update(cx, |app, cx| {
+            app.preferences
+                .borrow_mut()
+                .current
+                .as_mut()
+                .unwrap()
+                .pseudonymization
+                .model = settings::PiiModel::Fp32;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(cx.debug_bounds("setup-pseudonyms").is_some());
+        panel.update(cx, |panel, _| {
+            let index = settings::Model::ALL
+                .iter()
+                .position(|m| *m == settings::Model::Pii(settings::PiiModel::Fp16))
+                .unwrap();
+            panel.statuses[index] = settings_ui::Status::Missing;
+        });
+        app.update(cx, |app, cx| {
+            app.preferences
+                .borrow_mut()
+                .current
+                .as_mut()
+                .unwrap()
+                .pseudonymization
+                .model = settings::PiiModel::Fp16;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(cx.debug_bounds("setup-pseudonyms").is_some());
+    }
     #[gpui::test]
     fn cancelled_edited_and_replaced_document_results_are_rejected(cx: &mut gpui::TestAppContext) {
         let (app, cx) = crate::ui_tests::boot(cx);

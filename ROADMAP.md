@@ -43,8 +43,11 @@ The user authorized the pinned GLiNER2 option experimentally despite its blocker
    Isolated same-input comparisons expose raw recognition separately from prepared
    Markdown and support explicit report export. Alternatives require runtime/resource
    evidence; failed options remain visibly disabled on the affected platform.
-   All four bundles passed offline runtime probes on Apple Silicon macOS; FP32
-   retains experimental status and the FP16 default is unchanged. See
+   All four supported bundles passed offline runtime probes on Apple Silicon
+   macOS. The 2026-10-04 cleanup retains only GLiNER2 FP16/FP32 for
+   pseudonymization. Settings includes model descriptions, language/label coverage
+   and Hugging Face links. Both precisions remain experimental and FP16 remains
+   the default. Obsolete model preferences require an explicit reset. See
    [verification and remaining native/Windows checks](tests/fixtures/model-settings/README.md).
 
 A measured responsiveness/resource blocker moves ahead of features. Keep the
@@ -84,10 +87,8 @@ discovery descriptions alone do not establish suitability.
 
 [GLiNER multi PII v1](https://huggingface.co/urchade/gliner_multi_pii-v1/raw/main/README.md)
 declares EN/FR/DE/ES/PT/IT, excluding Russian: its name does not establish RU
-coverage. [OpenAI Privacy Filter](https://huggingface.co/openai/privacy-filter)
-is a comparison candidate with primarily English, fixed categories and no
-organization label in its published taxonomy. Presidio/Natasha were researched
-but excluded from the shipped shortlist because their integration uses Python.
+coverage. Presidio/Natasha were researched but excluded from the shipped shortlist
+because their integration uses Python.
 
 Reuse detection, but retain app-owned review, replacement mapping, undo, and
 stale-result protection. No detector establishes guaranteed anonymization.

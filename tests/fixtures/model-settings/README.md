@@ -100,3 +100,63 @@ layout, IME and native file dialogs), native pseudonymization comparison/review
 acceptance, and new Windows runtime/UI operation for model selection/FP32.
 Only the Apple Silicon host toolchain was available; Windows/Linux target builds
 were not run here. Existing Windows default-OCR evidence remains separate.
+
+## GLiNER-only cleanup — 2026-10-04
+
+Pseudonymization now offers only GLiNER2 FP16 and FP32. Removed the other
+detector adapters, manifests, dedicated probe files and classifier-only review
+categories. Settings descriptions, language evidence, source links and isolated
+comparisons remain. FP16 stays the default and OCR selection is unchanged.
+
+Focused preference tests verify FP16/FP32 compatibility and reject obsolete
+model selections with an explicit reset notice, preserving the stored file
+until the user applies supported preferences. Formatting, workspace/all-target
+clippy with denied warnings and workspace tests passed: 354 tests passed,
+11 opt-in tests ignored. The development application binary was rebuilt.
+
+Both installed precisions were rerun through `settings_model_offline_probe`
+with `GLINER2_DEVICE=cpu` and network access denied by `sandbox-exec`, using
+the same short synthetic EN/RU input and debug build as the earlier probes.
+Each returned the same 16 source spans/categories per language as the retained
+2026-10-02 reports. Current per-run timings and process peak RSS were:
+
+| Bundle | English elapsed | Russian elapsed | Peak RSS |
+| --- | ---: | ---: | ---: |
+| GLiNER2 FP16 | 5.530 s | 5.858 s | 2,064.5 MiB |
+| GLiNER2 FP32 | 8.496 s | 8.359 s | 2,763.2 MiB |
+
+These are runtime smoke checks, not accuracy qualification or resource limits.
+Native UI/IME acceptance and Windows runtime operation remain outstanding.
+
+
+## Settings and review UI cleanup — 2026-10-04
+
+The main toolbar has one Settings control with a unique ID and direct panel
+listener. A GPUI mouse regression reproduces the former duplicate-ID failure
+when the pseudonymization bar is open and verifies opening/closing without
+editor focus. It also checks Details/Advanced and the footer within a 640×480
+viewport. A successful-scan regression removes the setup prompt only for the
+scanned model and respects a later missing-model status.
+
+Settings uses compact model cards, one shared experimental PII caution,
+Details for evidence/repair/removal, and a fixed footer. The review bar keeps
+actions and the source-review caution visible; scan provenance is disclosed
+under Details. An additional regression exercises shutdown while a worker owns
+model admission, rejects new work, and waits for that worker to release it.
+
+A temporary native preview revealed a quit race: the main thread was in
+`exit`/`__cxa_finalize_ranges` while a background ONNX session was initializing.
+The app now waits synchronously for model work in its quit callback, before
+GPUI's 200 ms asynchronous cleanup deadline. Sequential native checks of both
+OCR bundles and both GLiNER precisions succeeded on the main thread, a 512 KiB
+Rust thread, and the macOS dispatch queue. These checks used installed local
+artifacts and performed no downloads. A controlled quit requested during
+active catalog loading waited 12.47 s for the worker and exited successfully.
+Formatting, clippy with denied warnings, all workspace tests (357 passed,
+11 ignored), and the development app build passed. The isolated native preview
+also closed without producing a new crash report.
+
+Native screenshots used an isolated in-memory synthetic document and temporary
+app bundle. Coordinate input was rejected by the native automation service
+(`noWindowsAvailable`), so those screenshots do not establish native mouse or
+keyboard acceptance. Human macOS/IME and Windows acceptance remain open.

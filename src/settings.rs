@@ -65,6 +65,31 @@ impl PiiModel {
             Self::Fp32 => gliner2_rs::Precision::Fp32,
         }
     }
+    pub fn engine(self) -> &'static str {
+        "gliner2-rs 0.9.6"
+    }
+    pub fn languages(self) -> &'static str {
+        "English, French, Spanish, German, Italian, Portuguese, Dutch; Russian is exploratory"
+    }
+    pub fn description(self) -> &'static str {
+        match self {
+            Self::Fp16 => {
+                "Flexible GLiNER2 span detector. Half-precision weights; current reference model."
+            }
+            Self::Fp32 => {
+                "The same GLiNER2 checkpoint with full-precision weights. Larger download and memory use; not established as more accurate."
+            }
+        }
+    }
+    pub fn evidence(self) -> &'static str {
+        "Experimental · Known EN/RU misses; neither precision is qualified. Review the complete document."
+    }
+    pub fn license(self) -> &'static str {
+        "Apache-2.0; encoder MIT"
+    }
+    pub fn hugging_face_url(self) -> &'static str {
+        "https://huggingface.co/fastino/gliner2-privacy-filter-PII-multi"
+    }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Model {
@@ -229,5 +254,41 @@ mod tests {
         assert_eq!(load(&path).unwrap().ocr.dpi, 300);
         std::fs::write(&path, b"{\"version\":9}").unwrap();
         assert!(load(&path).is_err());
+    }
+    #[test]
+    fn every_pii_model_roundtrips_without_changing_existing_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        for model in PiiModel::ALL {
+            let mut prefs = Preferences::default();
+            prefs.pseudonymization.model = model;
+            save(&path, &prefs).unwrap();
+            assert_eq!(load(&path).unwrap(), prefs);
+        }
+        assert_eq!(
+            serde_json::from_str::<PiiModel>("\"Fp16\"").unwrap(),
+            PiiModel::default()
+        );
+        assert_eq!(
+            serde_json::from_str::<PiiModel>("\"Fp32\"").unwrap(),
+            PiiModel::Fp32
+        );
+    }
+    #[test]
+    fn removed_models_require_explicit_reset_without_rewriting_preferences() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        for removed in ["HorizonSmallQ8", "NymBaseCompressed", "OpenAiPrivacyQ4"] {
+            let mut stored = serde_json::to_value(Preferences::default()).unwrap();
+            stored["pseudonymization"]["model"] = removed.into();
+            let bytes = serde_json::to_vec(&stored).unwrap();
+            std::fs::write(&path, &bytes).unwrap();
+            let error = load(&path).unwrap_err();
+            assert!(error.contains("Reset explicitly in Settings"));
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+
+            save(&path, &Preferences::default()).unwrap();
+            assert_eq!(load(&path).unwrap(), Preferences::default());
+        }
     }
 }

@@ -384,6 +384,10 @@ impl Render for View {
                     .flex()
                     .flex_col()
                     .gap_2()
+                    .id("qa-configurations")
+                    .max_h(px(280.))
+                    .min_h_0()
+                    .overflow_y_scroll()
                     .children(self.configs.iter().enumerate().map(|(index, config)| {
                         let config = config.clone();
                         let models: Vec<_> = match config {
@@ -410,7 +414,7 @@ impl Render for View {
                                 control(
                                     (
                                         "qa-model",
-                                        index * 4
+                                        index * Model::ALL.len()
                                             + Model::ALL.iter().position(|m| *m == model).unwrap(),
                                     ),
                                     format!("{}{}", if selected { "● " } else { "" }, model.name()),

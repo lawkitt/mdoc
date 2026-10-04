@@ -5,6 +5,11 @@ graph. It does not enable a product action. Read the
 [dated qualification result](../../tests/fixtures/pseudonymization/README.md)
 before choosing a detector.
 
+The app catalog retains only GLiNER2 FP16/FP32 as of 2026-10-04; see
+[app runtime verification](../../tests/fixtures/model-settings/README.md).
+The qualification tooling below compares GLiNER-family models and does not
+establish accuracy qualification for the experimental app options.
+
 The shared crate handles explicit setup, artifact integrity, annotated fixtures,
 exact scoring, measurements, and process supervision. Two small adapters use
 existing Rust engines. Separate Cargo locks are necessary: `gline-rs` pins

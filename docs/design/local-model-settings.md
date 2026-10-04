@@ -5,6 +5,10 @@ rounds and shared understanding are confirmed. The implementation and measured
 platform limits are recorded in [verification](../../tests/fixtures/model-settings/README.md).
 Human native acceptance and new Windows runtime checks remain outstanding.
 
+The 2026-10-04 cleanup retains only GLiNER2 FP16/FP32 for pseudonymization,
+as recorded in [ADR 0006](../adr/0006-local-model-settings.md#gliner-only-catalog--2026-10-04).
+The interview below records the original scope and unchanged defaults.
+
 ## Goal
 
 Let users inspect current OCR and pseudonymization settings, identify the model

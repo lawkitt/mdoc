@@ -81,7 +81,7 @@ impl Config {
             }
             Self::Pii(c) => {
                 let m = pseudonymization_detector::manifest_for(c.model);
-                serde_json::json!({"model":m.id,"revision":m.revision,"repository":m.repository,"runtime":"ONNX Runtime 1.27.0","engine":"gliner2-rs 0.9.6","execution":"CPU","threads":4,"artifacts":m.files.iter().map(|a|serde_json::json!({"file":a.path,"sha256":a.sha256})).collect::<Vec<_>>()})
+                serde_json::json!({"model":m.id,"revision":m.revision,"repository":m.repository,"runtime":"ONNX Runtime 1.27.0","engine":c.model.engine(),"model_card":c.model.hugging_face_url(),"languages":c.model.languages(),"description":c.model.description(),"confidence":"GLiNER2 span confidence","execution":"CPU","threads":4,"artifacts":m.files.iter().map(|a|serde_json::json!({"file":a.path,"sha256":a.sha256})).collect::<Vec<_>>()})
             }
         }
     }
@@ -178,7 +178,7 @@ pub fn run(
                 let detections = pseudonymization_detector::scan_reserved(source, cancel, c)?;
                 let predictions=detections.iter().map(|d|serde_json::json!({"text":&source[d.range.clone()],"category":format!("{:?}",d.category),"start":d.range.start,"end":d.range.end,"confidence":d.score})).collect::<Vec<_>>();
                 Ok(
-                    serde_json::json!({"predictions":predictions,"count":predictions.len(),"warnings":["Experimental review assistance. Confidence and candidate count are not accuracy scores."]}),
+                    serde_json::json!({"predictions":predictions,"count":predictions.len(),"warnings":[c.model.evidence(),c.model.languages(),c.model.description(),"Confidence and candidate count are not accuracy scores."]}),
                 )
             }
             (Input::Pdf(bytes), Config::Ocr(c)) => {

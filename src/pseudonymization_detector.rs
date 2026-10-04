@@ -73,8 +73,9 @@ pub fn root_for(model: crate::settings::PiiModel) -> Result<PathBuf, String> {
     dirs::data_local_dir()
         .map(|root| {
             root.join(format!(
-                "mdoc/pseudonymization/{}-e5948986",
-                manifest_for(model).id
+                "mdoc/pseudonymization/{}-{}",
+                manifest_for(model).id,
+                &manifest_for(model).revision[..8]
             ))
         })
         .ok_or_else(|| "Could not find local application storage.".into())
@@ -358,6 +359,35 @@ mod tests {
     use sha2::{Digest, Sha256};
     fn verify(path: &Path, artifact: &Artifact) -> Result<(), String> {
         crate::model_download::verify(path, artifact.bytes, &artifact.sha256)
+    }
+    #[test]
+    fn resource_guards_reject_before_opening_any_model_and_deadlines_reject_partial_work() {
+        let source = "x".repeat(MAX_SOURCE_BYTES + 1);
+        for model in crate::settings::PiiModel::ALL {
+            let result = scan_in(
+                &source,
+                &AtomicBool::new(false),
+                Path::new("missing-test-model"),
+                PathBuf::from("missing-runtime"),
+                &crate::settings::PiiConfig {
+                    model,
+                    ..Default::default()
+                },
+            );
+            assert!(result.unwrap_err().contains("2 MiB"));
+        }
+        assert!(
+            checkpoint(
+                &AtomicBool::new(false),
+                Instant::now() - Duration::from_secs(121)
+            )
+            .unwrap_err()
+            .contains("two minutes")
+        );
+        assert_eq!(
+            checkpoint(&AtomicBool::new(true), Instant::now()).unwrap_err(),
+            "Scan cancelled."
+        );
     }
     #[test]
     #[ignore = "requires preverified qualification cache and installed native runtime; no downloads"]

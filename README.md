@@ -7,8 +7,9 @@ Built with Rust and GPUI for macOS, Windows, and Linux.
 
 See [ROADMAP.md](ROADMAP.md) for planned features and priorities,
 [CONTEXT.md](CONTEXT.md) for domain terms, and [ADRs](docs/adr/) for durable decisions.
-Inline pseudonymization is available experimentally using the pinned GLiNER2
-model. The [initial qualification](tests/fixtures/pseudonymization/README.md)
+Inline pseudonymization is available experimentally using pinned local GLiNER2
+FP16 and FP32 bundles. The
+[initial GLiNER qualification](tests/fixtures/pseudonymization/README.md)
 found significant English/Russian and hidden-source misses; experimental use
 was explicitly authorized despite those blockers. This is review assistance,
 not guaranteed anonymization.
@@ -56,21 +57,29 @@ wrapper or metadata. Brief **Copied** feedback confirms the handoff; conversion
 warnings remain visible below the toolbar for review.
 
 **Settings** (Cmd/Ctrl+comma) opens application defaults, including with no
-document open. Choose the Cyrillic or original v6 OCR bundle, or GLiNER2 FP16/FP32
-at the same pinned revision. FP16 and Cyrillic remain the defaults. Installation,
+document open. Choose the Cyrillic or original v6 OCR bundle, or GLiNER2 FP16/FP32.
+FP16 and Cyrillic remain the defaults. Installation,
 language evidence and experimental status are shown separately. Selection never
-downloads a model: use **Download**, **Repair** or **Remove** explicitly. Shared
+downloads a model: use **Download** explicitly. **Details** contains **Repair**
+and **Remove model**, along with evidence and technical information. Shared
 runtimes are retained and model files cannot be removed during model work.
+**Details** includes model description, languages/category coverage, license,
+revision, runtime/storage information, a Hugging Face model-card link and pinned
+download files. Russian detection remains exploratory, with known misses.
+Language claims do not establish accuracy on your files.
 
 **Advanced** exposes OCR resolution (150/200/300 DPI), minimum recognition
 confidence (0–1), and detection threshold (0–1). Explicit OCR recognizes every
 selected page using fixed Force routing. **Apply** atomically persists defaults
-for future runs; **Close/Escape** discards drafts. **Reset to defaults** restores
+for future runs; **Close/Escape** discards drafts. **Reset defaults** restores
 the default models, 150 DPI, confidence 0 and threshold 0.5. Existing results keep
 their captured configuration. Setup continues after the dialog closes;
-cancellation retains completed verified artifacts.
+cancellation retains completed verified artifacts. Quitting waits for active
+model work before releasing the native runtimes.
+Saved preferences selecting a removed model require an explicit reset or
+supported selection in Settings; the app does not silently substitute a model.
 
-**Compare OCR / Compare pseudonymization** opens an isolated read-only window.
+**Compare models** in either Settings section opens an isolated read-only window.
 It captures the original PDF or the complete current Markdown once. Runs execute
 sequentially on that snapshot, with an optional OCR page range frozen on the
 first run. **New comparison** captures fresh input. Recognition output is
@@ -89,6 +98,9 @@ Windows x64; manual review remains available on every platform. The first use
 offers a separate **Download experimental model** action (default FP16: up to
 709 MB including the native runtime if absent; FP32: up to 1,323 MB). Setup verifies pinned sizes and SHA-256 digests;
 subsequent scans run offline. Ordinary opening and editing need no model.
+Scans use bounded 512-token schema/text windows with overlapping context,
+a 2 MiB source limit and a two-minute cooperative deadline. Comparison reports
+identify the model precision, engine and captured configuration.
 
 Candidates have subtle highlights; hidden source receives a marker beside its
 containing element. Click a candidate, or use Alt+Enter at its caret, to open one
@@ -97,7 +109,10 @@ Alt+Up/Down and **Previous / Next** navigate candidates. Shift-click
 bypasses review to edit normally; hover strengthens the highlight without opening
 a popup. The popup shows original text, its source fragment, a stable placeholder
 and occurrence count. **Accept** replaces all exact occurrences as one undo step;
-**Keep** changes no text. Both offer an explicit single-occurrence option. Edit
+**Keep** changes no text. Both offer an explicit single-occurrence option.
+**Accept all** in the review bar applies every pending suggestion as one undo
+step, preserving candidates marked Keep and edited replacement tokens. It is
+disabled during a scan or when no suggestions remain. Edit
 the replacement field or explicitly link a variant to an existing placeholder;
 tokens start with a letter, end with a letter/number and use ASCII letters,
 numbers, underscores and hyphens to remain safe inside

@@ -356,6 +356,51 @@ fn copy_markdown_toolbar_uses_active_tab_without_editor_focus(cx: &mut TestAppCo
 }
 
 #[gpui::test]
+fn toolbar_settings_opens_and_closes_without_editor_focus(cx: &mut TestAppContext) {
+    cx.update(settings_ui::bind_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let panel = cx.update(|window, cx| {
+        window.focus(&tabs.read(cx).focus.clone(), cx);
+        tabs.read(cx).settings.clone()
+    });
+    active(&tabs, cx).update(cx, |view, cx| {
+        view.pseudonymization.review.open = true;
+        cx.notify();
+    });
+    click_toolbar(cx, "Settings");
+    cx.update(|window, cx| {
+        assert!(panel.read(cx).open);
+        window.draw(cx).clear(cx);
+    });
+    assert!(cx.debug_bounds("settings-dialog").is_some());
+    click_toolbar(cx, "settings-advanced");
+    click_toolbar(cx, "settings-details-fp16");
+    cx.update(|_, cx| {
+        assert_eq!(
+            panel.read(cx).details,
+            Some(settings::Model::Pii(settings::PiiModel::Fp16))
+        );
+        assert!(panel.read(cx).advanced);
+    });
+    cx.simulate_resize(size(px(640.), px(480.)));
+    let dialog = cx.debug_bounds("settings-dialog").unwrap();
+    assert!(dialog.size.width <= px(640.));
+    assert!(dialog.size.height <= px(480.));
+    for selector in ["settings-close", "settings-apply"] {
+        let bounds = cx.debug_bounds(selector).unwrap();
+        assert!(bounds.top() >= px(0.) && bounds.bottom() <= px(480.));
+    }
+    cx.dispatch_action(settings_ui::CloseSettings);
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert!(!panel.read(cx).open);
+        window.draw(cx).clear(cx);
+    });
+    assert!(cx.debug_bounds("settings-dialog").is_none());
+}
+
+#[gpui::test]
 fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));

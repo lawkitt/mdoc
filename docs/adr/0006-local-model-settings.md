@@ -39,6 +39,22 @@ FP16 and add the pinned FP32 export only after actual compatibility and resource
 checks. Both remain experimental; FP32 is another precision of the same detector.
 Keep current model defaults. Distinct detector engines are deferred.
 
+### GLiNER-only catalog — 2026-10-04
+
+The user requested cleanup to retain only GLiNER models for pseudonymization.
+The supported app catalog is GLiNER2 FP16 and FP32. Other detector adapters,
+manifests, dedicated probe artifacts and classifier-only review categories are
+removed. Keep explicit setup, experimental status, model information and
+same-input comparisons. FP16 remains the default; both OCR bundles remain.
+
+Existing FP16/FP32 preferences and model cache identities stay compatible.
+Stored preferences selecting a removed model are obsolete and require a visible
+notice and explicit reset/supported selection, without silent substitution.
+
+Settings exposes language scope directly and model description, license,
+revision, storage and source/pinned-export links under Details. Comparison
+controls scroll within a bounded area as the catalog grows.
+
 Advanced settings expose OCR resolution/minimum recognition confidence and
 pseudonymization threshold. OCR routing is fixed to Force, with no user mode
 selector: explicit OCR recognizes every selected page. This changes the app's

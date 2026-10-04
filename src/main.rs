@@ -71,6 +71,7 @@ actions!(
         NextCandidate,
         PreviousCandidate,
         AcceptPseudonymCandidate,
+        AcceptAllPseudonyms,
         KeepPseudonymCandidate,
         ClosePseudonymPopup,
         Close,
@@ -1378,6 +1379,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::copy_markdown))
             .on_action(cx.listener(Self::pseudonymize))
             .on_action(cx.listener(Self::add_pseudonym))
+            .on_action(cx.listener(Self::accept_all_pseudonyms))
             .on_action(cx.listener(|this, _: &ReviewCandidate, window, cx| this.step_pseudonym(false, true, window, cx)))
             .on_action(cx.listener(|this, _: &NextCandidate, window, cx| this.step_pseudonym(false, false, window, cx)))
             .on_action(cx.listener(|this, _: &PreviousCandidate, window, cx| this.step_pseudonym(true, false, window, cx)))
@@ -1404,13 +1406,17 @@ impl Render for Workspace {
                     .when(self.copy_feedback.is_some(), |bar| bar.child(div().text_color(palette.header_muted).child("Copied")))
                     .when(self.can_copy_markdown(), |bar| bar.child(button("Pseudonymize", Pseudonymize, theme))))
                 .when((self.source_only && self.ocr_required.is_none() && !self.auto_convert_pending) || self.job.busy(), |bar| bar.child(if self.job.busy() { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting…" }).into_any_element() } else if self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy() { div().opacity(0.5).child("Convert to Markdown").into_any_element() } else { button("Convert to Markdown", Import, theme).into_any_element() }))
-                .child(if matches!(self.ocr_state, OcrState::Missing | OcrState::Failed(_)) {
-                    button(self.ocr_state.label(), SetupOcr, theme).into_any_element()
-                } else { div().opacity(0.65).child(self.ocr_state.label()).into_any_element() })
-                .child(button("Settings", Settings, theme))
+                .when(self.ocr_state.busy(), |bar| bar.child(div().text_color(palette.header_muted).child(self.ocr_state.label())))
                 .child(div().flex_1())
+                .child(div().id("workspace-settings").when(cfg!(test), |v| v.debug_selector(|| "Settings".into()))
+                    .px_3().py_1().rounded_md().cursor_pointer().hover(|v| v.bg(palette.placeholder_bg)).child("Settings")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        if let Some(panel) = this.model_panel.clone() {
+                            panel.update(cx, |panel, cx| panel.show(window, cx));
+                        }
+                    })))
                 .child(button(theme.toggle_label(), ToggleTheme, theme))
-                .child(if self.dirty_cached { "Unsaved changes" } else if self.source_only { "Source preview" } else { "Markdown · WYSIWYG" })
+                .when(self.dirty_cached, |bar| bar.child(div().text_size(px(11.)).text_color(palette.header_muted).child("Unsaved changes")))
                 .when(self.preview.loading, |bar| bar.child(div().child("Preparing preview…")))
                 .when(self.preview.pdf.is_some() || self.preview.source.is_some(), |bar| bar.child(button(if self.preview.visible { "Close Preview" } else { "Show Preview" }, TogglePreview, theme))))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
@@ -1497,6 +1503,7 @@ fn main() {
     });
     application.run(move |cx: &mut App| {
         cx.on_app_quit(|cx| {
+            model_work::shutdown();
             let executor = cx.background_executor().clone();
             async move {
                 executor

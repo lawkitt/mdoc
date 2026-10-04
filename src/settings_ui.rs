@@ -25,9 +25,9 @@ impl Status {
         match self {
             Self::Unknown => "Not checked".into(),
             Self::Missing => "Not installed".into(),
-            Self::Ready => "Installed · runtime checked".into(),
-            Self::Damaged(e) => format!("Repair needed: {e}"),
-            Self::Unavailable(e) => format!("Unavailable: {e}"),
+            Self::Ready => "Installed".into(),
+            Self::Damaged(_) => "Repair needed".into(),
+            Self::Unavailable(_) => "Unavailable".into(),
         }
     }
 }
@@ -88,13 +88,35 @@ pub fn control(
         })
         .when(!enabled, |v| v.opacity(0.45))
 }
+fn quiet_control(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    theme: Theme,
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .text_size(px(12.))
+        .text_color(theme.pdf_style().header_muted)
+        .child(label.into())
+        .when(enabled, |v| {
+            v.cursor_pointer().hover(|v| {
+                v.bg(theme.pdf_style().placeholder_bg)
+                    .text_color(theme.pdf_style().header_fg)
+            })
+        })
+        .when(!enabled, |v| v.opacity(0.45))
+}
 impl Panel {
     pub fn new(shared: Shared, theme: Rc<Cell<Theme>>, cx: &mut Context<Self>) -> Self {
         let draft = shared.borrow().current.clone().unwrap_or_default();
         Self {
             open: false,
             shared,
-            statuses: vec![Status::Unknown; 4],
+            statuses: vec![Status::Unknown; Model::ALL.len()],
             ocr_installations: Vec::new(),
             threshold: field(&draft.pseudonymization.threshold.to_string(), cx),
             confidence: field(&draft.ocr.minimum_confidence.to_string(), cx),
@@ -365,15 +387,18 @@ impl Panel {
     }
     fn row(&self, model: Model, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let accent = theme.search_accent();
         let index = Model::ALL.iter().position(|m| *m == model).unwrap();
         let status = &self.statuses[index];
         let selected = match model {
             Model::Ocr(m) => self.draft.ocr.model == m,
             Model::Pii(m) => self.draft.pseudonymization.model == m,
         };
-        let selectable = !matches!(status, Status::Unavailable(_));
+        let selectable = !matches!(status, Status::Unavailable(_)) && !self.applying;
         let idle = self.working.is_none() && !model_work::busy();
         let removable = idle && !matches!(status, Status::Missing | Status::Unknown);
+        let missing = matches!(status, Status::Missing | Status::Unknown);
         let bytes = match model {
             Model::Ocr(m) => m.manifest().artifacts.iter().map(|a| a.size).sum::<u64>(),
             Model::Pii(m) => pseudonymization_detector::manifest_for(m)
@@ -382,40 +407,91 @@ impl Panel {
                 .map(|a| a.bytes)
                 .sum::<u64>(),
         };
-        let evidence = match model {
-            Model::Ocr(m) => m.evidence(),
-            Model::Pii(_) => {
-                "Experimental · Detector has known EN/RU misses; neither precision is qualified. Review the complete document."
-            }
+        let summary = match model {
+            Model::Ocr(OcrModel::Cyrillic) => "English & Russian",
+            Model::Ocr(OcrModel::V6Small) => "English · Known Russian recognition failure",
+            Model::Pii(PiiModel::Fp16) => "Half precision · Default",
+            Model::Pii(PiiModel::Fp32) => "Full precision · Higher memory use",
         };
-        div().flex().flex_col().gap_1().py_2().border_b_1().border_color(theme.pdf_style().border)
-            .child(div().flex().items_center().gap_2()
-                .child(control(("settings-model",index*4),if selected {format!("● {}",model.name())}else{format!("○ {}",model.name())},theme,selectable)
-                    .on_click(cx.listener(move |this,_,_,cx| {if selectable {match model {Model::Ocr(m)=>this.draft.ocr.model=m,Model::Pii(m)=>this.draft.pseudonymization.model=m};cx.notify();}})))
-                .child(control(("settings-model",index*4+3),"Details",theme,true).on_click(cx.listener(move |this,_,_,cx| {this.details=if this.details==Some(model){None}else{Some(model)};cx.notify();})))
-                .child(div().flex_1())
-                .child(control(("settings-model",index*4+1),if matches!(status,Status::Missing|Status::Unknown){"Download"}else{"Repair"},theme,idle&&ocr::SUPPORTED).on_click(cx.listener(move |this,_,_,cx|this.setup(model,false,cx))))
-                .child(control(("settings-model",index*4+2),"Remove",theme,removable).on_click(cx.listener(move |_,_,window,cx| {
-                    if !removable {return;}
-                    let prompt=window.prompt(PromptLevel::Warning,&format!("Remove {} model files?",model.name()),Some("Shared runtimes and documents are retained."),&["Remove","Cancel"],cx);
-                    cx.spawn(async move |this,cx| {if prompt.await.ok()==Some(0){let _=this.update(cx,|this,cx|this.setup(model,true,cx));}}).detach();
-                }))))
-            .child(div().text_size(px(11.)).child(format!("{} · {} MB model artifacts",status.label(),bytes.div_ceil(1_000_000))))
-            .child(div().text_size(px(11.)).child(evidence))
-            .when(self.details==Some(model),|v| {
-                let (revision,path)=match model {Model::Ocr(m)=>(m.manifest().revision.to_string(),ocr::root().map(|root|ocr::model_root(&root,m))),Model::Pii(m)=>(pseudonymization_detector::manifest_for(m).revision,pseudonymization_detector::root_for(m))};
-                v.child(div().text_size(px(11.)).child(format!("Revision: {revision}\nCPU · ONNX Runtime 1.27.0{}\nLicenses: {}\nStorage: {}",if matches!(model,Model::Ocr(_)){" · PDFium native-v7988\nPrecision: fixed upstream ONNX weights\nThreads: converter-managed, 1–3 pipelines, up to 4 intra-op threads\nLimits: 256 MiB PDF input; 4-page raster batches; 256 MiB bitmap/page"}else{" · 4 threads · 2 MiB source · 512 tokens/window · 120 s cooperative deadline"},if matches!(model,Model::Ocr(_)){"Apache-2.0"}else{"Apache-2.0; encoder MIT"},path.map(|p|p.display().to_string()).unwrap_or_else(|e|e))))
+        div().id(("settings-choice", index)).flex().flex_col().min_w_0()
+            .border_1().border_color(if selected { accent } else { palette.border }).rounded_md()
+            .when(selected, |v| v.bg(gpui::Hsla { a: 0.05, ..accent }))
+            .child(div().flex().flex_wrap().items_center().gap_2().p_3()
+                .child(div().id(("select-model", index)).flex().flex_1().min_w(px(180.)).items_center().gap_3()
+                    .when(selectable, |v| v.cursor_pointer())
+                    .when(!selectable, |v| v.opacity(0.5))
+                    .child(div().text_color(if selected { accent } else { palette.header_muted }).child(if selected { "●" } else { "○" }))
+                    .child(div().flex().flex_col().flex_1().min_w_0().gap_1()
+                        .child(div().text_size(px(13.)).text_ellipsis().child(model.name()))
+                        .child(div().text_size(px(11.)).text_color(palette.header_muted).text_ellipsis().child(summary)))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if selectable {
+                            match model { Model::Ocr(m) => this.draft.ocr.model = m, Model::Pii(m) => this.draft.pseudonymization.model = m }
+                            cx.notify();
+                        }
+                    })))
+                .child(div().flex().flex_shrink_0().items_center().gap_2()
+                    .child(div().text_size(px(11.)).text_color(palette.header_muted).child(format!("{} · {} MB", status.label(), bytes.div_ceil(1_000_000))))
+                .when(missing, |v| v.child(control(("download-model", index), "Download", theme, idle && ocr::SUPPORTED)
+                    .on_click(cx.listener(move |this, _, _, cx| { if idle && ocr::SUPPORTED { this.setup(model, false, cx); } }))))
+                .child(quiet_control(("model-details", index), if self.details == Some(model) { "Less ↑" } else { "Details ↓" }, theme, true)
+                    .when(cfg!(test) && model == Model::Pii(PiiModel::Fp16), |v| v.debug_selector(|| "settings-details-fp16".into()))
+                    .on_click(cx.listener(move |this, _, _, cx| { this.details = if this.details == Some(model) { None } else { Some(model) }; cx.notify(); })))))
+            .when(self.details == Some(model), |v| {
+                let (revision, path) = match model {
+                    Model::Ocr(m) => (m.manifest().revision.to_string(), ocr::root().map(|root| ocr::model_root(&root, m))),
+                    Model::Pii(m) => (pseudonymization_detector::manifest_for(m).revision, pseudonymization_detector::root_for(m)),
+                };
+                let evidence = match model { Model::Ocr(m) => m.evidence(), Model::Pii(m) => m.evidence() };
+                let license = match model { Model::Ocr(_) => "Apache-2.0", Model::Pii(m) => m.license() };
+                let mut details = div().flex().flex_col().gap_2().px_3().pb_3().min_w_0().text_size(px(11.)).text_color(palette.header_muted)
+                    .child(evidence)
+                    .when_some(match status { Status::Damaged(e) | Status::Unavailable(e) => Some(e.clone()), _ => None }, |v, reason| v.child(reason));
+                if let Model::Pii(m) = model {
+                    let manifest = pseudonymization_detector::manifest_for(m);
+                    let export_url = format!("https://huggingface.co/{}/tree/{}", manifest.repository, manifest.revision);
+                    details = details.child(m.description()).child(format!("Languages: {}", m.languages()))
+                        .child(div().flex().flex_wrap().gap_2()
+                            .child(quiet_control(("settings-hf", index * 2), "Model card ↗", theme, true).on_click(move |_, _, cx| cx.open_url(m.hugging_face_url())))
+                            .child(quiet_control(("settings-hf", index * 2 + 1), "Pinned files ↗", theme, true).on_click(move |_, _, cx| cx.open_url(&export_url))));
+                }
+                details = details.child(format!("Revision: {revision}\nLicenses: {license}\nStorage: {}", path.map(|p| p.display().to_string()).unwrap_or_else(|e| e)))
+                    .child(match model {
+                        Model::Ocr(_) => "CPU · ONNX Runtime 1.27.0 · PDFium native-v7988\nFixed upstream precision · converter-managed threads\nLimits: 256 MiB PDF · 4-page batches · 256 MiB bitmap/page",
+                        Model::Pii(_) => "CPU · ONNX Runtime 1.27.0 · 4 threads\nLimits: 2 MiB source · 512 tokens/window · 120 s cooperative deadline",
+                    })
+                    .child(div().flex().flex_wrap().gap_2()
+                        .when(!missing, |v| v.child(quiet_control(("repair-model", index), "Repair", theme, idle && ocr::SUPPORTED)
+                            .on_click(cx.listener(move |this, _, _, cx| { if idle && ocr::SUPPORTED { this.setup(model, false, cx); } }))))
+                        .child(quiet_control(("remove-model", index), "Remove model…", theme, removable).on_click(cx.listener(move |_, _, window, cx| {
+                            if !removable { return; }
+                            let prompt = window.prompt(PromptLevel::Warning, &format!("Remove {} model files?", model.name()), Some("Shared runtimes and documents are retained."), &["Remove", "Cancel"], cx);
+                            cx.spawn(async move |this, cx| { if prompt.await.ok() == Some(0) { let _ = this.update(cx, |this, cx| this.setup(model, true, cx)); } }).detach();
+                        }))));
+                v.child(details)
             }).into_any_element()
     }
 }
 impl Render for Panel {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        div().id("settings-overlay").absolute().inset_0().flex().items_center().justify_center().occlude().bg(gpui::Hsla{a:0.35,..p.bg})
-            .on_mouse_down(MouseButton::Left,|_,_,cx|cx.stop_propagation())
-            .child(div().id("settings-dialog").key_context("ModelSettings").track_focus(&self.focus).w(px(740.)).max_w_full().max_h_full().flex().flex_col().p_4().gap_3().rounded_lg().shadow_lg().bg(p.bg).border_1().border_color(p.border)
-                .on_action(cx.listener(|this,_:&CloseSettings,w,cx|this.close(w,cx)))
+        let accent = theme.search_accent();
+        let changed = self.shared.borrow().current.as_ref().is_none_or(|current| {
+            current != &self.draft
+                || self.confidence.read(cx).value().parse::<f32>().ok()
+                    != Some(current.ocr.minimum_confidence)
+                || self.threshold.read(cx).value().parse::<f32>().ok()
+                    != Some(current.pseudonymization.threshold)
+        });
+        div().id("settings-overlay").absolute().inset_0().p_4().flex().items_center().justify_center().occlude().bg(gpui::Hsla { a: 0.35, ..p.bg })
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .child(div().id("settings-dialog").when(cfg!(test), |v| v.debug_selector(|| "settings-dialog".into()))
+                .key_context("ModelSettings").track_focus(&self.focus).w(px(680.)).max_w_full()
+                .max_h((window.viewport_size().height - px(32.)).max(px(160.)))
+                .flex().flex_col().rounded_lg().shadow_lg().bg(p.bg).text_color(p.header_fg).text_size(px(13.))
+                .border_1().border_color(p.border)
+                .on_action(cx.listener(|this, _: &CloseSettings, w, cx| this.close(w, cx)))
                 .on_action(|_: &New, _, cx| cx.stop_propagation())
                 .on_action(|_: &Open, _, cx| cx.stop_propagation())
                 .on_action(|_: &Close, _, cx| cx.stop_propagation())
@@ -424,32 +500,73 @@ impl Render for Panel {
                 .on_action(|_: &Save, _, cx| cx.stop_propagation())
                 .on_action(|_: &SaveAs, _, cx| cx.stop_propagation())
                 .on_action(|_: &Import, _, cx| cx.stop_propagation())
-                .on_action(cx.listener(|this,_:&NextSettingsField,w,cx| {this.advanced=true;cx.notify();let target=if this.confidence.read(cx).focus_handle(cx).is_focused(w){this.threshold.read(cx).focus_handle(cx)}else{this.confidence.read(cx).focus_handle(cx)};w.focus(&target,cx);}))
-                .on_action(cx.listener(|this,_:&PreviousSettingsField,w,cx| {this.advanced=true;cx.notify();let target=if this.threshold.read(cx).focus_handle(cx).is_focused(w){this.confidence.read(cx).focus_handle(cx)}else{this.threshold.read(cx).focus_handle(cx)};w.focus(&target,cx);}))
-                .child(div().text_size(px(18.)).child("Settings"))
-                .child(div().text_size(px(11.)).child("Apply defaults for future runs. Existing results keep the settings they used."))
-                .child(div().id("settings-scroll").overflow_y_scroll().min_h_0().flex_1()
-                    .child(div().text_size(px(14.)).child("OCR"))
-                    .children(OcrModel::ALL.into_iter().map(|m|self.row(Model::Ocr(m),cx)))
-                    .child(div().mt_3().text_size(px(14.)).child("Pseudonymization"))
-                    .children(PiiModel::ALL.into_iter().map(|m|self.row(Model::Pii(m),cx)))
-                    .child(control("advanced-settings","Advanced",theme,true).mt_3().on_click(cx.listener(|this,_,_,cx|{this.advanced = !this.advanced;cx.notify();})))
-                    .when(self.advanced,|v|v.child(div().flex().flex_col().gap_2().mt_2()
-                        .child(div().flex().flex_wrap().items_center().gap_2().child("OCR resolution").children([150,200,300].map(|dpi|control(("dpi",dpi as usize),format!("{}{} DPI",if self.draft.ocr.dpi==dpi{"● "}else{""},dpi),theme,true).on_click(cx.listener(move |this,_,_,cx|{this.draft.ocr.dpi=dpi;cx.notify();})))))
-                        .child(div().flex().gap_3().child("OCR minimum confidence").child(div().w(px(100.)).border_1().border_color(p.border).px_2().child(self.confidence.clone())))
-                        .child(div().flex().gap_3().child("Detection threshold").child(div().w(px(100.)).border_1().border_color(p.border).px_2().child(self.threshold.clone())))
-                        .child(div().text_size(px(11.)).child("Higher thresholds discard more predictions. OCR recognizes every selected page. CPU execution and resource limits are fixed."))))
-                )
-                .when_some(self.error.clone(),|v,e|v.child(div().text_size(px(12.)).text_color(style::markdown_style(theme).alert_warning).child(e)))
-                .when_some(self.progress.clone(),|v,progress| {let state=progress.state.lock().unwrap().clone();v.child(div().flex().items_center().gap_2().child(div().flex_1().child(format!("{}{}",state.phase,if state.phase.starts_with("Downloading"){format!(" · {} / {} MB",state.received/1_000_000,state.total.div_ceil(1_000_000))}else{String::new()}))).child(control("cancel-model-download","Cancel download",theme,true).on_click(cx.listener(|this,_,_,cx|{if let Some(p)=&this.progress{p.cancel.store(true,Ordering::Relaxed);}cx.notify();}))))})
-                .child(div().flex().flex_wrap().gap_2().items_center()
-                    .child(control("reset-settings","Reset to defaults",theme,!self.applying).on_click(cx.listener(|this,_,_,cx|{if !this.applying{this.draft=Preferences::default();this.update_fields(cx);this.error=None;cx.notify();}})))
-                    .child(control("compare-ocr","Compare OCR",theme,true).on_click(cx.listener(|_,_,_,cx|cx.emit(Event::Compare(Model::Ocr(OcrModel::Cyrillic))))))
-                    .child(control("compare-pii","Compare pseudonymization",theme,true).on_click(cx.listener(|_,_,_,cx|cx.emit(Event::Compare(Model::Pii(PiiModel::Fp16))))))
+                .on_action(cx.listener(|this, _: &NextSettingsField, w, cx| {
+                    this.advanced = true; cx.notify();
+                    let target = if this.confidence.read(cx).focus_handle(cx).is_focused(w) { this.threshold.read(cx).focus_handle(cx) } else { this.confidence.read(cx).focus_handle(cx) };
+                    w.focus(&target, cx);
+                }))
+                .on_action(cx.listener(|this, _: &PreviousSettingsField, w, cx| {
+                    this.advanced = true; cx.notify();
+                    let target = if this.threshold.read(cx).focus_handle(cx).is_focused(w) { this.confidence.read(cx).focus_handle(cx) } else { this.threshold.read(cx).focus_handle(cx) };
+                    w.focus(&target, cx);
+                }))
+                .child(div().px_4().pt_4().pb_3().flex().flex_col().gap_1().flex_shrink_0()
+                    .child(div().text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).child("Settings"))
+                    .child(div().text_size(px(12.)).text_color(p.header_muted).child("Defaults for your next OCR or pseudonymization run.")))
+                .child(div().id("settings-scroll").overflow_y_scroll().min_h_0().flex_1().px_4().pb_3()
+                    .child(div().flex().items_center().mb_2()
+                        .child(div().flex_1().font_weight(gpui::FontWeight::SEMIBOLD).child("Text recognition"))
+                        .child(quiet_control("compare-ocr", "Compare models", theme, true)
+                            .on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Compare(Model::Ocr(OcrModel::Cyrillic)))))))
+                    .child(div().flex().flex_col().gap_2().children(OcrModel::ALL.into_iter().map(|m| self.row(Model::Ocr(m), cx))))
+                    .child(div().flex().items_center().mt_4().mb_2()
+                        .child(div().flex_1().font_weight(gpui::FontWeight::SEMIBOLD).child("Pseudonymization"))
+                        .child(quiet_control("compare-pii", "Compare models", theme, true)
+                            .on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Compare(Model::Pii(PiiModel::Fp16)))))))
+                    .child(div().text_size(px(11.)).text_color(p.header_muted).mb_2()
+                        .child("Experimental · Known English/Russian misses. Review the complete document before sharing."))
+                    .child(div().flex().flex_col().gap_2().children(PiiModel::ALL.into_iter().map(|m| self.row(Model::Pii(m), cx))))
+                    .child(quiet_control("advanced-settings", if self.advanced { "Advanced ↑" } else { "Advanced ↓" }, theme, true)
+                        .when(cfg!(test), |v| v.debug_selector(|| "settings-advanced".into()))
+                        .mt_3().on_click(cx.listener(|this, _, _, cx| { this.advanced = !this.advanced; cx.notify(); })))
+                    .when(self.advanced, |v| v.child(div().flex().flex_col().gap_3().mt_2().p_3().rounded_md().bg(theme.sidebar_bg())
+                        .child(div().flex().flex_wrap().items_center().gap_2()
+                            .child(div().w(px(172.)).child("OCR resolution"))
+                            .children([150, 200, 300].map(|dpi| control(("dpi", dpi as usize), format!("{dpi} DPI"), theme, !self.applying)
+                                .when(self.draft.ocr.dpi == dpi, |v| v.border_color(accent).text_color(accent))
+                                .on_click(cx.listener(move |this, _, _, cx| { if !this.applying { this.draft.ocr.dpi = dpi; cx.notify(); } })))))
+                        .child(div().flex().flex_wrap().items_center().gap_2()
+                            .child(div().w(px(172.)).child("OCR minimum confidence"))
+                            .child(div().w(px(90.)).border_1().rounded_md().border_color(p.border).bg(p.bg).px_2().py_1().child(self.confidence.clone())))
+                        .child(div().flex().flex_wrap().items_center().gap_2()
+                            .child(div().w(px(172.)).child("Detection threshold"))
+                            .child(div().w(px(90.)).border_1().rounded_md().border_color(p.border).bg(p.bg).px_2().py_1().child(self.threshold.clone())))
+                        .child(div().text_size(px(11.)).text_color(p.header_muted).child("Values range from 0 to 1. Higher thresholds return fewer candidates.")))))
+                .when_some(self.error.clone(), |v, e| v.child(div().px_4().pb_3().text_size(px(12.)).text_color(style::markdown_style(theme).alert_warning).child(e)))
+                .when_some(self.progress.clone(), |v, progress| {
+                    let state = progress.state.lock().unwrap().clone();
+                    v.child(div().flex().items_center().gap_2().px_4().pb_3()
+                        .child(div().flex_1().text_size(px(12.)).child(format!("{}{}", state.phase, if state.phase.starts_with("Downloading") { format!(" · {} / {} MB", state.received / 1_000_000, state.total.div_ceil(1_000_000)) } else { String::new() })))
+                        .child(quiet_control("cancel-model-download", "Cancel download", theme, true).on_click(cx.listener(|this, _, _, cx| {
+                            if let Some(p) = &this.progress { p.cancel.store(true, Ordering::Relaxed); } cx.notify();
+                        }))))
+                })
+                .child(div().flex().flex_wrap().gap_2().items_center().flex_shrink_0().px_4().py_3().border_t_1().border_color(p.border)
+                    .child(quiet_control("reset-settings", "Reset defaults", theme, !self.applying).on_click(cx.listener(|this, _, _, cx| {
+                        if !this.applying { this.draft = Preferences::default(); this.update_fields(cx); this.error = None; cx.notify(); }
+                    })))
                     .child(div().flex_1())
-                    .child(control("apply-settings",if self.applying{"Applying"}else{"Apply"},theme,!self.applying).on_click(cx.listener(|this,_,_,cx|this.apply(cx))))
-                    .child(control("close-settings","Close",theme,true).on_click(cx.listener(|this,_,w,cx|this.close(w,cx))))
-                ))
+                    .child(quiet_control("close-settings", "Close", theme, true)
+                        .when(cfg!(test), |v| v.debug_selector(|| "settings-close".into()))
+                        .on_click(cx.listener(|this, _, w, cx| this.close(w, cx))))
+                    .child(div().id("apply-settings").px_3().py_1().rounded_md().border_1().text_size(px(12.))
+                        .child(if self.applying { "Applying…" } else { "Apply" })
+                        .when(!self.applying && changed, |v| v.cursor_pointer())
+                        .when(self.applying || !changed, |v| v.opacity(0.45))
+                        .when(cfg!(test), |v| v.debug_selector(|| "settings-apply".into()))
+                        .border_color(accent).bg(accent).text_color(p.bg).hover(move |v| v.bg(accent).opacity(0.85))
+                        .on_click(cx.listener(move |this, _, _, cx| { if changed && !this.applying { this.apply(cx); } }))))
+            )
     }
 }
 
