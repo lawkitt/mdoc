@@ -52,5 +52,6 @@ checks and before/after output evidence. All 75 pre-existing fork fixture output
 and all existing mdoc expectations were unchanged. Three added synthetic import
 fixtures exercise the selected improvements and source preservation.
 
-Review delivery: [AnyDoc fork PR](https://github.com/lawkitt/anydoc/pull/1) and an
-mdoc review branch/PR. No main branch was merged during this implementation.
+Review delivery: [AnyDoc fork PR](https://github.com/lawkitt/anydoc/pull/1) and
+[mdoc PR](https://github.com/lawkitt/mdoc/pull/9). No main branch was merged
+during this implementation.
