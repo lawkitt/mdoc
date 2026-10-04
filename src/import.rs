@@ -248,6 +248,9 @@ mod tests {
             "text.doc",
             "text.docx",
             "handmade-tables.docx",
+            "handmade-nested.docx",
+            "handmade-checkboxes.docx",
+            "handmade-revisions.doc",
             "sheet.xls",
             "sheet.xlsx",
             "text.pdf",
@@ -268,6 +271,7 @@ mod tests {
             );
             assert_eq!(std::fs::read(path).unwrap(), original);
             assert_eq!(imported.is_pdf, name.ends_with("pdf"));
+            assert_eq!(imported.is_docx, name.ends_with("docx"));
             assert_eq!(
                 imported.warning.is_some(),
                 name == "handmade-partly-scanned.pdf"

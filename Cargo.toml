@@ -17,7 +17,7 @@ gpui = { package = "gpui-pre", version = "0.3" }
 gpui_platform = { package = "gpui-pre-platform", version = "0.3", features = ["font-kit", "wayland", "x11", "runtime_shaders"] }
 
 [dependencies]
-anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "391b6b109b21c051a0edd726755352d78df3853f" }
+anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "97d21d1f46086d84478da072ba1fdfa210461c80" }
 pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "1baba87892a929e64d08069cb223b4a312f755cf", features = ["ocr"] }
 dirs = "6"
 sha2 = "0.11"
