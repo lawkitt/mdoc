@@ -27,11 +27,16 @@ App pin: fork `1baba87892a929e64d08069cb223b4a312f755cf`.
 
 ## Adoption gates and limits
 
-- Fresh Windows x64 setup/offline app smoke is pending CI. The mdoc Windows x64
+- Fresh Windows x64 setup/offline app smoke is blocked on CI availability. The mdoc Windows x64
   job now explicitly runs the previously opt-in test after workspace tests.
   Passing macOS OCR and compiling Windows are not substitutes for loading the
   actual Windows runtimes. A green runtime smoke must precede adoption.
-- Remote PR CI is pending; source/result equality does not establish native UI,
+- GitHub's repository settings report mdoc Actions disabled (`enabled: false`),
+  so app PR #7 has no checks. Fork PR #1's jobs remain queued on inherited
+  Blacksmith labels; its repository reports zero registered runners. Running
+  remote gates requires enabling app Actions and providing supported fork
+  runners, or independently executing equivalent Windows/runtime checks.
+- Remote PR CI is unverified; source/result equality does not establish native UI,
   keyboard/clipboard, GPU presentation or other platform acceptance.
 - The fork's required external `pdf-evals` repository is absent locally and
   inaccessible as `firecrawl/pdf-evals`, so its full snapshot/semantic suite is
