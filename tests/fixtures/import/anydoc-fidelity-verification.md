@@ -56,10 +56,10 @@ route and verify unchanged source bytes, metadata and warnings.
 - Both repository diffs passed whitespace checks. The mdoc lockfile changes only
   AnyDoc's Git source revision; package versions and transitive edges are unchanged.
 
-The fork review is [lawkitt/anydoc#1](https://github.com/lawkitt/anydoc/pull/1).
-No remote fork checks were reported when queried; local validation above is the
-available evidence. mdoc remote CI runs after its review PR is opened and is
-separate from these completed local checks.
+Reviews: [lawkitt/anydoc#1](https://github.com/lawkitt/anydoc/pull/1) and
+[lawkitt/mdoc#9](https://github.com/lawkitt/mdoc/pull/9). No remote checks were
+reported for either PR when queried; local validation above is the available
+evidence. Remote CI remains unverified and separate from completed local checks.
 
 The ignored fork test requires an external local sample directory. No native UI,
 Windows/Linux execution, binding-host runtime tests or wasm-target runtime tests
