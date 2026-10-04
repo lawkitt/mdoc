@@ -1,0 +1,53 @@
+25.Staff 26Class-child ratio
+(1) There shall be a Ntlo ya Dikgosi for Botswana which shall consist of not less than 33
+nor more than 35 Members which shall be constituted as follows— one person from each of the following areas, which person for the time being performs
+
+(a) the functions of the office of Kgosi in respect of such areas-
+
+|(i)|Barolong Farms in the Southern District,|
+|---|---|
+|(іi) (і)|Chobe in the North West District,|
+|(v)|Ghanzi District,|
+|(vi)|Goo Tawana in the North West District,|
+|(vii)|Kgalagadi District, Kgatleng District,|
+|(ix)|Kweneng District, Ngwaketse in the Southern District,|
+|(xi) (xіi) (c) such number of persons, not being more than 20, as may be selected under section|North East District, and|
+
+Ga Malete in the South East District, Ga Mmangwato in the Central District, (iv)
+
+(vii)
+
+(x) Tlokweng in the South East District; 'five persons who shall be appointed by the President; and
+() f
+
+78(4)(c) of this Constitution.
+
+(2) Notwithstanding the provisions of subsection (1)(a), the number of persons referred to
+in that subsection may, by virtue of section 78 (5), be less than 12, but not less than 10.
+
+78. Designation and selection of Members to Ntlo ya Dikgosi(1) Except for the areas of Ghanzi, Chobe, Kgalagadi and North East, the Members for the areas referred to in section 77(1)(a) shal be designated to the Ntlo ya Dikgosi according to the established norms and practices of those areas.
+(2)The Members for the Ghanzi, Chobe, Kgalagadi and North-East areas referred to in
+section 77(1)(a) shall be selected, from their own number, to the Ntlo ya Dikgosi by persons for the time being performing the functions of the office of Kgosi within each of those areas.
+
+(3) For the purpose of selecting the Members under section 77(1)(c), there shall be 20
+regions, as listed in the Second Schedule to this Constitution, the boundaries of which shall be defined by an Act of Parliament.
+
+(4) There shall be a Regional Electoral College for each region composed of paid
+Dikgosana from that region up to and including a Kgosi, which shall— when necessary, meet at a Kgotla or other suitable venue;
+
+(a)
+(b) be chaired by a senior government official appointed by the Minister responsible for local government; and select a Member to the Ntlo ya Dikgosi for that region by election or in such other manner
+(c) as the Regional Electoral College may agree.
+(5) Notwithstanding the provisions of section 77(1)(a) and subsections (2) and (4)(c) of
+this section, the areas of hanzi and Kgalagadi shall each have the option of either selecting one Member under subsection (2) of this section or of each selecting two regional Members under subsection (4)(c) of this section, but may not select Members under both subsections.
+
+79.Qualifications for membership of Ntlo ya Dikgosi
+(1) A person shall be qualified to be appointed under section 77(1)(b) as a Member of the
+Ntlo ya Dikgosi if he or she–
+
+(а) is a citizen of Botswana; and has attained the age of 21 years.
+(b)
+(2) No person shall be qualified to be appointed, selected or designated as a Member of
+the Ntlo ya Dikgosi if he or she—
+
+## Copyright Government of Botswana

@@ -185,3 +185,9 @@ jobs:
       # each `crates/*` library's tests (mdoc-markdown, gpui-pdf).
       - name: cargo test
         run: cargo test --workspace
+
+      # Converter updates need actual loading and offline EN/RU recognition on
+      # the supported Windows target; ordinary tests deliberately skip setup.
+      - name: Windows x64 OCR setup and offline smoke
+        if: matrix.runner == 'windows-latest'
+        run: cargo test -p mdoc --bin mdoc setup_and_offline_english_russian_smoke -- --ignored --nocapture

@@ -1,0 +1,5 @@
+LOCAL OCR ACCEPTANCE TEST
+This document contains printed English text.
+The agreement was signed on 19 September 2026.
+Payment must arrive within thirty working days.
+Reference number: 1234567890.
