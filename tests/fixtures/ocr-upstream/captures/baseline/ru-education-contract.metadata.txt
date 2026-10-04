@@ -1,0 +1,5 @@
+source=Ocr
+routed=[1]
+recommended=[1]
+warnings=[]
+model=Some(ModelIdentity { name: "pp-ocr-cyrillic", revision: "oar-det-v0.7.0-rec-v0.3.0" })

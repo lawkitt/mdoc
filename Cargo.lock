@@ -4435,7 +4435,7 @@ dependencies = [
  "image",
  "mdoc-editor",
  "ort",
- "pdf-inspector 1.21.0",
+ "pdf-inspector 1.25.2",
  "roxmltree 0.21.1",
  "serde",
  "serde_json",
@@ -5506,8 +5506,8 @@ dependencies = [
 
 [[package]]
 name = "pdf-inspector"
-version = "1.21.0"
-source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=7a11f9f3f2423edd0035f87e7152b49c08a7ce1a#7a11f9f3f2423edd0035f87e7152b49c08a7ce1a"
+version = "1.25.2"
+source = "git+https://github.com/lawkitt/pdf-inspector.git?rev=1baba87892a929e64d08069cb223b4a312f755cf#1baba87892a929e64d08069cb223b4a312f755cf"
 dependencies = [
  "dirs 6.0.0",
  "env_logger",
@@ -5525,6 +5525,7 @@ dependencies = [
  "sha2 0.11.0",
  "thiserror 2.0.20",
  "ttf-parser",
+ "unicode-bidi",
  "unicode-normalization",
  "ureq",
  "windows-sys 0.61.2",

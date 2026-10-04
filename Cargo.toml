@@ -18,7 +18,7 @@ gpui_platform = { package = "gpui-pre-platform", version = "0.3", features = ["f
 
 [dependencies]
 anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "391b6b109b21c051a0edd726755352d78df3853f" }
-pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "7a11f9f3f2423edd0035f87e7152b49c08a7ce1a", features = ["ocr"] }
+pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "1baba87892a929e64d08069cb223b4a312f755cf", features = ["ocr"] }
 dirs = "6"
 sha2 = "0.11"
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }

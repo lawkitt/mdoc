@@ -1,0 +1,1232 @@
+{
+  "metadata": {
+    "page_hash": "61d269cb1f2c976191469b891aa87b7cb40eb65eee4483725c1a85c4dc72d141",
+    "original_filename": "NASDAQ_EEFT_2000.pdf",
+    "page_no": 12,
+    "num_pages": 48,
+    "original_width": 612,
+    "original_height": 792,
+    "coco_width": 1025,
+    "coco_height": 1025,
+    "collection": "ann_reports_00_04_fancy",
+    "doc_category": "financial_reports"
+  },
+  "cells": [
+    {
+      "bbox": [
+        959.657455882353,
+        986.6542569128787,
+        33.433037990196,
+        21.874433112373733
+      ],
+      "text": "11",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJEBH+Univers-CondensedBold",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        107.05946294934641,
+        126.15512342171712,
+        698.2209676062091,
+        21.38520138888896
+      ],
+      "text": "In today\u2019s increasingly wireless world, consumers are turning ",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGIC+Bodoni-BookItalic",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        107.05946294934641,
+        157.21492708333346,
+        730.2432237336601,
+        21.385214330807912
+      ],
+      "text": "in record numbers to mobile devices for greater convenience and ",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGIC+Bodoni-BookItalic",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        107.05946294934641,
+        188.27474368686876,
+        491.3729194035948,
+        21.385214330808026
+      ],
+      "text": "access to banking and information services.",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGIC+Bodoni-BookItalic",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        149.7349175653595,
+        257.3578541666666,
+        803.9986580065358,
+        16.741627840909246
+      ],
+      "text": "ith the freedom of mobile devices, bank customers can instantly obtain account balances,",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41300894607842,
+        279.61844696969706,
+        835.4772169526145,
+        16.741627840909132
+      ],
+      "text": "transfer money and even view a mini-bank statement\u2013or set up instant alerts to monitor their",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41300894607842,
+        301.879026830808,
+        819.6569448937909,
+        16.741640782828426
+      ],
+      "text": "daily account balances, deposit notifications and other personalized information 24 hours a",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41300894607842,
+        324.1396196338384,
+        174.5002055147059,
+        16.741640782828426
+      ],
+      "text": "day, 7 days a week.",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41317475490196,
+        361.79133806818186,
+        501.0576536764707,
+        13.154166666666697
+      ],
+      "text": "The exciting potential of wireless is creating unprecedented opportuni-",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41317475490196,
+        382.4977746212122,
+        494.69983995098045,
+        13.154166666666583
+      ],
+      "text": "ties for banks to connect with their customers. In Western Europe, the",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41317475490196,
+        403.20421117424246,
+        490.9470000816994,
+        13.154166666666697
+      ],
+      "text": "number of mobile banking accounts is expected to reach 31.8 million",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41317475490196,
+        423.9106477272727,
+        62.419639379084984,
+        13.154166666666697
+      ],
+      "text": "by 2004.",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        170.8474019607843,
+        424.3513071338384,
+        4.60580065359477,
+        6.5770833333333485
+      ],
+      "text": "1",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        180.2434027777778,
+        423.912550189394,
+        400.3785661764707,
+        13.154166666666697
+      ],
+      "text": "Expanding wireless capabilities are also helping to drive",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41317475490196,
+        444.61898674242434,
+        463.9072823529412,
+        13.154166666666583
+      ],
+      "text": "growth in North America, where the number of wireless financial ",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41317475490196,
+        465.3254232954546,
+        439.5352108660131,
+        13.154166666666697
+      ],
+      "text": "services users is projected to skyrocket to 35 million by 2005.",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        547.9613153594771,
+        465.76544854797976,
+        4.60580065359477,
+        6.5770833333333485
+      ],
+      "text": "2",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        562.2396491013072,
+        465.3266916035353,
+        27.071037173202626,
+        13.15416666666681
+      ],
+      "text": "The",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41351977124184,
+        486.0331281565657,
+        472.7614802287582,
+        13.154166666666697
+      ],
+      "text": "Asia-Pacific region is forecast at 12 million subscribers of wireless",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41351977124184,
+        506.73956470959604,
+        230.5350713235294,
+        13.15416666666664
+      ],
+      "text": "financial services alone in 2003.",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        338.96264297385625,
+        507.1795899621212,
+        4.60580065359477,
+        6.5770833333333485
+      ],
+      "text": "3",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41317475490196,
+        541.6840148358585,
+        491.49971290849675,
+        13.154166666666697
+      ],
+      "text": "The quickly evolving market for mobile banking represents a tremen-",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41317475490196,
+        562.390451388889,
+        476.0500151960785,
+        13.15416666666664
+      ],
+      "text": "dous opportunity for Euronet Worldwide. Last spring we introduced",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41317475490196,
+        583.0968879419192,
+        55.980741789215685,
+        13.15416666666664
+      ],
+      "text": "Euronet",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        164.40430555555557,
+        583.5369131944444,
+        7.369281045751649,
+        6.5770833333333485
+      ],
+      "text": "\u00ae",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        176.5621119281046,
+        583.09815625,
+        428.09627450980395,
+        13.154166666666754
+      ],
+      "text": "Mobile Banking as the first financial application that offered",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        603.8045928030303,
+        475.2891838235294,
+        13.15416666666664
+      ],
+      "text": "both secure account access and a personalized accounting alerting ",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        624.5110293560606,
+        501.35801552287575,
+        13.15416666666664
+      ],
+      "text": "system. Among our new mobile banking clients in 2000 were the Bank",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        645.217465909091,
+        476.28402001633987,
+        13.15416666666664
+      ],
+      "text": "of Cyprus, for its branches in London and Greece, and the National",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        665.9239024621212,
+        495.1254293300654,
+        13.154179608585878
+      ],
+      "text": "Bank of Kuwait, for its Lebanon branch, who were both first to market",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        686.6303519570707,
+        116.73309640522875,
+        13.15416666666664
+      ],
+      "text": "in their regions. ",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        721.5728737373738,
+        505.1421413398693,
+        13.15415372474746
+      ],
+      "text": "To further strengthen our capabilities, we announced strategic alliances",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        742.2792973484849,
+        495.81078921568627,
+        13.15416666666664
+      ],
+      "text": "to market and deliver Euronet\u2019s suite of mobile banking solutions with",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        762.9857209595959,
+        744.2771033496732,
+        13.15414078282825
+      ],
+      "text": "Aether Systems, Inc. for the US market and with Sila Communications for the European, Middle Eastern ",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        783.6921316287879,
+        783.8502263071897,
+        13.154166666666669
+      ],
+      "text": "and Asian markets. In addition, we formed similar regional strategic alliances with companies like Stet Hellas",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        804.398555239899,
+        695.2861397058824,
+        13.154140782828307
+      ],
+      "text": "Telecommunications S.A., a Greek mobile operator and subsidiary of Telecom Italia Mobile (TIM).",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        839.3410899621213,
+        756.6335118464053,
+        13.15416666666664
+      ],
+      "text": "As next-generation mobile technology brings higher data speeds, personalization and other enhancements, ",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.41284313725491,
+        860.047487689394,
+        576.0714881535948,
+        13.15417960858585
+      ],
+      "text": "we believe the future of mobile banking presents great opportunities for Euronet. ",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        103.95811107026144,
+        227.45715467171715,
+        56.917642034313744,
+        58.529868371212274
+      ],
+      "text": "W",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGOK+BauerBodoni-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        364.76981723484846,
+        107.16976266339873,
+        12.15247506313142
+      ],
+      "text": "National Bank of",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJEBH+Univers-CondensedBold",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        381.5943121843435,
+        104.09578431372552,
+        12.152475063131305
+      ],
+      "text": "Kuwait-Lebanon",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJEBH+Univers-CondensedBold",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        682.8056090686275,
+        407.86639520202027,
+        100.66320669934635,
+        11.815972222222172
+      ],
+      "text": "First-to-Market ",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        682.8051903594771,
+        424.6908901515152,
+        101.31239011437913,
+        11.815972222222285
+      ],
+      "text": "Mobile Banking",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        455.4926448863637,
+        126.08843218954246,
+        11.815972222222172
+      ],
+      "text": "To broaden its cus-",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        475.94085132575765,
+        124.75022099673208,
+        11.815985164141352
+      ],
+      "text": "tomer and account",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        496.3890707070707,
+        286.030219362745,
+        11.815985164141466
+      ],
+      "text": "base, the National Bank of Kuwait-Lebanon",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        516.837290088384,
+        302.99304820261443,
+        11.815972222222229
+      ],
+      "text": "(NBK-L) wanted to be first in their market with",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        537.285509469697,
+        311.4274415849675,
+        11.815972222222229
+      ],
+      "text": "a mobile banking solution. In a tight race with a",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        557.733715909091,
+        308.3475510620916,
+        11.815985164141352
+      ],
+      "text": "competing bank, Euronet\u2019s mobile solution was",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        578.181935290404,
+        282.10942687908516,
+        11.815985164141466
+      ],
+      "text": "integrated quickly into the NBK-L\u2019s IT infra-",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        598.6301546717173,
+        292.75983006535955,
+        11.815972222222229
+      ],
+      "text": "structure, enabling the bank to be the first to",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        619.0783740530303,
+        192.18244199346418,
+        11.815972222222172
+      ],
+      "text": "deliver services in its market.",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        649.8801287878788,
+        309.07262132352946,
+        11.815972222222229
+      ],
+      "text": "Together with GSM operator Libancell, NBK-L\u2019s",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        670.3283352272728,
+        297.92326756535954,
+        11.81598516414141
+      ],
+      "text": "new mobile banking system offers customers",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        690.7765934343435,
+        287.38693750000004,
+        11.815959280303048
+      ],
+      "text": "any time, any place access to their account",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        683.4515600490196,
+        711.2248128156566,
+        260.0418300653596,
+        11.815972222222285
+      ],
+      "text": "information from their GSM telephones.",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJHBO+Univers-Condensed",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        97.65587177287583,
+        67.96466982323238,
+        94.48578794934639,
+        21.87439299242419
+      ],
+      "text": "Linking",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJEBH+Univers-CondensedBold",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        817.2015322712418,
+        67.96466982323238,
+        109.02204820261431,
+        21.87439299242419
+      ],
+      "text": "consumers with any time, any place mobile banking",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJEBH+Univers-CondensedBold",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        108.77461454248366,
+        980.0406786616162,
+        3.182191217320266,
+        4.783332039141413
+      ],
+      "text": "1",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        113.86628529411765,
+        979.7032828282828,
+        249.5901730392157,
+        9.566666666666663
+      ],
+      "text": "International Data Corporation (September 2000),",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        369.86505310457517,
+        980.0406786616162,
+        3.182189542483684,
+        4.783332039141413
+      ],
+      "text": "2",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        374.8292855392157,
+        979.7032828282828,
+        159.7637520424837,
+        9.566666666666663
+      ],
+      "text": "TowerGroup (September 2000), ",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        534.5944276960784,
+        980.0406786616162,
+        3.1821727941177187,
+        4.783332039141413
+      ],
+      "text": "3",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        539.0496940359477,
+        979.7032828282828,
+        170.2585796568627,
+        9.566666666666663
+      ],
+      "text": "Meridien Research (August 1999)",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/BBJGKF+Bodoni-Book",
+        "size": 1
+      }
+    }
+  ]
+}

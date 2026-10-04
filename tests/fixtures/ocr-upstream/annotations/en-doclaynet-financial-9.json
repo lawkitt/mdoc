@@ -1,0 +1,624 @@
+{
+  "metadata": {
+    "page_hash": "132a855ee8b23533d8ae69af0049c038171a06ddfcac892c3c6d7e6b4091c642",
+    "original_filename": "NASDAQ_FFIN_2002.pdf",
+    "page_no": 9,
+    "num_pages": 28,
+    "original_width": 612,
+    "original_height": 792,
+    "coco_width": 1025,
+    "coco_height": 1025,
+    "collection": "ann_reports_00_04_fancy",
+    "doc_category": "financial_reports"
+  },
+  "cells": [
+    {
+      "bbox": [
+        66.99346405228758,
+        112.10344760101009,
+        290.869358251634,
+        13.66279703282828
+      ],
+      "text": "Leigh Taliaferro, M.D., values consistency.",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAC+HelveticaNeue-Medium",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        133.5865287247475,
+        324.89481944444447,
+        13.534672032828325
+      ],
+      "text": "The Abilene native started his practice 17 years ago",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        150.41165782828284,
+        325.335016748366,
+        13.534672032828325
+      ],
+      "text": "and has developed a flourishing business as a",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        167.2367869318182,
+        325.3500735294118,
+        13.534672032828325
+      ],
+      "text": "general surgeon. He estimates that 90 percent of",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        184.06191603535353,
+        325.3017712418301,
+        13.534659090909145
+      ],
+      "text": "his practice is for abdominal surgery. With such a",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        200.8870321969698,
+        325.3560694444444,
+        13.534672032828212
+      ],
+      "text": "busy practice, he finds comfort in having a reliable",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        217.71223895202024,
+        325.0425232843138,
+        13.534672032828212
+      ],
+      "text": "banking partner. \u201cI have almost every type of busi-",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        234.5373680555556,
+        324.9461029411765,
+        13.534672032828212
+      ],
+      "text": "ness, trust and personal account with First National",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        251.36249715909105,
+        247.56913766339872,
+        13.534672032828212
+      ],
+      "text": "Bank of Abilene,\u201d says Dr. Taliaferro. ",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        272.84557828282834,
+        324.9867847222222,
+        13.534672032828212
+      ],
+      "text": "\u201cFirst National is immersed in this city \u2013 everywhere",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        289.66951672979803,
+        325.18126674836606,
+        13.534672032828325
+      ],
+      "text": "you go, they are involved with helping people with",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        306.493545770202,
+        325.3802038398693,
+        13.534659090909258
+      ],
+      "text": "their business. It\u2019s because of the people who",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        323.3174842171718,
+        325.3198427287582,
+        13.534672032828212
+      ],
+      "text": "work there \u2013 they are leaders \u2026 generous people",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        340.1415003156567,
+        325.4857017973857,
+        13.534672032828212
+      ],
+      "text": "who make their mark on the bank and on the",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        356.96545170454544,
+        325.35454534313726,
+        13.534659090909145
+      ],
+      "text": "community. While they may be the biggest bank",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        373.7894289772728,
+        325.342587009804,
+        13.534672032828325
+      ],
+      "text": "in town, they sure don\u2019t act like it. It\u2019s like bank-",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        390.61340625,
+        113.02433823529412,
+        13.534672032828325
+      ],
+      "text": "ing with friends.\u201d",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        414.8919160353536,
+        325.69678145424837,
+        13.534659090909031
+      ],
+      "text": "Dr. Taliaferro has invested in First Financial",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        431.7158933080808,
+        324.8405547385621,
+        13.534672032828325
+      ],
+      "text": "Bankshares for more than a decade. \u201cMy stock has",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        448.53987058080804,
+        325.3500902777778,
+        13.534672032828325
+      ],
+      "text": "done nothing but go up in value. They are solid,",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        465.3638478535354,
+        325.16471936274513,
+        13.534672032828325
+      ],
+      "text": "sound businesspeople. I sleep well at night know-",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        66.99346405228758,
+        482.1878380681818,
+        296.7781985294117,
+        13.534672032828325
+      ],
+      "text": "ing that my investments are in good hands.\u201d",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        112.37566899509804,
+        626.7556887626263,
+        845.9159743872548,
+        67.67691919191918
+      ],
+      "text": "\u201cWhile they may be the biggest ",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAG+AGaramond-Regular",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        319.7571241830065,
+        687.5803794191919,
+        638.5345191993463,
+        67.67691919191924
+      ],
+      "text": "bank in town, they sure ",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAG+AGaramond-Regular",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        556.650551879085,
+        748.4049277146464,
+        411.8772741013071,
+        67.67691919191918
+      ],
+      "text": "don\u2019t act like it. ",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAG+AGaramond-Regular",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        528.4834681372549,
+        809.2296183712122,
+        89.52817279411761,
+        67.67691919191921
+      ],
+      "text": "It\u2019s",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAG+AGaramond-Regular",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        648.5048717320261,
+        809.2296183712122,
+        306.2131225490198,
+        67.67691919191921
+      ],
+      "text": "like banking ",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAG+AGaramond-Regular",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        617.840522875817,
+        870.0542054924242,
+        357.64691911764703,
+        67.6769127209596
+      ],
+      "text": "with friends.\u201d",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAG+AGaramond-Regular",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        210.06018382352943,
+        31.14536268939389,
+        173.9850743464052,
+        16.54233522727293
+      ],
+      "text": "Leigh Taliaferro, M.D.",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAF+HelveticaNeue-Roman",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        299.47587459150327,
+        47.81977020202032,
+        84.4331858660131,
+        11.595907828282748
+      ],
+      "text": "General Surgeon",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAG+AGaramond-Regular",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        312.3412826797386,
+        58.820401515151616,
+        71.55571895424833,
+        11.595907828282861
+      ],
+      "text": "Abilene, Texas",
+      "font": {
+        "color": [
+          12,
+          72,
+          142,
+          255
+        ],
+        "name": "/AAAAAG+AGaramond-Regular",
+        "size": 1
+      }
+    },
+    {
+      "bbox": [
+        18.32874183006536,
+        1005.2406660353536,
+        7.4496732026143775,
+        10.353535094696968
+      ],
+      "text": "8",
+      "font": {
+        "color": [
+          0,
+          0,
+          0,
+          255
+        ],
+        "name": "/AAAAAD+Helvetica",
+        "size": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+Leigh Taliaferro, M.D. General Surgeon Abilene, Texas
+
+Leigh Taliaferro, M.D., values consistency. The Abilene native started his practice 17 years ago and has developed a flourishing business as a general surgeon. He estimates that 90 percent of his practice is for abdominal surgery. With such a busy practice, he finds comfort in having a reliable banking partner. “I have almost every type of business, trust and personal account with First National Bank of Abilene," says Dr. Taliaferro. "First National is immersed in this city – everywhere you go, they are involved with helping people with their business. It's because of the people who work there – they are leaders ... generous people who make their mark on the bank and on the community. While they may be the biggest bank in town, they sure don't act like it. It's like banking with friends." Dr. Taliaferro has invested in First Financial Bankshares for more than a decade. "My stock has done nothing but go up in value. They are solid, sound businesspeople. I sleep well at night know- ing that my investments are in good hands."
+
+# "While they may be the biggest
+
+### bank in town, they sure
+
+#### don't act like it.
+
+## It's like banking
+
+with friends.'

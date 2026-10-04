@@ -1,0 +1,650 @@
+{
+  "baseline_fork": "7a11f9f3f2423edd0035f87e7152b49c08a7ce1a",
+  "upstream": "ef52f77850b29189048797a48b24862251f54fe7",
+  "settings": {
+    "model": "pp-ocr-cyrillic",
+    "revision": "oar-det-v0.7.0-rec-v0.3.0",
+    "dpi": 150,
+    "minimum_confidence": 0,
+    "download_policy": "Offline",
+    "retain_recognition": true
+  },
+  "comparisons": [
+    {
+      "id": "ru-education-contract",
+      "reference_basis": "dataset OCR annotation, agent visual review and documented corrections; not an independent human gold standard",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "09bd27594c801919b471dc101e8223bbe163ccf53306a0c0d902c82ea11ad02d",
+          "updated_sha256": "09bd27594c801919b471dc101e8223bbe163ccf53306a0c0d902c82ea11ad02d",
+          "baseline": {
+            "cer": 0.014006,
+            "wer": 0.094003
+          },
+          "updated": {
+            "cer": 0.014006,
+            "wer": 0.094003
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "bd0522c60fc08a4b2f51333cef969718b6d1277c5cc4a4d643f5d87bb9330d50",
+          "updated_sha256": "bd0522c60fc08a4b2f51333cef969718b6d1277c5cc4a4d643f5d87bb9330d50",
+          "baseline": {
+            "cer": 0.014006,
+            "wer": 0.094003
+          },
+          "updated": {
+            "cer": 0.014006,
+            "wer": 0.094003
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "ru-apartment-handover",
+      "reference_basis": "dataset OCR annotation, agent visual review and documented corrections; not an independent human gold standard",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "f9bf06cd137e360db9930e303b7f6f436882adade4a4797d2e5e1ca3db652bda",
+          "updated_sha256": "f9bf06cd137e360db9930e303b7f6f436882adade4a4797d2e5e1ca3db652bda",
+          "baseline": {
+            "cer": 0.251423,
+            "wer": 0.314214
+          },
+          "updated": {
+            "cer": 0.251423,
+            "wer": 0.314214
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "53e717470d551fb9e21ca275b3f58f54c081fe8bc90e4452a5104770066d4190",
+          "updated_sha256": "53e717470d551fb9e21ca275b3f58f54c081fe8bc90e4452a5104770066d4190",
+          "baseline": {
+            "cer": 0.167299,
+            "wer": 0.234414
+          },
+          "updated": {
+            "cer": 0.167299,
+            "wer": 0.234414
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "ru-franchise-termination",
+      "reference_basis": "dataset OCR annotation, agent visual review and documented corrections; not an independent human gold standard",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "f21696103a5f2033ae7bdfb6a3a241fe2ad098718dfe59e946aa4cdb3fb0854b",
+          "updated_sha256": "f21696103a5f2033ae7bdfb6a3a241fe2ad098718dfe59e946aa4cdb3fb0854b",
+          "baseline": {
+            "cer": 0.07197,
+            "wer": 0.100313
+          },
+          "updated": {
+            "cer": 0.07197,
+            "wer": 0.100313
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "898a5da6743388a5dd46ec4a705a2d4020deba1c00f64942d15ec84510b1987a",
+          "updated_sha256": "898a5da6743388a5dd46ec4a705a2d4020deba1c00f64942d15ec84510b1987a",
+          "baseline": {
+            "cer": 0.017045,
+            "wer": 0.043887
+          },
+          "updated": {
+            "cer": 0.017045,
+            "wer": 0.043887
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "ru-employment-duties",
+      "reference_basis": "dataset OCR annotation, agent visual review and documented corrections; not an independent human gold standard",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "42a5425c3e6404ad5d27f0e777627abb4db881305d6790f4fcb8e3d2669ae2f8",
+          "updated_sha256": "42a5425c3e6404ad5d27f0e777627abb4db881305d6790f4fcb8e3d2669ae2f8",
+          "baseline": {
+            "cer": 0.018053,
+            "wer": 0.072639
+          },
+          "updated": {
+            "cer": 0.018053,
+            "wer": 0.072639
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "715ceacbe1e3411e9a4f12fc9dcb3b0d9cbe5911a42b8ae9002bbb8d75281321",
+          "updated_sha256": "715ceacbe1e3411e9a4f12fc9dcb3b0d9cbe5911a42b8ae9002bbb8d75281321",
+          "baseline": {
+            "cer": 0.018941,
+            "wer": 0.075061
+          },
+          "updated": {
+            "cer": 0.018941,
+            "wer": 0.075061
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "ru-goods-quality",
+      "reference_basis": "dataset OCR annotation, agent visual review and documented corrections; not an independent human gold standard",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "2ae509a6838afc0eca9959f43356b44b4ef78500ce76011ac761d62e9366fdc6",
+          "updated_sha256": "2ae509a6838afc0eca9959f43356b44b4ef78500ce76011ac761d62e9366fdc6",
+          "baseline": {
+            "cer": 0.018894,
+            "wer": 0.135647
+          },
+          "updated": {
+            "cer": 0.018894,
+            "wer": 0.135647
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "733d07aaa97d13c969b8397777f64e903afb55fbc382d73d46785d7dc5edf2d9",
+          "updated_sha256": "733d07aaa97d13c969b8397777f64e903afb55fbc382d73d46785d7dc5edf2d9",
+          "baseline": {
+            "cer": 0.041965,
+            "wer": 0.157729
+          },
+          "updated": {
+            "cer": 0.041965,
+            "wer": 0.157729
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "ru-confidentiality",
+      "reference_basis": "dataset OCR annotation, agent visual review and documented corrections; not an independent human gold standard",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "8f9d4bc6f9c939d077570fd09e4c8347cccd057f9b572875c4b166d265cd7b89",
+          "updated_sha256": "8f9d4bc6f9c939d077570fd09e4c8347cccd057f9b572875c4b166d265cd7b89",
+          "baseline": {
+            "cer": 0.004695,
+            "wer": 0.045317
+          },
+          "updated": {
+            "cer": 0.004695,
+            "wer": 0.045317
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "ab2c0ace9fec9d8f76213602adef88bc8bd58658969beb504def6d6528215536",
+          "updated_sha256": "ab2c0ace9fec9d8f76213602adef88bc8bd58658969beb504def6d6528215536",
+          "baseline": {
+            "cer": 0.003973,
+            "wer": 0.033233
+          },
+          "updated": {
+            "cer": 0.003973,
+            "wer": 0.033233
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "en-doclaynet-financial-9",
+      "reference_basis": "digital text cells checked visually; not a human OCR transcript",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "0303a9660e0104b01185d995c86acf4234a4db96555efd67fda1ea0f69f28d91",
+          "updated_sha256": "0303a9660e0104b01185d995c86acf4234a4db96555efd67fda1ea0f69f28d91",
+          "baseline": {
+            "cer": 0.013344,
+            "wer": 0.073171
+          },
+          "updated": {
+            "cer": 0.013344,
+            "wer": 0.073171
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "df74700be0930d054ef300bfb41fc5a8807b78bf069c0f64cae990ad410805b9",
+          "updated_sha256": "df74700be0930d054ef300bfb41fc5a8807b78bf069c0f64cae990ad410805b9",
+          "baseline": {
+            "cer": 0.01251,
+            "wer": 0.063415
+          },
+          "updated": {
+            "cer": 0.01251,
+            "wer": 0.063415
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "en-doclaynet-financial-9.native",
+      "reference_basis": "digital text cells checked visually; not a human OCR transcript",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "18ef3736075648f65091a9eb5d35534748ca53245f7760f0285627a89035a8a1",
+          "updated_sha256": "18ef3736075648f65091a9eb5d35534748ca53245f7760f0285627a89035a8a1",
+          "baseline": {
+            "cer": 0.003336,
+            "wer": 0.014634
+          },
+          "updated": {
+            "cer": 0.003336,
+            "wer": 0.014634
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "updated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "6c7771bb2615da472db914dd31b6cab296329fef1bf84612b1640b1690fc4e22",
+          "updated_sha256": "6c7771bb2615da472db914dd31b6cab296329fef1bf84612b1640b1690fc4e22"
+        }
+      }
+    },
+    {
+      "id": "en-doclaynet-financial-12",
+      "reference_basis": "digital text cells checked visually; not a human OCR transcript",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "490bb85946d6fa973d8e7450f2e006a12e192bf91f297cb0102f75eaf41fcf90",
+          "updated_sha256": "490bb85946d6fa973d8e7450f2e006a12e192bf91f297cb0102f75eaf41fcf90",
+          "baseline": {
+            "cer": 0.331592,
+            "wer": 0.396752
+          },
+          "updated": {
+            "cer": 0.331592,
+            "wer": 0.396752
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "c9fa01979c6ccd60de53ead0972498c89d56ffee72c468013c2bbdf612d7d276",
+          "updated_sha256": "c9fa01979c6ccd60de53ead0972498c89d56ffee72c468013c2bbdf612d7d276",
+          "baseline": {
+            "cer": 0.439916,
+            "wer": 0.482599
+          },
+          "updated": {
+            "cer": 0.439916,
+            "wer": 0.482599
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "cef95c0645bff7ca552e61ed3f619de172b05cfbe900c616a0dc72278ad8ce2f",
+          "updated_sha256": "cef95c0645bff7ca552e61ed3f619de172b05cfbe900c616a0dc72278ad8ce2f"
+        }
+      }
+    },
+    {
+      "id": "en-doclaynet-financial-12.native",
+      "reference_basis": "digital text cells checked visually; not a human OCR transcript",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "92968115a420f8b8e59530a3e518e859b83ca6d5bcafa0393ae18421875daba9",
+          "updated_sha256": "92968115a420f8b8e59530a3e518e859b83ca6d5bcafa0393ae18421875daba9",
+          "baseline": {
+            "cer": 0.32567,
+            "wer": 0.37123
+          },
+          "updated": {
+            "cer": 0.32567,
+            "wer": 0.37123
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "updated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "6c7771bb2615da472db914dd31b6cab296329fef1bf84612b1640b1690fc4e22",
+          "updated_sha256": "6c7771bb2615da472db914dd31b6cab296329fef1bf84612b1640b1690fc4e22"
+        }
+      }
+    },
+    {
+      "id": "en-doclaynet-law-34",
+      "reference_basis": "digital text cells checked visually; not a human OCR transcript",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "60e97ebdd23ba7a1ed4e635ce77b8c86499dbf72c62c364a0367ca6363fc6944",
+          "updated_sha256": "60e97ebdd23ba7a1ed4e635ce77b8c86499dbf72c62c364a0367ca6363fc6944",
+          "baseline": {
+            "cer": 0.130161,
+            "wer": 0.25913
+          },
+          "updated": {
+            "cer": 0.130161,
+            "wer": 0.25913
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "514fb45dcb061e41cfd0856f1848a0deac46d5672a30299aa8fdebd226454f1b",
+          "updated_sha256": "514fb45dcb061e41cfd0856f1848a0deac46d5672a30299aa8fdebd226454f1b",
+          "baseline": {
+            "cer": 0.017649,
+            "wer": 0.133913
+          },
+          "updated": {
+            "cer": 0.017649,
+            "wer": 0.133913
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "en-doclaynet-law-34.native",
+      "reference_basis": "digital text cells checked visually; not a human OCR transcript",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "d0dd5b03cc68015ae72d03ddce3ecda7de349e2f03141aed399218ce8df526ec",
+          "updated_sha256": "d0dd5b03cc68015ae72d03ddce3ecda7de349e2f03141aed399218ce8df526ec",
+          "baseline": {
+            "cer": 0.021431,
+            "wer": 0.147826
+          },
+          "updated": {
+            "cer": 0.021431,
+            "wer": 0.147826
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "updated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "6c7771bb2615da472db914dd31b6cab296329fef1bf84612b1640b1690fc4e22",
+          "updated_sha256": "6c7771bb2615da472db914dd31b6cab296329fef1bf84612b1640b1690fc4e22"
+        }
+      }
+    },
+    {
+      "id": "en-doclaynet-law-4",
+      "reference_basis": "digital text cells checked visually; not a human OCR transcript",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "feb55d743d47795c1956479d1406cb998f97c50eb6f05c7b8b68e5737b33eb78",
+          "updated_sha256": "feb55d743d47795c1956479d1406cb998f97c50eb6f05c7b8b68e5737b33eb78",
+          "baseline": {
+            "cer": 0.017287,
+            "wer": 0.102041
+          },
+          "updated": {
+            "cer": 0.017287,
+            "wer": 0.102041
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "a9c77649d7c6e4d35933e0b42319eb7778a082db4a67ecf406ac2b1fc6145c2a",
+          "updated_sha256": "a9c77649d7c6e4d35933e0b42319eb7778a082db4a67ecf406ac2b1fc6145c2a",
+          "baseline": {
+            "cer": 0.010898,
+            "wer": 0.095918
+          },
+          "updated": {
+            "cer": 0.010898,
+            "wer": 0.095918
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "en-doclaynet-law-4.native",
+      "reference_basis": "digital text cells checked visually; not a human OCR transcript",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "56471cd797dd14eb19a0a91bad38b0b281c4fc3731b5990eece3eb2d34e8b396",
+          "updated_sha256": "56471cd797dd14eb19a0a91bad38b0b281c4fc3731b5990eece3eb2d34e8b396",
+          "baseline": {
+            "cer": 0.146937,
+            "wer": 0.214286
+          },
+          "updated": {
+            "cer": 0.146937,
+            "wer": 0.214286
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "updated_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "6c7771bb2615da472db914dd31b6cab296329fef1bf84612b1640b1690fc4e22",
+          "updated_sha256": "6c7771bb2615da472db914dd31b6cab296329fef1bf84612b1640b1690fc4e22"
+        }
+      }
+    },
+    {
+      "id": "en-supreme-digest-1",
+      "reference_basis": "Independent Archive OCR draft, agent visually reviewed/corrected against scan; not an independent human gold standard",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "018390bab215d2735be1c824ea08afcefbf12e3fb95afb74a9250d8dbd43f81b",
+          "updated_sha256": "018390bab215d2735be1c824ea08afcefbf12e3fb95afb74a9250d8dbd43f81b",
+          "baseline": {
+            "cer": 0.759497,
+            "wer": 0.918999
+          },
+          "updated": {
+            "cer": 0.759497,
+            "wer": 0.918999
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "d63c3b3f2131ed20e5aaa4c3af1bd5be385858e4aa3db482beb25ccf03858fd4",
+          "updated_sha256": "d63c3b3f2131ed20e5aaa4c3af1bd5be385858e4aa3db482beb25ccf03858fd4",
+          "baseline": {
+            "cer": 0.75535,
+            "wer": 0.916789
+          },
+          "updated": {
+            "cer": 0.75535,
+            "wer": 0.916789
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "en-supreme-digest-10",
+      "reference_basis": "Independent Archive OCR draft, agent visually reviewed/corrected against scan; not an independent human gold standard",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "c548bf465e47f90bbc72a1e2569a6cd5fbdecb699b3fba97d6a8eac503499a09",
+          "updated_sha256": "c548bf465e47f90bbc72a1e2569a6cd5fbdecb699b3fba97d6a8eac503499a09",
+          "baseline": {
+            "cer": 0.753912,
+            "wer": 0.92813
+          },
+          "updated": {
+            "cer": 0.753912,
+            "wer": 0.92813
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "40c7db9f14b97e021c475ac4f9bf80c41a152f542b0aaaebbeba9bd156cc4d92",
+          "updated_sha256": "40c7db9f14b97e021c475ac4f9bf80c41a152f542b0aaaebbeba9bd156cc4d92",
+          "baseline": {
+            "cer": 0.74367,
+            "wer": 0.915765
+          },
+          "updated": {
+            "cer": 0.74367,
+            "wer": 0.915765
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "english",
+      "reference_basis": "project CC0 synthetic transcript",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "b19b368d2c4551215b62f4ff35012172ea386e9c8a9a0eff99faa88508d1a4ea",
+          "updated_sha256": "b19b368d2c4551215b62f4ff35012172ea386e9c8a9a0eff99faa88508d1a4ea",
+          "baseline": {
+            "cer": 0.0,
+            "wer": 0.0
+          },
+          "updated": {
+            "cer": 0.0,
+            "wer": 0.0
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "faa958c14c650297c67fca6b5b2e534bae420d0ff662aa6ef5ba195a2c0b0e8c",
+          "updated_sha256": "faa958c14c650297c67fca6b5b2e534bae420d0ff662aa6ef5ba195a2c0b0e8c",
+          "baseline": {
+            "cer": 0.0,
+            "wer": 0.0
+          },
+          "updated": {
+            "cer": 0.0,
+            "wer": 0.0
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    },
+    {
+      "id": "russian",
+      "reference_basis": "project CC0 synthetic transcript",
+      "outputs": {
+        "prepared.md": {
+          "byte_identical": true,
+          "baseline_sha256": "984fc415667ddf7d01c592ecc81005d0dd1026311384883a53d3981229ae3322",
+          "updated_sha256": "984fc415667ddf7d01c592ecc81005d0dd1026311384883a53d3981229ae3322",
+          "baseline": {
+            "cer": 0.0,
+            "wer": 0.0
+          },
+          "updated": {
+            "cer": 0.0,
+            "wer": 0.0
+          }
+        },
+        "recognition.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "f6bfc9b3a956094eeba2e44e96ac97454f728af59ab4d5b9acee068acea3df1c",
+          "updated_sha256": "f6bfc9b3a956094eeba2e44e96ac97454f728af59ab4d5b9acee068acea3df1c",
+          "baseline": {
+            "cer": 0.0,
+            "wer": 0.0
+          },
+          "updated": {
+            "cer": 0.0,
+            "wer": 0.0
+          }
+        },
+        "metadata.txt": {
+          "byte_identical": true,
+          "baseline_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8",
+          "updated_sha256": "e328f0bc6e70eeb8133e3ed26ae3d6361233077a19e2c9ed72acfaf71bdcc0c8"
+        }
+      }
+    }
+  ],
+  "changed_outputs": [],
+  "review_required": false
+}
