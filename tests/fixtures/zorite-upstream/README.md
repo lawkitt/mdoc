@@ -79,3 +79,8 @@ on this host and remain pending. The fixture check does not establish FUSE,
 direct-mount or firejail startup. The vendored backend's own upstream tests
 remain unrun; they depend on Zed's development repository/assets. macOS workspace
 checks do not compile that Linux-only backend.
+
+## Review delivery
+
+[mdoc PR #10](https://github.com/lawkitt/mdoc/pull/10), implementation commit
+`7a895e3b8580e6604881d869ebe56f1d21a6b59c`. Main merge and release are separate.

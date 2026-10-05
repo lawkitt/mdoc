@@ -61,3 +61,8 @@ The [verification record](../../tests/fixtures/zorite-upstream/README.md) report
 dependency/license/source checks, workflow lint and permission fixtures.
 A native macOS standalone-editor smoke check confirmed the new formats paint;
 Linux glyph placement and actual AppImage launch remain pending.
+
+Review delivery: [mdoc PR #10](https://github.com/lawkitt/mdoc/pull/10).
+The initial implementation commit is
+`7a895e3b8580e6604881d869ebe56f1d21a6b59c`; later documentation records delivery.
+No main branch merge or release was performed.
