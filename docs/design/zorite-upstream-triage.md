@@ -73,7 +73,7 @@ Round 2 confirmed by "agree, implement":
 The frontier is closed and implementation is authorized. See
 [ADR 0009](../adr/0009-selected-zorite-upstream-fixes.md).
 
-## Proposed verification principles
+## Verification principles
 
 For chosen changes, run relevant crate tests and the repository gate. Preserve
 complete raw Markdown handoff, Unicode/source offsets, undo/caret/selection,
