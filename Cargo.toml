@@ -9,8 +9,15 @@ repository = "https://github.com/lawkitt/mdoc"
 publish = false
 
 [workspace]
+# Upstream code with one Linux glyph-offset correction; not a workspace crate.
+exclude = ["vendor"]
 members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-markdown", "crates/gpui-pdf", "crates/os-spellcheck"]
 resolver = "2"
+
+# Remove when an adopted GPUI release includes the combining-mark correction.
+# Preserve the current GPUI family; see vendor/gpui-pre-wgpu/ZORITE-PATCH.md.
+[patch.crates-io]
+gpui-pre-wgpu = { path = "vendor/gpui-pre-wgpu" }
 
 [workspace.dependencies]
 gpui = { package = "gpui-pre", version = "0.3" }

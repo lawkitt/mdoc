@@ -502,7 +502,10 @@ Turn on WYSIWYG (live-preview) markdown styling with the given color/font
 palette — call once at setup (or again to re-theme). Everything markdown then
 renders live: headings sized, inline styles applied, markers hidden and
 revealed only around the caret, lists/quotes/alerts/rules drawn, tables
-gridded. Without it the editor is the **raw** view: plain text, spell
+gridded. Existing `==highlights==`, colored `<mark>` backgrounds and styled
+`<span>` colors are displayed. These are rendering rules; no formatting action
+or picker is added, and the stored source remains unchanged.
+Without it the editor is the **raw** view: plain text, spell
 squiggles only. The block providers below are each independently optional on
 top of this.
 

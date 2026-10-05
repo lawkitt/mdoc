@@ -48,6 +48,17 @@ isn't public. Feature `—` = always compiled (`mdoc_markdown::syntax`);
 | [`url_end`](#url_end) | fn | `fn url_end(line: &str, start: usize) -> usize` | Where a bare URL ends (GFM-ish) | — |
 | [`links`](#links) | fn | `fn links(line: &str) -> Vec<(Range<usize>, LinkHit)>` | Every clickable link in a line, with source ranges | — |
 | [`link_at`](#link_at) | fn | `fn link_at(line: &str, col: usize) -> Option<LinkHit>` | The link under a byte column | — |
+| [`highlight_close`](#highlights-and-inline-colors) | fn | `fn highlight_close(line: &str, open: usize) -> Option<usize>` | Closing highlight marker on the same line | — |
+| [`highlight_markers`](#highlights-and-inline-colors) | fn | `fn highlight_markers(line: &str) -> Vec<usize>` | Source offsets of paired highlight markers | — |
+| [`StyledKind`](#highlights-and-inline-colors) | enum | `Mark \| Span \| Underline` | Supported inline tag identities | — |
+| [`StyledKind::close`](#highlights-and-inline-colors) | method | `fn close(self) -> &'static str` | Canonical closing tag | — |
+| [`StyledTag`](#highlights-and-inline-colors) | struct | `kind: StyledKind, color: Option<u32>, background: Option<u32>` | Parsed tag and RGBA colors | — |
+| [`styled_tag`](#highlights-and-inline-colors) | fn | `fn styled_tag(tag: &str) -> Option<StyledTag>` | Supported opening tag and styling | — |
+| [`styled_kind`](#highlights-and-inline-colors) | fn | `fn styled_kind(tag: &str) -> Option<StyledKind>` | Opening tag identity, including unsupported styling | — |
+| [`styled_close`](#highlights-and-inline-colors) | fn | `fn styled_close(tag: &str) -> Option<StyledKind>` | Closing tag identity | — |
+| [`matching_styled_close`](#highlights-and-inline-colors) | fn | `fn matching_styled_close(body: &str, kind: StyledKind) -> Option<(usize, usize)>` | Matching close offset and byte length | — |
+| [`inline_tag_len`](#highlights-and-inline-colors) | fn | `fn inline_tag_len(source: &str) -> Option<usize>` | Opening tag byte length, respecting quoted attributes | — |
+| [`css_color`](#highlights-and-inline-colors) | fn | `fn css_color(s: &str) -> Option<u32>` | Supported CSS color as `0xRRGGBBAA` | — |
 | [`block_id`](#block_id) | fn | `fn block_id(line: &str) -> Option<(usize, &str)>` | Trailing ` ^block-id` anchor on a line | — |
 | [`split_block_anchor`](#split_block_anchor) | fn | `fn split_block_anchor(target: &str) -> (&str, Option<&str>)` | Split `Note#^id` into `(page, block id)` | — |
 | [`superscript`](#superscript) | fn | `fn superscript(n: usize) -> String` | `n` as superscript digits (`¹²`) — the ref-count badge text | — |
@@ -898,6 +909,30 @@ show themselves. A value with no links is a single `Text` segment.
 match the reader's and editor's click hit-tests exactly.
 
 ---
+
+## Highlights and inline colors
+
+These dependency-free functions recognize existing formatting; they never modify
+source. `highlight_close` validates an exact `==` opener and returns its same-line
+closer. Spaces at either inner edge, longer equals runs, empty bodies and unmatched
+markers remain literal. `highlight_markers` returns ascending source byte offsets
+while skipping escapes and matched backtick code spans, including longer runs.
+The shared scanner keeps editor display and reader search aligned.
+
+`StyledKind` and `StyledTag` derive `Clone`, `Copy`, `Debug`, `PartialEq`, `Eq`;
+the tag's three fields are public. `styled_tag` parses `<mark>`, `<u>`, and
+`<span>` with supported `color`, `background` or `background-color` declarations.
+An unsupported span returns `None` and remains literal. Tag/attribute names are
+case-insensitive; attribute values may be quoted or unquoted. Only actual `style`
+attributes count. Arbitrary HTML/CSS is not executed.
+
+`css_color` supports 3/4/6/8-digit hex, comma-separated `rgb`/`rgba` with finite
+numeric channels, and basic named colors. Invalid colors return `None`;
+unsupported declarations are ignored. `matching_styled_close` respects nested
+tags, escapes and code spans and returns offsets relative to the body after an
+opening tag. `inline_tag_len` includes the final unquoted `>` in its byte length.
+Recognition scans the provided slice and allocates only marker/color parsing
+results; the views own all painting and source mapping.
 
 # Part II — the reader view (feature `view`)
 

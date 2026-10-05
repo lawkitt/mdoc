@@ -33,6 +33,8 @@ cargo run -- path/to/reference.docx
 
 Write Markdown directly: headings, emphasis, lists, checkboxes, tables, links,
 quotes, and code blocks render as you edit. Syntax is revealed near the caret.
+Existing `==highlights==`, colored `<mark>` backgrounds, and `<span>` text colors
+also render. Saving and Copy Markdown retain their original source syntax.
 Local images resolve relative to the Markdown file and load in the background.
 Open a PDF or DOCX in its own preview tab to read, zoom, navigate pages, and
 search. DOCX preview is read-only and rendered locally with the bundled Rust

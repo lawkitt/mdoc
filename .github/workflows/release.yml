@@ -529,6 +529,13 @@ jobs:
 
           cd target/release
           "./$NAME" --appimage-extract >/dev/null
+          # The packed files are root-owned. Make the launcher runnable by
+          # every user even when the image is mounted directly.
+          chmod 0755 squashfs-root/AppRun
+          if find squashfs-root -type f -perm -u=x ! -perm -o=x | grep .; then
+            echo "::error::executables above aren't runnable by other users"
+            exit 1
+          fi
           UPDINFO="gh-releases-zsync|lawkitt|mdoc|latest|mdoc_*_${ARCH}.AppImage.zsync"
           ARCH="$ARCH" "$TOOL" -u "$UPDINFO" squashfs-root "$NAME"
           test -f "${NAME}.zsync"

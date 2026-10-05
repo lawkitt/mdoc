@@ -111,8 +111,7 @@ fn copy_markdown_preserves_source_selection_undo_and_warning(cx: &mut TestAppCon
     use gpui::EntityInputHandler;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("legal.md");
-    let saved =
-        "# Договор\r\n\r\n3. **Текст** [link](local.md)\r\n\r\n```rust\r\nlet x = 1;\r\n```\r\n";
+    let saved = "# Договор\r\n\r\n3. **Текст** [link](local.md)\r\n==Важно== <mark style='background:#ff0000'>условие</mark> <span style='color:blue'>сторона</span>\r\n\r\n```rust\r\nlet x = 1;\r\n```\r\n";
     std::fs::write(&path, saved).unwrap();
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {

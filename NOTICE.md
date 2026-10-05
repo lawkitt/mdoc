@@ -21,6 +21,9 @@ that does not remove upstream attribution.
 
 Dependency licenses are collected in [THIRD-PARTY-LICENSES.html](THIRD-PARTY-LICENSES.html).
 Regenerate that file with `cargo about generate about.hbs -o THIRD-PARTY-LICENSES.html`.
+The temporary [vendored GPUI Linux renderer](vendor/gpui-pre-wgpu/ZORITE-PATCH.md)
+retains Zed's Apache-2.0 license and Zorite's combining-mark correction. Its
+upstream identity, patch and removal condition are recorded beside the source.
 Imported test fixtures retain their separate notices in
 [tests/fixtures/import/README.md](tests/fixtures/import/README.md) and
 [LICENSE.anydoc](tests/fixtures/import/LICENSE.anydoc).
