@@ -1768,7 +1768,10 @@ fn render_list(list: &mdast::List, ctx: &mut Ctx, depth: usize, window: &mut Win
             Some(mdast::Node::Heading(h)) => heading_scale(h.depth),
             _ => 1.0,
         };
-        let marker_top = px(f32::from(ctx.style.text_size) * (lead_scale - 1.0) * 1.618_034 / 2.0);
+        let marker_top = px(f32::from(ctx.style.text_size)
+            * (lead_scale - 1.0)
+            * std::f32::consts::GOLDEN_RATIO
+            / 2.0);
 
         // The marker is a plain glyph, except a task's box, which is drawn (a
         // rounded square, accent-filled with a white check when done — the
@@ -1981,9 +1984,25 @@ struct Inline {
     /// (non-breaking spaces) reserves the width in the text; a canvas paints
     /// the raster over it at the laid-out position (see [`inline_element`]).
     math: Vec<InlineRaster>,
+    /// Source offsets of this paragraph's `==` highlight markers (hidden; see
+    /// [`highlight_marks`]), whether the text being appended sits inside one,
+    /// and the tint it gets.
+    marks: Vec<usize>,
+    source: SharedString,
+    mark_on: bool,
+    mark_bg: Hsla,
 }
 
 impl Inline {
+    fn new(nodes: &[mdast::Node], source: SharedString, style: &MarkdownStyle) -> Self {
+        Self {
+            mark_bg: style.mark_bg,
+            marks: highlight_marks(nodes, &source),
+            source,
+            ..Default::default()
+        }
+    }
+
     /// Record that the text appended next maps to source byte offset `src`.
     fn map(&mut self, src: usize) {
         self.source_map.push((self.text.len(), src));
@@ -1991,7 +2010,7 @@ impl Inline {
 }
 
 fn inline_element(nodes: &[mdast::Node], ctx: &mut Ctx) -> AnyElement {
-    let mut inl = Inline::default();
+    let mut inl = Inline::new(nodes, ctx.source.clone(), &ctx.style);
     // A checked task's text renders struck through + muted (Notion-style).
     let mut base = HighlightStyle::default();
     if ctx.strike_done {
@@ -2279,9 +2298,18 @@ fn build_inline(
     // Mutable so `<mark>` / `</mark>` — flat sibling HTML tags, not a wrapping node —
     // can toggle the highlight on the runs between them.
     let mut cur = cur;
-    for node in nodes {
+    let mut html_styles = Vec::new();
+    let paired_html = paired_styled_tags(nodes);
+    for (node_index, node) in nodes.iter().enumerate() {
         match node {
-            mdast::Node::Text(t) => push_text(&t.value, node_src(node), cur, style, out),
+            mdast::Node::Text(t) => {
+                let start = node_src(node);
+                let raw = node
+                    .position()
+                    .and_then(|p| out.source.get(start..p.end.offset));
+                let offsets = decoded_source_offsets(raw.unwrap_or(&t.value), &t.value, start);
+                push_text(&t.value, &offsets, cur, style, out);
+            }
             mdast::Node::Strong(s) => {
                 let mut c = cur;
                 c.font_weight = Some(FontWeight::BOLD);
@@ -2414,23 +2442,50 @@ fn build_inline(
                         .push((start..end, LinkTarget::Url(url.clone().into())));
                 }
             }
-            // Inline raw HTML stays literal (never executed) — except `<mark>`
-            // (a safe highlight tag) and `<u>` (underline — markdown has none
-            // natively): each toggles its style on the runs it wraps.
+            // Inline raw HTML stays literal (never executed) — except the
+            // styling tags both views honor (`syntax::styled_tag`): `<mark>`
+            // (a highlight, the theme's tint or a chosen `background`),
+            // `<span style="color:…">`, and `<u>` (underline — markdown has
+            // none). Each toggles its style on the runs it wraps.
             mdast::Node::Html(h) => {
-                let tag = h.value.trim().to_ascii_lowercase();
-                if tag == "<mark>" || tag.starts_with("<mark ") {
-                    cur.background_color = Some(style.mark_bg);
-                } else if tag == "</mark>" {
-                    cur.background_color = None;
-                } else if tag == "<u>" {
-                    cur.underline = Some(gpui::UnderlineStyle {
-                        thickness: px(1.0),
-                        color: None,
-                        wavy: false,
-                    });
-                } else if tag == "</u>" {
-                    cur.underline = None;
+                use crate::syntax::StyledKind;
+                if let Some(t) = crate::syntax::styled_tag(&h.value)
+                    && paired_html.contains(&node_index)
+                {
+                    html_styles.push((t.kind, cur, true));
+                    match t.kind {
+                        StyledKind::Mark => {
+                            cur.background_color =
+                                Some(t.background.map_or(style.mark_bg, hsla_of));
+                        }
+                        StyledKind::Span => {
+                            if let Some(c) = t.color {
+                                cur.color = Some(hsla_of(c));
+                            }
+                            if let Some(bg) = t.background {
+                                cur.background_color = Some(hsla_of(bg));
+                            }
+                        }
+                        StyledKind::Underline => {
+                            cur.underline = Some(gpui::UnderlineStyle {
+                                thickness: px(1.0),
+                                color: None,
+                                wavy: false,
+                            });
+                        }
+                    }
+                } else if let Some(kind) = crate::syntax::styled_kind(&h.value) {
+                    html_styles.push((kind, cur, false));
+                    push_run(&h.value, cur, out);
+                } else if let Some(kind) = crate::syntax::styled_close(&h.value)
+                    && let Some((open, parent, styled)) = html_styles.last().copied()
+                    && open == kind
+                {
+                    cur = parent;
+                    html_styles.pop();
+                    if !styled {
+                        push_run(&h.value, cur, out);
+                    }
                 } else {
                     push_run(&h.value, cur, out);
                 }
@@ -2446,12 +2501,34 @@ fn build_inline(
     }
 }
 
+// Pair once per inline sequence rather than rescanning its remaining siblings
+// for every tag. An unmatched outer tag stays literal even if an inner tag pairs.
+fn paired_styled_tags(nodes: &[mdast::Node]) -> HashSet<usize> {
+    let mut pairs = HashSet::new();
+    let mut open = Vec::new();
+    for (index, node) in nodes.iter().enumerate() {
+        let mdast::Node::Html(html) = node else {
+            continue;
+        };
+        if let Some(kind) = crate::syntax::styled_kind(&html.value) {
+            open.push((kind, index));
+        } else if let Some(kind) = crate::syntax::styled_close(&html.value)
+            && let Some(&(opening_kind, opening_index)) = open.last()
+            && kind == opening_kind
+        {
+            open.pop();
+            pairs.insert(opening_index);
+        }
+    }
+    pairs
+}
+
 /// Push plain text, splitting out `[[wiki-links]]` and `#tags` into
 /// clickable runs. Both navigate to a page; a tag keeps its `#` in the
 /// display text but targets the bare name.
 fn push_text(
     value: &str,
-    src_base: usize,
+    source_offsets: &SourceOffsets,
     cur: HighlightStyle,
     style: &MarkdownStyle,
     out: &mut Inline,
@@ -2460,6 +2537,15 @@ fn push_text(
     let mut plain_start = 0;
     let mut i = 0;
     while i < value.len() {
+        // `==` highlight marker (validated per paragraph by `highlight_marks`):
+        // hidden, toggling the highlight tint for the text that follows.
+        if bytes[i] == b'=' && out.marks.contains(&(source_offsets.at(i))) {
+            push_source_text(value, plain_start..i, source_offsets, marked(cur, out), out);
+            out.mark_on = !out.mark_on;
+            i += 2;
+            plain_start = i;
+            continue;
+        }
         // [[wiki-link]]
         if value[i..].starts_with("[[") {
             if let Some(close) = value[i + 2..].find("]]") {
@@ -2468,9 +2554,8 @@ fn push_text(
                 // uses the name for both. An empty label falls back to the target.
                 let (target, display) = crate::syntax::wiki_target_display(inner);
                 if !target.is_empty() {
-                    out.map(src_base + plain_start);
-                    push_run(&value[plain_start..i], cur, out);
-                    out.map(src_base + i + 2); // the display text sits just past `[[`
+                    push_source_text(value, plain_start..i, source_offsets, marked(cur, out), out);
+                    out.map(source_offsets.at(i + 2)); // the display text sits just past `[[`
                     // An unaliased anchor link (`[[Note#^id]]` / `[[Note#Heading]]`)
                     // reads as `Note → anchor` — the editor renders the same, and
                     // an alias still overrides the display entirely.
@@ -2490,9 +2575,9 @@ fn push_text(
                         heading.map(|h| format!("{page} → {}", h.trim()))
                     });
                     if let Some(Some(shown)) = anchored {
-                        push_link(&shown, target, style.link_color, cur, out);
+                        push_link(&shown, target, style.link_color, marked(cur, out), out);
                     } else {
-                        push_link(display, target, style.link_color, cur, out);
+                        push_link(display, target, style.link_color, marked(cur, out), out);
                     }
                     i += 2 + close + 2;
                     plain_start = i;
@@ -2515,10 +2600,15 @@ fn push_text(
                     .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
                 && let Some(label) = style.block_label.as_ref().and_then(|f| f("", id))
             {
-                out.map(src_base + plain_start);
-                push_run(&value[plain_start..i], cur, out);
-                out.map(src_base + i);
-                push_link(&label, &format!("#^{id}"), style.link_color, cur, out);
+                push_source_text(value, plain_start..i, source_offsets, marked(cur, out), out);
+                out.map(source_offsets.at(i));
+                push_link(
+                    &label,
+                    &format!("#^{id}"),
+                    style.link_color,
+                    marked(cur, out),
+                    out,
+                );
                 i += 2 + close + 2;
                 plain_start = i;
                 continue;
@@ -2535,11 +2625,10 @@ fn push_text(
             if let Some((at, id)) = crate::syntax::block_id(&value[..end])
                 && at == i
             {
-                out.map(src_base + plain_start);
-                push_run(&value[plain_start..i], cur, out);
+                push_source_text(value, plain_start..i, source_offsets, marked(cur, out), out);
                 let refs = style.block_ref_count.as_ref().map_or(0, |f| f(id));
                 if refs > 0 {
-                    out.map(src_base + i);
+                    out.map(source_offsets.at(i));
                     push_link(
                         &format!(" {}", crate::syntax::superscript(refs)),
                         &format!("refs:^{id}"),
@@ -2562,10 +2651,9 @@ fn push_text(
             }
             if j > i + 1 {
                 let name = &value[i + 1..j];
-                out.map(src_base + plain_start);
-                push_run(&value[plain_start..i], cur, out);
-                out.map(src_base + i); // the tag (with its `#`) is verbatim in the source
-                push_link(&value[i..j], name, style.tag_color, cur, out);
+                push_source_text(value, plain_start..i, source_offsets, marked(cur, out), out);
+                out.map(source_offsets.at(i)); // the tag (with its `#`) is verbatim in the source
+                push_link(&value[i..j], name, style.tag_color, marked(cur, out), out);
                 i = j;
                 plain_start = i;
                 continue;
@@ -2573,8 +2661,153 @@ fn push_text(
         }
         i += value[i..].chars().next().map_or(1, |c| c.len_utf8());
     }
-    out.map(src_base + plain_start);
-    push_run(&value[plain_start..], cur, out);
+    push_source_text(
+        value,
+        plain_start..value.len(),
+        source_offsets,
+        marked(cur, out),
+        out,
+    );
+}
+
+/// Map the parser's decoded Text bytes back to their source. Highlight markers
+/// are identified in source, so an entity or escape before one must not shift it.
+struct SourceOffsets {
+    base: usize,
+    decoded: Option<Vec<usize>>,
+}
+
+impl SourceOffsets {
+    fn at(&self, index: usize) -> usize {
+        self.decoded
+            .as_ref()
+            .map_or(self.base + index, |offsets| offsets[index])
+    }
+}
+
+fn decoded_source_offsets(raw: &str, value: &str, base: usize) -> SourceOffsets {
+    if raw == value {
+        return SourceOffsets {
+            base,
+            decoded: None,
+        };
+    }
+    let mut decoded = String::new();
+    let mut offsets = Vec::new();
+    let mut at = 0;
+    while at < raw.len() {
+        let rest = &raw[at..];
+        let entity = rest.strip_prefix('&').and_then(|s| {
+            let end = s.find(';')?;
+            let name = &s[..end];
+            let text = if let Some(number) = name.strip_prefix('#') {
+                let (digits, radix, max) = number
+                    .strip_prefix(['x', 'X'])
+                    .map_or((number, 10, 7), |n| (n, 16, 6));
+                if digits.is_empty()
+                    || digits.len() > max
+                    || !digits.chars().all(|c| c.is_digit(radix))
+                {
+                    return None;
+                }
+                markdown::decode_numeric(digits, radix)
+            } else {
+                markdown::decode_named(name, true)?
+            };
+            Some((end + 2, text))
+        });
+        let escape = rest.as_bytes().first() == Some(&b'\\')
+            && rest.as_bytes().get(1).is_some_and(u8::is_ascii_punctuation);
+        let (len, replacement) = if let Some((len, text)) = entity {
+            (len, Some(text))
+        } else if escape {
+            (2, Some(rest[1..2].to_owned()))
+        } else if rest.starts_with('\r') {
+            (
+                if rest.starts_with("\r\n") { 2 } else { 1 },
+                Some("\n".into()),
+            )
+        } else {
+            (rest.chars().next().unwrap().len_utf8(), None)
+        };
+        if let Some(text) = replacement {
+            offsets.extend(std::iter::repeat_n(base + at, text.len()));
+            decoded.push_str(&text);
+        } else {
+            offsets.extend(base + at..base + at + len);
+            decoded.push_str(&rest[..len]);
+        }
+        at += len;
+    }
+    if decoded != value {
+        // Text nodes without recorded source (private callers) keep their prior
+        // identity mapping. Never index a map with a different decoded length.
+        return SourceOffsets {
+            base,
+            decoded: None,
+        };
+    }
+    offsets.push(base + raw.len());
+    SourceOffsets {
+        base,
+        decoded: Some(offsets),
+    }
+}
+
+fn push_source_text(
+    value: &str,
+    range: Range<usize>,
+    offsets: &SourceOffsets,
+    style: HighlightStyle,
+    out: &mut Inline,
+) {
+    let rendered = out.text.len();
+    out.map(offsets.at(range.start));
+    if offsets.decoded.is_some() {
+        for (i, _) in value[range.clone()].char_indices().skip(1) {
+            let at = range.start + i;
+            if offsets.at(at) != offsets.at(at - 1) + 1 {
+                out.source_map.push((rendered + i, offsets.at(at)));
+            }
+        }
+    }
+    push_run(&value[range], style, out);
+}
+
+/// `cur` with the paragraph's `==` highlight tint applied while one is open
+/// (an explicit background — a `<mark style>` — wins).
+fn marked(cur: HighlightStyle, out: &Inline) -> HighlightStyle {
+    let mut c = cur;
+    if out.mark_on && c.background_color.is_none() {
+        c.background_color = Some(out.mark_bg);
+    }
+    c
+}
+
+/// Source offsets of the valid `==` markers across a paragraph's inline nodes,
+/// scanned on the SOURCE slice they span — so a highlight may wrap nested
+/// constructs (`==**bold**==`) the parser split into sibling nodes, and
+/// `push_text` only has to test membership.
+fn highlight_marks(nodes: &[mdast::Node], source: &str) -> Vec<usize> {
+    let (Some(first), Some(last)) = (
+        nodes.first().and_then(|n| n.position()),
+        nodes.last().and_then(|n| n.position()),
+    ) else {
+        return Vec::new();
+    };
+    let start = first.start.offset;
+    match source.get(start..last.end.offset) {
+        Some(s) => crate::syntax::highlight_markers(s)
+            .into_iter()
+            .map(|m| m + start)
+            .collect(),
+        None => Vec::new(),
+    }
+}
+
+/// `0xRRGGBBAA` (from `syntax::css_color`) as a gpui color.
+fn hsla_of(rgba: u32) -> Hsla {
+    gpui::rgba(rgba).into()
 }
 
 /// Source byte offset where `node` begins (0 if the parser recorded none).
@@ -3228,7 +3461,7 @@ fn render_table(
             let mdast::Node::TableCell(c) = cell else {
                 continue;
             };
-            let text = inline_text(&c.children, &ctx.style, &ctx.definitions);
+            let text = inline_text(&c.children, &ctx.style, &ctx.definitions, &ctx.source);
             if text.is_empty() {
                 continue;
             }
@@ -3462,8 +3695,9 @@ fn inline_text(
     nodes: &[mdast::Node],
     style: &MarkdownStyle,
     defs: &HashMap<String, String>,
+    source: &SharedString,
 ) -> String {
-    let mut inl = Inline::default();
+    let mut inl = Inline::new(nodes, source.clone(), style);
     build_inline(
         nodes,
         HighlightStyle::default(),
@@ -3484,28 +3718,29 @@ fn for_each_inline_text(
     nodes: &[mdast::Node],
     style: &MarkdownStyle,
     defs: &HashMap<String, String>,
+    source: &SharedString,
     f: &mut impl FnMut(&str),
 ) {
     for node in nodes {
         match node {
-            mdast::Node::Paragraph(p) => f(&inline_text(&p.children, style, defs)),
-            mdast::Node::Heading(h) => f(&inline_text(&h.children, style, defs)),
-            mdast::Node::TableCell(c) => f(&inline_text(&c.children, style, defs)),
-            mdast::Node::List(l) => for_each_inline_text(&l.children, style, defs, f),
-            mdast::Node::ListItem(li) => for_each_inline_text(&li.children, style, defs, f),
+            mdast::Node::Paragraph(p) => f(&inline_text(&p.children, style, defs, source)),
+            mdast::Node::Heading(h) => f(&inline_text(&h.children, style, defs, source)),
+            mdast::Node::TableCell(c) => f(&inline_text(&c.children, style, defs, source)),
+            mdast::Node::List(l) => for_each_inline_text(&l.children, style, defs, source, f),
+            mdast::Node::ListItem(li) => for_each_inline_text(&li.children, style, defs, source, f),
             mdast::Node::Blockquote(b) => {
                 // Mirror the alert-marker strip in `render_block`, so search
                 // match indices line up with what's painted.
                 if let Some((_, children)) = alert_children(b) {
-                    for_each_inline_text(&children, style, defs, f);
+                    for_each_inline_text(&children, style, defs, source, f);
                 } else {
-                    for_each_inline_text(&b.children, style, defs, f);
+                    for_each_inline_text(&b.children, style, defs, source, f);
                 }
             }
-            mdast::Node::Table(t) => for_each_inline_text(&t.children, style, defs, f),
-            mdast::Node::TableRow(r) => for_each_inline_text(&r.children, style, defs, f),
+            mdast::Node::Table(t) => for_each_inline_text(&t.children, style, defs, source, f),
+            mdast::Node::TableRow(r) => for_each_inline_text(&r.children, style, defs, source, f),
             mdast::Node::FootnoteDefinition(fd) => {
-                for_each_inline_text(&fd.children, style, defs, f)
+                for_each_inline_text(&fd.children, style, defs, source, f)
             }
             _ => {}
         }
@@ -3537,7 +3772,10 @@ pub fn find_matches(source: &str, query: &str) -> Vec<usize> {
     // (issue #60: seconds, per character, on the shapes that go superlinear),
     // and it makes the block indices below line up with the blocks actually
     // rendered instead of a separately-parsed approximation.
-    if let Some(node) = parse_cached(&crate::syntax::normalize_math_fences(source))
+    let source: SharedString = crate::syntax::normalize_math_fences(source)
+        .into_owned()
+        .into();
+    if let Some(node) = parse_cached(&source)
         && let mdast::Node::Root(root) = node.as_ref()
     {
         // Walk top-level blocks in render order, assigning each a column-child index
@@ -3549,9 +3787,15 @@ pub fn find_matches(source: &str, query: &str) -> Vec<usize> {
                 continue;
             }
             let mut n = 0;
-            for_each_inline_text(std::slice::from_ref(node), &style, &defs, &mut |t| {
-                n += scan_matches(t, query).len();
-            });
+            for_each_inline_text(
+                std::slice::from_ref(node),
+                &style,
+                &defs,
+                &source,
+                &mut |t| {
+                    n += scan_matches(t, query).len();
+                },
+            );
             out.extend(std::iter::repeat_n(block_ix, n));
             block_ix += 1;
         }
@@ -3694,7 +3938,7 @@ mod search_tests {
         let mdast::Node::Paragraph(p) = &root.children[0] else {
             panic!("not a paragraph")
         };
-        let mut inl = Inline::default();
+        let mut inl = Inline::new(&p.children, source.into(), &style);
         build_inline(
             &p.children,
             HighlightStyle::default(),
@@ -3705,6 +3949,107 @@ mod search_tests {
             &mut inl,
         );
         inl
+    }
+
+    #[test]
+    fn double_equals_highlights_and_hides_its_markers() {
+        let style = MarkdownStyle::default();
+        let inl = first_paragraph_inline("a ==b== c");
+        assert_eq!(inl.text, "a b c");
+        assert!(inl.highlights.iter().any(|(r, s)| {
+            &inl.text[r.clone()] == "b" && s.background_color == Some(style.mark_bg)
+        }));
+        // Across nested constructs, and only the highlighted run is tinted.
+        let inl = first_paragraph_inline("==**bold** tail== plain");
+        assert_eq!(inl.text, "bold tail plain");
+        assert!(inl.highlights.iter().all(|(r, s)| {
+            (s.background_color == Some(style.mark_bg)) == !inl.text[r.clone()].contains("plain")
+        }));
+        // Emphasis-style pairing: spaced `==` stays literal.
+        assert_eq!(first_paragraph_inline("a == b == c").text, "a == b == c");
+    }
+
+    #[test]
+    fn colored_mark_and_span_tags_style_their_body() {
+        let inl = first_paragraph_inline(
+            r#"x <mark style="background:#ff0000">hi</mark> <span style="color:#00ff00">go</span>"#,
+        );
+        assert_eq!(inl.text, "x hi go");
+        let run = |needle: &str| {
+            inl.highlights
+                .iter()
+                .find(|(r, _)| &inl.text[r.clone()] == needle)
+                .map(|(_, s)| *s)
+                .unwrap()
+        };
+        assert_eq!(run("hi").background_color, Some(hsla_of(0xff0000ff)));
+        assert_eq!(run("go").color, Some(hsla_of(0x00ff00ff)));
+        assert_eq!(run("go").background_color, None);
+    }
+
+    #[test]
+    fn highlighted_search_uses_visible_text_in_paragraphs_and_tables() {
+        assert_eq!(match_count("a ==b== c", "a b c"), 1);
+        assert_eq!(match_count("a ==b== c", "=="), 0);
+        assert_eq!(match_count("| ==Договор== |\n| --- |", "=="), 0);
+        assert_eq!(match_count("| ==Договор== |\n| --- |", "Договор"), 1);
+    }
+
+    #[test]
+    fn highlight_markers_respect_decoding_code_and_line_boundaries() {
+        for (source, visible) in [
+            (r"\* ==Договор== конец", "* Договор конец"),
+            ("&amp; ==Договор== конец", "& Договор конец"),
+            ("===literal==", "===literal=="),
+            ("==one\ntwo==", "==one\ntwo=="),
+            ("``a` ==b== c``", "a` ==b== c"),
+            ("==`a==b` tail== plain", "a==b tail plain"),
+            (
+                "x <mark>before `</mark>` after</mark> plain",
+                "x before </mark> after plain",
+            ),
+        ] {
+            let inl = first_paragraph_inline(source);
+            assert_eq!(inl.text, visible, "{source:?}");
+            if let Some(end) = inl.text.find("конец") {
+                assert_eq!(
+                    map_to_source(&inl.source_map, end),
+                    source.find("конец"),
+                    "{source:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn nested_html_restores_parent_style_and_unsupported_tags_stay_literal() {
+        let source = r#"x <span style="color:red">outer <span style="color:blue">inner</span> outer</span> plain"#;
+        let inl = first_paragraph_inline(source);
+        assert_eq!(inl.text, "x outer inner outer plain");
+        let end = inl.text.rfind("outer").unwrap();
+        assert!(
+            inl.highlights
+                .iter()
+                .any(|(r, s)| { r.contains(&end) && s.color == Some(hsla_of(0xff0000ff)) })
+        );
+        let unsupported = r#"x <span style="color:unsupported">text</span> y"#;
+        assert_eq!(first_paragraph_inline(unsupported).text, unsupported);
+        let incomplete =
+            r#"x <span style='color:red'>outer <span style='color:blue'>inner</span> plain"#;
+        assert_eq!(
+            first_paragraph_inline(incomplete).text,
+            "x <span style='color:red'>outer inner plain"
+        );
+        let source =
+            r#"x <span style="color:red">outer <span class=x>literal</span> outer</span> plain"#;
+        let inl = first_paragraph_inline(source);
+        assert_eq!(inl.text, "x outer <span class=x>literal</span> outer plain");
+        let end = inl.text.rfind("outer").unwrap();
+        assert!(
+            inl.highlights
+                .iter()
+                .any(|(r, s)| { r.contains(&end) && s.color == Some(hsla_of(0xff0000ff)) })
+        );
     }
 
     #[test]

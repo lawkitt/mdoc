@@ -1012,9 +1012,416 @@ pub fn normalize_math_fences(source: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+// --- Highlights and colors ------------------------------------------------
+//
+// `==text==` is the highlight most markdown apps agree on (Obsidian, Typora,
+// Bear); `<mark>` is its inline-HTML twin. A *chosen* color has no markdown
+// spelling at all, so it rides the HTML Obsidian (and its Highlightr plugin)
+// writes: `<mark style="background:#ffd54f">` and `<span style="color:#e11">`.
+// Both views recognize all of these through the functions below.
+
+/// The closing `==` for the highlight opener at byte `open` (`line[open..]`
+/// starts with `==`), under the emphasis-like rules markdown-it-mark uses so
+/// `a == b == c` and `====` stay literal: the opener is followed by a
+/// non-space that isn't `=`, the closer is preceded by a non-space and is
+/// exactly two `=`, and the body is non-empty.
+pub fn highlight_close(line: &str, open: usize) -> Option<usize> {
+    let b = line.as_bytes();
+    let body = open.checked_add(2)?;
+    if !line.is_char_boundary(open)
+        || b.get(open..body) != Some(b"==")
+        || (open > 0 && b[open - 1] == b'=')
+        || line
+            .get(body..)?
+            .chars()
+            .next()
+            .is_none_or(|c| c.is_whitespace() || c == '=')
+    {
+        return None;
+    }
+    let mut at = body;
+    while at < b.len() {
+        match b[at] {
+            // The editor scans one line at a time; reader pairing must agree.
+            b'\r' | b'\n' => return None,
+            b'\\' => at += 1 + line[at + 1..].chars().next().map_or(0, char::len_utf8),
+            b'`' => {
+                let end = code_span_end(line, at);
+                if line[at..end].contains(['\r', '\n']) {
+                    return None;
+                }
+                at = end;
+            }
+            b'=' => {
+                let run = b[at..].iter().take_while(|c| **c == b'=').count();
+                if run == 2
+                    && at > body
+                    && line[..at]
+                        .chars()
+                        .next_back()
+                        .is_some_and(|c| !c.is_whitespace())
+                {
+                    return Some(at);
+                }
+                at += run;
+            }
+            _ => at += line[at..].chars().next()?.len_utf8(),
+        }
+    }
+    None
+}
+
+// CommonMark code spans close with the same number of backticks. An unmatched
+// opener is literal; only a matched span shields its contents from highlighting.
+fn code_span_end(line: &str, open: usize) -> usize {
+    let b = line.as_bytes();
+    let run = b[open..].iter().take_while(|c| **c == b'`').count();
+    let mut at = open + run;
+    while let Some(rel) = line[at..].find('`') {
+        at += rel;
+        let close_run = b[at..].iter().take_while(|c| **c == b'`').count();
+        if close_run == run {
+            return at + run;
+        }
+        at += close_run;
+    }
+    open + run
+}
+
+/// Byte offsets of every `==` highlight marker in `line` — openers and closers,
+/// ascending — skipping backtick code spans and backslash escapes. What both
+/// views hide; the text between an opener and its closer is highlighted.
+pub fn highlight_markers(line: &str) -> Vec<usize> {
+    let b = line.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'`' => i = code_span_end(line, i),
+            b'\\' => i += 1 + line[i + 1..].chars().next().map_or(0, char::len_utf8),
+            b'=' if b.get(i + 1) == Some(&b'=') => match highlight_close(line, i) {
+                Some(close) => {
+                    out.push(i);
+                    out.push(close);
+                    i = close + 2;
+                }
+                None => i += b[i..].iter().take_while(|c| **c == b'=').count(),
+            },
+            _ => i += line[i..].chars().next().unwrap().len_utf8(),
+        }
+    }
+    out
+}
+
+/// Which inline-HTML tag a [`StyledTag`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StyledKind {
+    /// `<mark>` — a highlight, the theme's tint unless `background` says otherwise.
+    Mark,
+    /// `<span style="color:…">` — colored text (and/or a colored background).
+    Span,
+    /// `<u>` — underline (markdown has none).
+    Underline,
+}
+
+impl StyledKind {
+    /// The closing tag, as it appears in the source.
+    pub fn close(self) -> &'static str {
+        match self {
+            StyledKind::Mark => "</mark>",
+            StyledKind::Span => "</span>",
+            StyledKind::Underline => "</u>",
+        }
+    }
+}
+
+/// An inline-HTML opening tag both views style rather than print.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StyledTag {
+    pub kind: StyledKind,
+    /// `color:` from the `style` attribute, as `0xRRGGBBAA`.
+    pub color: Option<u32>,
+    /// `background:` / `background-color:` from the `style` attribute, as
+    /// `0xRRGGBBAA`. A bare `<mark>` has none: the theme's highlight.
+    pub background: Option<u32>,
+}
+
+/// Parse an opening tag (`<mark>`, `<mark style="background:#ffd54f">`,
+/// `<span style="color:#e11">`, `<u>`), the tag text including its angle
+/// brackets. A `<span>` that sets neither color is not styled — `None`, and
+/// it prints literally like any other HTML.
+pub fn styled_tag(tag: &str) -> Option<StyledTag> {
+    let inner = tag.trim().strip_prefix('<')?.strip_suffix('>')?;
+    let (name, attrs) = match inner.find(|c: char| c.is_ascii_whitespace()) {
+        Some(i) => (&inner[..i], inner[i..].trim()),
+        None => (inner, ""),
+    };
+    let kind = match name.to_ascii_lowercase().as_str() {
+        "mark" => StyledKind::Mark,
+        "span" => StyledKind::Span,
+        "u" => StyledKind::Underline,
+        _ => return None,
+    };
+    let (mut color, mut background) = (None, None);
+    if let Some(style) = attr_value(attrs, "style") {
+        for decl in style.split(';') {
+            if let Some((k, v)) = decl.split_once(':') {
+                match k.trim().to_ascii_lowercase().as_str() {
+                    "color" => color = css_color(v),
+                    "background" | "background-color" => background = css_color(v),
+                    _ => {}
+                }
+            }
+        }
+    }
+    if kind == StyledKind::Span && color.is_none() && background.is_none() {
+        return None;
+    }
+    Some(StyledTag {
+        kind,
+        color,
+        background,
+    })
+}
+
+/// The kind a closing tag (`</mark>`, `</span>`, `</u>`) closes.
+pub fn styled_close(tag: &str) -> Option<StyledKind> {
+    match tag.trim().to_ascii_lowercase().as_str() {
+        "</mark>" => Some(StyledKind::Mark),
+        "</span>" => Some(StyledKind::Span),
+        "</u>" => Some(StyledKind::Underline),
+        _ => None,
+    }
+}
+
+/// Find the matching closing tag, retaining nested styles of the same kind.
+/// Offsets are relative to the source after the opening tag.
+pub fn matching_styled_close(body: &str, kind: StyledKind) -> Option<(usize, usize)> {
+    let mut depth = 0;
+    let mut at = 0;
+    while at < body.len() {
+        match body.as_bytes()[at] {
+            b'`' => at = code_span_end(body, at),
+            b'\\' => at += 1 + body[at + 1..].chars().next().map_or(0, char::len_utf8),
+            b'<' => {
+                let Some(len) = inline_tag_len(&body[at..]) else {
+                    at += 1;
+                    continue;
+                };
+                let tag = &body[at..at + len];
+                if styled_kind(tag) == Some(kind) {
+                    depth += 1;
+                } else if styled_close(tag) == Some(kind) {
+                    if depth == 0 {
+                        return Some((at, len));
+                    }
+                    depth -= 1;
+                }
+                at += len;
+            }
+            _ => at += body[at..].chars().next()?.len_utf8(),
+        }
+    }
+    None
+}
+
+/// An inline tag ends at an unquoted `>`; quoted attribute contents are literal.
+pub fn inline_tag_len(source: &str) -> Option<usize> {
+    if !source.starts_with('<') {
+        return None;
+    }
+    let mut quote = None;
+    for (at, c) in source.char_indices().skip(1) {
+        match (quote, c) {
+            (None, '"' | '\'') => quote = Some(c),
+            (Some(q), c) if c == q => quote = None,
+            (None, '<') => return None,
+            (None, '>') => return Some(at + 1),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Tag identity even when its styling is unsupported. Such a tag stays literal,
+/// but its closer must not consume a supported enclosing tag's style.
+pub fn styled_kind(tag: &str) -> Option<StyledKind> {
+    let inner = tag.trim().strip_prefix('<')?.strip_suffix('>')?;
+    match inner
+        .split_ascii_whitespace()
+        .next()?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "mark" => Some(StyledKind::Mark),
+        "span" => Some(StyledKind::Span),
+        "u" => Some(StyledKind::Underline),
+        _ => None,
+    }
+}
+
+/// `name="value"` / `name='value'` / `name=value` out of an attribute list.
+fn attr_value<'a>(attrs: &'a str, name: &str) -> Option<&'a str> {
+    let mut rest = attrs.trim_start();
+    while !rest.is_empty() {
+        let end = rest
+            .find(|c: char| c.is_ascii_whitespace() || c == '=')
+            .unwrap_or(rest.len());
+        let key = &rest[..end];
+        rest = rest[end..].trim_start();
+        let Some(value) = rest.strip_prefix('=') else {
+            if end == 0 {
+                return None;
+            }
+            continue;
+        };
+        rest = value.trim_start();
+        let (value, consumed) = match rest.chars().next()? {
+            q @ ('"' | '\'') => {
+                let end = rest[1..].find(q)?;
+                (&rest[1..end + 1], end + 2)
+            }
+            _ => {
+                let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+                (&rest[..end], end)
+            }
+        };
+        if key.eq_ignore_ascii_case(name) {
+            return Some(value);
+        }
+        rest = rest[consumed..].trim_start();
+    }
+    None
+}
+
+/// A CSS color as `0xRRGGBBAA`: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`,
+/// `rgb(r, g, b)` / `rgba(r, g, b, a)`, and the basic named colors.
+pub fn css_color(s: &str) -> Option<u32> {
+    let s = s.trim();
+    if let Some(hex) = s.strip_prefix('#') {
+        let d: Vec<u32> = hex.chars().map(|c| c.to_digit(16)).collect::<Option<_>>()?;
+        let (r, g, b, a) = match d.as_slice() {
+            [r, g, b] => (r * 17, g * 17, b * 17, 255),
+            [r, g, b, a] => (r * 17, g * 17, b * 17, a * 17),
+            [r1, r2, g1, g2, b1, b2] => (r1 * 16 + r2, g1 * 16 + g2, b1 * 16 + b2, 255),
+            [r1, r2, g1, g2, b1, b2, a1, a2] => {
+                (r1 * 16 + r2, g1 * 16 + g2, b1 * 16 + b2, a1 * 16 + a2)
+            }
+            _ => return None,
+        };
+        return Some(r << 24 | g << 16 | b << 8 | a);
+    }
+    let lower = s.to_ascii_lowercase();
+    if let Some(inner) = lower
+        .strip_prefix("rgba(")
+        .or_else(|| lower.strip_prefix("rgb("))
+        .and_then(|r| r.strip_suffix(')'))
+    {
+        let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
+        if !matches!(parts.len(), 3 | 4) {
+            return None;
+        }
+        let channel = |p: &str| {
+            p.parse::<f32>()
+                .ok()
+                .filter(|v| v.is_finite())
+                .map(|v| v.clamp(0.0, 255.0) as u32)
+        };
+        let (r, g, b) = (channel(parts[0])?, channel(parts[1])?, channel(parts[2])?);
+        let a = match parts.get(3) {
+            Some(p) => {
+                let alpha = p.parse::<f32>().ok()?;
+                if !alpha.is_finite() {
+                    return None;
+                }
+                (alpha.clamp(0.0, 1.0) * 255.0).round() as u32
+            }
+            None => 255,
+        };
+        return Some(r << 24 | g << 16 | b << 8 | a);
+    }
+    let rgb = match lower.as_str() {
+        "black" => 0x000000,
+        "white" => 0xffffff,
+        "red" => 0xff0000,
+        "green" => 0x008000,
+        "blue" => 0x0000ff,
+        "yellow" => 0xffff00,
+        "orange" => 0xffa500,
+        "purple" => 0x800080,
+        "pink" => 0xffc0cb,
+        "gray" | "grey" => 0x808080,
+        "brown" => 0xa52a2a,
+        "cyan" => 0x00ffff,
+        "magenta" => 0xff00ff,
+        "lime" => 0x00ff00,
+        "navy" => 0x000080,
+        "teal" => 0x008080,
+        _ => return None,
+    };
+    Some(rgb << 8 | 0xff)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn highlight_markers_follow_the_pairing_rules() {
+        assert_eq!(highlight_markers("a ==b== c"), vec![2, 5]);
+        // Spaces inside, `===` runs, a lone opener, and code spans stay literal.
+        assert!(highlight_markers("a == b == c").is_empty());
+        assert!(highlight_markers("x ==== y").is_empty());
+        assert!(highlight_markers("==open only").is_empty());
+        assert!(highlight_markers("`a ==b== c`").is_empty());
+        assert_eq!(highlight_markers("==one== and ==two=="), vec![0, 5, 12, 17]);
+        assert_eq!(highlight_close("a ==b== c", 2), Some(5));
+        assert_eq!(highlight_close("a ==b=== c", 2), None);
+    }
+
+    #[test]
+    fn styled_tags_and_css_colors_parse() {
+        let t = styled_tag(r#"<mark style="background:#ff0000">"#).unwrap();
+        assert_eq!((t.kind, t.background), (StyledKind::Mark, Some(0xff0000ff)));
+        let t = styled_tag("<mark>").unwrap();
+        assert_eq!(
+            (t.kind, t.background, t.color),
+            (StyledKind::Mark, None, None)
+        );
+        let t = styled_tag("<span style='color: rgb(0, 255, 0); font-weight: bold'>").unwrap();
+        assert_eq!((t.kind, t.color), (StyledKind::Span, Some(0x00ff00ff)));
+        assert_eq!(styled_tag("<span class=\"x\">"), None);
+        assert_eq!(
+            styled_tag("<u>").map(|t| t.kind),
+            Some(StyledKind::Underline)
+        );
+        assert_eq!(styled_tag("<b>"), None);
+        assert_eq!(styled_close("</MARK>"), Some(StyledKind::Mark));
+        assert_eq!(css_color("#abc"), Some(0xaabbccff));
+        assert_eq!(css_color("#11223344"), Some(0x11223344));
+        assert_eq!(css_color("rgba(255, 0, 0, 0.5)"), Some(0xff000080));
+        assert_eq!(css_color("Orange"), Some(0xffa500ff));
+        assert_eq!(css_color("#12"), None);
+    }
+
+    #[test]
+    fn unsupported_attributes_and_colors_are_not_styling() {
+        for tag in [
+            "<span data-style='color:red'>",
+            "<span title='style=color:red'>",
+            "<span style='color:rgb(NaN,0,0)'>",
+            "<span style='color:rgba(0,0,0,inf)'>",
+            "<span style='color:rgb(1,2,3,4,5)'>",
+        ] {
+            assert_eq!(styled_tag(tag), None, "{tag}");
+        }
+        assert_eq!(
+            styled_tag("<span title='a>b' STYLE = 'color:blue'>")
+                .unwrap()
+                .color,
+            Some(0x0000ffff),
+        );
+    }
 
     #[test]
     fn math_fence_normalization() {

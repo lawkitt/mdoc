@@ -542,6 +542,11 @@ fn marker(out: &mut Vec<Span>, range: Range<usize>, color: Hsla) {
     });
 }
 
+/// `0xRRGGBBAA` (from `syntax::css_color`) as a gpui color.
+fn hsla_of(rgba: u32) -> Hsla {
+    gpui::rgba(rgba).into()
+}
+
 /// A formatting marker that NEVER reveals (not even with the caret inside its
 /// construct) — see [`Style::always_hide`]. The construct's opener and closer
 /// share `pair_id` (see [`fmt_marker_pairs`]).
@@ -942,6 +947,35 @@ fn scan_inline(
                 continue;
             }
         }
+        // Highlight: ==text== — the pairing rules are the reading view's
+        // (`syntax::highlight_close`), so `a == b == c` stays literal in both.
+        if c == b'='
+            && !is_backslash_escaped(b, i)
+            && i + 1 < end
+            && b[i + 1] == b'='
+            && let Some(close) = mdoc_markdown::syntax::highlight_close(&text[..end], i)
+        {
+            let id = *next_id;
+            *next_id += 1;
+            fmt_marker(out, i..i + 2, st.marker, id);
+            scan_styled_body(
+                text,
+                i + 2,
+                close,
+                st,
+                out,
+                Style {
+                    bg: Some(st.mark_bg),
+                    ..Default::default()
+                }
+                .over(base),
+                depth,
+                next_id,
+            );
+            fmt_marker(out, close..close + 2, st.marker, id);
+            i = close + 2;
+            continue;
+        }
         // Strikethrough: ~~text~~
         if c == b'~'
             && !is_backslash_escaped(b, i)
@@ -1161,62 +1195,40 @@ fn scan_inline(
             i = rb2 + 1;
             continue;
         }
-        // <mark>…</mark>: a highlight — a safe inline-HTML tag the reading
-        // view honors. Tags hidden, body gets a highlight background.
+        // Styled inline HTML — `<mark>` / `<mark style="background:…">`,
+        // `<span style="color:…">`, `<u>` — the tags hidden, the body styled.
+        // Recognition is the reading view's (`syntax::styled_tag`), so the two
+        // views can't disagree about which tags count.
         if c == b'<'
-            && b[i..end].starts_with(b"<mark>")
-            && let Some(rel) = text[i + 6..end].find("</mark>")
+            && let Some(len) = mdoc_markdown::syntax::inline_tag_len(&text[i..end])
+            && let Some(tag) = mdoc_markdown::syntax::styled_tag(&text[i..i + len])
+            && let Some((rel, close_len)) =
+                mdoc_markdown::syntax::matching_styled_close(&text[i + len..end], tag.kind)
         {
-            let body = i + 6;
+            use mdoc_markdown::syntax::StyledKind;
+            let body = i + len;
             let close = body + rel;
             let id = *next_id;
             *next_id += 1;
             fmt_marker(out, i..body, st.marker, id);
-            scan_styled_body(
-                text,
-                body,
-                close,
-                st,
-                out,
-                Style {
-                    bg: Some(st.mark_bg),
+            let style = match tag.kind {
+                StyledKind::Mark => Style {
+                    bg: Some(tag.background.map_or(st.mark_bg, hsla_of)),
                     ..Default::default()
-                }
-                .over(base),
-                depth,
-                next_id,
-            );
-            fmt_marker(out, close..close + 7, st.marker, id);
-            i = close + 7;
-            continue;
-        }
-        // <u>…</u>: underline (markdown has none natively) — the other safe
-        // inline-HTML tag, same treatment as <mark>.
-        if c == b'<'
-            && b[i..end].starts_with(b"<u>")
-            && let Some(rel) = text[i + 3..end].find("</u>")
-        {
-            let body = i + 3;
-            let close = body + rel;
-            let id = *next_id;
-            *next_id += 1;
-            fmt_marker(out, i..body, st.marker, id);
-            scan_styled_body(
-                text,
-                body,
-                close,
-                st,
-                out,
-                Style {
+                },
+                StyledKind::Span => Style {
+                    color: tag.color.map(hsla_of),
+                    bg: tag.background.map(hsla_of),
+                    ..Default::default()
+                },
+                StyledKind::Underline => Style {
                     underline: true,
                     ..Default::default()
-                }
-                .over(base),
-                depth,
-                next_id,
-            );
-            fmt_marker(out, close..close + 4, st.marker, id);
-            i = close + 4;
+                },
+            };
+            scan_styled_body(text, body, close, st, out, style.over(base), depth, next_id);
+            fmt_marker(out, close..close + close_len, st.marker, id);
+            i = close + close_len;
             continue;
         }
         // Bare URL: colored like a link (it clicks like one — see the shared
@@ -2538,6 +2550,59 @@ mod tests {
     }
 
     #[test]
+    fn double_equals_highlight_hides_markers_and_tints_the_body() {
+        let text = "an ==important== word, a == b == c";
+        let st = test_style();
+        let mut out = Vec::new();
+        scan_line(text, 0, text.len(), &st, &mut out);
+        let open = 3;
+        let body = open + 2;
+        let close = text.find("== word").unwrap();
+        assert!(out.iter().any(|s| s.range == (open..body) && s.style.hide));
+        assert!(
+            out.iter()
+                .any(|s| s.range == (close..close + 2) && s.style.hide)
+        );
+        assert!(
+            out.iter()
+                .any(|s| s.range.start == body && s.style.bg == Some(st.mark_bg))
+        );
+        // The spaced `==`s after it are prose: nothing hidden past the closer.
+        assert!(
+            !out.iter()
+                .any(|s| s.range.start > close + 2 && s.style.hide)
+        );
+    }
+
+    #[test]
+    fn colored_mark_and_span_tags_style_their_body() {
+        let text =
+            r#"a <mark style="background:#ff0000">hi</mark> <span style="color:#00ff00">go</span>"#;
+        let st = test_style();
+        let mut out = Vec::new();
+        scan_line(text, 0, text.len(), &st, &mut out);
+        let hi = text.find("hi<").unwrap();
+        let go = text.find("go<").unwrap();
+        assert!(
+            out.iter()
+                .any(|s| s.range.start == hi && s.style.bg == Some(hsla_of(0xff0000ff)))
+        );
+        assert!(
+            out.iter()
+                .any(|s| s.range.start == go && s.style.color == Some(hsla_of(0x00ff00ff)))
+        );
+        // Both tag pairs are hidden markers.
+        assert!(
+            out.iter()
+                .any(|s| s.range.start == 2 && s.range.end == hi && s.style.hide)
+        );
+        assert!(
+            out.iter()
+                .any(|s| s.range == (hi + 2..hi + 9) && s.style.hide)
+        );
+    }
+
+    #[test]
     fn underline_tags_hide_and_style_the_body() {
         let text = "an <u>underlined</u> word";
         let st = test_style();
@@ -3011,6 +3076,107 @@ mod tests {
         );
         let amp = display.find('&').unwrap();
         assert_eq!(map[amp], source.find("&amp;").unwrap());
+    }
+
+    #[test]
+    fn highlight_projection_preserves_unicode_code_tables_and_source_offsets() {
+        for (source, expected) in [
+            ("==Договор== конец", "Договор конец"),
+            (r"\==literal==", "==literal=="),
+            ("===literal==", "===literal=="),
+            ("``a` ==b== c``", "a` ==b== c"),
+            ("==`a==b` tail== plain", "a==b tail plain"),
+            (
+                "x <mark>before `</mark>` after</mark> plain",
+                "x before </mark> after plain",
+            ),
+            (
+                r#"x <span style="color:unsupported">text</span> y"#,
+                r#"x <span style="color:unsupported">text</span> y"#,
+            ),
+        ] {
+            let (display, _, map) = hidden_runs(
+                source,
+                &gpui::font("Helvetica"),
+                Hsla::default(),
+                &[],
+                None,
+                0,
+                0,
+                false,
+                &test_style(),
+            );
+            assert_eq!(display, expected, "{source:?}");
+            assert_eq!(map.len(), display.len() + 1);
+            for (offset, _) in display.char_indices() {
+                assert!(source.is_char_boundary(map[offset]), "{source:?}");
+            }
+        }
+        let source = "| ==Договор== | <span style='color:red'>Сторона</span> |\n| --- | --- |";
+        let index = crate::SearchIndex::from_markdown(source);
+        assert!(index.find("==", true).is_empty());
+        assert!(index.find("color", true).is_empty());
+        let found = index.find("Договор", true);
+        assert_eq!(found.len(), 1);
+        let start = source.find("Договор").unwrap();
+        assert_eq!(found[0].source, vec![start..start + "Договор".len()]);
+    }
+
+    #[test]
+    fn nested_styled_tags_restore_parent_and_keep_unsupported_inner_tags() {
+        let source = r#"x <span style='color:red'>outer <span style='color:blue'>inner</span> outer</span> plain"#;
+        let (display, runs, _) = hidden_runs(
+            source,
+            &gpui::font("Helvetica"),
+            Hsla::default(),
+            &[],
+            None,
+            0,
+            0,
+            false,
+            &test_style(),
+        );
+        assert_eq!(display, "x outer inner outer plain");
+        let end = display.rfind("outer").unwrap();
+        let mut at = 0;
+        let run = runs
+            .iter()
+            .find(|r| {
+                let contains = (at..at + r.len).contains(&end);
+                at += r.len;
+                contains
+            })
+            .unwrap();
+        assert_eq!(run.color, hsla_of(0xff0000ff));
+
+        let source =
+            r#"x <span style='color:red'>outer <span class=x>literal</span> outer</span> plain"#;
+        let (display, ..) = hidden_runs(
+            source,
+            &gpui::font("Helvetica"),
+            Hsla::default(),
+            &[],
+            None,
+            0,
+            0,
+            false,
+            &test_style(),
+        );
+        assert_eq!(display, "x outer <span class=x>literal</span> outer plain");
+        let incomplete =
+            r#"x <span style='color:red'>outer <span style='color:blue'>inner</span> plain"#;
+        let (display, ..) = hidden_runs(
+            incomplete,
+            &gpui::font("Helvetica"),
+            Hsla::default(),
+            &[],
+            None,
+            0,
+            0,
+            false,
+            &test_style(),
+        );
+        assert_eq!(display, "x <span style='color:red'>outer inner plain");
     }
 
     #[test]

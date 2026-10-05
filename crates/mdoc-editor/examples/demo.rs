@@ -122,6 +122,9 @@ fn main() {
                             1. First step\n2. Second step\n\n- [x] Done task\n- [ ] Pending \
                             task\n\n![](docs/report.pdf)\n\n---\n\nA footnote reference[^1], a \
                             [reference link][ref], and <mark>highlighted</mark> text.\n\n\
+                            ==Важное условие== and <mark style='background:#ffd54f80'>\
+                            a colored highlight</mark>, with <span style='color:#90caf9'>\
+                            colored text</span>. Literal comparison: a == b == c.\n\n\
                             [^1]: The footnote definition, shown muted.\n\
                             [ref]: https://example.com\n\nSpell-check still flags mispelled \
                             wrds; right-click one for suggestions.\n\nStriped:\n\

@@ -7196,6 +7196,71 @@ mod tests {
 mod annotation_tests {
     use super::*;
     #[gpui::test]
+    fn styled_mentions_keep_source_geometry_and_atomic_undo(cx: &mut gpui::TestAppContext) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        let source = "==Анна== and <span style='color:blue'>Анна</span>";
+        let first = source.find("Анна").unwrap();
+        let second = source.rfind("Анна").unwrap();
+        let ranges = [first..first + "Анна".len(), second..second + "Анна".len()];
+        let mut revision = 0;
+        editor.update(cx, |editor, cx| {
+            editor.set_text(source, cx);
+            editor.set_markdown_style(markdown_syntax::search_style(), cx);
+            revision = editor.revision();
+            let matches = SearchIndex::from_markdown(source).find("Анна", true);
+            assert_eq!(matches.len(), 2);
+            for (matched, range) in matches.iter().zip(&ranges) {
+                assert_eq!(matched.source, vec![range.clone()]);
+            }
+            editor.set_search(ranges.to_vec(), Some(0), cx);
+            editor.set_annotations(
+                revision,
+                ranges
+                    .iter()
+                    .enumerate()
+                    .map(|(id, range)| SourceAnnotation {
+                        id: id as u64,
+                        range: range.clone(),
+                        color: rgba(0xffaa0022).into(),
+                        active_color: rgba(0xffaa0055).into(),
+                    })
+                    .collect(),
+                cx,
+            );
+        });
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        editor.update_in(cx, |editor, window, cx| {
+            assert_eq!(editor.text(), source);
+            for id in 0..2 {
+                let annotation = editor.annotation_bounds(id).unwrap();
+                assert!(annotation.size.width > px(0.0));
+                assert!(editor.search_match_bounds(id as usize).is_some());
+            }
+            assert!(
+                editor.replace_ranges(
+                    revision,
+                    &ranges
+                        .iter()
+                        .map(|range| (range.clone(), "PERSON_1".into()))
+                        .collect::<Vec<_>>(),
+                    cx
+                )
+            );
+            assert_eq!(
+                editor.text(),
+                "==PERSON_1== and <span style='color:blue'>PERSON_1</span>"
+            );
+            assert!(editor.annotation_bounds(0).is_none());
+            assert!(!editor.replace_ranges(revision, &[(ranges[0].clone(), "stale".into())], cx));
+            editor.undo(&Undo, window, cx);
+            assert_eq!(editor.text(), source);
+        });
+    }
+
+    #[gpui::test]
     fn grouped_replacements_are_atomic_revision_checked_and_one_undo(
         cx: &mut gpui::TestAppContext,
     ) {
