@@ -84,3 +84,6 @@ checks do not compile that Linux-only backend.
 
 [mdoc PR #10](https://github.com/lawkitt/mdoc/pull/10), implementation commit
 `7a895e3b8580e6604881d869ebe56f1d21a6b59c`. Main merge and release are separate.
+GitHub reports repository Actions `enabled: false`; no runs or PR checks were
+created. Remote Linux/Windows compilation and tests are therefore unverified.
+No repository setting or token permission was changed.
