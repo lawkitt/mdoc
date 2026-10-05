@@ -1,9 +1,11 @@
 # Maintainability review — 2026-10-05
 
-Status: design confirmed and first cleanup implemented locally on 2026-10-05.
-The accepted scope and verification are recorded in
-[ADR 0010](../adr/0010-workspace-construction-and-test-parity.md). The evidence
-below describes the initial checkout; ADR 0010 records what changed afterward.
+Status: targeted cleanup completed locally on 2026-10-05. Workspace construction
+and production-path tests are recorded in
+[ADR 0010](../adr/0010-workspace-construction-and-test-parity.md); the focused
+editor input extraction is recorded in
+[ADR 0011](../adr/0011-editor-input-module.md). The evidence below describes the
+initial checkout; these ADRs record the changes and their verification.
 
 ## Assessment
 
@@ -88,9 +90,14 @@ absence of dead code.
   standalone fallback removal and production-path test migration, with the
   stated behavior invariants and verification. Defer editor extraction and
   broader lifecycle restructuring until this change is complete and assessed.
-- The frontier is empty for this first change. Shared understanding was confirmed;
-  implementation and the available verification are complete. Editor extraction
-  and broader restructuring remain deferred.
+- Follow-up — the user's "Ok, now finish refactoring" authorized the deferred
+  editor cleanup. Source edits, keyboard/clipboard commands, history and IME
+  conversion now live together in a private input module. EditorState remains
+  the single state owner and public APIs and behavior are preserved. See ADR
+  0011 for the concrete extraction and regression coverage.
+- The agreed targeted cleanup is complete. Broader lifecycle restructuring,
+  retained feature removal and generalized frameworks remain unjustified by
+  this investigation; they are not required follow-up work.
 
 No terminology decision requires a new glossary entry. Existing CONTEXT terms
 and ROADMAP source/behavior/reusable-crate constraints remain the reference.

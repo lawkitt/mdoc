@@ -4,6 +4,9 @@ Status: accepted and implemented locally, 2026-10-05. The user agreed to targete
 cleanup and preservation of reusable crates/features, then confirmed the exact
 first-change scope and shared understanding with "Ok".
 
+The subsequently authorized editor cleanup is completed separately in
+[ADR 0011](0011-editor-input-module.md).
+
 ## Problem and rationale
 
 Production constructs every Workspace inside Tabs with its owner, shared theme,
