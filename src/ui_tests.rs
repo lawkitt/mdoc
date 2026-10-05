@@ -7,9 +7,57 @@ pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTe
     cx.update(markdown_search::bind_keys);
     cx.update(bind_markdown_search_keys);
     cx.update(pseudonymization_ui::bind_keys);
-    let (app, cx) = cx.add_window_view(Workspace::new);
+    cx.update(settings_ui::bind_keys);
+    let (tabs, cx) = cx.add_window_view(|window, cx| {
+        let mut tabs = tabs::Tabs::empty(window, cx);
+        tabs.restore(session_store::Session::default(), window, cx);
+        tabs
+    });
     cx.run_until_parked();
+    let app = cx.update(|_, cx| tabs.read(cx).active_view().unwrap());
     (app, cx)
+}
+
+pub(super) fn active_document(
+    app: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+) -> Entity<Workspace> {
+    cx.update(|_, cx| {
+        let tabs = app.read(cx).owner.1.upgrade().unwrap();
+        tabs.read(cx).active_view().unwrap()
+    })
+}
+
+pub(super) fn open_document(
+    app: &Entity<Workspace>,
+    path: PathBuf,
+    cx: &mut VisualTestContext,
+) -> Entity<Workspace> {
+    app.update(cx, |_, cx| cx.emit(tabs::TabEvent::Open(vec![path])));
+    cx.run_until_parked();
+    active_document(app, cx)
+}
+
+pub(super) fn new_document(
+    app: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+) -> Entity<Workspace> {
+    app.update(cx, |_, cx| cx.emit(tabs::TabEvent::New));
+    cx.run_until_parked();
+    active_document(app, cx)
+}
+
+pub(super) fn close_document(
+    app: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+) -> Entity<Workspace> {
+    app.update(cx, |_, cx| cx.emit(tabs::TabEvent::CloseRequested));
+    cx.run_until_parked();
+    if cx.has_pending_prompt() {
+        cx.simulate_prompt_answer("Discard");
+        cx.run_until_parked();
+    }
+    active_document(app, cx)
 }
 
 #[gpui::test]
@@ -19,9 +67,10 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
     let source_path = dir.path().join("legal.md");
     let source = "# Contract\n\nAlice Morgan represents **Alice Morgan**. [contact](https://x.invalid/Alice_Morgan)\n";
     std::fs::write(&source_path, source).unwrap();
+    let source_path = session_store::identity(&source_path);
     let (app, cx) = boot(cx);
+    let app = open_document(&app, source_path.clone(), cx);
     app.update_in(cx, |app, window, cx| {
-        app.proceed(Next::Open(source_path.clone()), window, cx);
         app.session.warning = Some("Review extraction".into());
         app.pseudonymization.review.open = true;
         app.pseudonymization.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9 }]).unwrap();
@@ -57,9 +106,21 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
             text
         );
         assert_eq!(std::fs::read_to_string(&source_path).unwrap(), source);
-        app.proceed(Next::New, window, cx);
+        let generation = app.session.generation;
+        app.proceed(
+            Next::Import(converted(dir.path().join("replacement.docx"))),
+            window,
+            cx,
+        );
+        assert_ne!(app.session.generation, generation);
         assert!(app.pseudonymization.review.groups.is_empty());
+        assert!(app.pseudonymization.review.mappings().is_empty());
         assert!(app.pseudonymization.popup.is_none());
+    });
+    let app = close_document(&app, cx);
+    cx.update(|_, cx| {
+        assert!(app.read(cx).pseudonymization.review.groups.is_empty());
+        assert!(app.read(cx).pseudonymization.popup.is_none());
     });
 }
 
@@ -113,9 +174,10 @@ fn copy_markdown_preserves_source_selection_undo_and_warning(cx: &mut TestAppCon
     let path = dir.path().join("legal.md");
     let saved = "# Договор\r\n\r\n3. **Текст** [link](local.md)\r\n==Важно== <mark style='background:#ff0000'>условие</mark> <span style='color:blue'>сторона</span>\r\n\r\n```rust\r\nlet x = 1;\r\n```\r\n";
     std::fs::write(&path, saved).unwrap();
+    let path = session_store::identity(&path);
     let (app, cx) = boot(cx);
-    app.update_in(cx, |app, window, cx| {
-        app.proceed(Next::Open(path.clone()), window, cx);
+    let app = open_document(&app, path.clone(), cx);
+    app.update_in(cx, |app, _, cx| {
         app.session.warning = Some("Partial import: page 2 was skipped.".into());
         app.editor.update(cx, |editor, cx| {
             let end = editor.text().len();
@@ -164,7 +226,7 @@ fn copy_markdown_preserves_source_selection_undo_and_warning(cx: &mut TestAppCon
 }
 
 #[gpui::test]
-fn copy_markdown_feedback_restarts_expires_and_clears_on_new(cx: &mut TestAppContext) {
+fn copy_markdown_feedback_restarts_expires_and_stays_with_its_tab(cx: &mut TestAppContext) {
     use std::time::Duration;
     let (app, cx) = boot(cx);
     cx.dispatch_action(CopyMarkdown);
@@ -191,12 +253,17 @@ fn copy_markdown_feedback_restarts_expires_and_clears_on_new(cx: &mut TestAppCon
     cx.simulate_input("x");
     cx.run_until_parked();
     assert!(cx.update(|_, cx| app.read(cx).copy_feedback.is_none()));
-    app.update_in(cx, |app, window, cx| app.proceed(Next::New, window, cx));
+    let app = new_document(&app, cx);
     cx.dispatch_action(CopyMarkdown);
     cx.run_until_parked();
     cx.dispatch_action(New);
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).copy_feedback.is_none()));
+    let next = active_document(&app, cx);
+    assert!(cx.update(|_, cx| next.read(cx).copy_feedback.is_none()));
+    assert!(
+        cx.update(|_, cx| app.read(cx).copy_feedback.is_some()),
+        "the previous tab retains its own feedback"
+    );
 }
 
 #[gpui::test]
@@ -361,15 +428,15 @@ fn search_preserves_selection_undo_and_save_as_state(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn pending_large_search_cannot_survive_document_reset(cx: &mut TestAppContext) {
+fn pending_large_search_cannot_survive_tab_close(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
         app.editor.update(cx, |editor, cx| {
             editor.set_text("alpha ".repeat(20_000), cx)
         });
         app.find_markdown(&FindMarkdown, window, cx);
-        app.proceed(Next::New, window, cx);
     });
+    let app = close_document(&app, cx);
     cx.run_until_parked();
     assert!(!cx.update(|_, cx| app.read(cx).search.open));
     assert!(cx.update(|_, cx| app.read(cx).search.matches.is_empty()));
@@ -463,11 +530,12 @@ fn accepted_document_transition_resets_search_state(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.simulate_input("alpha");
     cx.run_until_parked();
-    cx.dispatch_action(New);
+    cx.dispatch_action(Close);
     cx.run_until_parked();
     cx.simulate_prompt_answer("Discard");
     cx.run_until_parked();
 
+    let app = active_document(&app, cx);
     assert!(cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().is_empty()));
     assert!(!cx.update(|_, cx| app.read(cx).search.open));
     assert!(cx.update(|_, cx| app.read(cx).search.matches.is_empty()));
@@ -522,7 +590,7 @@ fn cancelled_document_transition_preserves_search_state(cx: &mut TestAppContext)
     cx.run_until_parked();
     cx.simulate_input("alpha");
     cx.run_until_parked();
-    cx.dispatch_action(New);
+    cx.dispatch_action(Close);
     cx.run_until_parked();
     assert!(cx.update(|_, cx| app.read(cx).search.open));
     cx.simulate_prompt_answer("Cancel");
@@ -580,22 +648,28 @@ fn editing_save_and_new_roundtrip(cx: &mut TestAppContext) {
     assert!(!cx.update(|_, cx| app.read(cx).dirty(cx)));
     cx.dispatch_action(New);
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).editor.read(cx).text().is_empty()));
+    let blank = active_document(&app, cx);
+    assert!(cx.update(|_, cx| blank.read(cx).editor.read(cx).text().is_empty()));
     cx.dispatch_action(Open);
     cx.run_until_parked();
     cx.simulate_path_prompt_response(|_| Some(vec![path]));
     cx.run_until_parked();
+    let reopened = active_document(&app, cx);
     assert_eq!(
-        cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
+        reopened, app,
+        "opening a retained file activates its original tab"
+    );
+    assert_eq!(
+        cx.update(|_, cx| reopened.read(cx).editor.read(cx).text().to_owned()),
         "# Hello"
     );
 }
 
 #[gpui::test]
-fn new_cancel_and_discard_protect_edits(cx: &mut TestAppContext) {
+fn close_cancel_and_discard_protect_edits(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     cx.simulate_input("keep me");
-    cx.dispatch_action(New);
+    cx.dispatch_action(Close);
     cx.run_until_parked();
     assert!(cx.has_pending_prompt());
     cx.simulate_prompt_answer("Cancel");
@@ -604,18 +678,19 @@ fn new_cancel_and_discard_protect_edits(cx: &mut TestAppContext) {
         cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
         "keep me"
     );
-    cx.dispatch_action(New);
+    cx.dispatch_action(Close);
     cx.run_until_parked();
     cx.simulate_prompt_answer("Discard");
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).editor.read(cx).text().is_empty()));
+    let next = active_document(&app, cx);
+    assert!(cx.update(|_, cx| next.read(cx).editor.read(cx).text().is_empty()));
 }
 
 #[gpui::test]
-fn cancelling_save_as_does_not_continue_new(cx: &mut TestAppContext) {
+fn cancelling_save_as_does_not_continue_close(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     cx.simulate_input("keep me");
-    cx.dispatch_action(New);
+    cx.dispatch_action(Close);
     cx.run_until_parked();
     cx.simulate_prompt_answer("Save");
     cx.run_until_parked();
@@ -656,7 +731,11 @@ fn failed_open_preserves_current_document(cx: &mut TestAppContext) {
     app.update_in(cx, |app, window, cx| {
         app.open_path(dir.path().join("missing.md"), window, cx)
     });
-    assert!(cx.update(|_, cx| app.read(cx).error.is_some()));
+    cx.run_until_parked();
+    let failed = active_document(&app, cx);
+    assert!(cx.update(|_, cx| failed.read(cx).error.is_some()));
+    assert!(cx.update(|_, cx| failed.read(cx).unavailable));
+    assert_ne!(failed, app);
     assert!(cx.update(|_, cx| app.read(cx).session.document.path.is_none()));
 }
 
@@ -666,12 +745,10 @@ fn failed_save_does_not_discard_document(cx: &mut TestAppContext) {
     let path = dir.path().join("note.md");
     std::fs::write(&path, "original").unwrap();
     let (app, cx) = boot(cx);
-    app.update_in(cx, |app, window, cx| {
-        app.open_path(path.clone(), window, cx)
-    });
+    let app = open_document(&app, path.clone(), cx);
     cx.simulate_input("my edits");
     std::fs::write(&path, "external edit").unwrap();
-    cx.dispatch_action(New);
+    cx.dispatch_action(Close);
     cx.run_until_parked();
     cx.simulate_prompt_answer("Save");
     cx.run_until_parked();
@@ -908,7 +985,7 @@ fn import_waits_for_dialog_and_discards_result_after_document_change(cx: &mut Te
     let (app, cx) = boot(cx);
     cx.simulate_input("before");
     let generation = cx.update(|_, cx| app.read(cx).session.generation);
-    cx.dispatch_action(New);
+    cx.dispatch_action(Close);
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
         assert!(app.job.begin(false));
@@ -919,13 +996,19 @@ fn import_waits_for_dialog_and_discards_result_after_document_change(cx: &mut Te
     });
     cx.simulate_prompt_answer("Discard");
     cx.run_until_parked();
+    // Deliver the delayed completion after the shell has released the tab.
+    // The retained test handle lets us verify the old generation is rejected.
+    app.update_in(cx, |app, window, cx| app.resume_import(window, cx));
+    cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert!(app.editor.read(cx).text().is_empty());
+        assert_eq!(app.editor.read(cx).text(), "before");
         assert!(app.session.source.is_none());
         assert!(!app.job.busy());
         assert!(!app.job.has_pending());
     });
+    let next = active_document(&app, cx);
+    assert!(cx.update(|_, cx| next.read(cx).editor.read(cx).text().is_empty()));
 }
 
 #[gpui::test]
@@ -955,7 +1038,7 @@ fn import_completes_after_open_picker_cancel_and_refuses_second_job(cx: &mut Tes
 }
 
 #[gpui::test]
-fn imported_warning_survives_save_and_clears_on_dismiss_or_new(cx: &mut TestAppContext) {
+fn imported_warning_survives_save_and_stays_with_its_tab_until_dismissed(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
@@ -970,11 +1053,14 @@ fn imported_warning_survives_save_and_clears_on_dismiss_or_new(cx: &mut TestAppC
     cx.dispatch_action(DismissImportWarning);
     cx.run_until_parked();
     assert!(cx.update(|_, cx| app.read(cx).session.warning.is_none()));
-    app.update_in(cx, |app, window, cx| {
+    app.update(cx, |app, _| {
         app.session.warning = Some("warning".into());
-        app.request(Next::New, window, cx);
-        assert!(app.session.warning.is_none());
-        assert!(app.session.source.is_none());
+    });
+    let next = new_document(&app, cx);
+    cx.update(|_, cx| {
+        assert!(next.read(cx).session.warning.is_none());
+        assert!(next.read(cx).session.source.is_none());
+        assert_eq!(app.read(cx).session.warning.as_deref(), Some("warning"));
     });
 }
 
@@ -1016,7 +1102,9 @@ fn import_failure_and_stale_completion_keep_current_document(cx: &mut TestAppCon
         assert_eq!(app.editor.read(cx).text(), "keep edits");
         assert_eq!(app.error.as_deref(), Some("requires OCR"));
         let generation = app.session.generation;
-        app.proceed(Next::Open(path), window, cx);
+        let mut replacement = converted(path);
+        replacement.markdown = "other".into();
+        app.proceed(Next::Import(replacement), window, cx);
         assert!(app.job.begin(false));
         app.job
             .complete(generation, Ok(converted(dir.path().join("source.docx"))));
@@ -1154,7 +1242,6 @@ fn close_and_newer_request_discard_pending_completions(cx: &mut TestAppContext) 
     app.update_in(cx, |app, window, cx| {
         app.open_docx(docx, window, cx);
         app.open_pdf(pdf.clone(), window, cx);
-        app.proceed(Next::New, window, cx);
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
@@ -1175,13 +1262,12 @@ fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
     let source = base.join("tests/fixtures/docx-preview").join(file);
     let imported = import::convert(&source).unwrap();
     let (app, cx) = boot(cx);
-    cx.simulate_resize(gpui::size(px(1100.), px(750.)));
+    // Preserve the original 1100px document viewport beside the 232px tab sidebar.
+    cx.simulate_resize(gpui::size(px(1332.), px(750.)));
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("large.md");
     std::fs::write(&path, &imported.markdown).unwrap();
-    app.update_in(cx, |app, window, cx| {
-        app.proceed(Next::Open(path), window, cx)
-    });
+    let app = open_document(&app, path, cx);
     cx.run_until_parked();
     let mut failures = Vec::new();
     for state in ["markdown_only", "preview_open", "preview_closed"] {
@@ -1312,7 +1398,7 @@ fn comments_follow_preview_lifecycle(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mut TestAppContext) {
-    let (app, cx) = boot(cx);
+    let (mut app, cx) = boot(cx);
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for _ in 0..3 {
         app.update_in(cx, |app, window, cx| {
@@ -1346,8 +1432,8 @@ fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mu
         let pdf = cx.update(|_, cx| app.read(cx).preview.pdf.as_ref().unwrap().downgrade());
         app.update_in(cx, |app, window, cx| {
             app.close_preview(window, cx);
-            app.proceed(Next::New, window, cx);
         });
+        app = close_document(&app, cx);
         cx.run_until_parked();
         cx.update(|window, cx| {
             window.refresh();

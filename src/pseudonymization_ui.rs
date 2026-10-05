@@ -24,8 +24,6 @@ pub(super) struct ReviewUi {
     pub focus: FocusHandle,
     pub category: Category,
     job: Option<ScanJob>,
-    pub installing: bool,
-    ready_model: Option<settings::PiiModel>,
     details: bool,
     pub scans: Vec<settings::PiiConfig>,
     pub error: Option<String>,
@@ -48,8 +46,6 @@ impl ReviewUi {
             focus: cx.focus_handle(),
             category: Category::Person,
             job: None,
-            installing: false,
-            ready_model: None,
             details: false,
             scans: Vec::new(),
             error: None,
@@ -168,7 +164,7 @@ impl Workspace {
         cx.notify();
     }
     pub(super) fn scan_pseudonyms(&mut self, cx: &mut Context<Self>) {
-        if !self.can_copy_markdown() || self.pseudonymization.installing {
+        if !self.can_copy_markdown() {
             return;
         }
         self.pseudonymization.cancel();
@@ -233,27 +229,19 @@ impl Workspace {
         {
             Ok(()) => {
                 self.pseudonymization.error = None;
-                self.pseudonymization.ready_model = Some(config.model);
-                if let Some(panel) = self.model_panel.clone() {
-                    panel.update(cx, |panel, cx| {
-                        let model = settings::Model::Pii(config.model);
-                        let index = settings::Model::ALL
-                            .iter()
-                            .position(|m| *m == model)
-                            .unwrap();
-                        panel.statuses[index] = settings_ui::Status::Ready;
-                        cx.notify();
-                    });
-                }
+                self.model_panel.update(cx, |panel, cx| {
+                    let model = settings::Model::Pii(config.model);
+                    let index = settings::Model::ALL
+                        .iter()
+                        .position(|m| *m == model)
+                        .unwrap();
+                    panel.statuses[index] = settings_ui::Status::Ready;
+                    cx.notify();
+                });
                 self.pseudonymization.scans.push(config);
                 self.sync_annotations(cx);
             }
             Err(error) => {
-                if error.contains("Set up")
-                    && self.pseudonymization.ready_model == Some(config.model)
-                {
-                    self.pseudonymization.ready_model = None;
-                }
                 self.pseudonymization.error = Some(error);
             }
         }
@@ -261,7 +249,7 @@ impl Workspace {
     }
 
     fn setup_pseudonyms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.pseudonymization.installing || !detector::SUPPORTED {
+        if !detector::SUPPORTED {
             return;
         }
         let config = match self.preferences.borrow().snapshot() {
@@ -272,32 +260,12 @@ impl Workspace {
                 return;
             }
         };
-        if let Some(panel) = self.model_panel.clone() {
-            panel.update(cx, |panel, cx| {
-                panel.setup(settings::Model::Pii(config.model), false, cx);
-                panel.show(window, cx);
-            });
-            return;
-        }
-        self.pseudonymization.cancel();
-        self.pseudonymization.installing = true;
-        self.pseudonymization.error = None;
-        let model = config.model;
-        let task = cx.background_executor().spawn(async move {
-            detector::setup_config(&config, &model_download::Progress::default())
+        self.model_panel.update(cx, |panel, cx| {
+            panel.setup(settings::Model::Pii(config.model), false, cx);
+            panel.show(window, cx);
         });
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let _ = this.update(cx, |this, cx| {
-                this.pseudonymization.installing = false;
-                this.pseudonymization.ready_model = result.is_ok().then_some(model);
-                this.pseudonymization.error = result.err();
-                cx.notify();
-            });
-        })
-        .detach();
-        cx.notify();
     }
+
     fn leave_pseudonyms(&mut self, cx: &mut Context<Self>) {
         self.pseudonymization.cancel();
         self.pseudonymization.review.open = false;
@@ -554,25 +522,14 @@ impl Workspace {
             .borrow()
             .snapshot()
             .map(|p| settings::Model::Pii(p.pseudonymization.model));
-        let installing = self.pseudonymization.installing
-            || self.model_panel.as_ref().is_some_and(|p| {
-                selected
-                    .as_ref()
-                    .is_ok_and(|m| p.read(cx).working == Some(*m))
-            });
+        let installing = selected
+            .as_ref()
+            .is_ok_and(|m| self.model_panel.read(cx).working == Some(*m));
         let model_ready = selected.as_ref().is_ok_and(|m| {
-            let settings::Model::Pii(model) = m else {
-                return false;
-            };
-            self.model_panel.as_ref().map_or(
-                self.pseudonymization.ready_model == Some(*model),
-                |p| {
-                    matches!(
-                        p.read(cx).statuses
-                            [settings::Model::ALL.iter().position(|v| v == m).unwrap()],
-                        settings_ui::Status::Ready
-                    )
-                },
+            matches!(
+                self.model_panel.read(cx).statuses
+                    [settings::Model::ALL.iter().position(|v| v == m).unwrap()],
+                settings_ui::Status::Ready
             )
         });
         let scanning = self.pseudonymization.scanning();
@@ -933,15 +890,8 @@ mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         let (app, cx) = crate::ui_tests::boot(cx);
-        let panel = cx.new(|cx| {
-            settings_ui::Panel::new(
-                settings::Store::new(),
-                Rc::new(Cell::new(style::Theme::default())),
-                cx,
-            )
-        });
+        let panel = cx.update(|_, cx| app.read(cx).model_panel.clone());
         app.update(cx, |app, cx| {
-            app.model_panel = Some(panel.clone());
             app.editor
                 .update(cx, |editor, cx| editor.set_text("Alice", cx));
             app.pseudonymization.review.open = true;

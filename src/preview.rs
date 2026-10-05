@@ -231,21 +231,22 @@ impl Workspace {
         self.load_preview(path, None, window, cx);
     }
 
-    pub(super) fn open_docx(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_docx(
+        &mut self,
+        path: PathBuf,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let generation = self.begin_preview(path.clone());
         let cancel = Arc::new(AtomicBool::new(false));
         self.preview.cancel = Some(cancel.clone());
-        if self.owner.is_some() {
-            self.preview.queued = true;
-            cx.emit(tabs::TabEvent::Docx {
-                path,
-                generation,
-                cancel,
-            });
-            cx.notify();
-            return;
-        }
-        self.run_docx(path, generation, cancel, window, cx);
+        self.preview.queued = true;
+        cx.emit(tabs::TabEvent::Docx {
+            path,
+            generation,
+            cancel,
+        });
+        cx.notify();
     }
 
     pub(super) fn run_docx(
@@ -263,11 +264,10 @@ impl Workspace {
             .spawn(async move { docx_preview::render_with_cancel(&path, cancel) });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
-            if let Some((id, owner)) = owner {
-                let _ = owner.update_in(cx, |owner, window, cx| {
-                    owner.docx_finished(id, generation, window, cx)
-                });
-            }
+            let (id, owner) = owner;
+            let _ = owner.update_in(cx, |owner, window, cx| {
+                owner.docx_finished(id, generation, window, cx)
+            });
             let _ = this.update_in(cx, |this, window, cx| {
                 if !this.preview.is_current(generation) {
                     return;

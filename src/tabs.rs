@@ -177,7 +177,7 @@ impl Tabs {
         this
     }
 
-    fn empty(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub(super) fn empty(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let preferences = settings::Store::new();
         let theme = Rc::new(Cell::new(Theme::default()));
         let panel = cx.new(|cx| settings_ui::Panel::new(preferences.clone(), theme.clone(), cx));
@@ -451,7 +451,12 @@ impl Tabs {
         .detach();
     }
 
-    fn restore(&mut self, session: Session, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn restore(
+        &mut self,
+        session: Session,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.sidebar_visible = session.sidebar_visible;
         let selected = session.active;
         // Session paths were normalized when opened/saved. Do not stat every file
@@ -501,7 +506,7 @@ impl Tabs {
         id
     }
 
-    fn active_view(&self) -> Option<Entity<Workspace>> {
+    pub(super) fn active_view(&self) -> Option<Entity<Workspace>> {
         self.tabs
             .iter()
             .find(|tab| tab.id == self.active)?
@@ -521,13 +526,19 @@ impl Tabs {
         let theme = self.theme.clone();
         let import_busy = self.import_busy.clone();
         let view = cx.new(|cx| {
-            let mut view = Workspace::new_with_ocr(Some(self.ocr_state.clone()), window, cx);
-            view.owner = Some((id, owner));
+            let mut view = Workspace::new(
+                WorkspaceDependencies {
+                    owner: (id, owner),
+                    preferences: self.preferences.clone(),
+                    model_panel: self.settings.clone(),
+                    theme,
+                    import_busy,
+                    ocr: self.ocr_state.clone(),
+                },
+                window,
+                cx,
+            );
             view.active = id == self.active;
-            view.theme = theme;
-            view.preferences = self.preferences.clone();
-            view.model_panel = Some(self.settings.clone());
-            view.import_busy = import_busy;
             view.source_only = record.source_only;
             view.blank_disposable = record.blank_disposable;
             view.auto_convert_pending = record.source_only
@@ -537,9 +548,6 @@ impl Tabs {
                     })
                 });
             view.loading = !record.markdown.as_os_str().is_empty();
-            view.editor.update(cx, |editor, cx| {
-                editor.set_markdown_style(style::markdown_style(view.theme.get()), cx)
-            });
             view.preview.attachment = record.attachment.clone();
             view.preview.source = record.attachment.clone();
             view.preview.visible = record.preview_visible;

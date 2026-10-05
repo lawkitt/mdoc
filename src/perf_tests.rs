@@ -1,6 +1,6 @@
 //! Explicit host CPU measurements, not display latency or visual acceptance.
 use super::*;
-use crate::ui_tests::boot;
+use crate::ui_tests::{boot, close_document, open_document};
 use gpui::{TestAppContext, VisualTestContext};
 use std::time::Instant;
 
@@ -55,8 +55,9 @@ pub(super) fn rss_kib() -> Option<u64> {
 #[gpui::test]
 #[ignore = "host performance matrix; run serially on an idle machine"]
 fn host_performance_matrix(cx: &mut TestAppContext) {
-    let (app, cx) = boot(cx);
-    cx.simulate_resize(gpui::size(px(1100.), px(750.)));
+    let (mut app, cx) = boot(cx);
+    // Preserve the original 1100px document viewport beside the 232px tab sidebar.
+    cx.simulate_resize(gpui::size(px(1332.), px(750.)));
     let dir = tempfile::tempdir().unwrap();
     let image = dir.path().join("pixel.png");
     // A local image makes image resolution/decoding part of the workload.
@@ -94,9 +95,7 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
             path
         };
         let started = Instant::now();
-        app.update_in(cx, |app, window, cx| {
-            app.proceed(Next::Open(path), window, cx)
-        });
+        app = open_document(&app, path, cx);
         cx.run_until_parked();
         draw(cx);
         eprintln!(
@@ -183,15 +182,15 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
             }
         }
         cx.dispatch_action(CloseMarkdownSearch);
-        app.update_in(cx, |app, window, cx| app.proceed(Next::New, window, cx));
+        app = close_document(&app, cx);
         cx.run_until_parked();
     }
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let large = dir.path().join("large.md");
     for cycle in 0..12 {
         let started = Instant::now();
+        app = open_document(&app, large.clone(), cx);
         app.update_in(cx, |app, window, cx| {
-            app.proceed(Next::Open(large.clone()), window, cx);
             if cycle % 2 == 0 {
                 app.open_pdf(base.join("tests/fixtures/reference.pdf"), window, cx);
             } else {
@@ -223,10 +222,10 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
         cx.run_until_parked();
         app.update_in(cx, |app, window, cx| {
             app.close_preview(window, cx);
-            app.proceed(Next::New, window, cx);
         });
         cx.run_until_parked();
         draw(cx);
+        app = close_document(&app, cx);
         assert!(old_pdf.upgrade().is_none(), "old PDF entity retained");
         assert!(
             old_comments.is_none_or(|panel| panel.upgrade().is_none()),
@@ -253,7 +252,8 @@ fn local_preview_performance(cx: &mut TestAppContext) {
                 || extension.eq_ignore_ascii_case("docx"))
     );
     let (app, cx) = boot(cx);
-    cx.simulate_resize(gpui::size(px(1100.), px(750.)));
+    // Preserve the original 1100px document viewport beside the 232px tab sidebar.
+    cx.simulate_resize(gpui::size(px(1332.), px(750.)));
     let mut times = Vec::new();
     for cycle in 0..3 {
         let started = Instant::now();

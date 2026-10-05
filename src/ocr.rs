@@ -118,13 +118,6 @@ pub(crate) fn root() -> Result<PathBuf, String> {
 }
 
 /// No downloads, including when files are missing or invalid.
-pub fn check() -> Result<Option<Installed>, String> {
-    if !SUPPORTED || cfg!(test) {
-        return Ok(None);
-    }
-    check_config(&crate::settings::OcrConfig::default())
-}
-
 pub fn check_config(config: &crate::settings::OcrConfig) -> Result<Option<Installed>, String> {
     if !SUPPORTED || cfg!(test) {
         return Ok(None);

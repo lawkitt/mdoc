@@ -94,8 +94,6 @@ actions!(
 
 #[derive(Clone)]
 enum Next {
-    New,
-    Open(PathBuf),
     Import(import::Imported),
     Close,
 }
@@ -128,7 +126,7 @@ impl OcrState {
 
 struct Workspace {
     focus: gpui::FocusHandle,
-    owner: Option<(u64, gpui::WeakEntity<tabs::Tabs>)>,
+    owner: (u64, gpui::WeakEntity<tabs::Tabs>),
     active: bool,
     dirty_cached: bool,
     loading: bool,
@@ -145,7 +143,7 @@ struct Workspace {
     import_busy: Arc<AtomicBool>,
     import_cancel: Arc<AtomicBool>,
     preferences: settings::Shared,
-    model_panel: Option<Entity<settings_ui::Panel>>,
+    model_panel: Entity<settings_ui::Panel>,
     theme: Rc<Cell<Theme>>,
     editor: Entity<EditorState>,
     images: images::ImageCache,
@@ -168,18 +166,26 @@ struct Workspace {
     _markdown_search_subscription: Subscription,
 }
 
-impl Workspace {
-    #[cfg(test)]
-    fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        Self::new_with_ocr(None, window, cx)
-    }
+struct WorkspaceDependencies {
+    owner: (u64, gpui::WeakEntity<tabs::Tabs>),
+    preferences: settings::Shared,
+    model_panel: Entity<settings_ui::Panel>,
+    theme: Rc<Cell<Theme>>,
+    import_busy: Arc<AtomicBool>,
+    ocr: OcrState,
+}
 
-    fn new_with_ocr(ocr: Option<OcrState>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+impl Workspace {
+    fn new(
+        dependencies: WorkspaceDependencies,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let markdown_search = cx.new(markdown_search::SearchInput::new);
         let editor = cx.new(|cx| {
             let mut editor =
                 EditorState::new(window, cx).with_placeholder("Start writing Markdown…");
-            editor.set_markdown_style(style::markdown_style(Theme::default()), cx);
+            editor.set_markdown_style(style::markdown_style(dependencies.theme.get()), cx);
             editor.set_block_chip_provider(|src| {
                 gpui_pdf::is_pdf(src).then(|| src.to_owned().into())
             });
@@ -207,11 +213,7 @@ impl Workspace {
                     {
                         cx.open_url(src);
                     } else if let Some(path) = document::local_path(src, &this.save_directory()) {
-                        if this.owner.is_some() {
-                            cx.emit(tabs::TabEvent::Open(vec![path]));
-                        } else {
-                            this.open_path(path, window, cx);
-                        }
+                        cx.emit(tabs::TabEvent::Open(vec![path]));
                     }
                 }
                 _ => {}
@@ -226,25 +228,9 @@ impl Workspace {
                 _ => {}
             },
         );
-        if ocr.is_none() {
-            let task = cx.background_executor().spawn(async { ocr::check() });
-            cx.spawn(async move |this, cx| {
-                let result = task.await;
-                let _ = this.update(cx, |this, cx| {
-                    this.ocr_state = match result {
-                        Ok(Some(installed)) => OcrState::Ready(installed),
-                        Ok(None) if ocr::SUPPORTED => OcrState::Missing,
-                        Ok(None) => OcrState::Unsupported,
-                        Err(error) => OcrState::Failed(error),
-                    };
-                    cx.notify();
-                });
-            })
-            .detach();
-        }
         Self {
             focus: cx.focus_handle(),
-            owner: None,
+            owner: dependencies.owner,
             active: true,
             dirty_cached: false,
             loading: false,
@@ -258,11 +244,11 @@ impl Workspace {
             ocr_required: None,
             import_permit: None,
             conversion_source: None,
-            import_busy: Arc::new(AtomicBool::new(false)),
+            import_busy: dependencies.import_busy,
             import_cancel: Arc::new(AtomicBool::new(false)),
-            preferences: settings::Store::new(),
-            model_panel: None,
-            theme: Rc::new(Cell::new(Theme::default())),
+            preferences: dependencies.preferences,
+            model_panel: dependencies.model_panel,
+            theme: dependencies.theme,
             editor,
             images,
             session: document_session::DocumentSession::default(),
@@ -276,7 +262,7 @@ impl Workspace {
             setup_error_dismissed: false,
             prompting: false,
             job: import_session::ImportSession::default(),
-            ocr_state: ocr.unwrap_or(OcrState::Checking),
+            ocr_state: dependencies.ocr,
             markdown_search,
             search: search_session::SearchSession::default(),
             ocr_setup_subscription: None,
@@ -286,20 +272,7 @@ impl Workspace {
     }
 
     fn toggle_theme(&mut self, _: &ToggleTheme, _: &mut Window, cx: &mut Context<Self>) {
-        if self.owner.is_some() {
-            cx.emit(tabs::TabEvent::ToggleTheme);
-            return;
-        }
-        let theme = self.theme.get().toggle();
-        self.theme.set(theme);
-        self.editor.update(cx, |editor, cx| {
-            editor.set_markdown_style(style::markdown_style(theme), cx)
-        });
-        self.sync_pseudonym_theme(cx);
-        if let Some(pdf) = &self.preview.pdf {
-            pdf.update(cx, |_, cx| cx.notify());
-        }
-        cx.notify();
+        cx.emit(tabs::TabEvent::ToggleTheme);
     }
 
     fn replace_images(&mut self, directory: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
@@ -377,19 +350,6 @@ impl Workspace {
     }
 
     fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
-        if self.owner.is_some() {
-            match &next {
-                Next::New => {
-                    cx.emit(tabs::TabEvent::New);
-                    return;
-                }
-                Next::Open(path) => {
-                    cx.emit(tabs::TabEvent::Open(vec![path.clone()]));
-                    return;
-                }
-                _ => {}
-            }
-        }
         if self.prompting {
             return;
         }
@@ -426,41 +386,9 @@ impl Workspace {
         self.copy_feedback = None;
         match next {
             Next::Close => {
-                if self.owner.is_some() {
-                    cx.emit(tabs::TabEvent::CloseResolved);
-                    return;
-                }
-                self.session.replace(Document::default());
-                self.reset_pseudonymization(cx);
-                self.reset_markdown_search(cx);
-                self.close_preview(window, cx);
-                window.remove_window();
+                cx.emit(tabs::TabEvent::CloseResolved);
+                return;
             }
-            Next::New => {
-                self.session.replace(Document::default());
-                self.reset_pseudonymization(cx);
-                self.replace_images(self.session.document.directory(), window, cx);
-                self.editor.update(cx, |editor, cx| editor.set_text("", cx));
-                self.reset_markdown_search(cx);
-                self.error = None;
-                self.scroll.set_offset(gpui::point(px(0.), px(0.)));
-                self.update_title(window, cx);
-            }
-            Next::Open(path) => match Document::open(path) {
-                Ok(document) => {
-                    self.session.replace(document);
-                    self.reset_pseudonymization(cx);
-                    self.editor.update(cx, |editor, cx| {
-                        editor.set_text(self.session.document.saved.clone(), cx)
-                    });
-                    self.reset_markdown_search(cx);
-                    self.replace_images(self.session.document.directory(), window, cx);
-                    self.error = None;
-                    self.scroll.set_offset(gpui::point(px(0.), px(0.)));
-                    self.update_title(window, cx);
-                }
-                Err(error) => self.error = Some(format!("Could not open document: {error}")),
-            },
             Next::Import(imported) => {
                 self.source_only = false;
                 self.generated_unedited = self.automatic_import;
@@ -608,9 +536,8 @@ impl Workspace {
                 this.job.complete(generation, result);
                 this.resume_import(window, cx);
             });
-            if let Some((_, owner)) = owner {
-                let _ = owner.update_in(cx, |owner, window, cx| owner.refresh_import(window, cx));
-            }
+            let (_, owner) = owner;
+            let _ = owner.update_in(cx, |owner, window, cx| owner.refresh_import(window, cx));
         })
         .detach();
         cx.notify();
@@ -619,8 +546,8 @@ impl Workspace {
     fn resume_import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self
             .owner
-            .as_ref()
-            .and_then(|(_, owner)| owner.upgrade())
+            .1
+            .upgrade()
             .is_some_and(|owner| owner.read(cx).resolving_close())
         {
             return;
@@ -684,74 +611,46 @@ impl Workspace {
                 return;
             }
         };
-        if let Some(panel) = self.model_panel.clone() {
-            // The inline consent continuation remains document-owned. Settings downloads never create one.
-            if self.job.has_ocr_continuation() {
-                let config = config.clone();
-                let subscription =
-                    cx.subscribe_in(&panel, window, move |this, _, event, window, cx| {
-                        if let settings_ui::Event::Finished(settings::Model::Ocr(model), result) =
-                            event
-                            && *model == config.model
-                            && this.job.has_ocr_continuation()
-                        {
-                            match result {
-                                Ok(Some(installed)) => {
-                                    let mut installed = installed.clone();
-                                    installed.config = config.clone();
-                                    this.finish_ocr_setup(Ok(installed), window, cx);
-                                }
-                                Ok(None) => {}
-                                Err(e) => this.finish_ocr_setup(Err(e.clone()), window, cx),
+        let panel = self.model_panel.clone();
+        // The inline consent continuation remains document-owned. Settings downloads never create one.
+        if self.job.has_ocr_continuation() {
+            let config = config.clone();
+            let subscription =
+                cx.subscribe_in(&panel, window, move |this, _, event, window, cx| {
+                    if let settings_ui::Event::Finished(settings::Model::Ocr(model), result) = event
+                        && *model == config.model
+                        && this.job.has_ocr_continuation()
+                    {
+                        match result {
+                            Ok(Some(installed)) => {
+                                let mut installed = installed.clone();
+                                installed.config = config.clone();
+                                this.finish_ocr_setup(Ok(installed), window, cx);
                             }
+                            Ok(None) => {}
+                            Err(e) => this.finish_ocr_setup(Err(e.clone()), window, cx),
                         }
-                    });
-                self.ocr_setup_subscription = Some(subscription);
-            }
-            let started = panel.update(cx, |panel, cx| {
-                panel.setup(settings::Model::Ocr(config.model), false, cx);
-                let started = panel.working == Some(settings::Model::Ocr(config.model));
-                panel.show(window, cx);
-                started
-            });
-            if started {
-                self.ocr_state = OcrState::Installing;
-                cx.emit(tabs::TabEvent::OcrState(self.ocr_state.clone()));
-                cx.notify();
-            } else if self.job.has_ocr_continuation() {
-                self.finish_ocr_setup(
-                    Err("Another model job is running. Retry when it finishes.".into()),
-                    window,
-                    cx,
-                );
-            }
-            return;
+                    }
+                });
+            self.ocr_setup_subscription = Some(subscription);
         }
-        self.setup_error_dismissed = false;
-        self.ocr_state = OcrState::Installing;
-        cx.emit(tabs::TabEvent::OcrState(self.ocr_state.clone()));
-        self.error = None;
-        let owner = self.owner.clone();
-        let task = cx.background_executor().spawn(async move {
-            ocr::install_config(&config, &model_download::Progress::default())
+        let started = panel.update(cx, |panel, cx| {
+            panel.setup(settings::Model::Ocr(config.model), false, cx);
+            let started = panel.working == Some(settings::Model::Ocr(config.model));
+            panel.show(window, cx);
+            started
         });
-        cx.spawn_in(window, async move |this, cx| {
-            let result = task.await;
-            // Installation belongs to the application even if its initiating
-            // tab has closed. Only the import continuation belongs to the tab.
-            if let Some((_, owner)) = owner {
-                let state = match &result {
-                    Ok(installed) => OcrState::Ready(installed.clone()),
-                    Err(error) => OcrState::Failed(error.clone()),
-                };
-                let _ = owner.update(cx, |owner, cx| owner.set_ocr(state, cx));
-            }
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.finish_ocr_setup(result, window, cx)
-            });
-        })
-        .detach();
-        cx.notify();
+        if started {
+            self.ocr_state = OcrState::Installing;
+            cx.emit(tabs::TabEvent::OcrState(self.ocr_state.clone()));
+            cx.notify();
+        } else if self.job.has_ocr_continuation() {
+            self.finish_ocr_setup(
+                Err("Another model job is running. Retry when it finishes.".into()),
+                window,
+                cx,
+            );
+        }
     }
 
     fn finish_ocr_setup(
@@ -812,12 +711,7 @@ impl Workspace {
         } else if matches!(self.ocr_state, OcrState::Ready(_)) {
             self.start_import_mode(path, false, window, cx);
         } else if ocr::SUPPORTED {
-            if model_work::busy()
-                || self
-                    .model_panel
-                    .as_ref()
-                    .is_some_and(|p| p.read(cx).working.is_some())
-            {
+            if model_work::busy() || self.model_panel.read(cx).working.is_some() {
                 self.error = Some("Another model job is running. Retry when it finishes.".into());
                 cx.notify();
                 return;
@@ -965,7 +859,7 @@ impl Workspace {
             self.open_docx(path, window, cx);
             cx.notify();
         } else if document::is_markdown(&path) {
-            self.request(Next::Open(path), window, cx);
+            cx.emit(tabs::TabEvent::Open(vec![path]));
         } else if self.source_only {
             let generation = self.begin_preview(path.clone());
             let task = cx.background_executor().spawn(async move {
@@ -1012,13 +906,7 @@ impl Workspace {
             let _ = this.update_in(cx, |this, window, cx| {
                 this.prompting = false;
                 if let Ok(Ok(Some(paths))) = result {
-                    if this.owner.is_some() {
-                        cx.emit(tabs::TabEvent::Open(paths));
-                    } else {
-                        for path in paths {
-                            this.open_path(path, window, cx);
-                        }
-                    }
+                    cx.emit(tabs::TabEvent::Open(paths));
                 }
                 this.resume_import(window, cx);
             });
@@ -1079,22 +967,16 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some((id, owner)) = &self.owner {
-            let identity = session_store::identity(&path);
-            let other = owner
-                .upgrade()
-                .and_then(|owner| owner.read(cx).find_path(&identity, Some(*id), cx));
-            if let Some(other) = other {
-                cx.emit(tabs::TabEvent::SaveConflict(other));
-                cx.emit(tabs::TabEvent::CloseCancelled);
-                return;
-            }
+        let path = session_store::identity(&path);
+        let (id, owner) = &self.owner;
+        let other = owner
+            .upgrade()
+            .and_then(|owner| owner.read(cx).find_path(&path, Some(*id), cx));
+        if let Some(other) = other {
+            cx.emit(tabs::TabEvent::SaveConflict(other));
+            cx.emit(tabs::TabEvent::CloseCancelled);
+            return;
         }
-        let path = if self.owner.is_some() {
-            session_store::identity(&path)
-        } else {
-            path
-        };
         let old_directory = self.save_directory();
         match self.session.save(path, self.editor.read(cx).text()) {
             Ok(()) => {
@@ -1387,10 +1269,10 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &RunOcr, window, cx| this.ocr_action(false, window, cx)))
             .on_action(cx.listener(|this, _: &ExtractNative, window, cx| this.ocr_action(true, window, cx)))
             .on_action(cx.listener(|this, _: &DismissImportWarning, _, cx| { this.session.warning = None; cx.notify(); }))
-            .on_action(cx.listener(|this, _: &New, window, cx| this.request(Next::New, window, cx)))
+            .on_action(cx.listener(|_, _: &New, _, cx| cx.emit(tabs::TabEvent::New)))
             .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
             .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save(true, None, window, cx)))
-            .on_action(cx.listener(|this, _: &Close, window, cx| { if this.owner.is_some() { cx.emit(tabs::TabEvent::CloseRequested); } else { this.request(Next::Close, window, cx); } }))
+            .on_action(cx.listener(|_, _: &Close, _, cx| cx.emit(tabs::TabEvent::CloseRequested)))
             .on_action(cx.listener(|this, _: &ClosePdf, window, cx| { this.toggle_preview(window, cx); if this.source_only { window.focus(&this.focus, cx); } else { window.focus(&this.editor.read(cx).focus_handle(cx), cx); } cx.notify(); }))
             .on_action(cx.listener(Self::find_markdown))
             .on_action(cx.listener(Self::find_next_markdown))
@@ -1411,9 +1293,7 @@ impl Render for Workspace {
                 .child(div().id("workspace-settings").when(cfg!(test), |v| v.debug_selector(|| "Settings".into()))
                     .px_3().py_1().rounded_md().cursor_pointer().hover(|v| v.bg(palette.placeholder_bg)).child("Settings")
                     .on_click(cx.listener(|this, _, window, cx| {
-                        if let Some(panel) = this.model_panel.clone() {
-                            panel.update(cx, |panel, cx| panel.show(window, cx));
-                        }
+                        this.model_panel.update(cx, |panel, cx| panel.show(window, cx));
                     })))
                 .child(button(theme.toggle_label(), ToggleTheme, theme))
                 .when(self.dirty_cached, |bar| bar.child(div().text_size(px(11.)).text_color(palette.header_muted).child("Unsaved changes")))
