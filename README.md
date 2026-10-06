@@ -307,6 +307,12 @@ Release packaging uses the `mdoc` identity on all platforms. Automatic winget
 submission is disabled until `ENABLE_WINGET_PUBLISHING=true` and a `WINGET_TOKEN`
 secret are configured in this repository.
 
+To update the app icon, replace `build/appicon.png` with a square PNG (ideally
+at least 1024 × 1024), then run `./build/make-icon.sh` on macOS. It requires
+the built-in `sips` and `iconutil` tools and Python 3, with no Python packages.
+The script preserves the source PNG and regenerates the packaged PNG, Windows
+ICO, and macOS ICNS assets.
+
 ## License and attribution
 
 mdoc is derived from [Zorite](https://github.com/packetThrower/zorite).
