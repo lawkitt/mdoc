@@ -230,6 +230,16 @@ unwrapped natural widths. The regression reproduces the original jump and covers
 outer/internal borders, release, undo, and reload. Workspace verification after
 this fix: 392 tests passed, 11 existing probes ignored; formatting, diff checks,
 strict Clippy, and development build passed. Native dragging was not rechecked.
+A further 2026-10-06 follow-up limits automatically allocated columns to 32 font
+size units before fitting them to the pane. Hiding Original previously let
+unsized tables grow to their full single-line widths; this cap keeps long prose
+readable in wide panes. It affects display allocation only; saved widths and
+active manual drags remain authoritative. A production-shell regression toggles
+Original repeatedly and checks actual painted cell wrapping, manually sized cell
+geometry, source/revision, and dirty state. Together with the font-scaled cap
+test, workspace verification is 394 passed and 11 existing probes ignored;
+formatting, diff checks, strict Clippy, and development build pass. Native preview
+toggling was not rechecked for this follow-up.
 
 Shared chrome controls expose accessible names and keyboard focus. Secondary
 menus and Settings trap Tab/Shift-Tab and return focus on Escape. Settings, document lists, and

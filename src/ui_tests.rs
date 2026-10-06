@@ -356,6 +356,81 @@ fn search_reveals_last_wrapped_occurrence(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn automatic_table_cells_keep_readable_wrapping_when_original_is_toggled(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    cx.simulate_resize(gpui::size(px(2600.), px(1000.)));
+    let left = "Contractor: ORG_1 General director ______________________________ PERSON_4, authorized representative of the company.";
+    let right = "Заказчик: индивидуальный предприниматель PERSON_5 ______________________________ PERSON_6, уполномоченный представитель.";
+    let source = format!(
+        "<!-- table:grid cols=70,260,260 -->\n| Clause | Contractor | Customer |\n| --- | --- | --- |\n| 4.5.2 | {} | {} |\n\n| | |\n| --- | --- |\n| {left} | {right} |",
+        "Payment after services. ".repeat(6),
+        "Оплата после оказания услуг. ".repeat(6)
+    );
+    let first_start = source.find("Payment").unwrap();
+    let first_end = first_start + "Payment after services. ".repeat(6).len() - 2;
+    let left_start = source.find(left).unwrap();
+    let right_start = source.find(right).unwrap();
+    app.update(cx, |app, cx| {
+        app.session.document.saved = source.clone();
+        app.preview.source = Some(PathBuf::from("retained-original.docx"));
+        app.preview.loading = true;
+        app.preview.visible = true;
+        app.editor.update(cx, |e, cx| {
+            e.set_text(&source, cx);
+            e.set_search(
+                vec![
+                    left_start..left_start + 1,
+                    left_start + left.len() - 1..left_start + left.len(),
+                    right_start..right_start + right.chars().next().unwrap().len_utf8(),
+                    right_start + right.len() - 1..right_start + right.len(),
+                    first_start..first_start + 1,
+                    first_end..first_end + 1,
+                ],
+                None,
+                cx,
+            );
+        });
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let revision = cx.update(|_, cx| app.read(cx).editor.read(cx).revision());
+    let mut saved_geometry = None;
+    for visible in [true, false, true, false, true] {
+        app.update_in(cx, |app, window, cx| {
+            if app.preview.visible != visible {
+                app.toggle_preview(window, cx);
+            }
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        cx.update(|_, cx| {
+            let app = app.read(cx);
+            let editor = app.editor.read(cx);
+            assert_eq!(editor.text(), source);
+            assert_eq!(editor.revision(), revision);
+            assert!(!app.dirty(cx));
+            for index in [0, 2] {
+                let first = editor.search_match_bounds(index).expect("first cell glyph");
+                let last = editor.search_match_bounds(index + 1).expect("last cell glyph");
+                assert!(last.top() > first.top(), "automatic cells should retain readable wrapping with Original visible={visible}");
+            }
+            // A manually sized table retains its own text geometry in either pane width.
+            let first = editor.search_match_bounds(4).unwrap();
+            let last = editor.search_match_bounds(5).unwrap();
+            let geometry = (last.left() - first.left(), last.top() - first.top());
+            if let Some(saved) = saved_geometry {
+                assert_eq!(geometry, saved);
+            } else {
+                saved_geometry = Some(geometry);
+            }
+        });
+    }
+}
+
+#[gpui::test]
 fn wrapped_table_search_uses_painted_cell_geometry(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, _, cx| {

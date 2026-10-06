@@ -3186,6 +3186,7 @@ fn shape_document(
                                 fit_table_widths(
                                     &mut widths,
                                     (available - px(TABLE_GUTTER)).max(px(1.)),
+                                    base_font_size,
                                 );
                             }
                             widths

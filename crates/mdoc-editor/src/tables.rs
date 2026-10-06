@@ -1056,8 +1056,15 @@ pub(crate) fn table_column_widths(
 }
 
 /// View-only allocation. Short columns keep their natural width; long columns
-/// wrap above a readable floor. Explicit source widths bypass this function.
-pub(crate) fn fit_table_widths(widths: &mut [Pixels], available: Pixels) {
+/// have a readable maximum and wrap further when the pane narrows. Explicit
+/// source widths and live drags bypass this function.
+pub(crate) fn fit_table_widths(widths: &mut [Pixels], available: Pixels, font_size: Pixels) {
+    // A wide editor should not turn prose cells into page-wide single lines when
+    // Original is hidden. Scale the limit with the text size, not pane width.
+    let maximum = font_size * TABLE_COLUMN_MAX_EM;
+    for width in widths.iter_mut() {
+        *width = (*width).min(maximum);
+    }
     let total: Pixels = widths.iter().copied().sum();
     if total <= available || widths.is_empty() {
         return;
@@ -1079,6 +1086,9 @@ pub(crate) fn fit_table_widths(widths: &mut [Pixels], available: Pixels) {
             });
     }
 }
+
+/// Maximum automatic column width in font-size units (roughly 60-70 characters).
+const TABLE_COLUMN_MAX_EM: f32 = 32.;
 
 /// Horizontal inset (px) of a table cell's text from its column's left edge.
 pub(crate) const TABLE_CELL_PAD: f32 = 10.;
@@ -1578,17 +1588,26 @@ pub(crate) struct TableAffordance {
 mod viewport_allocation_tests {
     use super::*;
     #[test]
+    fn automatic_columns_have_a_font_scaled_readable_maximum_in_wide_panes() {
+        for font_size in [16., 24.] {
+            let mut widths = [px(60.), px(2000.), px(1800.)];
+            fit_table_widths(&mut widths, px(5000.), px(font_size));
+            assert_eq!(widths, [px(60.), px(32. * font_size), px(32. * font_size)]);
+        }
+    }
+
+    #[test]
     fn fit_wraps_without_shrinking_short_columns_and_overflows_below_floor() {
         let mut widths = [px(60.), px(600.), px(400.)];
-        fit_table_widths(&mut widths, px(500.));
+        fit_table_widths(&mut widths, px(500.), px(16.));
         assert_eq!(widths[0], px(60.));
         assert!((f32::from(widths.iter().copied().sum::<Pixels>()) - 500.).abs() < 0.01);
         assert!(widths[1] >= px(120.) && widths[2] >= px(120.));
         let mut narrow = [px(60.), px(600.), px(400.)];
-        fit_table_widths(&mut narrow, px(200.));
+        fit_table_widths(&mut narrow, px(200.), px(16.));
         assert_eq!(narrow, [px(60.), px(120.), px(120.)]);
         let mut short = [px(60.), px(80.)];
-        fit_table_widths(&mut short, px(500.));
+        fit_table_widths(&mut short, px(500.), px(16.));
         assert_eq!(short, [px(60.), px(80.)]);
     }
 }
