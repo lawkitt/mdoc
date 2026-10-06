@@ -81,6 +81,14 @@ pub(super) struct Tabs {
     active: u64,
     next_id: u64,
     sidebar_visible: bool,
+    sidebar_choice: Option<bool>,
+    document_list_open: bool,
+    document_list_focus: gpui::FocusHandle,
+    document_list_previous: Option<gpui::FocusHandle>,
+    sidebar_scroll: gpui::ScrollHandle,
+    compact_scroll: gpui::ScrollHandle,
+    compact_row_focus: std::cell::RefCell<std::collections::HashMap<u64, gpui::FocusHandle>>,
+    sidebar_row_focus: std::cell::RefCell<std::collections::HashMap<u64, gpui::FocusHandle>>,
     preferences: settings::Shared,
     settings: Entity<settings_ui::Panel>,
     settings_subscription: Option<Subscription>,
@@ -89,7 +97,6 @@ pub(super) struct Tabs {
     ocr_state: OcrState,
     pending_open: Vec<PathBuf>,
     notice: Option<String>,
-    notice_expanded: bool,
     tab_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
     import_busy: Arc<AtomicBool>,
     docx_queue: VecDeque<DocxJob>,
@@ -186,7 +193,15 @@ impl Tabs {
             tabs: Vec::new(),
             active: 0,
             next_id: 1,
-            sidebar_visible: true,
+            sidebar_visible: false,
+            sidebar_choice: None,
+            document_list_open: false,
+            document_list_focus: cx.focus_handle(),
+            document_list_previous: None,
+            sidebar_scroll: gpui::ScrollHandle::new(),
+            compact_scroll: gpui::ScrollHandle::new(),
+            compact_row_focus: Default::default(),
+            sidebar_row_focus: Default::default(),
             preferences,
             settings: panel.clone(),
             settings_subscription: None,
@@ -199,7 +214,6 @@ impl Tabs {
             },
             pending_open: Vec::new(),
             notice: None,
-            notice_expanded: false,
             tab_menu: None,
             import_busy: Arc::new(AtomicBool::new(false)),
             docx_queue: VecDeque::new(),
@@ -458,6 +472,9 @@ impl Tabs {
         cx: &mut Context<Self>,
     ) {
         self.sidebar_visible = session.sidebar_visible;
+        self.sidebar_choice = session
+            .sidebar_choice
+            .or((!session.sidebar_visible).then_some(false));
         let selected = session.active;
         // Session paths were normalized when opened/saved. Do not stat every file
         // during startup; missing files are diagnosed when activated.
@@ -551,6 +568,7 @@ impl Tabs {
             view.preview.attachment = record.attachment.clone();
             view.preview.source = record.attachment.clone();
             view.preview.visible = record.preview_visible;
+            view.preview.split_ratio = record.preview_split;
             view.preview.restore_position = record
                 .preview_zoom
                 .map(|zoom| (record.preview_page, zoom, record.preview_fit));
@@ -1040,6 +1058,15 @@ impl Tabs {
     }
 
     fn remove(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.sidebar_row_focus.borrow_mut().remove(&id);
+        let removed_opener = self.compact_row_focus.borrow_mut().remove(&id);
+        let removed_list_opener =
+            removed_opener.is_some() && self.document_list_previous == removed_opener;
+        let closed_popup = self.document_list_open && removed_list_opener;
+        if removed_list_opener {
+            self.document_list_open = false;
+            self.document_list_previous = None;
+        }
         let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
             return;
         };
@@ -1057,6 +1084,16 @@ impl Tabs {
             self.activate(id, window, cx);
         } else if self.active == id {
             self.activate(self.tabs[index.min(self.tabs.len() - 1)].id, window, cx);
+        } else if closed_popup && let Some(view) = self.active_view() {
+            let view = view.read(cx);
+            let focus = if view.source_only {
+                view.focus.clone()
+            } else if view.loading || view.unavailable {
+                self.focus.clone()
+            } else {
+                view.editor.read(cx).focus_handle(cx)
+            };
+            window.focus(&focus, cx);
         }
         self.checkpoint(window, cx);
         cx.notify();
@@ -1129,6 +1166,7 @@ impl Tabs {
     fn snapshot(&self, cx: &App) -> Session {
         let mut session = Session {
             sidebar_visible: self.sidebar_visible,
+            sidebar_choice: self.sidebar_choice,
             ..Session::default()
         };
         for tab in &self.tabs {
@@ -1154,6 +1192,7 @@ impl Tabs {
                     .clone()
                     .or_else(|| view.preview.source.clone());
                 record.preview_visible = view.preview.visible;
+                record.preview_split = view.preview.split_ratio;
                 if let Some(pdf) = &view.preview.pdf {
                     let (page, zoom) = pdf.read(cx).reading_position();
                     record.preview_page = page;
@@ -1275,34 +1314,309 @@ impl Tabs {
     fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
-        let accent = theme.search_accent();
-        let icon_button = |id: &'static str,
-                           label: &'static str,
-                           aria: &'static str,
-                           action: Box<dyn gpui::Action>| {
-            div()
-                .id(id)
-                .when(cfg!(test), |v| v.debug_selector(move || id.into()))
-                .aria_label(aria)
-                .w(px(28.))
-                .h(px(28.))
-                .flex_shrink_0()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded_md()
-                .cursor_pointer()
-                .text_size(px(18.))
-                .text_color(palette.header_muted)
-                .hover(move |view| {
-                    view.bg(palette.placeholder_bg)
-                        .text_color(palette.header_fg)
-                })
-                .child(label)
-                .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
-        };
-        let mut sidebar = div()
-            .w(px(if self.sidebar_visible { 232. } else { 40. }))
+        let expanded = self.sidebar_visible;
+        let mut compact_rows = Vec::with_capacity(self.tabs.len());
+        let mut compact_bounds = Vec::with_capacity(self.tabs.len());
+        let compact_viewport = Rc::new(Cell::new(None::<gpui::Bounds<gpui::Pixels>>));
+        let measured_viewport = compact_viewport.clone();
+        let rows = self
+            .tabs
+            .iter()
+            .map(|tab| {
+                let id = tab.id;
+                let view = tab.view.as_ref().map(|v| v.read(cx));
+                let name = view.map(|v| v.display_name()).unwrap_or_else(|| {
+                    let path = if tab.record.source_only {
+                        tab.record
+                            .attachment
+                            .as_ref()
+                            .unwrap_or(&tab.record.markdown)
+                    } else {
+                        &tab.record.markdown
+                    };
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Untitled.md".into())
+                });
+                let path = view
+                    .and_then(|v| v.session.document.path.as_ref())
+                    .unwrap_or(&tab.record.markdown);
+                let source = view
+                    .and_then(|v| v.preview.attachment.as_ref().or(v.preview.source.as_ref()))
+                    .or(tab.record.attachment.as_ref());
+                let format = source
+                    .or(Some(path))
+                    .and_then(|p| p.extension())
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("md")
+                    .to_uppercase();
+                let dirty = view.is_some_and(|v| v.dirty_cached);
+                let busy = view.is_some_and(|v| {
+                    v.loading || v.job.busy() || v.preview.loading || v.preview.queued
+                });
+                let error = view.is_some_and(|v| {
+                    v.error.is_some() || v.preview.retryable || v.ocr_required.is_some()
+                });
+                let identity = source.unwrap_or(path);
+                let parent = identity
+                    .parent()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let tooltip = format!(
+                    "{name}\n{parent}{}{}{}",
+                    if dirty { "\nUnsaved changes" } else { "" },
+                    if busy { "\nProcessing…" } else { "" },
+                    if error { "\nNeeds attention" } else { "" }
+                );
+                let duplicate = self
+                    .tabs
+                    .iter()
+                    .filter(|other| {
+                        let other_view = other.view.as_ref().map(|v| v.read(cx));
+                        let other_name =
+                            other_view.map(|v| v.display_name()).unwrap_or_else(|| {
+                                other
+                                    .record
+                                    .markdown
+                                    .file_name()
+                                    .unwrap_or_default()
+                                    .to_string_lossy()
+                                    .into_owned()
+                            });
+                        other_name == name
+                    })
+                    .count()
+                    > 1;
+                let peers: Vec<PathBuf> = self
+                    .tabs
+                    .iter()
+                    .filter_map(|tab| {
+                        let view = tab.view.as_ref().map(|v| v.read(cx));
+                        view.and_then(|v| {
+                            v.preview
+                                .attachment
+                                .as_ref()
+                                .or(v.preview.source.as_ref())
+                                .or(v.session.document.path.as_ref())
+                        })
+                        .or(tab.record.attachment.as_ref())
+                        .or(Some(&tab.record.markdown))
+                        .filter(|p| !p.as_os_str().is_empty())
+                        .cloned()
+                    })
+                    .collect();
+                let parent_label = disambiguating_parent(identity, &peers);
+                let focus = self
+                    .sidebar_row_focus
+                    .borrow_mut()
+                    .entry(id)
+                    .or_insert_with(|| cx.focus_handle().tab_stop(true))
+                    .clone();
+                let compact_focus = self
+                    .compact_row_focus
+                    .borrow_mut()
+                    .entry(id)
+                    .or_insert_with(|| cx.focus_handle().tab_stop(true))
+                    .clone();
+                let bounds = Rc::new(Cell::new(None::<gpui::Bounds<gpui::Pixels>>));
+                compact_bounds.push(bounds.clone());
+                compact_rows.push(
+                    ui::control(("compact-tab", id), format.clone(), theme, true)
+                        .map(|v| {
+                            ui::reveal_focus(
+                                v.track_focus(&compact_focus),
+                                compact_focus.clone(),
+                                self.compact_scroll.clone(),
+                            )
+                        })
+                        .tab_stop(!self.document_list_open)
+                        .aria_label(format!("Show documents: {name}"))
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(move || format!("compact-tab-{id}"))
+                        })
+                        .relative()
+                        .child(
+                            gpui::canvas(
+                                move |measured, _, _| bounds.set(Some(measured)),
+                                |_, _, _, _| {},
+                            )
+                            .absolute()
+                            .inset_0(),
+                        )
+                        .p_0()
+                        .size(px(32.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(9.))
+                        .mb(px(2.))
+                        .when(self.active == id, |v| v.bg(theme.sidebar_selected()))
+                        .when(!self.document_list_open, |v| {
+                            v.tooltip(style::tooltip(tooltip.clone(), theme))
+                        })
+                        .when(dirty || busy || error, |v| {
+                            v.child(
+                                div()
+                                    .absolute()
+                                    .top(px(-2.))
+                                    .right(px(2.))
+                                    .text_size(px(10.))
+                                    .text_color(if error {
+                                        style::markdown_style(theme).alert_warning
+                                    } else {
+                                        palette.header_muted
+                                    })
+                                    .child(if error {
+                                        "!"
+                                    } else if busy {
+                                        "…"
+                                    } else {
+                                        "•"
+                                    }),
+                            )
+                        })
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            if this.quitting.is_none() {
+                                if this.document_list_open && this.active != id {
+                                    this.activate(id, window, cx);
+                                }
+                                this.document_list_previous = Some(compact_focus.clone());
+                                this.document_list_open = true;
+                                window.focus(&this.document_list_focus, cx);
+                                cx.notify();
+                            }
+                        }))
+                        .on_mouse_down(
+                            gpui::MouseButton::Right,
+                            cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
+                                this.document_list_previous = window.focused(cx);
+                                window.focus(&this.document_list_focus, cx);
+                                this.document_list_open = false;
+                                this.tab_menu = Some((id, event.position));
+                                cx.notify();
+                            }),
+                        ),
+                );
+                div()
+                    .id(("tab", id))
+                    .map(|v| {
+                        ui::reveal_focus(v.track_focus(&focus), focus, self.sidebar_scroll.clone())
+                    })
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .role(gpui::Role::Button)
+                    .aria_label(if duplicate {
+                        format!("{name} · {parent_label}")
+                    } else {
+                        name.clone()
+                    })
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(move || format!("tab-{id}"))
+                    })
+                    .flex()
+                    .items_center()
+                    .min_w_0()
+                    .gap_1()
+                    .px_2()
+                    .min_h(px(32.))
+                    .mb(px(2.))
+                    .rounded_md()
+                    .when(self.active == id, |v| v.bg(theme.sidebar_selected()))
+                    .hover(move |v| v.bg(palette.placeholder_bg))
+                    .focus_visible(move |v| v.bg(palette.placeholder_bg))
+                    .tooltip(style::tooltip(tooltip, theme))
+                    .cursor_pointer()
+                    .child(
+                        div()
+                            .text_size(px(9.))
+                            .text_color(palette.header_muted)
+                            .flex_shrink_0()
+                            .child(format),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .child(div().truncate().child(name.clone()))
+                            .when(duplicate, |v| {
+                                v.child(
+                                    div()
+                                        .truncate()
+                                        .text_size(px(10.))
+                                        .text_color(palette.header_muted)
+                                        .child(parent_label),
+                                )
+                            }),
+                    )
+                    .when(dirty || busy || error, |v| {
+                        v.child(
+                            div()
+                                .text_color(if error {
+                                    style::markdown_style(theme).alert_warning
+                                } else {
+                                    palette.header_muted
+                                })
+                                .child(if error {
+                                    "!"
+                                } else if busy {
+                                    "…"
+                                } else {
+                                    "•"
+                                }),
+                        )
+                    })
+                    .child(
+                        ui::control(("close-tab", id), "×", theme, true)
+                            .aria_label("Close tab")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.close_tab(id, window, cx);
+                            })),
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        if this.quitting.is_none() {
+                            this.document_list_open = false;
+                            this.document_list_previous = None;
+                            this.activate(id, window, cx);
+                        }
+                    }))
+                    .on_mouse_down(
+                        gpui::MouseButton::Right,
+                        cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
+                            this.document_list_previous = window.focused(cx);
+                            window.focus(&this.document_list_focus, cx);
+                            this.document_list_open = false;
+                            this.tab_menu = Some((id, event.position));
+                            cx.notify();
+                        }),
+                    )
+                    .on_drag(TabDrag { id, label: name }, |drag, _, _, cx| {
+                        cx.stop_propagation();
+                        cx.new(|_| drag.clone())
+                    })
+                    .drag_over::<TabDrag>(move |v, _, _, _| {
+                        v.border_t_2().border_color(theme.search_accent())
+                    })
+                    .on_drop(
+                        cx.listener(move |this, drag: &TabDrag, _, cx| {
+                            this.reorder(drag.id, id, cx)
+                        }),
+                    )
+            })
+            .collect::<Vec<_>>();
+        let list = div()
+            .id("sidebar-tabs")
+            .track_scroll(&self.sidebar_scroll)
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .px_1()
+            .children(rows);
+        let mut rail = div()
+            .relative()
+            .w(px(if expanded { 200. } else { 40. }))
             .flex_shrink_0()
             .h_full()
             .flex()
@@ -1313,389 +1627,172 @@ impl Tabs {
             .border_color(palette.border)
             .child(
                 div()
-                    .h(px(if self.sidebar_visible { 44. } else { 76. }))
-                    .when(!self.sidebar_visible, |v| v.flex_col().justify_center())
-                    .flex_shrink_0()
-                    .px(px(6.))
                     .flex()
+                    .when(!expanded, |v| v.flex_col())
                     .items_center()
                     .gap_1()
-                    .child(icon_button(
-                        "sidebar-toggle",
-                        if self.sidebar_visible { "‹" } else { "›" },
-                        if self.sidebar_visible {
+                    .p_1()
+                    .min_h(px(40.))
+                    .flex_shrink_0()
+                    .child(
+                        ui::control(
+                            "sidebar-toggle",
+                            if expanded { "‹" } else { "›" },
+                            theme,
+                            true,
+                        )
+                        .aria_label(if expanded {
                             "Collapse sidebar"
                         } else {
                             "Expand sidebar"
-                        },
-                        Box::new(ToggleSidebar),
-                    ))
-                    .when(!self.sidebar_visible, |view| {
-                        view.child(icon_button(
-                            "sidebar-new-collapsed",
-                            "+",
-                            "New Markdown tab",
-                            Box::new(New),
-                        ))
-                    })
-                    .when(self.sidebar_visible, |view| {
-                        view.child(
+                        })
+                        .when(cfg!(test), |v| v.debug_selector(|| "sidebar-toggle".into()))
+                        .on_click(|_, window, cx| {
+                            window.dispatch_action(Box::new(ToggleSidebar), cx)
+                        }),
+                    )
+                    .when(expanded, |v| {
+                        v.child(
                             div()
                                 .flex_1()
+                                .min_w_0()
                                 .text_size(px(12.))
-                                .font_weight(gpui::FontWeight::MEDIUM)
                                 .text_color(palette.header_muted)
-                                .child("Open tabs"),
+                                .child("Documents"),
                         )
-                        .child(icon_button(
-                            "sidebar-new",
-                            "+",
-                            "New Markdown tab",
-                            Box::new(New),
-                        ))
-                    }),
-            );
-        {
-            let mut rows = div()
-                .id("sidebar-tabs")
-                .flex_1()
-                .min_h_0()
-                .overflow_y_scroll()
-                .px(px(6.))
-                .pb_2();
-            let mut filenames = std::collections::HashMap::new();
-            for tab in &self.tabs {
-                let path = tab
-                    .view
-                    .as_ref()
-                    .and_then(|view| view.read(cx).session.document.path.as_ref())
-                    .or(tab
-                        .record
-                        .attachment
-                        .as_ref()
-                        .filter(|_| tab.record.source_only))
-                    .unwrap_or(&tab.record.markdown);
-                *filenames.entry(path.file_name()).or_insert(0usize) += 1;
-            }
-            for tab in &self.tabs {
-                let id = tab.id;
-                let view = tab.view.as_ref().map(|view| view.read(cx));
-                let name = view
-                    .filter(|view| !view.loading && !view.unavailable)
-                    .map(|view| view.display_name())
-                    .unwrap_or_else(|| {
-                        (if tab.record.source_only {
-                            tab.record
-                                .attachment
-                                .as_ref()
-                                .unwrap_or(&tab.record.markdown)
-                        } else {
-                            &tab.record.markdown
-                        })
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "Untitled.md".into())
-                    });
-                let busy = view.and_then(|view| {
-                    if view.loading {
-                        Some("Loading…")
-                    } else if view.preview.queued {
-                        Some("Queued…")
-                    } else if view.preview.loading {
-                        Some("Preparing preview…")
-                    } else if view.job.busy() {
-                        Some("Converting…")
-                    } else if view.auto_convert_pending {
-                        Some("Waiting to convert…")
-                    } else {
-                        None
-                    }
-                });
-                let dirty = view.is_some_and(|view| view.dirty_cached);
-                let error = view.is_some_and(|view| {
-                    view.error.is_some() || view.preview.retryable || view.ocr_required.is_some()
-                });
-                let attachment = view
-                    .and_then(|view| {
-                        view.preview
-                            .attachment
-                            .as_ref()
-                            .or(view.preview.source.as_ref())
                     })
-                    .or(tab.record.attachment.as_ref());
-                let path = view
-                    .and_then(|view| view.session.document.path.as_ref())
-                    .or(tab
-                        .record
-                        .attachment
-                        .as_ref()
-                        .filter(|_| tab.record.source_only))
-                    .unwrap_or(&tab.record.markdown);
-                let duplicate = filenames.get(&path.file_name()).copied().unwrap_or(0) > 1;
-                let selected = self.active == id;
-                let mut text = div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .gap(px(3.))
                     .child(
-                        div()
-                            .truncate()
-                            .font_weight(if selected {
-                                gpui::FontWeight::MEDIUM
+                        ui::control(
+                            if expanded {
+                                "sidebar-new"
                             } else {
-                                gpui::FontWeight::NORMAL
-                            })
-                            .child(name.clone()),
-                    );
-                if duplicate && let Some(parent) = path.parent() {
-                    text = text.child(
-                        div()
-                            .truncate()
-                            .text_size(px(11.))
-                            .text_color(palette.header_muted)
-                            .child(parent.to_string_lossy().into_owned()),
-                    );
-                }
-                if let Some(source) = attachment {
-                    let kind = source
-                        .extension()
-                        .and_then(|ext| ext.to_str())
-                        .unwrap_or("")
-                        .to_ascii_uppercase();
-                    text = text.child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .min_w_0()
-                            .text_color(palette.header_muted)
-                            .child(
-                                div()
-                                    .flex_shrink_0()
-                                    .text_size(px(9.))
-                                    .font_weight(gpui::FontWeight::MEDIUM)
-                                    .px_1()
-                                    .rounded_sm()
-                                    .border_1()
-                                    .border_color(palette.border)
-                                    .child(kind),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(px(11.))
-                                    .child(
-                                        source
-                                            .file_name()
-                                            .unwrap_or_default()
-                                            .to_string_lossy()
-                                            .into_owned(),
-                                    ),
-                            ),
-                    );
-                }
-                if let Some(busy) = busy {
-                    text = text.child(div().text_size(px(11.)).text_color(accent).child(busy));
-                } else if error {
-                    text = text.child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(palette.header_muted)
-                            .child("Needs attention"),
-                    );
-                }
-                if !self.sidebar_visible {
-                    let kind = attachment
-                        .and_then(|p| p.extension())
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("md")
-                        .to_ascii_uppercase();
-                    rows = rows.child(
-                        div()
-                            .id(("compact-tab", id))
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(move || format!("compact-tab-{id}"))
-                            })
-                            .relative()
-                            .w(px(28.))
-                            .h(px(36.))
-                            .my_1()
-                            .rounded_md()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .cursor_pointer()
-                            .text_size(px(9.))
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(if selected {
-                                accent
-                            } else {
-                                palette.header_muted
-                            })
-                            .when(selected, |v| v.bg(theme.sidebar_selected()))
-                            .hover(|v| v.bg(palette.placeholder_bg))
-                            .child(
-                                div()
-                                    .border_1()
-                                    .border_color(if selected { accent } else { palette.border })
-                                    .rounded_sm()
-                                    .px(px(2.))
-                                    .py(px(4.))
-                                    .child(kind),
-                            )
-                            .when(dirty || busy.is_some() || error, |v| {
-                                v.child(
-                                    div()
-                                        .absolute()
-                                        .right_0()
-                                        .top_0()
-                                        .text_size(px(10.))
-                                        .text_color(accent)
-                                        .child(if error {
-                                            "!"
-                                        } else if busy.is_some() {
-                                            "◌"
-                                        } else {
-                                            "•"
-                                        }),
-                                )
-                            })
-                            .tooltip(style::tooltip(
-                                format!(
-                                    "{name}{}{}",
-                                    if path.as_os_str().is_empty() {
-                                        String::new()
-                                    } else {
-                                        format!("\n{}", path.display())
-                                    },
-                                    if error { " — Needs attention" } else { "" }
-                                ),
-                                theme,
-                            ))
-                            .on_click(
-                                cx.listener(move |this, _, window, cx| {
-                                    this.activate(id, window, cx)
-                                }),
-                            )
-                            .on_mouse_down(
-                                gpui::MouseButton::Right,
-                                cx.listener(move |this, e: &gpui::MouseDownEvent, _, cx| {
-                                    this.tab_menu = Some((id, e.position));
-                                    cx.stop_propagation();
-                                    cx.notify();
-                                }),
-                            )
-                            .on_drag(
-                                TabDrag {
-                                    id,
-                                    label: name.clone(),
-                                },
-                                |drag, _, _, cx| {
-                                    cx.stop_propagation();
-                                    cx.new(|_| drag.clone())
-                                },
-                            )
-                            .drag_over::<TabDrag>(move |v, _, _, _| v.bg(theme.sidebar_selected()))
-                            .on_drop(cx.listener(move |this, drag: &TabDrag, _, cx| {
-                                this.reorder(drag.id, id, cx)
-                            })),
-                    );
-                    continue;
-                }
-                rows = rows.child(
-                    div()
-                        .id(("tab", id))
-                        .flex()
-                        .items_center()
-                        .gap(px(7.))
-                        .px_2()
-                        .py_2()
-                        .mb(px(3.))
-                        .rounded_md()
-                        .cursor_pointer()
-                        .when(selected, |view| view.bg(theme.sidebar_selected()))
-                        .hover(move |view| {
-                            view.bg(if selected {
-                                theme.sidebar_selected()
-                            } else {
-                                palette.placeholder_bg
-                            })
-                        })
-                        .child(
-                            div()
-                                .w(px(2.))
-                                .h(px(22.))
-                                .flex_shrink_0()
-                                .rounded_full()
-                                .bg(if selected {
-                                    accent
+                                "sidebar-new-collapsed"
+                            },
+                            "+",
+                            theme,
+                            true,
+                        )
+                        .aria_label("New Markdown tab")
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(move || {
+                                if expanded {
+                                    "sidebar-new".into()
                                 } else {
-                                    gpui::transparent_black()
-                                }),
-                        )
-                        .child(text)
-                        .when(dirty, |view| {
-                            view.child(
-                                div()
-                                    .w(px(5.))
-                                    .h(px(5.))
-                                    .flex_shrink_0()
-                                    .rounded_full()
-                                    .bg(accent),
-                            )
+                                    "sidebar-new-collapsed".into()
+                                }
+                            })
                         })
-                        .child(
-                            div()
-                                .id(("close-tab", id))
-                                .aria_label("Close tab")
-                                .w(px(24.))
-                                .h(px(24.))
-                                .flex_shrink_0()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded_md()
-                                .text_size(px(16.))
-                                .text_color(palette.header_muted)
-                                .hover(|view| {
-                                    view.bg(palette.placeholder_bg)
-                                        .text_color(palette.header_fg)
-                                })
-                                .child("×")
-                                .on_click(cx.listener(move |this, _, window, cx| {
-                                    cx.stop_propagation();
-                                    this.close_tab(id, window, cx);
-                                })),
+                        .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx)),
+                    ),
+            );
+        if expanded {
+            rail = rail.child(list);
+        } else {
+            rail = rail.child(
+                div()
+                    .id("compact-tabs")
+                    .relative()
+                    .child(
+                        gpui::canvas(
+                            move |bounds, _, _| measured_viewport.set(Some(bounds)),
+                            |_, _, _, _| {},
                         )
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            if this.quitting.is_none() {
-                                this.activate(id, window, cx);
-                            }
-                        }))
-                        .on_drag(TabDrag { id, label: name }, |drag, _, _, cx| {
+                        .absolute()
+                        .inset_0(),
+                    )
+                    .track_scroll(&self.compact_scroll)
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .px_1()
+                    .children(compact_rows),
+            );
+            if self.document_list_open {
+                rail = rail.child(gpui::deferred(
+                    div()
+                        .absolute()
+                        .left(px(40.))
+                        .top(px(76.))
+                        .w(px(300.))
+                        .max_h(px(360.))
+                        .flex()
+                        .flex_col()
+                        .id("document-list-menu")
+                        .key_context("UiPanel UiMenu")
+                        .track_focus(&self.document_list_focus)
+                        .tab_group()
+                        .tab_stop(false)
+                        .occlude()
+                        .rounded_md()
+                        .shadow_md()
+                        .border_1()
+                        .border_color(palette.border)
+                        .bg(palette.bg)
+                        .py_1()
+                        .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
+                            ui::cycle(window, cx, Some(&this.document_list_focus), false);
                             cx.stop_propagation();
-                            cx.new(|_| drag.clone())
-                        })
-                        .drag_over::<TabDrag>(move |style, _, _, _| {
-                            style.border_t_2().border_color(accent)
-                        })
-                        .on_drop(cx.listener(move |this, drag: &TabDrag, _, cx| {
-                            this.reorder(drag.id, id, cx)
-                        })),
-                );
+                        }))
+                        .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
+                            ui::cycle(window, cx, Some(&this.document_list_focus), true);
+                            cx.stop_propagation();
+                        }))
+                        .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                            this.document_list_open = false;
+                            if let Some(focus) = this.document_list_previous.take() {
+                                window.focus(&focus, cx);
+                            }
+                            cx.notify();
+                        }))
+                        .on_mouse_down_out(cx.listener(
+                            move |this, event: &gpui::MouseDownEvent, _, cx| {
+                                // Rail controls switch documents without dismissing the list.
+                                // Clip row bounds to the scroll viewport for offscreen tabs.
+                                if compact_viewport
+                                    .get()
+                                    .is_some_and(|bounds| bounds.contains(&event.position))
+                                    && compact_bounds.iter().any(|bounds| {
+                                        bounds
+                                            .get()
+                                            .is_some_and(|bounds| bounds.contains(&event.position))
+                                    })
+                                {
+                                    return;
+                                }
+                                this.document_list_open = false;
+                                this.document_list_previous = None;
+                                cx.notify();
+                            },
+                        ))
+                        .child(list),
+                ));
             }
-            sidebar = sidebar.child(rows);
         }
-        sidebar.into_any_element()
+        rail.into_any_element()
     }
+}
+
+/// Show the shortest parent suffix that distinguishes this document's location.
+fn disambiguating_parent(path: &std::path::Path, peers: &[PathBuf]) -> String {
+    let Some(parent) = path.parent() else {
+        return String::new();
+    };
+    let components: Vec<_> = parent.components().collect();
+    for depth in 1..=components.len() {
+        let suffix: PathBuf = components[components.len() - depth..].iter().collect();
+        if !peers
+            .iter()
+            .any(|peer| peer != path && peer.parent().is_some_and(|p| p.ends_with(&suffix)))
+        {
+            return suffix.to_string_lossy().into_owned();
+        }
+    }
+    parent.to_string_lossy().into_owned()
 }
 
 impl Render for Tabs {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sidebar_visible = self.sidebar_choice.unwrap_or(false);
         let palette = self.theme.get().pdf_style();
         div()
             .track_focus(&self.focus)
@@ -1731,7 +1828,17 @@ impl Render for Tabs {
             .on_action(cx.listener(|this, _: &PreviousTab, window, cx| this.cycle(-1, window, cx)))
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
                 this.sidebar_visible = !this.sidebar_visible;
+                this.sidebar_choice = Some(this.sidebar_visible);
+                this.document_list_open = false;
                 cx.notify();
+            }))
+            .on_action(
+                cx.listener(|_, _: &ui::NextControl, window, cx| {
+                    ui::cycle(window, cx, None, false)
+                }),
+            )
+            .on_action(cx.listener(|_, _: &ui::PreviousControl, window, cx| {
+                ui::cycle(window, cx, None, true)
             }))
             .on_action(cx.listener(|this, _: &RetryDocument, window, cx| {
                 if let Some(tab) = this.tabs.iter().find(|tab| tab.id == this.active) {
@@ -1743,6 +1850,25 @@ impl Render for Tabs {
                     gpui::anchored().position(position).snap_to_window().child(
                         div()
                             .id("tab-context-menu")
+                            .key_context("UiPanel UiMenu")
+                            .track_focus(&self.document_list_focus)
+                            .tab_group()
+                            .tab_stop(false)
+                            .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                                this.tab_menu = None;
+                                if let Some(focus) = this.document_list_previous.take() {
+                                    window.focus(&focus, cx);
+                                }
+                                cx.notify();
+                            }))
+                            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
+                                ui::cycle(window, cx, Some(&this.document_list_focus), false);
+                                cx.stop_propagation();
+                            }))
+                            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
+                                ui::cycle(window, cx, Some(&this.document_list_focus), true);
+                                cx.stop_propagation();
+                            }))
                             .occlude()
                             .p_1()
                             .rounded_md()
@@ -1760,6 +1886,13 @@ impl Render for Tabs {
                             .child(
                                 div()
                                     .id("context-close-tab")
+                                    .role(gpui::Role::Button)
+                                    .aria_label("Close tab")
+                                    .key_context("UiControl")
+                                    .tab_index(0)
+                                    .focus_visible(|s| {
+                                        s.bg(self.theme.get().pdf_style().placeholder_bg)
+                                    })
                                     .when(cfg!(test), |v| {
                                         v.debug_selector(|| "context-close-tab".into())
                                     })
@@ -1796,28 +1929,18 @@ impl Render for Tabs {
                                 .px_3()
                                 .py_1()
                                 .child(div().text_color(accent).child("ⓘ"))
-                                .child(div().flex_1().min_w_0().truncate().child(notice.clone()))
-                                .child(
-                                    div()
-                                        .id("session-notice-details")
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .cursor_pointer()
-                                        .hover(|v| v.bg(palette.placeholder_bg))
-                                        .child(if self.notice_expanded {
-                                            "Less"
-                                        } else {
-                                            "Details"
-                                        })
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.notice_expanded = !this.notice_expanded;
-                                            cx.notify();
-                                        })),
-                                )
+                                .child(div().flex_1().min_w_0().child(notice))
                                 .child(
                                     div()
                                         .id("dismiss-session-notice")
+                                        .flex_shrink_0()
+                                        .role(gpui::Role::Button)
+                                        .aria_label("Dismiss notice")
+                                        .key_context("UiControl")
+                                        .tab_index(0)
+                                        .focus_visible(|s| {
+                                            s.bg(self.theme.get().pdf_style().placeholder_bg)
+                                        })
                                         .aria_label("Dismiss notice")
                                         .px_2()
                                         .py_1()
@@ -1827,22 +1950,10 @@ impl Render for Tabs {
                                         .child("×")
                                         .on_click(cx.listener(|this, _, _, cx| {
                                             this.notice = None;
-                                            this.notice_expanded = false;
                                             cx.notify();
                                         })),
                                 ),
-                        )
-                        .when(self.notice_expanded, |v| {
-                            v.child(
-                                div()
-                                    .id("session-notice-body")
-                                    .max_h(px(120.))
-                                    .overflow_y_scroll()
-                                    .px_3()
-                                    .pb_2()
-                                    .child(notice),
-                            )
-                        }),
+                        ),
                 )
             })
             .child(

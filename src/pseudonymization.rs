@@ -17,6 +17,18 @@ pub enum Category {
     Bank,
 }
 impl Category {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Person => "Person",
+            Self::Organization => "Organization",
+            Self::Email => "Email",
+            Self::Phone => "Phone",
+            Self::Address => "Address",
+            Self::Identity => "Identity",
+            Self::Tax => "Tax identifier",
+            Self::Bank => "Bank details",
+        }
+    }
     pub const ALL: [Self; 8] = [
         Self::Person,
         Self::Organization,

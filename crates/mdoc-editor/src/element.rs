@@ -204,7 +204,7 @@ impl Element for EditorElement {
                     sf,
                     selection,
                     editor.image_resize,
-                    editor.table_col_resize,
+                    editor.table_col_resize.as_ref(),
                     &scan,
                     &editor.shape_caches,
                     editor.shape_band.get().map(|(a, b)| (px(a), px(b))),
@@ -438,7 +438,7 @@ impl Element for EditorElement {
                 sf,
                 selection,
                 editor.image_resize,
-                editor.table_col_resize,
+                editor.table_col_resize.as_ref(),
                 &editor.scan_data(),
                 &editor.shape_caches,
                 editor.shape_band.get().map(|(a, b)| (px(a), px(b))),
@@ -940,7 +940,7 @@ impl Element for EditorElement {
         let mut row_aff: Option<TableAffordance> = None;
         let mut col_aff: Option<TableAffordance> = None;
         let mut col_resize_grips: Vec<ColResizeGrip> = Vec::new();
-        let dragging_col = editor.table_col_resize;
+        let dragging_col = editor.table_col_resize.as_ref();
         let mut caret_cell: Option<(Bounds<Pixels>, Hsla)> = None;
         let caret_pos = editor.caret_table_cell_pos();
         let mut tbl_top: Option<Pixels> = None;
@@ -975,7 +975,10 @@ impl Element for EditorElement {
                 // hand-cursor hitbox here; paint draws it and mouse-down
                 // drags it (see `on_mouse_down`).
                 let avail = bounds.size.width - px(TABLE_GUTTER);
-                if width > avail {
+                if width > avail
+                    && top < window.content_mask().bounds.bottom()
+                    && bottom > window.content_mask().bounds.top()
+                {
                     let th_w = (avail / f32::from(width) * f32::from(avail)).max(px(24.));
                     let range = f32::from(width - avail);
                     let sx = editor.table_sx(tbl_header, width, avail);
@@ -989,13 +992,16 @@ impl Element for EditorElement {
                     let th_x = track + (avail - th_w) * frac;
                     let mut th_c = t.border;
                     th_c.a = (th_c.a * 1.5).min(0.8);
-                    let rect = Bounds::new(point(th_x, bottom - px(4.)), size(th_w, px(3.)));
+                    let visible_bottom = bottom.min(window.content_mask().bounds.bottom() - px(4.));
+                    let rect =
+                        Bounds::new(point(th_x, visible_bottom - px(8.)), size(th_w, px(6.)));
                     let grab = Bounds::new(
                         rect.origin - point(px(4.), px(6.)),
                         rect.size + size(px(8.), px(12.)),
                     );
                     table_thumbs.push((
                         TableThumb {
+                            track: Bounds::new(point(track, rect.top()), size(avail, px(6.))),
                             rect,
                             grab,
                             header: tbl_header,
@@ -2266,7 +2272,7 @@ impl Element for EditorElement {
         // Column-resize grips: a resize cursor over each border band; the
         // hovered/dragged border draws in the accent color.
         let mut table_col_resize_rects: Vec<(Bounds<Pixels>, usize, usize, f32)> = Vec::new();
-        let dragging = self.editor.read(cx).table_col_resize;
+        let dragging = self.editor.read(cx).table_col_resize.as_ref();
         for gr in &prepaint.col_resize_grips {
             window.set_cursor_style(CursorStyle::ResizeLeftRight, &gr.hit);
             table_col_resize_rects.push((gr.band, gr.header_row, gr.col, gr.width));
@@ -2287,6 +2293,16 @@ impl Element for EditorElement {
         // wide table's last row, with a hand cursor over its grab band —
         // draggable (see `on_mouse_down`).
         for (thumb, hb) in &prepaint.table_thumbs {
+            window.paint_quad(
+                fill(
+                    thumb.track,
+                    Hsla {
+                        a: 0.12,
+                        ..thumb.color
+                    },
+                )
+                .corner_radii(Corners::all(px(3.))),
+            );
             window.paint_quad(fill(thumb.rect, thumb.color).corner_radii(Corners::all(px(1.5))));
             window.set_cursor_style(CursorStyle::PointingHand, hb);
         }
@@ -2906,7 +2922,7 @@ fn shape_document(
     // image painting over a stale, saved-size row.
     resize: Option<ImageResize>,
     // An in-progress column-border drag: that column takes the live width.
-    col_resize: Option<TableColResize>,
+    col_resize: Option<&TableColResize>,
     // The content's cached structural scans (see [`ScanData`]).
     scan: &ScanData,
     // Cross-frame shaping caches (see [`ShapeCaches`]).
@@ -3096,7 +3112,7 @@ fn shape_document(
     // measuring shaped every cell of every table per call. Natural widths
     // deliberately do not depend on the viewport width.
     let region_cols: std::rc::Rc<Vec<Vec<Pixels>>> = {
-        let cols_key = {
+        let natural_key = {
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
             // The scan generation covers every table byte and the `cols=`
@@ -3108,7 +3124,17 @@ fn shape_document(
                 r.header_row.hash(&mut h);
                 r.col.hash(&mut h);
                 r.width.to_bits().hash(&mut h);
+                for width in r.widths.iter() {
+                    f32::from(*width).to_bits().hash(&mut h);
+                }
             }
+            h.finish()
+        };
+        let cols_key = {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            natural_key.hash(&mut h);
+            wrap_width.map(f32::from).map(f32::to_bits).hash(&mut h);
             h.finish()
         };
         let hit = caches
@@ -3120,19 +3146,49 @@ fn shape_document(
         match hit {
             Some(cols) => cols,
             None => {
+                let measured = caches
+                    .natural_region_cols
+                    .borrow()
+                    .as_ref()
+                    .filter(|(key, cols)| *key == natural_key && cols.len() == regions.len())
+                    .map(|(_, cols)| cols.clone());
+                let measured = measured.unwrap_or_else(|| {
+                    let cols: std::rc::Rc<Vec<Vec<Pixels>>> = std::rc::Rc::new(
+                        regions
+                            .iter()
+                            .map(|r| {
+                                table_column_widths(
+                                    &lines,
+                                    r,
+                                    window,
+                                    base_font,
+                                    base_font_size,
+                                    base_color,
+                                    col_resize,
+                                )
+                            })
+                            .collect(),
+                    );
+                    *caches.natural_region_cols.borrow_mut() = Some((natural_key, cols.clone()));
+                    cols
+                });
                 let cols: std::rc::Rc<Vec<Vec<Pixels>>> = std::rc::Rc::new(
                     regions
                         .iter()
-                        .map(|r| {
-                            table_column_widths(
-                                &lines,
-                                r,
-                                window,
-                                base_font,
-                                base_font_size,
-                                base_color,
-                                col_resize,
-                            )
+                        .zip(measured.iter())
+                        .map(|(r, widths)| {
+                            let mut widths = widths.clone();
+                            if r.col_widths_attr.is_none()
+                                && col_resize
+                                    .is_none_or(|resize| resize.header_row != r.lines.start)
+                                && let Some(available) = wrap_width
+                            {
+                                fit_table_widths(
+                                    &mut widths,
+                                    (available - px(TABLE_GUTTER)).max(px(1.)),
+                                );
+                            }
+                            widths
                         })
                         .collect(),
                 );

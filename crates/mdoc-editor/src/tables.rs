@@ -804,6 +804,10 @@ impl EditorState {
         let Some(&w) = natural.get(col) else {
             return;
         };
+        let Some(table) = self.table_rows.get(header_row).and_then(Option::as_ref) else {
+            return;
+        };
+        let widths = std::rc::Rc::new(table.col_widths.clone());
         // Ceil: the marker serializes widths as whole px (`w.round()`), and a
         // fraction-of-a-pixel shortfall wraps the widest cell's last word.
         self.commit_table_col_widths(
@@ -813,6 +817,7 @@ impl EditorState {
                 start_x: px(0.),
                 orig: 0.,
                 width: f32::from(w).ceil(),
+                widths,
             },
             cx,
         );
@@ -833,15 +838,9 @@ impl EditorState {
         else {
             return;
         };
-        // The header row's committed display widths already carry the live drag.
-        let Some(t) = self
-            .table_rows
-            .get(resize.header_row)
-            .and_then(Option::as_ref)
-        else {
-            return;
-        };
-        let mut widths: Vec<f32> = t.col_widths.iter().map(|w| f32::from(*w)).collect();
+        // Start from the captured display allocation even if no frame was painted
+        // between the last mouse move and release.
+        let mut widths: Vec<f32> = resize.widths.iter().map(|w| f32::from(*w)).collect();
         if let Some(w) = widths.get_mut(resize.col) {
             *w = resize.width.max(24.);
         }
@@ -979,7 +978,7 @@ pub(crate) fn table_column_widths(
     base_font: &Font,
     font_size: Pixels,
     color: Hsla,
-    col_resize: Option<TableColResize>,
+    col_resize: Option<&TableColResize>,
 ) -> Vec<Pixels> {
     // Reader parity: a row with MORE cells than the header widens the grid —
     // extra columns render (the short rows' last cells span the remainder)
@@ -1046,12 +1045,39 @@ pub(crate) fn table_column_widths(
     if let Some(r) = col_resize.filter(|r| r.header_row == region.lines.start)
         && r.col < cols
     {
+        // A wrapped table's untouched columns must retain their display widths,
+        // rather than jumping back to unwrapped content measurements on press.
+        widths.clone_from(&r.widths);
         widths[r.col] = px(r.width.max(24.));
     }
-    // No scale-to-fit: a table wider than the viewport keeps its natural
-    // columns and scrolls horizontally in place (Cditor-style) — see
-    // `EditorState::table_scroll_x`.
+    // Natural measurement is independent of the viewport. The view allocator
+    // wraps un-sized tables; explicit widths retain horizontal scrolling.
     widths
+}
+
+/// View-only allocation. Short columns keep their natural width; long columns
+/// wrap above a readable floor. Explicit source widths bypass this function.
+pub(crate) fn fit_table_widths(widths: &mut [Pixels], available: Pixels) {
+    let total: Pixels = widths.iter().copied().sum();
+    if total <= available || widths.is_empty() {
+        return;
+    }
+    let floors: Vec<_> = widths.iter().map(|w| (*w).min(px(120.))).collect();
+    let minimum: Pixels = floors.iter().copied().sum();
+    if minimum > available {
+        widths.copy_from_slice(&floors);
+        return;
+    }
+    let extra = f32::from(total - minimum);
+    let remaining = f32::from(available - minimum);
+    for (width, floor) in widths.iter_mut().zip(floors) {
+        *width = floor
+            + px(if extra > 0. {
+                remaining * f32::from(*width - floor) / extra
+            } else {
+                0.
+            });
+    }
 }
 
 /// Horizontal inset (px) of a table cell's text from its column's left edge.
@@ -1101,6 +1127,7 @@ fn shape_cell(
 /// a hand-cursor hitbox), drawn in paint, committed for drag hit-tests.
 #[derive(Clone, Copy)]
 pub(crate) struct TableThumb {
+    pub(crate) track: Bounds<Pixels>,
     pub(crate) rect: Bounds<Pixels>,
     pub(crate) grab: Bounds<Pixels>,
     /// Header row — the table's `table_scroll_x` key.
@@ -1503,13 +1530,15 @@ pub(crate) fn paint_table_pill(
 /// An in-progress table column-border drag (issue #16): identifies the column
 /// by its table's header line + index, and carries the live width the shaping
 /// applies each frame; release writes it into the marker's `cols=` list.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct TableColResize {
     pub(crate) header_row: usize,
     pub(crate) col: usize,
     pub(crate) start_x: Pixels,
     pub(crate) orig: f32,
     pub(crate) width: f32,
+    /// Display widths at the start of the drag, after viewport fitting.
+    pub(crate) widths: std::rc::Rc<Vec<Pixels>>,
 }
 
 /// A column-resize grip: a slim band over one column's right border in the
@@ -1543,4 +1572,23 @@ pub(crate) struct TableAffordance {
     pub(crate) row: usize,
     pub(crate) col: usize,
     pub(crate) accent: Hsla,
+}
+
+#[cfg(test)]
+mod viewport_allocation_tests {
+    use super::*;
+    #[test]
+    fn fit_wraps_without_shrinking_short_columns_and_overflows_below_floor() {
+        let mut widths = [px(60.), px(600.), px(400.)];
+        fit_table_widths(&mut widths, px(500.));
+        assert_eq!(widths[0], px(60.));
+        assert!((f32::from(widths.iter().copied().sum::<Pixels>()) - 500.).abs() < 0.01);
+        assert!(widths[1] >= px(120.) && widths[2] >= px(120.));
+        let mut narrow = [px(60.), px(600.), px(400.)];
+        fit_table_widths(&mut narrow, px(200.));
+        assert_eq!(narrow, [px(60.), px(120.), px(120.)]);
+        let mut short = [px(60.), px(80.)];
+        fit_table_widths(&mut short, px(500.));
+        assert_eq!(short, [px(60.), px(80.)]);
+    }
 }

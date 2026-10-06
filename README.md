@@ -48,7 +48,13 @@ PDF form appearances are rendered; this is a viewer, not a PDF form editor.
 
 ## Files and shortcuts
 
-Use **New**, **Open**, **Save**, and **Save As** in the toolbar or File menu.
+Use the **Open**, **Save**, and **Save As** icons alongside **Pseudonymize** and
+**Copy Markdown** in the compact toolbar. **Settings** and the sun/moon theme
+control are directly accessible icons with tooltips. **New** is the sidebar plus
+button. Toolbar groups wrap when space is limited; commands remain visible.
+The sidebar defaults to collapsed for any document count and remembers an explicit
+expand/collapse choice. Each compact tab opens the full filename list; selecting
+a filename activates that document. The File menu retains file commands.
 The corresponding shortcuts are Cmd+N/O/S/Shift+S on macOS and
 Ctrl+N/O/S/Shift+S on Windows/Linux. Cmd/Ctrl+W closes the active tab;
 Cmd/Ctrl+Q quits. Ctrl+Tab and Ctrl+Shift+Tab switch tabs.
@@ -81,7 +87,7 @@ model work before releasing the native runtimes.
 Saved preferences selecting a removed model require an explicit reset or
 supported selection in Settings; the app does not silently substitute a model.
 
-**Compare models** in either Settings section opens an isolated read-only window.
+Comparison commands under **Advanced** in Settings open an isolated read-only window.
 It captures the original PDF or the complete current Markdown once. Runs execute
 sequentially on that snapshot, with an optional OCR page range frozen on the
 first run. **New comparison** captures fresh input. Recognition output is
@@ -112,7 +118,7 @@ bypasses review to edit normally; hover strengthens the highlight without openin
 a popup. The popup shows original text, its source fragment, a stable placeholder
 and occurrence count. **Accept** replaces all exact occurrences as one undo step;
 **Keep** changes no text. Both offer an explicit single-occurrence option.
-**Accept all** in the review bar applies every pending suggestion as one undo
+**Accept all** in the review **More** menu applies every pending suggestion as one undo
 step, preserving candidates marked Keep and edited replacement tokens. It is
 disabled during a scan or when no suggestions remain. Edit
 the replacement field or explicitly link a variant to an existing placeholder;
@@ -121,12 +127,12 @@ numbers, underscores and hyphens to remain safe inside
 Markdown, URLs and HTML. Exact repeats exclude substrings inside longer words;
 initials and inflected variants stay separate until linked by the lawyer.
 
-Use **Selection type** to choose a category, then **Add selection**
+Use the review **More** menu to choose a selection category, then **Add selection**
 (Cmd/Ctrl+Alt+P) for missed spans or information you choose to replace manually.
 Selections crossing Markdown delimiters, line breaks or more than 1,024 bytes
 must be narrowed. Find and review highlights coexist. Edits revalidate candidates
 and cancel a pending scan; undo restores accepted text and makes it reviewable
-again. **Rescan** retains mappings and exclusions. **Done** hides highlights and
+again. **Rescan** retains mappings and exclusions. **Close review** hides highlights and
 retains edits. **Cancel** rejects pending results without undoing accepted edits;
 an in-progress bounded native call finishes before releasing the inference slot.
 Only one scan runs at a time, engines are dropped after each scan, and oversized
@@ -195,13 +201,20 @@ Shift+Cmd/Ctrl+G moves to the previous one. Match case is optional. Find searche
 rendered visible text; PDF/DOCX search stays in its preview pane.
 
 Click local file links to open them; web links open in your
-browser. **Close Preview** returns to a full-width editor without changing your
-document. **Show Preview** reopens the same attachment, including for an unsaved
+browser. **Hide original** returns to a full-width editor without changing your
+document. **Show original** reopens the same attachment, including for an unsaved
 Markdown tab. Slim draggable scrollbars appear when content overflows. PDF/DOCX
 previews initially fit their pane; after zooming, use the trackpad, Shift+wheel,
 or the horizontal scrollbar to move sideways. Conversion warnings and errors
 use compact notices with expandable details and dismissal controls.
-Use the **☀ Light / ☾ Dark** toolbar button to switch the editor and PDF pane
+Drag the pane divider to adjust the split; the ratio and visibility stay with
+the document and saved session. Small windows offer a **Markdown / Original**
+switch. The Original header identifies the retained source file; DOCX rendering
+remains approximate. PDF navigation, zoom, fit, find, and markup tools remain
+directly visible and wrap in narrow panes.
+Tables without saved widths wrap to fit readable columns. Explicit widths remain
+unchanged; wider tables have a draggable horizontal scrollbar.
+Use the toolbar's sun/moon icon to switch the editor and PDF pane
 between the two themes. The app starts in dark mode; the toggle lasts for the session.
 
 Documents are ordinary UTF-8 files. Saves use atomic replacement, and an external

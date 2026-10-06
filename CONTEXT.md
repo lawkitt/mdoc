@@ -11,6 +11,11 @@ The original document from which Markdown is extracted, such as a PDF or DOCX.
 **Converted Markdown**:
 The Markdown produced from a source document, which the lawyer can review and edit.
 
+**Source preview**:
+A visual reference to the retained source document, before Markdown edits.
+DOCX preview is an approximate rendering and may have fidelity limitations.
+_UI label_: Original
+
 **OCR**:
 Recognition of text from document images, used when usable text cannot be
 extracted directly.
@@ -60,6 +65,11 @@ _Avoid_: Bulk Open, multi-file opening
 **Review candidate**:
 A detected span of identifying information proposed for replacement, which the
 lawyer can accept or decline.
+
+**Close review**:
+Leave pseudonymization review and hide candidate highlights while retaining
+accepted Markdown edits and the live document's replacement mappings. It does
+not establish that the document is safe to share.
 
 **Mention**:
 One occurrence of identifying information in the Markdown source. Exact repeated

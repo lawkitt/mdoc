@@ -4,6 +4,7 @@ use gpui::{TestAppContext, VisualTestContext};
 
 pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
+    cx.update(ui::bind_keys);
     cx.update(markdown_search::bind_keys);
     cx.update(bind_markdown_search_keys);
     cx.update(pseudonymization_ui::bind_keys);
@@ -847,7 +848,7 @@ fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut Tes
         app.job
             .defer_for_setup(app.session.generation, "scan.pdf".into());
         app.finish_ocr_setup(Err("download interrupted".into()), window, cx);
-        assert_eq!(app.ocr_state.label(), "Retry OCR setup");
+        assert!(matches!(&app.ocr_state, OcrState::Failed(error) if error.contains("download interrupted")));
         assert!(!app.job.busy());
         assert!(app.ocr_required.is_some());
         assert!(!app.prompting);
@@ -887,7 +888,9 @@ fn ocr_runtime_failure_enables_setup_retry(cx: &mut TestAppContext) {
             Err(import::ImportError::OcrFailed("runtime missing".into())),
         );
         app.resume_import(window, cx);
-        assert_eq!(app.ocr_state.label(), "Retry OCR setup");
+        assert!(
+            matches!(&app.ocr_state, OcrState::Failed(error) if error.contains("runtime missing"))
+        );
         assert!(app.error.as_ref().unwrap().contains("runtime missing"));
         assert!(!app.job.busy());
     });

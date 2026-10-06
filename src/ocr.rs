@@ -122,7 +122,7 @@ pub fn check_config(config: &crate::settings::OcrConfig) -> Result<Option<Instal
     if !SUPPORTED || cfg!(test) {
         return Ok(None);
     }
-    let _permit = crate::model_work::Permit::acquire()?;
+    let _permit = crate::model_work::Permit::acquire_for("checking text recognition")?;
     check_reserved(config)
 }
 
@@ -246,7 +246,7 @@ pub fn install_config(
     if !SUPPORTED {
         return Err("Local OCR supports Apple Silicon macOS and Windows x64.".into());
     }
-    let _permit = crate::model_work::Permit::acquire()?;
+    let _permit = crate::model_work::Permit::acquire_for("installing text recognition")?;
     install_config_in(&root()?, config, progress)
 }
 fn install_config_in(
@@ -289,7 +289,7 @@ fn install_config_in(
 }
 
 pub fn remove_model(model: crate::settings::OcrModel) -> Result<(), String> {
-    let _permit = crate::model_work::Permit::acquire()?;
+    let _permit = crate::model_work::Permit::acquire_for("removing text recognition")?;
     remove_model_files(&root()?, model)
 }
 fn remove_model_files(root: &Path, model: crate::settings::OcrModel) -> Result<(), String> {

@@ -3,6 +3,7 @@ use gpui::{TestAppContext, VisualTestContext};
 
 fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Tabs>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
+    cx.update(ui::bind_keys);
     cx.update(markdown_search::bind_keys);
     cx.update(bind_markdown_search_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
@@ -28,6 +29,11 @@ fn click_toolbar(cx: &mut VisualTestContext, label: &'static str) {
         .expect("toolbar button must be rendered");
     cx.simulate_click(bounds.center(), gpui::Modifiers::none());
     cx.run_until_parked();
+}
+
+fn open_document_list(tabs: &Entity<Tabs>, cx: &mut VisualTestContext) {
+    let id = cx.update(|_, cx| tabs.read(cx).tabs[0].id);
+    click_toolbar(cx, Box::leak(format!("compact-tab-{id}").into_boxed_str()));
 }
 
 #[gpui::test]
@@ -405,10 +411,10 @@ fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
     let original = cx.update(|_, cx| tabs.read(cx).theme.get());
-    click_toolbar(cx, original.toggle_label());
+    click_toolbar(cx, "theme-toggle");
     cx.update(|_, cx| assert_eq!(tabs.read(cx).theme.get(), original.toggle()));
     cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
-    click_toolbar(cx, original.toggle().toggle_label());
+    click_toolbar(cx, "theme-toggle");
     cx.update(|_, cx| assert_eq!(tabs.read(cx).theme.get(), original));
 }
 
@@ -423,7 +429,7 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let view = active(&tabs, cx);
     let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
-    click_toolbar(cx, "Close Preview");
+    click_toolbar(cx, "Hide original");
     cx.update(|window, cx| {
         assert!(!view.read(cx).preview.visible);
         assert!(
@@ -434,13 +440,13 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
                 .is_focused(window)
         );
     });
-    click_toolbar(cx, "Show Preview");
+    click_toolbar(cx, "Show original");
     cx.update(|_, cx| {
         assert!(view.read(cx).preview.visible);
         assert_eq!(view.read(cx).preview.pdf.as_ref(), Some(&pdf));
     });
     cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
-    click_toolbar(cx, "Close Preview");
+    click_toolbar(cx, "Hide original");
     cx.update(|_, cx| {
         assert!(!view.read(cx).preview.visible);
         assert_eq!(view.read(cx).preview.attachment.as_ref(), Some(&path));
@@ -808,6 +814,7 @@ fn checkpoint_serializes_latest_state_and_restores_pdf_position(cx: &mut TestApp
         tabs.session_path = Some(path.clone());
         tabs.checkpoint(window, cx);
         tabs.sidebar_visible = false;
+        tabs.sidebar_choice = Some(false);
         tabs.checkpoint(window, cx);
     });
     cx.run_until_parked();
@@ -1074,6 +1081,7 @@ fn pdf_preview_refits_when_sidebar_changes(cx: &mut TestAppContext) {
     cx.simulate_resize(size(px(1400.), px(850.)));
     tabs.update(cx, |tabs, cx| {
         tabs.sidebar_visible = false;
+        tabs.sidebar_choice = Some(false);
         cx.notify();
     });
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
@@ -1355,11 +1363,240 @@ fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
 }
 
 #[gpui::test]
+fn sidebar_default_and_explicit_choice_survive_document_count_changes(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.update(|_, cx| assert!(!tabs.read(cx).sidebar_visible));
+    tabs.update_in(cx, |tabs, window, cx| {
+        for _ in 0..3 {
+            tabs.new_tab(window, cx);
+        }
+    });
+    cx.run_until_parked();
+    click_toolbar(cx, "sidebar-toggle");
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    let saved = tabs.update(cx, |tabs, cx| tabs.snapshot(cx));
+    assert_eq!(saved.sidebar_choice, Some(true));
+    assert!(saved.sidebar_visible);
+    let restored = cx.update(|window, cx| {
+        cx.new(|cx| {
+            let mut restored = Tabs::empty(window, cx);
+            restored.restore(saved, window, cx);
+            restored
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(restored.read(cx).sidebar_choice, Some(true));
+        assert!(restored.read(cx).sidebar_visible);
+    });
+    click_toolbar(cx, "sidebar-toggle");
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    let saved = tabs.update(cx, |tabs, cx| tabs.snapshot(cx));
+    assert_eq!(saved.sidebar_choice, Some(false));
+    assert!(!saved.sidebar_visible);
+}
+
+#[gpui::test]
+fn collapsed_popup_escape_restores_its_opener_and_closing_it_keeps_focus_valid(
+    cx: &mut TestAppContext,
+) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(900.), px(700.)));
+    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    open_document_list(&tabs, cx);
+    cx.simulate_keystrokes("escape");
+    cx.update(|window, cx| {
+        assert!(!tabs.read(cx).document_list_open);
+        assert!(tabs.read(cx).compact_row_focus.borrow()[&first_id].is_focused(window));
+    });
+    open_document_list(&tabs, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(first_id, window, cx));
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert!(!tabs.read(cx).document_list_open);
+        assert!(tabs.read(cx).document_list_previous.is_none());
+        assert!(
+            tabs.read(cx)
+                .active_view()
+                .unwrap()
+                .read(cx)
+                .editor
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+    });
+}
+
+#[gpui::test]
+fn collapsed_icons_switch_tabs_with_list_open_until_selection_escape_or_outside_click(
+    cx: &mut TestAppContext,
+) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(900.), px(700.)));
+    let first = cx.update(|_, cx| tabs.read(cx).active);
+    let second = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    let third = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    let compact = |id| Box::leak(format!("compact-tab-{id}").into_boxed_str()) as &'static str;
+    let row = |id| Box::leak(format!("tab-{id}").into_boxed_str()) as &'static str;
+
+    // The first click reveals names without changing the active document.
+    click_toolbar(cx, compact(first));
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).active, third);
+        assert!(tabs.read(cx).document_list_open);
+    });
+    // Subsequent rail clicks switch directly, including the original opener.
+    for id in [first, second, second, third] {
+        click_toolbar(cx, compact(id));
+        cx.update(|window, cx| {
+            assert_eq!(tabs.read(cx).active, id);
+            assert!(tabs.read(cx).document_list_open);
+            assert!(
+                tabs.read(cx)
+                    .document_list_focus
+                    .contains_focused(window, cx)
+            );
+        });
+    }
+    cx.simulate_keystrokes("escape");
+    cx.update(|window, cx| {
+        assert!(!tabs.read(cx).document_list_open);
+        assert!(tabs.read(cx).compact_row_focus.borrow()[&third].is_focused(window));
+    });
+    click_toolbar(cx, compact(second));
+    click_toolbar(cx, row(first));
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).active, first);
+        assert!(!tabs.read(cx).document_list_open);
+    });
+    click_toolbar(cx, compact(second));
+    cx.simulate_click(gpui::point(px(850.), px(500.)), Default::default());
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(!tabs.read(cx).document_list_open);
+        assert!(tabs.read(cx).document_list_previous.is_none());
+        assert_eq!(tabs.read(cx).active, first);
+    });
+}
+
+#[gpui::test]
+fn file_icons_route_save_save_as_and_open_to_the_active_document(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let first_path = dir.path().join("first.md");
+    let copy_path = dir.path().join("copy.md");
+    let other_path = dir.path().join("other.md");
+    std::fs::write(&other_path, "other document").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let view = active(&tabs, cx);
+    view.update(cx, |v, cx| {
+        v.editor.update(cx, |e, cx| e.set_text("first version", cx))
+    });
+    cx.run_until_parked();
+    click_toolbar(cx, "Save");
+    cx.simulate_new_path_selection(|_| Some(first_path.clone()));
+    cx.run_until_parked();
+    assert_eq!(
+        std::fs::read_to_string(&first_path).unwrap(),
+        "first version"
+    );
+    view.update(cx, |v, cx| {
+        v.editor
+            .update(cx, |e, cx| e.set_text("updated version", cx))
+    });
+    cx.run_until_parked();
+    click_toolbar(cx, "Save");
+    assert_eq!(
+        std::fs::read_to_string(&first_path).unwrap(),
+        "updated version"
+    );
+    click_toolbar(cx, "Save As…");
+    cx.simulate_new_path_selection(|_| Some(copy_path.clone()));
+    cx.run_until_parked();
+    assert_eq!(
+        std::fs::read_to_string(&copy_path).unwrap(),
+        "updated version"
+    );
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).session.document.path.as_ref(),
+            Some(&copy_path.canonicalize().unwrap())
+        )
+    });
+    click_toolbar(cx, "Open…");
+    cx.simulate_path_prompt_response(|_| Some(vec![other_path]));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let opened = tabs.read(cx).active_view().unwrap();
+        assert_ne!(opened.entity_id(), view.entity_id());
+        assert_eq!(opened.read(cx).editor.read(cx).text(), "other document");
+    });
+}
+
+#[gpui::test]
+fn main_toolbar_wraps_without_hiding_actions_in_both_themes(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let view = active(&tabs, cx);
+    cx.simulate_resize(size(px(640.), px(480.)));
+    for theme in [Theme::Dark, Theme::Light] {
+        for expanded in [false, true] {
+            for source_only in [false, true] {
+                tabs.update(cx, |tabs, cx| {
+                    tabs.theme.set(theme);
+                    tabs.sidebar_choice = Some(expanded);
+                    cx.notify();
+                });
+                view.update(cx, |view, cx| {
+                    view.source_only = source_only;
+                    cx.notify();
+                });
+                for _ in 0..3 {
+                    cx.update(|window, cx| {
+                        window.refresh();
+                        window.draw(cx).clear(cx);
+                    });
+                    cx.run_until_parked();
+                }
+                let toolbar = cx.debug_bounds("workspace-toolbar").unwrap();
+                for selector in ["Open…", "Settings", "theme-toggle"] {
+                    let bounds = cx.debug_bounds(selector).unwrap();
+                    assert!(
+                        toolbar.contains(&bounds.origin)
+                            && toolbar.contains(&bounds.bottom_right())
+                    );
+                }
+                for selector in ["Save", "Save As…", "Pseudonymize", "Copy Markdown"] {
+                    let bounds = cx.debug_bounds(selector);
+                    assert_eq!(bounds.is_some(), !source_only);
+                    if let Some(bounds) = bounds {
+                        assert!(
+                            toolbar.contains(&bounds.origin)
+                                && toolbar.contains(&bounds.bottom_right())
+                        );
+                    }
+                }
+                if source_only {
+                    assert!(cx.debug_bounds("Convert to Markdown").is_some());
+                }
+                assert!(cx.debug_bounds("workspace-menu").is_none());
+                assert!(cx.debug_bounds("New").is_none());
+                assert!(toolbar.bottom() < px(160.));
+            }
+        }
+    }
+}
+
+#[gpui::test]
 fn collapsed_rail_keeps_new_and_tab_controls_and_context_close(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
     tabs.update(cx, |tabs, cx| {
         tabs.sidebar_visible = false;
+        tabs.sidebar_choice = Some(false);
         cx.notify();
     });
     let first_id = cx.update(|_, cx| tabs.read(cx).active);
@@ -1375,14 +1612,19 @@ fn collapsed_rail_keeps_new_and_tab_controls_and_context_close(cx: &mut TestAppC
     cx.run_until_parked();
     draw(cx);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 2));
+    let before_popup = cx.update(|_, cx| tabs.read(cx).active);
+    open_document_list(&tabs, cx);
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).active, before_popup);
+        assert!(tabs.read(cx).document_list_open);
+    });
     let first = cx
-        .debug_bounds(Box::leak(
-            format!("compact-tab-{first_id}").into_boxed_str(),
-        ))
+        .debug_bounds(Box::leak(format!("tab-{first_id}").into_boxed_str()))
         .unwrap();
     cx.simulate_click(first.center(), Default::default());
     cx.run_until_parked();
     cx.update(|_, cx| assert_eq!(tabs.read(cx).active, first_id));
+    open_document_list(&tabs, cx);
     draw(cx);
     cx.simulate_mouse_down(first.center(), gpui::MouseButton::Right, Default::default());
     cx.simulate_mouse_up(first.center(), gpui::MouseButton::Right, Default::default());
@@ -1451,5 +1693,215 @@ fn markdown_scrollbar_drags_without_changing_preview_scroll(cx: &mut TestAppCont
         assert!(view.read(cx).scroll.offset().y < px(-100.));
         assert_eq!(view.read(cx).scroll.offset().x, px(0.));
         assert_eq!(preview.read(cx).reading_position(), before);
+    });
+}
+
+#[gpui::test]
+fn settings_keyboard_traversal_does_not_expand_and_restores_opener(cx: &mut TestAppContext) {
+    cx.update(settings_ui::bind_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(640.), px(480.)));
+    let opener = cx.update(|window, cx| {
+        let opener = tabs
+            .read(cx)
+            .active_view()
+            .unwrap()
+            .read(cx)
+            .settings_focus
+            .clone();
+        window.focus(&opener, cx);
+        opener
+    });
+    click_toolbar(cx, "Settings");
+    let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
+    for _ in 0..25 {
+        cx.simulate_keystrokes("tab");
+        cx.update(|window, cx| {
+            assert!(gpui::Focusable::focus_handle(panel.read(cx), cx).contains_focused(window, cx));
+            assert!(!panel.read(cx).advanced);
+        });
+    }
+    cx.simulate_keystrokes("shift-tab escape");
+    cx.update(|window, cx| {
+        assert!(!panel.read(cx).open);
+        assert!(opener.is_focused(window));
+    });
+}
+
+#[gpui::test]
+fn narrow_original_switch_and_divider_preserve_source_and_session(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    view.update(cx, |v, cx| {
+        v.editor
+            .update(cx, |e, cx| e.set_text("# Draft\n\nOriginal words", cx));
+        v.source_only = false;
+        cx.notify();
+    });
+    let (source, revision) = cx.update(|_, cx| {
+        (
+            view.read(cx).editor.read(cx).text().to_owned(),
+            view.read(cx).editor.read(cx).revision(),
+        )
+    });
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    let divider = cx.debug_bounds("preview-divider").unwrap();
+    cx.simulate_mouse_down(
+        divider.center(),
+        gpui::MouseButton::Left,
+        Default::default(),
+    );
+    cx.simulate_mouse_move(
+        divider.center() + gpui::point(px(80.), px(0.)),
+        Some(gpui::MouseButton::Left),
+        Default::default(),
+    );
+    cx.simulate_mouse_up(
+        divider.center(),
+        gpui::MouseButton::Left,
+        Default::default(),
+    );
+    let ratio = cx.update(|_, cx| view.read(cx).preview.split_ratio.unwrap());
+    assert!(ratio > 0.5);
+    cx.simulate_resize(size(px(640.), px(480.)));
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    for theme in [Theme::Dark, Theme::Light] {
+        view.update(cx, |v, cx| {
+            v.theme.set(theme);
+            v.editor.update(cx, |e, cx| {
+                e.set_markdown_style(style::markdown_style(theme), cx)
+            });
+            v.sync_pseudonym_theme(cx);
+            cx.notify();
+        });
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        for selector in [
+            "Open…",
+            "Copy Markdown",
+            "Settings",
+            "Save",
+            "Save As…",
+            "Pseudonymize",
+            "theme-toggle",
+            "Markdown",
+            "Original",
+        ] {
+            let bounds = cx.debug_bounds(selector).unwrap();
+            assert!(bounds.left() >= px(0.) && bounds.right() <= px(640.));
+            assert!(bounds.bottom() <= px(480.));
+        }
+    }
+    assert!(cx.debug_bounds("preview-divider").is_none());
+    click_toolbar(cx, "Original");
+    cx.update(|_, cx| assert!(view.read(cx).original_selected));
+    click_toolbar(cx, "Markdown");
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    assert!(cx.debug_bounds("preview-divider").is_some());
+    cx.update(|_, cx| {
+        let v = view.read(cx);
+        assert_eq!(v.editor.read(cx).text(), source);
+        assert_eq!(v.editor.read(cx).revision(), revision);
+        assert_eq!(v.preview.split_ratio, Some(ratio));
+        assert!(v.preview.visible);
+    });
+    let snapshot = tabs.update(cx, |tabs, cx| tabs.snapshot(cx));
+    let decoded: Session = serde_json::from_slice(&serde_json::to_vec(&snapshot).unwrap()).unwrap();
+    assert_eq!(
+        decoded
+            .tabs
+            .iter()
+            .find(|t| t.preview_split.is_some())
+            .unwrap()
+            .preview_split,
+        Some(ratio)
+    );
+}
+
+#[test]
+fn duplicate_names_show_distinguishing_parent_suffixes() {
+    let peers = vec![
+        PathBuf::from("/contracts/first/client/sample.md"),
+        PathBuf::from("/contracts/second/client/sample.md"),
+    ];
+    assert_eq!(disambiguating_parent(&peers[0], &peers), "first/client");
+    assert_eq!(disambiguating_parent(&peers[1], &peers), "second/client");
+}
+
+#[gpui::test]
+fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
+    use gpui::InputEvent;
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(640.), px(480.)));
+    let last_id = tabs.update_in(cx, |tabs, window, cx| {
+        for _ in 0..19 {
+            tabs.new_tab(window, cx);
+        }
+        tabs.sidebar_choice = Some(false);
+        cx.notify();
+        tabs.tabs.last().unwrap().id
+    });
+    open_document_list(&tabs, cx);
+    let mut reached = false;
+    for _ in 0..45 {
+        cx.simulate_keystrokes("tab");
+        for _ in 0..3 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+        }
+        reached = cx.update(|window, cx| {
+            tabs.read(cx)
+                .sidebar_row_focus
+                .borrow()
+                .get(&last_id)
+                .is_some_and(|focus| focus.is_focused(window))
+        });
+        if reached {
+            break;
+        }
+    }
+    assert!(reached, "Tab must reach every document");
+    let last = cx
+        .debug_bounds(Box::leak(format!("tab-{last_id}").into_boxed_str()))
+        .unwrap();
+    cx.update(|_, cx| {
+        let viewport = tabs.read(cx).sidebar_scroll.bounds();
+        assert!(
+            last.top() >= viewport.top() && last.bottom() <= viewport.bottom(),
+            "last={last:?}, viewport={viewport:?}"
+        );
+    });
+    cx.simulate_keystrokes("enter");
+    cx.update(|window, cx| {
+        window.dispatch_event(
+            gpui::KeyUpEvent {
+                keystroke: gpui::Keystroke::parse("enter").unwrap(),
+            }
+            .to_platform_input(),
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).active, last_id);
+        assert!(!tabs.read(cx).document_list_open);
     });
 }

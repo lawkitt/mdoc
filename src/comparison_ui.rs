@@ -166,7 +166,7 @@ impl View {
                 return;
             }
         }
-        let permit = match model_work::Permit::acquire() {
+        let permit = match model_work::Permit::acquire_for("model comparison") {
             Ok(p) => p,
             Err(e) => {
                 self.error = Some(e);

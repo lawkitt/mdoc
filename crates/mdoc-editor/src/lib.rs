@@ -1158,6 +1158,13 @@ impl EditorState {
             .flatten()
     }
 
+    /// Whether the painted annotation represents hidden source in the gutter.
+    pub fn annotation_is_hidden(&self, id: u64) -> bool {
+        self.annotation_bounds(id)
+            .zip(self.last_bounds)
+            .is_some_and(|(annotation, editor)| annotation.left() < editor.left())
+    }
+
     /// Replace the set of diagnostics (underlined spans). The host computes these
     /// (e.g. spell-check) and refreshes them as the text changes.
     pub fn set_diagnostics(&mut self, diagnostics: Vec<Diagnostic>, cx: &mut Context<Self>) {
@@ -2597,7 +2604,11 @@ impl EditorState {
                 self.autofit_table_col(header_row, col, window, cx);
                 return;
             }
+            let Some(table) = self.table_rows.get(header_row).and_then(Option::as_ref) else {
+                return;
+            };
             self.table_col_resize = Some(TableColResize {
+                widths: std::rc::Rc::new(table.col_widths.clone()),
                 header_row,
                 col,
                 start_x: event.position.x,
@@ -2783,7 +2794,7 @@ impl EditorState {
         // While dragging a table column's border, track the pointer: the new
         // width is the grab width plus the travel, floored so the column can't
         // vanish. Shaping applies it live (see `table_column_widths`).
-        if let Some(resize) = self.table_col_resize {
+        if let Some(resize) = self.table_col_resize.as_ref() {
             let dx = f32::from(event.position.x - resize.start_x);
             let width = (resize.orig + dx).max(24.);
             if let Some(r) = self.table_col_resize.as_mut() {
@@ -5719,14 +5730,16 @@ type RegionCols = Option<(u64, std::rc::Rc<Vec<Vec<Pixels>>>)>;
 /// The editor-owned caches `shape_document` reads and writes (interior-
 /// mutable — shaping runs under a read borrow of the editor):
 /// - `line_runs`: each markdown line's built display + runs (cross-frame).
-/// - `region_cols`: the measured table column widths for the WHOLE document,
+/// - `natural_region_cols`: the measured table column widths for the WHOLE document,
 ///   one keyed entry — rebuilt on content generation, font size/epoch, or a
 ///   live column drag. Viewport width does not change natural column widths.
+/// - `region_cols`: view-fitted allocations, also keyed by viewport width.
 /// - `cell_rows`: per table row, how many wrap rows its tallest cell needs.
 #[derive(Default)]
 struct ShapeCaches {
     line_runs: std::cell::RefCell<std::collections::HashMap<u64, CachedLineRuns>>,
     region_cols: std::cell::RefCell<RegionCols>,
+    natural_region_cols: std::cell::RefCell<RegionCols>,
     cell_rows: std::cell::RefCell<std::collections::HashMap<u64, usize>>,
     /// Per-line (row height, wrap rows), keyed by the line-run key ⊕ font
     /// size ⊕ wrap width — the shaping window's exact heights for skipped
@@ -5808,9 +5821,7 @@ struct ShapeMemo {
 #[cfg(test)]
 mod tests {
     #[gpui::test]
-    fn table_width_cache_reuses_viewport_changes_and_invalidates_content_and_style(
-        cx: &mut gpui::TestAppContext,
-    ) {
+    fn table_width_cache_tracks_viewport_content_and_style(cx: &mut gpui::TestAppContext) {
         use super::*;
         let (editor, cx) = cx.add_window_view(EditorState::new);
         editor.update(cx, |editor, cx| {
@@ -5836,6 +5847,15 @@ mod tests {
             })
         }
         let first = columns(&editor, cx);
+        let natural = editor.read_with(cx, |e, _| {
+            e.shape_caches
+                .natural_region_cols
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .1
+                .clone()
+        });
         assert!(std::rc::Rc::ptr_eq(&first, &columns(&editor, cx)));
         cx.simulate_resize(size(px(300.), px(400.)));
         editor.update(cx, |editor, cx| {
@@ -5843,7 +5863,18 @@ mod tests {
             editor.set_diagnostics(Vec::new(), cx);
         });
         let after_resize = columns(&editor, cx);
-        assert!(std::rc::Rc::ptr_eq(&first, &after_resize));
+        assert!(!std::rc::Rc::ptr_eq(&first, &after_resize));
+        editor.read_with(cx, |e, _| {
+            assert!(std::rc::Rc::ptr_eq(
+                &natural,
+                &e.shape_caches
+                    .natural_region_cols
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .1
+            ))
+        });
         editor.update(cx, |editor, cx| {
             editor.set_text(
                 "| a much longer heading | other |\n| --- | --- |\n| words | text |",
@@ -5859,6 +5890,201 @@ mod tests {
             editor.set_markdown_style(style, cx);
         });
         assert!(!std::rc::Rc::ptr_eq(&changed, &columns(&editor, cx)));
+    }
+
+    #[gpui::test]
+    fn table_viewport_fitting_preserves_edits_selection_and_explicit_widths(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use super::*;
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update(cx, |e, cx| {
+            e.set_text("| First lengthy heading that must wrap | Second lengthy heading that must wrap |\n| --- | --- |\n| Many words to measure in this column | More words to measure here |", cx);
+            e.set_markdown_style(markdown_syntax::search_style(), cx);
+            e.set_cursor(5, cx);
+        });
+        let source = editor.read_with(cx, |e, _| e.text().to_owned());
+        let revision = editor.read_with(cx, |e, _| e.revision());
+        cx.simulate_resize(size(px(350.), px(400.)));
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        let fitted = editor.read_with(cx, |e, _| {
+            e.shape_caches.region_cols.borrow().as_ref().unwrap().1[0].clone()
+        });
+        assert!(fitted.iter().copied().sum::<Pixels>() <= px(350.));
+        cx.simulate_resize(size(px(900.), px(600.)));
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        editor.update(cx, |e, cx| {
+            assert_eq!(e.text(), source);
+            assert_eq!(e.revision(), revision);
+            assert_eq!(e.cursor(), 5);
+            {
+                let cache = e.shape_caches.region_cols.borrow();
+                let widths = &cache.as_ref().unwrap().1[0];
+                assert!(
+                    widths.iter().copied().sum::<Pixels>() > fitted.iter().copied().sum::<Pixels>()
+                );
+            }
+            e.set_text(
+                "<!-- table:grid cols=500,500 -->\n| A | B |\n| --- | --- |\n| First | Second |",
+                cx,
+            );
+        });
+        cx.simulate_resize(size(px(350.), px(400.)));
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        editor.read_with(cx, |e, _| {
+            assert_eq!(
+                e.shape_caches.region_cols.borrow().as_ref().unwrap().1[0],
+                vec![px(500.), px(500.)]
+            );
+            assert!(
+                !e.table_thumbs.is_empty(),
+                "explicit overflow has a draggable thumb"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn resizing_wrapped_table_preserves_other_columns_and_wrap_through_release(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use super::*;
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        cx.simulate_resize(size(px(700.), px(700.)));
+        let source = format!(
+            "| Clause | Contractor wording | Customer wording |\n| --- | --- | --- |\n| 4.5.2 | {} | {} |",
+            "Payment must be made after the services have been provided. ".repeat(8),
+            "Оплата производится после оказания соответствующих услуг. ".repeat(8),
+        );
+        let draw = |cx: &mut gpui::VisualTestContext| {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+        };
+        for col in [2, 1] {
+            editor.update(cx, |e, cx| {
+                e.set_text(&source, cx);
+                e.set_markdown_style(markdown_syntax::search_style(), cx);
+                e.set_cursor(source.find("Оплата").unwrap(), cx);
+            });
+            draw(cx);
+            let hover = editor.read_with(cx, |e, _| e.table_hover_zones[0].0.center());
+            cx.simulate_mouse_move(hover, None, Default::default());
+            draw(cx);
+            let (widths, band) = editor.read_with(cx, |e, _| {
+                let widths = e.table_rows[0].as_ref().unwrap().col_widths.clone();
+                let band = e
+                    .table_col_resize_rects
+                    .iter()
+                    .find(|(_, header, c, _)| *header == 0 && *c == col)
+                    .unwrap()
+                    .0;
+                assert!(e.table_thumbs.is_empty());
+                (widths, band)
+            });
+            let from = point(band.left() + px(1.), band.top() + px(8.));
+            let to = from - point(px(12.), px(0.));
+            cx.simulate_mouse_down(from, MouseButton::Left, Default::default());
+            draw(cx);
+            editor.read_with(cx, |e, _| {
+                assert!(e.table_col_resize.is_some());
+                assert_eq!(
+                    e.table_rows[0].as_ref().unwrap().col_widths,
+                    widths,
+                    "pressing the border must not expand other columns"
+                );
+            });
+            cx.simulate_mouse_move(to, Some(MouseButton::Left), Default::default());
+            draw(cx);
+            let live = editor.read_with(cx, |e, _| {
+                let live = e.table_rows[0].as_ref().unwrap().col_widths.clone();
+                for c in 0..widths.len() {
+                    let expected = if c == col {
+                        widths[c] - px(12.)
+                    } else {
+                        widths[c]
+                    };
+                    assert!((f32::from(live[c] - expected)).abs() < 0.01);
+                }
+                assert_eq!(e.text(), source);
+                assert!(e.table_thumbs.is_empty());
+                live
+            });
+            cx.simulate_mouse_up(to, MouseButton::Left, Default::default());
+            draw(cx);
+            let saved = editor.read_with(cx, |e, _| {
+                assert!(e.table_col_resize.is_none());
+                assert!(e.text().ends_with(&source));
+                let widths = &e.table_rows[1].as_ref().unwrap().col_widths;
+                for (a, b) in widths.iter().zip(&live) {
+                    assert!(f32::from(*a - *b).abs() <= 0.5);
+                }
+                assert!(e.table_thumbs.is_empty());
+                e.text().to_owned()
+            });
+            editor.update_in(cx, |e, window, cx| e.undo(&Undo, window, cx));
+            draw(cx);
+            editor.read_with(cx, |e, _| assert_eq!(e.text(), source));
+            editor.update(cx, |e, cx| e.set_text(&saved, cx));
+            draw(cx);
+            editor.read_with(cx, |e, _| {
+                for (a, b) in e.table_rows[1]
+                    .as_ref()
+                    .unwrap()
+                    .col_widths
+                    .iter()
+                    .zip(&live)
+                {
+                    assert!(f32::from(*a - *b).abs() <= 0.5);
+                }
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn tall_overflow_table_thumb_stays_visible_and_drags_without_edits(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use super::*;
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        let source = format!(
+            "<!-- table:grid cols=500,500 -->\n| First | Second |\n| --- | --- |\n{}",
+            "| Left text | Right text |\n".repeat(30)
+        );
+        editor.update(cx, |e, cx| {
+            e.set_text(&source, cx);
+            e.set_markdown_style(markdown_syntax::search_style(), cx);
+            e.set_cursor(5, cx);
+        });
+        let revision = editor.read_with(cx, |e, _| e.revision());
+        cx.simulate_resize(size(px(350.), px(400.)));
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        let thumb = editor.read_with(cx, |e, _| e.table_thumbs[0]);
+        assert!(thumb.rect.top() > px(0.) && thumb.rect.bottom() <= px(400.));
+        let from = thumb.rect.center();
+        let to = from + point(px(60.), px(0.));
+        cx.simulate_mouse_down(from, MouseButton::Left, Default::default());
+        cx.simulate_mouse_move(to, Some(MouseButton::Left), Default::default());
+        cx.simulate_mouse_up(to, MouseButton::Left, Default::default());
+        editor.read_with(cx, |e, _| {
+            assert!(e.table_scroll_x.get(&thumb.header).copied().unwrap_or(0.) > 0.);
+            assert_eq!(e.text(), source);
+            assert_eq!(e.revision(), revision);
+            assert_eq!(e.cursor(), 5);
+            assert!(e.table_col_resize.is_none());
+        });
     }
 
     #[gpui::test]

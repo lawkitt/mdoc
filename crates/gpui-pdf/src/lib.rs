@@ -494,6 +494,7 @@ pub enum PdfEvent {
 /// [`release`](PdfView::release) before dropping it (e.g. when its tab closes) to
 /// free the atlas textures gpui won't free on plain drop.
 pub struct PdfView {
+    display_name: Option<String>,
     #[cfg(test)]
     render_requests: usize,
     path: PathBuf,
@@ -670,6 +671,7 @@ impl PdfView {
         Self {
             #[cfg(test)]
             render_requests: 0,
+            display_name: None,
             path,
             style,
             quality,
@@ -1712,11 +1714,19 @@ impl PdfView {
         label: impl Into<gpui::SharedString>,
     ) -> gpui::Stateful<gpui::Div> {
         let style = (self.style)();
+        let label = label.into();
         div()
             .id(id)
+            .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+            .key_context("PdfControl")
+            .tab_index(0)
+            .role(gpui::Role::Button)
+            .aria_label(label.clone())
+            .focus_visible(|s| s.bg(style.placeholder_bg))
             .flex()
             .items_center()
             .justify_center()
+            .flex_shrink_0()
             .min_w(px(20.0))
             .px(px(6.0))
             .py(px(1.0))
@@ -1724,7 +1734,17 @@ impl PdfView {
             .cursor_pointer()
             .text_color(style.header_fg)
             .hover(|s| s.bg(style.placeholder_bg))
-            .child(label.into())
+            .child(label)
+    }
+
+    /// Host-facing source identity, independent of a temporary PDF backing path.
+    pub fn set_display_name(&mut self, name: String, cx: &mut Context<Self>) {
+        self.display_name = Some(name);
+        cx.notify();
+    }
+
+    pub fn focus_handle(&self, _: &App) -> gpui::FocusHandle {
+        self.focus.clone()
     }
 
     /// Build a `.tooltip(..)` closure for a header control. gpui core has the tooltip
@@ -1776,11 +1796,14 @@ impl Render for PdfView {
             return loading(style).into_any_element();
         }
 
-        let name = self
-            .path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let name = self.display_name.clone().unwrap_or_else(|| {
+            self.path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
+        let pane_width = f32::from(self.scroll.bounds().size.width);
+        let narrow = pane_width > 0. && pane_width < 600.;
         let total = self.dims.len();
         let page_width = self.page_width();
         let current = current_page(&self.dims, page_width, f32::from(-self.scroll.offset().y));
@@ -1997,6 +2020,15 @@ impl Render for PdfView {
         let editing = self.page_input.is_some();
         let counter = div()
             .id("pdf-page-counter")
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "pdf-page-counter".into())
+            })
+            .flex_shrink_0()
+            .role(gpui::Role::Button)
+            .aria_label("Go to page")
+            .key_context("PdfControl")
+            .tab_index(0)
+            .focus_visible(|s| s.bg(style.placeholder_bg))
             .min_w(px(78.0))
             .flex()
             .items_center()
@@ -2030,47 +2062,41 @@ impl Render for PdfView {
                 Hsla { a: 0.0, ..style.bg }
             };
             self.control("pdf-toc", "≡")
+                .aria_label("Document outline")
                 .bg(toc_bg)
                 .on_click(cx.listener(|this, _, _window, cx| this.toggle_toc(cx)))
                 .tooltip(self.tip("Table of contents"))
         });
 
-        // Header: [☰] filename · N pages … (spacer) … page nav · zoom.
-        let header = div()
-            .flex_shrink_0()
-            .px(px(16.0))
-            .py(px(6.0))
-            .border_b_1()
-            .border_color(style.border)
+        // Keep each tool group intact; wrap groups instead of hiding tools.
+        let navigation = div()
             .flex()
-            .flex_row()
             .items_center()
-            .gap_2()
-            .text_size(px(12.0))
-            .text_color(style.header_fg)
+            .gap_1()
+            .flex_shrink_0()
             .children(toc_toggle)
-            .child(format!("📄 {name}"))
-            .child(
-                div()
-                    .text_color(style.header_muted)
-                    .child(format!("· {total} pages")),
-            )
-            .child(div().flex_1())
             .child(
                 self.control("pdf-prev", "‹")
-                    .on_click(cx.listener(|this, _, _window, cx| this.prev_page(cx)))
+                    .aria_label("Previous page")
+                    .on_click(cx.listener(|this, _, _, cx| this.prev_page(cx)))
                     .tooltip(self.tip("Previous page (PageUp)")),
             )
             .child(counter)
             .child(
                 self.control("pdf-next", "›")
-                    .on_click(cx.listener(|this, _, _window, cx| this.next_page(cx)))
+                    .aria_label("Next page")
+                    .on_click(cx.listener(|this, _, _, cx| this.next_page(cx)))
                     .tooltip(self.tip("Next page (PageDown)")),
-            )
-            .child(div().w(px(1.0)).h(px(14.0)).mx(px(4.0)).bg(style.border))
+            );
+        let zoom = div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .flex_shrink_0()
             .child(
                 self.control("pdf-zoom-out", "−")
-                    .on_click(cx.listener(|this, _, _window, cx| this.zoom_out(cx)))
+                    .aria_label("Zoom out")
+                    .on_click(cx.listener(|this, _, _, cx| this.zoom_out(cx)))
                     .tooltip(self.tip("Zoom out (⌘−)")),
             )
             .child(
@@ -2078,19 +2104,26 @@ impl Render for PdfView {
                     "pdf-zoom-reset",
                     format!("{}%", (self.zoom * 100.0).round() as i32),
                 )
-                .on_click(cx.listener(|this, _, _window, cx| this.reset_zoom(cx)))
+                .aria_label("Reset zoom")
+                .on_click(cx.listener(|this, _, _, cx| this.reset_zoom(cx)))
                 .tooltip(self.tip("Reset zoom (⌘0)")),
             )
             .child(
                 self.control("pdf-zoom-in", "+")
-                    .on_click(cx.listener(|this, _, _window, cx| this.zoom_in(cx)))
+                    .aria_label("Zoom in")
+                    .on_click(cx.listener(|this, _, _, cx| this.zoom_in(cx)))
                     .tooltip(self.tip("Zoom in (⌘+)")),
-            )
-            .child(div().w(px(1.0)).h(px(14.0)).mx(px(4.0)).bg(style.border))
+            );
+        let fit = div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .flex_shrink_0()
             .child({
                 let mut c = self
                     .control("pdf-fit-width", "↔")
-                    .on_click(cx.listener(|this, _, _window, cx| this.fit_width(cx)))
+                    .aria_label("Fit width")
+                    .on_click(cx.listener(|this, _, _, cx| this.fit_width(cx)))
                     .tooltip(self.tip("Fit width"));
                 if self.fit == Some(FitMode::Width) {
                     c = c.bg(style.placeholder_bg);
@@ -2100,13 +2133,31 @@ impl Render for PdfView {
             .child({
                 let mut c = self
                     .control("pdf-fit-page", "⤢")
-                    .on_click(cx.listener(|this, _, _window, cx| this.fit_page(cx)))
+                    .aria_label("Fit page")
+                    .on_click(cx.listener(|this, _, _, cx| this.fit_page(cx)))
                     .tooltip(self.tip("Fit page"));
                 if self.fit == Some(FitMode::Page) {
                     c = c.bg(style.placeholder_bg);
                 }
                 c
             });
+        let header = div()
+            .id("pdf-toolbar")
+            .when(cfg!(test), |v| v.debug_selector(|| "pdf-toolbar".into()))
+            .flex_shrink_0()
+            .px(px(8.))
+            .py(px(6.))
+            .border_b_1()
+            .border_color(style.border)
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_1()
+            .text_size(px(12.))
+            .text_color(style.header_fg)
+            .child(navigation)
+            .child(zoom)
+            .child(fit);
 
         // Highlight-mode toggle + color picker (markup): the pen turns drag-to-select
         // on and pops a palette down; the active color shows as a chip beneath it.
@@ -2120,6 +2171,13 @@ impl Render for PdfView {
             let active = self.active_color_hsla();
             let pen = div()
                 .id("pdf-mark")
+                .when(cfg!(test), |v| v.debug_selector(|| "pdf-mark".into()))
+                .key_context("PdfControl")
+                .tab_index(0)
+                .role(gpui::Role::Button)
+                .aria_label("Highlight text")
+                .focus_visible(|s| s.bg(style.placeholder_bg))
+                .flex_shrink_0()
                 .flex()
                 .flex_col()
                 .items_center()
@@ -2146,6 +2204,13 @@ impl Render for PdfView {
             };
             let area = div()
                 .id("pdf-area")
+                .when(cfg!(test), |v| v.debug_selector(|| "pdf-area".into()))
+                .key_context("PdfControl")
+                .tab_index(0)
+                .role(gpui::Role::Button)
+                .aria_label("Highlight area")
+                .focus_visible(|s| s.bg(style.placeholder_bg))
+                .flex_shrink_0()
                 .flex()
                 .flex_col()
                 .items_center()
@@ -2184,6 +2249,11 @@ impl Render for PdfView {
                     row = row.child(
                         div()
                             .id(SharedString::from(format!("pdf-swatch-{i}")))
+                            .key_context("PdfControl")
+                            .tab_index(0)
+                            .role(gpui::Role::Button)
+                            .aria_label(format!("Highlight color: {name}"))
+                            .focus_visible(|s| s.border_color(style.header_fg))
                             .w(px(16.0))
                             .h(px(16.0))
                             .rounded(px(8.0))
@@ -2213,7 +2283,7 @@ impl Render for PdfView {
                 div()
                     .relative()
                     .flex()
-                    .flex_row()
+                    .flex_shrink_0()
                     .gap(px(2.0))
                     .child(pen)
                     .child(area)
@@ -2231,8 +2301,9 @@ impl Render for PdfView {
             };
             header.child(
                 self.control("pdf-find", "🔍")
+                    .aria_label("Find")
                     .bg(bg)
-                    .on_click(cx.listener(|this, _, _window, cx| this.toggle_search(cx)))
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_search(cx)))
                     .tooltip(self.tip("Find (⌘F)")),
             )
         };
@@ -2266,6 +2337,15 @@ impl Render for PdfView {
             )
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _window, cx| {
                 let key = ev.keystroke.key.as_str();
+                if key == "tab" {
+                    if ev.keystroke.modifiers.shift {
+                        _window.focus_prev(cx);
+                    } else {
+                        _window.focus_next(cx);
+                    }
+                    cx.stop_propagation();
+                    return;
+                }
                 // Page-number entry mode swallows keys until Enter/Esc.
                 if this.page_input.is_some() {
                     match key {
@@ -2570,9 +2650,10 @@ impl Render for PdfView {
         // jump to its page. Built only when toggled open + the PDF has an outline.
         let toc_panel = (self.toc_open && self.has_outline()).then(|| {
             let mut col = div()
-                .id("pdf-toc")
+                .id("pdf-toc-panel")
+                .when(narrow, |v| v.absolute().left(px(0.)).top(px(0.)).occlude())
                 .flex_shrink_0()
-                .w(px(280.0))
+                .w(px(280.0).min(px(pane_width.max(320.) - 32.)))
                 .h_full()
                 .overflow_y_scroll()
                 .border_r_1()
@@ -2612,54 +2693,74 @@ impl Render for PdfView {
             col
         });
 
-        root.child(header)
-            .child(
-                // Content row: the optional TOC panel beside the scrollable page column.
-                div()
-                    .min_w_0()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_row()
-                    .children(toc_panel)
-                    .child(
-                        // A relative wrapper so the scrollbar can float over the scroll
-                        // area's right edge without taking layout space (overlay scrollbar).
-                        div()
-                            .relative()
-                            .min_w_0()
-                            .flex_1()
-                            .min_h_0()
-                            .child(
-                                div()
-                                    .id("pdf-scroll")
-                                    .min_w_0()
-                                    .size_full()
-                                    .overflow_scroll()
-                                    .track_scroll(&self.scroll)
-                                    // The page column lives directly on the scroll element
-                                    // (not nested) so each page is a tracked scroll item —
-                                    // `point_to_page` reads real bounds via `bounds_for_item`.
-                                    .flex()
-                                    .flex_col()
-                                    .items_start()
-                                    .when(
-                                        page_width <= f32::from(self.scroll.bounds().size.width),
-                                        |v| v.items_center(),
-                                    )
-                                    .gap(px(PAGE_GAP))
-                                    .py(px(PAGE_PAD_Y))
-                                    // Scrolling doesn't re-run render on its own; notify so
-                                    // the next frame re-runs `ensure_window` + page counter.
-                                    .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
-                                    .children(slots),
-                            )
-                            .child(scrollbar)
-                            .child(horizontal_scrollbar)
-                            .children(scroll_top_btn),
-                    ),
-            )
-            .into_any_element()
+        root.child(
+            div()
+                .px_2()
+                .py_1()
+                .min_w_0()
+                .flex_shrink_0()
+                .text_size(px(11.))
+                .text_color(style.header_muted)
+                .child(
+                    div()
+                        .id("pdf-source-name")
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "pdf-source-name".into())
+                        })
+                        .truncate()
+                        .child(name.clone())
+                        .tooltip(self.tip(name)),
+                ),
+        )
+        .child(header)
+        .child(
+            // Content row: the optional TOC panel beside the scrollable page column.
+            div()
+                .relative()
+                .min_w_0()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_row()
+                .children(toc_panel)
+                .child(
+                    // A relative wrapper so the scrollbar can float over the scroll
+                    // area's right edge without taking layout space (overlay scrollbar).
+                    div()
+                        .relative()
+                        .min_w_0()
+                        .flex_1()
+                        .min_h_0()
+                        .child(
+                            div()
+                                .id("pdf-scroll")
+                                .min_w_0()
+                                .size_full()
+                                .overflow_scroll()
+                                .track_scroll(&self.scroll)
+                                // The page column lives directly on the scroll element
+                                // (not nested) so each page is a tracked scroll item —
+                                // `point_to_page` reads real bounds via `bounds_for_item`.
+                                .flex()
+                                .flex_col()
+                                .items_start()
+                                .when(
+                                    page_width <= f32::from(self.scroll.bounds().size.width),
+                                    |v| v.items_center(),
+                                )
+                                .gap(px(PAGE_GAP))
+                                .py(px(PAGE_PAD_Y))
+                                // Scrolling doesn't re-run render on its own; notify so
+                                // the next frame re-runs `ensure_window` + page counter.
+                                .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
+                                .children(slots),
+                        )
+                        .child(scrollbar)
+                        .child(horizontal_scrollbar)
+                        .children(scroll_top_btn),
+                ),
+        )
+        .into_any_element()
     }
 }
 
@@ -2881,6 +2982,69 @@ mod scrolling_tests {
             cx.run_until_parked();
         }
     }
+    #[gpui::test]
+    fn narrow_toolbar_exposes_and_wraps_pdf_tools(cx: &mut gpui::TestAppContext) {
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/reference.pdf");
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            PdfView::new(path, Rc::new(PdfStyle::default), Rc::new(|| 1.), cx)
+        });
+        cx.run_until_parked();
+        for width in [320., 440., 900.] {
+            cx.simulate_resize(gpui::size(px(width), px(480.)));
+            draw(cx);
+            let toolbar = cx.debug_bounds("pdf-toolbar").unwrap();
+            let name = cx.debug_bounds("pdf-source-name").unwrap();
+            assert!(name.bottom() <= toolbar.top());
+            for selector in [
+                "pdf-prev",
+                "pdf-page-counter",
+                "pdf-next",
+                "pdf-zoom-out",
+                "pdf-zoom-reset",
+                "pdf-zoom-in",
+                "pdf-fit-width",
+                "pdf-fit-page",
+            ] {
+                let bounds = cx.debug_bounds(selector).unwrap();
+                assert!(
+                    toolbar.contains(&bounds.origin) && toolbar.contains(&bounds.bottom_right()),
+                    "{selector} at {width}"
+                );
+            }
+            #[cfg(feature = "search")]
+            assert!(cx.debug_bounds("pdf-find").is_some());
+            #[cfg(feature = "markup")]
+            for selector in ["pdf-mark", "pdf-area"] {
+                let bounds = cx.debug_bounds(selector).unwrap();
+                assert!(
+                    toolbar.contains(&bounds.origin) && toolbar.contains(&bounds.bottom_right())
+                );
+            }
+            assert!(cx.debug_bounds("pdf-tools").is_none());
+            assert!(toolbar.bottom() < px(150.));
+        }
+        cx.simulate_resize(gpui::size(px(320.), px(480.)));
+        draw(cx);
+        let fit = cx.debug_bounds("pdf-fit-page").unwrap();
+        cx.simulate_click(fit.center(), Default::default());
+        cx.run_until_parked();
+        cx.update(|_, cx| assert_eq!(view.read(cx).fit_mode(), Some(FitMode::Page)));
+        draw(cx);
+        let zoom = cx.debug_bounds("pdf-zoom-in").unwrap();
+        cx.simulate_click(zoom.center(), Default::default());
+        cx.run_until_parked();
+        cx.update(|_, cx| assert_eq!(view.read(cx).fit_mode(), None));
+        #[cfg(feature = "search")]
+        {
+            draw(cx);
+            let find = cx.debug_bounds("pdf-find").unwrap();
+            cx.simulate_click(find.center(), Default::default());
+            cx.run_until_parked();
+            cx.update(|_, cx| assert!(view.read(cx).search_open));
+        }
+    }
+
     #[gpui::test]
     fn horizontal_gestures_thumb_and_page_navigation_preserve_geometry(
         cx: &mut gpui::TestAppContext,

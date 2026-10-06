@@ -110,7 +110,7 @@ pub fn setup_config(
                 .into(),
         );
     }
-    let _permit = crate::model_work::Permit::acquire()?;
+    let _permit = crate::model_work::Permit::acquire_for("installing pseudonymization model")?;
     let root = root_for(config.model)?;
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     for artifact in manifest_for(config.model).files {
@@ -176,7 +176,7 @@ pub fn check_reserved(model: crate::settings::PiiModel) -> Result<bool, String> 
     Ok(true)
 }
 pub fn remove_model(model: crate::settings::PiiModel) -> Result<(), String> {
-    let _permit = crate::model_work::Permit::acquire()?;
+    let _permit = crate::model_work::Permit::acquire_for("removing pseudonymization model")?;
     let root = root_for(model)?;
     if root.exists() {
         fs::remove_dir_all(root).map_err(|e| e.to_string())?;
@@ -204,7 +204,7 @@ pub fn scan_config(
     cancel: &AtomicBool,
     config: &crate::settings::PiiConfig,
 ) -> Result<Vec<Detection>, String> {
-    let _permit = crate::model_work::Permit::acquire()?;
+    let _permit = crate::model_work::Permit::acquire_for("pseudonymization scanning")?;
     scan_reserved(source, cancel, config)
 }
 pub fn scan_reserved(

@@ -11,6 +11,7 @@ struct PendingPreview {
 
 #[derive(Default)]
 pub(super) struct PreviewState {
+    pub split_ratio: Option<f32>,
     pub visible: bool,
     pub queued: bool,
     /// Committed attachment; source is the current request/retry target.
@@ -102,6 +103,16 @@ impl PreviewState {
             .filter(|d| !d.comments.is_empty())
             .map(|d| cx.new(|_| comment_panel::CommentPanel::new(d.comments.clone(), theme)));
         self.docx = pending.docx;
+        if let Some(source) = self.source.as_ref() {
+            let name = source
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            pending.pdf.update(cx, |pdf, cx| {
+                pdf.set_display_name(format!("Original · {name}"), cx)
+            });
+        }
         self.subscription = Some(cx.observe(&pending.pdf, |_, _, cx| cx.notify()));
         if let Some((page, zoom, fit)) = self.restore_position.take() {
             pending.pdf.update(cx, |pdf, cx| {

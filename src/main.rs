@@ -29,8 +29,10 @@ mod settings;
 mod settings_ui;
 mod style;
 mod tabs;
+mod ui;
 #[cfg(test)]
 mod ui_tests;
+mod workspace_ui;
 
 use document::Document;
 use gpui::{
@@ -112,16 +114,6 @@ impl OcrState {
     fn busy(&self) -> bool {
         matches!(self, Self::Checking | Self::Installing)
     }
-    fn label(&self) -> &'static str {
-        match self {
-            Self::Checking => "Checking OCR…",
-            Self::Missing => "Set up OCR",
-            Self::Installing => "Setting up OCR…",
-            Self::Ready(_) => "OCR ready",
-            Self::Failed(_) => "Retry OCR setup",
-            Self::Unsupported => "OCR unavailable on this platform",
-        }
-    }
 }
 
 struct Workspace {
@@ -132,6 +124,7 @@ struct Workspace {
     loading: bool,
     load_generation: u64,
     unavailable: bool,
+    settings_focus: gpui::FocusHandle,
     source_only: bool,
     auto_convert_pending: bool,
     automatic_import: bool,
@@ -153,7 +146,9 @@ struct Workspace {
     scroll: ScrollHandle,
     error: Option<String>,
     copy_feedback: Option<gpui::Task<()>>,
-    expanded_notice: Option<&'static str>,
+    workspace_bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
+    split_dragging: bool,
+    original_selected: bool,
     ocr_notice_dismissed: bool,
     setup_error_dismissed: bool,
     prompting: bool,
@@ -183,8 +178,8 @@ impl Workspace {
     ) -> Self {
         let markdown_search = cx.new(markdown_search::SearchInput::new);
         let editor = cx.new(|cx| {
-            let mut editor =
-                EditorState::new(window, cx).with_placeholder("Start writing Markdown…");
+            let mut editor = EditorState::new(window, cx)
+                .with_placeholder("Start writing, or open a PDF, DOCX, or Markdown file.");
             editor.set_markdown_style(style::markdown_style(dependencies.theme.get()), cx);
             editor.set_block_chip_provider(|src| {
                 gpui_pdf::is_pdf(src).then(|| src.to_owned().into())
@@ -236,6 +231,7 @@ impl Workspace {
             loading: false,
             load_generation: 0,
             unavailable: false,
+            settings_focus: cx.focus_handle(),
             source_only: false,
             auto_convert_pending: false,
             automatic_import: false,
@@ -257,7 +253,9 @@ impl Workspace {
             scroll: ScrollHandle::new(),
             error: None,
             copy_feedback: None,
-            expanded_notice: None,
+            workspace_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
+            split_dragging: false,
+            original_selected: false,
             ocr_notice_dismissed: false,
             setup_error_dismissed: false,
             prompting: false,
@@ -756,7 +754,6 @@ impl Workspace {
         } else {
             style::markdown_style(theme).alert_warning
         };
-        let expanded = self.expanded_notice == Some(id);
         div()
             .id(id)
             .flex()
@@ -778,36 +775,31 @@ impl Workspace {
                             .text_color(accent)
                             .child(if failure { "!" } else { "ⓘ" }),
                     )
-                    .child(div().text_color(palette.header_fg).child(title))
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .text_color(palette.header_fg)
+                            .child(title),
+                    )
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
-                            .truncate()
                             .text_color(palette.header_muted)
-                            .child(detail.clone()),
+                            .child(detail),
                     )
                     .when(id == "preview-notice" && self.preview.retryable, |v| {
                         v.child(button("Retry", RetryPreview, theme))
                     })
                     .child(
                         div()
-                            .id((id, 0usize))
-                            .cursor_pointer()
-                            .px_2()
-                            .py_1()
-                            .rounded_md()
-                            .hover(|v| v.bg(palette.placeholder_bg))
-                            .child(if expanded { "Less" } else { "Details" })
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.expanded_notice = if expanded { None } else { Some(id) };
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        div()
                             .id((id, 1usize))
+                            .role(gpui::Role::Button)
+                            .focus_visible(|s| s.bg(palette.placeholder_bg))
+                            .key_context("UiControl")
+                            .tab_index(0)
                             .aria_label("Dismiss notice")
+                            .flex_shrink_0()
                             .cursor_pointer()
                             .px_2()
                             .py_1()
@@ -826,17 +818,6 @@ impl Workspace {
                             })),
                     ),
             )
-            .when(expanded, |v| {
-                v.child(
-                    div()
-                        .id((id, 2usize))
-                        .max_h(px(120.))
-                        .overflow_y_scroll()
-                        .px_3()
-                        .pb_2()
-                        .child(detail),
-                )
-            })
             .into_any_element()
     }
 
@@ -1002,16 +983,13 @@ impl Workspace {
     }
 }
 
-fn button(label: &'static str, action: impl gpui::Action, theme: Theme) -> impl IntoElement {
-    div()
-        .id(label)
+fn button(
+    label: &'static str,
+    action: impl gpui::Action,
+    theme: Theme,
+) -> gpui::Stateful<gpui::Div> {
+    ui::control(label, label, theme, true)
         .when(cfg!(test), |view| view.debug_selector(move || label.into()))
-        .px_3()
-        .py_1()
-        .rounded_md()
-        .cursor_pointer()
-        .hover(move |s| s.bg(theme.pdf_style().placeholder_bg))
-        .child(label)
         .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
 }
 
@@ -1110,6 +1088,10 @@ impl Render for Workspace {
             .child(
                 div()
                     .id("markdown-search-match-case")
+                    .role(gpui::Role::Button)
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .focus_visible(|s| s.bg(palette.placeholder_bg))
                     .aria_label(if self.search.match_case {
                         "Match case: on"
                     } else {
@@ -1145,6 +1127,10 @@ impl Render for Workspace {
             .child(
                 div()
                     .id("markdown-search-previous")
+                    .role(gpui::Role::Button)
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .focus_visible(|s| s.bg(palette.placeholder_bg))
                     .aria_label("Previous match")
                     .w(px(28.))
                     .h(px(28.))
@@ -1166,6 +1152,10 @@ impl Render for Workspace {
             .child(
                 div()
                     .id("markdown-search-next")
+                    .role(gpui::Role::Button)
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .focus_visible(|s| s.bg(palette.placeholder_bg))
                     .aria_label("Next match")
                     .w(px(28.))
                     .h(px(28.))
@@ -1187,6 +1177,10 @@ impl Render for Workspace {
             .child(
                 div()
                     .id("markdown-search-close")
+                    .role(gpui::Role::Button)
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .focus_visible(|s| s.bg(palette.placeholder_bg))
                     .aria_label("Close Markdown search")
                     .w(px(28.))
                     .h(px(28.))
@@ -1251,7 +1245,32 @@ impl Render for Workspace {
         });
         let ocr_disabled =
             self.job.busy() || self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy();
-        div().size_full().flex().flex_col().bg(palette.bg).text_color(palette.header_fg).text_size(px(16.))
+        let width = self.chrome_width(window);
+        let narrow_preview = self.preview.visible && width < 620.;
+        let show_original = self.preview.visible && (!narrow_preview || self.original_selected);
+        let show_markdown = !narrow_preview || !self.original_selected;
+        let minimum = (280. / width.max(620.)).min(0.5);
+        let split = self
+            .preview
+            .split_ratio
+            .unwrap_or(0.5)
+            .clamp(minimum, 1. - minimum);
+        let measured_bounds = self.workspace_bounds.clone();
+        let measured_owner = cx.entity().downgrade();
+        div().relative().size_full().flex().flex_col().bg(palette.bg).text_color(palette.header_fg).text_size(px(16.))
+            .child(gpui::canvas(move |bounds, _, cx| { if measured_bounds.replace(bounds) != bounds { let _ = measured_owner.update(cx, |_, cx| cx.notify()); } }, |_, _, _, _| {}).absolute().inset_0())
+            .on_action(cx.listener(|_, _: &ui::NextControl, window, cx| ui::cycle(window, cx, None, false)))
+            .on_action(cx.listener(|_, _: &ui::PreviousControl, window, cx| ui::cycle(window, cx, None, true)))
+            .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                if event.pressed_button != Some(gpui::MouseButton::Left) { this.split_dragging = false; }
+                if this.split_dragging {
+                    let bounds = this.workspace_bounds.get();
+                    let ratio = f32::from(event.position.x - bounds.left()) / f32::from(bounds.size.width).max(1.);
+                    this.preview.split_ratio = Some(ratio.clamp(0.25, 0.75));
+                    cx.notify();
+                }
+            }))
+            .on_mouse_up(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = false; cx.notify(); }))
             // Toolbar clicks must dispatch inside this workspace, not the outer tab shell.
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::toggle_theme))
@@ -1279,31 +1298,13 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::find_previous_markdown))
             .on_action(cx.listener(Self::close_markdown_search))
             .on_action(cx.listener(Self::retry_preview))
-            .child(div().flex().flex_wrap().items_center().gap_2().p_2().text_size(px(13.)).border_b_1().border_color(palette.border)
-                .child(button("New", New, theme)).child(button("Open…", Open, theme))
-                .when(!self.source_only, |bar| bar.child(button("Save", Save, theme)).child(button("Save As…", SaveAs, theme)))
-                .when(!self.source_only, |bar| bar.child(if self.can_copy_markdown() {
-                    button("Copy Markdown", CopyMarkdown, theme).into_any_element()
-                } else { div().px_3().py_1().opacity(0.5).child("Copy Markdown").into_any_element() })
-                    .when(self.copy_feedback.is_some(), |bar| bar.child(div().text_color(palette.header_muted).child("Copied")))
-                    .when(self.can_copy_markdown(), |bar| bar.child(button("Pseudonymize", Pseudonymize, theme))))
-                .when((self.source_only && self.ocr_required.is_none() && !self.auto_convert_pending) || self.job.busy(), |bar| bar.child(if self.job.busy() { div().child(if self.ocr_state.busy() { "Waiting for OCR setup…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting…" }).into_any_element() } else if self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy() { div().opacity(0.5).child("Convert to Markdown").into_any_element() } else { button("Convert to Markdown", Import, theme).into_any_element() }))
-                .when(self.ocr_state.busy(), |bar| bar.child(div().text_color(palette.header_muted).child(self.ocr_state.label())))
-                .child(div().flex_1())
-                .child(div().id("workspace-settings").when(cfg!(test), |v| v.debug_selector(|| "Settings".into()))
-                    .px_3().py_1().rounded_md().cursor_pointer().hover(|v| v.bg(palette.placeholder_bg)).child("Settings")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.model_panel.update(cx, |panel, cx| panel.show(window, cx));
-                    })))
-                .child(button(theme.toggle_label(), ToggleTheme, theme))
-                .when(self.dirty_cached, |bar| bar.child(div().text_size(px(11.)).text_color(palette.header_muted).child("Unsaved changes")))
-                .when(self.preview.loading, |bar| bar.child(div().child("Preparing preview…")))
-                .when(self.preview.pdf.is_some() || self.preview.source.is_some(), |bar| bar.child(button(if self.preview.visible { "Close Preview" } else { "Show Preview" }, TogglePreview, theme))))
+            .child(self.toolbar(window, cx))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
             .children(import_notice).children(ocr_notice)
             .children(self.pseudonym_bar(cx))
+            .when(narrow_preview, |v| v.child(self.pane_switch(cx)))
             .child(div().flex().flex_1().min_h_0()
-                .when(!self.source_only, |row| row.child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
+                .when(!self.source_only && show_markdown, |row| row.child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
                     .when(self.search.open, |column| column.child(search_bar))
                     .child(if self.loading || self.unavailable {
                         div().p_6().child(if self.loading { "Loading Markdown…" } else { "Markdown unavailable" })
@@ -1312,7 +1313,7 @@ impl Render for Workspace {
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6()
                             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))
                         .child(markdown_scrollbar).into_any_element() })))
-                .when(self.source_only, |row| row.child(div().flex_1().min_w_0().p_6().flex().flex_col().justify_center().gap_2()
+                .when(self.source_only && show_markdown, |row| row.child(div().flex_1().min_w_0().p_6().flex().flex_col().justify_center().gap_2()
                     .child(div().text_size(px(18.)).child(self.display_name()))
                     .child(div().text_color(palette.header_muted).child(if self.job.busy() {
                         if self.ocr_state.busy() { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }
@@ -1320,21 +1321,24 @@ impl Render for Workspace {
                     else if self.auto_convert_pending { "Waiting to convert…" }
                     else if self.error.is_some() { "Conversion could not be completed" } else { "Convert this document to begin editing" }))
                     .when_some(ocr_pages, |v, pages| v
-                        .child(div().text_size(px(13.)).text_color(palette.header_muted).child(if pages.is_empty() { "Recognition needs your attention.".into() } else { format!("Pages {pages} need OCR. The original remains available on the right.") }))
+                        .child(div().text_size(px(13.)).text_color(palette.header_muted).child(if pages.is_empty() { "Recognition needs your attention.".into() } else { format!("Pages {pages} need OCR. The original remains available in the source preview.") }))
                         .when(ocr::SUPPORTED && !matches!(self.ocr_state, OcrState::Ready(_)), |v| v.child(div().text_size(px(12.)).text_color(palette.header_muted)
                             .child(format!("Setup downloads about {} MB once. Recognition runs locally on this device.", ocr::download_megabytes()))))
                         .child(div().flex().flex_wrap().gap_2().text_size(px(13.)).when(!ocr_disabled, |v| v
                             .when(ocr::SUPPORTED, |v| v.child(button(if matches!(self.ocr_state, OcrState::Ready(_)) { "Run OCR" } else { "Set up OCR" }, RunOcr, theme)))
                             .child(button("Extract native text only", ExtractNative, theme))))
                         .when(!ocr::SUPPORTED, |v| v.child(div().text_size(px(12.)).text_color(palette.header_muted).child("Local OCR is unavailable on this platform."))))))
-                .when(self.source_only && self.preview.visible && self.preview.pdf.is_none(), |row| row.child(div().w_1_2().h_full().border_l_1().border_color(palette.border)
-                    .flex().items_center().justify_center().text_color(palette.header_muted)
-                    .child(if self.preview.loading { "Preparing preview…" } else { "Preview unavailable" })))
-                .when_some(self.preview.pdf.clone().filter(|_| self.preview.visible), |row, pdf| row.child(div().w_1_2().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
+                .when(self.preview.visible && !narrow_preview, |row| row.child(div().id("preview-divider").when(cfg!(test), |v| v.debug_selector(|| "preview-divider".into())).w(px(6.)).h_full().flex_shrink_0().cursor(gpui::CursorStyle::ResizeLeftRight).bg(palette.border)
+                    .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = true; cx.notify(); }))))
+                .when(show_original && self.preview.pdf.is_none(), |row| row.child(div().when(!narrow_preview, |v| v.w(gpui::relative(1. - split))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
+                    .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
+                    .child(if self.preview.loading { "Preparing preview…" } else { "Preview unavailable" }).when_some(self.preview.message.clone(), |v, message| v.child(self.notice("preview-notice", "Preview", message, self.preview.retryable, cx)))))
+                .when_some(self.preview.pdf.clone().filter(|_| show_original), |row, pdf| row.child(div().when(!narrow_preview, |v| v.w(gpui::relative(1. - split))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
-                    .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments)))))
-            .children(preview_notice).children(setup_notice).children(error_notice)
-            .children(self.pseudonym_popup(cx))
+                    .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments))
+                    .children(preview_notice))))
+            .children(setup_notice).children(error_notice)
+            .children(self.pseudonym_popup(window, cx))
     }
 }
 
@@ -1398,6 +1402,7 @@ fn main() {
         markdown_search::bind_keys(cx);
         pseudonymization_ui::bind_keys(cx);
         settings_ui::bind_keys(cx);
+        ui::bind_keys(cx);
         cx.bind_keys([KeyBinding::new(
             "escape",
             comparison_ui::CloseComparison,

@@ -32,6 +32,11 @@ impl Render for CommentPanel {
             .child(
                 div()
                     .id("toggle-comments")
+                    .role(gpui::Role::Button)
+                    .aria_label("Toggle comments")
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .focus_visible(|s| s.bg(palette.placeholder_bg))
                     .p_2()
                     .cursor_pointer()
                     .child(format!(

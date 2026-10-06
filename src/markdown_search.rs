@@ -78,7 +78,7 @@ impl SearchInput {
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             placeholder: "Search Markdown",
-            focus_handle: cx.focus_handle(),
+            focus_handle: cx.focus_handle().tab_index(0).tab_stop(true),
             key_context: CONTEXT,
             content: String::new(),
             selected_range: 0..0,

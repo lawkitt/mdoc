@@ -151,7 +151,8 @@ fn convert_pdf(
         ));
     }
     let (result, used_ocr) = if !skip_ocr && let Some(installed) = installed {
-        let _permit = crate::model_work::Permit::acquire().map_err(ImportError::OcrFailed)?;
+        let _permit = crate::model_work::Permit::acquire_for("text recognition")
+            .map_err(ImportError::OcrFailed)?;
         match process_pdf_with_ocr_mem(&bytes, installed.options()) {
             Ok(result) => (result, true),
             Err(error) => return Err(ImportError::OcrFailed(format!("Local OCR failed: {error}"))),

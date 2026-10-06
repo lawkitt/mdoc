@@ -4,6 +4,7 @@ use std::sync::{Condvar, Mutex};
 #[derive(Default)]
 struct State {
     busy: bool,
+    label: Option<&'static str>,
     stopping: bool,
 }
 struct Admission {
@@ -15,6 +16,7 @@ impl Admission {
         Self {
             state: Mutex::new(State {
                 busy: false,
+                label: None,
                 stopping: false,
             }),
             idle: Condvar::new(),
@@ -37,6 +39,15 @@ impl Permit {
     pub fn acquire() -> Result<Self, String> {
         Self::acquire_from(&ADMISSION)
     }
+    pub fn acquire_for(label: &'static str) -> Result<Self, String> {
+        let permit = Self::acquire()?;
+        ADMISSION
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .label = Some(label);
+        Ok(permit)
+    }
     fn acquire_from(admission: &'static Admission) -> Result<Self, String> {
         let mut state = admission.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.stopping {
@@ -46,6 +57,7 @@ impl Permit {
             return Err("Another model job is running. Retry when it finishes.".into());
         }
         state.busy = true;
+        state.label = Some("model processing");
         Ok(Self { admission })
     }
 }
@@ -57,6 +69,7 @@ impl Drop for Permit {
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         state.busy = false;
+        state.label = None;
         self.admission.idle.notify_all();
     }
 }
@@ -66,6 +79,13 @@ pub fn busy() -> bool {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .busy
+}
+pub fn description() -> Option<&'static str> {
+    ADMISSION
+        .state
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .label
 }
 /// Called synchronously before GPUI's short asynchronous quit deadline. Native
 /// runtime destructors must not run while a worker is loading or using a model.

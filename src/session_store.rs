@@ -29,6 +29,7 @@ pub struct TabRecord {
     pub preview_page: usize,
     pub preview_zoom: Option<f32>,
     pub preview_fit: PreviewFit,
+    pub preview_split: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -37,6 +38,8 @@ pub struct Session {
     pub tabs: Vec<TabRecord>,
     pub active: usize,
     pub sidebar_visible: bool,
+    #[serde(default)]
+    pub sidebar_choice: Option<bool>,
 }
 impl Default for Session {
     fn default() -> Self {
@@ -44,7 +47,8 @@ impl Default for Session {
             version: 1,
             tabs: Vec::new(),
             active: 0,
-            sidebar_visible: true,
+            sidebar_visible: false,
+            sidebar_choice: None,
         }
     }
 }
@@ -82,6 +86,9 @@ pub fn load(path: &Path) -> io::Result<Session> {
             .is_some_and(|path| !path.is_absolute())
             || !tab.scroll_y.is_finite()
             || tab.preview_zoom.is_some_and(|z| !z.is_finite())
+            || tab
+                .preview_split
+                .is_some_and(|v| !v.is_finite() || !(0.2..=0.8).contains(&v))
     }) {
         return Err(io::Error::other(
             "Invalid session paths or reading positions",
@@ -137,6 +144,7 @@ mod tests {
             preview_page: 4,
             preview_zoom: Some(1.25),
             preview_fit: PreviewFit::Manual,
+            preview_split: Some(0.6),
         });
         save(&path, &session).unwrap();
         assert_eq!(load(&path).unwrap(), session);

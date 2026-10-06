@@ -18,13 +18,6 @@ impl Theme {
     }
 
     /// The icon names the theme the button will switch to.
-    pub fn toggle_label(self) -> &'static str {
-        match self {
-            Self::Dark => "☀ Light",
-            Self::Light => "☾ Dark",
-        }
-    }
-
     pub fn pdf_style(self) -> PdfStyle {
         match self {
             Self::Dark => PdfStyle {
