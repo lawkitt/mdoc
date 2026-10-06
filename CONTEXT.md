@@ -30,6 +30,16 @@ placeholders while retaining useful relationships in the text. It does not
 guarantee that the document's subjects cannot be identified.
 _Avoid_: Guaranteed anonymization
 
+**Anonymization mode**:
+Identifier replacement using shared category
+markers, such as PERSON, instead of identity-linked numbered placeholders.
+The default anonymous-person icon action scans locally and applies replacements
+to current Markdown as one undoable batch; manual review remains available.
+Copy Markdown is a separate action. This removes identity distinctions
+from replaced mentions but does not establish that the subjects cannot be
+identified from remaining context. Accepted behavior is recorded in
+[ADR 0013](docs/adr/0013-reviewable-anonymization.md).
+
 **Model bundle**:
 A pinned set of mutually compatible model artifacts, including the required
 dictionary or tokenizer, offered as one selectable configuration. Availability

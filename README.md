@@ -7,7 +7,7 @@ Built with Rust and GPUI for macOS, Windows, and Linux.
 
 See [ROADMAP.md](ROADMAP.md) for planned features and priorities,
 [CONTEXT.md](CONTEXT.md) for domain terms, and [ADRs](docs/adr/) for durable decisions.
-Inline pseudonymization is available experimentally using pinned local GLiNER2
+Anonymization and inline pseudonymization are available experimentally using pinned local GLiNER2
 FP16 and FP32 bundles. The
 [initial GLiNER qualification](tests/fixtures/pseudonymization/README.md)
 found significant English/Russian and hidden-source misses; experimental use
@@ -48,8 +48,9 @@ PDF form appearances are rendered; this is a viewer, not a PDF form editor.
 
 ## Files and shortcuts
 
-Use the **Open**, **Save**, and **Save As** icons alongside **Pseudonymize** and
-**Copy Markdown** in the compact toolbar. **Settings** and the sun/moon theme
+Use the **Open**, **Save**, **Save As**, and anonymous-person icons alongside
+**Copy Markdown** in the compact toolbar. The anonymous-person action defaults
+to **Anonymize**; its small menu selects **Pseudonymize**. **Settings** and the sun/moon theme
 control are directly accessible icons with tooltips. **New** is the sidebar plus
 button. Toolbar groups wrap when space is limited; commands remain visible.
 The sidebar defaults to collapsed for any document count and remembers an explicit
@@ -98,6 +99,31 @@ without replacement mappings; OCR Markdown can be saved separately. Exports
 protect the document/source paths and their aliases. Comparisons stay in memory
 until close, and cancellation holds the model slot until the native call stops.
 See [model settings verification](tests/fixtures/model-settings/README.md).
+
+**Anonymize** (anonymous-person icon or Cmd/Ctrl+Shift+A) scans current Markdown
+locally and immediately replaces eligible detected PII with shared markers:
+`PERSON`, `ORG`, `EMAIL`, `PHONE`, `ADDRESS`, `IDENTITY`, `TAX`, and `BANK`.
+Different people receive the same `PERSON` marker. One Undo restores the entire
+batch. A compact status shows the actual replacement count; **Copy Markdown**
+remains a separate step. Check the remaining text before copying: the
+experimental detector can miss PII and identifying context remains.
+
+Choose **Review** for manual selections, Accept/Keep and bulk acceptance. Markers
+are fixed in this mode, with no replacement-editing or identity-linking controls.
+Existing Keep decisions are respected. Switch to **Pseudonymize** in the icon's
+small menu for the numbered-token review workflow below; selecting a mode alone
+changes no Markdown. Modes stay with each open document and new documents
+default to Anonymize. Known accepted pseudonyms, including custom tokens, can be
+converted to shared markers while their live-document mappings exist. Reopened
+files have no mappings, so existing tokens require manual selection. Shared
+markers are left unchanged on rescans.
+
+Failed, partial, stale, cancelled or mode-switched scans apply no batch. Setup
+still requires an explicit model download through Settings. Original files,
+filenames, attachments and undo history are retained; this feature prepares
+Markdown for handoff and does not erase local source data. Dates, amounts and
+other identifying context receive no new automatic generalization. See
+[anonymization design and verification](docs/design/anonymization.md).
 
 **Pseudonymize** (Cmd/Ctrl+Shift+P) explicitly scans the complete current
 Markdown source in the background, including link destinations, image paths,
@@ -261,7 +287,7 @@ problem; conversion and OCR algorithm changes belong in the dependency forks.
 | `src/preview.rs`, `src/docx_preview.rs` | Preview ownership and supervised local DOCX worker |
 | `src/docx_comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
 | `src/markdown_search.rs`, `src/search_session.rs` | Markdown find controls and revision-aware search scheduling |
-| `src/pseudonymization.rs`, `src/pseudonymization_detector.rs`, `src/pseudonymization_ui.rs` | In-memory review/mapping policy, experimental offline detection/setup, inline controls |
+| `src/pseudonymization.rs`, `src/pseudonymization_detector.rs`, `src/pseudonymization_ui.rs`, `src/pseudonymization_ui/` | Review/mapping policy, offline detection/setup, scan/edit controller, private rendering and regression tests |
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
 | `src/ui_tests.rs`, `src/tabs_tests.rs`, `src/perf_tests.rs` | Headless flows, ownership/lifetime checks, and opt-in performance measurements |
 | `crates/mdoc-editor`, `crates/mdoc-markdown` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |

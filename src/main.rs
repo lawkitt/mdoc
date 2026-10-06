@@ -67,6 +67,7 @@ actions!(
         Save,
         SaveAs,
         CopyMarkdown,
+        Anonymize,
         Pseudonymize,
         AddPseudonymCandidate,
         ReviewCandidate,
@@ -1278,6 +1279,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::open))
             .on_action(cx.listener(Self::import))
             .on_action(cx.listener(Self::copy_markdown))
+            .on_action(cx.listener(Self::anonymize))
             .on_action(cx.listener(Self::pseudonymize))
             .on_action(cx.listener(Self::add_pseudonym))
             .on_action(cx.listener(Self::accept_all_pseudonyms))
@@ -1435,6 +1437,7 @@ fn main() {
                 MenuItem::action("Save", Save),
                 MenuItem::action("Save As…", SaveAs),
                 MenuItem::action("Copy Markdown", CopyMarkdown),
+                MenuItem::action("Anonymize", Anonymize),
                 MenuItem::action("Pseudonymize", Pseudonymize),
                 MenuItem::action("Settings", Settings),
                 MenuItem::separator(),

@@ -50,6 +50,14 @@ The user authorized the pinned GLiNER2 option experimentally despite its blocker
    the default. Obsolete model preferences require an explicit reset. See
    [verification and remaining native/Windows checks](tests/fixtures/model-settings/README.md).
 
+6. **Shared-marker anonymization — implemented experimentally** — the
+   [accepted design](docs/adr/0013-reviewable-anonymization.md) makes the default
+   anonymous-person icon scan locally and apply fixed category markers as one
+   undoable batch. Pseudonymize remains selectable; manual review is secondary
+   for Anonymize, and Copy Markdown remains separate. Reuses GLiNER2, whole-source
+   safeguards and live-document mapping/Keep semantics. Detector qualification
+   gaps remain unchanged. See [verification](docs/design/anonymization.md).
+
 A measured responsiveness/resource blocker moves ahead of features. Keep the
 app and reusable crates; refactor only where concrete ownership or testing
 problems appear. Extraction/OCR algorithm improvements belong in the AnyDoc and

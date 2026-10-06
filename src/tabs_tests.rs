@@ -1569,7 +1569,7 @@ fn main_toolbar_wraps_without_hiding_actions_in_both_themes(cx: &mut TestAppCont
                             && toolbar.contains(&bounds.bottom_right())
                     );
                 }
-                for selector in ["Save", "Save As…", "Pseudonymize", "Copy Markdown"] {
+                for selector in ["Save", "Save As…", "Anonymize", "Copy Markdown"] {
                     let bounds = cx.debug_bounds(selector);
                     assert_eq!(bounds.is_some(), !source_only);
                     if let Some(bounds) = bounds {
@@ -1794,7 +1794,7 @@ fn narrow_original_switch_and_divider_preserve_source_and_session(cx: &mut TestA
             "Settings",
             "Save",
             "Save As…",
-            "Pseudonymize",
+            "Anonymize",
             "theme-toggle",
             "Markdown",
             "Original",

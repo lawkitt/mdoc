@@ -73,6 +73,7 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
     let app = open_document(&app, source_path.clone(), cx);
     app.update_in(cx, |app, window, cx| {
         app.session.warning = Some("Review extraction".into());
+        app.select_pii_mode(crate::pseudonymization::Mode::Pseudonymize, cx);
         app.pseudonymization.review.open = true;
         app.pseudonymization.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9 }]).unwrap();
         app.sync_pseudonym_theme(cx);
@@ -132,6 +133,7 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
     app.update_in(cx, |app, window, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice Alice", cx));
+        app.select_pii_mode(crate::pseudonymization::Mode::Pseudonymize, cx);
         app.pseudonymization.review.open = true;
         app.pseudonymization
             .review

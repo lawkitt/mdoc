@@ -5,6 +5,21 @@ use std::{
     ops::Range,
 };
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mode {
+    Anonymize,
+    #[default]
+    Pseudonymize,
+}
+impl Mode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Anonymize => "Anonymize",
+            Self::Pseudonymize => "Pseudonymize",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Category {
     Person,
@@ -66,6 +81,7 @@ pub struct Group {
     pub replacement: String,
     pub mentions: Vec<Range<usize>>,
     kept: bool,
+    conversion: bool,
 }
 #[derive(Clone, Debug)]
 struct Exclusion {
@@ -82,6 +98,8 @@ pub struct Review {
     exclusions: Vec<Exclusion>,
     counters: HashMap<Category, usize>,
     next_id: u64,
+    pub mode: Mode,
+    accepted_pseudonyms: Vec<(String, Category)>,
 }
 
 /// Tokens work unchanged in prose, table cells, destinations, code and HTML.
@@ -271,6 +289,48 @@ fn protected_syntax(source: &str) -> Vec<Range<usize>> {
 }
 
 impl Review {
+    pub fn set_mode(&mut self, mode: Mode, source: &str) {
+        self.mode = mode;
+        self.prepare_conversions(source);
+        self.refresh(source);
+    }
+    pub fn replacement(&self, group: &Group) -> String {
+        match self.mode {
+            Mode::Anonymize => group.category.token().into(),
+            Mode::Pseudonymize => group.replacement.clone(),
+        }
+    }
+    /// Only accepted replacements establish provenance for later conversion.
+    pub fn record_acceptance(&mut self, id: u64, replacement: &str) {
+        if self.mode == Mode::Pseudonymize
+            && let Some(group) = self.group(id)
+        {
+            let entry = (replacement.to_owned(), group.category);
+            if !self.accepted_pseudonyms.contains(&entry) {
+                self.accepted_pseudonyms.push(entry);
+            }
+            self.set_replacement(id, replacement);
+        }
+    }
+    fn prepare_conversions(&mut self, source: &str) {
+        if self.mode != Mode::Anonymize {
+            return;
+        }
+        self.refresh(source);
+        for (original, category) in self.accepted_pseudonyms.clone() {
+            if original != category.token() && !occurrences(source, &original).is_empty() {
+                if self.groups.iter().any(|group| group.original == original) {
+                    continue;
+                }
+                let id = self.add_seed(&original, category);
+                self.groups
+                    .iter_mut()
+                    .find(|g| g.id == id)
+                    .unwrap()
+                    .conversion = true;
+            }
+        }
+    }
     pub fn group(&self, id: u64) -> Option<&Group> {
         self.groups.iter().find(|group| group.id == id)
     }
@@ -281,6 +341,7 @@ impl Review {
         let mut seen = HashSet::new();
         self.groups
             .iter()
+            .filter(|group| !group.conversion)
             .filter(|group| seen.insert(group.replacement.clone()))
             .map(|group| (group.original.clone(), group.replacement.clone()))
             .collect()
@@ -328,7 +389,8 @@ impl Review {
         let protected = protected_syntax(source);
         let mut occupied: Vec<Range<usize>> = Vec::new();
         for group in &mut self.groups {
-            group.mentions = if group.kept {
+            group.mentions = if group.kept || (group.conversion && self.mode == Mode::Pseudonymize)
+            {
                 Vec::new()
             } else {
                 occurrences(source, &group.original)
@@ -389,6 +451,14 @@ impl Review {
         let mut accepted: Vec<Range<usize>> = Vec::new();
         let mut selected = Vec::new();
         for detection in detections {
+            // Emitted shared markers are already prepared, regardless of a
+            // detector's category guess. Do not turn them back into identities.
+            if Category::ALL
+                .iter()
+                .any(|c| c.token() == &source[detection.range.clone()])
+            {
+                continue;
+            }
             if !safe_span(&source[detection.range.clone()])
                 || protected
                     .iter()
@@ -411,6 +481,7 @@ impl Review {
         for detection in selected {
             self.add_seed(&source[detection.range], detection.category);
         }
+        self.prepare_conversions(source);
         self.refresh(source);
         Ok(())
     }
@@ -437,6 +508,7 @@ impl Review {
             replacement,
             mentions: Vec::new(),
             kept: false,
+            conversion: false,
         });
         id
     }
@@ -474,6 +546,9 @@ impl Review {
             return Err("Use a token of up to 128 ASCII letters, numbers, underscores or hyphens, starting with a letter and ending with a letter or number.".into());
         }
         let group = self.group(id).ok_or("Candidate is no longer available.")?;
+        if self.mode == Mode::Anonymize && replacement != group.category.token() {
+            return Err("Anonymization uses a fixed category marker.".into());
+        }
         let ranges = match single {
             Some(range) if group.mentions.contains(&range) => vec![range],
             Some(_) => return Err("Candidate offsets changed. Review it again.".into()),
@@ -488,6 +563,7 @@ impl Review {
         }
         Ok(ranges
             .into_iter()
+            .filter(|range| source.get(range.clone()) != Some(replacement))
             .map(|range| (range, replacement.into()))
             .collect())
     }
@@ -509,9 +585,10 @@ impl Review {
         let mut edits = Vec::new();
         for group in &self.groups {
             if !group.mentions.is_empty() {
+                let default = self.replacement(group);
                 let replacement = draft
                     .filter(|(id, _)| *id == group.id)
-                    .map_or(group.replacement.as_str(), |(_, replacement)| replacement);
+                    .map_or(default.as_str(), |(_, replacement)| replacement);
                 edits.extend(self.plan(source, group.id, None, replacement)?);
             }
         }
@@ -548,6 +625,79 @@ mod tests {
             category,
             score: 0.9,
         }
+    }
+    #[test]
+    fn anonymization_uses_shared_markers_keeps_exclusions_and_protects_markdown() {
+        let source =
+            "**Анна** Bob Анна [mail](anna@example.invalid) <span title='Bob'>Bob</span> 2026 100";
+        let mut review = Review::default();
+        review.set_mode(Mode::Anonymize, source);
+        let anna = review.add_manual(source, 2..10, Category::Person).unwrap();
+        let bob = source.find("Bob").unwrap();
+        review
+            .add_manual(source, bob..bob + 3, Category::Person)
+            .unwrap();
+        let email = source.find("anna@example.invalid").unwrap();
+        review
+            .add_manual(source, email..email + 20, Category::Email)
+            .unwrap();
+        review.keep(anna, Some(2..10));
+        let edits = review.plan_all(source, None).unwrap();
+        let mut result = source.to_owned();
+        for (range, replacement) in edits.iter().rev() {
+            result.replace_range(range.clone(), replacement);
+        }
+        assert_eq!(
+            result,
+            "**Анна** PERSON PERSON [mail](EMAIL) <span title='PERSON'>PERSON</span> 2026 100"
+        );
+        review.refresh_after_edits(&result, &edits);
+        assert_eq!(review.remaining(), 0);
+        assert!(review.plan(&result, anna, None, "PERSON_1").is_err());
+        // Detected shared markers cannot acquire new numbered identities.
+        review.set_mode(Mode::Pseudonymize, &result);
+        let marker = result.find("PERSON").unwrap();
+        review
+            .ingest(
+                &result,
+                vec![detection(marker..marker + 6, Category::Person)],
+            )
+            .unwrap();
+        assert_eq!(review.remaining(), 0);
+    }
+    #[test]
+    fn anonymization_converts_only_known_accepted_pseudonyms_and_restores_proposals() {
+        let mut review = Review::default();
+        let original = "Alice Bob CLIENT_OTHER";
+        let alice = review.add_manual(original, 0..5, Category::Person).unwrap();
+        let bob = review.add_manual(original, 6..9, Category::Person).unwrap();
+        review.set_replacement(bob, "CLIENT_OTHER"); // proposed, never accepted
+        let edits = review.plan(original, alice, None, "CLIENT_A").unwrap();
+        let changed = "CLIENT_A Bob CLIENT_OTHER";
+        review.record_acceptance(alice, "CLIENT_A");
+        review.refresh_after_edits(changed, &edits);
+        review.set_mode(Mode::Anonymize, changed);
+        assert_eq!(
+            review.plan_all(changed, None).unwrap(),
+            vec![(0..8, "PERSON".into()), (9..12, "PERSON".into())]
+        );
+        assert_eq!(review.mappings().len(), 2);
+        review.set_mode(Mode::Pseudonymize, changed);
+        assert_eq!(
+            review.plan_all(changed, None).unwrap(),
+            vec![(9..12, "CLIENT_OTHER".into())]
+        );
+        let mut reopened = Review::default();
+        reopened.set_mode(Mode::Anonymize, changed);
+        assert!(reopened.plan_all(changed, None).unwrap().is_empty());
+        // Explicit manual selection works for tokens whose mappings are gone.
+        reopened
+            .add_manual(changed, 0..8, Category::Person)
+            .unwrap();
+        assert_eq!(
+            reopened.plan_all(changed, None).unwrap(),
+            vec![(0..8, "PERSON".into())]
+        );
     }
     #[test]
     fn unicode_exact_repeats_and_hidden_source_keep_source_syntax() {

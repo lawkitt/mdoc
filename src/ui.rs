@@ -71,6 +71,8 @@ pub enum Icon {
     Sun,
     Moon,
     Settings,
+    Anonymous,
+    ChevronDown,
 }
 
 impl Icon {
@@ -82,6 +84,8 @@ impl Icon {
             Self::Sun => include_bytes!("../resources/ui/sun.svg"),
             Self::Moon => include_bytes!("../resources/ui/moon.svg"),
             Self::Settings => include_bytes!("../resources/ui/settings.svg"),
+            Self::Anonymous => include_bytes!("../resources/ui/anonymous.svg"),
+            Self::ChevronDown => include_bytes!("../resources/ui/chevron-down.svg"),
         }
     }
 }

@@ -47,15 +47,7 @@ impl Workspace {
                             }
                         })),
                 )
-                .child(
-                    ui::control("Pseudonymize", "Pseudonymize", theme, copy)
-                        .when(cfg!(test), |v| v.debug_selector(|| "Pseudonymize".into()))
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            if copy {
-                                this.pseudonymize(&Pseudonymize, window, cx);
-                            }
-                        })),
-                )
+                .child(self.pii_toolbar_control(cx))
                 .child(
                     ui::control(
                         "Copy Markdown",
