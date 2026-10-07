@@ -504,7 +504,7 @@ impl EditorState {
         };
         self.selected_range = caret..caret;
         self.remap_diagnostics(&range, new_sep.len());
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -546,7 +546,7 @@ impl EditorState {
         self.remap_diagnostics(&range, new_row.len());
         self.selected_range = (pos + 3)..(pos + 3); // first cell, after "\n| "
         self.table_menu = None;
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -586,7 +586,7 @@ impl EditorState {
         let caret = self.caret_pos_for_cell(target, cell, in_cell);
         self.selected_range = caret..caret;
         self.table_menu = None;
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -624,7 +624,7 @@ impl EditorState {
         self.selection_reversed = false;
         self.goal_x = None;
         self.table_menu = None;
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -663,7 +663,7 @@ impl EditorState {
         let caret = self.caret_pos_for_cell(after + 1, cell, in_cell);
         self.selected_range = caret..caret;
         self.table_menu = None;
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -743,7 +743,7 @@ impl EditorState {
         let caret = caret.min(self.content.len());
         self.selected_range = caret..caret;
         self.table_menu = None;
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -905,7 +905,7 @@ impl EditorState {
             let caret = self.caret_pos_for_cell(row, new_cell, in_cell);
             self.selected_range = caret..caret;
             self.table_menu = None;
-            cx.emit(EditorEvent::Changed);
+            self.emit_changed(cx);
             cx.notify();
         }
     }
@@ -920,7 +920,7 @@ impl EditorState {
             let caret = self.caret_pos_for_cell(row, cell, in_cell);
             self.selected_range = caret..caret;
             self.table_menu = None;
-            cx.emit(EditorEvent::Changed);
+            self.emit_changed(cx);
             cx.notify();
         }
     }

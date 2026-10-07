@@ -1,12 +1,17 @@
 //! Live-document PII state, scan lifecycle and replacement actions.
+mod applied;
+mod chooser;
+mod discovery;
 mod render;
+mod scan;
+use scan::{ScanIntent, ScanJob};
 #[cfg(test)]
 mod tests;
 
 use crate::{
     AcceptAllPseudonyms, AcceptPseudonymCandidate, AddPseudonymCandidate, Anonymize,
     ClosePseudonymPopup, KeepPseudonymCandidate, NextCandidate, PreviousCandidate, Pseudonymize,
-    ReviewCandidate, Workspace, markdown_search,
+    RestoreAllPii, RestorePii, ReviewCandidate, Workspace, markdown_search,
     pseudonymization::{self, Category, Mode, Review},
     pseudonymization_detector as detector, settings, settings_ui, style,
 };
@@ -23,34 +28,26 @@ use std::{
     },
 };
 
+pub(super) enum PopupTarget {
+    Candidate { group: u64, mention: Range<usize> },
+    Applied(u64),
+    Choose { ids: Arc<[u64]>, selected: usize },
+}
 pub(super) struct Popup {
-    pub group: u64,
-    pub mention: Range<usize>,
+    target: PopupTarget,
     pub all: bool,
     context_open: bool,
     links_open: bool,
 }
-/// A review scan proposes edits; the explicit Anonymize action applies them.
-#[derive(Clone, Copy)]
-enum ScanIntent {
-    Review(Mode),
-    Anonymize,
-}
-impl ScanIntent {
-    fn mode(self) -> Mode {
-        match self {
-            Self::Review(mode) => mode,
-            Self::Anonymize => Mode::Anonymize,
+impl Popup {
+    fn candidate(&self) -> Option<(u64, Range<usize>)> {
+        match &self.target {
+            PopupTarget::Candidate { group, mention } => Some((*group, mention.clone())),
+            _ => None,
         }
     }
 }
-struct ScanJob {
-    cancel: Arc<AtomicBool>,
-    revision: u64,
-    generation: u64,
-    config: settings::PiiConfig,
-    intent: ScanIntent,
-}
+const APPLIED_ID: u64 = 1 << 63;
 pub(super) struct ReviewUi {
     pub review: Review,
     pub manual_review: bool,
@@ -64,6 +61,8 @@ pub(super) struct ReviewUi {
     pub focus: FocusHandle,
     pub category: Category,
     job: Option<ScanJob>,
+    discovery_job: Option<discovery::DiscoveryJob>,
+    discovery_pending: bool,
     details: bool,
     pub scans: Vec<settings::PiiConfig>,
     pub error: Option<String>,
@@ -74,6 +73,7 @@ pub(super) struct ReviewUi {
     menu_bounds: Rc<Cell<gpui::Bounds<Pixels>>>,
     popup_previous: Option<FocusHandle>,
     popup_scroll: gpui::ScrollHandle,
+    chooser_scroll: gpui::UniformListScrollHandle,
     popup_controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
 }
 impl Drop for ReviewUi {
@@ -102,6 +102,8 @@ impl ReviewUi {
             focus: cx.focus_handle(),
             category: Category::Person,
             job: None,
+            discovery_job: None,
+            discovery_pending: false,
             details: false,
             scans: Vec::new(),
             error: None,
@@ -112,10 +114,15 @@ impl ReviewUi {
             menu_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
             popup_previous: None,
             popup_scroll: gpui::ScrollHandle::new(),
+            chooser_scroll: gpui::UniformListScrollHandle::new(),
             popup_controls: Default::default(),
         }
     }
     fn cancel(&mut self) {
+        if let Some(job) = &self.discovery_job {
+            job.cancel.store(true, Ordering::Relaxed);
+        }
+        self.discovery_pending = false;
         if let Some(job) = self.job.take() {
             job.cancel.store(true, Ordering::Relaxed);
         }
@@ -133,6 +140,9 @@ pub(super) fn bind_keys(cx: &mut App) {
         "ctrl"
     };
     cx.bind_keys([
+        KeyBinding::new("down", crate::NextPiiChoice, Some("PiiChooser")),
+        KeyBinding::new("up", crate::PreviousPiiChoice, Some("PiiChooser")),
+        KeyBinding::new("enter", crate::OpenPiiChoice, Some("PiiChooser")),
         KeyBinding::new(&format!("{modifier}-shift-p"), Pseudonymize, None),
         KeyBinding::new(&format!("{modifier}-shift-a"), Anonymize, None),
         KeyBinding::new("alt-enter", ReviewCandidate, Some("Editor")),
@@ -190,9 +200,7 @@ impl Workspace {
             self.pseudonymization.error =
                 Some("Document changed; scan cancelled. Rescan when ready.".into());
         }
-        self.pseudonymization
-            .review
-            .refresh(self.editor.read(cx).text());
+        self.schedule_pii_discovery(cx);
         self.sync_annotations(cx);
     }
     pub(super) fn sync_pseudonym_theme(&mut self, cx: &mut Context<Self>) {
@@ -200,30 +208,47 @@ impl Workspace {
     }
     fn sync_annotations(&mut self, cx: &mut Context<Self>) {
         let accent = style::markdown_style(self.theme.get()).alert_warning;
-        let annotations = if self.pseudonymization.review.open
-            && (self.pseudonymization.review.mode == Mode::Pseudonymize
-                || self.pseudonymization.manual_review)
-        {
-            self.pseudonymization
-                .review
-                .groups
-                .iter()
-                .flat_map(|group| {
-                    group
-                        .mentions
-                        .iter()
-                        .enumerate()
-                        .map(move |(index, range)| mdoc_editor::SourceAnnotation {
-                            id: (group.id << 32) | index as u64,
-                            range: range.clone(),
-                            color: Hsla { a: 0.14, ..accent },
-                            active_color: Hsla { a: 0.3, ..accent },
-                        })
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let review = &self.pseudonymization.review;
+        let show_candidates = review.open
+            && (review.mode == Mode::Pseudonymize || self.pseudonymization.manual_review);
+        let mut candidates = review
+            .candidates
+            .iter()
+            .filter(|_| show_candidates)
+            .peekable();
+        let mut applied = review.tracking.applied.iter().peekable();
+        let mut annotations = Vec::with_capacity(
+            if show_candidates {
+                review.candidates.len()
+            } else {
+                0
+            } + review.tracking.applied.len(),
+        );
+        // Both inputs already follow source order; ordinary edits need no new sort.
+        while candidates.peek().is_some() || applied.peek().is_some() {
+            let candidate_first = match (candidates.peek(), applied.peek()) {
+                (Some(candidate), Some(applied)) => candidate.range.start <= applied.range.start,
+                (Some(_), None) => true,
+                _ => false,
+            };
+            annotations.push(if candidate_first {
+                let occurrence = candidates.next().unwrap();
+                mdoc_editor::SourceAnnotation {
+                    id: occurrence.id,
+                    range: occurrence.range.clone(),
+                    color: Hsla { a: 0.14, ..accent },
+                    active_color: Hsla { a: 0.3, ..accent },
+                }
+            } else {
+                let occurrence = applied.next().unwrap();
+                mdoc_editor::SourceAnnotation {
+                    id: APPLIED_ID | occurrence.id,
+                    range: occurrence.range.clone(),
+                    color: Hsla { a: 0.1, ..accent },
+                    active_color: Hsla { a: 0.24, ..accent },
+                }
+            });
+        }
         self.editor.update(cx, |editor, cx| {
             editor.set_annotations(editor.revision(), annotations, cx)
         });
@@ -264,104 +289,6 @@ impl Workspace {
     pub(super) fn scan_pseudonyms(&mut self, cx: &mut Context<Self>) {
         self.start_pii_scan(ScanIntent::Review(self.pseudonymization.review.mode), cx);
     }
-    fn start_pii_scan(&mut self, intent: ScanIntent, cx: &mut Context<Self>) {
-        if !self.can_copy_markdown() {
-            return;
-        }
-        self.pseudonymization.cancel();
-        self.pseudonymization.error = None;
-        self.pseudonymization.completion = None;
-        self.pseudonymization.popup = None;
-        self.pseudonymization.review.open = true;
-        let editor = self.editor.read(cx);
-        let revision = editor.revision();
-        let source = editor.text().to_owned();
-        let config = match self.preferences.borrow().snapshot() {
-            Ok(p) => p.pseudonymization,
-            Err(e) => {
-                self.pseudonymization.error = Some(e);
-                cx.notify();
-                return;
-            }
-        };
-        let generation = self.pseudonymization.generation;
-        let identity = self.session.generation;
-        let cancel = Arc::new(AtomicBool::new(false));
-        self.pseudonymization.job = Some(ScanJob {
-            cancel: cancel.clone(),
-            revision,
-            generation,
-            config: config.clone(),
-            intent,
-        });
-        let task = cx
-            .background_executor()
-            .spawn(async move { detector::scan_config(&source, &cancel, &config) });
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let _ = this.update(cx, |this, cx| {
-                this.complete_pseudonym_scan(generation, identity, revision, result, cx)
-            });
-        })
-        .detach();
-        cx.notify();
-    }
-    fn complete_pseudonym_scan(
-        &mut self,
-        generation: u64,
-        identity: u64,
-        revision: u64,
-        result: Result<Vec<pseudonymization::Detection>, String>,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(job) = &self.pseudonymization.job else {
-            return;
-        };
-        if job.generation != generation
-            || job.revision != revision
-            || self.session.generation != identity
-            || self.editor.read(cx).revision() != revision
-            || job.intent.mode() != self.pseudonymization.review.mode
-            || job.cancel.load(Ordering::Relaxed)
-        {
-            return;
-        }
-        let config = job.config.clone();
-        let intent = job.intent;
-        self.pseudonymization.job = None;
-        let source = self.editor.read(cx).text().to_owned();
-        match result.and_then(|detections| self.pseudonymization.review.ingest(&source, detections))
-        {
-            Ok(()) => {
-                self.pseudonymization.error = None;
-                self.model_panel.update(cx, |panel, cx| {
-                    let model = settings::Model::Pii(config.model);
-                    let index = settings::Model::ALL
-                        .iter()
-                        .position(|m| *m == model)
-                        .unwrap();
-                    panel.statuses[index] = settings_ui::Status::Ready;
-                    cx.notify();
-                });
-                self.pseudonymization.scans.push(config);
-                if matches!(intent, ScanIntent::Anonymize) {
-                    match self.commit_all_pii(None, cx) {
-                        Ok(count) => {
-                            self.pseudonymization.completion =
-                                Some((count, self.editor.read(cx).revision()))
-                        }
-                        Err(error) => self.pseudonymization.error = Some(error),
-                    }
-                }
-                self.sync_annotations(cx);
-            }
-            Err(error) => {
-                self.pseudonymization.error = Some(error);
-            }
-        }
-        cx.notify();
-    }
-
     fn setup_pseudonyms(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !detector::SUPPORTED {
             return;
@@ -394,22 +321,49 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if id & APPLIED_ID != 0 {
+            let occurrence = id & !APPLIED_ID;
+            if self
+                .pseudonymization
+                .review
+                .tracking
+                .get(occurrence)
+                .is_none()
+            {
+                return;
+            }
+            self.pseudonymization.popup = Some(Popup {
+                target: PopupTarget::Applied(occurrence),
+                all: false,
+                context_open: false,
+                links_open: false,
+            });
+            self.pseudonymization.popup_previous = window.focused(cx);
+            self.pseudonymization
+                .popup_scroll
+                .set_offset(gpui::point(px(0.), px(0.)));
+            window.focus(&self.pseudonymization.focus, cx);
+            cx.notify();
+            return;
+        }
         if !self.pseudonymization.review.open {
             return;
         }
-        let group_id = id >> 32;
-        let index = (id & u32::MAX as u64) as usize;
-        let Some(group) = self.pseudonymization.review.group(group_id) else {
+        let Some(candidate) = self.pseudonymization.review.candidate(id) else {
             return;
         };
-        let Some(mention) = group.mentions.get(index).cloned() else {
+        let group_id = candidate.group;
+        let mention = candidate.range.clone();
+        let Some(group) = self.pseudonymization.review.group(group_id) else {
             return;
         };
         let replacement = self.pseudonymization.review.replacement(group);
         self.pseudonymization.error = None;
         self.pseudonymization.popup = Some(Popup {
-            group: group_id,
-            mention,
+            target: PopupTarget::Candidate {
+                group: group_id,
+                mention,
+            },
             all: true,
             context_open: self.editor.read(cx).annotation_is_hidden(id),
             links_open: false,
@@ -435,23 +389,22 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.pseudonymization.review.open {
-            return;
-        }
         let cursor = self.editor.read(cx).cursor();
         let mut mentions: Vec<_> = self
             .pseudonymization
             .review
-            .groups
+            .candidates
             .iter()
-            .flat_map(|group| {
-                group
-                    .mentions
-                    .iter()
-                    .enumerate()
-                    .map(move |(index, range)| ((group.id << 32) | index as u64, range.clone()))
-            })
+            .map(|o| (o.id, o.range.clone()))
             .collect();
+        mentions.extend(
+            self.pseudonymization
+                .review
+                .tracking
+                .applied
+                .iter()
+                .map(|o| (APPLIED_ID | o.id, o.range.clone())),
+        );
         mentions.sort_by_key(|(_, range)| range.start);
         let choice = if at_caret {
             mentions
@@ -511,16 +464,9 @@ impl Workspace {
             Ok(id) => {
                 self.pseudonymization.error = None;
                 self.sync_annotations(cx);
-                let index = self
-                    .pseudonymization
-                    .review
-                    .group(id)
-                    .unwrap()
-                    .mentions
-                    .iter()
-                    .position(|mention| *mention == range)
-                    .unwrap_or(0);
-                self.activate_annotation((id << 32) | index as u64, window, cx);
+                if let Some(annotation) = self.pseudonymization.review.annotation_id(id, &range) {
+                    self.activate_annotation(annotation, window, cx);
+                }
             }
             Err(error) => self.pseudonymization.error = Some(error),
         }
@@ -535,8 +481,14 @@ impl Workspace {
         let Some(popup) = &self.pseudonymization.popup else {
             return;
         };
-        let id = popup.group;
-        let single = (!popup.all).then(|| popup.mention.clone());
+        if matches!(popup.target, PopupTarget::Applied(_)) {
+            self.restore_pii(&RestorePii, window, cx);
+            return;
+        }
+        let Some((id, mention)) = popup.candidate() else {
+            return;
+        };
+        let single = (!popup.all).then_some(mention);
         let replacement = if self.pseudonymization.review.mode == Mode::Anonymize {
             let Some(group) = self.pseudonymization.review.group(id) else {
                 return;
@@ -577,11 +529,13 @@ impl Workspace {
             return;
         }
         let draft = if self.pseudonymization.review.mode == Mode::Pseudonymize {
-            self.pseudonymization.popup.as_ref().map(|popup| {
-                (
-                    popup.group,
-                    self.pseudonymization.input.read(cx).value().to_owned(),
-                )
+            self.pseudonymization.popup.as_ref().and_then(|popup| {
+                popup.candidate().map(|(group, _)| {
+                    (
+                        group,
+                        self.pseudonymization.input.read(cx).value().to_owned(),
+                    )
+                })
             })
         } else {
             None
@@ -643,12 +597,52 @@ impl Workspace {
         accepted: &[(u64, String)],
         cx: &mut Context<Self>,
     ) -> bool {
+        let originals: std::collections::HashMap<_, _> = accepted
+            .iter()
+            .filter_map(|(id, value)| {
+                self.pseudonymization.review.group(*id).map(|g| {
+                    (
+                        g.original.to_string(),
+                        (
+                            g.original.clone(),
+                            Arc::<str>::from(value.as_str()),
+                            g.category,
+                        ),
+                    )
+                })
+            })
+            .collect();
+        let plans: Vec<_> = edits
+            .iter()
+            .filter_map(|(range, _)| {
+                originals
+                    .get(&self.editor.read(cx).text()[range.clone()])
+                    .map(|(before, after, category)| {
+                        (range.clone(), before.clone(), after.clone(), *category)
+                    })
+            })
+            .collect();
+        if plans.len() != edits.len() {
+            return false;
+        }
+        let added = self.pseudonymization.review.tracking.prepare(&plans);
         if !self
             .editor
             .update(cx, |editor, cx| editor.replace_ranges(revision, edits, cx))
         {
             return false;
         }
+        let transaction = self
+            .editor
+            .read(cx)
+            .last_transaction()
+            .cloned()
+            .expect("committed edit transaction");
+        self.pii_transaction(&transaction, cx);
+        self.pseudonymization
+            .review
+            .tracking
+            .commit(self.editor.read(cx).history_id(), added);
         for (id, replacement) in accepted {
             self.pseudonymization
                 .review
@@ -656,7 +650,7 @@ impl Workspace {
         }
         self.pseudonymization
             .review
-            .refresh_after_edits(self.editor.read(cx).text(), edits);
+            .refresh(self.editor.read(cx).text());
         self.pseudonymization.error = None;
         true
     }
@@ -669,11 +663,91 @@ impl Workspace {
         let Some(popup) = self.pseudonymization.popup.take() else {
             return;
         };
+        let Some((group, mention)) = popup.candidate() else {
+            return;
+        };
         self.pseudonymization
             .review
-            .keep(popup.group, (!popup.all).then_some(popup.mention));
+            .keep(group, (!popup.all).then_some(mention));
         self.sync_annotations(cx);
         window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+        cx.notify();
+    }
+    pub(super) fn pii_transaction(
+        &mut self,
+        transaction: &mdoc_editor::EditorTransaction,
+        cx: &mut Context<Self>,
+    ) {
+        self.pseudonymization
+            .review
+            .on_transaction(transaction, self.editor.read(cx).text());
+    }
+    pub(super) fn restore_pii(
+        &mut self,
+        _: &RestorePii,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.restore_pii_scope(false, window, cx);
+    }
+    pub(super) fn restore_all_pii(
+        &mut self,
+        _: &RestoreAllPii,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.restore_pii_scope(true, window, cx);
+    }
+    fn restore_pii_scope(&mut self, all: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(Popup {
+            target: PopupTarget::Applied(id),
+            ..
+        }) = self.pseudonymization.popup.as_ref()
+        else {
+            return;
+        };
+        let editor = self.editor.read(cx);
+        let revision = editor.revision();
+        if !self
+            .pseudonymization
+            .review
+            .tracking
+            .matches_history(editor.history_id())
+        {
+            self.pseudonymization.error =
+                Some("Document changed. Review the replacement again.".into());
+            cx.notify();
+            return;
+        }
+        let plan = self
+            .pseudonymization
+            .review
+            .tracking
+            .restore_plan(editor.text(), *id, all);
+        match plan {
+            Ok(edits) => {
+                let restored = self
+                    .pseudonymization
+                    .review
+                    .tracking
+                    .prepare_restore(&edits);
+                if self
+                    .editor
+                    .update(cx, |e, cx| e.replace_ranges(revision, &edits, cx))
+                {
+                    let transaction = self.editor.read(cx).last_transaction().cloned().unwrap();
+                    self.pii_transaction(&transaction, cx);
+                    self.pseudonymization
+                        .review
+                        .tracking
+                        .commit_restore(self.editor.read(cx).history_id(), restored);
+                    self.pseudonymization_edited(cx);
+                    self.pseudonymization.error = None;
+                    window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+                }
+            }
+            Err(error) => self.pseudonymization.error = Some(error),
+        }
         cx.notify();
     }
     pub(super) fn close_pseudonym_popup(

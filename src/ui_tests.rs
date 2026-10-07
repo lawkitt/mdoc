@@ -75,10 +75,12 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
         app.session.warning = Some("Review extraction".into());
         app.select_pii_mode(crate::pseudonymization::Mode::Pseudonymize, cx);
         app.pseudonymization.review.open = true;
-        app.pseudonymization.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9 }]).unwrap();
+        app.pseudonymization.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9, recognizer: crate::pseudonymization::Recognizer::Model }]).unwrap();
         app.sync_pseudonym_theme(cx);
         let id = app.pseudonymization.review.groups[0].id;
-        app.activate_annotation(id << 32, window, cx);
+        let range=app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
+        let annotation=app.pseudonymization.review.annotation_id(id,&range).unwrap();
+        app.activate_annotation(annotation,window,cx);
         app.accept_pseudonym(&AcceptPseudonymCandidate, window, cx);
         assert_eq!(app.editor.read(cx).text(), "# Contract\n\nPERSON_1 represents **PERSON_1**. [contact](https://x.invalid/Alice_Morgan)\n");
         assert_eq!(app.pseudonymization.review.remaining(), 0);
@@ -95,7 +97,13 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
         assert_eq!(app.pseudonymization.review.remaining(), 2);
         assert!(!app.dirty(cx));
         let id = app.pseudonymization.review.groups[0].id;
-        app.activate_annotation(id << 32, window, cx);
+        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
+        let annotation = app
+            .pseudonymization
+            .review
+            .annotation_id(id, &range)
+            .unwrap();
+        app.activate_annotation(annotation, window, cx);
         app.pseudonymization.popup.as_mut().unwrap().all = false;
         app.accept_pseudonym(&AcceptPseudonymCandidate, window, cx);
         assert_eq!(app.pseudonymization.review.remaining(), 1);
@@ -143,11 +151,18 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
                     range: 0..5,
                     category: Category::Person,
                     score: 0.9,
+                    recognizer: crate::pseudonymization::Recognizer::Model,
                 }],
             )
             .unwrap();
         let id = app.pseudonymization.review.groups[0].id;
-        app.activate_annotation(id << 32, window, cx);
+        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
+        let annotation = app
+            .pseudonymization
+            .review
+            .annotation_id(id, &range)
+            .unwrap();
+        app.activate_annotation(annotation, window, cx);
         app.keep_pseudonym(&KeepPseudonymCandidate, window, cx);
         assert_eq!(app.editor.read(cx).text(), "Alice Alice");
         assert_eq!(app.pseudonymization.review.remaining(), 0);
@@ -155,7 +170,13 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
             .review
             .add_manual("Alice Alice", 0..5, Category::Person)
             .unwrap();
-        app.activate_annotation(id << 32, window, cx);
+        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
+        let annotation = app
+            .pseudonymization
+            .review
+            .annotation_id(id, &range)
+            .unwrap();
+        app.activate_annotation(annotation, window, cx);
         app.editor.update(cx, |editor, cx| {
             let revision = editor.revision();
             editor.replace_ranges(revision, &[(0..5, "Betty".into())], cx);

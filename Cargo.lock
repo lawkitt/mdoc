@@ -4421,6 +4421,7 @@ dependencies = [
 name = "mdoc"
 version = "0.1.0"
 dependencies = [
+ "aho-corasick",
  "anydoc",
  "dirs 6.0.0",
  "docxide-pdf",
@@ -4434,6 +4435,7 @@ dependencies = [
  "mdoc-editor",
  "ort",
  "pdf-inspector 1.25.2",
+ "regex",
  "roxmltree 0.21.1",
  "serde",
  "serde_json",

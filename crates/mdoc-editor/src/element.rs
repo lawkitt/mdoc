@@ -96,7 +96,8 @@ pub(crate) struct PrepaintState {
     search_bounds: Vec<Option<Bounds<Pixels>>>,
     annotations: Vec<PaintQuad>,
     annotation_bounds: Vec<(u64, Bounds<Pixels>)>,
-    hidden_annotation_hits: Vec<(u64, Hitbox)>,
+    hidden_annotation_hits: Vec<(Vec<u64>, Hitbox)>,
+    annotation_counts: Vec<(SharedString, Bounds<Pixels>, Hsla)>,
 }
 
 impl IntoElement for EditorElement {
@@ -352,6 +353,7 @@ impl Element for EditorElement {
         let image_resize = editor.image_resize;
         let style = window.text_style();
         let font = style.font();
+
         let font_size = style.font_size.to_pixels(window.rem_size());
         let base_lh = font_size * LINE_HEIGHT_RATIO;
         let wrap_width = Some(bounds.size.width);
@@ -1151,20 +1153,31 @@ impl Element for EditorElement {
         let disp_col =
             |row: usize, sc: usize| display_col_in(maps.get(row).and_then(Option::as_ref), sc);
 
-        // Search can ask for thousands of positions on the same logical line.
-        // Keep this frame-local: content, wrapping, font and caret reveal are
-        // already reflected in `wrapped`, so no extra invalidation rules arise.
+        // Cache glyph-position indexes for visible long lines. Cache identity
+        // includes shaping, wrap boundaries and width, including caret reveal.
+        editor.position_cache.borrow_mut().retain(|&row, _| {
+            is_visible_row(row)
+                && wrapped.get(row).is_some_and(|line| line.len() > 256)
+                && bidi(row).is_none()
+        });
         let search_positions: Vec<_> = if editor
             .search
             .as_ref()
             .is_some_and(|(matches, _)| matches.len() > 8)
+            || editor.annotations.len() > 8
         {
             wrapped
                 .iter()
                 .enumerate()
                 .map(|(row, line)| {
-                    (line.len() > 256 && bidi(row).is_none())
-                        .then(|| crate::search_geometry::SearchLinePositions::new(line))
+                    (line.len() > 256 && bidi(row).is_none() && is_visible_row(row))
+                        .then(|| {
+                            crate::search_geometry::CachedLinePositions::get(
+                                &mut editor.position_cache.borrow_mut(),
+                                row,
+                                line,
+                            )
+                        })
                         .flatten()
                 })
                 .collect()
@@ -1239,6 +1252,8 @@ impl Element for EditorElement {
                             // Both ends inside the SAME (possibly wrapped)
                             // cell: per-wrap-row bands within that cell —
                             // one full-height band would smear the whole row.
+                            (Some((xa, ya, ca, _)), Some((xb, yb, cb, _)))
+                                if ca == cb && xa == xb && ya == yb => {}
                             (Some((xa, ya, ca, _)), Some((xb, yb, cb, _))) if ca == cb => {
                                 let pad = px(TABLE_CELL_PAD);
                                 let cell_x =
@@ -1279,6 +1294,9 @@ impl Element for EditorElement {
                                 band(xa.min(xb), xa.max(xb), bounds.top() + top, lh);
                             }
                         }
+                        continue;
+                    }
+                    if disp_col(row, a) == disp_col(row, b) {
                         continue;
                     }
                     let inset = row_x(row);
@@ -1395,56 +1413,142 @@ impl Element for EditorElement {
         let mut annotations = Vec::new();
         let mut annotation_bounds = Vec::new();
         let mut hidden_annotation_hits = Vec::new();
-        let mut hidden_annotations: std::collections::BTreeMap<usize, Vec<(u64, Hsla)>> =
+        let mut annotation_counts = Vec::new();
+        let mask = window.content_mask().bounds;
+        let low = mask.top() - px(64.);
+        let high = mask.bottom() + px(64.);
+        let mut visible_sources = Vec::new();
+        for (row, line) in wrapped.iter().enumerate() {
+            let top = bounds.top() + line_tops[row];
+            let lh = line_heights[row];
+            if lh <= px(0.5) || top + lh * (wrap_rows[row] as f32) < low || top > high {
+                continue;
+            }
+            // Restrict even a single multi-megabyte logical line to visual rows.
+            let first = ((f32::from(low - top) / f32::from(lh)).floor().max(0.)) as usize;
+            let end = ((f32::from(high - top) / f32::from(lh)).ceil().max(1.)) as usize;
+            let boundary = |index: usize| {
+                line.wrap_boundaries
+                    .get(index)
+                    .map(|b| line.unwrapped_layout.runs[b.run_ix].glyphs[b.glyph_ix].index)
+            };
+            let display_start = if first == 0 {
+                0
+            } else {
+                boundary(first - 1).unwrap_or(line.len())
+            };
+            let display_end = boundary(end.saturating_sub(1)).unwrap_or(line.len());
+            let map = maps.get(row).and_then(Option::as_ref);
+            let source_start = map
+                .and_then(|m| m.get(display_start))
+                .copied()
+                .unwrap_or(display_start);
+            let source_end = if display_end >= line.len() {
+                line_end(row) - line_starts[row]
+            } else {
+                map.and_then(|m| m.get(display_end))
+                    .copied()
+                    .unwrap_or(display_end)
+            };
+            visible_sources.push(line_starts[row] + source_start..line_starts[row] + source_end);
+        }
+        let mut hidden_annotations: std::collections::BTreeMap<(usize, usize), Vec<(u64, Hsla)>> =
             std::collections::BTreeMap::new();
         if editor.annotation_revision == editor.content_gen {
-            for annotation in &editor.annotations {
-                if annotation.range.start >= annotation.range.end
-                    || annotation.range.end > editor.content.len()
-                    || !editor.content.is_char_boundary(annotation.range.start)
-                    || !editor.content.is_char_boundary(annotation.range.end)
+            for visible in visible_sources {
+                let start = editor
+                    .annotation_ends
+                    .partition_point(|&end| end <= visible.start);
+                for annotation in editor.annotations[start..]
+                    .iter()
+                    .take_while(|a| a.range.start < visible.end)
                 {
-                    continue;
-                }
-                let color = if editor.annotation_hover == Some(annotation.id) {
-                    annotation.active_color
-                } else {
-                    annotation.color
-                };
-                let mut quads =
-                    range_quads(annotation.range.start, annotation.range.end, color, window);
-                quads.retain(|quad| quad.bounds.size.width > px(1.));
-                // Hidden source (URL/image/HTML etc.) receives a gutter marker
-                // beside its containing row, with the same click/keyboard identity.
-                if quads.is_empty() {
-                    let (row, _) = row_col(annotation.range.start);
-                    hidden_annotations
-                        .entry(row)
-                        .or_default()
-                        .push((annotation.id, color));
-                }
-                for quad in quads {
-                    annotation_bounds.push((annotation.id, quad.bounds));
-                    annotations.push(quad);
+                    if annotation.range.start >= annotation.range.end
+                        || annotation.range.end > editor.content.len()
+                        || !editor.content.is_char_boundary(annotation.range.start)
+                        || !editor.content.is_char_boundary(annotation.range.end)
+                    {
+                        continue;
+                    }
+                    let color = if editor.annotation_hover == Some(annotation.id) {
+                        annotation.active_color
+                    } else {
+                        annotation.color
+                    };
+                    let mut quads = range_quads(
+                        annotation.range.start.max(visible.start),
+                        annotation.range.end.min(visible.end),
+                        color,
+                        window,
+                    );
+                    quads.retain(|q| q.bounds.size.width > px(1.));
+                    if quads.is_empty() {
+                        let (row, col) = row_col(annotation.range.start);
+                        let lh = if tables.get(row).and_then(Option::as_ref).is_some() {
+                            base_lh
+                        } else {
+                            line_heights[row]
+                        };
+                        let y = if let Some(table) = tables.get(row).and_then(Option::as_ref) {
+                            table_caret_pos(
+                                table,
+                                col,
+                                editor.table_left(table, row, &bounds),
+                                &font,
+                                font_size,
+                                window,
+                            )
+                            .map(|(_, y, ..)| y)
+                        } else {
+                            search_position(row, &wrapped[row], disp_col(row, col), lh).map(|p| p.y)
+                        }
+                        .unwrap_or(px(0.));
+                        let visual_row = (f32::from(y) / f32::from(lh)).round().max(0.) as usize;
+                        hidden_annotations
+                            .entry((row, visual_row))
+                            .or_default()
+                            .push((annotation.id, color));
+                    }
+                    for quad in quads
+                        .into_iter()
+                        .filter(|q| q.bounds.bottom() > low && q.bounds.top() < high)
+                    {
+                        annotation_bounds.push((annotation.id, quad.bounds));
+                        annotations.push(quad);
+                    }
                 }
             }
         }
-
-        for (row, markers) in hidden_annotations {
+        for ((row, visual_row), mut markers) in hidden_annotations {
+            markers.sort_by_key(|(id, _)| *id);
+            markers.dedup_by_key(|(id, _)| *id);
             if let Some(top) = line_tops.get(row) {
-                let height = base_lh / markers.len() as f32;
-                for (index, (id, color)) in markers.into_iter().enumerate() {
-                    let marker = Bounds::new(
-                        point(
-                            bounds.left() - px(12.),
-                            bounds.top() + *top + height * index as f32,
-                        ),
-                        size(px(8.), (height - px(1.)).max(px(1.))),
-                    );
-                    annotation_bounds.push((id, marker));
-                    hidden_annotation_hits
-                        .push((id, window.insert_hitbox(marker, HitboxBehavior::Normal)));
-                    annotations.push(fill(marker, color));
+                let count = markers.len();
+                let color = markers[0].1;
+                let width = if count > 1 { px(24.) } else { px(8.) };
+                let lh = if tables.get(row).and_then(Option::as_ref).is_some() {
+                    base_lh
+                } else {
+                    line_heights[row]
+                };
+                let marker = Bounds::new(
+                    point(
+                        (bounds.left() - width - px(4.)).max(px(2.)),
+                        bounds.top() + *top + lh * visual_row as f32,
+                    ),
+                    size(width, lh),
+                );
+                let ids: Vec<_> = markers.iter().map(|(id, _)| *id).collect();
+                annotation_bounds.extend(ids.iter().map(|&id| (id, marker)));
+                hidden_annotation_hits
+                    .push((ids, window.insert_hitbox(marker, HitboxBehavior::Normal)));
+                annotations.push(fill(marker, color));
+                if count > 1 {
+                    annotation_counts.push((
+                        count.to_string().into(),
+                        marker,
+                        window.text_style().color,
+                    ));
                 }
             }
         }
@@ -1586,6 +1690,7 @@ impl Element for EditorElement {
             annotations,
             annotation_bounds,
             hidden_annotation_hits,
+            annotation_counts,
         }
     }
 
@@ -1618,6 +1723,25 @@ impl Element for EditorElement {
 
         let style = window.text_style();
         let font = style.font();
+        for (text, marker, color) in prepaint.annotation_counts.drain(..) {
+            let run = TextRun {
+                len: text.len(),
+                font: font.clone(),
+                color,
+                background_color: None,
+                underline: None,
+                strikethrough: None,
+            };
+            let line = window.text_system().shape_line(text, px(10.), &[run], None);
+            let _ = line.paint(
+                marker.origin + point((marker.size.width - line.width()) / 2., px(1.)),
+                marker.size.height,
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+            );
+        }
         let text_color = style.color;
         let font_size = style.font_size.to_pixels(window.rem_size());
         let base_lh = font_size * LINE_HEIGHT_RATIO;
@@ -2521,7 +2645,7 @@ impl Element for EditorElement {
             }
             let editor = self.editor.clone();
             window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
-                if phase == gpui::DispatchPhase::Bubble
+                if phase == gpui::DispatchPhase::Capture
                     && event.button == MouseButton::Left
                     && !event.modifiers.shift
                     && event.click_count == 1
@@ -2529,7 +2653,11 @@ impl Element for EditorElement {
                 {
                     editor.update(cx, |editor, cx| {
                         if editor.annotation_revision == editor.content_gen {
-                            cx.emit(EditorEvent::ActivateAnnotation(*id));
+                            if id.len() == 1 {
+                                cx.emit(EditorEvent::ActivateAnnotation(id[0]));
+                            } else {
+                                cx.emit(EditorEvent::ActivateAnnotations(id.clone()));
+                            }
                         }
                     });
                     cx.stop_propagation();
@@ -2542,11 +2670,12 @@ impl Element for EditorElement {
                     let id = hits
                         .iter()
                         .find(|(_, hit)| hit.is_hovered(window))
-                        .map(|(id, _)| *id);
+                        .and_then(|(ids, _)| ids.first().copied());
                     let current = editor.read(cx).annotation_hover;
                     // Visible annotations use the div's existing move listener.
                     if (id.is_some()
-                        || current.is_some_and(|id| hits.iter().any(|(key, _)| *key == id)))
+                        || current
+                            .is_some_and(|id| hits.iter().any(|(keys, _)| keys.contains(&id))))
                         && id != current
                     {
                         editor.update(cx, |editor, cx| {
@@ -2571,6 +2700,11 @@ impl Element for EditorElement {
         }
         self.editor.update(cx, |editor, _| {
             editor.search_bounds = std::mem::take(&mut prepaint.search_bounds);
+            editor.hidden_annotation_ids = prepaint
+                .hidden_annotation_hits
+                .iter()
+                .flat_map(|(ids, _)| ids.iter().copied())
+                .collect();
             editor.annotation_bounds = std::mem::take(&mut prepaint.annotation_bounds);
             editor.wrapped = wrapped;
             editor.line_tops = line_tops;

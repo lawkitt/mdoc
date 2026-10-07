@@ -10,6 +10,8 @@ use std::{
     time::Instant,
 };
 
+pub mod rules;
+
 pub const CATEGORIES: &[&str] = &[
     "PERSON", "ORG", "EMAIL", "PHONE", "ADDRESS", "IDENTITY", "TAX", "BANK",
 ];

@@ -28,6 +28,7 @@ const UNDO_LIMIT: usize = 256;
 pub(super) struct Snapshot {
     content: String,
     caret: usize,
+    history_id: u64,
 }
 
 /// The last edit's kind, for coalescing a run of edits into one undo step.
@@ -64,11 +65,16 @@ impl EditorState {
             }
             end = range.end;
         }
-        self.undo_stack.push(self.snapshot());
-        if self.undo_stack.len() > UNDO_LIMIT {
-            self.undo_stack.remove(0);
-        }
-        self.redo_stack.clear();
+        self.begin_history(
+            false,
+            edits
+                .iter()
+                .map(|(range, value)| super::SourceEdit {
+                    range: range.clone(),
+                    new_len: value.len(),
+                })
+                .collect(),
+        );
         let remap = |offset: usize| {
             let mut delta = 0isize;
             for (range, replacement) in edits {
@@ -83,17 +89,18 @@ impl EditorState {
             (offset as isize + delta) as usize
         };
         let selection = remap(self.selected_range.start)..remap(self.selected_range.end);
+        let content = super::transactions::build_batch(&self.content, edits);
         for (range, replacement) in edits.iter().rev() {
-            self.content.replace_range(range.clone(), replacement);
             self.remap_diagnostics(range, replacement.len());
         }
+        self.content = content;
         self.selected_range = selection;
         self.marked_range = None;
         self.content_gen += 1;
         self.last_edit = EditKind::Other;
         self.last_edit_keystroke = false;
         self.annotation_bounds.clear();
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
         true
     }
@@ -124,7 +131,7 @@ impl EditorState {
         self.marked_range = None;
         // Don't coalesce a following keystroke into this structural replacement.
         self.last_edit = EditKind::Other;
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -143,6 +150,11 @@ impl EditorState {
         // A programmatic load isn't undoable to the prior document.
         self.undo_stack.clear();
         self.redo_stack.clear();
+        self.next_history_id += 1;
+        self.history_id = self.next_history_id;
+        self.pending_changes.clear();
+        self.last_transaction = None;
+        self.position_cache.borrow_mut().clear();
         self.last_edit = EditKind::Other;
         cx.notify();
     }
@@ -228,7 +240,7 @@ impl EditorState {
                     .flatten()
             }) {
                 self.replace_range(range, "", cx);
-                cx.emit(EditorEvent::Changed);
+                self.emit_changed(cx);
                 return;
             }
             // The same Word-style treatment for math: backspacing onto an
@@ -242,7 +254,7 @@ impl EditorState {
                 .filter(|(r, _)| off == r.end)
             {
                 self.replace_range(range, "", cx);
-                cx.emit(EditorEvent::Changed);
+                self.emit_changed(cx);
                 return;
             }
             if col == 0
@@ -252,7 +264,7 @@ impl EditorState {
             {
                 let range = self.math_delete_range(range);
                 self.replace_range(range, "", cx);
-                cx.emit(EditorEvent::Changed);
+                self.emit_changed(cx);
                 return;
             }
             // Backspacing from the line below a property panel joins as
@@ -268,7 +280,7 @@ impl EditorState {
             // emptied construct's marker pair with it.
             if let Some(range) = self.fmt_delete_range(off, true) {
                 self.replace_range(range, "", cx);
-                cx.emit(EditorEvent::Changed);
+                self.emit_changed(cx);
                 return;
             }
             let prev = self.previous_boundary(off);
@@ -297,7 +309,7 @@ impl EditorState {
                     .flatten()
             }) {
                 self.replace_range(range, "", cx);
-                cx.emit(EditorEvent::Changed);
+                self.emit_changed(cx);
                 return;
             }
             // Math mirrors of the backspace guards: deleting onto an inline
@@ -308,7 +320,7 @@ impl EditorState {
                 .filter(|(r, _)| off == r.start)
             {
                 self.replace_range(range, "", cx);
-                cx.emit(EditorEvent::Changed);
+                self.emit_changed(cx);
                 return;
             }
             if off == self.line_end(row)
@@ -317,7 +329,7 @@ impl EditorState {
             {
                 let range = self.math_delete_range(range);
                 self.replace_range(range, "", cx);
-                cx.emit(EditorEvent::Changed);
+                self.emit_changed(cx);
                 return;
             }
             // Mirroring backspace's property join: pulling the panel's first
@@ -328,7 +340,7 @@ impl EditorState {
             // Cditor-style around hidden formatting markers (see backspace).
             if let Some(range) = self.fmt_delete_range(off, false) {
                 self.replace_range(range, "", cx);
-                cx.emit(EditorEvent::Changed);
+                self.emit_changed(cx);
                 return;
             }
             let next = self.next_boundary(off);
@@ -475,7 +487,7 @@ impl EditorState {
         self.selection_reversed = false;
         self.goal_x = None;
         self.remap_diagnostics(&range, new.len());
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -545,7 +557,7 @@ impl EditorState {
         self.selection_reversed = false;
         self.goal_x = None;
         self.remap_diagnostics(&range, new_text.len());
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -581,7 +593,7 @@ impl EditorState {
         self.selection_reversed = false;
         self.goal_x = None;
         self.remap_diagnostics(&range, 0);
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -722,9 +734,14 @@ impl EditorState {
 
     pub(super) fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(prev) = self.undo_stack.pop() {
+            self.pending_changes.push(super::HistoryChange {
+                before: self.history_id,
+                after: prev.history_id,
+                edits: Vec::new(),
+            });
             self.redo_stack.push(self.snapshot());
             self.restore(prev);
-            cx.emit(EditorEvent::Changed);
+            self.emit_changed(cx);
             self.last_edit = EditKind::Other;
             cx.notify();
         }
@@ -732,9 +749,14 @@ impl EditorState {
 
     pub(super) fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
         if let Some(next) = self.redo_stack.pop() {
+            self.pending_changes.push(super::HistoryChange {
+                before: self.history_id,
+                after: next.history_id,
+                edits: Vec::new(),
+            });
             self.undo_stack.push(self.snapshot());
             self.restore(next);
-            cx.emit(EditorEvent::Changed);
+            self.emit_changed(cx);
             self.last_edit = EditKind::Other;
             cx.notify();
         }
@@ -746,12 +768,14 @@ impl EditorState {
             // The forward caret (selection end), so undoing a backspace lands the
             // caret after the restored text rather than inside it.
             caret: self.selected_range.end,
+            history_id: self.history_id,
         }
     }
 
     pub(super) fn restore(&mut self, s: Snapshot) {
         self.content_gen += 1;
         self.content = s.content;
+        self.history_id = s.history_id;
         let caret = s.caret.min(self.content.len());
         self.selected_range = caret..caret;
         self.selection_reversed = false;
@@ -778,19 +802,65 @@ impl EditorState {
             (EditKind::Delete, EditKind::Delete) => true,
             _ => false,
         };
-        if !coalesce {
-            self.undo_stack.push(self.snapshot());
-            if self.undo_stack.len() > UNDO_LIMIT {
-                self.undo_stack.remove(0);
-            }
-            self.redo_stack.clear();
-        }
+        self.begin_history(
+            coalesce,
+            vec![super::SourceEdit {
+                range: range.clone(),
+                new_len: new_text.len(),
+            }],
+        );
         self.last_edit = kind;
         // A keystroke is one typed grapheme (incl. typed over a selection — that's
         // an auto-pair "wrap") or a single-char backspace. Multi-char edits (paste,
         // table ops, …) are not, so auto-pairing skips them.
         self.last_edit_keystroke = (new_text != "\n" && new_text.graphemes(true).count() == 1)
             || (new_text.is_empty() && self.content[range.clone()].graphemes(true).count() == 1);
+    }
+
+    fn begin_history(&mut self, coalesce: bool, edits: Vec<super::SourceEdit>) {
+        if !coalesce {
+            self.undo_stack.push(self.snapshot());
+            if self.undo_stack.len() > UNDO_LIMIT {
+                self.undo_stack.remove(0);
+            }
+        }
+        self.redo_stack.clear();
+        let before = self.history_id;
+        self.next_history_id += 1;
+        self.history_id = self.next_history_id;
+        self.pending_changes.push(super::HistoryChange {
+            before,
+            after: self.history_id,
+            edits,
+        });
+    }
+
+    pub fn history_id(&self) -> u64 {
+        self.history_id
+    }
+    pub fn last_transaction(&self) -> Option<&std::sync::Arc<super::EditorTransaction>> {
+        self.last_transaction.as_ref()
+    }
+    pub(super) fn emit_changed(&mut self, cx: &mut Context<Self>) {
+        if !self.pending_changes.is_empty() {
+            let mut retained: Vec<_> = self
+                .undo_stack
+                .iter()
+                .chain(&self.redo_stack)
+                .map(|s| s.history_id)
+                .chain(std::iter::once(self.history_id))
+                .collect();
+            retained.sort_unstable();
+            retained.dedup();
+            let transaction = std::sync::Arc::new(super::EditorTransaction {
+                revision: self.content_gen,
+                changes: std::mem::take(&mut self.pending_changes),
+                retained,
+            });
+            self.last_transaction = Some(transaction.clone());
+            cx.emit(EditorEvent::Transaction(transaction));
+        }
+        cx.emit(EditorEvent::Changed);
     }
 
     // --- UTF-16 + grapheme boundaries (IME / cursor movement) ----------------
@@ -923,7 +993,7 @@ impl EntityInputHandler for EditorState {
         if word_boundary_input(new_text) {
             self.apply_auto_replace(range.start);
         }
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -940,7 +1010,20 @@ impl EntityInputHandler for EditorState {
             .map(|r| self.range_from_utf16(r))
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
+        // Composition updates retain the existing editor undo contract: only
+        // the commit records a snapshot. Hosts still receive every exact change.
         self.content_gen += 1;
+        let before = self.history_id;
+        self.next_history_id += 1;
+        self.history_id = self.next_history_id;
+        self.pending_changes.push(super::HistoryChange {
+            before,
+            after: self.history_id,
+            edits: vec![super::SourceEdit {
+                range: range.clone(),
+                new_len: new_text.len(),
+            }],
+        });
         self.content =
             self.content[0..range.start].to_owned() + new_text + &self.content[range.end..];
         self.marked_range =
@@ -954,7 +1037,7 @@ impl EntityInputHandler for EditorState {
                 caret..caret
             });
         self.remap_diagnostics(&range, new_text.len());
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 

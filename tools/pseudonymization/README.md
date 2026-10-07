@@ -10,6 +10,11 @@ The app catalog retains only GLiNER2 FP16/FP32 as of 2026-10-04; see
 The qualification tooling below compares GLiNER-family models and does not
 establish accuracy qualification for the experimental app options.
 
+The [2026-10-07 hybrid evaluation](../../tests/fixtures/pseudonymization/hybrid/README.md)
+adds an isolated structured-rule comparison and an adapter matching the app's
+tokenizer-bounded windows. It records individual rule ablations and a proposed
+email/INN/SNILS subset; no production detector selection has been approved.
+
 The shared crate handles explicit setup, artifact integrity, annotated fixtures,
 exact scoring, measurements, and process supervision. Two small adapters use
 existing Rust engines. Separate Cargo locks are necessary: `gline-rs` pins
@@ -138,3 +143,14 @@ license-file digests, upstream model-card revisions, and the tested runtime.
 `models.json` identifies the actual exported weights and tokenizer bytes.
 Shipping any model still requires retaining applicable licenses/notices and
 resolving the documented export provenance questions.
+
+
+### Restoration policy performance
+
+`python3 tools/pseudonymization/benchmark_policy.py` captures the pre-refactor
+policy from pinned commit `68960389525c8f7ae4eb7fc62eb7a242dd9b648c` and compiles
+that baseline plus the current app policy in isolated optimized harnesses. It
+uses cached dependencies only and writes raw timings/source hashes under
+`.qualification/restoration/reproduced`. No GPUI/model load occurs in this matrix.
+See the [full report](../../tests/fixtures/pseudonymization/results/2026-10-07-restoration/README.md)
+for geometry/history/storage commands and evidence limits.

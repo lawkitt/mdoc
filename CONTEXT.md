@@ -38,7 +38,11 @@ to current Markdown as one undoable batch; manual review remains available.
 Copy Markdown is a separate action. This removes identity distinctions
 from replaced mentions but does not establish that the subjects cannot be
 identified from remaining context. Accepted behavior is recorded in
-[ADR 0013](docs/adr/0013-reviewable-anonymization.md).
+[ADR 0013](docs/adr/0013-reviewable-anonymization.md). Applied fields stay
+highlighted and clickable in both modes; the popup restores this occurrence or
+all occurrences of the same immediate prior value. Restore creates Keep decisions
+and travels with text undo/redo. Originals live only in the open document; Save
+does not serialize them. See [ADR 0014](docs/adr/0014-highlighted-pii-replacements.md).
 
 **Model bundle**:
 A pinned set of mutually compatible model artifacts, including the required
@@ -78,7 +82,8 @@ lawyer can accept or decline.
 
 **Close review**:
 Leave pseudonymization review and hide candidate highlights while retaining
-accepted Markdown edits and the live document's replacement mappings. It does
+accepted Markdown edits, clickable applied highlights and the live document's
+restoration provenance. It does
 not establish that the document is safe to share.
 
 **Mention**:

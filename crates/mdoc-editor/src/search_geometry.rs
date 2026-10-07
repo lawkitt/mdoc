@@ -63,6 +63,40 @@ impl SearchLinePositions {
     }
 }
 
+/// Retain only visible long-line indices. Actual shape identity and wrap geometry
+/// invalidate the cache, including caret reveal, fonts, bidi and viewport width.
+pub(crate) struct CachedLinePositions {
+    layout: std::sync::Arc<gpui::LineLayout>,
+    boundaries: Vec<gpui::WrapBoundary>,
+    width: Option<Pixels>,
+    positions: Option<std::rc::Rc<SearchLinePositions>>,
+}
+impl CachedLinePositions {
+    pub fn get(
+        cache: &mut std::collections::HashMap<usize, Self>,
+        row: usize,
+        line: &WrappedLine,
+    ) -> Option<std::rc::Rc<SearchLinePositions>> {
+        let fresh = cache.get(&row).is_some_and(|c| {
+            std::sync::Arc::ptr_eq(&c.layout, &line.unwrapped_layout)
+                && c.width == line.wrap_width
+                && c.boundaries.as_slice() == line.wrap_boundaries.as_slice()
+        });
+        if !fresh {
+            cache.insert(
+                row,
+                Self {
+                    layout: line.unwrapped_layout.clone(),
+                    boundaries: line.wrap_boundaries.to_vec(),
+                    width: line.wrap_width,
+                    positions: SearchLinePositions::new(line).map(std::rc::Rc::new),
+                },
+            );
+        }
+        cache[&row].positions.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

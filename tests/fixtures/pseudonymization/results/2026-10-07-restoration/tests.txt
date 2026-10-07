@@ -1,0 +1,65 @@
+
+running 19 tests
+...................
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 35 tests
+...i...............................
+test result: ok. 34 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+
+running 191 tests
+ii.................................i...iii.............i...i......i.......i............ 87/191
+...........................................i.................................i......... 174/191
+.................
+test result: ok. 179 passed; 0 failed; 12 ignored; 0 measured; 0 filtered out; finished in 4.45s
+
+
+running 19 tests
+........i.........missing DOCX worker input or output
+.
+test result: ok. 18 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.87s
+
+
+running 103 tests
+..................................................................i.................... 87/103
+................
+test result: ok. 102 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+
+running 61 tests
+.............................................................
+test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+.
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.74s; merged doctests compilation took 0.57s
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

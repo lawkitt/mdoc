@@ -54,6 +54,8 @@ pub use search::{SearchIndex, SearchMatch};
 
 mod input;
 use input::{EditKind, Snapshot};
+mod transactions;
+pub use transactions::{EditorTransaction, HistoryChange, SourceEdit, inverse_edits};
 
 mod tables;
 use tables::*;
@@ -426,6 +428,8 @@ pub struct SourceAnnotation {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EditorEvent {
+    /// Exact edits and history travel, emitted before the legacy Changed event.
+    Transaction(Arc<EditorTransaction>),
     /// The document text changed via a user edit (typing, delete, paste, IME,
     /// applying a suggestion). Not emitted for programmatic `set_text`.
     Changed,
@@ -441,6 +445,8 @@ pub enum EditorEvent {
     SelectionChanged,
     /// Explicit activation of a host annotation; no text or selection change.
     ActivateAnnotation(u64),
+    /// Several hidden fields share a gutter indicator; the host offers a chooser.
+    ActivateAnnotations(Vec<u64>),
     /// The caret entered a `$$…$$` math block (by click, or by arrowing into it): its byte
     /// `range` in the document (covering both fences) and the LaTeX `source` between them, so
     /// the host can open a structural editor and replace the block's text on commit. `at_end`
@@ -711,6 +717,10 @@ pub struct EditorState {
     search_bounds: Vec<Option<Bounds<Pixels>>>,
     annotations: Vec<SourceAnnotation>,
     annotation_revision: u64,
+    annotation_ends: Vec<usize>,
+    position_cache:
+        std::cell::RefCell<std::collections::HashMap<usize, search_geometry::CachedLinePositions>>,
+    hidden_annotation_ids: std::collections::HashSet<u64>,
     annotation_bounds: Vec<(u64, Bounds<Pixels>)>,
     annotation_hover: Option<u64>,
     /// Last paint's wrapped lines (one per logical line) and each line's top
@@ -779,6 +789,10 @@ pub struct EditorState {
     is_selecting: bool,
     undo_stack: Vec<Snapshot>,
     redo_stack: Vec<Snapshot>,
+    history_id: u64,
+    next_history_id: u64,
+    pending_changes: Vec<HistoryChange>,
+    last_transaction: Option<Arc<EditorTransaction>>,
     last_edit: EditKind,
     /// Whether the last content edit was a single typed grapheme or a single-char
     /// backspace — the only edits auto-pairing should react to, so programmatic /
@@ -1014,6 +1028,9 @@ impl EditorState {
             search_bounds: Vec::new(),
             annotations: Vec::new(),
             annotation_revision: 0,
+            annotation_ends: Vec::new(),
+            position_cache: Default::default(),
+            hidden_annotation_ids: std::collections::HashSet::new(),
             annotation_bounds: Vec::new(),
             annotation_hover: None,
             wrapped: Vec::new(),
@@ -1039,6 +1056,10 @@ impl EditorState {
             is_selecting: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            history_id: 0,
+            next_history_id: 0,
+            pending_changes: Vec::new(),
+            last_transaction: None,
             last_edit: EditKind::Other,
             last_edit_keystroke: false,
             tab_indent: 4,
@@ -1137,10 +1158,21 @@ impl EditorState {
     pub fn set_annotations(
         &mut self,
         revision: u64,
-        annotations: Vec<SourceAnnotation>,
+        mut annotations: Vec<SourceAnnotation>,
         cx: &mut Context<Self>,
     ) {
         self.annotation_bounds.clear();
+        if !annotations.is_sorted_by_key(|a| (a.range.start, a.range.end)) {
+            annotations.sort_by_key(|a| (a.range.start, a.range.end));
+        }
+        let mut end = 0;
+        self.annotation_ends = annotations
+            .iter()
+            .map(|a| {
+                end = end.max(a.range.end);
+                end
+            })
+            .collect();
         self.annotations = annotations;
         self.annotation_revision = revision;
         self.annotation_hover = None;
@@ -1160,9 +1192,7 @@ impl EditorState {
 
     /// Whether the painted annotation represents hidden source in the gutter.
     pub fn annotation_is_hidden(&self, id: u64) -> bool {
-        self.annotation_bounds(id)
-            .zip(self.last_bounds)
-            .is_some_and(|(annotation, editor)| annotation.left() < editor.left())
+        self.annotation_revision == self.content_gen && self.hidden_annotation_ids.contains(&id)
     }
 
     /// Replace the set of diagnostics (underlined spans). The host computes these
@@ -2344,7 +2374,7 @@ impl EditorState {
                 self.content =
                     self.content[..range.start].to_owned() + &new_line + &self.content[range.end..];
                 self.remap_diagnostics(&range, new_line.len());
-                cx.emit(EditorEvent::Changed);
+                self.emit_changed(cx);
                 cx.notify();
             }
             return;
@@ -2375,7 +2405,7 @@ impl EditorState {
                 self.record_edit(&range, repl);
                 self.content.replace_range(range.clone(), repl);
                 self.remap_diagnostics(&range, 1);
-                cx.emit(EditorEvent::Changed);
+                self.emit_changed(cx);
                 cx.notify();
             }
             return;
@@ -2915,7 +2945,7 @@ impl EditorState {
             }
         };
         self.selected_range = remap(self.selected_range.start)..remap(self.selected_range.end);
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
         cx.notify();
     }
 
@@ -2945,7 +2975,7 @@ impl EditorState {
         };
         let end = (self.line_end(row) + 1).min(self.content.len());
         self.replace_range(start..end, "", cx);
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
     }
 
     /// Delete the image occupying logical line `row` — line + trailing newline,
@@ -2954,7 +2984,7 @@ impl EditorState {
     fn delete_image_row(&mut self, row: usize, cx: &mut Context<Self>) {
         if let Some(range) = self.image_row_range(row) {
             self.replace_range(range, "", cx);
-            cx.emit(EditorEvent::Changed);
+            self.emit_changed(cx);
         }
     }
 
@@ -3504,7 +3534,7 @@ impl EditorState {
             self.replace_range(target_off..block_end, &new, cx);
             self.selected_range = target_off..target_off;
         }
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
     }
 
     // --- Selection helpers ---------------------------------------------------
@@ -3541,7 +3571,7 @@ impl EditorState {
                 None => {
                     let end = self.content.len();
                     self.replace_range(end..end, "\n", cx);
-                    cx.emit(EditorEvent::Changed);
+                    self.emit_changed(cx);
                     self.content.len()
                 }
             }
@@ -3963,7 +3993,7 @@ impl EditorState {
         // line instead so the fence stays hidden.
         let caret = (start + new_line.len() + 1).min(self.content.len());
         self.selected_range = caret..caret;
-        cx.emit(EditorEvent::Changed);
+        self.emit_changed(cx);
     }
 
     fn checkbox_at(&self, position: Point<Pixels>) -> Option<usize> {

@@ -58,6 +58,18 @@ The user authorized the pinned GLiNER2 option experimentally despite its blocker
    safeguards and live-document mapping/Keep semantics. Detector qualification
    gaps remain unchanged. See [verification](docs/design/anonymization.md).
 
+7. **Inspectable PII replacements and subsystem cleanup — implemented** —
+   [ADR 0014](docs/adr/0014-highlighted-pii-replacements.md) preserves default automatic
+   Anonymize and adds click/keyboard original inspection, this-occurrence/matching-original
+   restoration, restoration Keep and metadata-aware undo/redo. Originals remain live-memory
+   only. Policy/tracking/discovery, detector/windows and scan/popup/chooser responsibilities
+   are separated; exact editor transactions, ordered rebasing, cached background matching,
+   single-pass batches and viewport geometry replace repeated full/group passes. Q15 selected
+   only email plus contextual checksum-valid INN/SNILS; other recognizers/full engines are
+   deferred. macOS native restoration smoke checks and 2 MiB/20,000 occurrence CPU/storage
+   checks passed; base-editor stress responsiveness and detector quality remain limited.
+   See [verification](tests/fixtures/pseudonymization/results/2026-10-07-restoration/README.md).
+
 A measured responsiveness/resource blocker moves ahead of features. Keep the
 app and reusable crates; refactor only where concrete ownership or testing
 problems appear. Extraction/OCR algorithm improvements belong in the AnyDoc and
