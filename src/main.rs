@@ -76,6 +76,11 @@ actions!(
         AcceptPseudonymCandidate,
         AcceptAllPseudonyms,
         KeepPseudonymCandidate,
+        RestorePii,
+        RestoreAllPii,
+        NextPiiChoice,
+        PreviousPiiChoice,
+        OpenPiiChoice,
         ClosePseudonymPopup,
         Close,
         ClosePdf,
@@ -191,6 +196,7 @@ impl Workspace {
         window.focus(&editor.read(cx).focus_handle(cx), cx);
         let subscription =
             cx.subscribe_in(&editor, window, |this, _, event, window, cx| match event {
+                EditorEvent::Transaction(transaction) => this.pii_transaction(transaction, cx),
                 EditorEvent::Changed => {
                     this.copy_feedback = None;
                     this.pseudonymization_edited(cx);
@@ -200,6 +206,9 @@ impl Workspace {
                     this.update_title(window, cx);
                     this.refresh_markdown_search(SearchRefresh::DocumentEdit, false, window, cx);
                     cx.notify();
+                }
+                EditorEvent::ActivateAnnotations(ids) => {
+                    this.choose_annotations(ids.clone(), window, cx)
                 }
                 EditorEvent::ActivateAnnotation(id) => this.activate_annotation(*id, window, cx),
                 EditorEvent::OpenLink(src) => {

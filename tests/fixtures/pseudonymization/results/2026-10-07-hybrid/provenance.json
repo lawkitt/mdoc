@@ -1,0 +1,104 @@
+{
+  "sha256": {
+    "tools/pseudonymization/src/rules.rs": "93d9e18089ed200c69a3b486f673964b5f1c5b75d271d21ab6e9d99ab2a11e5b",
+    "tools/pseudonymization/src/bin/hybrid.rs": "3e98bce8bd748cc8fe12f5f4e9e44f04882244f4eeafe97861d60023c2b6cc1b",
+    "tools/pseudonymization/src/lib.rs": "0666e661fb268f3bb1e8e7096847d30b9f380f9f0a6e6d68dc9a950efde03e00",
+    "tools/pseudonymization/src/main.rs": "def95698c6954b2c5ef04272ae828adc3416d28c552d30959cfcc8d504eb3dde",
+    "tools/pseudonymization/gliner2/src/bounded.rs": "6f197d44f55e66faca875c0f4bb67ad5481093f4c21093696f8e401d55c06dc4",
+    "tools/pseudonymization/gliner2/Cargo.toml": "804a9d8162c7ce1c5361e87d608d5e4c11ce9e4e83f80de8d8bf576a72591c7c",
+    "tools/pseudonymization/Cargo.toml": "94ca5edfacd22e8c4b7db5235e5d6c32fc33544ea34eccb25fab6601e30da615",
+    "tools/pseudonymization/Cargo.lock": "eae62a479102b0828de8ca1d7e7d6c6a8b89a667da90f01ebee25c5636b02952",
+    "tools/pseudonymization/gliner2/Cargo.lock": "7b7ffbba3195ebea064641f48ada3c783c0cadfe40ef7ba82fceca8b03890949",
+    "tools/pseudonymization/generate_hybrid_corpus.py": "bc1d8575cca2ffe784a56dd5c516b5ca7be1472e606fc96240ef0697906ff69f",
+    "tools/pseudonymization/summarize_hybrid.py": "1c665445c5d11bc198b4bbbd78a309def0990274b119f0cca0c38215377d5459",
+    "src/pseudonymization_detector.rs": "fc0553c5245b8a42ce8fb744614ee01a5b38fd2ff4a04c618f996c6acb03c38f",
+    "tests/fixtures/pseudonymization/corpus.json": "95e88cbb6c167bc38e82956cac7e7b9b0c623e361d57660b4555fbacbbd80a09",
+    "tests/fixtures/pseudonymization/hybrid/corpus.json": "0f1c5d7f8d4ffa286ffc01839648ab02ead52ad3099f8ebbb32555b85210eda6",
+    "tools/pseudonymization/target/release/hybrid": "acaea96f0c925589537408a8d08d9f716e5880fe0cccb184f9b10ff53fcecbb7",
+    "tools/pseudonymization/target/release/mdoc-pseudonymization-qualification": "62aacf70e8523d8fd4771748b5ea77269300e321dad7d938cc369006c43d93fd",
+    "tools/pseudonymization/gliner2/target/release/mdoc-qualify-gliner2-bounded": "955905f06485766b2666576959967e6b3060f189fb64eef9d9ed5f34fb50697d",
+    "tests/fixtures/pseudonymization/results/2026-10-07-hybrid/comparison.json": "c72841253ad2024d96a03d82c59ef8080565a7ed720cfa85c76828b786508488",
+    "tests/fixtures/pseudonymization/results/2026-10-07-hybrid/model.json": "8b2dc57c277619f6d103b4d7a5174e3e7f3b1e0f14cc20bd4724355f6e132624",
+    "tests/fixtures/pseudonymization/results/2026-10-07-hybrid/model.process.json": "31d518edb9190f328dcf4461bff5b8694551fc8da1a6b48102dacab70594fd5f",
+    "tests/fixtures/pseudonymization/results/2026-10-07-hybrid/model.stderr.log": "ff965e04b470ec09ef2b2ebd31f5c858b639c272f7ddd8efd3e859bb38e15d8b"
+  },
+  "model_configuration": {
+    "app_detector_sha256": "fc0553c5245b8a42ce8fb744614ee01a5b38fd2ff4a04c618f996c6acb03c38f",
+    "execution": "Standard",
+    "families": [
+      [
+        [
+          "person",
+          "PERSON"
+        ],
+        [
+          "full_name",
+          "PERSON"
+        ]
+      ],
+      [
+        [
+          "organization",
+          "ORG"
+        ]
+      ],
+      [
+        [
+          "email",
+          "EMAIL"
+        ],
+        [
+          "phone_number",
+          "PHONE"
+        ],
+        [
+          "address",
+          "ADDRESS"
+        ]
+      ],
+      [
+        [
+          "passport_number",
+          "IDENTITY"
+        ],
+        [
+          "national_id_number",
+          "IDENTITY"
+        ],
+        [
+          "tax_id",
+          "TAX"
+        ]
+      ],
+      [
+        [
+          "bank_account",
+          "BANK"
+        ],
+        [
+          "iban",
+          "BANK"
+        ],
+        [
+          "routing_number",
+          "BANK"
+        ]
+      ]
+    ],
+    "flat_ner": true,
+    "max_schema_text_tokens": 512,
+    "precision": "Fp16",
+    "provider": "CPU",
+    "splitter": "app tokenizer-bounded windows"
+  },
+  "model_revision": "e594898629d452e8311796f5f329c7edbeda907c",
+  "runtime_sha256": "299e5a2c6ea00531ecd6bf3217e23798c1fcba1698bb386d313c8e16d7317d60",
+  "validation": [
+    "tooling fmt checks",
+    "tooling clippy -D warnings",
+    "14 tests passed; 1 model integration test ignored",
+    "33 model fixtures: valid offsets, deterministic, successful process; deny network",
+    "rules stress: exact 2 MiB and 20,000 matches"
+  ],
+  "note": "No production changes or app/native UI checks. Model artifact hashes are in model.json. Binary files are ignored build outputs; source hashes identify this research snapshot."
+}

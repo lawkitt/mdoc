@@ -1,0 +1,17 @@
+{
+  "baseline_commit": "68960389525c8f7ae4eb7fc62eb7a242dd9b648c",
+  "baseline_policy_sha256": "aa4d3c0134071782b952438e7c2489931c65a7253690d54415194f7e335822a2",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "platform": "macOS-15.7.7-arm64-arm-64bit-Mach-O",
+  "source_sha256": {
+    "src/pseudonymization.rs": "9f4ae84362e782a5cb9de8e4c97b34f0a23ecacbe1e659e9395a3f69f3e4145d",
+    "crates/mdoc-editor/src/transactions.rs": "886bcd907ee7b405f3fb8f0701de08ae02547cf153edc685132418482bfc3176",
+    "src/pseudonymization/discovery.rs": "ee22ea23a094497dbee47b114aea10b6d74a7f5defa7f3ecb8db1bd7597b4cd2",
+    "src/pseudonymization/syntax.rs": "98892c7616877ecb0ed9d6c4271ea67d8979be3d701c0406337204aa4d1556fe",
+    "src/pseudonymization/tests.rs": "50725b09adb6641d492e2bec6a82a6522fc33a0867d314e7b37c8ce7be6ad3c0",
+    "src/pseudonymization/tracking.rs": "755238fa61a6faa588c298d3cf969f120b6ff16f7ca8abc5d1a6ea5eb8de469e",
+    "src/pseudonymization/tracking_tests.rs": "ce8f70fe1b7e40384cf14e2cbd54b5e093fda5bf5a72e2337e73714dcd71c754",
+    "tools/pseudonymization/policy_bench.rs": "75b42dfc5da314d92d47b904529b8b280e88ceda5bc3f2d93292714fb69f99a0",
+    "tools/pseudonymization/policy_baseline.rs": "24b1077e4eb26ad36c7a1c10bf3218170abafb82fbd7a08129de917dda69c5da"
+  }
+}

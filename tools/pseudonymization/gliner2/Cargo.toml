@@ -11,6 +11,10 @@ publish = false
 ocr-compat = ["dep:pdf-inspector"]
 
 [[bin]]
+name = "mdoc-qualify-gliner2-bounded"
+path = "src/bounded.rs"
+
+[[bin]]
 name = "mdoc-qualify-ocr-compat"
 path = "src/ocr_compat.rs"
 required-features = ["ocr-compat"]

@@ -35,6 +35,7 @@ fn anonymization_review_scan_proposes_without_applying(cx: &mut gpui::TestAppCon
                 range: 0..5,
                 category: Category::Person,
                 score: 0.9,
+                recognizer: crate::pseudonymization::Recognizer::Model,
             }]),
             cx,
         );
@@ -46,7 +47,13 @@ fn anonymization_review_scan_proposes_without_applying(cx: &mut gpui::TestAppCon
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
         let id = app.pseudonymization.review.groups[0].id;
-        app.activate_annotation(id << 32, window, cx);
+        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
+        let annotation = app
+            .pseudonymization
+            .review
+            .annotation_id(id, &range)
+            .unwrap();
+        app.activate_annotation(annotation, window, cx);
         app.accept_pseudonym(&AcceptPseudonymCandidate, window, cx);
         assert_eq!(app.editor.read(cx).text(), "PERSON");
         assert_eq!(app.pseudonymization.review.remaining(), 0);
@@ -119,16 +126,19 @@ fn anonymization_applies_scan_as_one_undo_step_and_copy_is_explicit(cx: &mut gpu
                     range: 2..10,
                     category: Category::Person,
                     score: 0.9,
+                    recognizer: crate::pseudonymization::Recognizer::Model,
                 },
                 pseudonymization::Detection {
                     range: bob..bob + 3,
                     category: Category::Person,
                     score: 0.9,
+                    recognizer: crate::pseudonymization::Recognizer::Model,
                 },
                 pseudonymization::Detection {
                     range: mail..mail + 20,
                     category: Category::Email,
                     score: 0.9,
+                    recognizer: crate::pseudonymization::Recognizer::Model,
                 },
             ]),
             cx,
@@ -194,6 +204,7 @@ fn anonymization_failed_cancelled_stale_and_switched_scans_do_not_edit(
                 range: 0..5,
                 category: Category::Person,
                 score: 0.9,
+                recognizer: crate::pseudonymization::Recognizer::Model,
             }]);
             match case {
                 0 => result = Err("Partial scan rejected".into()),
@@ -272,7 +283,13 @@ fn anonymization_icon_menu_defaults_and_manual_popup_are_simple(cx: &mut gpui::T
             .add_manual("Alice", 0..5, Category::Person)
             .unwrap();
         app.sync_annotations(cx);
-        app.activate_annotation(id << 32, window, cx);
+        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
+        let annotation = app
+            .pseudonymization
+            .review
+            .annotation_id(id, &range)
+            .unwrap();
+        app.activate_annotation(annotation, window, cx);
     });
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -320,7 +337,13 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
         review.keep(anna, Some(2..10));
         review.keep(kept, None);
         app.sync_annotations(cx);
-        app.activate_annotation(anna << 32, window, cx);
+        let range = app.pseudonymization.review.group(anna).unwrap().mentions[0].clone();
+        let annotation = app
+            .pseudonymization
+            .review
+            .annotation_id(anna, &range)
+            .unwrap();
+        app.activate_annotation(annotation, window, cx);
         app.pseudonymization
             .input
             .update(cx, |input, cx| input.set_value("PERSON_CUSTOM".into(), cx));
@@ -397,7 +420,13 @@ fn keyboard_reveals_long_candidate_links_without_editing_source(cx: &mut gpui::T
         }
         app.sync_pseudonym_theme(cx);
         let id = app.pseudonymization.review.groups[0].id;
-        app.activate_annotation(id << 32, window, cx);
+        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
+        let annotation = app
+            .pseudonymization
+            .review
+            .annotation_id(id, &range)
+            .unwrap();
+        app.activate_annotation(annotation, window, cx);
         app.pseudonymization.popup.as_mut().unwrap().links_open = true;
         cx.notify();
     });
@@ -499,7 +528,13 @@ fn accept_all_refuses_pending_scans_and_invalid_popup_tokens(cx: &mut gpui::Test
         assert_eq!(app.editor.read(cx).revision(), revision);
         assert_eq!(app.editor.read(cx).text(), source);
         app.pseudonymization.cancel();
-        app.activate_annotation(alice << 32, window, cx);
+        let range = app.pseudonymization.review.group(alice).unwrap().mentions[0].clone();
+        let annotation = app
+            .pseudonymization
+            .review
+            .annotation_id(alice, &range)
+            .unwrap();
+        app.activate_annotation(annotation, window, cx);
         app.pseudonymization
             .input
             .update(cx, |input, cx| input.set_value("invalid token".into(), cx));
@@ -535,6 +570,7 @@ fn successful_scan_removes_setup_prompt_only_for_the_scanned_model(cx: &mut gpui
                 range: 0..5,
                 category: Category::Person,
                 score: 0.9,
+                recognizer: crate::pseudonymization::Recognizer::Model,
             }]),
             cx,
         );
@@ -602,6 +638,7 @@ fn cancelled_edited_and_replaced_document_results_are_rejected(cx: &mut gpui::Te
                 range: 0..5,
                 category: Category::Person,
                 score: 0.9,
+                recognizer: crate::pseudonymization::Recognizer::Model,
             }])
         };
         let identity = app.session.generation;
@@ -638,5 +675,236 @@ fn cancelled_edited_and_replaced_document_results_are_rejected(cx: &mut gpui::Te
         app.complete_pseudonym_scan(9, identity, revision, result(), cx);
         assert!(app.pseudonymization.review.groups.is_empty());
         app.pseudonymization.cancel();
+    });
+}
+
+fn prepare_applied(app: &mut Workspace, source: &str, cx: &mut Context<Workspace>) {
+    app.editor.update(cx, |e, cx| e.set_text(source, cx));
+    app.pseudonymization
+        .review
+        .set_mode(Mode::Anonymize, source);
+    app.pseudonymization.review.open = true;
+    let detections: Vec<_> = source
+        .match_indices("Anna")
+        .chain(source.match_indices("Bob"))
+        .map(|(at, text)| pseudonymization::Detection {
+            range: at..at + text.len(),
+            category: Category::Person,
+            score: 0.9,
+            recognizer: pseudonymization::Recognizer::Model,
+        })
+        .collect();
+    app.pseudonymization
+        .review
+        .ingest(source, detections)
+        .unwrap();
+    app.commit_all_pii(None, cx).unwrap();
+    app.sync_annotations(cx);
+}
+#[gpui::test]
+fn applied_highlights_restore_one_or_matching_originals_and_keep_survives_rescan(
+    cx: &mut gpui::TestAppContext,
+) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    app.update(cx, |app, cx| prepare_applied(app, "Anna Bob Anna", cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        app.leave_pseudonyms(cx);
+        assert_eq!(app.editor.read(cx).text(), "PERSON PERSON PERSON");
+        let id = app.pseudonymization.review.tracking.applied[0].id;
+        app.activate_annotation(APPLIED_ID | id, window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("restoration-original").is_some());
+    app.update_in(cx, |app, window, cx| {
+        app.restore_pii(&RestorePii, window, cx)
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), "Anna PERSON PERSON");
+        app.pseudonymization
+            .review
+            .ingest(
+                "Anna PERSON PERSON",
+                vec![pseudonymization::Detection {
+                    range: 0..4,
+                    category: Category::Person,
+                    score: 0.9,
+                    recognizer: pseudonymization::Recognizer::Model,
+                }],
+            )
+            .unwrap();
+        assert_eq!(app.pseudonymization.review.remaining(), 0);
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert_eq!(app.editor.read(cx).text(), "PERSON PERSON PERSON");
+        let id = app.pseudonymization.review.tracking.applied[0].id;
+        app.activate_annotation(APPLIED_ID | id, window, cx);
+        app.restore_all_pii(&RestoreAllPii, window, cx);
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), "Anna PERSON Anna");
+        assert_eq!(app.pseudonymization.review.tracking.applied.len(), 1);
+        assert_eq!(
+            app.pseudonymization.review.tracking.applied[0]
+                .step
+                .before
+                .as_ref(),
+            "Bob"
+        );
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    cx.dispatch_action(mdoc_editor::Redo);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), "Anna PERSON Anna")
+    });
+}
+#[gpui::test]
+fn editing_marker_invalidates_provenance_undo_recovers_it_and_paste_creates_none(
+    cx: &mut gpui::TestAppContext,
+) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    app.update(cx, |app, cx| prepare_applied(app, "Anna", cx));
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |e, cx| e.replace_range(0..0, "😀 ", cx))
+    });
+    cx.run_until_parked();
+    let id = app.read_with(cx, |app, _| {
+        app.pseudonymization.review.tracking.applied[0].id
+    });
+    app.update(cx, |app, cx| {
+        assert_eq!(
+            app.pseudonymization.review.tracking.get(id).unwrap().range,
+            5..11
+        );
+        app.editor
+            .update(cx, |e, cx| e.replace_range(6..6, "X", cx));
+    });
+    cx.run_until_parked();
+    assert!(app.read_with(cx, |app, _| {
+        app.pseudonymization.review.tracking.applied.is_empty()
+    }));
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(
+            app.pseudonymization.review.tracking.get(id).unwrap().range,
+            5..11
+        );
+        app.editor
+            .update(cx, |e, cx| e.replace_range(11..11, " PERSON", cx));
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), "😀 PERSON PERSON");
+        assert_eq!(app.pseudonymization.review.tracking.applied.len(), 1);
+    });
+}
+#[gpui::test]
+fn dense_hidden_fields_choose_and_restore_by_keyboard(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    app.update(cx, |app, cx| {
+        prepare_applied(app, "intro\n\n[link](https://x.invalid/Anna/Bob)", cx)
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let bounds = app.read_with(cx, |app, cx| {
+        let applied = &app.pseudonymization.review.tracking.applied;
+        let a = app
+            .editor
+            .read(cx)
+            .annotation_bounds(APPLIED_ID | applied[0].id)
+            .unwrap();
+        let b = app
+            .editor
+            .read(cx)
+            .annotation_bounds(APPLIED_ID | applied[1].id)
+            .unwrap();
+        assert_eq!(a, b);
+        a
+    });
+    cx.simulate_click(bounds.center(), Default::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("pii-field-chooser").is_some());
+    cx.simulate_keystrokes("down enter");
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        app.restore_pii(&RestorePii, window, cx)
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "intro\n\n[link](https://x.invalid/PERSON/Bob)"
+        )
+    });
+}
+
+#[gpui::test]
+fn hidden_annotations_follow_visible_wrapped_rows(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    let source = format!(
+        "{}\n\nend",
+        "Пример [visible_label_with_words](https://x.invalid/Anna/Bob) ".repeat(1000)
+    );
+    let annotations: Vec<_> = source
+        .match_indices("Anna")
+        .enumerate()
+        .map(|(id, (at, _))| mdoc_editor::SourceAnnotation {
+            id: id as u64,
+            range: at..at + 4,
+            color: gpui::rgba(0xffaa0022).into(),
+            active_color: gpui::rgba(0xffaa0055).into(),
+        })
+        .collect();
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text(source.clone(), cx);
+            editor.set_cursor(source.len(), cx);
+            editor.set_annotations(editor.revision(), annotations, cx);
+        })
+    });
+    for _ in 0..2 {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    }
+    app.update(cx, |app, _| {
+        app.scroll
+            .set_offset(gpui::point(px(0.), -app.scroll.max_offset().y / 2.))
+    });
+    for _ in 0..2 {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    }
+    app.read_with(cx, |app, cx| {
+        let viewport = app.scroll.bounds();
+        let editor = app.editor.read(cx);
+        let visible: Vec<_> = (0..1000)
+            .filter_map(|id| editor.annotation_bounds(id).map(|bounds| (id, bounds)))
+            .collect();
+        assert!(!visible.is_empty() && visible.len() < 300);
+        assert!(
+            visible
+                .iter()
+                .any(|(_, bounds)| bounds.top() >= viewport.top()
+                    && bounds.bottom() <= viewport.bottom()),
+            "hidden markers must follow their visible wrap rows"
+        );
+        assert!(
+            visible
+                .iter()
+                .all(|(id, _)| editor.annotation_is_hidden(*id))
+        );
+        assert!(
+            editor.annotation_bounds(0).is_none(),
+            "offscreen hidden spans are not gutter markers"
+        );
     });
 }

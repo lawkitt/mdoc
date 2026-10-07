@@ -286,3 +286,102 @@ fn local_preview_performance(cx: &mut TestAppContext) {
     }
     report("local_preview open", &mut times);
 }
+
+#[gpui::test]
+#[ignore = "2 MiB / 20,000 annotation CPU matrix; run serially on an idle machine"]
+fn pii_annotation_geometry_matrix(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    cx.simulate_resize(gpui::size(px(1332.), px(750.)));
+    for (name, seed) in [
+        ("prose", "PERSON ordinary prose.\n"),
+        ("long_line", "PERSON ordinary prose. "),
+        ("hidden", "[x](https://example.invalid/PERSON)\n"),
+        ("utf8_table", "| PERSON | Русский текст |\n"),
+        (
+            "dense_hidden_wrapped",
+            "Visible link [a label](https://x.invalid/PERSON) ",
+        ),
+    ] {
+        let mut source = if name == "utf8_table" {
+            format!(
+                "| Name | Contact |\n| ---- | ---- |\n{}",
+                seed.repeat(20000)
+            )
+        } else {
+            seed.repeat(20000)
+        };
+        source.push_str(&" ".repeat(2097152 - source.len()));
+        let annotations: Vec<_> = source
+            .match_indices("PERSON")
+            .enumerate()
+            .map(|(id, (at, _))| mdoc_editor::SourceAnnotation {
+                id: id as u64,
+                range: at..at + 6,
+                color: gpui::rgba(0xffaa0022).into(),
+                active_color: gpui::rgba(0xffaa0055).into(),
+            })
+            .collect();
+        app.update(cx, |app, cx| {
+            app.editor.update(cx, |e, cx| {
+                e.set_text(source.clone(), cx);
+                e.set_cursor(e.text().len(), cx);
+                e.set_annotations(e.revision(), vec![], cx);
+            });
+            app.scroll.set_offset(gpui::point(px(0.), px(0.)));
+        });
+        draw(cx);
+        draw(cx);
+        let mut baseline = Vec::new();
+        for _ in 0..7 {
+            let start = Instant::now();
+            draw(cx);
+            baseline.push(start.elapsed().as_secs_f64() * 1000.);
+        }
+        app.update(cx, |app, cx| {
+            app.editor.update(cx, |e, cx| {
+                e.set_annotations(e.revision(), annotations.clone(), cx)
+            })
+        });
+        let start = Instant::now();
+        draw(cx);
+        let cold = start.elapsed().as_secs_f64() * 1000.;
+        let mut annotated = Vec::new();
+        for _ in 0..7 {
+            let start = Instant::now();
+            draw(cx);
+            annotated.push(start.elapsed().as_secs_f64() * 1000.);
+        }
+        let count = app.read_with(cx, |app, cx| {
+            (0..20000)
+                .filter(|&id| app.editor.read(cx).annotation_bounds(id).is_some())
+                .count()
+        });
+        assert!(count > 0 && count < 500, "viewport geometry count {count}");
+        eprintln!(
+            "PII_GEOMETRY workload={name} bytes={} occurrences=20000 cold_ms={cold:.3} visible_bounds={count} rss_kib={:?}",
+            source.len(),
+            rss_kib()
+        );
+        let base = report(&format!("pii_{name}_unannotated"), &mut baseline);
+        let warm = report(&format!("pii_{name}_annotated"), &mut annotated);
+        app.update(cx, |app, _| {
+            app.scroll
+                .set_offset(gpui::point(px(0.), -app.scroll.max_offset().y / 2.))
+        });
+        draw(cx);
+        draw(cx);
+        let middle_count = app.read_with(cx, |app, cx| {
+            (0..20000)
+                .filter(|&id| app.editor.read(cx).annotation_bounds(id).is_some())
+                .count()
+        });
+        assert!(
+            middle_count < 500,
+            "scrolled viewport geometry count {middle_count}"
+        );
+        eprintln!(
+            "PII_GEOMETRY workload={name} added_median_ms={:.3} middle_visible_bounds={middle_count}",
+            warm - base
+        );
+    }
+}

@@ -1,9 +1,16 @@
 //! Live-document review policy. Source text is immutable during a detection job;
 //! every edit plan is checked against the current source and editor revision.
+mod discovery;
+mod syntax;
+pub mod tracking;
+pub use discovery::{DiscoveryInput, DiscoveryResult};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     ops::Range,
+    sync::Arc,
 };
+use syntax::protected_syntax;
+use tracking::Tracking;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Mode {
@@ -72,34 +79,43 @@ pub struct Detection {
     pub range: Range<usize>,
     pub category: Category,
     pub score: f32,
+    pub recognizer: Recognizer,
 }
 #[derive(Clone, Debug)]
 pub struct Group {
     pub id: u64,
-    pub original: String,
+    pub original: Arc<str>,
     pub category: Category,
     pub replacement: String,
     pub mentions: Vec<Range<usize>>,
     kept: bool,
     conversion: bool,
 }
-#[derive(Clone, Debug)]
-struct Exclusion {
-    range: Range<usize>,
-    original: String,
-}
 
+#[derive(Clone)]
+pub struct CandidateOccurrence {
+    pub id: u64,
+    pub group: u64,
+    pub range: Range<usize>,
+}
 #[derive(Default)]
 pub struct Review {
     pub open: bool,
     pub skipped_syntax_spans: usize,
-    source: String,
+    source: Arc<str>,
     pub groups: Vec<Group>,
-    exclusions: Vec<Exclusion>,
+    pub candidates: Vec<CandidateOccurrence>,
+    candidate_lookup: HashMap<u64, usize>,
+    candidate_counters: HashMap<u64, u64>,
+    pub tracking: Tracking,
+    group_lookup: HashMap<u64, usize>,
+    original_lookup: HashMap<Arc<str>, u64>,
+    occupied_tokens: HashSet<String>,
+    matcher: Option<Arc<aho_corasick::AhoCorasick>>,
+    discovery_version: u64,
     counters: HashMap<Category, usize>,
     next_id: u64,
     pub mode: Mode,
-    accepted_pseudonyms: Vec<(String, Category)>,
 }
 
 /// Tokens work unchanged in prose, table cells, destinations, code and HTML.
@@ -125,170 +141,74 @@ fn safe_span(value: &str) -> bool {
         && !value.ends_with('_')
         && !value.chars().any(|ch| "\n\r[]<>`*|\\#~".contains(ch))
 }
-fn occurrences(source: &str, original: &str) -> Vec<Range<usize>> {
-    source
-        .match_indices(original)
-        .filter_map(|(start, value)| {
-            let end = start + value.len();
-            // Avoid turning Ann into PERSON_1 inside Anna. Underscore-separated
-            // hidden paths remain exact-repeat candidates, as agreed for full source.
-            let left = original.chars().next().is_some_and(char::is_alphanumeric)
-                && source[..start]
-                    .chars()
-                    .next_back()
-                    .is_some_and(char::is_alphanumeric);
-            let right = original
-                .chars()
-                .next_back()
-                .is_some_and(char::is_alphanumeric)
-                && source[end..]
-                    .chars()
-                    .next()
-                    .is_some_and(char::is_alphanumeric);
-            (!left && !right).then_some(start..end)
-        })
-        .collect()
+fn exact_boundary(source: &str, range: &Range<usize>, original: &str) -> bool {
+    let left = original.chars().next().is_some_and(char::is_alphanumeric)
+        && source[..range.start]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_alphanumeric);
+    let right = original
+        .chars()
+        .next_back()
+        .is_some_and(char::is_alphanumeric)
+        && source[range.end..]
+            .chars()
+            .next()
+            .is_some_and(char::is_alphanumeric);
+    !left && !right
+}
+fn interval_conflict(occupied: &BTreeMap<usize, usize>, range: &Range<usize>) -> bool {
+    occupied
+        .range(..=range.start)
+        .next_back()
+        .is_some_and(|(_, end)| *end > range.start)
+        || occupied
+            .range(range.start..)
+            .next()
+            .is_some_and(|(start, _)| *start < range.end)
+}
+fn intersects(protected: &[Range<usize>], range: &Range<usize>) -> bool {
+    let i = protected.partition_point(|r| r.end <= range.start);
+    protected.get(i).is_some_and(|r| r.start < range.end)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Recognizer {
+    Model,
+    Email,
+    Inn,
+    Snils,
+}
+impl Recognizer {
+    fn rule(self) -> bool {
+        self != Self::Model
+    }
+}
 fn overlaps(a: &Range<usize>, b: &Range<usize>) -> bool {
     a.start < b.end && b.start < a.end
 }
 
-/// Protect letter/number-bearing grammar: list prefixes, HTML tag and attribute
-/// names, and attribute quotes. Identifying-information detection stays in GLiNER2.
-fn protected_syntax(source: &str) -> Vec<Range<usize>> {
-    let mut protected = Vec::new();
-    let mut base = 0;
-    for line in source.split_inclusive('\n') {
-        let mut start = line.len() - line.trim_start_matches([' ', '\t']).len();
-        while line[start..].starts_with('>') {
-            start += 1;
-            start += line[start..].len() - line[start..].trim_start_matches([' ', '\t']).len();
-        }
-        let body = &line[start..];
-        if body.starts_with("- ") || body.starts_with("+ ") || body.starts_with("* ") {
-            protected.push(base + start..base + start + 2);
-        }
-        let digits = body.bytes().take_while(u8::is_ascii_digit).count();
-        if (1..=9).contains(&digits)
-            && matches!(body.as_bytes().get(digits), Some(b'.' | b')'))
-            && body
-                .as_bytes()
-                .get(digits + 1)
-                .is_some_and(u8::is_ascii_whitespace)
-        {
-            protected.push(base + start..base + start + digits + 1);
-        }
-        base += line.len();
-    }
-    let bytes = source.as_bytes();
-    let name_byte = |byte: u8| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':');
-    let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] != b'<' {
-            at += 1;
-            continue;
-        }
-        let mut i = at + 1;
-        if bytes.get(i) == Some(&b'/') {
-            i += 1;
-        }
-        if !bytes.get(i).is_some_and(u8::is_ascii_alphabetic) {
-            at += 1;
-            continue;
-        }
-        let tag = i;
-        while bytes.get(i).is_some_and(|byte| name_byte(*byte)) {
-            i += 1;
-        }
-        protected.push(tag..i);
-        loop {
-            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
-                i += 1;
-            }
-            if i >= bytes.len() || bytes[i] == b'>' {
-                break;
-            }
-            if bytes[i] == b'/' {
-                i += 1;
-                continue;
-            }
-            let name = i;
-            while bytes.get(i).is_some_and(|byte| name_byte(*byte)) {
-                i += 1;
-            }
-            if i == name {
-                break;
-            }
-            protected.push(name..i);
-            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
-                i += 1;
-            }
-            if bytes.get(i) != Some(&b'=') {
-                continue;
-            }
-            i += 1;
-            while bytes.get(i).is_some_and(u8::is_ascii_whitespace) {
-                i += 1;
-            }
-            if let Some(quote @ (b'\'' | b'"')) = bytes.get(i).copied() {
-                protected.push(i..i + 1);
-                i += 1;
-                while i < bytes.len() && bytes[i] != quote {
-                    i += 1;
-                }
-                if i < bytes.len() {
-                    protected.push(i..i + 1);
-                    i += 1;
-                }
-            } else {
-                while bytes
-                    .get(i)
-                    .is_some_and(|byte| !byte.is_ascii_whitespace() && *byte != b'>')
-                {
-                    i += 1;
-                }
-            }
-        }
-        at = i.saturating_add(1);
-    }
-    // Link outer delimiters remain intact, while ordinary parenthesized
-    // phone/address text and balanced parentheses inside destinations are valid.
-    for (open, _) in source.match_indices("](") {
-        let mut depth = 1;
-        let mut i = open + 2;
-        let mut quote = None;
-        while i < bytes.len() {
-            if bytes[i] == b'\\' {
-                i += 2;
-                continue;
-            }
-            if let Some(current) = quote {
-                if bytes[i] == current {
-                    protected.push(i..i + 1);
-                    quote = None;
-                }
-            } else if matches!(bytes[i], b'\'' | b'"')
-                && bytes.get(i - 1).is_some_and(u8::is_ascii_whitespace)
-            {
-                quote = Some(bytes[i]);
-                protected.push(i..i + 1);
-            } else if bytes[i] == b'(' {
-                depth += 1;
-            } else if bytes[i] == b')' {
-                depth -= 1;
-                if depth == 0 {
-                    protected.push(i..i + 1);
-                    break;
-                }
-            }
-            i += 1;
-        }
-    }
-    protected
-}
-
 impl Review {
+    pub fn on_transaction(&mut self, transaction: &mdoc_editor::EditorTransaction, source: &str) {
+        if self.tracking.on_transaction(transaction) {
+            self.source = source.into();
+            self.discovery_version += 1;
+            for change in &transaction.changes {
+                if change.edits.is_empty() {
+                    self.candidates.clear();
+                } else {
+                    tracking::rebase(&mut self.candidates, &change.edits, |o| &mut o.range);
+                }
+            }
+            self.candidate_lookup.clear();
+            self.candidate_lookup
+                .extend(self.candidates.iter().enumerate().map(|(i, o)| (o.id, i)));
+            for group in &mut self.groups {
+                group.mentions.clear();
+            }
+        }
+    }
+
     pub fn set_mode(&mut self, mode: Mode, source: &str) {
         self.mode = mode;
         self.prepare_conversions(source);
@@ -302,37 +222,43 @@ impl Review {
     }
     /// Only accepted replacements establish provenance for later conversion.
     pub fn record_acceptance(&mut self, id: u64, replacement: &str) {
-        if self.mode == Mode::Pseudonymize
-            && let Some(group) = self.group(id)
-        {
-            let entry = (replacement.to_owned(), group.category);
-            if !self.accepted_pseudonyms.contains(&entry) {
-                self.accepted_pseudonyms.push(entry);
-            }
+        if self.mode == Mode::Pseudonymize {
             self.set_replacement(id, replacement);
         }
     }
-    fn prepare_conversions(&mut self, source: &str) {
+    fn prepare_conversions(&mut self, _source: &str) {
         if self.mode != Mode::Anonymize {
             return;
         }
-        self.refresh(source);
-        for (original, category) in self.accepted_pseudonyms.clone() {
-            if original != category.token() && !occurrences(source, &original).is_empty() {
-                if self.groups.iter().any(|group| group.original == original) {
-                    continue;
-                }
-                let id = self.add_seed(&original, category);
-                self.groups
-                    .iter_mut()
-                    .find(|g| g.id == id)
-                    .unwrap()
-                    .conversion = true;
+        let originals: HashSet<_> = self
+            .tracking
+            .applied
+            .iter()
+            .filter(|o| o.step.after.as_ref() != o.step.category.token())
+            .map(|o| (o.step.after.to_string(), o.step.category))
+            .collect();
+        for (original, category) in originals {
+            if self.original_lookup.contains_key(original.as_str()) {
+                continue;
             }
+            let id = self.add_seed(&original, category);
+            self.groups[self.group_lookup[&id]].conversion = true;
         }
     }
     pub fn group(&self, id: u64) -> Option<&Group> {
-        self.groups.iter().find(|group| group.id == id)
+        self.group_lookup.get(&id).map(|&index| &self.groups[index])
+    }
+    pub fn candidate(&self, id: u64) -> Option<&CandidateOccurrence> {
+        self.candidate_lookup.get(&id).map(|&i| &self.candidates[i])
+    }
+    pub fn annotation_id(&self, group: u64, range: &Range<usize>) -> Option<u64> {
+        let index = self
+            .candidates
+            .partition_point(|o| o.range.start < range.start);
+        self.candidates
+            .get(index)
+            .filter(|o| o.group == group && o.range == *range)
+            .map(|o| o.id)
     }
     pub fn remaining(&self) -> usize {
         self.groups.iter().map(|group| group.mentions.len()).sum()
@@ -343,14 +269,14 @@ impl Review {
             .iter()
             .filter(|group| !group.conversion)
             .filter(|group| seen.insert(group.replacement.clone()))
-            .map(|group| (group.original.clone(), group.replacement.clone()))
+            .map(|group| (group.original.to_string(), group.replacement.clone()))
             .collect()
     }
     pub fn refresh(&mut self, source: &str) {
         // A conservative source diff revalidates single-occurrence exclusions.
         // Anything crossing an edited region is invalidated rather than shifted
         // speculatively. Group seeds/mappings survive edits and undo.
-        if self.source != source {
+        if self.source.as_ref() != source {
             let mut prefix = self
                 .source
                 .bytes()
@@ -373,46 +299,96 @@ impl Review {
             }
             let old_end = self.source.len() - suffix;
             let delta = source.len() as isize - self.source.len() as isize;
-            self.exclusions.retain_mut(|excluded| {
+            self.tracking.exclusions.retain_mut(|excluded| {
                 if excluded.range.end <= prefix {
-                    return source.get(excluded.range.clone()) == Some(excluded.original.as_str());
+                    return source.get(excluded.range.clone()) == Some(excluded.original.as_ref());
                 }
                 if excluded.range.start < old_end {
                     return false;
                 }
                 excluded.range = excluded.range.start.saturating_add_signed(delta)
                     ..excluded.range.end.saturating_add_signed(delta);
-                source.get(excluded.range.clone()) == Some(excluded.original.as_str())
+                source.get(excluded.range.clone()) == Some(excluded.original.as_ref())
             });
-            self.source = source.to_owned();
+            self.source = source.into();
         }
-        let protected = protected_syntax(source);
-        let mut occupied: Vec<Range<usize>> = Vec::new();
-        for group in &mut self.groups {
-            group.mentions = if group.kept || (group.conversion && self.mode == Mode::Pseudonymize)
-            {
-                Vec::new()
-            } else {
-                occurrences(source, &group.original)
-                    .into_iter()
-                    .filter(|range| {
-                        !protected.iter().any(|syntax| overlaps(range, syntax))
-                            && !self.exclusions.iter().any(|excluded| {
-                                excluded.original == group.original && excluded.range == *range
-                            })
-                            && !occupied
-                                .iter()
-                                .any(|other| range.start < other.end && other.start < range.end)
-                    })
-                    .collect()
-            };
-            occupied.extend(group.mentions.iter().cloned());
+        self.discovery_version += 1;
+        if let Some(result) = self
+            .discovery_input()
+            .run(&std::sync::atomic::AtomicBool::new(false))
+        {
+            self.apply_discovery(result);
         }
     }
+    pub fn discovery_input(&self) -> DiscoveryInput {
+        DiscoveryInput {
+            source: self.source.clone(),
+            version: self.discovery_version,
+            originals: self.groups.iter().map(|g| g.original.clone()).collect(),
+            enabled: self
+                .groups
+                .iter()
+                .map(|g| !g.kept && !(g.conversion && self.mode == Mode::Pseudonymize))
+                .collect(),
+            conversions: self.groups.iter().map(|g| g.conversion).collect(),
+            applied: self
+                .tracking
+                .applied
+                .iter()
+                .map(|o| (o.range.start, o.range.end))
+                .collect(),
+            excluded: self
+                .tracking
+                .exclusions
+                .iter()
+                .map(|o| (o.range.start, o.range.end))
+                .collect(),
+            matcher: self.matcher.clone(),
+        }
+    }
+    pub fn apply_discovery(&mut self, result: DiscoveryResult) -> bool {
+        if result.version != self.discovery_version {
+            return false;
+        }
+        self.matcher = result.matcher;
+        self.occupied_tokens = result.tokens;
+        self.occupied_tokens
+            .extend(self.groups.iter().map(|g| g.replacement.clone()));
+        let mut old: HashMap<_, _> = self
+            .candidates
+            .drain(..)
+            .map(|o| ((o.group, o.range.start, o.range.end), o.id))
+            .collect();
+        for (group, mentions) in self.groups.iter_mut().zip(result.mentions) {
+            for range in &mentions {
+                let id = old
+                    .remove(&(group.id, range.start, range.end))
+                    .unwrap_or_else(|| {
+                        let next = self.candidate_counters.entry(group.id).or_default();
+                        let id = (group.id << 32) | *next;
+                        *next += 1;
+                        id
+                    });
+                self.candidates.push(CandidateOccurrence {
+                    id,
+                    group: group.id,
+                    range: range.clone(),
+                });
+            }
+            group.mentions = mentions;
+        }
+        self.candidates.sort_by_key(|o| o.range.start);
+        self.candidate_lookup.clear();
+        self.candidate_lookup
+            .extend(self.candidates.iter().enumerate().map(|(i, o)| (o.id, i)));
+        true
+    }
+
     /// Rebase Keep decisions using the exact batch just committed by the editor.
     /// A broad source diff would discard unchanged exclusions between edits.
+    #[cfg(test)]
     pub fn refresh_after_edits(&mut self, source: &str, edits: &[(Range<usize>, String)]) {
-        self.exclusions.retain_mut(|excluded| {
+        self.tracking.exclusions.retain_mut(|excluded| {
             if edits
                 .iter()
                 .any(|(range, _)| overlaps(range, &excluded.range))
@@ -426,9 +402,9 @@ impl Review {
                 .sum();
             excluded.range = excluded.range.start.saturating_add_signed(delta)
                 ..excluded.range.end.saturating_add_signed(delta);
-            source.get(excluded.range.clone()) == Some(excluded.original.as_str())
+            source.get(excluded.range.clone()) == Some(excluded.original.as_ref())
         });
-        self.source = source.to_owned();
+        self.source = source.into();
         self.refresh(source);
     }
     pub fn ingest(&mut self, source: &str, mut detections: Vec<Detection>) -> Result<(), String> {
@@ -439,16 +415,18 @@ impl Review {
         }) {
             return Err("Invalid detector offsets; scan discarded.".into());
         }
-        // Prefer the strongest model span in overlapping/category conflicts.
+        // Validated structured spans win conflicts; otherwise prefer model confidence.
         detections.sort_by(|a, b| {
-            b.score
-                .total_cmp(&a.score)
+            b.recognizer
+                .rule()
+                .cmp(&a.recognizer.rule())
+                .then_with(|| b.score.total_cmp(&a.score))
                 .then(b.range.len().cmp(&a.range.len()))
                 .then(a.range.start.cmp(&b.range.start))
         });
         let protected = protected_syntax(source);
         self.skipped_syntax_spans = 0;
-        let mut accepted: Vec<Range<usize>> = Vec::new();
+        let mut accepted = BTreeMap::new();
         let mut selected = Vec::new();
         for detection in detections {
             // Emitted shared markers are already prepared, regardless of a
@@ -460,20 +438,15 @@ impl Review {
                 continue;
             }
             if !safe_span(&source[detection.range.clone()])
-                || protected
-                    .iter()
-                    .any(|syntax| overlaps(&detection.range, syntax))
+                || intersects(&protected, &detection.range)
             {
                 self.skipped_syntax_spans += 1;
                 continue;
             }
-            if accepted
-                .iter()
-                .any(|other| overlaps(&detection.range, other))
-            {
+            if interval_conflict(&accepted, &detection.range) {
                 continue;
             }
-            accepted.push(detection.range.clone());
+            accepted.insert(detection.range.start, detection.range.end);
             selected.push(detection);
         }
         self.refresh(source);
@@ -486,21 +459,23 @@ impl Review {
         Ok(())
     }
     fn add_seed(&mut self, original: &str, category: Category) -> u64 {
-        if let Some(group) = self.groups.iter().find(|group| group.original == original) {
-            return group.id;
+        if let Some(&id) = self.original_lookup.get(original) {
+            return id;
         }
         let count = self.counters.entry(category).or_default();
         let replacement = loop {
             *count += 1;
             let value = format!("{}_{count}", category.token());
-            if !self.groups.iter().any(|group| group.replacement == value)
-                && !self.source.contains(&value)
-            {
+            if !self.occupied_tokens.contains(&value) {
                 break value;
             }
         };
         self.next_id += 1;
         let id = self.next_id;
+        self.group_lookup.insert(id, self.groups.len());
+        self.original_lookup.insert(original.into(), id);
+        self.occupied_tokens.insert(replacement.clone());
+        self.matcher = None;
         self.groups.push(Group {
             id,
             original: original.into(),
@@ -522,13 +497,10 @@ impl Review {
         let original = source.get(range.clone()).filter(|value| safe_span(value) && !protected.iter().any(|syntax| overlaps(&range, syntax))).ok_or("Select identifying text without Markdown delimiters. Narrow selections that cross syntax.")?;
         self.refresh(source);
         let id = self.add_seed(original, category);
-        self.groups
-            .iter_mut()
-            .find(|group| group.id == id)
-            .unwrap()
-            .kept = false;
-        self.exclusions
-            .retain(|excluded| excluded.original != original);
+        self.groups[self.group_lookup[&id]].kept = false;
+        self.tracking
+            .exclusions
+            .retain(|excluded| excluded.original.as_ref() != original);
         self.refresh(source);
         Ok(id)
     }
@@ -539,7 +511,7 @@ impl Review {
         single: Option<Range<usize>>,
         replacement: &str,
     ) -> Result<Vec<(Range<usize>, String)>, String> {
-        if source != self.source {
+        if source != self.source.as_ref() {
             return Err("The document changed. Review the candidate again.".into());
         }
         if !valid_replacement(replacement) {
@@ -557,7 +529,7 @@ impl Review {
         if ranges.is_empty()
             || ranges
                 .iter()
-                .any(|range| source.get(range.clone()) != Some(group.original.as_str()))
+                .any(|range| source.get(range.clone()) != Some(group.original.as_ref()))
         {
             return Err("Candidate is no longer available.".into());
         }
@@ -568,8 +540,8 @@ impl Review {
             .collect())
     }
     pub fn set_replacement(&mut self, id: u64, replacement: &str) {
-        if let Some(group) = self.groups.iter_mut().find(|group| group.id == id) {
-            group.replacement = replacement.into();
+        if let Some(&index) = self.group_lookup.get(&id) {
+            self.groups[index].replacement = replacement.into();
         }
     }
     /// Plan all pending mentions against one source snapshot. Kept candidates
@@ -579,7 +551,7 @@ impl Review {
         source: &str,
         draft: Option<(u64, &str)>,
     ) -> Result<Vec<(Range<usize>, String)>, String> {
-        if source != self.source {
+        if source != self.source.as_ref() {
             return Err("The document changed. Review the candidates again.".into());
         }
         let mut edits = Vec::new();
@@ -589,7 +561,19 @@ impl Review {
                 let replacement = draft
                     .filter(|(id, _)| *id == group.id)
                     .map_or(default.as_str(), |(_, replacement)| replacement);
-                edits.extend(self.plan(source, group.id, None, replacement)?);
+                if !valid_replacement(replacement)
+                    || (self.mode == Mode::Anonymize && replacement != group.category.token())
+                {
+                    return Err("Invalid replacement token.".into());
+                }
+                for range in &group.mentions {
+                    if source.get(range.clone()) != Some(group.original.as_ref()) {
+                        return Err("Candidate offsets changed.".into());
+                    }
+                    if group.original.as_ref() != replacement {
+                        edits.push((range.clone(), replacement.to_owned()));
+                    }
+                }
             }
         }
         edits.sort_by_key(|(range, _)| range.start);
@@ -599,13 +583,12 @@ impl Review {
         Ok(edits)
     }
     pub fn keep(&mut self, id: u64, single: Option<Range<usize>>) {
-        if let Some(group) = self.groups.iter_mut().find(|group| group.id == id) {
+        if let Some(&index) = self.group_lookup.get(&id) {
+            let group = &mut self.groups[index];
             if let Some(range) = single {
                 if group.mentions.contains(&range) {
-                    self.exclusions.push(Exclusion {
-                        range,
-                        original: group.original.clone(),
-                    });
+                    let original = group.original.clone();
+                    self.tracking.keep(range, original);
                 }
             } else {
                 group.kept = true;
@@ -617,273 +600,4 @@ impl Review {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    fn detection(range: Range<usize>, category: Category) -> Detection {
-        Detection {
-            range,
-            category,
-            score: 0.9,
-        }
-    }
-    #[test]
-    fn anonymization_uses_shared_markers_keeps_exclusions_and_protects_markdown() {
-        let source =
-            "**Анна** Bob Анна [mail](anna@example.invalid) <span title='Bob'>Bob</span> 2026 100";
-        let mut review = Review::default();
-        review.set_mode(Mode::Anonymize, source);
-        let anna = review.add_manual(source, 2..10, Category::Person).unwrap();
-        let bob = source.find("Bob").unwrap();
-        review
-            .add_manual(source, bob..bob + 3, Category::Person)
-            .unwrap();
-        let email = source.find("anna@example.invalid").unwrap();
-        review
-            .add_manual(source, email..email + 20, Category::Email)
-            .unwrap();
-        review.keep(anna, Some(2..10));
-        let edits = review.plan_all(source, None).unwrap();
-        let mut result = source.to_owned();
-        for (range, replacement) in edits.iter().rev() {
-            result.replace_range(range.clone(), replacement);
-        }
-        assert_eq!(
-            result,
-            "**Анна** PERSON PERSON [mail](EMAIL) <span title='PERSON'>PERSON</span> 2026 100"
-        );
-        review.refresh_after_edits(&result, &edits);
-        assert_eq!(review.remaining(), 0);
-        assert!(review.plan(&result, anna, None, "PERSON_1").is_err());
-        // Detected shared markers cannot acquire new numbered identities.
-        review.set_mode(Mode::Pseudonymize, &result);
-        let marker = result.find("PERSON").unwrap();
-        review
-            .ingest(
-                &result,
-                vec![detection(marker..marker + 6, Category::Person)],
-            )
-            .unwrap();
-        assert_eq!(review.remaining(), 0);
-    }
-    #[test]
-    fn anonymization_converts_only_known_accepted_pseudonyms_and_restores_proposals() {
-        let mut review = Review::default();
-        let original = "Alice Bob CLIENT_OTHER";
-        let alice = review.add_manual(original, 0..5, Category::Person).unwrap();
-        let bob = review.add_manual(original, 6..9, Category::Person).unwrap();
-        review.set_replacement(bob, "CLIENT_OTHER"); // proposed, never accepted
-        let edits = review.plan(original, alice, None, "CLIENT_A").unwrap();
-        let changed = "CLIENT_A Bob CLIENT_OTHER";
-        review.record_acceptance(alice, "CLIENT_A");
-        review.refresh_after_edits(changed, &edits);
-        review.set_mode(Mode::Anonymize, changed);
-        assert_eq!(
-            review.plan_all(changed, None).unwrap(),
-            vec![(0..8, "PERSON".into()), (9..12, "PERSON".into())]
-        );
-        assert_eq!(review.mappings().len(), 2);
-        review.set_mode(Mode::Pseudonymize, changed);
-        assert_eq!(
-            review.plan_all(changed, None).unwrap(),
-            vec![(9..12, "CLIENT_OTHER".into())]
-        );
-        let mut reopened = Review::default();
-        reopened.set_mode(Mode::Anonymize, changed);
-        assert!(reopened.plan_all(changed, None).unwrap().is_empty());
-        // Explicit manual selection works for tokens whose mappings are gone.
-        reopened
-            .add_manual(changed, 0..8, Category::Person)
-            .unwrap();
-        assert_eq!(
-            reopened.plan_all(changed, None).unwrap(),
-            vec![(0..8, "PERSON".into())]
-        );
-    }
-    #[test]
-    fn unicode_exact_repeats_and_hidden_source_keep_source_syntax() {
-        let source = "**Анна** [Анна](https://x.invalid/Анна) `Анна` Аннушка";
-        let mut review = Review::default();
-        review
-            .ingest(source, vec![detection(2..10, Category::Person)])
-            .unwrap();
-        let group = &review.groups[0];
-        assert_eq!(group.mentions.len(), 4);
-        let edits = review.plan(source, group.id, None, "PERSON_1").unwrap();
-        let mut changed = source.to_string();
-        for (range, replacement) in edits.iter().rev() {
-            changed.replace_range(range.clone(), replacement);
-        }
-        assert_eq!(
-            changed,
-            "**PERSON_1** [PERSON_1](https://x.invalid/PERSON_1) `PERSON_1` Аннушка"
-        );
-        review.refresh(&changed);
-        assert_eq!(review.remaining(), 0);
-        review.refresh(source); // undo
-        assert_eq!(review.remaining(), 4);
-        assert_eq!(review.groups[0].replacement, "PERSON_1");
-    }
-    #[test]
-    fn keep_all_survives_rescan_and_single_keep_rebases() {
-        let mut review = Review::default();
-        review
-            .ingest("Ann Ann", vec![detection(0..3, Category::Person)])
-            .unwrap();
-        let id = review.groups[0].id;
-        review.keep(id, Some(0..3));
-        assert_eq!(review.remaining(), 1);
-        review.refresh("prefix Ann Ann");
-        assert_eq!(review.groups[0].mentions, vec![11..14]);
-        review.keep(id, None);
-        review
-            .ingest("prefix Ann Ann", vec![detection(7..10, Category::Person)])
-            .unwrap();
-        assert_eq!(review.remaining(), 0);
-    }
-    #[test]
-    fn batch_refresh_preserves_a_kept_mention_between_replacements() {
-        let source = "Ann Acme Ann Bob";
-        let mut review = Review::default();
-        let ann = review.add_manual(source, 0..3, Category::Person).unwrap();
-        review
-            .add_manual(source, 4..8, Category::Organization)
-            .unwrap();
-        review.add_manual(source, 13..16, Category::Person).unwrap();
-        review.keep(ann, Some(9..12));
-        let edits = review.plan_all(source, None).unwrap();
-        let mut changed = source.to_owned();
-        for (range, replacement) in edits.iter().rev() {
-            changed.replace_range(range.clone(), replacement);
-        }
-        review.refresh_after_edits(&changed, &edits);
-        assert_eq!(changed, "PERSON_1 ORG_1 Ann PERSON_2");
-        assert_eq!(review.remaining(), 0);
-    }
-    #[test]
-    fn batch_plan_preserves_kept_mentions_custom_tokens_and_hidden_source() {
-        let source = "**Анна** Acme Анна [mail](anna@example.invalid) Bob";
-        let mut review = Review::default();
-        let anna = review.add_manual(source, 2..10, Category::Person).unwrap();
-        let acme = source.find("Acme").unwrap();
-        let org = review
-            .add_manual(source, acme..acme + 4, Category::Organization)
-            .unwrap();
-        let email = source.find("anna@example.invalid").unwrap();
-        review
-            .add_manual(source, email..email + 20, Category::Email)
-            .unwrap();
-        let bob = source.find("Bob").unwrap();
-        let kept = review
-            .add_manual(source, bob..bob + 3, Category::Person)
-            .unwrap();
-        review.keep(anna, Some(2..10));
-        review.keep(kept, None);
-        review.set_replacement(org, "CLIENT_1");
-        let edits = review
-            .plan_all(source, Some((anna, "PERSON_CUSTOM")))
-            .unwrap();
-        assert_eq!(edits.len(), 3);
-        let mut changed = source.to_owned();
-        for (range, replacement) in edits.iter().rev() {
-            changed.replace_range(range.clone(), replacement);
-        }
-        assert_eq!(
-            changed,
-            "**Анна** CLIENT_1 PERSON_CUSTOM [mail](EMAIL_1) Bob"
-        );
-        assert!(review.plan_all("changed", None).is_err());
-        assert!(
-            review
-                .plan_all(source, Some((anna, "invalid token")))
-                .is_err()
-        );
-        assert_eq!(review.remaining(), 3);
-    }
-    #[test]
-    fn plans_refuse_stale_or_invalid_ranges_and_syntax_replacements() {
-        let mut review = Review::default();
-        assert!(
-            review
-                .ingest("Ё", vec![detection(1..2, Category::Person)])
-                .is_err()
-        );
-        review
-            .ingest("Ann", vec![detection(0..3, Category::Person)])
-            .unwrap();
-        let id = review.groups[0].id;
-        assert!(review.plan("Anna", id, None, "PERSON_1").is_err());
-        assert!(review.plan("Ann", id, Some(1..3), "PERSON_1").is_err());
-        assert!(review.plan("Ann", id, None, "](bad)").is_err());
-        assert!(
-            review
-                .add_manual("[Ann](url)", 0..10, Category::Person)
-                .is_err()
-        );
-    }
-    #[test]
-    fn hidden_values_are_replaceable_but_html_names_quotes_and_list_prefixes_are_protected() {
-        let source = "1. Anna\n\n[Anna](https://x.invalid/Anna) ![photo](Anna.png) <Anna Anna=\"Anna\">Anna</Anna>";
-        let mut review = Review::default();
-        let id = review.add_manual(source, 3..7, Category::Person).unwrap();
-        let group = review.group(id).unwrap();
-        assert_eq!(group.mentions.len(), 6);
-        let mut changed = source.to_owned();
-        for (range, replacement) in review
-            .plan(source, id, None, "PERSON_1")
-            .unwrap()
-            .iter()
-            .rev()
-        {
-            changed.replace_range(range.clone(), replacement);
-        }
-        assert_eq!(
-            changed,
-            "1. PERSON_1\n\n[PERSON_1](https://x.invalid/PERSON_1) ![photo](PERSON_1.png) <Anna Anna=\"PERSON_1\">PERSON_1</Anna>"
-        );
-        assert!(review.add_manual(source, 0..2, Category::Identity).is_err());
-        let tag = source.find("<Anna").unwrap() + 1;
-        assert!(
-            review
-                .add_manual(source, tag..tag + 4, Category::Person)
-                .is_err()
-        );
-        let quote = source.find("\"Anna\"").unwrap();
-        assert!(
-            review
-                .add_manual(source, quote + 1..quote + 6, Category::Person)
-                .is_err()
-        );
-        assert!(!valid_replacement("---"));
-        assert!(!valid_replacement("1"));
-        assert!(!valid_replacement("PERSON_"));
-    }
-    #[test]
-    fn parenthesized_phone_values_do_not_consume_link_delimiters() {
-        let source = "Call (202) 555-0101. [contact](tel:(202)555-0101)";
-        let mut review = Review::default();
-        let id = review.add_manual(source, 5..19, Category::Phone).unwrap();
-        assert_eq!(
-            review.plan(source, id, None, "PHONE_1").unwrap()[0].0,
-            5..19
-        );
-        let end = source.len();
-        assert!(
-            review
-                .add_manual(source, end - 13..end, Category::Phone)
-                .is_err()
-        );
-    }
-    #[test]
-    fn mappings_link_variants_explicitly_and_never_collide_with_source_tokens() {
-        let mut review = Review::default();
-        let source = "PERSON_1 Анна Анны";
-        let a = review.add_manual(source, 9..17, Category::Person).unwrap();
-        let b = review.add_manual(source, 18..26, Category::Person).unwrap();
-        assert_eq!(review.group(a).unwrap().replacement, "PERSON_2");
-        review.set_replacement(b, "PERSON_2");
-        assert_eq!(
-            review.group(a).unwrap().replacement,
-            review.group(b).unwrap().replacement
-        );
-    }
-}
+mod tests;

@@ -1,0 +1,9 @@
+{
+  "deadline_exceeded": false,
+  "elapsed_ms": 14589.824084,
+  "exit_code": 0,
+  "machine": "Apple M4; 24 GiB; Apple Silicon macOS; Rust 1.98.1; release; CPU 4 threads; network denied",
+  "report_written": true,
+  "stderr": "tests/fixtures/pseudonymization/results/2026-10-07-hybrid/model.stderr.log",
+  "success": true
+}

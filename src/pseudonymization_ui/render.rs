@@ -1,5 +1,5 @@
 //! PII toolbar, status and review rendering. State stays in the parent controller.
-use super::ReviewUi;
+use super::{PopupTarget, ReviewUi};
 use crate::{
     AcceptAllPseudonyms, AcceptPseudonymCandidate, AddPseudonymCandidate, Anonymize,
     ClosePseudonymPopup, KeepPseudonymCandidate, NextCandidate, PreviousCandidate, Pseudonymize,
@@ -14,7 +14,7 @@ use gpui::{
 use std::ops::Range;
 
 impl ReviewUi {
-    fn reveal_popup_control(
+    pub(super) fn reveal_popup_control(
         &self,
         id: impl Into<gpui::ElementId>,
         control: gpui::Stateful<gpui::Div>,
@@ -344,17 +344,21 @@ impl Workspace {
     ) -> Option<AnyElement> {
         let anonymous = self.pseudonymization.review.mode == Mode::Anonymize;
         let popup = self.pseudonymization.popup.as_ref()?;
-        let group = self.pseudonymization.review.group(popup.group)?;
-        let original = group.original.clone();
+        if let PopupTarget::Choose { ids, selected } = &popup.target {
+            return Some(self.annotation_chooser(ids.clone(), *selected, cx));
+        }
+        if let PopupTarget::Applied(id) = popup.target {
+            return self.applied_popup(id, window, cx);
+        }
+        let (group_id, mention) = popup.candidate()?;
+        let group = self.pseudonymization.review.group(group_id)?;
+        let original = group.original.to_string();
         let count = group.mentions.len();
-        let index = group
-            .mentions
-            .iter()
-            .position(|range| *range == popup.mention)?;
-        let anchor = self
-            .editor
-            .read(cx)
-            .annotation_bounds((group.id << 32) | index as u64);
+        let annotation = self
+            .pseudonymization
+            .review
+            .annotation_id(group.id, &mention)?;
+        let anchor = self.editor.read(cx).annotation_bounds(annotation);
         let position: Point<Pixels> = anchor
             .map(|bounds| gpui::point(bounds.left(), bounds.bottom() + px(4.)))
             .unwrap_or_else(|| self.scroll.bounds().origin + gpui::point(px(24.), px(24.)));
@@ -560,9 +564,11 @@ impl Workspace {
                                     .text_color(palette.header_muted)
                                     .child("Source fragment (includes hidden Markdown):"),
                             )
-                            .child(div().py_1().child(
-                                source_fragment(self.editor.read(cx).text(), &popup.mention),
-                            ))
+                            .child(
+                                div()
+                                    .py_1()
+                                    .child(source_fragment(self.editor.read(cx).text(), &mention)),
+                            )
                         })
                         .when(!anonymous && mappings.len() > 1, |v| {
                             v.child(

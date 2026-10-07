@@ -1,0 +1,4050 @@
+{
+  "model": {
+    "id": "gliner2-pii-fp16",
+    "engine": "gliner2",
+    "repository": "jugaadsrl/gliner2-privacy-filter-PII-multi-onnx",
+    "revision": "e594898629d452e8311796f5f329c7edbeda907c",
+    "files": [
+      {
+        "path": "fp16_v2/classifier_fp16.onnx",
+        "bytes": 2366948,
+        "sha256": "05496dbc57d06ae19a41ee740419880baf00c704ce78ced483732703ce336a6c",
+        "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/classifier_fp16.onnx"
+      },
+      {
+        "path": "fp16_v2/count_lstm_fixed_fp16.onnx",
+        "bytes": 21288145,
+        "sha256": "83d4f991fbdb65226ef1dfdf6095f08b960547c3a1a6c1e3d45cd539ff92a1b3",
+        "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/count_lstm_fixed_fp16.onnx"
+      },
+      {
+        "path": "fp16_v2/count_pred_argmax_fp16.onnx",
+        "bytes": 2425035,
+        "sha256": "a353e6b967a09f78d520e28c237b52ccfda5113de6e4345158d1e5e5cb963c9b",
+        "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/count_pred_argmax_fp16.onnx"
+      },
+      {
+        "path": "fp16_v2/encoder_fp16.onnx",
+        "bytes": 556324340,
+        "sha256": "fd75d6cd79523848e788d473a806de918f7fcc9b20b26ef3091238234eedee6c",
+        "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/encoder_fp16.onnx"
+      },
+      {
+        "path": "fp16_v2/schema_gather_fp16.onnx",
+        "bytes": 2145,
+        "sha256": "255437e8b4a2af91951421309208fc188859b74062b88359ea565bdb0309ccdf",
+        "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/schema_gather_fp16.onnx"
+      },
+      {
+        "path": "fp16_v2/scorer_fp16.onnx",
+        "bytes": 5876,
+        "sha256": "ebbdf71ab00f6382f1effe04c586207ab85ac0b941688063005c384fa2e0458e",
+        "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/scorer_fp16.onnx"
+      },
+      {
+        "path": "fp16_v2/span_rep_fp16.onnx",
+        "bytes": 33074792,
+        "sha256": "df0d2e318daf16e0b85c1c5ed0b223d529f26a09865aea29e805e0191b8041c2",
+        "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/span_rep_fp16.onnx"
+      },
+      {
+        "path": "fp16_v2/token_gather_fp16.onnx",
+        "bytes": 524,
+        "sha256": "9f69059ca4db687f07d6a11d1c8f3c59780aff374978aec6fc51798beb13313a",
+        "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/token_gather_fp16.onnx"
+      },
+      {
+        "path": "fp16_v2/tokenizer.json",
+        "bytes": 16020604,
+        "sha256": "f6df10ec83bea993035b2dd7c39345a3d4fcf23421c2adb6cb4ffc1e6d1bc4b5",
+        "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/fp16_v2/tokenizer.json"
+      },
+      {
+        "path": "README.md",
+        "bytes": 8085,
+        "sha256": "240b8eed6ddf54b4e42e9ee2838b7ffebea482cec932968d0eb37f6caf60bbae",
+        "url": "https://huggingface.co/jugaadsrl/gliner2-privacy-filter-PII-multi-onnx/resolve/e594898629d452e8311796f5f329c7edbeda907c/README.md"
+      }
+    ]
+  },
+  "engine_revision": "gliner2-rs=0.9.6; ort=2.0.0-rc.13; hub disabled",
+  "profile": "release",
+  "platform": "macos-aarch64",
+  "runtime_sha256": "299e5a2c6ea00531ecd6bf3217e23798c1fcba1698bb386d313c8e16d7317d60",
+  "corpus_sha256": "0f1c5d7f8d4ffa286ffc01839648ab02ead52ad3099f8ebbb32555b85210eda6",
+  "threshold": 0.5,
+  "threads": 4,
+  "window_words": 128,
+  "overlap_words": 32,
+  "configuration": {
+    "app_detector_sha256": "fc0553c5245b8a42ce8fb744614ee01a5b38fd2ff4a04c618f996c6acb03c38f",
+    "execution": "Standard",
+    "families": [
+      [
+        [
+          "person",
+          "PERSON"
+        ],
+        [
+          "full_name",
+          "PERSON"
+        ]
+      ],
+      [
+        [
+          "organization",
+          "ORG"
+        ]
+      ],
+      [
+        [
+          "email",
+          "EMAIL"
+        ],
+        [
+          "phone_number",
+          "PHONE"
+        ],
+        [
+          "address",
+          "ADDRESS"
+        ]
+      ],
+      [
+        [
+          "passport_number",
+          "IDENTITY"
+        ],
+        [
+          "national_id_number",
+          "IDENTITY"
+        ],
+        [
+          "tax_id",
+          "TAX"
+        ]
+      ],
+      [
+        [
+          "bank_account",
+          "BANK"
+        ],
+        [
+          "iban",
+          "BANK"
+        ],
+        [
+          "routing_number",
+          "BANK"
+        ]
+      ]
+    ],
+    "flat_ner": true,
+    "max_schema_text_tokens": 512,
+    "precision": "Fp16",
+    "provider": "CPU",
+    "splitter": "app tokenizer-bounded windows"
+  },
+  "verify_ms": 309.551416,
+  "load_ms": 951.9195000000001,
+  "drop_ms": 130.88683400000002,
+  "peak_rss_bytes": 1831452672,
+  "fixtures": [
+    {
+      "id": "en-contract",
+      "language": "en",
+      "kind": "legal",
+      "source_bytes": 268,
+      "source_sha256": "4cd30bbfcd4ed5bb666aa8fb7bc7e47cd5777b95b2a12fb12b4beea0123b3f4c",
+      "latency_ms": [
+        141.482375,
+        169.33066699999998,
+        129.9425
+      ],
+      "predictions": [
+        {
+          "category": "ADDRESS",
+          "label": "address",
+          "start": 171,
+          "end": 202,
+          "text": "42 Cedar Lane, Boston, MA 02110",
+          "score": 0.943243
+        },
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 118,
+          "end": 146,
+          "text": "alice.morgan@example.invalid",
+          "score": 0.99999535
+        },
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 21,
+          "end": 42,
+          "text": "Northbridge Legal Ltd",
+          "score": 0.9962492
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 52,
+          "end": 64,
+          "text": "Alice Morgan",
+          "score": 0.99754655
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 88,
+          "end": 100,
+          "text": "Alice Morgan",
+          "score": 0.9966885
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 150,
+          "end": 167,
+          "text": "+1 (202) 555-0147",
+          "score": 0.99999905
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 2,
+            "true_positives": 2,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "ru-contract",
+      "language": "ru",
+      "kind": "legal",
+      "source_bytes": 509,
+      "source_sha256": "f8b78ca4cd934e9a766018b78ab7b7231feff91145607ffa4cbf8532572cbaf4",
+      "latency_ms": [
+        138.29525,
+        199.155125,
+        142.80954100000002
+      ],
+      "predictions": [
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 275,
+          "end": 298,
+          "text": "elkinа@example.invalid",
+          "score": 0.99062383
+        },
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 54,
+          "end": 83,
+          "text": "Северный Вектор",
+          "score": 0.9164094
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 117,
+          "end": 159,
+          "text": "Анны Сергеевны Ёлкиной",
+          "score": 0.98813087
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 197,
+          "end": 249,
+          "text": "Иваном Петровичем Соколовым",
+          "score": 0.9947187
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 300,
+          "end": 318,
+          "text": "+7 (495) 555-01-47",
+          "score": 0.9999943
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 1
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 1
+          },
+          "PERSON": {
+            "expected": 2,
+            "true_positives": 2,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [
+          {
+            "category": "ORG",
+            "start": 45,
+            "end": 85,
+            "text": "ООО «Северный Вектор»"
+          },
+          {
+            "category": "ADDRESS",
+            "start": 332,
+            "end": 389,
+            "text": "г. Москва, ул. Кедровая, д. 42, кв. 7"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "ORG",
+            "label": "organization",
+            "start": 54,
+            "end": 83,
+            "text": "Северный Вектор",
+            "score": 0.9164094
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "en-identifiers",
+      "language": "en",
+      "kind": "legal",
+      "source_bytes": 190,
+      "source_sha256": "88ca10c7ce87453fb3bb79e7785000ae4058361262eb9271d17382ee2aa76f14",
+      "latency_ms": [
+        131.514625,
+        129.441542,
+        143.1465
+      ],
+      "predictions": [
+        {
+          "category": "BANK",
+          "label": "iban",
+          "start": 96,
+          "end": 123,
+          "text": "GB29 NWBK 6016 1331 9268 19",
+          "score": 0.96458924
+        },
+        {
+          "category": "BANK",
+          "label": "routing_number",
+          "start": 181,
+          "end": 189,
+          "text": "2026/314",
+          "score": 0.98421544
+        },
+        {
+          "category": "IDENTITY",
+          "label": "passport_number",
+          "start": 34,
+          "end": 43,
+          "text": "XK0427819",
+          "score": 0.99791706
+        },
+        {
+          "category": "PERSON",
+          "label": "full_name",
+          "start": 7,
+          "end": 19,
+          "text": "Robert Hayes",
+          "score": 0.9897909
+        },
+        {
+          "category": "TAX",
+          "label": "tax_id",
+          "start": 71,
+          "end": 81,
+          "text": "12-3456789",
+          "score": 0.9388008
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [
+          {
+            "category": "BANK",
+            "label": "routing_number",
+            "start": 181,
+            "end": 189,
+            "text": "2026/314",
+            "score": 0.98421544
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "ru-identifiers",
+      "language": "ru",
+      "kind": "legal",
+      "source_bytes": 268,
+      "source_sha256": "2f89f0d6155f6a6c788d7b8a2f6b0d05cfe3c8cf3e3ba15f775abf3cc156c937",
+      "latency_ms": [
+        133.354333,
+        159.066292,
+        145.664541
+      ],
+      "predictions": [
+        {
+          "category": "BANK",
+          "label": "bank_account",
+          "start": 166,
+          "end": 186,
+          "text": "40702810900000001234",
+          "score": 0.9167081
+        },
+        {
+          "category": "BANK",
+          "label": "bank_account",
+          "start": 196,
+          "end": 205,
+          "text": "044525225",
+          "score": 0.7664685
+        },
+        {
+          "category": "BANK",
+          "label": "routing_number",
+          "start": 251,
+          "end": 267,
+          "text": "А40-123456/2026",
+          "score": 0.938124
+        },
+        {
+          "category": "IDENTITY",
+          "label": "passport_number",
+          "start": 76,
+          "end": 87,
+          "text": "4510 123456",
+          "score": 0.99780875
+        },
+        {
+          "category": "IDENTITY",
+          "label": "national_id_number",
+          "start": 97,
+          "end": 107,
+          "text": "7701234567",
+          "score": 0.9895109
+        },
+        {
+          "category": "PERSON",
+          "label": "full_name",
+          "start": 18,
+          "end": 58,
+          "text": "Анна Сергеевна Ёлкина",
+          "score": 0.98826754
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 2,
+            "true_positives": 2,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 2,
+            "true_positives": 1,
+            "false_positives": 1,
+            "misses": 1
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 1
+          }
+        },
+        "missed": [
+          {
+            "category": "TAX",
+            "start": 97,
+            "end": 107,
+            "text": "7701234567"
+          },
+          {
+            "category": "IDENTITY",
+            "start": 121,
+            "end": 135,
+            "text": "123-456-789 00"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "BANK",
+            "label": "routing_number",
+            "start": 251,
+            "end": 267,
+            "text": "А40-123456/2026",
+            "score": 0.938124
+          },
+          {
+            "category": "IDENTITY",
+            "label": "national_id_number",
+            "start": 97,
+            "end": 107,
+            "text": "7701234567",
+            "score": 0.9895109
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "en-variants",
+      "language": "en",
+      "kind": "legal",
+      "source_bytes": 129,
+      "source_sha256": "31c44e6f45af5001ca6619844179a65f20067410055493a83e448e7ccab7e91a",
+      "latency_ms": [
+        94.28408300000001,
+        119.894166,
+        122.622166
+      ],
+      "predictions": [
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 24,
+          "end": 46,
+          "text": "Northbridge Legal Ltd.",
+          "score": 0.9974491
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 0,
+          "end": 12,
+          "text": "Alice Morgan",
+          "score": 0.9832145
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 47,
+          "end": 56,
+          "text": "A. Morgan",
+          "score": 0.8312801
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 103,
+          "end": 115,
+          "text": "Alice Morgan",
+          "score": 0.9705206
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 1
+          },
+          "PERSON": {
+            "expected": 4,
+            "true_positives": 3,
+            "false_positives": 0,
+            "misses": 1
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [
+          {
+            "category": "ORG",
+            "start": 24,
+            "end": 45,
+            "text": "Northbridge Legal Ltd"
+          },
+          {
+            "category": "PERSON",
+            "start": 84,
+            "end": 90,
+            "text": "Morgan"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "ORG",
+            "label": "organization",
+            "start": 24,
+            "end": 46,
+            "text": "Northbridge Legal Ltd.",
+            "score": 0.9974491
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "ru-variants",
+      "language": "ru",
+      "kind": "legal",
+      "source_bytes": 334,
+      "source_sha256": "db796aedd1368954a71a8c58679e503d62be330b5395a4f33b099f81c6599dd1",
+      "latency_ms": [
+        159.698875,
+        128.025333,
+        143.589334
+      ],
+      "predictions": [
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 272,
+          "end": 301,
+          "text": "Северный Вектор",
+          "score": 0.83223665
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 0,
+          "end": 40,
+          "text": "Анна Сергеевна Ёлкина",
+          "score": 0.85752964
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 102,
+          "end": 144,
+          "text": "Анне Сергеевне Ёлкиной",
+          "score": 0.742048
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 173,
+          "end": 193,
+          "text": "А. С. Ёлкина",
+          "score": 0.80022407
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 221,
+          "end": 235,
+          "text": "Ёлкиной",
+          "score": 0.582016
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 1
+          },
+          "PERSON": {
+            "expected": 4,
+            "true_positives": 4,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [
+          {
+            "category": "ORG",
+            "start": 263,
+            "end": 303,
+            "text": "ООО «Северный Вектор»"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "ORG",
+            "label": "organization",
+            "start": 272,
+            "end": 301,
+            "text": "Северный Вектор",
+            "score": 0.83223665
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "en-ocr",
+      "language": "en",
+      "kind": "ocr",
+      "source_bytes": 272,
+      "source_sha256": "4c370b2db1676cabd7f84d0572c68662a8eb5399f4351d64b2d7006d839483b8",
+      "latency_ms": [
+        145.297291,
+        148.609458,
+        178.263584
+      ],
+      "predictions": [
+        {
+          "category": "ADDRESS",
+          "label": "address",
+          "start": 181,
+          "end": 202,
+          "text": "42 Cedar Lane, B0ston",
+          "score": 0.93891287
+        },
+        {
+          "category": "BANK",
+          "label": "iban",
+          "start": 217,
+          "end": 244,
+          "text": "GB29 NWBK 6016 1331 9268 19",
+          "score": 0.883236
+        },
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 79,
+          "end": 107,
+          "text": "alice.morgan@examp1e.invalid",
+          "score": 0.9999752
+        },
+        {
+          "category": "IDENTITY",
+          "label": "passport_number",
+          "start": 142,
+          "end": 152,
+          "text": "XK O427819",
+          "score": 0.9991896
+        },
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 27,
+          "end": 39,
+          "text": "A1ice M0rgan",
+          "score": 0.64097303
+        },
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 49,
+          "end": 70,
+          "text": "N0rthbridge Legal Ltd",
+          "score": 0.98498523
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 113,
+          "end": 128,
+          "text": "+1 202 555 O147",
+          "score": 0.99999046
+        },
+        {
+          "category": "TAX",
+          "label": "tax_id",
+          "start": 161,
+          "end": 171,
+          "text": "12-3456789",
+          "score": 0.9823555
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 1
+          },
+          "PHONE": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [
+          {
+            "category": "PERSON",
+            "start": 27,
+            "end": 39,
+            "text": "A1ice M0rgan"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "ORG",
+            "label": "organization",
+            "start": 27,
+            "end": 39,
+            "text": "A1ice M0rgan",
+            "score": 0.64097303
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "ru-ocr",
+      "language": "ru",
+      "kind": "ocr",
+      "source_bytes": 405,
+      "source_sha256": "c5bc8f464b80a033e3a485b094adc8be5dac4181bc68640ba2a74d915191f531",
+      "latency_ms": [
+        156.742833,
+        147.654667,
+        132.078584
+      ],
+      "predictions": [
+        {
+          "category": "BANK",
+          "label": "bank_account",
+          "start": 195,
+          "end": 215,
+          "text": "407028I0900000001234",
+          "score": 0.88817817
+        },
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 331,
+          "end": 358,
+          "text": "anna.elkina@example.invalid",
+          "score": 0.99998826
+        },
+        {
+          "category": "IDENTITY",
+          "label": "passport_number",
+          "start": 154,
+          "end": 165,
+          "text": "45I0 123456",
+          "score": 0.9991574
+        },
+        {
+          "category": "IDENTITY",
+          "label": "national_id_number",
+          "start": 174,
+          "end": 184,
+          "text": "77O1234567",
+          "score": 0.98687875
+        },
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 98,
+          "end": 138,
+          "text": "ООО «Северньй Вектор»",
+          "score": 0.9829547
+        },
+        {
+          "category": "PERSON",
+          "label": "full_name",
+          "start": 32,
+          "end": 73,
+          "text": "Анна Сергее вна Ёлкина",
+          "score": 0.9777138
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 233,
+          "end": 252,
+          "text": "+7 (495) 555-О1-47",
+          "score": 0.99999756
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 1
+          },
+          "BANK": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 1
+          }
+        },
+        "missed": [
+          {
+            "category": "TAX",
+            "start": 174,
+            "end": 184,
+            "text": "77O1234567"
+          },
+          {
+            "category": "ADDRESS",
+            "start": 265,
+            "end": 312,
+            "text": "г. М0сква, ул. Кедровая, д. 42"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "IDENTITY",
+            "label": "national_id_number",
+            "start": 174,
+            "end": 184,
+            "text": "77O1234567",
+            "score": 0.98687875
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "en-markdown",
+      "language": "en",
+      "kind": "source",
+      "source_bytes": 331,
+      "source_sha256": "53372d9e26f171d22fa6ffe31739cfbe487d7f03db82614ad0c101e981cc8ec6",
+      "latency_ms": [
+        145.62858400000002,
+        152.311208,
+        167.588875
+      ],
+      "predictions": [
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 53,
+          "end": 74,
+          "text": "alice@example.invalid",
+          "score": 0.99972415
+        },
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 93,
+          "end": 114,
+          "text": "alice@example.invalid",
+          "score": 0.9994
+        },
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 255,
+          "end": 276,
+          "text": "alice@example.invalid",
+          "score": 0.9996749
+        },
+        {
+          "category": "PERSON",
+          "label": "full_name",
+          "start": 38,
+          "end": 50,
+          "text": "Alice Morgan",
+          "score": 0.9810583
+        },
+        {
+          "category": "PERSON",
+          "label": "full_name",
+          "start": 221,
+          "end": 233,
+          "text": "Alice Morgan",
+          "score": 0.9628831
+        },
+        {
+          "category": "PERSON",
+          "label": "full_name",
+          "start": 302,
+          "end": 314,
+          "text": "Alice Morgan",
+          "score": 0.9634375
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 3,
+            "true_positives": 3,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 5,
+            "true_positives": 3,
+            "false_positives": 0,
+            "misses": 2
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [
+          {
+            "category": "PERSON",
+            "start": 158,
+            "end": 170,
+            "text": "Alice_Morgan"
+          },
+          {
+            "category": "PERSON",
+            "start": 192,
+            "end": 204,
+            "text": "Alice_Morgan"
+          }
+        ],
+        "false_positives": [],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "ru-markdown",
+      "language": "ru",
+      "kind": "source",
+      "source_bytes": 355,
+      "source_sha256": "8d20f27ba6ca5fea69a17bc3cb9522431664ab5b662120989502bcf0fa043c62",
+      "latency_ms": [
+        178.334,
+        156.232417,
+        152.374833
+      ],
+      "predictions": [
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 125,
+          "end": 145,
+          "text": "anna@example.invalid",
+          "score": 0.9985278
+        },
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 46,
+          "end": 86,
+          "text": "ООО «Северный Вектор»",
+          "score": 0.8482194
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 269,
+          "end": 290,
+          "text": "Анна Ёлкина",
+          "score": 0.95900095
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 311,
+          "end": 332,
+          "text": "Анна Ёлкина",
+          "score": 0.96432143
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 89,
+          "end": 99,
+          "text": "7701234567",
+          "score": 0.9879462
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 4,
+            "true_positives": 2,
+            "false_positives": 0,
+            "misses": 2
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 1
+          }
+        },
+        "missed": [
+          {
+            "category": "TAX",
+            "start": 89,
+            "end": 99,
+            "text": "7701234567"
+          },
+          {
+            "category": "PERSON",
+            "start": 170,
+            "end": 191,
+            "text": "Анна_Ёлкина"
+          },
+          {
+            "category": "PERSON",
+            "start": 221,
+            "end": 242,
+            "text": "Анна_Ёлкина"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "PHONE",
+            "label": "phone_number",
+            "start": 89,
+            "end": 99,
+            "text": "7701234567",
+            "score": 0.9879462
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "mixed-unicode",
+      "language": "mixed",
+      "kind": "source",
+      "source_bytes": 186,
+      "source_sha256": "ae93c68825ca4e8f0bfe6536e8abefa507be8beb5d4c68bfb5c136058bdcfc09",
+      "latency_ms": [
+        112.607792,
+        108.883917,
+        99.16125000000001
+      ],
+      "predictions": [
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 70,
+          "end": 89,
+          "text": "zoe@example.invalid",
+          "score": 0.99988407
+        },
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 127,
+          "end": 135,
+          "text": "Ёлка",
+          "score": 0.81669897
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 20,
+          "end": 35,
+          "text": "Zoë O’Connor",
+          "score": 0.9818405
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 40,
+          "end": 61,
+          "text": "Анна Ёлкина",
+          "score": 0.99062383
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 170,
+          "end": 185,
+          "text": "+7 495 555 0147",
+          "score": 0.99999833
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 1
+          },
+          "PERSON": {
+            "expected": 2,
+            "true_positives": 2,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [
+          {
+            "category": "ORG",
+            "start": 118,
+            "end": 137,
+            "text": "ООО «Ёлка»"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "ORG",
+            "label": "organization",
+            "start": 127,
+            "end": 135,
+            "text": "Ёлка",
+            "score": 0.81669897
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "en-negative",
+      "language": "en",
+      "kind": "negative",
+      "source_bytes": 258,
+      "source_sha256": "fe2e890a20f507b2ab101fd7e52e6d3a8dfd2cf5a6c74a4f2efaffcd7babaf2f",
+      "latency_ms": [
+        153.18912500000002,
+        131.736625,
+        130.24379199999998
+      ],
+      "predictions": [
+        {
+          "category": "ADDRESS",
+          "label": "address",
+          "start": 192,
+          "end": 199,
+          "text": "address",
+          "score": 0.94068086
+        },
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 166,
+          "end": 178,
+          "text": "organization",
+          "score": 0.891811
+        },
+        {
+          "category": "PERSON",
+          "label": "person",
+          "start": 158,
+          "end": 164,
+          "text": "person",
+          "score": 0.7465088
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [
+          {
+            "category": "ADDRESS",
+            "label": "address",
+            "start": 192,
+            "end": 199,
+            "text": "address",
+            "score": 0.94068086
+          },
+          {
+            "category": "ORG",
+            "label": "organization",
+            "start": 166,
+            "end": 178,
+            "text": "organization",
+            "score": 0.891811
+          },
+          {
+            "category": "PERSON",
+            "label": "person",
+            "start": 158,
+            "end": 164,
+            "text": "person",
+            "score": 0.7465088
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "ru-negative",
+      "language": "ru",
+      "kind": "negative",
+      "source_bytes": 375,
+      "source_sha256": "82a9bfef3d0d0db2b6552fa933b0c951fec3c7c15e778d932e16d9733e6785bc",
+      "latency_ms": [
+        131.301208,
+        128.456833,
+        141.785833
+      ],
+      "predictions": [
+        {
+          "category": "ADDRESS",
+          "label": "address",
+          "start": 287,
+          "end": 297,
+          "text": "адрес",
+          "score": 0.6766199
+        },
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 261,
+          "end": 283,
+          "text": "организация",
+          "score": 0.7576151
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [
+          {
+            "category": "ADDRESS",
+            "label": "address",
+            "start": 287,
+            "end": 297,
+            "text": "адрес",
+            "score": 0.6766199
+          },
+          {
+            "category": "ORG",
+            "label": "organization",
+            "start": 261,
+            "end": 283,
+            "text": "организация",
+            "score": 0.7576151
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-email",
+      "language": "en",
+      "kind": "calibration",
+      "source_bytes": 63,
+      "source_sha256": "6d84b7a19e6b553784c5f62bb36ea5788b626e830115d93a373860af4f9bbe82",
+      "latency_ms": [
+        109.28975,
+        118.030208,
+        112.617625
+      ],
+      "predictions": [
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 7,
+          "end": 31,
+          "text": "qa+legal@example.invalid",
+          "score": 0.99475956
+        },
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 38,
+          "end": 62,
+          "text": "qa+legal@example.invalid",
+          "score": 0.993973
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 2,
+            "true_positives": 2,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-phone",
+      "language": "mixed",
+      "kind": "calibration",
+      "source_bytes": 61,
+      "source_sha256": "aef7f9d0951afdf422801ee90eee4efa5f985d798f06863aaf747120ccea3765",
+      "latency_ms": [
+        100.65579199999999,
+        119.747791,
+        122.46808300000001
+      ],
+      "predictions": [
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 7,
+          "end": 24,
+          "text": "+1 (202) 555-0189",
+          "score": 0.999988
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 42,
+          "end": 60,
+          "text": "+7 (495) 555-02-19",
+          "score": 0.9999228
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 2,
+            "true_positives": 2,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-inn",
+      "language": "ru",
+      "kind": "calibration",
+      "source_bytes": 56,
+      "source_sha256": "fcf968263c9f45608b51bd4d93b24770615e6a59e316edf243a4203774bef64a",
+      "latency_ms": [
+        115.794125,
+        109.15683399999999,
+        89.80208300000001
+      ],
+      "predictions": [
+        {
+          "category": "TAX",
+          "label": "tax_id",
+          "start": 8,
+          "end": 18,
+          "text": "7701000019",
+          "score": 0.8531803
+        },
+        {
+          "category": "TAX",
+          "label": "tax_id",
+          "start": 43,
+          "end": 55,
+          "text": "500100000199",
+          "score": 0.6117299
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 2,
+            "true_positives": 2,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-snils",
+      "language": "ru",
+      "kind": "calibration",
+      "source_bytes": 65,
+      "source_sha256": "bb055723ad8de459f571d298ff660f1b7b3c9e317544ff86f4ee3963ac0521c0",
+      "latency_ms": [
+        102.8085,
+        127.16170900000002,
+        78.979708
+      ],
+      "predictions": [
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 12,
+          "end": 26,
+          "text": "123-456-789 64",
+          "score": 0.9998233
+        },
+        {
+          "category": "TAX",
+          "label": "tax_id",
+          "start": 48,
+          "end": 64,
+          "text": "А40-987654/2026",
+          "score": 0.70548075
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 1
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          }
+        },
+        "missed": [
+          {
+            "category": "IDENTITY",
+            "start": 12,
+            "end": 26,
+            "text": "123-456-789 64"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "PHONE",
+            "label": "phone_number",
+            "start": 12,
+            "end": 26,
+            "text": "123-456-789 64",
+            "score": 0.9998233
+          },
+          {
+            "category": "TAX",
+            "label": "tax_id",
+            "start": 48,
+            "end": 64,
+            "text": "А40-987654/2026",
+            "score": 0.70548075
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-iban",
+      "language": "en",
+      "kind": "calibration",
+      "source_bytes": 69,
+      "source_sha256": "3c37fa5fb3430b0cb73dfe296ef2578f776a46bd8673fd85f89777bbc01f2237",
+      "latency_ms": [
+        115.92066600000001,
+        118.00595799999999,
+        114.809584
+      ],
+      "predictions": [
+        {
+          "category": "BANK",
+          "label": "iban",
+          "start": 6,
+          "end": 33,
+          "text": "GB29 NWBK 6016 1331 9268 19",
+          "score": 0.9973581
+        },
+        {
+          "category": "BANK",
+          "label": "iban",
+          "start": 41,
+          "end": 68,
+          "text": "DE89 3704 0044 0532 0130 00",
+          "score": 0.99750805
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 2,
+            "true_positives": 2,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-ru-bank",
+      "language": "ru",
+      "kind": "calibration",
+      "source_bytes": 94,
+      "source_sha256": "6cb2b710bf2acbd52c519819d63032b79d6919c6f4b73c8547e14e0df89e8b3a",
+      "latency_ms": [
+        122.524584,
+        122.814041,
+        99.287
+      ],
+      "predictions": [
+        {
+          "category": "BANK",
+          "label": "bank_account",
+          "start": 29,
+          "end": 49,
+          "text": "40702810900000001234",
+          "score": 0.856092
+        },
+        {
+          "category": "BANK",
+          "label": "routing_number",
+          "start": 59,
+          "end": 68,
+          "text": "044525225",
+          "score": 0.9658996
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 2,
+            "true_positives": 2,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-hidden",
+      "language": "mixed",
+      "kind": "calibration",
+      "source_bytes": 108,
+      "source_sha256": "00a72b1ed52a819e367bed1ee713abe319907e32d2b53eed8e0c9d2d3722caa9",
+      "latency_ms": [
+        140.3315,
+        131.386584,
+        113.821417
+      ],
+      "predictions": [
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 15,
+          "end": 37,
+          "text": "hidden@example.invalid",
+          "score": 0.99933326
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 93,
+          "end": 107,
+          "text": "234-567-891 00",
+          "score": 0.9936856
+        },
+        {
+          "category": "TAX",
+          "label": "tax_id",
+          "start": 59,
+          "end": 69,
+          "text": "7701000026",
+          "score": 0.7687332
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 1
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [
+          {
+            "category": "IDENTITY",
+            "start": 93,
+            "end": 107,
+            "text": "234-567-891 00"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "PHONE",
+            "label": "phone_number",
+            "start": 93,
+            "end": 107,
+            "text": "234-567-891 00",
+            "score": 0.9936856
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-calibration-negative",
+      "language": "mixed",
+      "kind": "calibration",
+      "source_bytes": 181,
+      "source_sha256": "9b5b4a3c83db4fcd9e6621e56e060459fd0eb1182cb97d774f1d2285c661f6a5",
+      "latency_ms": [
+        115.31704099999999,
+        109.436208,
+        136.28370900000002
+      ],
+      "predictions": [
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 140,
+          "end": 160,
+          "text": "not-a-mail@localhost",
+          "score": 0.92944044
+        },
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 176,
+          "end": 180,
+          "text": "BANK",
+          "score": 0.5873515
+        },
+        {
+          "category": "TAX",
+          "label": "tax_id",
+          "start": 22,
+          "end": 38,
+          "text": "А40-987654/2026",
+          "score": 0.54192406
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [
+          {
+            "category": "EMAIL",
+            "label": "email",
+            "start": 140,
+            "end": 160,
+            "text": "not-a-mail@localhost",
+            "score": 0.92944044
+          },
+          {
+            "category": "ORG",
+            "label": "organization",
+            "start": 176,
+            "end": 180,
+            "text": "BANK",
+            "score": 0.5873515
+          },
+          {
+            "category": "TAX",
+            "label": "tax_id",
+            "start": 22,
+            "end": 38,
+            "text": "А40-987654/2026",
+            "score": 0.54192406
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-email",
+      "language": "mixed",
+      "kind": "holdout",
+      "source_bytes": 194,
+      "source_sha256": "7ab2214d50bcbadc4aefad5811e0cf003a30ade7cd171bed433b11535df45c8d",
+      "latency_ms": [
+        110.521917,
+        120.186875,
+        111.233208
+      ],
+      "predictions": [
+        {
+          "category": "EMAIL",
+          "label": "email",
+          "start": 103,
+          "end": 126,
+          "text": "case-42@example.invalid",
+          "score": 0.9908035
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 4,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 3
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [
+          {
+            "category": "EMAIL",
+            "start": 30,
+            "end": 56,
+            "text": "юрист@example.invalid"
+          },
+          {
+            "category": "EMAIL",
+            "start": 58,
+            "end": 82,
+            "text": "mixed.а@example.invalid"
+          },
+          {
+            "category": "EMAIL",
+            "start": 174,
+            "end": 193,
+            "text": "url@example.invalid"
+          }
+        ],
+        "false_positives": [],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-phone",
+      "language": "mixed",
+      "kind": "holdout",
+      "source_bytes": 131,
+      "source_sha256": "45e591bb08e71b0f9238a45d33de18aebca4f26b71e1a5b0def86862d6e4484d",
+      "latency_ms": [
+        113.462958,
+        129.050209,
+        148.308958
+      ],
+      "predictions": [
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 11,
+          "end": 27,
+          "text": "+7-495-555-03-29",
+          "score": 0.9938787
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 46,
+          "end": 62,
+          "text": "+44 20 7946 0123",
+          "score": 0.9861514
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 83,
+          "end": 95,
+          "text": "202-555-0169",
+          "score": 0.99973047
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 113,
+          "end": 130,
+          "text": "8 (495) 555-01-47",
+          "score": 0.9993638
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 4,
+            "true_positives": 4,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-inn",
+      "language": "ru",
+      "kind": "holdout",
+      "source_bytes": 84,
+      "source_sha256": "3aeea4ae6aa367f384e179bc5b1c564bc1885641ebd361ec337547c18315dba4",
+      "latency_ms": [
+        97.667625,
+        139.872791,
+        96.111125
+      ],
+      "predictions": [
+        {
+          "category": "BANK",
+          "label": "routing_number",
+          "start": 8,
+          "end": 18,
+          "text": "5401000039",
+          "score": 0.7403621
+        },
+        {
+          "category": "BANK",
+          "label": "routing_number",
+          "start": 24,
+          "end": 36,
+          "text": "660100000231",
+          "score": 0.56709766
+        },
+        {
+          "category": "BANK",
+          "label": "routing_number",
+          "start": 46,
+          "end": 56,
+          "text": "5401000039",
+          "score": 0.55362594
+        },
+        {
+          "category": "TAX",
+          "label": "tax_id",
+          "start": 8,
+          "end": 18,
+          "text": "5401000039",
+          "score": 0.78514385
+        },
+        {
+          "category": "TAX",
+          "label": "tax_id",
+          "start": 46,
+          "end": 56,
+          "text": "5401000039",
+          "score": 0.6753365
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 3,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 3,
+            "true_positives": 2,
+            "false_positives": 0,
+            "misses": 1
+          }
+        },
+        "missed": [
+          {
+            "category": "TAX",
+            "start": 24,
+            "end": 36,
+            "text": "660100000231"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "BANK",
+            "label": "routing_number",
+            "start": 8,
+            "end": 18,
+            "text": "5401000039",
+            "score": 0.7403621
+          },
+          {
+            "category": "BANK",
+            "label": "routing_number",
+            "start": 24,
+            "end": 36,
+            "text": "660100000231",
+            "score": 0.56709766
+          },
+          {
+            "category": "BANK",
+            "label": "routing_number",
+            "start": 46,
+            "end": 56,
+            "text": "5401000039",
+            "score": 0.55362594
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-snils",
+      "language": "ru",
+      "kind": "holdout",
+      "source_bytes": 46,
+      "source_sha256": "70b60a93898430b4beab2009e9c3278d313b8e38f415618948a86f2482846d08",
+      "latency_ms": [
+        101.798084,
+        110.124667,
+        100.644333
+      ],
+      "predictions": [
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 0,
+          "end": 10,
+          "text": "СНИЛС",
+          "score": 0.6940954
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 12,
+          "end": 26,
+          "text": "345-678-912 26",
+          "score": 0.9995345
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 34,
+          "end": 45,
+          "text": "45678912344",
+          "score": 0.99706507
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 2,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 2
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 2,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [
+          {
+            "category": "IDENTITY",
+            "start": 12,
+            "end": 26,
+            "text": "345-678-912 26"
+          },
+          {
+            "category": "IDENTITY",
+            "start": 34,
+            "end": 45,
+            "text": "45678912344"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "ORG",
+            "label": "organization",
+            "start": 0,
+            "end": 10,
+            "text": "СНИЛС",
+            "score": 0.6940954
+          },
+          {
+            "category": "PHONE",
+            "label": "phone_number",
+            "start": 12,
+            "end": 26,
+            "text": "345-678-912 26",
+            "score": 0.9995345
+          },
+          {
+            "category": "PHONE",
+            "label": "phone_number",
+            "start": 34,
+            "end": 45,
+            "text": "45678912344",
+            "score": 0.99706507
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-bank",
+      "language": "mixed",
+      "kind": "holdout",
+      "source_bytes": 152,
+      "source_sha256": "3485d1b0c50bd1c977629c43bec3ad81cb3112005156dcf6c953a238b9d25dd1",
+      "latency_ms": [
+        120.259709,
+        114.57237500000001,
+        125.69820800000001
+      ],
+      "predictions": [
+        {
+          "category": "BANK",
+          "label": "iban",
+          "start": 6,
+          "end": 28,
+          "text": "NL91 ABNA 0417 1643 00",
+          "score": 0.9976768
+        },
+        {
+          "category": "BANK",
+          "label": "bank_account",
+          "start": 39,
+          "end": 59,
+          "text": "40702810500000009876",
+          "score": 0.98463464
+        },
+        {
+          "category": "BANK",
+          "label": "bank_account",
+          "start": 69,
+          "end": 78,
+          "text": "044525593",
+          "score": 0.88759494
+        },
+        {
+          "category": "BANK",
+          "label": "bank_account",
+          "start": 118,
+          "end": 138,
+          "text": "40702810500000009876",
+          "score": 0.98314995
+        },
+        {
+          "category": "BANK",
+          "label": "bank_account",
+          "start": 141,
+          "end": 150,
+          "text": "044525593",
+          "score": 0.8554894
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 5,
+            "true_positives": 5,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-unlabeled",
+      "language": "ru",
+      "kind": "holdout",
+      "source_bytes": 69,
+      "source_sha256": "69fd8fa06f0b816a449396db3f546b9c8d57aa1dac96a59c3babe5782ac6ea52",
+      "latency_ms": [
+        147.831083,
+        114.23075,
+        129.876375
+      ],
+      "predictions": [
+        {
+          "category": "BANK",
+          "label": "routing_number",
+          "start": 40,
+          "end": 50,
+          "text": "5401000039",
+          "score": 0.9554856
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 53,
+          "end": 67,
+          "text": "345-678-912 26",
+          "score": 0.9957187
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 1
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 1
+          }
+        },
+        "missed": [
+          {
+            "category": "TAX",
+            "start": 40,
+            "end": 50,
+            "text": "5401000039"
+          },
+          {
+            "category": "IDENTITY",
+            "start": 53,
+            "end": 67,
+            "text": "345-678-912 26"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "BANK",
+            "label": "routing_number",
+            "start": 40,
+            "end": 50,
+            "text": "5401000039",
+            "score": 0.9554856
+          },
+          {
+            "category": "PHONE",
+            "label": "phone_number",
+            "start": 53,
+            "end": 67,
+            "text": "345-678-912 26",
+            "score": 0.9957187
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-invalid-sensitive",
+      "language": "ru",
+      "kind": "holdout",
+      "source_bytes": 185,
+      "source_sha256": "b775955e64ce32fe6b72319922513e1b4009d28d7fd7ec4982129641a6a769eb",
+      "latency_ms": [
+        121.175292,
+        154.777583,
+        122.349167
+      ],
+      "predictions": [
+        {
+          "category": "IDENTITY",
+          "label": "national_id_number",
+          "start": 8,
+          "end": 18,
+          "text": "7701234567",
+          "score": 0.98031855
+        },
+        {
+          "category": "IDENTITY",
+          "label": "national_id_number",
+          "start": 32,
+          "end": 46,
+          "text": "123-456-789 00",
+          "score": 0.8044059
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 64,
+          "end": 83,
+          "text": "+7 (495) 555-О1-47",
+          "score": 0.9999739
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 1,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 1
+          }
+        },
+        "missed": [
+          {
+            "category": "TAX",
+            "start": 8,
+            "end": 18,
+            "text": "7701234567"
+          }
+        ],
+        "false_positives": [
+          {
+            "category": "IDENTITY",
+            "label": "national_id_number",
+            "start": 8,
+            "end": 18,
+            "text": "7701234567",
+            "score": 0.98031855
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-short-international",
+      "language": "en",
+      "kind": "holdout",
+      "source_bytes": 42,
+      "source_sha256": "aab1b11d62a94b3ef44585c8b32d51e19d29779f5ebce7e5192b1c50de825550",
+      "latency_ms": [
+        115.110833,
+        91.055125,
+        111.74125
+      ],
+      "predictions": [
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 11,
+          "end": 24,
+          "text": "+65 6123 4567",
+          "score": 0.9999922
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 1,
+            "true_positives": 1,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-identifiers-as-contract-numbers",
+      "language": "ru",
+      "kind": "negative",
+      "source_bytes": 198,
+      "source_sha256": "99ba554d8b93375adb444da2da6a16bea6155acd15a9be66b7bfebb5ec363aa7",
+      "latency_ms": [
+        132.38070800000003,
+        112.427916,
+        133.27349999999998
+      ],
+      "predictions": [
+        {
+          "category": "BANK",
+          "label": "routing_number",
+          "start": 19,
+          "end": 29,
+          "text": "5401000039",
+          "score": 0.57033134
+        },
+        {
+          "category": "ORG",
+          "label": "organization",
+          "start": 98,
+          "end": 107,
+          "text": "ГК РФ",
+          "score": 0.6906634
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 188,
+          "end": 197,
+          "text": "044525593",
+          "score": 0.8949732
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [
+          {
+            "category": "BANK",
+            "label": "routing_number",
+            "start": 19,
+            "end": 29,
+            "text": "5401000039",
+            "score": 0.57033134
+          },
+          {
+            "category": "ORG",
+            "label": "organization",
+            "start": 98,
+            "end": 107,
+            "text": "ГК РФ",
+            "score": 0.6906634
+          },
+          {
+            "category": "PHONE",
+            "label": "phone_number",
+            "start": 188,
+            "end": 197,
+            "text": "044525593",
+            "score": 0.8949732
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-negative-labels",
+      "language": "mixed",
+      "kind": "negative",
+      "source_bytes": 135,
+      "source_sha256": "3950d0a159c8c7d7efe58baf002eaf975e9f9d36806c68fe8a722a59fba13a88",
+      "latency_ms": [
+        117.51691699999999,
+        111.552333,
+        105.01245800000001
+      ],
+      "predictions": [
+        {
+          "category": "BANK",
+          "label": "iban",
+          "start": 8,
+          "end": 18,
+          "text": "0000000000",
+          "score": 0.5080254
+        },
+        {
+          "category": "BANK",
+          "label": "routing_number",
+          "start": 32,
+          "end": 46,
+          "text": "000-000-000 00",
+          "score": 0.6288634
+        },
+        {
+          "category": "BANK",
+          "label": "bank_account",
+          "start": 67,
+          "end": 72,
+          "text": "12345",
+          "score": 0.5371931
+        },
+        {
+          "category": "BANK",
+          "label": "bank_account",
+          "start": 83,
+          "end": 91,
+          "text": "12345.67",
+          "score": 0.89858866
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 55,
+          "end": 57,
+          "text": "42",
+          "score": 0.998935
+        },
+        {
+          "category": "TAX",
+          "label": "tax_id",
+          "start": 8,
+          "end": 18,
+          "text": "0000000000",
+          "score": 0.5859899
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 4,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 1,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [
+          {
+            "category": "BANK",
+            "label": "iban",
+            "start": 8,
+            "end": 18,
+            "text": "0000000000",
+            "score": 0.5080254
+          },
+          {
+            "category": "BANK",
+            "label": "routing_number",
+            "start": 32,
+            "end": 46,
+            "text": "000-000-000 00",
+            "score": 0.6288634
+          },
+          {
+            "category": "BANK",
+            "label": "bank_account",
+            "start": 67,
+            "end": 72,
+            "text": "12345",
+            "score": 0.5371931
+          },
+          {
+            "category": "BANK",
+            "label": "bank_account",
+            "start": 83,
+            "end": 91,
+            "text": "12345.67",
+            "score": 0.89858866
+          },
+          {
+            "category": "PHONE",
+            "label": "phone_number",
+            "start": 55,
+            "end": 57,
+            "text": "42",
+            "score": 0.998935
+          },
+          {
+            "category": "TAX",
+            "label": "tax_id",
+            "start": 8,
+            "end": 18,
+            "text": "0000000000",
+            "score": 0.5859899
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-negative-checksums",
+      "language": "mixed",
+      "kind": "negative",
+      "source_bytes": 158,
+      "source_sha256": "80f8913c59f088381b332de6900e78c0098ce07490166f3e86ed18069b6114ec",
+      "latency_ms": [
+        202.51587500000002,
+        105.910125,
+        152.103583
+      ],
+      "predictions": [
+        {
+          "category": "BANK",
+          "label": "iban",
+          "start": 15,
+          "end": 37,
+          "text": "GB28NWBK60161331926819",
+          "score": 0.9930693
+        },
+        {
+          "category": "BANK",
+          "label": "routing_number",
+          "start": 87,
+          "end": 98,
+          "text": "12345678900",
+          "score": 0.62039167
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 2,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [
+          {
+            "category": "BANK",
+            "label": "iban",
+            "start": 15,
+            "end": 37,
+            "text": "GB28NWBK60161331926819",
+            "score": 0.9930693
+          },
+          {
+            "category": "BANK",
+            "label": "routing_number",
+            "start": 87,
+            "end": 98,
+            "text": "12345678900",
+            "score": 0.62039167
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    },
+    {
+      "id": "hybrid-holdout-negative-long-digits",
+      "language": "en",
+      "kind": "negative",
+      "source_bytes": 110,
+      "source_sha256": "b59a2faa99de626e484dc266a264943db0ad1d84bb7a610dbaf897d7ab18c054",
+      "latency_ms": [
+        151.211708,
+        104.862208,
+        133.393666
+      ],
+      "predictions": [
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 10,
+          "end": 40,
+          "text": "123456789012345678901234567890",
+          "score": 0.72758853
+        },
+        {
+          "category": "PHONE",
+          "label": "phone_number",
+          "start": 51,
+          "end": 76,
+          "text": "1234567890123456789012345",
+          "score": 0.8563324
+        }
+      ],
+      "assessment": {
+        "counts": {
+          "ADDRESS": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "BANK": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "EMAIL": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "IDENTITY": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "ORG": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PERSON": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          },
+          "PHONE": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 2,
+            "misses": 0
+          },
+          "TAX": {
+            "expected": 0,
+            "true_positives": 0,
+            "false_positives": 0,
+            "misses": 0
+          }
+        },
+        "missed": [],
+        "false_positives": [
+          {
+            "category": "PHONE",
+            "label": "phone_number",
+            "start": 10,
+            "end": 40,
+            "text": "123456789012345678901234567890",
+            "score": 0.72758853
+          },
+          {
+            "category": "PHONE",
+            "label": "phone_number",
+            "start": 51,
+            "end": 76,
+            "text": "1234567890123456789012345",
+            "score": 0.8563324
+          }
+        ],
+        "invalid_offsets": [],
+        "duplicate_predictions": 0
+      },
+      "error": null,
+      "repeat_deterministic": true
+    }
+  ]
+}
