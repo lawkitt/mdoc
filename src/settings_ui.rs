@@ -78,30 +78,7 @@ pub fn control(
     theme: Theme,
     enabled: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    let label = label.into();
-    div()
-        .id(id)
-        .key_context("UiControl")
-        .tab_index(0)
-        .tab_stop(enabled)
-        .role(gpui::Role::Button)
-        .aria_label(label.clone())
-        .focus_visible(|s| {
-            s.bg(theme.pdf_style().placeholder_bg)
-                .text_color(theme.search_accent())
-        })
-        .px_3()
-        .py_1()
-        .rounded_md()
-        .border_1()
-        .border_color(theme.pdf_style().border)
-        .text_size(px(12.))
-        .child(label)
-        .when(enabled, |v| {
-            v.cursor_pointer()
-                .hover(|v| v.bg(theme.pdf_style().placeholder_bg))
-        })
-        .when(!enabled, |v| v.opacity(0.45))
+    ui::action_control(id, label, theme, enabled, false)
 }
 fn quiet_control(
     id: impl Into<gpui::ElementId>,
@@ -541,7 +518,9 @@ impl Panel {
                         }
                     })))
                 .child(div().flex().flex_shrink_0().items_center().gap_2()
-                    .child(div().text_size(px(11.)).text_color(palette.header_muted).child(format!("{} · {} MB", if self.checking && matches!(status, Status::Unknown) { "Checking…".into() } else { status.label() }, bytes.div_ceil(1_000_000))))
+                     .child(if self.checking && matches!(status, Status::Unknown) {
+                        ui::activity(("checking-model", index), "Checking…", theme).into_any_element()
+                    } else { div().text_size(px(11.)).text_color(palette.header_muted).child(format!("{} · {} MB", status.label(), bytes.div_ceil(1_000_000))).into_any_element() })
                 .when(missing, |v| v.child(self.scrolled_control(("download-model", index), "Download", theme, idle && ocr::SUPPORTED, cx)
                     .on_click(cx.listener(move |this, _, _, cx| { if idle && ocr::SUPPORTED { this.setup(model, false, cx); } }))))
                 .child(self.scrolled_quiet(("model-details", index), if self.details == Some(model) { "Less ↑" } else { "Details ↓" }, theme, true, cx)
@@ -602,7 +581,7 @@ impl Render for Panel {
         });
         div().id("settings-overlay").absolute().inset_0().p_4().flex().items_center().justify_center().occlude().bg(gpui::Hsla { a: 0.35, ..p.bg })
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-            .child(div().id("settings-dialog").when(cfg!(test), |v| v.debug_selector(|| "settings-dialog".into()))
+            .child(ui::panel("settings-dialog", theme).when(cfg!(test), |v| v.debug_selector(|| "settings-dialog".into()))
                 .key_context("ModelSettings UiPanel").track_focus(&self.focus).tab_group().tab_stop(false).w(px(600.)).max_w_full()
                 .max_h((window.viewport_size().height - px(32.)).max(px(160.)))
                 .flex().flex_col().rounded_lg().shadow_lg().bg(p.bg).text_color(p.header_fg).text_size(px(13.))
@@ -656,14 +635,22 @@ impl Render for Panel {
                             .child(div().id("settings-threshold-field").w(px(90.)).border_1().rounded_md().border_color(p.border).bg(p.bg).px_2().py_1().child(self.threshold.clone()).map(|v| ui::reveal_focus(v, self.threshold.read(cx).focus_handle(cx), self.scroll.clone()))))
                         .child(div().text_size(px(11.)).text_color(p.header_muted).child("Values range from 0 to 1. Higher thresholds return fewer candidates.")))))
                 .when_some(self.error.clone(), |v, e| v.child(div().px_4().pb_3().text_size(px(12.)).text_color(style::markdown_style(theme).alert_warning).child(e)))
-                .when_some(model_work::description(), |v, work| v.child(div().px_4().pb_2().text_size(px(11.)).text_color(p.header_muted).child(format!("In progress: {work}. Model actions will be available when it finishes."))))
+                 .when_some(model_work::description().filter(|_| self.progress.is_none()), |v, work| v.child(ui::activity("model-work-activity", work, theme).px_4().pb_2()))
                 .when_some(self.progress.clone(), |v, progress| {
                     let state = progress.state.lock().unwrap().clone();
-                    v.child(div().flex().items_center().gap_2().px_4().pb_3()
-                        .child(div().flex_1().text_size(px(12.)).child(format!("{}{}", state.phase, if state.phase.starts_with("Downloading") { format!(" · {} / {} MB", state.received / 1_000_000, state.total.div_ceil(1_000_000)) } else { String::new() })))
-                        .child(quiet_control("cancel-model-download", "Cancel download", theme, true).on_click(cx.listener(|this, _, _, cx| {
-                            if let Some(p) = &this.progress { p.cancel.store(true, Ordering::Relaxed); } cx.notify();
-                        }))))
+                    let downloading = state.phase.starts_with("Downloading") && state.total > 0;
+                    let cancelling = progress.cancel.load(Ordering::Relaxed);
+                    let label = if cancelling { "Cancelling…" } else if downloading { "Downloading model files…" } else if state.phase.is_empty() { "Preparing model…" } else { &state.phase };
+                    v.child(div().px_4().pb_3().flex().flex_col().gap_2()
+                        .child(div().flex().flex_wrap().items_center().gap_2()
+                            .child(ui::activity("model-download-activity", label.to_owned(), theme).flex_1())
+                            .child(quiet_control("cancel-model-download", "Cancel", theme, !cancelling).on_click(cx.listener(|this, _, _, cx| {
+                                if let Some(p) = &this.progress { p.cancel.store(true, Ordering::Relaxed); } cx.notify();
+                            }))))
+                        .when(downloading, |v| v
+                            .child(ui::progress_bar(state.received, state.total, theme))
+                            .child(div().text_size(px(11.)).text_color(p.header_muted)
+                                .child(format!("Current file · {} / {} MB", state.received / 1_000_000, state.total.div_ceil(1_000_000))))))
                 })
                 .child(div().flex().flex_wrap().gap_2().items_center().flex_shrink_0().px_4().py_3().border_t_1().border_color(p.border)
                     .child(quiet_control("reset-settings", "Reset defaults", theme, !self.applying).on_click(cx.listener(|this, _, _, cx| {
@@ -674,11 +661,12 @@ impl Render for Panel {
                         .when(cfg!(test), |v| v.debug_selector(|| "settings-close".into()))
                         .on_click(cx.listener(|this, _, w, cx| this.close(w, cx))))
                     .child(div().id("apply-settings").role(gpui::Role::Button).aria_label("Apply").focus_visible(|s| s.bg(p.placeholder_bg)).key_context("UiControl").tab_index(0).tab_stop(!self.applying && changed).px_3().py_1().rounded_md().border_1().text_size(px(12.))
-                        .child(if self.applying { "Applying…" } else { "Apply" })
+                        .bg(theme.sidebar_selected()).text_color(accent)
+                        .child(if self.applying { ui::activity("settings-apply-activity", "Applying…", theme).into_any_element() } else { div().child("Apply").into_any_element() })
                         .when(!self.applying && changed, |v| v.cursor_pointer())
                         .when(self.applying || !changed, |v| v.opacity(0.45))
                         .when(cfg!(test), |v| v.debug_selector(|| "settings-apply".into()))
-                        .border_color(accent).bg(accent).text_color(p.bg).hover(move |v| v.bg(accent).opacity(0.85))
+                        .border_color(accent).hover(move |v| v.bg(theme.sidebar_selected()).opacity(0.85))
                         .on_click(cx.listener(move |this, _, _, cx| { if changed && !this.applying { this.apply(cx); } }))))
             )
     }

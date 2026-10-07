@@ -72,8 +72,7 @@ impl Workspace {
         let count = ids.len();
         deferred(
             anchored().position(position).snap_to_window().child(
-                div()
-                    .id("pii-field-chooser")
+                ui::panel("pii-field-chooser", self.theme.get())
                     .when(cfg!(test), |v| {
                         v.debug_selector(|| "pii-field-chooser".into())
                     })
@@ -81,14 +80,9 @@ impl Workspace {
                     .tab_group()
                     .tab_stop(false)
                     .track_focus(&self.pseudonymization.focus)
-                    .occlude()
                     .w(px(340.))
+                    .max_w_full()
                     .p_2()
-                    .rounded_md()
-                    .shadow_md()
-                    .bg(palette.bg)
-                    .border_1()
-                    .border_color(palette.border)
                     .on_action(
                         cx.listener(|this, _: &NextPiiChoice, _, cx| this.choose_step(false, cx)),
                     )
@@ -99,11 +93,30 @@ impl Workspace {
                     )
                     .on_action(cx.listener(Self::open_choice))
                     .on_action(cx.listener(Self::close_pseudonym_popup))
-                    .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                        this.pseudonymization.popup = None;
-                        cx.notify();
+                    .on_mouse_down_out(cx.listener(|this, _, window, cx| {
+                        this.close_pseudonym_popup(&ClosePseudonymPopup, window, cx)
                     }))
-                    .child(div().py_1().child(format!("{count} fields · select one")))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .pb_2()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .text_size(px(12.))
+                                    .text_color(palette.header_muted)
+                                    .child(format!("Choose a field · {count}")),
+                            )
+                            .child(
+                                ui::control("chooser-close", "×", self.theme.get(), true)
+                                    .aria_label("Close field chooser")
+                                    .on_click(|_, window, cx| {
+                                        window.dispatch_action(Box::new(ClosePseudonymPopup), cx)
+                                    }),
+                            ),
+                    )
                     .child(
                         uniform_list(
                             "hidden-pii-fields",
@@ -130,7 +143,8 @@ impl Workspace {
                                             })
                                         }
                                         .unwrap_or_else(|| "Field no longer available".into());
-                                        let label: String = label.chars().take(100).collect();
+                                        let tooltip =
+                                            crate::style::tooltip(label.clone(), this.theme.get());
                                         ui::control(
                                             gpui::SharedString::from(format!("field-{id}")),
                                             label,
@@ -140,7 +154,8 @@ impl Workspace {
                                         .h(px(30.))
                                         .w_full()
                                         .overflow_hidden()
-                                        .whitespace_nowrap()
+                                        .truncate()
+                                        .tooltip(tooltip)
                                         .when(index == selected, |v| v.bg(palette.placeholder_bg))
                                         .on_click(
                                             cx.listener(move |this, _, window, cx| {

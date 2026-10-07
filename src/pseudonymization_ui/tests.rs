@@ -765,6 +765,155 @@ fn applied_highlights_restore_one_or_matching_originals_and_keep_survives_rescan
         assert_eq!(app.editor.read(cx).text(), "Anna PERSON Anna")
     });
 }
+
+#[gpui::test]
+fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
+    cx: &mut gpui::TestAppContext,
+) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    for theme in [Theme::Dark, Theme::Light] {
+        for (width, height) in [(1100., 760.), (640., 480.)] {
+            cx.simulate_resize(gpui::size(px(width), px(height)));
+            app.update(cx, |app, cx| {
+                app.theme.set(theme);
+                app.pseudonymization.review = Default::default();
+                prepare_applied(app, "Anna Bob Anna", cx);
+            });
+            cx.run_until_parked();
+            app.update_in(cx, |app, window, cx| {
+                let id = app.pseudonymization.review.tracking.applied[0].id;
+                app.activate_annotation(APPLIED_ID | id, window, cx);
+            });
+            cx.run_until_parked();
+            cx.update(|window, cx| window.draw(cx).clear(cx));
+            let panel = cx.debug_bounds("applied-pii-popup").unwrap();
+            for id in [
+                "restoration-original",
+                "restoration-token",
+                "restore-this",
+                "restore-all",
+            ] {
+                let control = cx
+                    .debug_bounds(id)
+                    .unwrap_or_else(|| panic!("missing {id}"));
+                assert!(control.left() >= panel.left() && control.right() <= panel.right());
+                assert!(control.top() >= panel.top() && control.bottom() <= panel.bottom());
+            }
+            assert!(panel.bottom() <= px(height) && panel.right() <= px(width));
+            // Click the actual secondary action, rather than calling its handler.
+            let restore_all = cx.debug_bounds("restore-all").unwrap().center();
+            cx.simulate_click(restore_all, Default::default());
+            cx.run_until_parked();
+            app.update(cx, |app, cx| {
+                assert_eq!(app.editor.read(cx).text(), "Anna PERSON Anna");
+                assert!(app.pseudonymization.popup.is_none());
+            });
+            app.update_in(cx, |app, window, cx| {
+                let id = app.pseudonymization.review.tracking.applied[0].id;
+                app.activate_annotation(APPLIED_ID | id, window, cx);
+            });
+            cx.run_until_parked();
+            cx.update(|window, cx| window.draw(cx).clear(cx));
+            assert!(
+                cx.debug_bounds("restore-all").is_none(),
+                "one match needs only Restore this"
+            );
+            cx.simulate_keystrokes("escape");
+            cx.run_until_parked();
+            app.update_in(cx, |app, window, cx| {
+                assert!(app.pseudonymization.popup.is_none());
+                assert!(app.editor.read(cx).focus_handle(cx).is_focused(window));
+            });
+        }
+    }
+}
+
+#[gpui::test]
+fn long_transition_wraps_and_keyboard_replacement_remains_undoable(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(640.), px(480.)));
+    let original = "Индивидуальный предприниматель Анна Александровна ".repeat(5);
+    for theme in [Theme::Dark, Theme::Light] {
+        app.update_in(cx, |app, window, cx| {
+            app.theme.set(theme);
+            app.editor
+                .update(cx, |editor, cx| editor.set_text(&original, cx));
+            app.pseudonymization
+                .review
+                .set_mode(Mode::Pseudonymize, &original);
+            app.pseudonymization.review.open = true;
+            let id = app
+                .pseudonymization
+                .review
+                .add_manual(&original, 0..original.len(), Category::Person)
+                .unwrap();
+            app.sync_annotations(cx);
+            let annotation = app
+                .pseudonymization
+                .review
+                .annotation_id(id, &(0..original.len()))
+                .unwrap();
+            app.activate_annotation(annotation, window, cx);
+            app.pseudonymization
+                .input
+                .update(cx, |input, cx| input.set_value("CLIENT_1".into(), cx));
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let panel = cx.debug_bounds("pseudonym-popup").unwrap();
+        let text = cx.debug_bounds("pseudonym-original").unwrap();
+        assert!(
+            text.size.height > px(26.),
+            "long original must wrap, not truncate"
+        );
+        assert!(text.left() >= panel.left() && text.right() <= panel.right());
+        assert!(panel.bottom() <= px(480.));
+        // The current popup initially focuses its token field. Tab navigation
+        // must reveal Replace even when the long transition makes it scroll.
+        let target = gpui::ElementId::from("Accept");
+        let mut reached = false;
+        for _ in 0..8 {
+            cx.simulate_keystrokes("tab");
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            reached = cx.update(|window, cx| {
+                app.read(cx)
+                    .pseudonymization
+                    .popup_controls
+                    .borrow()
+                    .get(&target)
+                    .is_some_and(|focus| focus.is_focused(window))
+            });
+            if reached {
+                break;
+            }
+        }
+        assert!(reached);
+        cx.simulate_keystrokes("enter");
+        cx.update(|window, cx| {
+            window.dispatch_event(
+                gpui::KeyUpEvent {
+                    keystroke: gpui::Keystroke::parse("enter").unwrap(),
+                }
+                .to_platform_input(),
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        assert_eq!(
+            app.read_with(cx, |app, cx| app.editor.read(cx).text().to_owned()),
+            "CLIENT_1"
+        );
+        cx.dispatch_action(mdoc_editor::Undo);
+        cx.run_until_parked();
+        assert_eq!(
+            app.read_with(cx, |app, cx| app.editor.read(cx).text().to_owned()),
+            original
+        );
+    }
+}
 #[gpui::test]
 fn editing_marker_invalidates_provenance_undo_recovers_it_and_paste_creates_none(
     cx: &mut gpui::TestAppContext,

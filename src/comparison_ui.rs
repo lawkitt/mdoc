@@ -541,7 +541,15 @@ impl Render for View {
                     })
                     .child(div().flex_1())
                     .when(self.running, |v| {
-                        v.child("Running · cancellation waits for the current native call")
+                        v.child(ui::activity(
+                            "comparison-activity",
+                            if self.cancel.load(Ordering::Relaxed) {
+                                "Cancelling after the current step…"
+                            } else {
+                                "Comparing models…"
+                            },
+                            theme,
+                        ))
                     }),
             )
             .when_some(self.error.clone(), |v, e| {

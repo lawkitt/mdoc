@@ -500,6 +500,7 @@ pub struct PdfView {
     path: PathBuf,
     style: PdfStyleFn,
     quality: PdfQualityFn,
+    loading_indicator: Option<Rc<dyn Fn(SharedString) -> gpui::AnyElement>>,
     /// The parsed PDF (shared with the background render tasks); `None` until the
     /// off-thread load finishes.
     pdf: Option<Arc<Document>>,
@@ -675,6 +676,7 @@ impl PdfView {
             path,
             style,
             quality,
+            loading_indicator: None,
             pdf: None,
             bytes: None,
             locked: false,
@@ -953,6 +955,12 @@ impl PdfView {
     /// The terminal read/parse failure shown in place of the viewer, if any.
     pub fn load_error(&self) -> Option<&SharedString> {
         self.load_error.as_ref()
+    }
+
+    /// Customize active load feedback without changing parsing or page scheduling.
+    /// Unscheduled page placeholders continue to show their page number.
+    pub fn set_loading_indicator(&mut self, render: Rc<dyn Fn(SharedString) -> gpui::AnyElement>) {
+        self.loading_indicator = Some(render);
     }
 
     /// Set the handler behind the failure pane's "Open in system viewer"
@@ -1793,7 +1801,17 @@ impl Render for PdfView {
                 .into_any_element();
         }
         if self.dims.is_empty() {
-            return loading(style).into_any_element();
+            return div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(style.bg)
+                .child(self.loading_indicator.as_ref().map_or_else(
+                    || loading(style).into_any_element(),
+                    |render| render("Loading PDF…".into()),
+                ))
+                .into_any_element();
         }
 
         let name = self.display_name.clone().unwrap_or_else(|| {
@@ -1837,9 +1855,22 @@ impl Render for PdfView {
                     .justify_center()
                     .bg(style.placeholder_bg)
                     .child(
-                        div()
-                            .text_color(style.placeholder_fg)
-                            .child(format!("Page {}", i + 1)),
+                        if self.pages.get(i).is_some_and(|slot| slot.loading.is_some()) {
+                            self.loading_indicator.as_ref().map_or_else(
+                                || {
+                                    div()
+                                        .text_color(style.placeholder_fg)
+                                        .child(format!("Page {}", i + 1))
+                                        .into_any_element()
+                                },
+                                |render| render(format!("Preparing page {}…", i + 1).into()),
+                            )
+                        } else {
+                            div()
+                                .text_color(style.placeholder_fg)
+                                .child(format!("Page {}", i + 1))
+                                .into_any_element()
+                        },
                     ),
             };
             // Markup: overlay a translucent, clickable box on each line of every
@@ -2517,15 +2548,16 @@ impl Render for PdfView {
         // prev/next/close. Deferred so it paints over the page area below the header.
         #[cfg(feature = "search")]
         let root = if self.search_open {
+            let searching = !self.search_query.trim().is_empty()
+                && self
+                    .page_text
+                    .values()
+                    .any(|s| matches!(s, TextSlot::Loading));
             let count = if self.search_query.trim().is_empty() {
                 // Empty query: the field already shows the "Find…" placeholder, so the
                 // count reads "0 / 0" rather than repeating it.
                 "0 / 0".to_string()
-            } else if self
-                .page_text
-                .values()
-                .any(|s| matches!(s, TextSlot::Loading))
-            {
+            } else if searching {
                 "searching…".to_string()
             } else if self.matches.is_empty() {
                 "no results".to_string()
@@ -2580,7 +2612,14 @@ impl Render for PdfView {
                     .bg(style.bg)
                     .text_size(px(12.0))
                     .child(field)
-                    .child(div().text_color(style.header_muted).child(count))
+                    .child(if searching && let Some(render) = &self.loading_indicator {
+                        render("Searching…".into())
+                    } else {
+                        div()
+                            .text_color(style.header_muted)
+                            .child(count)
+                            .into_any_element()
+                    })
                     .child(
                         self.control("pdf-find-prev", "‹")
                             .on_click(cx.listener(|this, _, _w, cx| this.prev_match(cx)))

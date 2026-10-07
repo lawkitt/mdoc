@@ -1311,7 +1311,7 @@ impl Tabs {
         cx.notify();
     }
 
-    fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn sidebar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let expanded = self.sidebar_visible;
@@ -1351,9 +1351,8 @@ impl Tabs {
                     .unwrap_or("md")
                     .to_uppercase();
                 let dirty = view.is_some_and(|v| v.dirty_cached);
-                let busy = view.is_some_and(|v| {
-                    v.loading || v.job.busy() || v.preview.loading || v.preview.queued
-                });
+                let running = view.is_some_and(|v| v.loading || v.job.busy() || v.preview.loading);
+                let busy = running || view.is_some_and(|v| v.preview.queued);
                 let error = view.is_some_and(|v| {
                     v.error.is_some() || v.preview.retryable || v.ocr_required.is_some()
                 });
@@ -1466,12 +1465,18 @@ impl Tabs {
                                     } else {
                                         palette.header_muted
                                     })
-                                    .child(if error {
-                                        "!"
-                                    } else if busy {
-                                        "…"
+                                    .child(if running && !error {
+                                        ui::spinner(("compact-tab-activity", id), theme)
                                     } else {
-                                        "•"
+                                        div()
+                                            .child(if error {
+                                                "!"
+                                            } else if busy {
+                                                "…"
+                                            } else {
+                                                "•"
+                                            })
+                                            .into_any_element()
                                     }),
                             )
                         })
@@ -1558,12 +1563,18 @@ impl Tabs {
                                 } else {
                                     palette.header_muted
                                 })
-                                .child(if error {
-                                    "!"
-                                } else if busy {
-                                    "…"
+                                .child(if running && !error {
+                                    ui::spinner(("tab-activity", id), theme)
                                 } else {
-                                    "•"
+                                    div()
+                                        .child(if error {
+                                            "!"
+                                        } else if busy {
+                                            "…"
+                                        } else {
+                                            "•"
+                                        })
+                                        .into_any_element()
                                 }),
                         )
                     })
@@ -1709,15 +1720,21 @@ impl Tabs {
             );
             if self.document_list_open {
                 rail = rail.child(gpui::deferred(
-                    div()
+                    ui::panel("document-list-menu", theme)
                         .absolute()
                         .left(px(40.))
                         .top(px(76.))
                         .w(px(300.))
-                        .max_h(px(360.))
+                        .max_h(
+                            (window.viewport_size().height - px(92.))
+                                .min(px(360.))
+                                .max(px(80.)),
+                        )
                         .flex()
                         .flex_col()
-                        .id("document-list-menu")
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "document-list-menu".into())
+                        })
                         .key_context("UiPanel UiMenu")
                         .track_focus(&self.document_list_focus)
                         .tab_group()
@@ -1791,7 +1808,7 @@ fn disambiguating_parent(path: &std::path::Path, peers: &[PathBuf]) -> String {
 }
 
 impl Render for Tabs {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sidebar_visible = self.sidebar_choice.unwrap_or(false);
         let palette = self.theme.get().pdf_style();
         div()
@@ -1848,8 +1865,7 @@ impl Render for Tabs {
             .when_some(self.tab_menu, |view, (id, position)| {
                 view.child(gpui::deferred(
                     gpui::anchored().position(position).snap_to_window().child(
-                        div()
-                            .id("tab-context-menu")
+                        ui::panel("tab-context-menu", self.theme.get())
                             .key_context("UiPanel UiMenu")
                             .track_focus(&self.document_list_focus)
                             .tab_group()
@@ -1869,14 +1885,7 @@ impl Render for Tabs {
                                 ui::cycle(window, cx, Some(&this.document_list_focus), true);
                                 cx.stop_propagation();
                             }))
-                            .occlude()
                             .p_1()
-                            .rounded_md()
-                            .shadow_md()
-                            .bg(self.theme.get().sidebar_bg())
-                            .border_1()
-                            .border_color(self.theme.get().pdf_style().border)
-                            .text_size(px(13.))
                             .on_mouse_down_out(cx.listener(
                                 |this, _: &gpui::MouseDownEvent, _, cx| {
                                     this.tab_menu = None;
@@ -1961,7 +1970,7 @@ impl Render for Tabs {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .child(self.sidebar(cx))
+                    .child(self.sidebar(window, cx))
                     .child(
                         div()
                             .flex_1()

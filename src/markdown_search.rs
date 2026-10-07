@@ -5,7 +5,7 @@ use gpui::{
     Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla,
     KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
     Pixels, Point, Render, ShapedLine, SharedString, Style, TextRun, UTF16Selection, Window,
-    actions, div, fill, point, prelude::*, px, relative, rgba, size,
+    actions, div, fill, point, prelude::*, px, relative, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -590,7 +590,7 @@ impl Element for SearchInputElement {
                         point(left + line.x_for_index(cursor), bounds.top()),
                         size(px(1.), bounds.bottom() - bounds.top()),
                     ),
-                    rgba(0x336b5cff),
+                    text_color,
                 )),
             )
         } else {
@@ -606,7 +606,12 @@ impl Element for SearchInputElement {
                             bounds.bottom(),
                         ),
                     ),
-                    rgba(0x336b5cff),
+                    // The replacement field inherits the accent as its text
+                    // color. An opaque accent selection would hide its glyphs.
+                    Hsla {
+                        a: text_color.a * 0.1,
+                        ..text_color
+                    },
                 )),
                 None,
             )

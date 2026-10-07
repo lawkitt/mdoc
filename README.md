@@ -108,7 +108,7 @@ batch. A compact status shows the actual replacement count; **Copy Markdown**
 remains a separate step. Check the remaining text before copying: the
 experimental detector can miss PII and identifying context remains.
 
-Choose **Review** for manual selections, Accept/Keep and bulk acceptance. Markers
+Choose **Review** for manual selections, Replace/Keep and bulk acceptance. Markers
 are fixed in this mode, with no replacement-editing or identity-linking controls.
 Existing Keep decisions are respected. Switch to **Pseudonymize** in the icon's
 small menu for the numbered-token review workflow below; selecting a mode alone
@@ -142,7 +142,7 @@ review popup. Enter accepts, Alt+K keeps, and Escape closes it.
 Alt+Up/Down and **Previous / Next** navigate candidates. Shift-click
 bypasses review to edit normally; hover strengthens the highlight without opening
 a popup. The popup shows original text, its source fragment, a stable placeholder
-and occurrence count. **Accept** replaces all exact occurrences as one undo step;
+and occurrence count. **Replace** replaces all exact occurrences as one undo step;
 **Keep** changes no text. Both offer an explicit single-occurrence option.
 **Accept all** in the review **More** menu applies every pending suggestion as one undo
 step, preserving candidates marked Keep and edited replacement tokens. It is

@@ -206,7 +206,13 @@ impl Workspace {
         });
         // Both source PDFs and converted DOCX previews follow the pane width.
         // Sticky fit responds to sidebar/window resizing until manually zoomed.
-        pdf.update(cx, |pdf, cx| pdf.fit_width(cx));
+        let activity_theme = self.theme.clone();
+        pdf.update(cx, |pdf, cx| {
+            pdf.set_loading_indicator(Rc::new(move |label| {
+                crate::ui::activity(label.clone(), label, activity_theme.get()).into_any_element()
+            }));
+            pdf.fit_width(cx);
+        });
         let generation = self.preview.generation;
         let subscription = cx.subscribe_in(&pdf, window, move |this, pdf, _, window, cx| {
             if !this.preview.is_current(generation) {

@@ -1132,7 +1132,11 @@ impl Render for Workspace {
                     .px_2()
                     .text_size(px(12.))
                     .text_color(palette.header_muted)
-                    .child(count),
+                    .child(if self.search.task.is_some() {
+                        ui::activity("search-activity", count, theme).into_any_element()
+                    } else {
+                        div().child(count).into_any_element()
+                    }),
             )
             .child(
                 div()
@@ -1310,6 +1314,9 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::close_markdown_search))
             .on_action(cx.listener(Self::retry_preview))
             .child(self.toolbar(window, cx))
+            .when(!self.source_only && self.job.busy(), |v| v.child(
+                ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
+                    .px_3().py_2().border_b_1().border_color(palette.border)))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
             .children(import_notice).children(ocr_notice)
             .children(self.pseudonym_bar(cx))
@@ -1318,7 +1325,7 @@ impl Render for Workspace {
                 .when(!self.source_only && show_markdown, |row| row.child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
                     .when(self.search.open, |column| column.child(search_bar))
                     .child(if self.loading || self.unavailable {
-                        div().p_6().child(if self.loading { "Loading Markdown…" } else { "Markdown unavailable" })
+                        div().p_6().child(if self.loading { ui::activity("markdown-loading", "Loading Markdown…", theme).into_any_element() } else { div().child("Markdown unavailable").into_any_element() })
                             .when(self.unavailable, |view| view.child(button("Retry", RetryDocument, theme))).into_any_element()
                     } else { div().relative().flex_1().min_w_0().min_h_0()
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6()
@@ -1326,11 +1333,11 @@ impl Render for Workspace {
                         .child(markdown_scrollbar).into_any_element() })))
                 .when(self.source_only && show_markdown, |row| row.child(div().flex_1().min_w_0().p_6().flex().flex_col().justify_center().gap_2()
                     .child(div().text_size(px(18.)).child(self.display_name()))
-                    .child(div().text_color(palette.header_muted).child(if self.job.busy() {
-                        if self.ocr_state.busy() { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }
-                    } else if self.ocr_required.is_some() { "Text recognition required" }
+                    .child(if self.job.busy() || matches!(self.ocr_state, OcrState::Installing) {
+                        ui::activity("conversion-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme).into_any_element()
+                    } else { div().text_color(palette.header_muted).child(if self.ocr_required.is_some() { "Text recognition required" }
                     else if self.auto_convert_pending { "Waiting to convert…" }
-                    else if self.error.is_some() { "Conversion could not be completed" } else { "Convert this document to begin editing" }))
+                    else if self.error.is_some() { "Conversion could not be completed" } else { "Convert this document to begin editing" }).into_any_element() })
                     .when_some(ocr_pages, |v, pages| v
                         .child(div().text_size(px(13.)).text_color(palette.header_muted).child(if pages.is_empty() { "Recognition needs your attention.".into() } else { format!("Pages {pages} need OCR. The original remains available in the source preview.") }))
                         .when(ocr::SUPPORTED && !matches!(self.ocr_state, OcrState::Ready(_)), |v| v.child(div().text_size(px(12.)).text_color(palette.header_muted)
@@ -1343,7 +1350,7 @@ impl Render for Workspace {
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = true; cx.notify(); }))))
                 .when(show_original && self.preview.pdf.is_none(), |row| row.child(div().when(!narrow_preview, |v| v.w(gpui::relative(1. - split))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
                     .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
-                    .child(if self.preview.loading { "Preparing preview…" } else { "Preview unavailable" }).when_some(self.preview.message.clone(), |v, message| v.child(self.notice("preview-notice", "Preview", message, self.preview.retryable, cx)))))
+                    .child(if self.preview.loading { ui::activity("preview-activity", "Preparing preview…", theme).into_any_element() } else { div().child(if self.preview.queued { "Waiting to prepare preview…" } else { "Preview unavailable" }).into_any_element() }).when_some(self.preview.message.clone(), |v, message| v.child(self.notice("preview-notice", "Preview", message, self.preview.retryable, cx)))))
                 .when_some(self.preview.pdf.clone().filter(|_| show_original), |row, pdf| row.child(div().when(!narrow_preview, |v| v.w(gpui::relative(1. - split))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments))

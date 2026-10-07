@@ -37,7 +37,6 @@ impl ReviewUi {
 impl Workspace {
     pub(crate) fn pii_toolbar_control(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
-        let palette = theme.pdf_style();
         let mode = self.pseudonymization.review.mode;
         let enabled = self.can_copy_markdown() && !self.pseudonymization.scanning();
         div()
@@ -85,8 +84,7 @@ impl Workspace {
             )
             .when(self.pseudonymization.mode_menu_open, |v| {
                 v.child(deferred(
-                    div()
-                        .id("pii-mode-options")
+                    ui::panel("pii-mode-options", theme)
                         .absolute()
                         .top(px(34.))
                         .left_0()
@@ -96,12 +94,6 @@ impl Workspace {
                         .track_focus(&self.pseudonymization.mode_menu_focus)
                         .tab_group()
                         .tab_stop(false)
-                        .occlude()
-                        .rounded_md()
-                        .shadow_md()
-                        .bg(palette.bg)
-                        .border_1()
-                        .border_color(palette.border)
                         .flex()
                         .flex_col()
                         .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
@@ -182,7 +174,11 @@ impl Workspace {
                     .flex_wrap()
                     .items_center()
                     .gap_1()
-                    .child(div().flex_1().min_w_0().child(message))
+                    .child(div().flex_1().min_w_0().child(if scanning {
+                        ui::activity("anonymization-activity", message, theme).into_any_element()
+                    } else {
+                        div().child(message).into_any_element()
+                    }))
                     .when(scanning, |v| {
                         v.child(
                             ui::control("cancel-anonymize", "Cancel", theme, true)
@@ -228,7 +224,7 @@ impl Workspace {
                 div()
                     .text_size(px(11.))
                     .text_color(theme.pdf_style().header_muted)
-                    .child("Experimental · May miss PII. Check the remaining text before copying."),
+                    .child("Experimental · Check for missed identifiers before copying."),
             )
             .when(self.pseudonymization.review.skipped_syntax_spans > 0, |v| {
                 v.child(div().text_size(px(11.)).child(
@@ -279,7 +275,7 @@ impl Workspace {
         });
         Some(div().id("pseudonym-review-bar").relative().flex().flex_col().gap_1().px_2().py_1().text_size(px(12.)).border_b_1().border_color(p.border)
             .child(div().flex().items_center().gap_1()
-                .child(div().flex_1().min_w_0().truncate().font_weight(gpui::FontWeight::SEMIBOLD).child(if scanning { "Scanning…".to_owned() } else { format!("{remaining} candidates") }))
+                .child(div().flex_1().min_w_0().child(if scanning { ui::activity("review-activity", "Scanning…", theme).into_any_element() } else { div().child(format!("{remaining} candidates")).into_any_element() }))
                 .child(button("Previous", PreviousCandidate, theme))
                 .child(button("Next", NextCandidate, theme))
                 .child(ui::control("review-rescan", if scanning { "Cancel" } else { "Rescan" }, theme, true)
@@ -311,9 +307,8 @@ impl Workspace {
             .when(self.pseudonymization.details, |v| v.child(div().text_size(px(11.)).text_color(p.header_muted)
                 .child(format!("Russian and hidden-source details may be missed. Completed scans: {}{}", self.pseudonymization.scans.iter().map(|c| format!("{} (threshold {})", c.model.name(), c.threshold)).collect::<Vec<_>>().join(", "), if self.pseudonymization.review.skipped_syntax_spans > 0 { ". Some spans cross Markdown syntax; add a narrower selection manually." } else { "" }))))
             .when_some(self.pseudonymization.error.clone(), |v, error| v.child(div().text_color(style::markdown_style(theme).alert_warning).child(error)))
-            .when(self.pseudonymization.menu_open, |v| v.child(deferred(div().absolute().top(px(34.)).right(px(8.)).w(px(230.)).p_1()
-                .id("review-command-menu").key_context("UiPanel UiMenu").track_focus(&self.pseudonymization.menu_focus).tab_group().tab_stop(false)
-                .occlude().rounded_md().shadow_md().bg(p.bg).border_1().border_color(p.border).flex().flex_col()
+            .when(self.pseudonymization.menu_open, |v| v.child(deferred(ui::panel("review-command-menu", theme).absolute().top(px(34.)).right(px(8.)).w(px(230.)).p_1().key_context("UiPanel UiMenu").track_focus(&self.pseudonymization.menu_focus).tab_group().tab_stop(false)
+                .flex().flex_col()
                 .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| { ui::cycle(window, cx, Some(&this.pseudonymization.menu_focus), false); cx.stop_propagation(); }))
                     .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| { ui::cycle(window, cx, Some(&this.pseudonymization.menu_focus), true); cx.stop_propagation(); }))
                     .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| this.close_review_menu(window, cx)))
@@ -368,25 +363,20 @@ impl Workspace {
         Some(
             deferred(
                 anchored().position(position).snap_to_window().child(
-                    div()
-                        .id("pseudonym-popup")
+                    ui::panel("pseudonym-popup", self.theme.get())
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "pseudonym-popup".into())
+                        })
                         .track_scroll(&self.pseudonymization.popup_scroll)
                         .key_context("PseudonymReview UiPanel")
                         .tab_group()
                         .tab_stop(false)
                         .track_focus(&self.pseudonymization.focus)
-                        .occlude()
                         .w(px(340.))
                         .max_w_full()
                         .max_h((window.viewport_size().height - px(40.)).max(px(120.)))
                         .overflow_y_scroll()
                         .p_3()
-                        .rounded_md()
-                        .shadow_md()
-                        .bg(palette.bg)
-                        .border_1()
-                        .border_color(palette.border)
-                        .text_size(px(13.))
                         .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
                             ui::cycle(window, cx, Some(&this.pseudonymization.focus), false);
                             cx.stop_propagation();
@@ -399,7 +389,7 @@ impl Workspace {
                         .on_action(cx.listener(Self::keep_pseudonym))
                         .on_action(cx.listener(Self::close_pseudonym_popup))
                         .on_mouse_down_out(cx.listener(
-                            |this, event: &gpui::MouseDownEvent, _, cx| {
+                            |this, event: &gpui::MouseDownEvent, window, cx| {
                                 // Keep the replacement draft until the bulk button's
                                 // click handler can validate and apply it.
                                 if this.pseudonymization.menu_open
@@ -416,8 +406,7 @@ impl Workspace {
                                 {
                                     return;
                                 }
-                                this.pseudonymization.popup = None;
-                                cx.notify();
+                                this.close_pseudonym_popup(&ClosePseudonymPopup, window, cx);
                             },
                         ))
                         .child(
@@ -425,7 +414,12 @@ impl Workspace {
                                 .flex()
                                 .items_center()
                                 .gap_2()
-                                .child(format!("{} · {count} occurrences", group.category.label()))
+                                .child(
+                                    div()
+                                        .text_size(px(12.))
+                                        .text_color(palette.header_muted)
+                                        .child(group.category.label()),
+                                )
                                 .child(div().flex_1())
                                 .child(self.pseudonymization.reveal_popup_control(
                                     "popup-close",
@@ -433,53 +427,41 @@ impl Workspace {
                                     cx,
                                 )),
                         )
-                        .child(
+                        .child(ui::replacement_transition(
                             div()
                                 .id("pseudonym-original")
-                                .max_h(px(80.))
-                                .overflow_y_scroll()
-                                .py_2()
-                                .child(original),
-                        )
-                        .when(anonymous, |v| {
-                            v.child(
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "pseudonym-original".into())
+                                })
+                                .child(original)
+                                .into_any_element(),
+                            if anonymous {
                                 div()
                                     .id("anonymous-replacement")
-                                    .py_2()
-                                    .child(format!("Replacement: {}", group.category.token())),
-                            )
-                        })
-                        .when(!anonymous, |v| {
-                            v.child(
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "anonymous-replacement".into())
+                                    })
+                                    .child(group.category.token())
+                                    .into_any_element()
+                            } else {
                                 div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .py_2()
-                                    .child("Replacement")
-                                    .child(
-                                        div()
-                                            .id("pseudonym-replacement")
-                                            .flex_1()
-                                            .min_w_0()
-                                            .border_1()
-                                            .border_color(palette.border)
-                                            .rounded_sm()
-                                            .p_1()
-                                            .child(self.pseudonymization.input.clone())
-                                            .map(|v| {
-                                                ui::reveal_focus(
-                                                    v,
-                                                    self.pseudonymization
-                                                        .input
-                                                        .read(cx)
-                                                        .focus_handle(cx),
-                                                    self.pseudonymization.popup_scroll.clone(),
-                                                )
-                                            }),
-                                    ),
-                            )
-                        })
+                                    .id("pseudonym-replacement")
+                                    .min_w_0()
+                                    .w_full()
+                                    .border_b_1()
+                                    .border_color(self.theme.get().search_accent())
+                                    .child(self.pseudonymization.input.clone())
+                                    .map(|v| {
+                                        ui::reveal_focus(
+                                            v,
+                                            self.pseudonymization.input.read(cx).focus_handle(cx),
+                                            self.pseudonymization.popup_scroll.clone(),
+                                        )
+                                    })
+                                    .into_any_element()
+                            },
+                            self.theme.get(),
+                        ))
                         .when_some(self.pseudonymization.error.clone(), |view, error| {
                             view.child(div().py_1().text_color(palette.header_muted).child(error))
                         })
@@ -506,9 +488,9 @@ impl Workspace {
                                 .cursor_pointer()
                                 .py_2()
                                 .child(if all {
-                                    "☑ Apply to all exact occurrences"
+                                    format!("☑ All {count} exact matches")
                                 } else {
-                                    "☐ Apply to all exact occurrences"
+                                    format!("☐ All {count} exact matches")
                                 })
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     if let Some(popup) = &mut this.pseudonymization.popup {
@@ -520,17 +502,51 @@ impl Workspace {
                         .child(
                             div()
                                 .flex()
+                                .flex_wrap()
                                 .gap_2()
-                                .child(self.pseudonymization.reveal_popup_control(
-                                    "Accept",
-                                    button("Accept", AcceptPseudonymCandidate, self.theme.get()),
-                                    cx,
-                                ))
-                                .child(self.pseudonymization.reveal_popup_control(
-                                    "Keep",
-                                    button("Keep", KeepPseudonymCandidate, self.theme.get()),
-                                    cx,
-                                )),
+                                .child(
+                                    self.pseudonymization.reveal_popup_control(
+                                        "Accept",
+                                        ui::action_control(
+                                            "Accept",
+                                            "Replace",
+                                            self.theme.get(),
+                                            true,
+                                            true,
+                                        )
+                                        .when(cfg!(test), |v| v.debug_selector(|| "Accept".into()))
+                                        .on_click(
+                                            |_, window, cx| {
+                                                window.dispatch_action(
+                                                    Box::new(AcceptPseudonymCandidate),
+                                                    cx,
+                                                )
+                                            },
+                                        ),
+                                        cx,
+                                    ),
+                                )
+                                .child(
+                                    self.pseudonymization.reveal_popup_control(
+                                        "Keep",
+                                        ui::action_control(
+                                            "Keep",
+                                            "Keep",
+                                            self.theme.get(),
+                                            true,
+                                            false,
+                                        )
+                                        .on_click(
+                                            |_, window, cx| {
+                                                window.dispatch_action(
+                                                    Box::new(KeepPseudonymCandidate),
+                                                    cx,
+                                                )
+                                            },
+                                        ),
+                                        cx,
+                                    ),
+                                ),
                         )
                         .child(
                             ui::control(

@@ -1,6 +1,157 @@
 //! Shared chrome controls. GPUI activates focused click controls with Enter/Space.
 use crate::style::Theme;
-use gpui::{App, FocusHandle, KeyBinding, Window, actions, div, prelude::*, px};
+use gpui::{
+    Animation, AnimationExt, AnyElement, App, FocusHandle, KeyBinding, Window, actions, div,
+    prelude::*, px,
+};
+use std::time::Duration;
+
+/// A common surface for app-owned popovers and dialogs. Callers own sizing/focus.
+pub fn panel(id: impl Into<gpui::ElementId>, theme: Theme) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    div()
+        .id(id)
+        .occlude()
+        .rounded_md()
+        .shadow_md()
+        .bg(p.bg)
+        .border_1()
+        .border_color(p.border)
+        .text_color(p.header_fg)
+        .text_size(px(13.))
+}
+
+pub fn action_control(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    theme: Theme,
+    enabled: bool,
+    primary: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    control(id, label, theme, enabled)
+        .px_3()
+        .py_1()
+        .border_1()
+        .border_color(if primary {
+            theme.search_accent()
+        } else {
+            p.border
+        })
+        .when(primary, |v| {
+            v.bg(theme.sidebar_selected())
+                .text_color(theme.search_accent())
+                .font_weight(gpui::FontWeight::MEDIUM)
+        })
+}
+
+/// Only mounted while busy. The first phase reserves space without flashing;
+/// the repeating phase respects GPUI's reduced-motion preference.
+pub fn spinner(id: impl Into<gpui::ElementId>, theme: Theme) -> AnyElement {
+    gpui::svg()
+        .data(include_bytes!("../resources/ui/spinner.svg"))
+        .size(px(14.))
+        .flex_shrink_0()
+        .text_color(theme.search_accent())
+        .with_animations(
+            id,
+            vec![
+                Animation::new(Duration::from_millis(150)).with_max_fps(20.),
+                Animation::new(Duration::from_millis(900))
+                    .repeat()
+                    .with_max_fps(30.),
+            ],
+            |icon, phase, delta| {
+                icon.opacity(if phase == 0 { 0. } else { 1. })
+                    .with_transformation(gpui::Transformation::rotate(gpui::radians(
+                        if phase == 0 {
+                            0.
+                        } else {
+                            delta * std::f32::consts::TAU
+                        },
+                    )))
+            },
+        )
+        .into_any_element()
+}
+
+pub fn activity(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    theme: Theme,
+) -> gpui::Stateful<gpui::Div> {
+    let label = label.into();
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap_2()
+        .min_w_0()
+        .text_size(px(12.))
+        .text_color(theme.pdf_style().header_muted)
+        .role(gpui::Role::Status)
+        .aria_label(label.clone())
+        .child(spinner("activity-spinner", theme))
+        .child(div().min_w_0().child(label))
+}
+
+/// Per-artifact bytes only: the caller must not pass stale counts from a
+/// verification/runtime phase or claim this is overall setup completion.
+pub fn progress_bar(received: u64, total: u64, theme: Theme) -> gpui::Div {
+    let fraction = if total == 0 {
+        0.
+    } else {
+        (received as f32 / total as f32).clamp(0., 1.)
+    };
+    div()
+        .h(px(3.))
+        .w_full()
+        .rounded_full()
+        .bg(theme.pdf_style().placeholder_bg)
+        .child(
+            div()
+                .h_full()
+                .w(gpui::relative(fraction))
+                .rounded_full()
+                .bg(theme.search_accent()),
+        )
+}
+
+/// Both sides stay visible and wrap; flex wrapping stacks them in small panes.
+pub fn replacement_transition(
+    original: AnyElement,
+    replacement: AnyElement,
+    theme: Theme,
+) -> gpui::Div {
+    div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap_2()
+        .my_2()
+        .min_w_0()
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(100.))
+                .p_2()
+                .rounded_md()
+                .bg(theme.pdf_style().placeholder_bg)
+                .child(original),
+        )
+        .child(div().text_color(theme.pdf_style().header_muted).child("→"))
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(100.))
+                .p_2()
+                .rounded_md()
+                .bg(theme.sidebar_selected())
+                .text_color(theme.search_accent())
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .child(replacement),
+        )
+}
 
 actions!(ui, [NextControl, PreviousControl, CloseMenu]);
 
