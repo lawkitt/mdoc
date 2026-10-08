@@ -168,7 +168,7 @@ impl Review {
         let mut ids: HashSet<_> = self
             .groups
             .iter()
-            .filter(|g| !g.conversion && !g.kept)
+            .filter(|g| !g.kept)
             .filter_map(|g| self.group_identity(g.id))
             .collect();
         ids.extend(
@@ -408,7 +408,7 @@ impl Review {
         // being rescanned once per identity. Ambiguous signatures stay separate.
         let mut signatures: HashSet<(String, char, char)> = HashSet::new();
         for group in &self.groups {
-            if group.category != Category::Person || group.conversion {
+            if group.category != Category::Person {
                 continue;
             }
             let p = name_parts(&group.original);

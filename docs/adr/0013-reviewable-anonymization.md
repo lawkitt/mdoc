@@ -1,5 +1,8 @@
 # Add reviewable anonymization with shared category markers
 
+Superseded on 2026-10-08 by [ADR 0022](0022-remove-anonymization-mode.md):
+Anonymization mode was removed; Pseudonymization is the only PII behavior.
+
 Status: accepted and implementation authorized with "ok, implement",
 2026-10-06. Implemented locally; verification is in the linked design record.
 

@@ -148,7 +148,6 @@ impl Workspace {
         self.pseudonymization.popup = None;
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(None, cx));
-        self.pseudonymization.accept_all_bounds.set(None);
         if let Some(focus) = self.pseudonymization.mapping.previous_focus.take() {
             if !self
                 .pseudonymization
@@ -173,6 +172,12 @@ impl Workspace {
         mapping.choosing_category = false;
         window.focus(&mapping.search.read(cx).focus_handle(cx), cx);
         cx.notify();
+    }
+    pub(super) fn selected_applied(&self) -> Option<u64> {
+        match self.pseudonymization.mapping.selected {
+            Some(Selection::Applied(id)) => Some(id),
+            _ => None,
+        }
     }
     fn selected_identity(&self) -> Option<u64> {
         match self.pseudonymization.mapping.selected.as_ref()? {
@@ -281,11 +286,6 @@ impl Workspace {
         cx.notify();
     }
     pub(super) fn sync_replacement_annotation(&mut self, annotation: u64, cx: &mut Context<Self>) {
-        if !self.pseudonymization.mapping.open
-            && self.pseudonymization.review.mode != Mode::Pseudonymize
-        {
-            return;
-        }
         self.pseudonymization.mapping.open = true;
         let review = &self.pseudonymization.review;
         let selection = if annotation & APPLIED_ID != 0 {
@@ -311,23 +311,6 @@ impl Workspace {
                 self.pseudonymization.mapping.selected = None;
             }
         }
-    }
-    pub(super) fn edit_annotation_identity(&mut self, cx: &mut Context<Self>) {
-        let Some(popup) = &self.pseudonymization.popup else {
-            return;
-        };
-        let selection = match &popup.target {
-            PopupTarget::Candidate { group, mention } => Selection::Candidate {
-                group: *group,
-                range: mention.clone(),
-            },
-            PopupTarget::Applied(id) => Selection::Applied(*id),
-            PopupTarget::Choose { .. } => return,
-        };
-        self.pseudonymization.mapping.open = true;
-        self.select_identity(selection, cx);
-        self.remember_active_replacement(cx);
-        cx.notify();
     }
     fn change_mapping(&mut self, action: MappingAction, cx: &mut Context<Self>) {
         self.change_mapping_with_apply(action, false, cx);
@@ -476,9 +459,6 @@ impl Workspace {
             .review
             .refresh(self.editor.read(cx).text());
         self.pseudonymization.error = None;
-        if apply {
-            self.pseudonymization.completion = Some((edits.len(), self.editor.read(cx).revision()));
-        }
         self.pseudonymization.popup = None;
         if let Some(id) = selected_after {
             self.select_identity(Selection::Identity(id), cx);
@@ -636,17 +616,12 @@ impl Workspace {
             let identity = review
                 .identity(target)
                 .ok_or("Identity is no longer available.")?;
-            let alias = if review.mode == Mode::Anonymize {
-                identity.category.token()
-            } else {
-                &identity.alias
-            };
-            // An equal visible marker can still need a different identity/category.
+            // An equal visible alias can still need a different identity/category.
             plans.push((
                 (
                     a.range.clone(),
                     a.step.after.clone(),
-                    alias.into(),
+                    identity.alias.as_str().into(),
                     identity.category,
                 ),
                 target,
@@ -735,12 +710,7 @@ impl Workspace {
                 .tracking
                 .commit(self.editor.read(cx).history_id(), added);
         }
-        if self.pseudonymization.review.mode != Mode::Pseudonymize {
-            self.select_pii_mode(Mode::Pseudonymize, cx);
-        }
         self.pseudonymization.review.open = true;
-        self.pseudonymization.manual_review = true;
-        self.pseudonymization.completion = Some((edits.len(), self.editor.read(cx).revision()));
         self.pseudonymization
             .review
             .refresh(self.editor.read(cx).text());

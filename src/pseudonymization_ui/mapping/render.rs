@@ -129,7 +129,7 @@ impl Workspace {
                         this.pseudonymization.error = Some("Scan cancelled.".into());
                         cx.notify();
                     } else {
-                        this.scan_pseudonyms(cx);
+                        this.start_pii_scan(cx);
                     }
                 })),
             )

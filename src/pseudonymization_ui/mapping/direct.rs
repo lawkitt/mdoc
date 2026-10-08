@@ -256,21 +256,8 @@ impl Workspace {
                     })
             });
         if let Some(selection) = selection {
-            self.select_identity(selection.clone(), cx);
-            let target = match selection {
-                Selection::Candidate { group, range } => PopupTarget::Candidate {
-                    group,
-                    mention: range,
-                },
-                Selection::Applied(id) => PopupTarget::Applied(id),
-                Selection::Identity(_) => return,
-            };
-            self.pseudonymization.popup = Some(Popup {
-                target,
-                all: true,
-                context_open: false,
-                links_open: false,
-            });
+            self.select_identity(selection, cx);
+            self.pseudonymization.popup = Some(Popup::Selection);
             self.pseudonymization.mapping.popup_revision = Some(self.editor.read(cx).revision());
             self.remember_active_replacement(cx);
         } else {
@@ -442,7 +429,10 @@ impl Workspace {
             .update(cx, |e, cx| e.set_active_annotation(None, cx));
         cx.notify();
     }
-    pub(super) fn apply_replacements_direct(&mut self, cx: &mut Context<Self>) {
+    pub(in crate::pseudonymization_ui) fn apply_replacements_direct(
+        &mut self,
+        cx: &mut Context<Self>,
+    ) {
         if self.pseudonymization.scanning() || !self.can_copy_markdown() {
             return;
         }

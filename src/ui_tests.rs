@@ -73,7 +73,6 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
     let app = open_document(&app, source_path.clone(), cx);
     app.update_in(cx, |app, window, cx| {
         app.session.warning = Some("Review extraction".into());
-        app.select_pii_mode(crate::pseudonymization::Mode::Pseudonymize, cx);
         app.pseudonymization.review.open = true;
         app.pseudonymization.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9, recognizer: crate::pseudonymization::Recognizer::Model }]).unwrap();
         app.sync_pseudonym_theme(cx);
@@ -81,7 +80,7 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
         let range=app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
         let annotation=app.pseudonymization.review.annotation_id(id,&range).unwrap();
         app.activate_annotation(annotation,window,cx);
-        app.accept_pseudonym(&AcceptPseudonymCandidate, window, cx);
+        app.accept_all_pseudonyms(&AcceptAllPseudonyms, window, cx);
         assert_eq!(app.editor.read(cx).text(), "# Contract\n\nPERSON_1 represents **PERSON_1**. [contact](https://x.invalid/Alice_Morgan)\n");
         assert_eq!(app.pseudonymization.review.remaining(), 0);
         assert_eq!(app.session.document.path.as_ref(), Some(&source_path));
@@ -89,6 +88,7 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
         assert!(app.dirty(cx));
         app.copy_markdown(&CopyMarkdown, window, cx);
         assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), app.editor.read(cx).text());
+        window.focus(&app.editor.read(cx).focus_handle(cx), cx);
     });
     cx.dispatch_action(mdoc_editor::Undo);
     cx.run_until_parked();
@@ -104,9 +104,10 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
             .annotation_id(id, &range)
             .unwrap();
         app.activate_annotation(annotation, window, cx);
-        app.pseudonymization.popup.as_mut().unwrap().all = false;
-        app.accept_pseudonym(&AcceptPseudonymCandidate, window, cx);
-        assert_eq!(app.pseudonymization.review.remaining(), 1);
+        app.pseudonymization.review.keep(id, Some(range));
+        app.accept_all_pseudonyms(&AcceptAllPseudonyms, window, cx);
+        assert_eq!(app.pseudonymization.review.remaining(), 0);
+        assert_eq!(app.editor.read(cx).text(), "# Contract\n\nAlice Morgan represents **PERSON_1**. [contact](https://x.invalid/Alice_Morgan)\n");
         let text = app.editor.read(cx).text().to_owned();
         app.session
             .save(dir.path().join("prepared.md"), &text)
@@ -124,7 +125,6 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
         );
         assert_ne!(app.session.generation, generation);
         assert!(app.pseudonymization.review.groups.is_empty());
-        assert!(app.pseudonymization.review.mappings().is_empty());
         assert!(app.pseudonymization.popup.is_none());
     });
     let app = close_document(&app, cx);
@@ -141,7 +141,6 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
     app.update_in(cx, |app, window, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice Alice", cx));
-        app.select_pii_mode(crate::pseudonymization::Mode::Pseudonymize, cx);
         app.pseudonymization.review.open = true;
         app.pseudonymization
             .review
@@ -163,7 +162,7 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
             .annotation_id(id, &range)
             .unwrap();
         app.activate_annotation(annotation, window, cx);
-        app.keep_pseudonym(&KeepPseudonymCandidate, window, cx);
+        app.pseudonymization.review.keep(id, None);
         assert_eq!(app.editor.read(cx).text(), "Alice Alice");
         assert_eq!(app.pseudonymization.review.remaining(), 0);
         app.pseudonymization
@@ -183,9 +182,8 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
         });
     });
     cx.run_until_parked();
-    app.update_in(cx, |app, window, cx| {
+    app.update(cx, |app, cx| {
         assert!(app.pseudonymization.popup.is_none());
-        app.accept_pseudonym(&AcceptPseudonymCandidate, window, cx);
         assert_eq!(app.editor.read(cx).text(), "Betty Alice");
         assert_eq!(app.pseudonymization.review.remaining(), 1);
     });

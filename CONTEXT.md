@@ -37,22 +37,12 @@ restoration behavior have not yet been designed or implemented.
 **Pseudonymization**:
 Reviewable replacement of selected identifying information with consistent
 placeholders while retaining useful relationships in the text. It does not
-guarantee that the document's subjects cannot be identified.
-_Avoid_: Guaranteed anonymization
-
-**Anonymization mode**:
-Identifier replacement using shared category
-markers, such as PERSON, instead of identity-linked numbered placeholders.
-The default anonymous-person icon action scans locally and applies replacements
-to current Markdown as one undoable batch; manual review remains available.
-Copy Markdown is a separate action. This removes identity distinctions
-from replaced mentions but does not establish that the subjects cannot be
-identified from remaining context. Accepted behavior is recorded in
-[ADR 0013](docs/adr/0013-reviewable-anonymization.md). Applied fields stay
-highlighted and clickable in both modes; the popup restores this occurrence or
-all occurrences of the same immediate prior value. Restore creates Keep decisions
-and travels with text undo/redo. Originals live only in the open document; Save
-does not serialize them. See [ADR 0014](docs/adr/0014-highlighted-pii-replacements.md).
+guarantee that the document's subjects cannot be identified. It is the only PII
+replacement behavior ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)):
+scanning proposes, explicit Apply replaces as one undo step. Applied fields stay
+highlighted and clickable; Restore creates Keep decisions and travels with text
+undo/redo. Originals live only in the open document; Save does not serialize them.
+_Avoid_: Guaranteed anonymization, Anonymize, shared category markers
 
 **Model bundle**:
 A pinned set of mutually compatible model artifacts, including the required

@@ -117,42 +117,6 @@ pub fn progress_bar(received: u64, total: u64, theme: Theme) -> gpui::Div {
         )
 }
 
-/// Both sides stay visible and wrap; flex wrapping stacks them in small panes.
-pub fn replacement_transition(
-    original: AnyElement,
-    replacement: AnyElement,
-    theme: Theme,
-) -> gpui::Div {
-    div()
-        .flex()
-        .flex_wrap()
-        .items_center()
-        .gap_2()
-        .my_2()
-        .min_w_0()
-        .child(
-            div()
-                .flex_1()
-                .min_w(px(100.))
-                .p_2()
-                .rounded_md()
-                .bg(theme.pdf_style().placeholder_bg)
-                .child(original),
-        )
-        .child(div().text_color(theme.pdf_style().header_muted).child("→"))
-        .child(
-            div()
-                .flex_1()
-                .min_w(px(100.))
-                .p_2()
-                .rounded_md()
-                .bg(theme.sidebar_selected())
-                .text_color(theme.search_accent())
-                .font_weight(gpui::FontWeight::MEDIUM)
-                .child(replacement),
-        )
-}
-
 actions!(ui, [NextControl, PreviousControl, CloseMenu]);
 
 pub fn bind_keys(cx: &mut App) {
@@ -223,7 +187,6 @@ pub enum Icon {
     Moon,
     Settings,
     Anonymous,
-    ChevronDown,
 }
 
 impl Icon {
@@ -236,7 +199,6 @@ impl Icon {
             Self::Moon => include_bytes!("../resources/ui/moon.svg"),
             Self::Settings => include_bytes!("../resources/ui/settings.svg"),
             Self::Anonymous => include_bytes!("../resources/ui/anonymous.svg"),
-            Self::ChevronDown => include_bytes!("../resources/ui/chevron-down.svg"),
         }
     }
 }

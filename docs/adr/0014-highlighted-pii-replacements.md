@@ -3,6 +3,10 @@
 Status: accepted and implemented, 2026-10-07. The final Q15 agreement authorized
 email plus contextual checksum-valid INN/SNILS alongside the restoration/refactor.
 
+> Since [ADR 0022](0022-remove-anonymization-mode.md) (2026-10-08) there is no
+> Anonymize action or shared category marker; references to them below are
+> historical. Inspection, scoped restoration and history travel apply to aliases.
+
 ## Confirmed direction
 
 The default Anonymize action continues to scan locally and replace eligible

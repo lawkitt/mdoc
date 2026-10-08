@@ -68,9 +68,10 @@ fn pseudonymization_mappings_survive_switches_and_end_with_the_tab(cx: &mut Test
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(first_id, window, cx));
     cx.update(|_, cx| {
         let view = first.read(cx);
+        let group = &view.pseudonymization.review.groups[0];
         assert_eq!(
-            view.pseudonymization.review.mappings(),
-            vec![("Alice".into(), "PERSON_1".into())]
+            (group.original.as_ref(), group.replacement.as_str()),
+            ("Alice", "PERSON_1")
         );
         assert_eq!(view.pseudonymization.review.remaining(), 0);
     });
@@ -1569,7 +1570,7 @@ fn main_toolbar_wraps_without_hiding_actions_in_both_themes(cx: &mut TestAppCont
                             && toolbar.contains(&bounds.bottom_right())
                     );
                 }
-                for selector in ["Save", "Save As…", "Anonymize", "Copy Markdown"] {
+                for selector in ["Save", "Save As…", "Pseudonymize", "Copy Markdown"] {
                     let bounds = cx.debug_bounds(selector);
                     assert_eq!(bounds.is_some(), !source_only);
                     if let Some(bounds) = bounds {
@@ -1794,7 +1795,7 @@ fn narrow_original_switch_and_divider_preserve_source_and_session(cx: &mut TestA
             "Settings",
             "Save",
             "Save As…",
-            "Anonymize",
+            "Pseudonymize",
             "theme-toggle",
             "Markdown",
             "Original",

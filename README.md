@@ -7,7 +7,7 @@ Built with Rust and GPUI for macOS, Windows, and Linux.
 
 See [ROADMAP.md](ROADMAP.md) for planned features and priorities,
 [CONTEXT.md](CONTEXT.md) for domain terms, and [ADRs](docs/adr/) for durable decisions.
-Anonymization and inline pseudonymization are available experimentally using pinned local GLiNER2
+Inline pseudonymization is available experimentally using pinned local GLiNER2
 FP16 and FP32 bundles. The
 [initial GLiNER qualification](tests/fixtures/pseudonymization/README.md)
 found significant English/Russian and hidden-source misses; experimental use
@@ -49,8 +49,8 @@ PDF form appearances are rendered; this is a viewer, not a PDF form editor.
 ## Files and shortcuts
 
 Use the **Open**, **Save**, **Save As**, and anonymous-person icons alongside
-**Copy Markdown** in the compact toolbar. The anonymous-person action defaults
-to **Anonymize**; its small menu selects **Pseudonymize**. **Settings** and the sun/moon theme
+**Copy Markdown** in the compact toolbar. The anonymous-person icon is
+**Pseudonymize**: it scans once, then shows or hides the review. **Settings** and the sun/moon theme
 control are directly accessible icons with tooltips. **New** is the sidebar plus
 button. Toolbar groups wrap when space is limited; commands remain visible.
 The sidebar defaults to collapsed for any document count and remembers an explicit
@@ -100,32 +100,7 @@ protect the document/source paths and their aliases. Comparisons stay in memory
 until close, and cancellation holds the model slot until the native call stops.
 See [model settings verification](tests/fixtures/model-settings/README.md).
 
-**Anonymize** (anonymous-person icon or Cmd/Ctrl+Shift+A) scans current Markdown
-locally and immediately replaces eligible detected PII with shared markers:
-`PERSON`, `ORG`, `EMAIL`, `PHONE`, `ADDRESS`, `IDENTITY`, `TAX`, and `BANK`.
-Different people receive the same `PERSON` marker. One Undo restores the entire
-batch. A compact status shows the actual replacement count; **Copy Markdown**
-remains a separate step. Check the remaining text before copying: the
-experimental detector can miss PII and identifying context remains.
-
-Choose **Review** for manual selections, Replace/Keep and bulk acceptance. Markers
-are fixed in this mode, with no replacement-editing or identity-linking controls.
-Existing Keep decisions are respected. Switch to **Pseudonymize** in the icon's
-small menu for the numbered-token review workflow below; selecting a mode alone
-changes no Markdown. Modes stay with each open document and new documents
-default to Anonymize. Known accepted pseudonyms, including custom tokens, can be
-converted to shared markers while their live-document mappings exist. Reopened
-files have no mappings, so existing tokens require manual selection. Shared
-markers are left unchanged on rescans.
-
-Failed, partial, stale, cancelled or mode-switched scans apply no batch. Setup
-still requires an explicit model download through Settings. Original files,
-filenames, attachments and undo history are retained; this feature prepares
-Markdown for handoff and does not erase local source data. Dates, amounts and
-other identifying context receive no new automatic generalization. See
-[anonymization design and verification](docs/design/anonymization.md).
-
-**Pseudonymize** (Cmd/Ctrl+Shift+P) explicitly scans the complete current
+**Pseudonymize** (anonymous-person icon or Cmd/Ctrl+Shift+P) explicitly scans the complete current
 Markdown source in the background, including link destinations, image paths,
 code and HTML. Automatic scanning is experimental on Apple Silicon macOS and
 Windows x64; manual review remains available on every platform. The first use
@@ -136,24 +111,27 @@ Scans use bounded 512-token schema/text windows with overlapping context,
 a 2 MiB source limit and a two-minute cooperative deadline. Comparison reports
 identify the model precision, engine and captured configuration.
 
-Candidates have subtle highlights; hidden source receives a marker beside its
-containing element. Click a candidate, or use Alt+Enter at its caret, to open one
-review popup. Enter accepts, Alt+K keeps, and Escape closes it.
-Alt+Up/Down and **Previous / Next** navigate candidates. Shift-click
-bypasses review to edit normally; hover strengthens the highlight without opening
-a popup. The popup shows original text, its source fragment, a stable placeholder
-and occurrence count. **Replace** replaces all exact occurrences as one undo step;
-**Keep** changes no text. Both offer an explicit single-occurrence option.
-**Accept all** in the review **More** menu applies every pending suggestion as one undo
-step, preserving candidates marked Keep and edited replacement tokens. It is
-disabled during a scan or when no suggestions remain. Edit
-the replacement field or explicitly link a variant to an existing placeholder;
-tokens start with a letter, end with a letter/number and use ASCII letters,
-numbers, underscores and hyphens to remain safe inside
-Markdown, URLs and HTML. Exact repeats exclude substrings inside longer words;
-initials and inflected variants stay separate until linked by the lawyer.
+A scan only proposes replacements; no Markdown changes until **Apply
+replacements**, which applies every pending proposal as one undo step. Failed,
+partial, stale or cancelled scans propose nothing. Candidates have subtle
+highlights; hidden source receives a marker beside its containing element.
+Clicking a highlight, or Alt+Enter at its caret, opens the **Replacements** panel
+together with a popup at that exact word. Alt+Up/Down navigate highlights.
+The popup edits the alias for this mention, the same wording or the entire
+entity, links mentions to an existing entity, corrects the category, records
+ownership and offers scoped Keep/Restore. Applied replacements stay highlighted
+and restorable while their originals live in the open document. Aliases start
+with a letter, end with a letter/number and use ASCII letters, numbers,
+underscores and hyphens to remain safe inside Markdown, URLs and HTML. Exact
+repeats exclude substrings inside longer words; initials and inflected variants
+stay separate until linked by the lawyer. **Copy Markdown** remains a separate
+step that copies the exact current source. Check the remaining text before
+copying: the experimental detector can miss PII and identifying context remains.
+Original files, filenames, attachments and undo history are retained; this
+feature prepares Markdown for handoff and does not erase local source data.
+Dates, amounts and other identifying context receive no automatic generalization.
 
-Use the review **More** menu to choose a selection category, then **Add selection**
+Use the panel's **⋯** menu to choose a selection category, then **Add selected text**
 (Cmd/Ctrl+Alt+P) for missed spans or information you choose to replace manually.
 Selections crossing Markdown delimiters, line breaks or more than 1,024 bytes
 must be narrowed. Find and review highlights coexist. Edits revalidate candidates
