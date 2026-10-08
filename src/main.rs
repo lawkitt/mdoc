@@ -20,10 +20,8 @@ mod model_work;
 mod ocr;
 #[cfg(test)]
 mod perf_tests;
+mod pii;
 mod preview;
-use mdoc_pii as pseudonymization;
-mod pseudonymization_detector;
-mod pseudonymization_ui;
 mod session_store;
 mod settings;
 mod settings_ui;
@@ -68,18 +66,18 @@ actions!(
         SaveAs,
         CopyMarkdown,
         Pseudonymize,
-        AddPseudonymCandidate,
-        ReviewCandidate,
-        NextCandidate,
-        PreviousCandidate,
-        AcceptPseudonymCandidate,
-        AcceptAllPseudonyms,
-        RestorePii,
-        RestoreAllPii,
-        NextPiiChoice,
-        PreviousPiiChoice,
-        OpenPiiChoice,
-        ClosePseudonymPopup,
+        PiiAddCandidate,
+        PiiReviewCandidate,
+        PiiNextCandidate,
+        PiiPreviousCandidate,
+        PiiConfirm,
+        PiiApplyAll,
+        PiiRestore,
+        PiiRestoreAll,
+        PiiNextChoice,
+        PiiPreviousChoice,
+        PiiOpenChoice,
+        PiiClosePopup,
         Close,
         ClosePdf,
         RetryPreview,
@@ -145,7 +143,7 @@ struct Workspace {
     editor: Entity<EditorState>,
     images: images::ImageCache,
     session: document_session::DocumentSession,
-    pseudonymization: pseudonymization_ui::ReviewUi,
+    pii: pii::ui::ReviewUi,
     preview: preview::PreviewState,
     scroll: ScrollHandle,
     error: Option<String>,
@@ -197,7 +195,7 @@ impl Workspace {
                 EditorEvent::Transaction(transaction) => this.pii_transaction(transaction, cx),
                 EditorEvent::Changed => {
                     this.copy_feedback = None;
-                    this.pseudonymization_edited(cx);
+                    this.pii_edited(cx);
                     this.generated_unedited = false;
                     this.blank_disposable = false;
                     this.dirty_cached = this.dirty(cx);
@@ -256,7 +254,7 @@ impl Workspace {
             editor,
             images,
             session: document_session::DocumentSession::default(),
-            pseudonymization: pseudonymization_ui::ReviewUi::new(cx),
+            pii: pii::ui::ReviewUi::new(cx),
             preview: preview::PreviewState::default(),
             scroll: ScrollHandle::new(),
             error: None,
@@ -407,7 +405,7 @@ impl Workspace {
                 self.session
                     .import(imported.source.clone(), imported.warning);
                 self.session.ocr_configuration = imported.ocr_configuration;
-                self.reset_pseudonymization(cx);
+                self.reset_pii(cx);
                 if !retain_preview {
                     self.close_preview(window, cx);
                 }
@@ -1261,7 +1259,7 @@ impl Render for Workspace {
         let ocr_disabled =
             self.job.busy() || self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy();
         let width = self.chrome_width(window);
-        let content_width = (width - f32::from(self.replacement_panel_width(window))).max(1.);
+        let content_width = (width - f32::from(self.replacements_panel_width(window))).max(1.);
         let narrow_preview = self.preview.visible && content_width < 620.;
         let show_original = self.preview.visible && (!narrow_preview || self.original_selected);
         let show_markdown = !narrow_preview || !self.original_selected;
@@ -1281,7 +1279,7 @@ impl Render for Workspace {
                 if event.pressed_button != Some(gpui::MouseButton::Left) { this.split_dragging = false; }
                 if this.split_dragging {
                     let bounds = this.workspace_bounds.get();
-                    let width = f32::from(bounds.size.width - this.replacement_panel_width(window)).max(1.);
+                    let width = f32::from(bounds.size.width - this.replacements_panel_width(window)).max(1.);
                     let ratio = f32::from(event.position.x - bounds.left()) / width;
                     this.preview.split_ratio = Some(ratio.clamp(0.25, 0.75));
                     cx.notify();
@@ -1296,11 +1294,11 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::import))
             .on_action(cx.listener(Self::copy_markdown))
             .on_action(cx.listener(Self::pseudonymize))
-            .on_action(cx.listener(Self::add_pseudonym))
-            .on_action(cx.listener(Self::accept_all_pseudonyms))
-            .on_action(cx.listener(|this, _: &ReviewCandidate, window, cx| this.step_pseudonym(false, true, window, cx)))
-            .on_action(cx.listener(|this, _: &NextCandidate, window, cx| this.step_pseudonym(false, false, window, cx)))
-            .on_action(cx.listener(|this, _: &PreviousCandidate, window, cx| this.step_pseudonym(true, false, window, cx)))
+            .on_action(cx.listener(Self::add_pii_candidate))
+            .on_action(cx.listener(Self::apply_all_pii))
+            .on_action(cx.listener(|this, _: &PiiReviewCandidate, window, cx| this.step_pii_highlight(false, true, window, cx)))
+            .on_action(cx.listener(|this, _: &PiiNextCandidate, window, cx| this.step_pii_highlight(false, false, window, cx)))
+            .on_action(cx.listener(|this, _: &PiiPreviousCandidate, window, cx| this.step_pii_highlight(true, false, window, cx)))
             .on_action(cx.listener(Self::setup_ocr))
             .on_action(cx.listener(|this, _: &RunOcr, window, cx| this.ocr_action(false, window, cx)))
             .on_action(cx.listener(|this, _: &ExtractNative, window, cx| this.ocr_action(true, window, cx)))
@@ -1356,9 +1354,9 @@ impl Render for Workspace {
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments))
                     .children(preview_notice)))
-                .children(self.identity_panel(window, cx)))
+                .children(self.replacements_panel(window, cx)))
             .children(setup_notice).children(error_notice)
-            .children(self.pseudonym_popup(window, cx))
+            .children(self.pii_popup(window, cx))
     }
 }
 
@@ -1420,7 +1418,7 @@ fn main() {
         .detach();
         mdoc_editor::bind_keys(cx);
         markdown_search::bind_keys(cx);
-        pseudonymization_ui::bind_keys(cx);
+        pii::ui::bind_keys(cx);
         settings_ui::bind_keys(cx);
         ui::bind_keys(cx);
         cx.bind_keys([KeyBinding::new(

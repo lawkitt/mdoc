@@ -2,7 +2,7 @@
 //! explicit setup. One bounded scan runs at a time; each scan drops its engine.
 mod structured;
 mod windows;
-use crate::pseudonymization::{Category, Detection};
+use crate::pii::{Category, Detection};
 use gliner2_rs::{
     Chunker, ExecutionMode, InferenceParams, SchemaTask, SpanConfig, SpanEngine,
     processor::SchemaTransformer,
@@ -65,9 +65,11 @@ pub struct Artifact {
 }
 pub fn manifest_for(model: crate::settings::PiiModel) -> Manifest {
     let source = match model {
-        crate::settings::PiiModel::Fp16 => include_str!("../resources/pseudonymization-model.json"),
+        crate::settings::PiiModel::Fp16 => {
+            include_str!("../../resources/pseudonymization-model.json")
+        }
         crate::settings::PiiModel::Fp32 => {
-            include_str!("../resources/pseudonymization-fp32-model.json")
+            include_str!("../../resources/pseudonymization-fp32-model.json")
         }
     };
     serde_json::from_str(source).expect("pinned model manifest")
@@ -132,15 +134,15 @@ pub fn setup_config(
     for (name, text) in [
         (
             "Apache-2.0.txt",
-            include_str!("../resources/gliner2-license.txt"),
+            include_str!("../../resources/gliner2-license.txt"),
         ),
         (
             "gliner2-NOTICE.txt",
-            include_str!("../resources/gliner2-notice.txt"),
+            include_str!("../../resources/gliner2-notice.txt"),
         ),
         (
             "Microsoft-MIT.txt",
-            include_str!("../resources/pseudonymization-microsoft-license.txt"),
+            include_str!("../../resources/pseudonymization-microsoft-license.txt"),
         ),
     ] {
         fs::write(licenses.join(name), text).map_err(|e| e.to_string())?;
@@ -304,7 +306,7 @@ fn scan_in(
                 range: range.start + entity.char_start..range.start + entity.char_end,
                 category,
                 score: entity.score,
-                recognizer: crate::pseudonymization::Recognizer::Model,
+                recognizer: crate::pii::Recognizer::Model,
             });
         }
     }

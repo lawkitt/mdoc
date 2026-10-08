@@ -1,6 +1,6 @@
 //! Lazy list for multiple hidden fields sharing a containing visual row.
 use super::*;
-use crate::{NextPiiChoice, OpenPiiChoice, PreviousPiiChoice, ui};
+use crate::{PiiNextChoice, PiiOpenChoice, PiiPreviousChoice, ui};
 use gpui::{AnyElement, anchored, deferred, div, prelude::*, uniform_list};
 impl Workspace {
     pub(crate) fn choose_annotations(
@@ -12,29 +12,29 @@ impl Workspace {
         if ids.is_empty() {
             return;
         }
-        self.pseudonymization.show_popup(
+        self.pii.show_popup(
             Popup::Choose {
                 ids: ids.into(),
                 selected: 0,
             },
             window.focused(cx),
         );
-        self.pseudonymization
+        self.pii
             .chooser_scroll
             .scroll_to_item(0, gpui::ScrollStrategy::Top);
-        window.focus(&self.pseudonymization.focus, cx);
+        window.focus(&self.pii.focus, cx);
         cx.notify();
     }
     fn choose_step(&mut self, backwards: bool, cx: &mut Context<Self>) {
-        if let Some(selected) = self.pseudonymization.step_choice(backwards) {
-            self.pseudonymization
+        if let Some(selected) = self.pii.step_choice(backwards) {
+            self.pii
                 .chooser_scroll
                 .scroll_to_item(selected, gpui::ScrollStrategy::Nearest);
             cx.notify();
         }
     }
-    fn open_choice(&mut self, _: &OpenPiiChoice, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Popup::Choose { ids, selected }) = &self.pseudonymization.popup else {
+    fn open_choice(&mut self, _: &PiiOpenChoice, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(Popup::Choose { ids, selected }) = &self.pii.popup else {
             return;
         };
         let id = ids[*selected];
@@ -63,22 +63,22 @@ impl Workspace {
                     .key_context("PiiChooser PseudonymReview UiPanel")
                     .tab_group()
                     .tab_stop(false)
-                    .track_focus(&self.pseudonymization.focus)
+                    .track_focus(&self.pii.focus)
                     .w(px(340.))
                     .max_w_full()
                     .p_2()
                     .on_action(
-                        cx.listener(|this, _: &NextPiiChoice, _, cx| this.choose_step(false, cx)),
+                        cx.listener(|this, _: &PiiNextChoice, _, cx| this.choose_step(false, cx)),
                     )
                     .on_action(
-                        cx.listener(|this, _: &PreviousPiiChoice, _, cx| {
+                        cx.listener(|this, _: &PiiPreviousChoice, _, cx| {
                             this.choose_step(true, cx)
                         }),
                     )
                     .on_action(cx.listener(Self::open_choice))
-                    .on_action(cx.listener(Self::close_pseudonym_popup))
+                    .on_action(cx.listener(Self::close_pii_popup))
                     .on_mouse_down_out(cx.listener(|this, _, window, cx| {
-                        this.close_pseudonym_popup(&ClosePseudonymPopup, window, cx)
+                        this.close_pii_popup(&PiiClosePopup, window, cx)
                     }))
                     .child(
                         div()
@@ -97,7 +97,7 @@ impl Workspace {
                                 ui::control("chooser-close", "×", self.theme.get(), true)
                                     .aria_label("Close field chooser")
                                     .on_click(|_, window, cx| {
-                                        window.dispatch_action(Box::new(ClosePseudonymPopup), cx)
+                                        window.dispatch_action(Box::new(PiiClosePopup), cx)
                                     }),
                             ),
                     )
@@ -110,7 +110,7 @@ impl Workspace {
                                     .map(|index| {
                                         let id = ids[index];
                                         let label = if id & APPLIED_ID != 0 {
-                                            this.pseudonymization
+                                            this.pii
                                                 .review
                                                 .applied_occurrence(id & !APPLIED_ID)
                                                 .map(|o| {
@@ -121,7 +121,7 @@ impl Workspace {
                                                     )
                                                 })
                                         } else {
-                                            this.pseudonymization.review.group(id >> 32).map(|g| {
+                                            this.pii.review.variant(id >> 32).map(|g| {
                                                 format!("{} · {}", g.category.label(), g.original)
                                             })
                                         }
@@ -150,7 +150,7 @@ impl Workspace {
                             }),
                         )
                         .h(px(240.))
-                        .track_scroll(&self.pseudonymization.chooser_scroll),
+                        .track_scroll(&self.pii.chooser_scroll),
                     ),
             ),
         )

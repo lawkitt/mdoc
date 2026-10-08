@@ -13,26 +13,26 @@ impl Workspace {
         if !self.can_copy_markdown() {
             return;
         }
-        self.pseudonymization.cancel();
-        self.pseudonymization.error = None;
-        self.pseudonymization.dismiss_popup();
-        self.pseudonymization.reviewing = true;
-        self.pseudonymization.mapping.begin_review();
+        self.pii.cancel();
+        self.pii.error = None;
+        self.pii.dismiss_popup();
+        self.pii.reviewing = true;
+        self.pii.mapping.begin_review();
         let editor = self.editor.read(cx);
         let revision = editor.revision();
         let source = editor.text().to_owned();
         let config = match self.preferences.borrow().snapshot() {
             Ok(p) => p.pseudonymization,
             Err(e) => {
-                self.pseudonymization.error = Some(e);
+                self.pii.error = Some(e);
                 cx.notify();
                 return;
             }
         };
-        let generation = self.pseudonymization.generation;
+        let generation = self.pii.generation;
         let identity = self.session.generation;
         let cancel = Arc::new(AtomicBool::new(false));
-        self.pseudonymization.job = Some(ScanJob {
+        self.pii.job = Some(ScanJob {
             cancel: cancel.clone(),
             revision,
             generation,
@@ -44,21 +44,21 @@ impl Workspace {
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {
-                this.complete_pseudonym_scan(generation, identity, revision, result, cx)
+                this.complete_pii_scan(generation, identity, revision, result, cx)
             });
         })
         .detach();
         cx.notify();
     }
-    pub(super) fn complete_pseudonym_scan(
+    pub(super) fn complete_pii_scan(
         &mut self,
         generation: u64,
         identity: u64,
         revision: u64,
-        result: Result<Vec<pseudonymization::Detection>, String>,
+        result: Result<Vec<pii::Detection>, String>,
         cx: &mut Context<Self>,
     ) {
-        let Some(job) = &self.pseudonymization.job else {
+        let Some(job) = &self.pii.job else {
             return;
         };
         if job.generation != generation
@@ -70,13 +70,12 @@ impl Workspace {
             return;
         }
         let config = job.config.clone();
-        self.pseudonymization.job = None;
-        self.pseudonymization.mapping.show();
+        self.pii.job = None;
+        self.pii.mapping.show();
         let source = self.editor.read(cx).text().to_owned();
-        match result.and_then(|detections| self.pseudonymization.review.ingest(&source, detections))
-        {
+        match result.and_then(|detections| self.pii.review.ingest(&source, detections)) {
             Ok(()) => {
-                self.pseudonymization.error = None;
+                self.pii.error = None;
                 self.model_panel.update(cx, |panel, cx| {
                     let model = settings::Model::Pii(config.model);
                     let index = settings::Model::ALL
@@ -86,11 +85,11 @@ impl Workspace {
                     panel.statuses[index] = settings_ui::Status::Ready;
                     cx.notify();
                 });
-                self.pseudonymization.scans.push(config);
+                self.pii.scans.push(config);
                 self.sync_annotations(cx);
             }
             Err(error) => {
-                self.pseudonymization.error = Some(error);
+                self.pii.error = Some(error);
             }
         }
         cx.notify();

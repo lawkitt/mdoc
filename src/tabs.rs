@@ -643,7 +643,7 @@ impl Tabs {
                     match result {
                         Ok(document) => {
                             view.session.replace(document);
-                            view.reset_pseudonymization(cx);
+                            view.reset_pii(cx);
                             view.editor.update(cx, |editor, cx| {
                                 editor.set_text(view.session.document.saved.clone(), cx);
                                 let mut caret = record.caret.min(editor.text().len());
@@ -689,7 +689,7 @@ impl Tabs {
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| {
                 view.active = false;
-                view.pseudonymization.dismiss_popup();
+                view.pii.dismiss_popup();
             });
         }
         self.active = id;
@@ -904,7 +904,7 @@ impl Tabs {
                             view.editor.update(cx, |editor, cx| {
                                 editor.set_markdown_style(style::markdown_style(theme), cx)
                             });
-                            view.sync_pseudonym_theme(cx);
+                            view.sync_pii_theme(cx);
                             cx.notify();
                         });
                     }

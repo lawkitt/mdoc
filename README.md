@@ -265,7 +265,7 @@ problem; conversion and OCR algorithm changes belong in the dependency forks.
 | `src/preview.rs`, `src/docx_preview.rs` | Preview ownership and supervised local DOCX worker |
 | `src/docx_comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
 | `src/markdown_search.rs`, `src/search_session.rs` | Markdown find controls and revision-aware search scheduling |
-| `src/pseudonymization_detector.rs`, `src/pseudonymization_ui.rs`, `src/pseudonymization_ui/` | Offline detection/setup, scan/edit controller, private rendering and UI regression tests |
+| `src/pii.rs`, `src/pii/detector*`, `src/pii/ui*` | Pseudonymization: offline detection/setup, scan/edit controller, Replacements panel and word popup, UI regression tests |
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
 | `src/ui_tests.rs`, `src/tabs_tests.rs`, `src/perf_tests.rs` | Headless flows, ownership/lifetime checks, and opt-in performance measurements |
 | `crates/mdoc-editor`, `crates/mdoc-markdown` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |

@@ -2,10 +2,10 @@ use super::*;
 use crate::{CopyMarkdown, document::Document, style::Theme};
 fn install_scan(app: &mut Workspace, cx: &mut Context<Workspace>) -> (u64, u64, u64) {
     let revision = app.editor.read(cx).revision();
-    let generation = app.pseudonymization.generation;
+    let generation = app.pii.generation;
     let identity = app.session.generation;
-    app.pseudonymization.reviewing = true;
-    app.pseudonymization.job = Some(ScanJob {
+    app.pii.reviewing = true;
+    app.pii.job = Some(ScanJob {
         cancel: Arc::new(AtomicBool::new(false)),
         revision,
         generation,
@@ -23,43 +23,39 @@ fn scan_proposes_without_applying_until_explicit_apply(cx: &mut gpui::TestAppCon
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         let (generation, identity, revision) = install_scan(app, cx);
-        app.complete_pseudonym_scan(
+        app.complete_pii_scan(
             generation,
             identity,
             revision,
-            Ok(vec![pseudonymization::Detection {
+            Ok(vec![pii::Detection {
                 range: 0..5,
                 category: Category::Person,
                 score: 0.9,
-                recognizer: crate::pseudonymization::Recognizer::Model,
+                recognizer: crate::pii::Recognizer::Model,
             }]),
             cx,
         );
         assert_eq!(app.editor.read(cx).text(), "Alice");
         assert_eq!(app.editor.read(cx).revision(), revision);
-        assert_eq!(app.pseudonymization.review.remaining(), 1);
-        assert!(app.pseudonymization.mapping.open);
+        assert_eq!(app.pii.review.remaining(), 1);
+        assert!(app.pii.mapping.open);
     });
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
-        let id = app.pseudonymization.review.groups()[0].id;
-        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
-        let annotation = app
-            .pseudonymization
-            .review
-            .annotation_id(id, &range)
-            .unwrap();
+        let id = app.pii.review.variants()[0].id;
+        let range = app.pii.review.variant(id).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(id, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
-        app.apply_replacements_direct(cx);
+        app.apply_replacements(cx);
         assert_eq!(app.editor.read(cx).text(), "PERSON_1");
-        assert_eq!(app.pseudonymization.review.remaining(), 0);
+        assert_eq!(app.pii.review.remaining(), 0);
         window.focus(&app.editor.read(cx).focus_handle(cx), cx);
     });
     cx.dispatch_action(mdoc_editor::Undo);
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), "Alice");
-        assert_eq!(app.pseudonymization.review.remaining(), 1);
+        assert_eq!(app.pii.review.remaining(), 1);
     });
 }
 
@@ -78,15 +74,11 @@ fn installed_model_offline_smoke(cx: &mut gpui::TestAppContext) {
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        assert!(
-            app.pseudonymization.error.is_none(),
-            "{:?}",
-            app.pseudonymization.error
-        );
-        let count = app.pseudonymization.review.remaining();
+        assert!(app.pii.error.is_none(), "{:?}", app.pii.error);
+        let count = app.pii.review.remaining();
         assert!(count > 0);
         assert_eq!(app.editor.read(cx).text(), source);
-        app.apply_replacements_direct(cx);
+        app.apply_replacements(cx);
         let result = app.editor.read(cx).text();
         assert!(result.contains("PERSON_"));
         assert!(result.contains("EMAIL_"));
@@ -105,44 +97,44 @@ fn scan_then_apply_is_one_undo_step_and_copy_is_explicit(cx: &mut gpui::TestAppC
     app.update(cx, |app, cx| {
         app.session.warning = Some("Review extraction".into());
         let kept = app
-            .pseudonymization
+            .pii
             .review
             .add_manual(source, 2..10, Category::Person)
             .unwrap();
-        app.pseudonymization.review.keep(kept, Some(2..10));
+        app.pii.review.keep(kept, Some(2..10));
         cx.write_to_clipboard(gpui::ClipboardItem::new_string("keep clipboard".into()));
         let (generation, identity, revision) = install_scan(app, cx);
         let bob = source.find("Bob").unwrap();
         let mail = source.find("anna@example.invalid").unwrap();
-        app.complete_pseudonym_scan(
+        app.complete_pii_scan(
             generation,
             identity,
             revision,
             Ok(vec![
-                pseudonymization::Detection {
+                pii::Detection {
                     range: 2..10,
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: crate::pseudonymization::Recognizer::Model,
+                    recognizer: crate::pii::Recognizer::Model,
                 },
-                pseudonymization::Detection {
+                pii::Detection {
                     range: bob..bob + 3,
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: crate::pseudonymization::Recognizer::Model,
+                    recognizer: crate::pii::Recognizer::Model,
                 },
-                pseudonymization::Detection {
+                pii::Detection {
                     range: mail..mail + 20,
                     category: Category::Email,
                     score: 0.9,
-                    recognizer: crate::pseudonymization::Recognizer::Model,
+                    recognizer: crate::pii::Recognizer::Model,
                 },
             ]),
             cx,
         );
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(app.pseudonymization.review.remaining(), 3);
-        app.apply_replacements_direct(cx);
+        assert_eq!(app.pii.review.remaining(), 3);
+        app.apply_replacements(cx);
         assert_eq!(app.editor.read(cx).text(), applied);
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().as_deref(),
@@ -171,7 +163,7 @@ fn scan_then_apply_is_one_undo_step_and_copy_is_explicit(cx: &mut gpui::TestAppC
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(app.pseudonymization.review.remaining(), 3);
+        assert_eq!(app.pii.review.remaining(), 3);
     });
     cx.dispatch_action(mdoc_editor::Redo);
     cx.run_until_parked();
@@ -191,30 +183,30 @@ fn failed_cancelled_stale_and_superseded_scans_do_not_edit(cx: &mut gpui::TestAp
         cx.run_until_parked();
         app.update(cx, |app, cx| {
             let (generation, identity, revision) = install_scan(app, cx);
-            let mut result = Ok(vec![pseudonymization::Detection {
+            let mut result = Ok(vec![pii::Detection {
                 range: 0..5,
                 category: Category::Person,
                 score: 0.9,
-                recognizer: crate::pseudonymization::Recognizer::Model,
+                recognizer: crate::pii::Recognizer::Model,
             }]);
             match case {
                 0 => result = Err("Partial scan rejected".into()),
                 1 => result.as_mut().unwrap()[0].range = 0..99,
-                2 => app.pseudonymization.cancel(),
+                2 => app.pii.cancel(),
                 3 => {
                     app.editor
                         .update(cx, |editor, cx| editor.replace_range(0..5, "Betty", cx));
                 }
-                4 => app.reset_pseudonymization(cx),
+                4 => app.reset_pii(cx),
                 _ => app.session.replace(Document::default()),
             }
-            app.complete_pseudonym_scan(generation, identity, revision, result, cx);
+            app.complete_pii_scan(generation, identity, revision, result, cx);
             assert_eq!(
                 app.editor.read(cx).text(),
                 if case == 3 { "Betty" } else { "Alice" }
             );
-            assert_eq!(app.pseudonymization.review.remaining(), 0);
-            app.pseudonymization.cancel();
+            assert_eq!(app.pii.review.remaining(), 0);
+            app.pii.cancel();
         });
         cx.run_until_parked();
     }
@@ -252,32 +244,28 @@ fn toolbar_icon_scans_once_then_toggles_the_review(cx: &mut gpui::TestAppContext
     });
     click(cx, "Pseudonymize");
     app.update(cx, |app, _| {
-        assert!(app.pseudonymization.error.is_some());
-        assert!(app.pseudonymization.reviewing);
-        assert!(app.pseudonymization.mapping.open);
+        assert!(app.pii.error.is_some());
+        assert!(app.pii.reviewing);
+        assert!(app.pii.mapping.open);
     });
     click(cx, "Pseudonymize");
-    assert!(app.read_with(cx, |app, _| !app.pseudonymization.mapping.open));
+    assert!(app.read_with(cx, |app, _| !app.pii.mapping.open));
     click(cx, "Pseudonymize");
     app.update(cx, |app, _| {
-        assert!(app.pseudonymization.mapping.open);
-        assert!(!app.pseudonymization.scanning());
+        assert!(app.pii.mapping.open);
+        assert!(!app.pii.scanning());
     });
     app.update_in(cx, |app, window, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice", cx));
         let id = app
-            .pseudonymization
+            .pii
             .review
             .add_manual("Alice", 0..5, Category::Person)
             .unwrap();
         app.sync_annotations(cx);
-        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
-        let annotation = app
-            .pseudonymization
-            .review
-            .annotation_id(id, &range)
-            .unwrap();
+        let range = app.pii.review.variant(id).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(id, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
     });
     cx.run_until_parked();
@@ -290,8 +278,8 @@ fn toolbar_icon_scans_once_then_toggles_the_review(cx: &mut gpui::TestAppContext
     );
     let next = crate::ui_tests::new_document(&app, cx);
     next.read_with(cx, |app, _| {
-        assert!(!app.pseudonymization.reviewing);
-        assert!(!app.pseudonymization.mapping.open);
+        assert!(!app.pii.reviewing);
+        assert!(!app.pii.mapping.open);
     });
 }
 #[gpui::test]
@@ -304,9 +292,9 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
     });
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
-        app.pseudonymization.mapping.open = true;
-        app.pseudonymization.reviewing = true;
-        let review = &mut app.pseudonymization.review;
+        app.pii.mapping.open = true;
+        app.pii.reviewing = true;
+        let review = &mut app.pii.review;
         let anna = review.add_manual(source, 2..10, Category::Person).unwrap();
         let acme = source.find("Acme").unwrap();
         review
@@ -323,14 +311,10 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
         review.keep(anna, Some(2..10));
         review.keep(kept, None);
         app.sync_annotations(cx);
-        let range = app.pseudonymization.review.group(anna).unwrap().mentions[0].clone();
-        let annotation = app
-            .pseudonymization
-            .review
-            .annotation_id(anna, &range)
-            .unwrap();
+        let range = app.pii.review.variant(anna).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(anna, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
-        app.pseudonymization
+        app.pii
             .mapping
             .alias
             .update(cx, |input, cx| input.set_value("PERSON_CUSTOM".into(), cx));
@@ -347,10 +331,10 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
             app.editor.read(cx).text(),
             "**Анна** ORG_1 PERSON_CUSTOM [mail](EMAIL_1) Bob"
         );
-        assert_eq!(app.pseudonymization.review.remaining(), 0);
-        assert!(app.pseudonymization.popup.is_some());
+        assert_eq!(app.pii.review.remaining(), 0);
+        assert!(app.pii.popup.is_some());
         assert!(app.dirty(cx));
-        assert!(app.pseudonymization.error.is_none());
+        assert!(app.pii.error.is_none());
     });
     // With no pending suggestions, another click must not add an undo step.
     let revision = app.read_with(cx, |app, cx| app.editor.read(cx).revision());
@@ -364,7 +348,7 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(app.pseudonymization.review.remaining(), 3);
+        assert_eq!(app.pii.review.remaining(), 3);
     });
     cx.dispatch_action(mdoc_editor::Redo);
     cx.run_until_parked();
@@ -373,7 +357,7 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
             app.editor.read(cx).text(),
             "**Анна** ORG_1 PERSON_CUSTOM [mail](EMAIL_1) Bob"
         );
-        assert_eq!(app.pseudonymization.review.remaining(), 0);
+        assert_eq!(app.pii.review.remaining(), 0);
     });
 }
 #[gpui::test]
@@ -387,22 +371,19 @@ fn keyboard_search_and_navigation_reach_virtualized_alias_targets(cx: &mut gpui:
     app.update_in(cx, |app, window, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text(&source, cx));
-        app.pseudonymization.review = Review::default();
-        app.pseudonymization.reviewing = true;
+        app.pii.review = Review::default();
+        app.pii.reviewing = true;
         for i in 0..30 {
-            app.pseudonymization
+            app.pii
                 .review
                 .add_manual(&source, i * 7..i * 7 + 6, Category::Person)
                 .unwrap();
         }
         app.sync_annotations(cx);
-        let annotation = app.pseudonymization.review.candidates()[0].id;
+        let annotation = app.pii.review.candidates()[0].id;
         app.activate_annotation(annotation, window, cx);
-        app.pseudonymization.mapping.show_alias_choices();
-        window.focus(
-            &app.pseudonymization.mapping.alias.read(cx).focus_handle(cx),
-            cx,
-        );
+        app.pii.mapping.show_alias_choices();
+        window.focus(&app.pii.mapping.alias.read(cx).focus_handle(cx), cx);
     });
     cx.run_until_parked();
     for _ in 0..29 {
@@ -416,7 +397,7 @@ fn keyboard_search_and_navigation_reach_virtualized_alias_targets(cx: &mut gpui:
         });
     }
     app.update(cx, |app, cx| {
-        assert_eq!(app.pseudonymization.mapping.target_index, Some(28));
+        assert_eq!(app.pii.mapping.target_index, Some(28));
         assert_eq!(app.editor.read(cx).text(), source);
     });
     let last = cx
@@ -430,12 +411,9 @@ fn keyboard_search_and_navigation_reach_virtualized_alias_targets(cx: &mut gpui:
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        assert_eq!(
-            app.pseudonymization.mapping.alias.read(cx).value(),
-            "PERSON_30"
-        );
+        assert_eq!(app.pii.mapping.alias.read(cx).value(), "PERSON_30");
         assert_eq!(app.editor.read(cx).text(), source);
-        assert!(app.pseudonymization.popup.is_some());
+        assert!(app.pii.popup.is_some());
     });
 }
 
@@ -449,42 +427,38 @@ fn accept_all_refuses_pending_scans_and_invalid_alias_drafts(cx: &mut gpui::Test
     });
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
-        app.pseudonymization.reviewing = true;
+        app.pii.reviewing = true;
         let alice = app
-            .pseudonymization
+            .pii
             .review
             .add_manual(source, 0..5, Category::Person)
             .unwrap();
-        app.pseudonymization
+        app.pii
             .review
             .add_manual(source, 6..10, Category::Organization)
             .unwrap();
         let revision = app.editor.read(cx).revision();
-        app.pseudonymization.job = Some(ScanJob {
+        app.pii.job = Some(ScanJob {
             cancel: Arc::new(AtomicBool::new(false)),
             revision,
             generation: 1,
             config: settings::PiiConfig::default(),
         });
-        app.accept_all_pseudonyms(&AcceptAllPseudonyms, window, cx);
+        app.apply_all_pii(&PiiApplyAll, window, cx);
         assert_eq!(app.editor.read(cx).revision(), revision);
         assert_eq!(app.editor.read(cx).text(), source);
-        app.pseudonymization.cancel();
-        let range = app.pseudonymization.review.group(alice).unwrap().mentions[0].clone();
-        let annotation = app
-            .pseudonymization
-            .review
-            .annotation_id(alice, &range)
-            .unwrap();
+        app.pii.cancel();
+        let range = app.pii.review.variant(alice).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(alice, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
-        app.pseudonymization
+        app.pii
             .mapping
             .alias
             .update(cx, |input, cx| input.set_value("invalid token".into(), cx));
-        app.accept_all_pseudonyms(&AcceptAllPseudonyms, window, cx);
+        app.apply_all_pii(&PiiApplyAll, window, cx);
         assert_eq!(app.editor.read(cx).revision(), revision);
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(app.pseudonymization.review.remaining(), 2);
+        assert_eq!(app.pii.review.remaining(), 2);
     });
 }
 #[gpui::test]
@@ -494,23 +468,23 @@ fn successful_scan_removes_setup_prompt_only_for_the_scanned_model(cx: &mut gpui
     app.update(cx, |app, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice", cx));
-        app.pseudonymization.reviewing = true;
+        app.pii.reviewing = true;
         let revision = app.editor.read(cx).revision();
-        app.pseudonymization.job = Some(ScanJob {
+        app.pii.job = Some(ScanJob {
             cancel: Arc::new(AtomicBool::new(false)),
             revision,
             generation: 7,
             config: settings::PiiConfig::default(),
         });
-        app.complete_pseudonym_scan(
+        app.complete_pii_scan(
             7,
             app.session.generation,
             revision,
-            Ok(vec![pseudonymization::Detection {
+            Ok(vec![pii::Detection {
                 range: 0..5,
                 category: Category::Person,
                 score: 0.9,
-                recognizer: crate::pseudonymization::Recognizer::Model,
+                recognizer: crate::pii::Recognizer::Model,
             }]),
             cx,
         );
@@ -573,17 +547,17 @@ fn cancelled_edited_and_replaced_document_results_are_rejected(cx: &mut gpui::Te
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice", cx));
         let result = || {
-            Ok(vec![pseudonymization::Detection {
+            Ok(vec![pii::Detection {
                 range: 0..5,
                 category: Category::Person,
                 score: 0.9,
-                recognizer: crate::pseudonymization::Recognizer::Model,
+                recognizer: crate::pii::Recognizer::Model,
             }])
         };
         let identity = app.session.generation;
         let revision = app.editor.read(cx).revision();
         let install_job = |app: &mut Workspace| {
-            app.pseudonymization.job = Some(ScanJob {
+            app.pii.job = Some(ScanJob {
                 cancel: Arc::new(AtomicBool::new(false)),
                 revision,
                 generation: 7,
@@ -591,49 +565,46 @@ fn cancelled_edited_and_replaced_document_results_are_rejected(cx: &mut gpui::Te
             });
         };
         install_job(app);
-        app.pseudonymization.cancel();
-        app.complete_pseudonym_scan(7, identity, revision, result(), cx);
-        assert!(app.pseudonymization.review.groups().is_empty());
+        app.pii.cancel();
+        app.complete_pii_scan(7, identity, revision, result(), cx);
+        assert!(app.pii.review.variants().is_empty());
         install_job(app);
         app.editor
             .update(cx, |editor, cx| editor.replace_range(0..5, "Betty", cx));
-        app.complete_pseudonym_scan(7, identity, revision, result(), cx);
-        assert!(app.pseudonymization.review.groups().is_empty());
+        app.complete_pii_scan(7, identity, revision, result(), cx);
+        assert!(app.pii.review.variants().is_empty());
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice", cx));
         let revision = app.editor.read(cx).revision();
-        app.pseudonymization.job = Some(ScanJob {
+        app.pii.job = Some(ScanJob {
             cancel: Arc::new(AtomicBool::new(false)),
             revision,
             generation: 9,
             config: settings::PiiConfig::default(),
         });
         app.session.replace(Document::default());
-        app.complete_pseudonym_scan(9, identity, revision, result(), cx);
-        assert!(app.pseudonymization.review.groups().is_empty());
-        app.pseudonymization.cancel();
+        app.complete_pii_scan(9, identity, revision, result(), cx);
+        assert!(app.pii.review.variants().is_empty());
+        app.pii.cancel();
     });
 }
 
 fn prepare_applied(app: &mut Workspace, source: &str, cx: &mut Context<Workspace>) {
     app.editor.update(cx, |e, cx| e.set_text(source, cx));
-    app.pseudonymization.reviewing = true;
+    app.pii.reviewing = true;
     let detections: Vec<_> = source
         .match_indices("Anna")
         .chain(source.match_indices("Bob"))
-        .map(|(at, text)| pseudonymization::Detection {
+        .map(|(at, text)| pii::Detection {
             range: at..at + text.len(),
             category: Category::Person,
             score: 0.9,
-            recognizer: pseudonymization::Recognizer::Model,
+            recognizer: pii::Recognizer::Model,
         })
         .collect();
-    app.pseudonymization
-        .review
-        .ingest(source, detections)
-        .unwrap();
-    app.apply_replacements_direct(cx);
-    assert_eq!(app.pseudonymization.review.remaining(), 0);
+    app.pii.review.ingest(source, detections).unwrap();
+    app.apply_replacements(cx);
+    assert_eq!(app.pii.review.remaining(), 0);
     app.sync_annotations(cx);
 }
 #[gpui::test]
@@ -645,51 +616,45 @@ fn applied_highlights_restore_one_or_matching_originals_and_keep_survives_rescan
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
         assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1");
-        let id = app.pseudonymization.review.applied()[0].id;
+        let id = app.pii.review.applied()[0].id;
         app.activate_annotation(APPLIED_ID | id, window, cx);
     });
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("pseudonym-original").is_some());
     app.update_in(cx, |app, window, cx| {
-        app.restore_pii(&RestorePii, window, cx)
+        app.restore_pii(&PiiRestore, window, cx)
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), "Anna PERSON_2 PERSON_1");
-        app.pseudonymization
+        app.pii
             .review
             .ingest(
                 "Anna PERSON_2 PERSON_1",
-                vec![pseudonymization::Detection {
+                vec![pii::Detection {
                     range: 0..4,
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: pseudonymization::Recognizer::Model,
+                    recognizer: pii::Recognizer::Model,
                 }],
             )
             .unwrap();
-        assert_eq!(app.pseudonymization.review.remaining(), 0);
+        assert_eq!(app.pii.review.remaining(), 0);
     });
     cx.dispatch_action(mdoc_editor::Undo);
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
         assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1");
-        let id = app.pseudonymization.review.applied()[0].id;
+        let id = app.pii.review.applied()[0].id;
         app.activate_annotation(APPLIED_ID | id, window, cx);
-        app.restore_all_pii(&RestoreAllPii, window, cx);
+        app.restore_all_pii(&PiiRestoreAll, window, cx);
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), "Anna PERSON_2 Anna");
-        assert_eq!(app.pseudonymization.review.applied().len(), 1);
-        assert_eq!(
-            app.pseudonymization.review.applied()[0]
-                .step
-                .before
-                .as_ref(),
-            "Bob"
-        );
+        assert_eq!(app.pii.review.applied().len(), 1);
+        assert_eq!(app.pii.review.applied()[0].step.before.as_ref(), "Bob");
     });
     cx.dispatch_action(mdoc_editor::Undo);
     cx.run_until_parked();
@@ -710,12 +675,12 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
             cx.simulate_resize(gpui::size(px(width), px(height)));
             app.update(cx, |app, cx| {
                 app.theme.set(theme);
-                app.pseudonymization.review = Default::default();
+                app.pii.review = Default::default();
                 prepare_applied(app, "Anna Bob Anna", cx);
             });
             cx.run_until_parked();
             app.update_in(cx, |app, window, cx| {
-                let id = app.pseudonymization.review.applied()[0].id;
+                let id = app.pii.review.applied()[0].id;
                 app.activate_annotation(APPLIED_ID | id, window, cx);
             });
             cx.run_until_parked();
@@ -739,7 +704,7 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
             cx.run_until_parked();
             app.update(cx, |app, cx| {
                 assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1");
-                assert!(app.pseudonymization.popup.is_some());
+                assert!(app.pii.popup.is_some());
             });
             // Click the actual secondary action, rather than calling its handler.
             let restore_all = cx.debug_bounds("direct-keep-restore-all").unwrap().center();
@@ -747,10 +712,10 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
             cx.run_until_parked();
             app.update(cx, |app, cx| {
                 assert_eq!(app.editor.read(cx).text(), "Anna PERSON_2 Anna");
-                assert!(app.pseudonymization.popup.is_none());
+                assert!(app.pii.popup.is_none());
             });
             app.update_in(cx, |app, window, cx| {
-                let id = app.pseudonymization.review.applied()[0].id;
+                let id = app.pii.review.applied()[0].id;
                 app.activate_annotation(APPLIED_ID | id, window, cx);
             });
             cx.run_until_parked();
@@ -762,7 +727,7 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
             cx.simulate_keystrokes("escape");
             cx.run_until_parked();
             app.update_in(cx, |app, window, cx| {
-                assert!(app.pseudonymization.popup.is_none());
+                assert!(app.pii.popup.is_none());
                 assert!(app.editor.read(cx).focus_handle(cx).is_focused(window));
             });
         }
@@ -780,14 +745,14 @@ fn long_original_and_neutral_enter_preserve_source_until_explicit_apply(
         app.update_in(cx, |app, window, cx| {
             app.theme.set(theme);
             app.editor.update(cx, |e, cx| e.set_text(&original, cx));
-            app.pseudonymization.review = Review::default();
-            app.pseudonymization.reviewing = true;
-            app.pseudonymization
+            app.pii.review = Review::default();
+            app.pii.reviewing = true;
+            app.pii
                 .review
                 .add_manual(&original, 0..original.len(), Category::Person)
                 .unwrap();
             app.sync_annotations(cx);
-            app.activate_annotation(app.pseudonymization.review.candidates()[0].id, window, cx);
+            app.activate_annotation(app.pii.review.candidates()[0].id, window, cx);
         });
         cx.run_until_parked();
         cx.simulate_keystrokes("enter");
@@ -797,14 +762,11 @@ fn long_original_and_neutral_enter_preserve_source_until_explicit_apply(
             original
         );
         app.update_in(cx, |app, window, cx| {
-            app.pseudonymization
+            app.pii
                 .mapping
                 .alias
                 .update(cx, |input, cx| input.set_value("CLIENT_1".into(), cx));
-            window.focus(
-                &app.pseudonymization.mapping.alias.read(cx).focus_handle(cx),
-                cx,
-            );
+            window.focus(&app.pii.mapping.alias.read(cx).focus_handle(cx), cx);
         });
         cx.simulate_keystrokes("enter");
         cx.run_until_parked();
@@ -818,8 +780,8 @@ fn long_original_and_neutral_enter_preserve_source_until_explicit_apply(
         cx.run_until_parked();
         app.update_in(cx, |app, window, cx| {
             assert_eq!(app.editor.read(cx).text(), "CLIENT_1");
-            assert!(app.pseudonymization.popup.is_some());
-            window.focus(&app.pseudonymization.focus, cx);
+            assert!(app.pii.popup.is_some());
+            window.focus(&app.pii.focus, cx);
         });
         cx.simulate_keystrokes("enter");
         cx.run_until_parked();
@@ -842,41 +804,25 @@ fn editing_alias_invalidates_provenance_undo_recovers_it_and_paste_creates_none(
             .update(cx, |e, cx| e.replace_range(0..0, "😀 ", cx))
     });
     cx.run_until_parked();
-    let id = app.read_with(cx, |app, _| app.pseudonymization.review.applied()[0].id);
+    let id = app.read_with(cx, |app, _| app.pii.review.applied()[0].id);
     app.update(cx, |app, cx| {
-        assert_eq!(
-            app.pseudonymization
-                .review
-                .applied_occurrence(id)
-                .unwrap()
-                .range,
-            5..13
-        );
+        assert_eq!(app.pii.review.applied_occurrence(id).unwrap().range, 5..13);
         app.editor
             .update(cx, |e, cx| e.replace_range(6..6, "X", cx));
     });
     cx.run_until_parked();
-    assert!(app.read_with(cx, |app, _| {
-        app.pseudonymization.review.applied().is_empty()
-    }));
+    assert!(app.read_with(cx, |app, _| { app.pii.review.applied().is_empty() }));
     cx.dispatch_action(mdoc_editor::Undo);
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        assert_eq!(
-            app.pseudonymization
-                .review
-                .applied_occurrence(id)
-                .unwrap()
-                .range,
-            5..13
-        );
+        assert_eq!(app.pii.review.applied_occurrence(id).unwrap().range, 5..13);
         app.editor
             .update(cx, |e, cx| e.replace_range(13..13, " PERSON_1", cx));
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), "😀 PERSON_1 PERSON_1");
-        assert_eq!(app.pseudonymization.review.applied().len(), 1);
+        assert_eq!(app.pii.review.applied().len(), 1);
     });
 }
 #[gpui::test]
@@ -888,7 +834,7 @@ fn dense_hidden_fields_choose_and_restore_by_keyboard(cx: &mut gpui::TestAppCont
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
     let bounds = app.read_with(cx, |app, cx| {
-        let applied = &app.pseudonymization.review.applied();
+        let applied = &app.pii.review.applied();
         let a = app
             .editor
             .read(cx)
@@ -909,7 +855,7 @@ fn dense_hidden_fields_choose_and_restore_by_keyboard(cx: &mut gpui::TestAppCont
     cx.simulate_keystrokes("down enter");
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
-        app.restore_pii(&RestorePii, window, cx)
+        app.restore_pii(&PiiRestore, window, cx)
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {

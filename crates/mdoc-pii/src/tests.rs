@@ -66,7 +66,7 @@ fn unicode_exact_repeats_and_hidden_source_keep_source_syntax() {
     review
         .ingest(source, vec![detection(2..10, Category::Person)])
         .unwrap();
-    let group = &review.groups()[0];
+    let group = &review.variants()[0];
     assert_eq!(group.mentions.len(), 4);
     let edits = plan_all(&review, source).unwrap();
     let mut changed = source.to_string();
@@ -81,7 +81,7 @@ fn unicode_exact_repeats_and_hidden_source_keep_source_syntax() {
     assert_eq!(review.remaining(), 0);
     review.refresh(source); // undo
     assert_eq!(review.remaining(), 4);
-    assert_eq!(review.groups()[0].replacement, "PERSON_1");
+    assert_eq!(review.variants()[0].replacement, "PERSON_1");
 }
 #[test]
 fn keep_all_survives_rescan_and_single_keep_rebases() {
@@ -89,11 +89,11 @@ fn keep_all_survives_rescan_and_single_keep_rebases() {
     review
         .ingest("Ann Ann", vec![detection(0..3, Category::Person)])
         .unwrap();
-    let id = review.groups()[0].id;
+    let id = review.variants()[0].id;
     review.keep(id, Some(0..3));
     assert_eq!(review.remaining(), 1);
     review.refresh("prefix Ann Ann");
-    assert_eq!(review.groups()[0].mentions, vec![11..14]);
+    assert_eq!(review.variants()[0].mentions, vec![11..14]);
     review.keep(id, None);
     review
         .ingest("prefix Ann Ann", vec![detection(7..10, Category::Person)])
@@ -151,7 +151,7 @@ fn batch_plan_preserves_kept_mentions_custom_tokens_and_hidden_source() {
         "**Анна** CLIENT_1 PERSON_CUSTOM [mail](EMAIL_1) Bob"
     );
     assert!(plan_all(&review, "changed").is_err());
-    let identity = review.group_identity(anna).unwrap();
+    let identity = review.variant_identity(anna).unwrap();
     assert!(review.rename_identity(identity, "invalid token").is_err());
     assert_eq!(review.remaining(), 3);
 }
@@ -166,9 +166,9 @@ fn plans_refuse_stale_or_invalid_ranges_and_syntax_replacements() {
     review
         .ingest("Ann", vec![detection(0..3, Category::Person)])
         .unwrap();
-    let id = review.groups()[0].id;
+    let id = review.variants()[0].id;
     assert!(plan_all(&review, "Anna").is_err());
-    let identity = review.group_identity(id).unwrap();
+    let identity = review.variant_identity(id).unwrap();
     assert!(review.rename_identity(identity, "](bad)").is_err());
     assert!(
         review
@@ -181,7 +181,7 @@ fn hidden_values_are_replaceable_but_html_names_quotes_and_list_prefixes_are_pro
     let source = "1. Anna\n\n[Anna](https://x.invalid/Anna) ![photo](Anna.png) <Anna Anna=\"Anna\">Anna</Anna>";
     let mut review = Review::default();
     let id = review.add_manual(source, 3..7, Category::Person).unwrap();
-    let group = review.group(id).unwrap();
+    let group = review.variant(id).unwrap();
     assert_eq!(group.mentions.len(), 6);
     let mut changed = source.to_owned();
     for (range, replacement) in plan_all(&review, source).unwrap().iter().rev() {
@@ -227,12 +227,12 @@ fn mappings_link_variants_explicitly_and_never_collide_with_source_tokens() {
     let source = "PERSON_1 Анна Анны";
     let a = review.add_manual(source, 9..17, Category::Person).unwrap();
     let b = review.add_manual(source, 18..26, Category::Person).unwrap();
-    assert_eq!(review.group(a).unwrap().replacement, "PERSON_2");
+    assert_eq!(review.variant(a).unwrap().replacement, "PERSON_2");
     assert!(review.rename_identity(b, "PERSON_1").is_err()); // raw source token
     review.set_replacement(b, "PERSON_2");
     assert_eq!(
-        review.group(a).unwrap().replacement,
-        review.group(b).unwrap().replacement
+        review.variant(a).unwrap().replacement,
+        review.variant(b).unwrap().replacement
     );
 }
 
@@ -280,15 +280,18 @@ fn normalized_identities_preserve_bytes_and_legal_forms_without_guessing_relatio
     let b = review
         .add_manual(source, at..at + "ALICE   MORGAN".len(), Category::Person)
         .unwrap();
-    assert_eq!(review.group_identity(a), review.group_identity(b));
-    assert_eq!(review.group(b).unwrap().original.as_ref(), "ALICE   MORGAN");
+    assert_eq!(review.variant_identity(a), review.variant_identity(b));
+    assert_eq!(
+        review.variant(b).unwrap().original.as_ref(),
+        "ALICE   MORGAN"
+    );
     let mut ids = Vec::new();
     for value in ["ООО «Берег»", "ооо \"берег\"", "ИП Берег"] {
         let start = source.find(value).unwrap();
         let group = review
             .add_manual(source, start..start + value.len(), Category::Organization)
             .unwrap();
-        ids.push(review.group_identity(group).unwrap());
+        ids.push(review.variant_identity(group).unwrap());
     }
     assert_eq!(ids[0], ids[1]);
     assert_ne!(ids[0], ids[2]);
@@ -312,7 +315,7 @@ fn initials_discovery_keeps_ambiguous_links_as_suggestions() {
     }
     review.ingest(source, detections).unwrap();
     let initials = review
-        .groups()
+        .variants()
         .iter()
         .find(|g| g.original.as_ref() == "Павлова М.С.")
         .unwrap();
@@ -320,7 +323,7 @@ fn initials_discovery_keeps_ambiguous_links_as_suggestions() {
     assert_eq!(review.active_identities().len(), 3);
     assert!(
         review
-            .groups()
+            .variants()
             .iter()
             .all(|g| g.original.as_ref() != "Павлова")
     );

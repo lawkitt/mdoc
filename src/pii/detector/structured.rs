@@ -1,6 +1,6 @@
 //! Selected structured recognizers. Declining a value never rejects model output.
 //! Heuristic rule evidence is ranked separately from model probabilities.
-use crate::pseudonymization::{Category, Detection, Recognizer};
+use crate::pii::{Category, Detection, Recognizer};
 use presidio_analyzer::{Pattern, PatternRecognizer, country, predefined};
 use regex::Regex;
 use std::sync::OnceLock;
@@ -287,7 +287,7 @@ mod tests {
         assert!(inn_valid("500100732259"));
         assert!(!inn_valid("500100732258"));
         let source = "ИНН: 7707083894";
-        let mut review = crate::pseudonymization::Review::default();
+        let mut review = crate::pii::Review::default();
         review
             .ingest(
                 source,
@@ -309,11 +309,11 @@ mod captured_corpus {
     #[test]
     fn selected_recognizers_match_the_frozen_research_predictions() {
         let corpus: Vec<serde_json::Value> = serde_json::from_str(include_str!(
-            "../../tests/fixtures/pseudonymization/hybrid/corpus.json"
+            "../../../tests/fixtures/pseudonymization/hybrid/corpus.json"
         ))
         .unwrap();
         let comparison: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/fixtures/pseudonymization/hybrid/comparison.json"
+            "../../../tests/fixtures/pseudonymization/hybrid/comparison.json"
         ))
         .unwrap();
         for fixture in corpus {
