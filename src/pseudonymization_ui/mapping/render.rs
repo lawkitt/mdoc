@@ -139,7 +139,7 @@ impl Workspace {
                         if this.pseudonymization.scanning() {
                             return;
                         }
-                        this.pseudonymization.mapping.actions_open = false;
+                        this.pseudonymization.mapping.close_actions();
                         this.add_pseudonym(&AddPseudonymCandidate, window, cx);
                     })),
             )
@@ -169,7 +169,7 @@ impl Workspace {
             .child(
                 self.replacement_control("review-settings", "Model settings…", true, cx)
                     .on_click(cx.listener(|this, _, window, cx| {
-                        this.pseudonymization.mapping.actions_open = false;
+                        this.pseudonymization.mapping.close_actions();
                         this.model_panel
                             .update(cx, |panel, cx| panel.show(window, cx));
                     })),
@@ -281,8 +281,7 @@ impl Workspace {
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                if this.pseudonymization.mapping.actions_open {
-                    this.pseudonymization.mapping.actions_open = false;
+                if this.pseudonymization.mapping.close_actions() {
                     cx.notify();
                 } else {
                     this.close_replacements(window, cx);
@@ -302,8 +301,7 @@ impl Workspace {
                         self.replacement_control("replacement-commands", "⋯", true, cx)
                             .aria_label("Scan and model actions")
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.pseudonymization.mapping.actions_open =
-                                    !this.pseudonymization.mapping.actions_open;
+                                this.pseudonymization.mapping.toggle_actions();
                                 cx.notify();
                             })),
                     )

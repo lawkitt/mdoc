@@ -79,7 +79,7 @@ impl Workspace {
         let draft = mapping.alias.read(cx).value().trim();
         let changed = draft != identity.alias;
         let input_focused = mapping.alias.read(cx).focus_handle(cx).is_focused(window);
-        let choices = mapping.alias_choices || input_focused;
+        let choices = mapping.pickers.alias || input_focused;
         let query = if changed {
             draft.to_lowercase()
         } else {
@@ -96,7 +96,7 @@ impl Workspace {
         let width = px(360.).min((available.size.width - px(16.)).max(px(160.)));
         let maximum = (available.size.height - px(44.)).max(px(110.));
         let desired = px(
-            if choices || mapping.choosing_owner || mapping.choosing_category {
+            if choices || mapping.pickers.owner || mapping.pickers.category {
                 430.
             } else {
                 300.
@@ -213,8 +213,7 @@ impl Workspace {
                         )
                         .aria_label("Correct category for selected scope")
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.pseudonymization.mapping.choosing_category =
-                                !this.pseudonymization.mapping.choosing_category;
+                            this.pseudonymization.mapping.toggle_category_picker();
                             cx.notify();
                         })),
                     )
@@ -290,7 +289,7 @@ impl Workspace {
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
-                            this.pseudonymization.mapping.alias_choices = true;
+                            this.pseudonymization.mapping.show_alias_choices();
                             cx.notify();
                         }),
                     ),
@@ -316,7 +315,7 @@ impl Workspace {
                             .when(mapping.scope == scope, |v| v.bg(palette.placeholder_bg))
                             .on_click(cx.listener(
                                 move |this, _, _, cx| {
-                                    this.pseudonymization.mapping.scope = scope;
+                                    this.pseudonymization.mapping.set_scope(scope);
                                     cx.notify();
                                 },
                             ))
@@ -332,7 +331,7 @@ impl Workspace {
                         .child(error),
                 )
             });
-        if mapping.choosing_category {
+        if mapping.pickers.category {
             let custom = identity.custom_alias;
             panel = panel.child(div().flex().flex_wrap().gap_1().children(
                 Category::ALL.into_iter().map(|category| {
@@ -475,12 +474,11 @@ impl Workspace {
                 )
                 .text_size(px(11.))
                 .on_click(cx.listener(|this, _, _, cx| {
-                    this.pseudonymization.mapping.choosing_owner =
-                        !this.pseudonymization.mapping.choosing_owner;
+                    this.pseudonymization.mapping.toggle_owner_picker();
                     cx.notify();
                 })),
             );
-            if mapping.choosing_owner {
+            if mapping.pickers.owner {
                 panel = panel.child(mapping.target.clone()).child(
                     self.direct_control("direct-owner-none", "No owner", enabled, cx)
                         .on_click(cx.listener(move |this, _, _, cx| {

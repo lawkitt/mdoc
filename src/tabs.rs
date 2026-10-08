@@ -689,7 +689,7 @@ impl Tabs {
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| {
                 view.active = false;
-                view.pseudonymization.popup = None;
+                view.pseudonymization.dismiss_popup();
             });
         }
         self.active = id;

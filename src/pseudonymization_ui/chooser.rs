@@ -12,11 +12,13 @@ impl Workspace {
         if ids.is_empty() {
             return;
         }
-        self.pseudonymization.popup = Some(Popup::Choose {
-            ids: ids.into(),
-            selected: 0,
-        });
-        self.pseudonymization.popup_previous = window.focused(cx);
+        self.pseudonymization.show_popup(
+            Popup::Choose {
+                ids: ids.into(),
+                selected: 0,
+            },
+            window.focused(cx),
+        );
         self.pseudonymization
             .chooser_scroll
             .scroll_to_item(0, gpui::ScrollStrategy::Top);
@@ -24,15 +26,10 @@ impl Workspace {
         cx.notify();
     }
     fn choose_step(&mut self, backwards: bool, cx: &mut Context<Self>) {
-        if let Some(Popup::Choose { ids, selected }) = &mut self.pseudonymization.popup {
-            *selected = if backwards {
-                selected.checked_sub(1).unwrap_or(ids.len() - 1)
-            } else {
-                (*selected + 1) % ids.len()
-            };
+        if let Some(selected) = self.pseudonymization.step_choice(backwards) {
             self.pseudonymization
                 .chooser_scroll
-                .scroll_to_item(*selected, gpui::ScrollStrategy::Nearest);
+                .scroll_to_item(selected, gpui::ScrollStrategy::Nearest);
             cx.notify();
         }
     }

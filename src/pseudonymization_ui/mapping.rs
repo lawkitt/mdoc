@@ -5,20 +5,36 @@ mod render;
 use direct::Scope;
 mod direct_render;
 
+/// What the workspace popup edits: a whole entity after a mapping change, or
+/// one exact pending or applied occurrence.
 #[derive(Clone)]
 pub(super) enum Selection {
-    Identity(u64),
+    Entity(u64),
     Candidate { group: u64, range: Range<usize> },
     Applied(u64),
+}
+
+/// Inline popup pickers. Several may be open at once.
+#[derive(Default)]
+pub(super) struct Pickers {
+    pub alias: bool,
+    pub owner: bool,
+    pub category: bool,
+}
+impl Pickers {
+    fn any(&self) -> bool {
+        self.alias || self.owner || self.category
+    }
 }
 
 #[cfg(test)]
 #[path = "mapping_tests.rs"]
 mod tests;
+/// Replacements panel and word-popup state. Every transition is a method here.
 pub(super) struct MappingUi {
     pub open: bool,
     scope: Scope,
-    pub(super) alias_choices: bool,
+    pub(super) pickers: Pickers,
     pub(super) target_index: Option<usize>,
     pub(super) target_scroll: gpui::UniformListScrollHandle,
     field_error: Option<String>,
@@ -29,8 +45,6 @@ pub(super) struct MappingUi {
     search: Entity<markdown_search::SearchInput>,
     pub(super) alias: Entity<markdown_search::SearchInput>,
     target: Entity<markdown_search::SearchInput>,
-    choosing_owner: bool,
-    choosing_category: bool,
     actions_open: bool,
     previous_focus: Option<FocusHandle>,
     controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
@@ -42,18 +56,86 @@ impl MappingUi {
     pub(super) fn invalidate_source_edit(&mut self, cx: &mut Context<Workspace>) {
         self.selected = None;
         self.remembered.clear();
-        self.alias_choices = false;
+        self.pickers.alias = false;
         self.field_error = None;
         self.alias
             .update(cx, |input, cx| input.set_value(String::new(), cx));
     }
-
     pub(super) fn begin_review(&mut self) {
         self.open = true;
+        self.clear_selection();
+    }
+    /// Show the overview without changing its selection.
+    pub(super) fn show(&mut self) {
+        self.open = true;
+    }
+    pub(super) fn open_panel(&mut self, previous_focus: Option<FocusHandle>) {
+        self.previous_focus = previous_focus;
+        self.begin_review();
+    }
+    /// Hide the panel, returning the focus it should restore.
+    pub(super) fn close_panel(&mut self) -> Option<FocusHandle> {
+        self.open = false;
+        self.previous_focus.take()
+    }
+    pub(super) fn clear_selection(&mut self) {
         self.selected = None;
         self.actions_open = false;
-        self.choosing_owner = false;
-        self.choosing_category = false;
+        self.pickers.owner = false;
+        self.pickers.category = false;
+    }
+    /// Forget a selection whose occurrence no longer exists.
+    pub(super) fn deselect(&mut self) {
+        self.selected = None;
+    }
+    pub(super) fn select(&mut self, selected: Selection) {
+        self.selected = Some(selected);
+        self.pickers = Pickers::default();
+        self.scope = Scope::Wording;
+        self.target_index = None;
+        self.field_error = None;
+        self.actions_open = false;
+        self.scroll.set_offset(gpui::point(px(0.), px(0.)));
+    }
+    fn set_scope(&mut self, scope: Scope) {
+        self.scope = scope;
+    }
+    pub(super) fn toggle_actions(&mut self) {
+        self.actions_open = !self.actions_open;
+    }
+    /// Close the secondary actions menu; false when it was already closed.
+    pub(super) fn close_actions(&mut self) -> bool {
+        std::mem::take(&mut self.actions_open)
+    }
+    pub(super) fn toggle_category_picker(&mut self) {
+        self.pickers.category = !self.pickers.category;
+    }
+    pub(super) fn toggle_owner_picker(&mut self) {
+        self.pickers.owner = !self.pickers.owner;
+    }
+    pub(super) fn show_alias_choices(&mut self) {
+        self.pickers.alias = true;
+    }
+    /// Close every inline picker; false when none was open.
+    pub(super) fn close_pickers(&mut self) -> bool {
+        std::mem::take(&mut self.pickers).any()
+    }
+    pub(super) fn highlight_target(&mut self, index: usize) {
+        self.target_index = Some(index);
+        self.pickers.alias = true;
+        self.target_scroll
+            .scroll_to_item(index, gpui::ScrollStrategy::Nearest);
+    }
+    /// A changed draft invalidates the highlighted target and its explanation.
+    fn draft_changed(&mut self) {
+        self.target_index = None;
+        self.field_error = None;
+    }
+    pub(super) fn set_field_error(&mut self, error: Option<String>) {
+        self.field_error = error;
+    }
+    pub(super) fn mark_popup_revision(&mut self, revision: u64) {
+        self.popup_revision = Some(revision);
     }
     pub fn new(cx: &mut Context<Workspace>) -> Self {
         let mut input = |placeholder| {
@@ -71,8 +153,7 @@ impl MappingUi {
                 cx.subscribe(
                     &input,
                     |this, _, _: &markdown_search::SearchInputEvent, cx| {
-                        this.pseudonymization.mapping.target_index = None;
-                        this.pseudonymization.mapping.field_error = None;
+                        this.pseudonymization.mapping.draft_changed();
                         this.pseudonymization
                             .popup_scroll
                             .set_offset(gpui::point(px(0.), px(0.)));
@@ -86,7 +167,7 @@ impl MappingUi {
         Self {
             open: false,
             scope: Scope::Wording,
-            alias_choices: false,
+            pickers: Pickers::default(),
             target_index: None,
             target_scroll: gpui::UniformListScrollHandle::new(),
             field_error: None,
@@ -97,8 +178,6 @@ impl MappingUi {
             search: input("Find an alias or original"),
             alias: input("Alias"),
             target: input("Find an identity"),
-            choosing_owner: false,
-            choosing_category: false,
             actions_open: false,
             previous_focus: None,
             controls: Default::default(),
@@ -135,21 +214,20 @@ impl Workspace {
         if self.pseudonymization.mapping.open {
             self.close_replacements(window, cx);
         } else {
-            self.pseudonymization.mapping.previous_focus = window.focused(cx);
-            self.pseudonymization.mapping.open = true;
-            self.pseudonymization.mapping.selected = None;
+            self.pseudonymization.mapping.open_panel(window.focused(cx));
             self.pseudonymization.review.open = true;
             self.sync_annotations(cx);
-            self.back_to_replacements(window, cx);
+            let search = &self.pseudonymization.mapping.search;
+            window.focus(&search.read(cx).focus_handle(cx), cx);
         }
         cx.notify();
     }
     fn close_replacements(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.pseudonymization.mapping.open = false;
-        self.pseudonymization.popup = None;
+        let previous = self.pseudonymization.mapping.close_panel();
+        self.pseudonymization.dismiss_popup();
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(None, cx));
-        if let Some(focus) = self.pseudonymization.mapping.previous_focus.take() {
+        if let Some(focus) = previous {
             if !self
                 .pseudonymization
                 .mapping
@@ -165,15 +243,6 @@ impl Workspace {
         }
         cx.notify();
     }
-    fn back_to_replacements(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let mapping = &mut self.pseudonymization.mapping;
-        mapping.selected = None;
-        mapping.actions_open = false;
-        mapping.choosing_owner = false;
-        mapping.choosing_category = false;
-        window.focus(&mapping.search.read(cx).focus_handle(cx), cx);
-        cx.notify();
-    }
     pub(super) fn selected_applied(&self) -> Option<u64> {
         match self.pseudonymization.mapping.selected {
             Some(Selection::Applied(id)) => Some(id),
@@ -182,7 +251,7 @@ impl Workspace {
     }
     fn selected_identity(&self) -> Option<u64> {
         match self.pseudonymization.mapping.selected.as_ref()? {
-            Selection::Identity(id) => Some(*id),
+            Selection::Entity(id) => Some(*id),
             Selection::Candidate { group, range } => self
                 .pseudonymization
                 .review
@@ -226,7 +295,7 @@ impl Workspace {
         if kept.is_none() {
             return;
         }
-        self.pseudonymization.popup = None;
+        self.pseudonymization.dismiss_popup();
         self.sync_annotations(cx);
         cx.notify();
     }
@@ -251,18 +320,7 @@ impl Workspace {
         }
     }
     pub(super) fn select_identity(&mut self, selected: Selection, cx: &mut Context<Self>) {
-        self.pseudonymization.mapping.selected = Some(selected);
-        self.pseudonymization.mapping.choosing_owner = false;
-        self.pseudonymization.mapping.choosing_category = false;
-        self.pseudonymization.mapping.scope = Scope::Wording;
-        self.pseudonymization.mapping.alias_choices = false;
-        self.pseudonymization.mapping.target_index = None;
-        self.pseudonymization.mapping.field_error = None;
-        self.pseudonymization.mapping.actions_open = false;
-        self.pseudonymization
-            .mapping
-            .scroll
-            .set_offset(gpui::point(px(0.), px(0.)));
+        self.pseudonymization.mapping.select(selected);
         if let Some(identity) = self
             .selected_identity()
             .and_then(|id| self.pseudonymization.review.identity(id))
@@ -276,7 +334,7 @@ impl Workspace {
         cx.notify();
     }
     pub(super) fn sync_replacement_annotation(&mut self, annotation: u64, cx: &mut Context<Self>) {
-        self.pseudonymization.mapping.open = true;
+        self.pseudonymization.mapping.show();
         let review = &self.pseudonymization.review;
         let selection = if annotation & APPLIED_ID != 0 {
             review
@@ -298,7 +356,7 @@ impl Workspace {
             if self.selected_identity().is_some() {
                 self.select_identity(selected, cx);
             } else {
-                self.pseudonymization.mapping.selected = None;
+                self.pseudonymization.mapping.deselect();
             }
         }
     }
@@ -413,9 +471,9 @@ impl Workspace {
             .review
             .refresh(self.editor.read(cx).text());
         self.pseudonymization.error = None;
-        self.pseudonymization.popup = None;
+        self.pseudonymization.dismiss_popup();
         if let Some(id) = selected_after {
-            self.select_identity(Selection::Identity(id), cx);
+            self.select_identity(Selection::Entity(id), cx);
         }
         self.sync_annotations(cx);
         self.restore_active_replacement(active, &edits, cx);
@@ -614,7 +672,7 @@ impl Workspace {
         self.pseudonymization
             .review
             .refresh(self.editor.read(cx).text());
-        self.pseudonymization.popup = None;
+        self.pseudonymization.dismiss_popup();
         self.sync_annotations(cx);
         cx.notify();
     }

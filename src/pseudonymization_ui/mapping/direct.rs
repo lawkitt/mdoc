@@ -84,12 +84,7 @@ impl Workspace {
         self.pseudonymization
             .popup_scroll
             .set_offset(gpui::point(px(0.), -bottom));
-        self.pseudonymization.mapping.target_index = Some(index);
-        self.pseudonymization.mapping.alias_choices = true;
-        self.pseudonymization
-            .mapping
-            .target_scroll
-            .scroll_to_item(index, gpui::ScrollStrategy::Nearest);
+        self.pseudonymization.mapping.highlight_target(index);
         cx.notify();
     }
     pub(super) fn alias_query(&self, cx: &App) -> String {
@@ -154,7 +149,7 @@ impl Workspace {
                 .tracking
                 .get(*id)
                 .map(|a| a.range.clone()),
-            Selection::Identity(_) => None,
+            Selection::Entity(_) => None,
         }
     }
     pub(super) fn active_original(&self) -> Option<Arc<str>> {
@@ -170,7 +165,7 @@ impl Workspace {
                 .tracking
                 .get(*id)
                 .map(|a| a.step.original_shared().clone()),
-            Selection::Identity(_) => None,
+            Selection::Entity(_) => None,
         }
     }
     pub(super) fn active_annotation(&self) -> Option<u64> {
@@ -179,7 +174,7 @@ impl Workspace {
                 self.pseudonymization.review.annotation_id(*group, range)
             }
             Selection::Applied(id) => Some(APPLIED_ID | id),
-            Selection::Identity(_) => None,
+            Selection::Entity(_) => None,
         }
     }
     pub(super) fn scoped_ranges(&self, scope: Scope) -> Vec<Range<usize>> {
@@ -216,7 +211,8 @@ impl Workspace {
         &mut self,
         cx: &mut Context<Self>,
     ) {
-        self.pseudonymization.mapping.popup_revision = Some(self.editor.read(cx).revision());
+        let revision = self.editor.read(cx).revision();
+        self.pseudonymization.mapping.mark_popup_revision(revision);
         if let (Some(id), Some(range)) = (self.selected_identity(), self.active_replacement_range())
         {
             self.pseudonymization
@@ -262,11 +258,10 @@ impl Workspace {
             });
         if let Some(selection) = selection {
             self.select_identity(selection, cx);
-            self.pseudonymization.popup = Some(Popup::Selection);
-            self.pseudonymization.mapping.popup_revision = Some(self.editor.read(cx).revision());
+            self.pseudonymization.keep_selection_popup();
             self.remember_active_replacement(cx);
         } else {
-            self.pseudonymization.popup = None;
+            self.pseudonymization.dismiss_popup();
             self.editor
                 .update(cx, |e, cx| e.set_active_annotation(None, cx));
         }
@@ -356,9 +351,10 @@ impl Workspace {
             .into_iter()
             .any(|other| other != id && review.identity(other).is_some_and(|i| i.alias == value))
         {
-            self.pseudonymization.mapping.alias_choices = true;
-            self.pseudonymization.mapping.field_error =
-                Some("Choose the existing entity below to use its alias.".into());
+            self.pseudonymization.mapping.show_alias_choices();
+            self.pseudonymization.mapping.set_field_error(Some(
+                "Choose the existing entity below to use its alias.".into(),
+            ));
             cx.notify();
             return false;
         }
@@ -370,8 +366,9 @@ impl Workspace {
         if let Some(action) = action {
             self.change_mapping_with_apply(action, apply, cx);
             let error = self.pseudonymization.error.take();
-            self.pseudonymization.mapping.field_error = error;
-            self.pseudonymization.mapping.field_error.is_none()
+            let confirmed = error.is_none();
+            self.pseudonymization.mapping.set_field_error(error);
+            confirmed
         } else {
             false
         }
@@ -417,7 +414,7 @@ impl Workspace {
         if kept.is_none() {
             return;
         }
-        self.pseudonymization.popup = None;
+        self.pseudonymization.dismiss_popup();
         self.sync_annotations(cx);
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(None, cx));
@@ -459,13 +456,7 @@ impl Workspace {
         self.restore_active_replacement(active, &edits, cx);
     }
     pub(super) fn close_direct_popup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.pseudonymization.mapping.alias_choices
-            || self.pseudonymization.mapping.choosing_owner
-            || self.pseudonymization.mapping.choosing_category
-        {
-            self.pseudonymization.mapping.alias_choices = false;
-            self.pseudonymization.mapping.choosing_owner = false;
-            self.pseudonymization.mapping.choosing_category = false;
+        if self.pseudonymization.mapping.close_pickers() {
             window.focus(&self.pseudonymization.focus, cx);
         } else if self
             .selected_identity()
@@ -483,7 +474,7 @@ impl Workspace {
                 .mapping
                 .alias
                 .update(cx, |input, cx| input.set_value(alias, cx));
-            self.pseudonymization.mapping.field_error = None;
+            self.pseudonymization.mapping.set_field_error(None);
             window.focus(&self.pseudonymization.focus, cx);
         } else {
             self.close_pseudonym_popup(&ClosePseudonymPopup, window, cx);

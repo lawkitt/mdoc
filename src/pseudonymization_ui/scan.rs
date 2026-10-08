@@ -15,7 +15,7 @@ impl Workspace {
         }
         self.pseudonymization.cancel();
         self.pseudonymization.error = None;
-        self.pseudonymization.popup = None;
+        self.pseudonymization.dismiss_popup();
         self.pseudonymization.review.open = true;
         self.pseudonymization.mapping.begin_review();
         let editor = self.editor.read(cx);
@@ -71,7 +71,7 @@ impl Workspace {
         }
         let config = job.config.clone();
         self.pseudonymization.job = None;
-        self.pseudonymization.mapping.open = true;
+        self.pseudonymization.mapping.show();
         let source = self.editor.read(cx).text().to_owned();
         match result.and_then(|detections| self.pseudonymization.review.ingest(&source, detections))
         {
