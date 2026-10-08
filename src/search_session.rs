@@ -69,7 +69,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.pseudonymization.popup = None;
+        self.pseudonymization.dismiss_popup();
         if self.source_only {
             return;
         }

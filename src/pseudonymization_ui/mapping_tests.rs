@@ -531,7 +531,7 @@ fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
             .unwrap();
         let revision = app.editor.read(cx).revision();
         let dirty = app.dirty(cx);
-        app.select_identity(Selection::Identity(identity), cx);
+        app.select_identity(Selection::Entity(identity), cx);
         app.keep_replacement(false, cx);
         assert_eq!(app.editor.read(cx).text(), source);
         assert_ne!(

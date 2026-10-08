@@ -90,6 +90,35 @@ impl ReviewUi {
     fn scanning(&self) -> bool {
         self.job.is_some()
     }
+    /// Open a popup, remembering where focus returns when it closes.
+    fn show_popup(&mut self, popup: Popup, previous_focus: Option<FocusHandle>) {
+        self.popup = Some(popup);
+        self.popup_previous = previous_focus;
+    }
+    /// Re-show the selection popup after an edit, keeping the original return focus.
+    fn keep_selection_popup(&mut self) {
+        self.popup = Some(Popup::Selection);
+    }
+    /// Move the chooser highlight cyclically, returning the new index.
+    fn step_choice(&mut self, backwards: bool) -> Option<usize> {
+        let Some(Popup::Choose { ids, selected }) = &mut self.popup else {
+            return None;
+        };
+        *selected = if backwards {
+            selected.checked_sub(1).unwrap_or(ids.len() - 1)
+        } else {
+            (*selected + 1) % ids.len()
+        };
+        Some(*selected)
+    }
+    pub(crate) fn dismiss_popup(&mut self) {
+        self.popup = None;
+    }
+    /// Close the popup, returning the focus it should restore.
+    fn close_popup(&mut self) -> Option<FocusHandle> {
+        self.popup = None;
+        self.popup_previous.take()
+    }
 }
 
 pub(super) fn bind_keys(cx: &mut App) {
@@ -125,7 +154,7 @@ impl Workspace {
         self.pseudonymization.cancel();
         self.pseudonymization.review = Review::default();
         self.pseudonymization.scans.clear();
-        self.pseudonymization.popup = None;
+        self.pseudonymization.dismiss_popup();
         self.pseudonymization.error = None;
         self.pseudonymization.mapping = mapping::MappingUi::new(cx);
         self.sync_annotations(cx);
@@ -140,7 +169,7 @@ impl Workspace {
         let was_scanning = self.pseudonymization.scanning();
         self.pseudonymization.cancel();
         if self.pseudonymization.mapping.popup_revision != Some(self.editor.read(cx).revision()) {
-            self.pseudonymization.popup = None;
+            self.pseudonymization.dismiss_popup();
             self.pseudonymization.mapping.invalidate_source_edit(cx);
             self.editor
                 .update(cx, |e, cx| e.set_active_annotation(None, cx));
@@ -257,8 +286,8 @@ impl Workspace {
         }
         self.sync_replacement_annotation(id, cx);
         self.pseudonymization.error = None;
-        self.pseudonymization.popup = Some(Popup::Selection);
-        self.pseudonymization.popup_previous = window.focused(cx);
+        self.pseudonymization
+            .show_popup(Popup::Selection, window.focused(cx));
         self.pseudonymization
             .popup_scroll
             .set_offset(gpui::point(px(0.), px(0.)));
@@ -530,10 +559,10 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.pseudonymization.popup = None;
+        let previous = self.pseudonymization.close_popup();
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(None, cx));
-        if let Some(focus) = self.pseudonymization.popup_previous.take() {
+        if let Some(focus) = previous {
             window.focus(&focus, cx);
         } else {
             window.focus(&self.editor.read(cx).focus_handle(cx), cx);

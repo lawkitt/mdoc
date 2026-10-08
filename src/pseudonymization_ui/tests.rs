@@ -398,7 +398,7 @@ fn keyboard_search_and_navigation_reach_virtualized_alias_targets(cx: &mut gpui:
         app.sync_annotations(cx);
         let annotation = app.pseudonymization.review.candidates[0].id;
         app.activate_annotation(annotation, window, cx);
-        app.pseudonymization.mapping.alias_choices = true;
+        app.pseudonymization.mapping.show_alias_choices();
         window.focus(
             &app.pseudonymization.mapping.alias.read(cx).focus_handle(cx),
             cx,
