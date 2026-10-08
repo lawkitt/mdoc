@@ -73,10 +73,10 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
     let app = open_document(&app, source_path.clone(), cx);
     app.update_in(cx, |app, window, cx| {
         app.session.warning = Some("Review extraction".into());
-        app.pseudonymization.review.open = true;
+        app.pseudonymization.reviewing = true;
         app.pseudonymization.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9, recognizer: crate::pseudonymization::Recognizer::Model }]).unwrap();
         app.sync_pseudonym_theme(cx);
-        let id = app.pseudonymization.review.groups[0].id;
+        let id = app.pseudonymization.review.groups()[0].id;
         let range=app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
         let annotation=app.pseudonymization.review.annotation_id(id,&range).unwrap();
         app.activate_annotation(annotation,window,cx);
@@ -96,7 +96,7 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
         assert_eq!(app.editor.read(cx).text(), source);
         assert_eq!(app.pseudonymization.review.remaining(), 2);
         assert!(!app.dirty(cx));
-        let id = app.pseudonymization.review.groups[0].id;
+        let id = app.pseudonymization.review.groups()[0].id;
         let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
         let annotation = app
             .pseudonymization
@@ -124,12 +124,12 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
             cx,
         );
         assert_ne!(app.session.generation, generation);
-        assert!(app.pseudonymization.review.groups.is_empty());
+        assert!(app.pseudonymization.review.groups().is_empty());
         assert!(app.pseudonymization.popup.is_none());
     });
     let app = close_document(&app, cx);
     cx.update(|_, cx| {
-        assert!(app.read(cx).pseudonymization.review.groups.is_empty());
+        assert!(app.read(cx).pseudonymization.review.groups().is_empty());
         assert!(app.read(cx).pseudonymization.popup.is_none());
     });
 }
@@ -141,7 +141,7 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
     app.update_in(cx, |app, window, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice Alice", cx));
-        app.pseudonymization.review.open = true;
+        app.pseudonymization.reviewing = true;
         app.pseudonymization
             .review
             .ingest(
@@ -154,7 +154,7 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
                 }],
             )
             .unwrap();
-        let id = app.pseudonymization.review.groups[0].id;
+        let id = app.pseudonymization.review.groups()[0].id;
         let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
         let annotation = app
             .pseudonymization

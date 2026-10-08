@@ -529,10 +529,9 @@ impl Workspace {
         }
         let applied = annotation & APPLIED_ID != 0;
         let matching = if applied {
-            let selected = review.tracking.get(annotation & !APPLIED_ID)?;
+            let selected = review.applied_occurrence(annotation & !APPLIED_ID)?;
             review
-                .tracking
-                .applied
+                .applied()
                 .iter()
                 .filter(|a| a.step.before == selected.step.before)
                 .count()
@@ -543,7 +542,7 @@ impl Workspace {
                 .map(|r| (r.start, r.end))
                 .collect();
             review
-                .candidates
+                .candidates()
                 .iter()
                 .filter(|c| ranges.contains(&(c.range.start, c.range.end)))
                 .count()

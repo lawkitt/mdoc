@@ -6,7 +6,7 @@ pub(super) struct DiscoveryJob {
 }
 impl Workspace {
     pub(super) fn schedule_pii_discovery(&mut self, cx: &mut Context<Self>) {
-        if self.pseudonymization.review.groups.is_empty() {
+        if self.pseudonymization.review.groups().is_empty() {
             return;
         }
         if let Some(job) = &self.pseudonymization.discovery_job {

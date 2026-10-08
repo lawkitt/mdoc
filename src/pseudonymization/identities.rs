@@ -143,7 +143,7 @@ impl Review {
             .insert(after, self.identities.policy.clone());
     }
     pub(super) fn sync_identity_groups(&mut self) {
-        for group in &mut self.groups {
+        for group in &mut self.candidates.groups {
             group.kept = self
                 .identities
                 .policy
@@ -166,31 +166,29 @@ impl Review {
     }
     pub fn active_identities(&self) -> Vec<u64> {
         let mut ids: HashSet<_> = self
-            .groups
+            .groups()
             .iter()
             .filter(|g| !g.kept)
             .filter_map(|g| self.group_identity(g.id))
             .collect();
         ids.extend(
-            self.tracking
-                .applied
+            self.applied()
                 .iter()
                 .map(|a| a.step.identity)
                 .filter(|id| *id != 0),
         );
-        ids.extend(self.tracking.assignments.iter().map(|a| a.identity));
+        ids.extend(self.assignments().iter().map(|a| a.identity));
         let mut ids: Vec<_> = ids.into_iter().collect();
         ids.sort_unstable();
         ids
     }
     pub fn identity_count(&self, id: u64) -> usize {
-        self.candidates
+        self.candidates()
             .iter()
             .filter(|o| self.occurrence_identity(o.group, &o.range) == Some(id))
             .count()
             + self
-                .tracking
-                .applied
+                .applied()
                 .iter()
                 .filter(|o| o.step.identity == id)
                 .count()
@@ -199,7 +197,7 @@ impl Review {
     /// overrides for homonyms. Refresh once for the entire metadata operation.
     pub fn keep_identity(&mut self, id: u64) {
         let mentions: Vec<_> = self
-            .candidates
+            .candidates()
             .iter()
             .filter(|c| self.occurrence_identity(c.group, &c.range) == Some(id))
             .filter_map(|c| {
@@ -339,7 +337,7 @@ impl Review {
         self.identity(target)
             .ok_or("Identity is no longer available.")?;
         let groups: Vec<_> = self
-            .groups
+            .groups()
             .iter()
             .filter(|g| self.group_identity(g.id) == Some(from))
             .map(|g| g.id)
@@ -384,7 +382,7 @@ impl Review {
         };
         let current = self.group_identity(group);
         let mut ids: Vec<_> = self
-            .groups
+            .groups()
             .iter()
             .filter(|g| {
                 g.category == Category::Person
@@ -407,7 +405,7 @@ impl Review {
         // One source pass; surname/signature indexing keeps large documents from
         // being rescanned once per identity. Ambiguous signatures stay separate.
         let mut signatures: HashSet<(String, char, char)> = HashSet::new();
-        for group in &self.groups {
+        for group in self.groups() {
             if group.category != Category::Person {
                 continue;
             }
@@ -495,7 +493,7 @@ mod tests {
                 .values()
                 .all(|state| Arc::ptr_eq(state, &policy))
         );
-        let id = review.groups[0].identity;
+        let id = review.groups()[0].identity;
         review.rename_identity(id, "CLIENT_1").unwrap();
         assert!(!Arc::ptr_eq(&policy, &review.identity_snapshot()));
         assert_eq!(review.identities.policy.edited.len(), 1);

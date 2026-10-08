@@ -66,7 +66,7 @@ fn unicode_exact_repeats_and_hidden_source_keep_source_syntax() {
     review
         .ingest(source, vec![detection(2..10, Category::Person)])
         .unwrap();
-    let group = &review.groups[0];
+    let group = &review.groups()[0];
     assert_eq!(group.mentions.len(), 4);
     let edits = plan_all(&review, source).unwrap();
     let mut changed = source.to_string();
@@ -81,7 +81,7 @@ fn unicode_exact_repeats_and_hidden_source_keep_source_syntax() {
     assert_eq!(review.remaining(), 0);
     review.refresh(source); // undo
     assert_eq!(review.remaining(), 4);
-    assert_eq!(review.groups[0].replacement, "PERSON_1");
+    assert_eq!(review.groups()[0].replacement, "PERSON_1");
 }
 #[test]
 fn keep_all_survives_rescan_and_single_keep_rebases() {
@@ -89,11 +89,11 @@ fn keep_all_survives_rescan_and_single_keep_rebases() {
     review
         .ingest("Ann Ann", vec![detection(0..3, Category::Person)])
         .unwrap();
-    let id = review.groups[0].id;
+    let id = review.groups()[0].id;
     review.keep(id, Some(0..3));
     assert_eq!(review.remaining(), 1);
     review.refresh("prefix Ann Ann");
-    assert_eq!(review.groups[0].mentions, vec![11..14]);
+    assert_eq!(review.groups()[0].mentions, vec![11..14]);
     review.keep(id, None);
     review
         .ingest("prefix Ann Ann", vec![detection(7..10, Category::Person)])
@@ -166,7 +166,7 @@ fn plans_refuse_stale_or_invalid_ranges_and_syntax_replacements() {
     review
         .ingest("Ann", vec![detection(0..3, Category::Person)])
         .unwrap();
-    let id = review.groups[0].id;
+    let id = review.groups()[0].id;
     assert!(plan_all(&review, "Anna").is_err());
     let identity = review.group_identity(id).unwrap();
     assert!(review.rename_identity(identity, "](bad)").is_err());
@@ -256,17 +256,17 @@ fn utf8_matcher_storage_matrix() {
         source.push_str(&" ".repeat(2_097_152 - source.len()));
         let mut review = Review::default();
         review.ingest(&source, detections).unwrap();
-        assert_eq!(review.candidates.len(), 20_000);
+        assert_eq!(review.candidates().len(), 20_000);
         assert_eq!(plan_all(&review, &source).unwrap().len(), 20_000);
         let input = review.discovery_input();
         assert!(Arc::ptr_eq(&review.source, &input.source));
-        let matcher = review.matcher.as_ref().unwrap();
+        let matcher = review.candidates.matcher.as_ref().unwrap();
         assert!(Arc::ptr_eq(matcher, input.matcher.as_ref().unwrap()));
         eprintln!(
-            "PII_STORAGE bytes={} occurrences=20000 groups={groups} matcher_bytes={} candidate_capacity_bytes={} shared_source=true cached_matcher=true",
+            "PII_STORAGE bytes={} occurrences=20000 groups={groups} matcher_bytes={} candidate_bytes={} shared_source=true cached_matcher=true",
             source.len(),
             matcher.memory_usage(),
-            review.candidates.capacity() * std::mem::size_of::<CandidateOccurrence>()
+            std::mem::size_of_val(review.candidates())
         );
     }
 }
@@ -312,7 +312,7 @@ fn initials_discovery_keeps_ambiguous_links_as_suggestions() {
     }
     review.ingest(source, detections).unwrap();
     let initials = review
-        .groups
+        .groups()
         .iter()
         .find(|g| g.original.as_ref() == "Павлова М.С.")
         .unwrap();
@@ -320,7 +320,7 @@ fn initials_discovery_keeps_ambiguous_links_as_suggestions() {
     assert_eq!(review.active_identities().len(), 3);
     assert!(
         review
-            .groups
+            .groups()
             .iter()
             .all(|g| g.original.as_ref() != "Павлова")
     );

@@ -3,7 +3,7 @@ use super::*;
 fn seed(app: &mut Workspace, source: &str, cx: &mut Context<Workspace>) -> (u64, u64) {
     app.editor.update(cx, |e, cx| e.set_text(source, cx));
     app.pseudonymization.review = Default::default();
-    app.pseudonymization.review.open = true;
+    app.pseudonymization.reviewing = true;
     let mut detections = Vec::new();
     for (value, category) in [
         ("Павлова Марина Сергеевна", Category::Person),
@@ -26,7 +26,7 @@ fn seed(app: &mut Workspace, source: &str, cx: &mut Context<Workspace>) -> (u64,
     let full = app
         .pseudonymization
         .review
-        .groups
+        .groups()
         .iter()
         .find(|g| g.original.as_ref() == "Павлова Марина Сергеевна")
         .unwrap()
@@ -34,7 +34,7 @@ fn seed(app: &mut Workspace, source: &str, cx: &mut Context<Workspace>) -> (u64,
     let initials = app
         .pseudonymization
         .review
-        .groups
+        .groups()
         .iter()
         .find(|g| g.original.as_ref() == "Павлова М.С.")
         .unwrap()
@@ -71,7 +71,7 @@ fn staging_merge_category_owner_apply_rename_and_undo_preserve_exact_originals(
         let email = app
             .pseudonymization
             .review
-            .groups
+            .groups()
             .iter()
             .find(|g| g.category == Category::Email)
             .unwrap()
@@ -83,16 +83,14 @@ fn staging_merge_category_owner_apply_rename_and_undo_preserve_exact_originals(
             "PERSON_1 · PERSON_1 · PERSON_1 · EMAIL_1"
         );
         assert_eq!(app.pseudonymization.review.remaining(), 0);
-        assert_eq!(app.pseudonymization.review.tracking.applied.len(), 4);
+        assert_eq!(app.pseudonymization.review.applied().len(), 4);
         app.change_mapping(MappingAction::Rename(full_id, "CLIENT_1".into()), cx);
         assert_eq!(
             app.editor.read(cx).text(),
             "CLIENT_1 · CLIENT_1 · CLIENT_1 · EMAIL_1"
         );
         assert_eq!(
-            app.pseudonymization.review.tracking.applied[1]
-                .step
-                .original(),
+            app.pseudonymization.review.applied()[1].step.original(),
             "Павлова М.С."
         );
     });
@@ -128,7 +126,7 @@ fn staging_merge_category_owner_apply_rename_and_undo_preserve_exact_originals(
             app.editor.read(cx).text(),
             "CLIENT_1 · CLIENT_1 · CLIENT_1 · EMAIL_1"
         );
-        let selected = app.pseudonymization.review.tracking.applied[1].id;
+        let selected = app.pseudonymization.review.applied()[1].id;
         app.activate_annotation(APPLIED_ID | selected, window, cx);
         app.restore_pii(&RestorePii, window, cx);
         assert_eq!(
@@ -163,7 +161,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
         );
         app.apply_identity_aliases(cx);
         assert_eq!(app.editor.read(cx).text(), "PERSON_1 · PERSON_1 · PERSON_2");
-        let detached = app.pseudonymization.review.tracking.applied[2].id;
+        let detached = app.pseudonymization.review.applied()[2].id;
         app.select_identity(Selection::Applied(detached), cx);
         app.change_mapping(
             MappingAction::AssignApplied(detached, Some(full_id), false),
@@ -319,7 +317,7 @@ fn alias_rename_ignores_pasted_lookalikes(cx: &mut gpui::TestAppContext) {
             app.editor.read(cx).text(),
             "CLIENT_1 · CLIENT_1 · pasted CLIENT_9 · PERSON_1"
         );
-        assert_eq!(app.pseudonymization.review.tracking.applied.len(), 2);
+        assert_eq!(app.pseudonymization.review.applied().len(), 2);
     });
 }
 
@@ -386,7 +384,7 @@ fn bulk_apply_preserves_first_occurrence_split(cx: &mut gpui::TestAppContext) {
                 .collect();
         app.apply_identity_aliases(cx);
         assert_eq!(app.editor.read(cx).text(), expected.join(" · "));
-        for applied in &app.pseudonymization.review.tracking.applied {
+        for applied in app.pseudonymization.review.applied() {
             assert_eq!(
                 applied.step.after.as_ref(),
                 app.pseudonymization
@@ -416,8 +414,7 @@ fn owner_picker_click_links_without_merging_identities(cx: &mut gpui::TestAppCon
             let email = app
                 .pseudonymization
                 .review
-                .tracking
-                .applied
+                .applied()
                 .last()
                 .unwrap()
                 .step
@@ -490,7 +487,7 @@ fn entity_rename_then_apply_covers_all_normalized_variants(cx: &mut gpui::TestAp
         app.change_mapping(MappingAction::Rename(identity, "CLIENT_1".into()), cx);
         app.apply_identity_aliases(cx);
         assert_eq!(app.editor.read(cx).text(), "CLIENT_1 · ORG_1 · CLIENT_1");
-        for a in &app.pseudonymization.review.tracking.applied {
+        for a in app.pseudonymization.review.applied() {
             assert_eq!(
                 a.step.after.as_ref(),
                 app.pseudonymization
@@ -568,7 +565,7 @@ fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
         app.apply_identity_aliases(cx);
         let text = app.editor.read(cx).text();
         assert!(text.starts_with("Павлова Марина Сергеевна · Павлова М.С. · PERSON_"));
-        assert_eq!(app.pseudonymization.review.tracking.applied.len(), 1);
+        assert_eq!(app.pseudonymization.review.applied().len(), 1);
     });
 }
 
@@ -584,7 +581,7 @@ fn single_copy_with_pending_replacements_preserves_exact_source_and_history(
         let email = app
             .pseudonymization
             .review
-            .groups
+            .groups()
             .iter()
             .find(|g| g.category == Category::Email)
             .unwrap()
@@ -601,7 +598,7 @@ fn single_copy_with_pending_replacements_preserves_exact_source_and_history(
         assert_eq!(app.editor.read(cx).revision(), revision);
         assert_eq!(app.editor.read(cx).history_id(), history);
         assert_eq!(app.pseudonymization.review.remaining(), pending);
-        assert!(app.pseudonymization.review.tracking.applied.is_empty());
+        assert!(app.pseudonymization.review.applied().is_empty());
     });
 }
 
@@ -789,15 +786,11 @@ fn same_wording_links_preserve_detached_homonyms_before_and_after_apply(
             "PERSON_1 · PERSON_2 · ORG_2 · PERSON_2"
         );
         assert_eq!(
-            app.pseudonymization.review.tracking.applied[2]
-                .step
-                .identity,
+            app.pseudonymization.review.applied()[2].step.identity,
             detached
         );
         assert_eq!(
-            app.pseudonymization.review.tracking.applied[1]
-                .step
-                .original(),
+            app.pseudonymization.review.applied()[1].step.original(),
             "Павлова М.С."
         );
     });
@@ -863,7 +856,7 @@ fn category_origin_existing_alias_and_draft_lifecycle_are_explicit(cx: &mut gpui
         let email = app
             .pseudonymization
             .review
-            .candidates
+            .candidates()
             .iter()
             .find(|c| {
                 app.pseudonymization.review.group(c.group).unwrap().category == Category::Email
