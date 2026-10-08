@@ -74,7 +74,7 @@ impl Workspace {
             row.mentions += 1;
             row.pending |= pending;
         };
-        for c in &review.candidates {
+        for c in review.candidates() {
             if let (Some(id), Some(group)) = (
                 review.occurrence_identity(c.group, &c.range),
                 review.group(c.group),
@@ -82,7 +82,7 @@ impl Workspace {
                 add(id, group.original.clone(), true);
             }
         }
-        for a in &review.tracking.applied {
+        for a in review.applied() {
             let proposed = review
                 .identity(a.step.identity)
                 .is_some_and(|i| a.step.after.as_ref() != i.alias);
@@ -234,18 +234,12 @@ impl Workspace {
         let bounds = mapping.bounds.clone();
         let busy = self.pseudonymization.scanning();
         let pending = self.pseudonymization.review.remaining();
-        let upgrade = self
-            .pseudonymization
-            .review
-            .tracking
-            .applied
-            .iter()
-            .any(|a| {
-                self.pseudonymization
-                    .review
-                    .identity(a.step.identity)
-                    .is_some_and(|i| a.step.after.as_ref() != i.alias)
-            });
+        let upgrade = self.pseudonymization.review.applied().iter().any(|a| {
+            self.pseudonymization
+                .review
+                .identity(a.step.identity)
+                .is_some_and(|i| a.step.after.as_ref() != i.alias)
+        });
         let panel = ui::panel("identity-panel", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "identity-panel".into()))
             .rounded_none()
@@ -373,8 +367,7 @@ impl Workspace {
                                     let original = if annotation & APPLIED_ID != 0 {
                                         this.pseudonymization
                                             .review
-                                            .tracking
-                                            .get(annotation & !APPLIED_ID)
+                                            .applied_occurrence(annotation & !APPLIED_ID)
                                             .unwrap()
                                             .step
                                             .original_shared()
@@ -532,7 +525,7 @@ impl Workspace {
                                     } else {
                                         format!(
                                             "{} applied mentions",
-                                            self.pseudonymization.review.tracking.applied.len()
+                                            self.pseudonymization.review.applied().len()
                                         )
                                     }),
                             )
@@ -557,7 +550,7 @@ impl Workspace {
                             .when(
                                 pending == 0
                                     && !upgrade
-                                    && !self.pseudonymization.review.tracking.applied.is_empty(),
+                                    && !self.pseudonymization.review.applied().is_empty(),
                                 |v| {
                                     v.child(
                                         self.replacement_control(

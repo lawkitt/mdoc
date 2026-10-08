@@ -1,10 +1,12 @@
 //! Live-document review policy. Source text is immutable during a detection job;
 //! every edit plan is checked against the current source and editor revision.
+mod candidates;
 mod discovery;
 mod identities;
 pub use identities::{Identity, IdentitySnapshot};
 mod syntax;
 pub mod tracking;
+use candidates::Candidates;
 pub use discovery::{DiscoveryInput, DiscoveryResult};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -12,7 +14,7 @@ use std::{
     sync::Arc,
 };
 use syntax::protected_syntax;
-use tracking::{ReplacementPlan, Tracking};
+use tracking::{Applied, Assignment, ReplacementPlan, Tracking};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Category {
@@ -86,21 +88,15 @@ pub struct CandidateOccurrence {
     pub group: u64,
     pub range: Range<usize>,
 }
+/// One live document's review: pending candidates, the identity policy and
+/// applied-replacement provenance. Every change goes through a named method.
 #[derive(Default)]
 pub struct Review {
-    pub open: bool,
-    pub skipped_syntax_spans: usize,
     source: Arc<str>,
-    pub groups: Vec<Group>,
-    pub candidates: Vec<CandidateOccurrence>,
-    candidate_lookup: HashMap<u64, usize>,
-    candidate_counters: HashMap<u64, u64>,
-    pub tracking: Tracking,
+    candidates: Candidates,
+    tracking: Tracking,
     identities: identities::IdentityStore,
-    group_lookup: HashMap<u64, usize>,
-    original_lookup: HashMap<Arc<str>, u64>,
     occupied_tokens: HashSet<String>,
-    matcher: Option<Arc<aho_corasick::AhoCorasick>>,
     discovery_version: u64,
     counters: HashMap<Category, usize>,
     next_id: u64,
@@ -186,41 +182,79 @@ impl Review {
             self.source = source.into();
             self.discovery_version += 1;
             for change in &transaction.changes {
-                if change.edits.is_empty() {
-                    self.candidates.clear();
-                } else {
-                    tracking::rebase(&mut self.candidates, &change.edits, |o| &mut o.range);
-                }
+                self.candidates.follow(&change.edits);
             }
-            self.candidate_lookup.clear();
-            self.candidate_lookup
-                .extend(self.candidates.iter().enumerate().map(|(i, o)| (o.id, i)));
-            for group in &mut self.groups {
-                group.mentions.clear();
-            }
+            self.candidates.await_discovery();
             if unchanged_source {
                 self.refresh(source);
             }
         }
     }
 
+    pub fn groups(&self) -> &[Group] {
+        &self.candidates.groups
+    }
     pub fn group(&self, id: u64) -> Option<&Group> {
-        self.group_lookup.get(&id).map(|&index| &self.groups[index])
+        self.candidates.group(id)
+    }
+    /// Pending mentions in source order.
+    pub fn candidates(&self) -> &[CandidateOccurrence] {
+        self.candidates.occurrences()
     }
     pub fn candidate(&self, id: u64) -> Option<&CandidateOccurrence> {
-        self.candidate_lookup.get(&id).map(|&i| &self.candidates[i])
+        self.candidates.occurrence(id)
     }
     pub fn annotation_id(&self, group: u64, range: &Range<usize>) -> Option<u64> {
-        let index = self
-            .candidates
-            .partition_point(|o| o.range.start < range.start);
-        self.candidates
-            .get(index)
-            .filter(|o| o.group == group && o.range == *range)
-            .map(|o| o.id)
+        self.candidates.annotation_id(group, range)
     }
     pub fn remaining(&self) -> usize {
-        self.groups.iter().map(|group| group.mentions.len()).sum()
+        self.candidates.remaining()
+    }
+    /// Applied replacements in source order.
+    pub fn applied(&self) -> &[Applied] {
+        &self.tracking.applied
+    }
+    pub fn applied_occurrence(&self, id: u64) -> Option<&Applied> {
+        self.tracking.get(id)
+    }
+    pub fn assignments(&self) -> &[Assignment] {
+        &self.tracking.assignments
+    }
+    /// Whether provenance was recorded against this editor history state.
+    pub fn matches_history(&self, history: u64) -> bool {
+        self.tracking.matches_history(history)
+    }
+    /// Text edits restoring one applied occurrence, or every occurrence of the
+    /// same immediate prior value.
+    pub fn restoration_edits(
+        &self,
+        source: &str,
+        id: u64,
+        all: bool,
+    ) -> Result<Vec<(Range<usize>, String)>, String> {
+        self.tracking.restore_plan(source, id, all)
+    }
+    pub fn prepare_restore(
+        &self,
+        edits: &[(Range<usize>, String)],
+    ) -> Vec<(Applied, Range<usize>)> {
+        self.tracking.prepare_restore(edits)
+    }
+    /// Record restorations committed as history state `history`; each becomes Keep.
+    pub fn commit_restore(&mut self, history: u64, restored: Vec<(Applied, Range<usize>)>) {
+        self.tracking.commit_restore(history, restored);
+    }
+    /// Prepare provenance for plans before their text is committed.
+    pub fn prepare_replacements(&mut self, plans: &[ReplacementPlan]) -> Vec<Applied> {
+        self.tracking.prepare_corrections(plans)
+    }
+    /// Record prepared replacements once the editor committed history state `history`.
+    pub fn commit_replacements(&mut self, history: u64, added: Vec<Applied>) {
+        self.tracking.commit(history, added);
+    }
+    /// Pin one occurrence to an identity, separating homonyms within a variant.
+    pub fn commit_assignment(&mut self, history: u64, range: Range<usize>, identity: u64) {
+        self.tracking.commit_assignment(history, range, identity);
     }
     pub fn refresh(&mut self, source: &str) {
         // A conservative source diff revalidates single-occurrence exclusions.
@@ -274,52 +308,26 @@ impl Review {
         DiscoveryInput {
             source: self.source.clone(),
             version: self.discovery_version,
-            originals: self.groups.iter().map(|g| g.original.clone()).collect(),
-            enabled: self.groups.iter().map(|g| !g.kept).collect(),
+            originals: self.groups().iter().map(|g| g.original.clone()).collect(),
+            enabled: self.groups().iter().map(|g| !g.kept).collect(),
             excluded: self
                 .tracking
                 .exclusions
                 .iter()
                 .map(|o| (o.range.start, o.range.end))
                 .collect(),
-            matcher: self.matcher.clone(),
+            matcher: self.candidates.matcher.clone(),
         }
     }
     pub fn apply_discovery(&mut self, result: DiscoveryResult) -> bool {
         if result.version != self.discovery_version {
             return false;
         }
-        self.matcher = result.matcher;
+        self.candidates.matcher = result.matcher;
         self.occupied_tokens = result.tokens;
         self.occupied_tokens
-            .extend(self.groups.iter().map(|g| g.replacement.clone()));
-        let mut old: HashMap<_, _> = self
-            .candidates
-            .drain(..)
-            .map(|o| ((o.group, o.range.start, o.range.end), o.id))
-            .collect();
-        for (group, mentions) in self.groups.iter_mut().zip(result.mentions) {
-            for range in &mentions {
-                let id = old
-                    .remove(&(group.id, range.start, range.end))
-                    .unwrap_or_else(|| {
-                        let next = self.candidate_counters.entry(group.id).or_default();
-                        let id = (group.id << 32) | *next;
-                        *next += 1;
-                        id
-                    });
-                self.candidates.push(CandidateOccurrence {
-                    id,
-                    group: group.id,
-                    range: range.clone(),
-                });
-            }
-            group.mentions = mentions;
-        }
-        self.candidates.sort_by_key(|o| o.range.start);
-        self.candidate_lookup.clear();
-        self.candidate_lookup
-            .extend(self.candidates.iter().enumerate().map(|(i, o)| (o.id, i)));
+            .extend(self.candidates.groups.iter().map(|g| g.replacement.clone()));
+        self.candidates.set_mentions(result.mentions);
         true
     }
 
@@ -364,12 +372,11 @@ impl Review {
                 .then(a.range.start.cmp(&b.range.start))
         });
         let protected = protected_syntax(source);
-        self.skipped_syntax_spans = 0;
         let mut accepted = BTreeMap::new();
         let mut selected = Vec::new();
         for detection in detections {
-            // Emitted shared markers are already prepared, regardless of a
-            // detector's category guess. Do not turn them back into identities.
+            // A bare category marker is not identifying, whatever category the
+            // detector guesses. Do not turn it into an identity.
             if Category::ALL
                 .iter()
                 .any(|c| c.token() == &source[detection.range.clone()])
@@ -378,11 +385,8 @@ impl Review {
             }
             if !safe_span(&source[detection.range.clone()])
                 || intersects(&protected, &detection.range)
+                || interval_conflict(&accepted, &detection.range)
             {
-                self.skipped_syntax_spans += 1;
-                continue;
-            }
-            if interval_conflict(&accepted, &detection.range) {
                 continue;
             }
             accepted.insert(detection.range.start, detection.range.end);
@@ -398,7 +402,7 @@ impl Review {
         Ok(())
     }
     fn add_seed(&mut self, original: &str, category: Category) -> u64 {
-        if let Some(&id) = self.original_lookup.get(original) {
+        if let Some(id) = self.candidates.by_original(original) {
             return id;
         }
         let normalized = self.identities.normalized_identity(original, category);
@@ -408,10 +412,7 @@ impl Review {
             .unwrap_or_else(|| self.allocate_alias(category));
         self.next_id += 1;
         let id = self.next_id;
-        self.group_lookup.insert(id, self.groups.len());
-        self.original_lookup.insert(original.into(), id);
         self.occupied_tokens.insert(replacement.clone());
-        self.matcher = None;
         let identity = normalized.unwrap_or(id);
         if normalized.is_none() {
             self.identities.add(Identity {
@@ -424,7 +425,7 @@ impl Review {
         }
         self.identities
             .remember_normalized(original, category, identity);
-        self.groups.push(Group {
+        self.candidates.push(Group {
             id,
             original: original.into(),
             identity,
@@ -449,10 +450,10 @@ impl Review {
     ) -> Result<u64, String> {
         let original = Self::validate_manual(source, range.clone())?;
         self.refresh(source);
-        let existed = self.original_lookup.contains_key(original);
+        let existed = self.candidates.by_original(original).is_some();
         let id = self.add_seed(original, category);
-        if !existed {
-            self.groups[self.group_lookup[&id]].keep_default = true;
+        if !existed && let Some(group) = self.candidates.group_mut(id) {
+            group.keep_default = true;
         }
         self.set_kept(id, false);
         self.tracking.remove_keeps_for(original);
@@ -481,7 +482,7 @@ impl Review {
         source: &str,
         assigned: &HashMap<(usize, usize), u64>,
     ) -> Result<Vec<ReplacementPlan>, String> {
-        self.candidates
+        self.candidates()
             .iter()
             .map(|candidate| {
                 let range = &candidate.range;
@@ -527,8 +528,7 @@ impl Review {
         Ok(plans)
     }
     pub fn keep(&mut self, id: u64, single: Option<Range<usize>>) {
-        if let Some(&index) = self.group_lookup.get(&id) {
-            let group = &mut self.groups[index];
+        if let Some(group) = self.group(id) {
             if let Some(range) = single {
                 if group.mentions.contains(&range) {
                     let original = group.original.clone();

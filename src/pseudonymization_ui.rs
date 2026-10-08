@@ -37,6 +37,8 @@ pub(super) enum Popup {
 const APPLIED_ID: u64 = 1 << 63;
 pub(super) struct ReviewUi {
     pub review: Review,
+    /// Candidate highlights are shown; Close review hides them.
+    pub reviewing: bool,
     pub popup: Option<Popup>,
     pub focus: FocusHandle,
     pub category: Category,
@@ -61,6 +63,7 @@ impl ReviewUi {
     pub fn new(cx: &mut Context<Workspace>) -> Self {
         Self {
             review: Review::default(),
+            reviewing: false,
             popup: None,
             focus: cx.focus_handle(),
             category: Category::Person,
@@ -160,8 +163,8 @@ impl Workspace {
         self.sync_annotations(cx);
     }
     pub(super) fn pseudonymization_edited(&mut self, cx: &mut Context<Self>) {
-        if !self.pseudonymization.review.open
-            && self.pseudonymization.review.groups.is_empty()
+        if !self.pseudonymization.reviewing
+            && self.pseudonymization.review.groups().is_empty()
             && !self.pseudonymization.scanning()
         {
             return;
@@ -187,19 +190,19 @@ impl Workspace {
     fn sync_annotations(&mut self, cx: &mut Context<Self>) {
         let accent = style::markdown_style(self.theme.get()).alert_warning;
         let review = &self.pseudonymization.review;
-        let show_candidates = review.open;
+        let show_candidates = self.pseudonymization.reviewing;
         let mut candidates = review
-            .candidates
+            .candidates()
             .iter()
             .filter(|_| show_candidates)
             .peekable();
-        let mut applied = review.tracking.applied.iter().peekable();
+        let mut applied = review.applied().iter().peekable();
         let mut annotations = Vec::with_capacity(
             if show_candidates {
-                review.candidates.len()
+                review.candidates().len()
             } else {
                 0
-            } + review.tracking.applied.len(),
+            } + review.applied().len(),
         );
         // Both inputs already follow source order; ordinary edits need no new sort.
         while candidates.peek().is_some() || applied.peek().is_some() {
@@ -242,9 +245,9 @@ impl Workspace {
     pub(super) fn toggle_pseudonymization(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let review = &self.pseudonymization.review;
         if self.pseudonymization.mapping.open
-            || review.open
-            || !review.groups.is_empty()
-            || !review.tracking.applied.is_empty()
+            || self.pseudonymization.reviewing
+            || !review.groups().is_empty()
+            || !review.applied().is_empty()
         {
             self.toggle_identity_panel(window, cx);
         } else {
@@ -277,9 +280,9 @@ impl Workspace {
     ) {
         let review = &self.pseudonymization.review;
         let available = if id & APPLIED_ID != 0 {
-            review.tracking.get(id & !APPLIED_ID).is_some()
+            review.applied_occurrence(id & !APPLIED_ID).is_some()
         } else {
-            review.open && review.candidate(id).is_some()
+            self.pseudonymization.reviewing && review.candidate(id).is_some()
         };
         if !available {
             return;
@@ -306,15 +309,14 @@ impl Workspace {
         let mut mentions: Vec<_> = self
             .pseudonymization
             .review
-            .candidates
+            .candidates()
             .iter()
             .map(|o| (o.id, o.range.clone()))
             .collect();
         mentions.extend(
             self.pseudonymization
                 .review
-                .tracking
-                .applied
+                .applied()
                 .iter()
                 .map(|o| (APPLIED_ID | o.id, o.range.clone())),
         );
@@ -367,7 +369,7 @@ impl Workspace {
         let editor = self.editor.read(cx);
         let source = editor.text().to_owned();
         let range = editor.selection();
-        self.pseudonymization.review.open = true;
+        self.pseudonymization.reviewing = true;
         if let Err(error) = Review::validate_manual(&source, range.clone()) {
             self.pseudonymization.error = Some(error);
             cx.notify();
@@ -394,7 +396,7 @@ impl Workspace {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.pseudonymization.review.open && self.pseudonymization.review.remaining() > 0 {
+        if self.pseudonymization.reviewing && self.pseudonymization.review.remaining() > 0 {
             self.apply_replacements_direct(cx);
         }
     }
@@ -440,7 +442,7 @@ impl Workspace {
             review.restore_identity_snapshot(old.clone());
             next
         });
-        let added = review.tracking.prepare_corrections(plans);
+        let added = review.prepare_replacements(plans);
         let edits: Vec<_> = plans
             .iter()
             .map(|p| (p.range.clone(), p.after.to_string()))
@@ -463,7 +465,7 @@ impl Workspace {
             review.restore_identity_snapshot(next);
             review.commit_identity_snapshot(before, after, old);
         }
-        review.tracking.commit(after, added);
+        review.commit_replacements(after, added);
         Some(after)
     }
     pub(super) fn pii_transaction(
@@ -514,7 +516,6 @@ impl Workspace {
         if !self
             .pseudonymization
             .review
-            .tracking
             .matches_history(editor.history_id())
         {
             self.pseudonymization.error =
@@ -525,15 +526,10 @@ impl Workspace {
         let plan = self
             .pseudonymization
             .review
-            .tracking
-            .restore_plan(editor.text(), id, all);
+            .restoration_edits(editor.text(), id, all);
         match plan {
             Ok(edits) => {
-                let restored = self
-                    .pseudonymization
-                    .review
-                    .tracking
-                    .prepare_restore(&edits);
+                let restored = self.pseudonymization.review.prepare_restore(&edits);
                 if self
                     .editor
                     .update(cx, |e, cx| e.replace_ranges(revision, &edits, cx))
@@ -542,7 +538,6 @@ impl Workspace {
                     self.pii_transaction(&transaction, cx);
                     self.pseudonymization
                         .review
-                        .tracking
                         .commit_restore(self.editor.read(cx).history_id(), restored);
                     self.pseudonymization_edited(cx);
                     self.pseudonymization.error = None;

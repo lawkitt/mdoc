@@ -215,7 +215,7 @@ impl Workspace {
             self.close_replacements(window, cx);
         } else {
             self.pseudonymization.mapping.open_panel(window.focused(cx));
-            self.pseudonymization.review.open = true;
+            self.pseudonymization.reviewing = true;
             self.sync_annotations(cx);
             let search = &self.pseudonymization.mapping.search;
             window.focus(&search.read(cx).focus_handle(cx), cx);
@@ -259,8 +259,7 @@ impl Workspace {
             Selection::Applied(id) => self
                 .pseudonymization
                 .review
-                .tracking
-                .get(*id)
+                .applied_occurrence(*id)
                 .map(|a| a.step.identity),
         }
     }
@@ -279,7 +278,7 @@ impl Workspace {
         };
         let review = &self.pseudonymization.review;
         if !review
-            .candidates
+            .candidates()
             .iter()
             .any(|c| review.occurrence_identity(c.group, &c.range) == Some(id))
         {
@@ -338,8 +337,7 @@ impl Workspace {
         let review = &self.pseudonymization.review;
         let selection = if annotation & APPLIED_ID != 0 {
             review
-                .tracking
-                .get(annotation & !APPLIED_ID)
+                .applied_occurrence(annotation & !APPLIED_ID)
                 .map(|_| Selection::Applied(annotation & !APPLIED_ID))
         } else {
             review.candidate(annotation).map(|c| Selection::Candidate {
@@ -411,8 +409,7 @@ impl Workspace {
             MappingAction::AssignApplied(id, _, _) => self
                 .pseudonymization
                 .review
-                .tracking
-                .get(*id)
+                .applied_occurrence(*id)
                 .and_then(|a| plans.iter().find(|p| p.range == a.range))
                 .map(|p| p.identity),
         };
@@ -464,7 +461,6 @@ impl Workspace {
                 range.start.saturating_add_signed(shift)..range.end.saturating_add_signed(shift);
             self.pseudonymization
                 .review
-                .tracking
                 .commit_assignment(after, range, identity);
         }
         self.pseudonymization
@@ -517,7 +513,7 @@ impl Workspace {
                 if let Some(alias) = alias {
                     review.rename_identity(target, alias)?;
                 }
-                for c in &review.candidates {
+                for c in review.candidates() {
                     if ranges.contains(&(c.range.start, c.range.end))
                         && review.occurrence_identity(c.group, &c.range) == Some(identity)
                     {
@@ -529,7 +525,7 @@ impl Workspace {
                         assignments.push((c.range.clone(), target));
                     }
                 }
-                for a in &review.tracking.applied {
+                for a in review.applied() {
                     if ranges.contains(&(a.range.start, a.range.end)) && a.step.identity == identity
                     {
                         changed.insert(a.id | APPLIED_ID, target);
@@ -552,8 +548,7 @@ impl Workspace {
                 changed.insert(from, target);
                 assignments.extend(
                     review
-                        .tracking
-                        .assignments
+                        .assignments()
                         .iter()
                         .filter(|a| a.identity == from)
                         .map(|a| (a.range.clone(), target)),
@@ -566,7 +561,7 @@ impl Workspace {
                     .original
                     .clone();
                 review.assign_variant(group, target)?;
-                for a in &review.tracking.applied {
+                for a in review.applied() {
                     if a.step.original() == original.as_ref() {
                         changed.insert(a.id | APPLIED_ID, target);
                     }
@@ -590,8 +585,7 @@ impl Workspace {
             }
             MappingAction::AssignApplied(id, target, all) => {
                 let selected = review
-                    .tracking
-                    .get(id)
+                    .applied_occurrence(id)
                     .ok_or("Replacement is no longer available.")?
                     .clone();
                 let target = target.unwrap_or_else(|| review.new_identity(selected.step.category));
@@ -600,7 +594,7 @@ impl Workspace {
                     .ok_or("Identity is no longer available.")?;
                 if all {
                     let group = review
-                        .groups
+                        .groups()
                         .iter()
                         .find(|g| g.original.as_ref() == selected.step.original())
                         .map(|g| g.id)
@@ -614,7 +608,7 @@ impl Workspace {
             }
         }
         let mut plans = Vec::new();
-        for a in &review.tracking.applied {
+        for a in review.applied() {
             let Some(target) = changed
                 .get(&(a.id | APPLIED_ID))
                 .or_else(|| changed.get(&a.step.identity))
@@ -668,7 +662,7 @@ impl Workspace {
         if !plans.is_empty() && self.commit_plans(revision, &plans, None, cx).is_none() {
             return;
         }
-        self.pseudonymization.review.open = true;
+        self.pseudonymization.reviewing = true;
         self.pseudonymization
             .review
             .refresh(self.editor.read(cx).text());

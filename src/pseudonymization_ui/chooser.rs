@@ -112,8 +112,7 @@ impl Workspace {
                                         let label = if id & APPLIED_ID != 0 {
                                             this.pseudonymization
                                                 .review
-                                                .tracking
-                                                .get(id & !APPLIED_ID)
+                                                .applied_occurrence(id & !APPLIED_ID)
                                                 .map(|o| {
                                                     format!(
                                                         "{} · {}",

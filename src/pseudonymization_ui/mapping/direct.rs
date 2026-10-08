@@ -23,7 +23,7 @@ impl Workspace {
         let original = self.active_original();
         let suggestions: std::collections::HashSet<_> = original
             .as_ref()
-            .and_then(|original| review.groups.iter().find(|g| &g.original == original))
+            .and_then(|original| review.groups().iter().find(|g| &g.original == original))
             .map(|g| review.suggestions(g.id).into_iter().collect())
             .unwrap_or_default();
         let mut representatives = std::collections::BTreeMap::<u64, (Arc<str>, bool)>::new();
@@ -32,7 +32,7 @@ impl Workspace {
             let row = representatives.entry(id).or_insert((value, false));
             row.1 |= matches;
         };
-        for c in &review.candidates {
+        for c in review.candidates() {
             if let (Some(id), Some(group)) = (
                 review.occurrence_identity(c.group, &c.range),
                 review.group(c.group),
@@ -40,7 +40,7 @@ impl Workspace {
                 add(id, group.original.clone());
             }
         }
-        for a in &review.tracking.applied {
+        for a in review.applied() {
             add(a.step.identity, a.step.original_shared().clone());
         }
         let mut targets: Vec<_> = representatives
@@ -124,15 +124,14 @@ impl Workspace {
     pub(super) fn identity_occurrences(&self, id: u64) -> Vec<(u64, Range<usize>)> {
         let review = &self.pseudonymization.review;
         let mut result: Vec<_> = review
-            .candidates
+            .candidates()
             .iter()
             .filter(|c| review.occurrence_identity(c.group, &c.range) == Some(id))
             .map(|c| (c.id, c.range.clone()))
             .collect();
         result.extend(
             review
-                .tracking
-                .applied
+                .applied()
                 .iter()
                 .filter(|a| a.step.identity == id)
                 .map(|a| (APPLIED_ID | a.id, a.range.clone())),
@@ -146,8 +145,7 @@ impl Workspace {
             Selection::Applied(id) => self
                 .pseudonymization
                 .review
-                .tracking
-                .get(*id)
+                .applied_occurrence(*id)
                 .map(|a| a.range.clone()),
             Selection::Entity(_) => None,
         }
@@ -162,8 +160,7 @@ impl Workspace {
             Selection::Applied(id) => self
                 .pseudonymization
                 .review
-                .tracking
-                .get(*id)
+                .applied_occurrence(*id)
                 .map(|a| a.step.original_shared().clone()),
             Selection::Entity(_) => None,
         }
@@ -194,8 +191,7 @@ impl Workspace {
                 }
                 if *annotation & APPLIED_ID != 0 {
                     review
-                        .tracking
-                        .get(*annotation & !APPLIED_ID)
+                        .applied_occurrence(*annotation & !APPLIED_ID)
                         .is_some_and(|a| Some(a.step.original()) == original.as_deref())
                 } else {
                     review
@@ -241,14 +237,13 @@ impl Workspace {
         let offset = range.start.saturating_add_signed(shift);
         let review = &self.pseudonymization.review;
         let selection = review
-            .tracking
-            .applied
+            .applied()
             .iter()
             .find(|a| a.range.start == offset)
             .map(|a| Selection::Applied(a.id))
             .or_else(|| {
                 review
-                    .candidates
+                    .candidates()
                     .iter()
                     .find(|c| c.range.start == offset)
                     .map(|c| Selection::Candidate {
@@ -398,7 +393,7 @@ impl Workspace {
         let candidates: Vec<_> = self
             .pseudonymization
             .review
-            .candidates
+            .candidates()
             .iter()
             .filter(|c| ranges.contains(&(c.range.start, c.range.end)))
             .map(|c| (c.group, c.range.clone()))
@@ -440,14 +435,14 @@ impl Workspace {
         let active = self.active_replacement_range();
         let review = &self.pseudonymization.review;
         let mut edits: Vec<_> = review
-            .candidates
+            .candidates()
             .iter()
             .filter_map(|c| {
                 let id = review.occurrence_identity(c.group, &c.range)?;
                 Some((c.range.clone(), review.identity(id)?.alias.clone()))
             })
             .collect();
-        edits.extend(review.tracking.applied.iter().filter_map(|a| {
+        edits.extend(review.applied().iter().filter_map(|a| {
             let alias = &review.identity(a.step.identity)?.alias;
             (a.step.after.as_ref() != alias).then(|| (a.range.clone(), alias.clone()))
         }));

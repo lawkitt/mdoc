@@ -52,7 +52,7 @@ fn pseudonymization_mappings_survive_switches_and_end_with_the_tab(cx: &mut Test
     let first = active(&tabs, cx);
     let first_id = cx.update(|_, cx| tabs.read(cx).active);
     first.update(cx, |view, cx| {
-        view.pseudonymization.review.open = true;
+        view.pseudonymization.reviewing = true;
         let id = view
             .pseudonymization
             .review
@@ -64,11 +64,11 @@ fn pseudonymization_mappings_survive_switches_and_end_with_the_tab(cx: &mut Test
     tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
     cx.run_until_parked();
     let second = active(&tabs, cx);
-    cx.update(|_, cx| assert!(second.read(cx).pseudonymization.review.groups.is_empty()));
+    cx.update(|_, cx| assert!(second.read(cx).pseudonymization.review.groups().is_empty()));
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(first_id, window, cx));
     cx.update(|_, cx| {
         let view = first.read(cx);
-        let group = &view.pseudonymization.review.groups[0];
+        let group = &view.pseudonymization.review.groups()[0];
         assert_eq!(
             (group.original.as_ref(), group.replacement.as_str()),
             ("Alice", "PERSON_1")
@@ -372,7 +372,7 @@ fn toolbar_settings_opens_and_closes_without_editor_focus(cx: &mut TestAppContex
         tabs.read(cx).settings.clone()
     });
     active(&tabs, cx).update(cx, |view, cx| {
-        view.pseudonymization.review.open = true;
+        view.pseudonymization.reviewing = true;
         cx.notify();
     });
     click_toolbar(cx, "Settings");

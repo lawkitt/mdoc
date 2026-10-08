@@ -16,7 +16,7 @@ impl Workspace {
         self.pseudonymization.cancel();
         self.pseudonymization.error = None;
         self.pseudonymization.dismiss_popup();
-        self.pseudonymization.review.open = true;
+        self.pseudonymization.reviewing = true;
         self.pseudonymization.mapping.begin_review();
         let editor = self.editor.read(cx);
         let revision = editor.revision();
