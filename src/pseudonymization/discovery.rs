@@ -14,8 +14,6 @@ pub struct DiscoveryInput {
     pub(super) version: u64,
     pub(super) originals: Vec<Arc<str>>,
     pub(super) enabled: Vec<bool>,
-    pub(super) conversions: Vec<bool>,
-    pub(super) applied: HashSet<(usize, usize)>,
     pub(super) excluded: HashSet<(usize, usize)>,
     pub(super) matcher: Option<Arc<AhoCorasick>>,
 }
@@ -84,7 +82,6 @@ impl DiscoveryInput {
                 } else {
                     interval_conflict(&occupied, &range)
                 })
-                || (self.conversions[index] && !self.applied.contains(&(range.start, range.end)))
             {
                 continue;
             }

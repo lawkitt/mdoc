@@ -50,17 +50,13 @@ The user authorized the pinned GLiNER2 option experimentally despite its blocker
    the default. Obsolete model preferences require an explicit reset. See
    [verification and remaining native/Windows checks](tests/fixtures/model-settings/README.md).
 
-6. **Shared-marker anonymization — implemented experimentally** — the
-   [accepted design](docs/adr/0013-reviewable-anonymization.md) makes the default
-   anonymous-person icon scan locally and apply fixed category markers as one
-   undoable batch. Pseudonymize remains selectable; manual review is secondary
-   for Anonymize, and Copy Markdown remains separate. Reuses GLiNER2, whole-source
-   safeguards and live-document mapping/Keep semantics. Detector qualification
-   gaps remain unchanged. See [verification](docs/design/anonymization.md).
+6. **Shared-marker anonymization — removed** — the
+   [original design](docs/adr/0013-reviewable-anonymization.md) was superseded by
+   [ADR 0022](docs/adr/0022-remove-anonymization-mode.md): Pseudonymization is the
+   only PII replacement behavior and the toolbar default.
 
 7. **Inspectable PII replacements and subsystem cleanup — implemented** —
-   [ADR 0014](docs/adr/0014-highlighted-pii-replacements.md) preserves default automatic
-   Anonymize and adds click/keyboard original inspection, this-occurrence/matching-original
+   [ADR 0014](docs/adr/0014-highlighted-pii-replacements.md) adds click/keyboard original inspection, this-occurrence/matching-original
    restoration, restoration Keep and metadata-aware undo/redo. Originals remain live-memory
    only. Policy/tracking/discovery, detector/windows and scan/popup/chooser responsibilities
    are separated; exact editor transactions, ordered rebasing, cached background matching,
@@ -161,7 +157,7 @@ runtime checks remain outstanding.
    pairs that overview with an exact-word popup, inline alias linking/creation,
    counted scopes, readable occurrence context and a compact vertical panel.
    Copy Markdown is the single handoff and copies exact current source;
-   relationship owners remain local. Tracked shared markers can be upgraded directly.
+   relationship owners remain local.
    Decisions follow undo/redo and survive rescans. Labelled checksum-valid ОГРН/ОГРНИП
    are structured identifiers. Holdout quality, correction time, platform acceptance
    and explicit release gates still block removal of experimental status.

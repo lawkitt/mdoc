@@ -12,14 +12,9 @@ impl Workspace {
         if ids.is_empty() {
             return;
         }
-        self.pseudonymization.popup = Some(Popup {
-            target: PopupTarget::Choose {
-                ids: ids.into(),
-                selected: 0,
-            },
-            all: false,
-            context_open: false,
-            links_open: false,
+        self.pseudonymization.popup = Some(Popup::Choose {
+            ids: ids.into(),
+            selected: 0,
         });
         self.pseudonymization.popup_previous = window.focused(cx);
         self.pseudonymization
@@ -29,11 +24,7 @@ impl Workspace {
         cx.notify();
     }
     fn choose_step(&mut self, backwards: bool, cx: &mut Context<Self>) {
-        if let Some(Popup {
-            target: PopupTarget::Choose { ids, selected },
-            ..
-        }) = &mut self.pseudonymization.popup
-        {
+        if let Some(Popup::Choose { ids, selected }) = &mut self.pseudonymization.popup {
             *selected = if backwards {
                 selected.checked_sub(1).unwrap_or(ids.len() - 1)
             } else {
@@ -46,11 +37,7 @@ impl Workspace {
         }
     }
     fn open_choice(&mut self, _: &OpenPiiChoice, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Popup {
-            target: PopupTarget::Choose { ids, selected },
-            ..
-        }) = &self.pseudonymization.popup
-        else {
+        let Some(Popup::Choose { ids, selected }) = &self.pseudonymization.popup else {
             return;
         };
         let id = ids[*selected];

@@ -14,21 +14,6 @@ use std::{
 use syntax::protected_syntax;
 use tracking::Tracking;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Mode {
-    Anonymize,
-    #[default]
-    Pseudonymize,
-}
-impl Mode {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Anonymize => "Anonymize",
-            Self::Pseudonymize => "Pseudonymize",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Category {
     Person,
@@ -93,7 +78,6 @@ pub struct Group {
     pub mentions: Vec<Range<usize>>,
     kept: bool,
     keep_default: bool,
-    conversion: bool,
 }
 
 #[derive(Clone)]
@@ -120,7 +104,6 @@ pub struct Review {
     discovery_version: u64,
     counters: HashMap<Category, usize>,
     next_id: u64,
-    pub mode: Mode,
 }
 
 /// Tokens work unchanged in prose, table cells, destinations, code and HTML.
@@ -221,43 +204,6 @@ impl Review {
         }
     }
 
-    pub fn set_mode(&mut self, mode: Mode, source: &str) {
-        self.mode = mode;
-        self.prepare_conversions(source);
-        self.refresh(source);
-    }
-    pub fn replacement(&self, group: &Group) -> String {
-        match self.mode {
-            Mode::Anonymize => group.category.token().into(),
-            Mode::Pseudonymize => group.replacement.clone(),
-        }
-    }
-    /// Only accepted replacements establish provenance for later conversion.
-    #[cfg(test)]
-    pub fn record_acceptance(&mut self, id: u64, replacement: &str) {
-        if self.mode == Mode::Pseudonymize {
-            self.set_replacement(id, replacement);
-        }
-    }
-    fn prepare_conversions(&mut self, _source: &str) {
-        if self.mode != Mode::Anonymize {
-            return;
-        }
-        let originals: HashSet<_> = self
-            .tracking
-            .applied
-            .iter()
-            .filter(|o| o.step.after.as_ref() != o.step.category.token())
-            .map(|o| (o.step.after.to_string(), o.step.category))
-            .collect();
-        for (original, category) in originals {
-            if self.original_lookup.contains_key(original.as_str()) {
-                continue;
-            }
-            let id = self.add_seed(&original, category);
-            self.groups[self.group_lookup[&id]].conversion = true;
-        }
-    }
     pub fn group(&self, id: u64) -> Option<&Group> {
         self.group_lookup.get(&id).map(|&index| &self.groups[index])
     }
@@ -275,15 +221,6 @@ impl Review {
     }
     pub fn remaining(&self) -> usize {
         self.groups.iter().map(|group| group.mentions.len()).sum()
-    }
-    pub fn mappings(&self) -> Vec<(String, String)> {
-        let mut seen = HashSet::new();
-        self.groups
-            .iter()
-            .filter(|group| !group.conversion)
-            .filter(|group| seen.insert(group.replacement.clone()))
-            .map(|group| (group.original.to_string(), group.replacement.clone()))
-            .collect()
     }
     pub fn refresh(&mut self, source: &str) {
         // A conservative source diff revalidates single-occurrence exclusions.
@@ -338,18 +275,7 @@ impl Review {
             source: self.source.clone(),
             version: self.discovery_version,
             originals: self.groups.iter().map(|g| g.original.clone()).collect(),
-            enabled: self
-                .groups
-                .iter()
-                .map(|g| !g.kept && !(g.conversion && self.mode == Mode::Pseudonymize))
-                .collect(),
-            conversions: self.groups.iter().map(|g| g.conversion).collect(),
-            applied: self
-                .tracking
-                .applied
-                .iter()
-                .map(|o| (o.range.start, o.range.end))
-                .collect(),
+            enabled: self.groups.iter().map(|g| !g.kept).collect(),
             excluded: self
                 .tracking
                 .exclusions
@@ -468,7 +394,6 @@ impl Review {
             self.add_seed(&source[detection.range], detection.category);
         }
         self.discover_initial_variants(source);
-        self.prepare_conversions(source);
         self.refresh(source);
         Ok(())
     }
@@ -508,7 +433,6 @@ impl Review {
             mentions: Vec::new(),
             kept: false,
             keep_default: false,
-            conversion: false,
         });
         id
     }
@@ -535,61 +459,6 @@ impl Review {
         self.refresh(source);
         Ok(id)
     }
-    pub fn plan(
-        &self,
-        source: &str,
-        id: u64,
-        single: Option<Range<usize>>,
-        replacement: &str,
-    ) -> Result<Vec<(Range<usize>, String)>, String> {
-        if source != self.source.as_ref() {
-            return Err("The document changed. Review the candidate again.".into());
-        }
-        if !valid_replacement(replacement) {
-            return Err("Use a token of up to 128 ASCII letters, numbers, underscores or hyphens, starting with a letter and ending with a letter or number.".into());
-        }
-        let group = self.group(id).ok_or("Candidate is no longer available.")?;
-        if self.mode == Mode::Anonymize
-            && replacement != group.category.token()
-            && !single
-                .as_ref()
-                .and_then(|range| self.occurrence_identity(id, range))
-                .and_then(|id| self.identity(id))
-                .is_some_and(|i| replacement == i.category.token())
-        {
-            return Err("Anonymization uses a fixed category marker.".into());
-        }
-        let ranges = match single {
-            Some(range) if group.mentions.contains(&range) => vec![range],
-            Some(_) => return Err("Candidate offsets changed. Review it again.".into()),
-            None => group.mentions.clone(),
-        };
-        if ranges.is_empty()
-            || ranges
-                .iter()
-                .any(|range| source.get(range.clone()) != Some(group.original.as_ref()))
-        {
-            return Err("Candidate is no longer available.".into());
-        }
-        Ok(ranges
-            .into_iter()
-            .filter_map(|range| {
-                let assigned = self
-                    .occurrence_identity(id, &range)
-                    .and_then(|id| self.identity(id));
-                let value = if self.mode == Mode::Anonymize {
-                    assigned
-                        .map_or(group.category.token(), |i| i.category.token())
-                        .to_owned()
-                } else if replacement == group.replacement {
-                    assigned.map_or_else(|| replacement.to_owned(), |i| i.alias.clone())
-                } else {
-                    replacement.to_owned()
-                };
-                (source.get(range.clone()) != Some(value.as_str())).then_some((range, value))
-            })
-            .collect())
-    }
     #[cfg(test)]
     pub fn set_replacement(&mut self, id: u64, replacement: &str) {
         let Some(identity) = self.group_identity(id) else {
@@ -606,49 +475,27 @@ impl Review {
         }
     }
     /// Plan all pending mentions against one source snapshot. Kept candidates
-    /// have no mentions; each group retains its proposed or edited replacement.
-    pub fn plan_all(
-        &self,
-        source: &str,
-        draft: Option<(u64, &str)>,
-    ) -> Result<Vec<(Range<usize>, String)>, String> {
+    /// have no mentions; each mention takes its assigned identity's alias.
+    #[cfg(test)] // Step 2 moves Apply planning here; see ADR 0021.
+    pub fn plan_all(&self, source: &str) -> Result<Vec<(Range<usize>, String)>, String> {
         if source != self.source.as_ref() {
             return Err("The document changed. Review the candidates again.".into());
         }
         let mut edits = Vec::new();
         for group in &self.groups {
-            if !group.mentions.is_empty() {
-                let default = self.replacement(group);
-                let replacement = draft
-                    .filter(|(id, _)| *id == group.id)
-                    .map_or(default.as_str(), |(_, replacement)| replacement);
-                if !valid_replacement(replacement)
-                    || (self.mode == Mode::Anonymize && replacement != group.category.token())
-                {
+            for range in &group.mentions {
+                if source.get(range.clone()) != Some(group.original.as_ref()) {
+                    return Err("Candidate offsets changed.".into());
+                }
+                let value = self
+                    .occurrence_identity(group.id, range)
+                    .and_then(|id| self.identity(id))
+                    .map_or_else(|| group.replacement.clone(), |i| i.alias.clone());
+                if !valid_replacement(&value) {
                     return Err("Invalid replacement token.".into());
                 }
-                for range in &group.mentions {
-                    if source.get(range.clone()) != Some(group.original.as_ref()) {
-                        return Err("Candidate offsets changed.".into());
-                    }
-                    let assigned = self
-                        .occurrence_identity(group.id, range)
-                        .and_then(|id| self.identity(id));
-                    let value = if self.mode == Mode::Anonymize {
-                        assigned
-                            .map_or(group.category.token(), |i| i.category.token())
-                            .to_owned()
-                    } else if draft.is_some_and(|(id, _)| id == group.id)
-                        && self.occurrence_identity(group.id, range)
-                            == self.group_identity(group.id)
-                    {
-                        replacement.to_owned()
-                    } else {
-                        assigned.map_or_else(|| replacement.to_owned(), |i| i.alias.clone())
-                    };
-                    if group.original.as_ref() != value {
-                        edits.push((range.clone(), value));
-                    }
+                if group.original.as_ref() != value {
+                    edits.push((range.clone(), value));
                 }
             }
         }

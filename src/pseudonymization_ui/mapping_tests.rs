@@ -4,9 +4,6 @@ fn seed(app: &mut Workspace, source: &str, cx: &mut Context<Workspace>) -> (u64,
     app.editor.update(cx, |e, cx| e.set_text(source, cx));
     app.pseudonymization.review = Default::default();
     app.pseudonymization.review.open = true;
-    app.pseudonymization
-        .review
-        .set_mode(Mode::Pseudonymize, source);
     let mut detections = Vec::new();
     for (value, category) in [
         ("Павлова Марина Сергеевна", Category::Person),
@@ -158,7 +155,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
             .mentions[1]
             .clone();
         app.change_mapping(MappingAction::AssignCandidate(initials, range, None), cx);
-        let edits = app.pseudonymization.review.plan_all(source, None).unwrap();
+        let edits = app.pseudonymization.review.plan_all(source).unwrap();
         assert_eq!(
             edits.iter().map(|(_, a)| a.as_str()).collect::<Vec<_>>(),
             ["PERSON_1", "PERSON_1", "PERSON_2"]
@@ -192,7 +189,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
         assert_eq!(
-            app.pseudonymization.review.plan_all(source, None).unwrap()[2].1,
+            app.pseudonymization.review.plan_all(source).unwrap()[2].1,
             "PERSON_2"
         );
         app.pseudonymization
@@ -200,7 +197,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
             .ingest(source, Vec::new())
             .unwrap();
         assert_eq!(
-            app.pseudonymization.review.plan_all(source, None).unwrap()[2].1,
+            app.pseudonymization.review.plan_all(source).unwrap()[2].1,
             "PERSON_2"
         );
     });
@@ -208,7 +205,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
     cx.run_until_parked();
     app.update(cx, |app, _cx| {
         assert_eq!(
-            app.pseudonymization.review.plan_all(source, None).unwrap()[2].1,
+            app.pseudonymization.review.plan_all(source).unwrap()[2].1,
             "PERSON_1"
         )
     });
@@ -216,7 +213,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
     cx.run_until_parked();
     app.update(cx, |app, _cx| {
         assert_eq!(
-            app.pseudonymization.review.plan_all(source, None).unwrap()[2].1,
+            app.pseudonymization.review.plan_all(source).unwrap()[2].1,
             "PERSON_2"
         )
     });
@@ -275,23 +272,15 @@ fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpu
 }
 
 #[gpui::test]
-fn shared_markers_upgrade_and_alias_rename_ignore_pasted_lookalikes(cx: &mut gpui::TestAppContext) {
+fn alias_rename_ignores_pasted_lookalikes(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::ui_tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · pasted CLIENT_9";
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        app.pseudonymization
-            .review
-            .set_mode(Mode::Anonymize, source);
-        app.commit_all_pii(None, cx).unwrap();
-        assert_eq!(app.editor.read(cx).text(), "PERSON · ORG · pasted CLIENT_9");
         let identity = app.pseudonymization.review.group_identity(full).unwrap();
         app.change_mapping(MappingAction::AssignVariant(initials, identity), cx);
-        assert_eq!(
-            app.editor.read(cx).text(),
-            "PERSON · PERSON · pasted CLIENT_9"
-        );
+        assert_eq!(app.editor.read(cx).text(), source);
         app.apply_identity_aliases(cx);
         assert_eq!(
             app.editor.read(cx).text(),
@@ -345,8 +334,8 @@ fn inline_keep_is_metadata_only_and_undoable(cx: &mut gpui::TestAppContext) {
             .annotation_id(initials, &range)
             .unwrap();
         app.activate_annotation(annotation, window, cx);
-        app.pseudonymization.popup.as_mut().unwrap().all = false;
-        app.keep_pseudonym(&KeepPseudonymCandidate, window, cx);
+        app.keep_replacement(true, cx);
+        window.focus(&app.editor.read(cx).focus_handle(cx), cx);
         assert_eq!(app.editor.read(cx).text(), source);
         assert_eq!(app.pseudonymization.review.remaining(), 2);
     });
@@ -366,7 +355,7 @@ fn inline_keep_is_metadata_only_and_undoable(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
-fn legacy_bulk_acceptance_preserves_first_occurrence_split(cx: &mut gpui::TestAppContext) {
+fn bulk_apply_preserves_first_occurrence_split(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::ui_tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С.";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
@@ -383,12 +372,12 @@ fn legacy_bulk_acceptance_preserves_first_occurrence_split(cx: &mut gpui::TestAp
         let expected: Vec<_> = app
             .pseudonymization
             .review
-            .plan_all(source, None)
+            .plan_all(source)
             .unwrap()
             .into_iter()
             .map(|(_, alias)| alias)
             .collect();
-        app.commit_all_pii(None, cx).unwrap();
+        app.apply_identity_aliases(cx);
         assert_eq!(app.editor.read(cx).text(), expected.join(" · "));
         for applied in &app.pseudonymization.review.tracking.applied {
             assert_eq!(
@@ -471,7 +460,7 @@ fn owner_picker_click_links_without_merging_identities(cx: &mut gpui::TestAppCon
 }
 
 #[gpui::test]
-fn popup_bulk_draft_renames_all_variants_of_a_normalized_identity(cx: &mut gpui::TestAppContext) {
+fn entity_rename_then_apply_covers_all_normalized_variants(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::ui_tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · ПАВЛОВА МАРИНА СЕРГЕЕВНА";
     let (full, _) = app.update(cx, |app, cx| seed(app, source, cx));
@@ -490,8 +479,9 @@ fn popup_bulk_draft_renames_all_variants_of_a_normalized_identity(cx: &mut gpui:
                 }],
             )
             .unwrap();
-        app.commit_all_pii(Some((full, "CLIENT_1".into())), cx)
-            .unwrap();
+        let identity = app.pseudonymization.review.group_identity(full).unwrap();
+        app.change_mapping(MappingAction::Rename(identity, "CLIENT_1".into()), cx);
+        app.apply_identity_aliases(cx);
         assert_eq!(app.editor.read(cx).text(), "CLIENT_1 · ORG_1 · CLIENT_1");
         for a in &app.pseudonymization.review.tracking.applied {
             assert_eq!(
@@ -735,42 +725,6 @@ fn visible_alias_draft_and_apply_share_one_undo_step(cx: &mut gpui::TestAppConte
             );
         }
     }
-}
-
-#[gpui::test]
-fn panel_apply_upgrades_tracked_shared_markers_without_touching_pasted_tokens(
-    cx: &mut gpui::TestAppContext,
-) {
-    let (app, cx) = crate::ui_tests::boot(cx);
-    app.update(cx, |app, cx| {
-        seed(
-            app,
-            "Павлова Марина Сергеевна · Павлова М.С. · pasted PERSON",
-            cx,
-        );
-        app.select_pii_mode(Mode::Anonymize, cx);
-        app.commit_all_pii(None, cx).unwrap();
-        assert_eq!(app.editor.read(cx).text(), "PERSON · ORG · pasted PERSON");
-        app.select_pii_mode(Mode::Pseudonymize, cx);
-        app.pseudonymization.mapping.begin_review();
-    });
-    cx.run_until_parked();
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-    let apply = cx.debug_bounds("apply-identity-map").unwrap().center();
-    cx.simulate_click(apply, Default::default());
-    cx.run_until_parked();
-    app.update_in(cx, |app, window, cx| {
-        assert_eq!(
-            app.editor.read(cx).text(),
-            "PERSON_1 · ORG_1 · pasted PERSON"
-        );
-        window.focus(&app.editor.read(cx).focus_handle(cx), cx);
-    });
-    cx.dispatch_action(mdoc_editor::Undo);
-    cx.run_until_parked();
-    app.update(cx, |app, cx| {
-        assert_eq!(app.editor.read(cx).text(), "PERSON · ORG · pasted PERSON")
-    });
 }
 
 #[gpui::test]

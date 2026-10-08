@@ -67,7 +67,6 @@ actions!(
         Save,
         SaveAs,
         CopyMarkdown,
-        Anonymize,
         Pseudonymize,
         AddPseudonymCandidate,
         ReviewCandidate,
@@ -75,7 +74,6 @@ actions!(
         PreviousCandidate,
         AcceptPseudonymCandidate,
         AcceptAllPseudonyms,
-        KeepPseudonymCandidate,
         RestorePii,
         RestoreAllPii,
         NextPiiChoice,
@@ -1297,7 +1295,6 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::open))
             .on_action(cx.listener(Self::import))
             .on_action(cx.listener(Self::copy_markdown))
-            .on_action(cx.listener(Self::anonymize))
             .on_action(cx.listener(Self::pseudonymize))
             .on_action(cx.listener(Self::add_pseudonym))
             .on_action(cx.listener(Self::accept_all_pseudonyms))
@@ -1324,7 +1321,6 @@ impl Render for Workspace {
                     .px_3().py_2().border_b_1().border_color(palette.border)))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
             .children(import_notice).children(ocr_notice)
-            .children(self.pseudonym_bar(cx))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx)))
             .child(div().flex().flex_1().min_h_0()
                 .when(!self.source_only && show_markdown, |row| row.child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
@@ -1459,7 +1455,6 @@ fn main() {
                 MenuItem::action("Save", Save),
                 MenuItem::action("Save As…", SaveAs),
                 MenuItem::action("Copy Markdown", CopyMarkdown),
-                MenuItem::action("Anonymize", Anonymize),
                 MenuItem::action("Pseudonymize", Pseudonymize),
                 MenuItem::action("Settings", Settings),
                 MenuItem::separator(),
