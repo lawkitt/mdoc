@@ -1,5 +1,14 @@
 use super::*;
 use mdoc_editor::HistoryChange;
+fn plan(range: Range<usize>, before: Arc<str>, after: Arc<str>) -> ReplacementPlan {
+    ReplacementPlan {
+        range,
+        before,
+        after,
+        category: Category::Person,
+        identity: 0,
+    }
+}
 fn edit(
     tracking: &mut Tracking,
     revision: u64,
@@ -39,7 +48,7 @@ fn replace(
     from: u64,
     to: u64,
 ) {
-    let added = tracking.prepare(&[(range.clone(), before.into(), after.into(), Category::Person)]);
+    let added = tracking.prepare(&[plan(range.clone(), before.into(), after.into())]);
     edit(tracking, revision, from, to, range, after.len(), &[0, to]);
     tracking.commit(to, added);
 }
@@ -87,9 +96,9 @@ fn restoration_keep_and_chained_predecessors_travel_with_text_history() {
 fn same_marker_is_not_same_original_and_pasted_tokens_have_no_provenance() {
     let mut t = Tracking::default();
     let plans = vec![
-        (0..4, "Anna".into(), "PERSON".into(), Category::Person),
-        (5..8, "Bob".into(), "PERSON".into(), Category::Person),
-        (9..13, "Anna".into(), "PERSON".into(), Category::Person),
+        plan(0..4, "Anna".into(), "PERSON".into()),
+        plan(5..8, "Bob".into(), "PERSON".into()),
+        plan(9..13, "Anna".into(), "PERSON".into()),
     ];
     let added = t.prepare(&plans);
     t.on_transaction(&EditorTransaction {
@@ -99,9 +108,9 @@ fn same_marker_is_not_same_original_and_pasted_tokens_have_no_provenance() {
             after: 1,
             edits: plans
                 .iter()
-                .map(|(r, _, a, _)| SourceEdit {
-                    range: r.clone(),
-                    new_len: a.len(),
+                .map(|p| SourceEdit {
+                    range: p.range.clone(),
+                    new_len: p.after.len(),
                 })
                 .collect(),
         }],
@@ -141,14 +150,7 @@ fn metadata_history_stress_retains_shared_originals_and_prunes_reversible_deltas
     let marker: Arc<str> = "PERSON".into();
     let original_weak = Arc::downgrade(&original);
     let plans: Vec<_> = (0..20_000)
-        .map(|n| {
-            (
-                14 * n..14 * n + 8,
-                original.clone(),
-                marker.clone(),
-                Category::Person,
-            )
-        })
+        .map(|n| plan(14 * n..14 * n + 8, original.clone(), marker.clone()))
         .collect();
     let added = tracking.prepare(&plans);
     let weak = Arc::downgrade(&added[0].step);
@@ -160,9 +162,9 @@ fn metadata_history_stress_retains_shared_originals_and_prunes_reversible_deltas
             after: 1,
             edits: plans
                 .iter()
-                .map(|(range, _, after, _)| SourceEdit {
-                    range: range.clone(),
-                    new_len: after.len(),
+                .map(|p| SourceEdit {
+                    range: p.range.clone(),
+                    new_len: p.after.len(),
                 })
                 .collect(),
         }],

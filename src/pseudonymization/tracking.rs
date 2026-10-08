@@ -31,10 +31,17 @@ pub struct Assignment {
     pub range: Range<usize>,
     pub identity: u64,
 }
-/// Immutable values shared across a source-sorted replacement batch.
-pub type ReplacementPlan = (Range<usize>, Arc<str>, Arc<str>, Category);
+/// One replacement in a source-sorted batch: `before` is the current text at
+/// `range`, `after` the alias recorded for `identity`.
+#[derive(Clone, Debug)]
+pub struct ReplacementPlan {
+    pub range: Range<usize>,
+    pub before: Arc<str>,
+    pub after: Arc<str>,
+    pub category: Category,
+    pub identity: u64,
+}
 type StepKey = (Arc<str>, Arc<str>, Category, usize, u64);
-pub type IdentifiedPlan = (ReplacementPlan, u64);
 #[derive(Clone, Debug)]
 pub struct Applied {
     pub id: u64,
@@ -356,42 +363,41 @@ impl Tracking {
         self.journal.retain(|id, _| live.contains(id));
     }
     /// Prepare before the text commit; captured predecessor is occurrence-specific.
-    #[cfg(test)]
     pub fn prepare(&mut self, plans: &[ReplacementPlan]) -> Vec<Applied> {
-        self.prepare_identified(&plans.iter().cloned().map(|p| (p, 0)).collect::<Vec<_>>())
-    }
-    pub fn prepare_identified(&mut self, plans: &[IdentifiedPlan]) -> Vec<Applied> {
         let mut delta = 0isize;
         let mut steps: HashMap<StepKey, Arc<Step>> = HashMap::new();
         plans
             .iter()
-            .map(|((range, before, after, category), identity)| {
-                let predecessor = self.at(range).map(|o| o.step.clone());
+            .map(|plan| {
+                let predecessor = self.at(&plan.range).map(|o| o.step.clone());
                 let key = (
-                    before.clone(),
-                    after.clone(),
-                    *category,
+                    plan.before.clone(),
+                    plan.after.clone(),
+                    plan.category,
                     predecessor.as_ref().map_or(0, |s| Arc::as_ptr(s) as usize),
-                    *identity,
+                    plan.identity,
                 );
                 let step = steps
                     .entry(key)
                     .or_insert_with(|| {
                         Arc::new(Step {
-                            identity: *identity,
-                            before: before.clone(),
-                            after: after.clone(),
-                            category: *category,
+                            identity: plan.identity,
+                            before: plan.before.clone(),
+                            after: plan.after.clone(),
+                            category: plan.category,
                             predecessor,
                         })
                     })
                     .clone();
-                let id = self.at(range).map(|o| o.id).unwrap_or_else(|| self.id());
-                let start = range.start.saturating_add_signed(delta);
-                delta += after.len() as isize - range.len() as isize;
+                let id = self
+                    .at(&plan.range)
+                    .map(|o| o.id)
+                    .unwrap_or_else(|| self.id());
+                let start = plan.range.start.saturating_add_signed(delta);
+                delta += plan.after.len() as isize - plan.range.len() as isize;
                 Applied {
                     id,
-                    range: start..start + after.len(),
+                    range: start..start + plan.after.len(),
                     step,
                 }
             })
@@ -426,10 +432,10 @@ impl Tracking {
     }
     /// Identity correction retains the original, rather than adding an alias as
     /// another restoration layer. Undo still retains the previous exact Step.
-    pub fn prepare_corrections(&mut self, plans: &[IdentifiedPlan]) -> Vec<Applied> {
+    pub fn prepare_corrections(&mut self, plans: &[ReplacementPlan]) -> Vec<Applied> {
         type CorrectionKey = (Arc<str>, Arc<str>, Category, u64);
         let mut shared: HashMap<CorrectionKey, Arc<Step>> = HashMap::new();
-        let added = self.prepare_identified(plans);
+        let added = self.prepare(plans);
         added
             .into_iter()
             .map(|mut a| {

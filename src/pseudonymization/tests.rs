@@ -1,4 +1,19 @@
 use super::*;
+/// Text edits Apply would make for pending mentions of an unchanged source.
+pub(crate) fn plan_all(
+    review: &Review,
+    source: &str,
+) -> Result<Vec<(Range<usize>, String)>, String> {
+    if source != review.source.as_ref() {
+        return Err("The document changed. Review the candidates again.".into());
+    }
+    Ok(review
+        .pending_plans(source, &HashMap::new())?
+        .into_iter()
+        .filter(|plan| plan.before != plan.after)
+        .map(|plan| (plan.range, plan.after.to_string()))
+        .collect())
+}
 fn detection(range: Range<usize>, category: Category) -> Detection {
     Detection {
         range,
@@ -22,7 +37,7 @@ fn batch_keeps_exclusions_protects_markdown_and_skips_detected_markers() {
         .add_manual(source, email..email + 20, Category::Email)
         .unwrap();
     review.keep(anna, Some(2..10));
-    let edits = review.plan_all(source).unwrap();
+    let edits = plan_all(&review, source).unwrap();
     let mut result = source.to_owned();
     for (range, replacement) in edits.iter().rev() {
         result.replace_range(range.clone(), replacement);
@@ -33,7 +48,7 @@ fn batch_keeps_exclusions_protects_markdown_and_skips_detected_markers() {
     );
     review.refresh_after_edits(&result, &edits);
     assert_eq!(review.remaining(), 0);
-    assert!(review.plan_all(source).is_err());
+    assert!(plan_all(&review, source).is_err());
     // A detected category marker cannot acquire a new numbered identity.
     let marker = result.find("PERSON").unwrap();
     review
@@ -53,7 +68,7 @@ fn unicode_exact_repeats_and_hidden_source_keep_source_syntax() {
         .unwrap();
     let group = &review.groups[0];
     assert_eq!(group.mentions.len(), 4);
-    let edits = review.plan_all(source).unwrap();
+    let edits = plan_all(&review, source).unwrap();
     let mut changed = source.to_string();
     for (range, replacement) in edits.iter().rev() {
         changed.replace_range(range.clone(), replacement);
@@ -95,7 +110,7 @@ fn batch_refresh_preserves_a_kept_mention_between_replacements() {
         .unwrap();
     review.add_manual(source, 13..16, Category::Person).unwrap();
     review.keep(ann, Some(9..12));
-    let edits = review.plan_all(source).unwrap();
+    let edits = plan_all(&review, source).unwrap();
     let mut changed = source.to_owned();
     for (range, replacement) in edits.iter().rev() {
         changed.replace_range(range.clone(), replacement);
@@ -125,7 +140,7 @@ fn batch_plan_preserves_kept_mentions_custom_tokens_and_hidden_source() {
     review.keep(kept, None);
     review.set_replacement(org, "CLIENT_1");
     review.set_replacement(anna, "PERSON_CUSTOM");
-    let edits = review.plan_all(source).unwrap();
+    let edits = plan_all(&review, source).unwrap();
     assert_eq!(edits.len(), 3);
     let mut changed = source.to_owned();
     for (range, replacement) in edits.iter().rev() {
@@ -135,7 +150,7 @@ fn batch_plan_preserves_kept_mentions_custom_tokens_and_hidden_source() {
         changed,
         "**Анна** CLIENT_1 PERSON_CUSTOM [mail](EMAIL_1) Bob"
     );
-    assert!(review.plan_all("changed").is_err());
+    assert!(plan_all(&review, "changed").is_err());
     let identity = review.group_identity(anna).unwrap();
     assert!(review.rename_identity(identity, "invalid token").is_err());
     assert_eq!(review.remaining(), 3);
@@ -152,7 +167,7 @@ fn plans_refuse_stale_or_invalid_ranges_and_syntax_replacements() {
         .ingest("Ann", vec![detection(0..3, Category::Person)])
         .unwrap();
     let id = review.groups[0].id;
-    assert!(review.plan_all("Anna").is_err());
+    assert!(plan_all(&review, "Anna").is_err());
     let identity = review.group_identity(id).unwrap();
     assert!(review.rename_identity(identity, "](bad)").is_err());
     assert!(
@@ -169,7 +184,7 @@ fn hidden_values_are_replaceable_but_html_names_quotes_and_list_prefixes_are_pro
     let group = review.group(id).unwrap();
     assert_eq!(group.mentions.len(), 6);
     let mut changed = source.to_owned();
-    for (range, replacement) in review.plan_all(source).unwrap().iter().rev() {
+    for (range, replacement) in plan_all(&review, source).unwrap().iter().rev() {
         changed.replace_range(range.clone(), replacement);
     }
     assert_eq!(
@@ -198,7 +213,7 @@ fn parenthesized_phone_values_do_not_consume_link_delimiters() {
     let source = "Call (202) 555-0101. [contact](tel:(202)555-0101)";
     let mut review = Review::default();
     review.add_manual(source, 5..19, Category::Phone).unwrap();
-    assert_eq!(review.plan_all(source).unwrap()[0].0, 5..19);
+    assert_eq!(plan_all(&review, source).unwrap()[0].0, 5..19);
     let end = source.len();
     assert!(
         review
@@ -242,7 +257,7 @@ fn utf8_matcher_storage_matrix() {
         let mut review = Review::default();
         review.ingest(&source, detections).unwrap();
         assert_eq!(review.candidates.len(), 20_000);
-        assert_eq!(review.plan_all(&source).unwrap().len(), 20_000);
+        assert_eq!(plan_all(&review, &source).unwrap().len(), 20_000);
         let input = review.discovery_input();
         assert!(Arc::ptr_eq(&review.source, &input.source));
         let matcher = review.matcher.as_ref().unwrap();

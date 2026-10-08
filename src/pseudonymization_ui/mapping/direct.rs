@@ -7,12 +7,17 @@ pub(super) enum Scope {
     Wording,
     Entity,
 }
+/// An entity offered for linking or ownership, labelled with an original.
+#[derive(Clone)]
+pub(super) struct AliasTarget {
+    pub id: u64,
+    pub alias: String,
+    pub original: String,
+    pub category: Category,
+    pub suggested: bool,
+}
 impl Workspace {
-    pub(super) fn direct_targets(
-        &self,
-        query: &str,
-        owner: bool,
-    ) -> Vec<(u64, String, String, Category, bool)> {
+    pub(super) fn direct_targets(&self, query: &str, owner: bool) -> Vec<AliasTarget> {
         let review = &self.pseudonymization.review;
         let active = self.selected_identity();
         let original = self.active_original();
@@ -48,19 +53,19 @@ impl Workspace {
                 {
                     return None;
                 }
-                Some((
+                Some(AliasTarget {
                     id,
-                    i.alias.clone(),
-                    original.to_string(),
-                    i.category,
-                    suggestions.contains(&id),
-                ))
+                    alias: i.alias.clone(),
+                    original: original.to_string(),
+                    category: i.category,
+                    suggested: suggestions.contains(&id),
+                })
             })
             .collect();
         let category = active
             .and_then(|id| review.identity(id))
             .map(|i| i.category);
-        targets.sort_by_key(|(_, _, _, c, suggested)| (!*suggested, Some(*c) != category));
+        targets.sort_by_key(|t| (!t.suggested, Some(t.category) != category));
         targets
     }
     pub(super) fn step_alias_choice(&mut self, backwards: bool, cx: &mut Context<Self>) {
@@ -101,13 +106,13 @@ impl Workspace {
     }
     pub(super) fn open_alias_choice(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let targets = self.direct_targets(&self.alias_query(cx), false);
-        if let Some((target, ..)) = self
+        if let Some(target) = self
             .pseudonymization
             .mapping
             .target_index
             .and_then(|i| targets.get(i))
         {
-            self.link_direct(*target, cx);
+            self.link_direct(target.id, cx);
         } else if self
             .pseudonymization
             .mapping
@@ -404,25 +409,14 @@ impl Workspace {
         if candidates.is_empty() {
             return;
         }
-        let old = self.pseudonymization.review.identity_snapshot();
-        let before = self.editor.read(cx).history_id();
-        let revision = self.editor.read(cx).revision();
-        if !self
-            .editor
-            .update(cx, |e, cx| e.checkpoint_metadata(revision, cx))
-        {
+        let kept = self.checkpoint_review(cx, |review| {
+            for (group, range) in candidates {
+                review.keep(group, Some(range));
+            }
+        });
+        if kept.is_none() {
             return;
         }
-        let tx = self.editor.read(cx).last_transaction().cloned().unwrap();
-        self.pii_transaction(&tx, cx);
-        for (group, range) in candidates {
-            self.pseudonymization.review.keep(group, Some(range));
-        }
-        self.pseudonymization.review.commit_identity_snapshot(
-            before,
-            self.editor.read(cx).history_id(),
-            old,
-        );
         self.pseudonymization.popup = None;
         self.sync_annotations(cx);
         self.editor

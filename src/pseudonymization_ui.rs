@@ -12,7 +12,7 @@ use crate::{
     AcceptAllPseudonyms, AcceptPseudonymCandidate, AddPseudonymCandidate, ClosePseudonymPopup,
     NextCandidate, PreviousCandidate, Pseudonymize, RestoreAllPii, RestorePii, ReviewCandidate,
     Workspace, markdown_search,
-    pseudonymization::{self, Category, Review},
+    pseudonymization::{self, Category, IdentitySnapshot, Review, tracking::ReplacementPlan},
     pseudonymization_detector as detector, settings, settings_ui, style,
 };
 use gpui::{
@@ -344,27 +344,14 @@ impl Workspace {
             cx.notify();
             return;
         }
-        let old = self.pseudonymization.review.identity_snapshot();
-        let before = self.editor.read(cx).history_id();
-        let revision = self.editor.read(cx).revision();
-        if !self
-            .editor
-            .update(cx, |e, cx| e.checkpoint_metadata(revision, cx))
-        {
+        let category = self.pseudonymization.category;
+        let Some(id) = self.checkpoint_review(cx, |review| {
+            review
+                .add_manual(&source, range.clone(), category)
+                .expect("validated unchanged selection")
+        }) else {
             return;
-        }
-        let tx = self.editor.read(cx).last_transaction().cloned().unwrap();
-        self.pii_transaction(&tx, cx);
-        let id = self
-            .pseudonymization
-            .review
-            .add_manual(&source, range.clone(), self.pseudonymization.category)
-            .expect("validated unchanged selection");
-        self.pseudonymization.review.commit_identity_snapshot(
-            before,
-            self.editor.read(cx).history_id(),
-            old,
-        );
+        };
         self.pseudonymization.error = None;
         self.sync_annotations(cx);
         if let Some(annotation) = self.pseudonymization.review.annotation_id(id, &range) {
@@ -381,6 +368,74 @@ impl Workspace {
         if self.pseudonymization.review.open && self.pseudonymization.review.remaining() > 0 {
             self.apply_replacements_direct(cx);
         }
+    }
+    /// Record a metadata-only review change as its own undo step. The checkpoint
+    /// commits first so Keep exclusions join the new step's journal entry.
+    fn checkpoint_review<R>(
+        &mut self,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut Review) -> R,
+    ) -> Option<R> {
+        let old = self.pseudonymization.review.identity_snapshot();
+        let before = self.editor.read(cx).history_id();
+        let revision = self.editor.read(cx).revision();
+        if !self
+            .editor
+            .update(cx, |e, cx| e.checkpoint_metadata(revision, cx))
+        {
+            return None;
+        }
+        let tx = self.editor.read(cx).last_transaction().cloned().unwrap();
+        self.pii_transaction(&tx, cx);
+        let result = change(&mut self.pseudonymization.review);
+        let after = self.editor.read(cx).history_id();
+        self.pseudonymization
+            .review
+            .commit_identity_snapshot(before, after, old);
+        Some(result)
+    }
+    /// Commit planned replacements as one undo step, or a metadata checkpoint when
+    /// there are none. `policy_before` is the identity policy preceding staged
+    /// mapping changes; Undo returns to it. Returns the new history id.
+    fn commit_plans(
+        &mut self,
+        revision: u64,
+        plans: &[ReplacementPlan],
+        policy_before: Option<IdentitySnapshot>,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
+        let before = self.editor.read(cx).history_id();
+        let review = &mut self.pseudonymization.review;
+        let staged = policy_before.as_ref().map(|old| {
+            let next = review.identity_snapshot();
+            review.restore_identity_snapshot(old.clone());
+            next
+        });
+        let added = review.tracking.prepare_corrections(plans);
+        let edits: Vec<_> = plans
+            .iter()
+            .map(|p| (p.range.clone(), p.after.to_string()))
+            .collect();
+        let committed = self.editor.update(cx, |e, cx| {
+            if edits.is_empty() {
+                e.checkpoint_metadata(revision, cx)
+            } else {
+                e.replace_ranges(revision, &edits, cx)
+            }
+        });
+        if !committed {
+            return None;
+        }
+        let transaction = self.editor.read(cx).last_transaction().cloned().unwrap();
+        self.pii_transaction(&transaction, cx);
+        let after = self.editor.read(cx).history_id();
+        let review = &mut self.pseudonymization.review;
+        if let (Some(old), Some(next)) = (policy_before, staged) {
+            review.restore_identity_snapshot(next);
+            review.commit_identity_snapshot(before, after, old);
+        }
+        review.tracking.commit(after, added);
+        Some(after)
     }
     pub(super) fn pii_transaction(
         &mut self,
