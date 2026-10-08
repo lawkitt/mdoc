@@ -1,6 +1,7 @@
 # Pseudonymization refactoring — design interview
 
-Status: frontier empty, awaiting the user's confirmation of shared understanding (2026-10-08). Behavior baseline: ADRs 0013, 0014,
+Status: implemented 2026-10-08 on branch `refactor/pseudonymization` after the user
+confirmed the shared understanding and requested full implementation. Behavior baseline: ADRs 0013, 0014,
 0018, 0019, 0020 and the current workspace test suite.
 
 ## Findings (inspection, 2026-10-08)
@@ -107,3 +108,58 @@ whether `manual_review` and `ScanIntent` collapse once Anonymize is gone.
 
 Detector extraction into the crate (blocked on `settings::PiiModel`); toolbar
 icon artwork.
+
+## Implementation (2026-10-08)
+
+Six commits, each passing `cargo test --workspace` (437 passed, 16 ignored),
+strict Clippy and `cargo fmt --check`:
+
+1. ADR 0022: Anonymize removed; single icon toggle; one word popup; docs.
+2. `ReplacementPlan` struct, `Review::pending_plans`/`alias_corrections`,
+   `checkpoint_review`/`commit_plans` history helpers, `AliasTarget`.
+3. `MappingUi`/`ReviewUi` named transitions, `Selection::Entity`, `Pickers`.
+4. `Candidates` extracted; `Review` fields private behind accessors/commands.
+5. `crates/mdoc-pii` (+ `crates/mdoc-history`); evidence to `docs/evidence/`.
+6. `pii` vocabulary: `src/pii/{detector,ui}`, `Workspace::pii`, `Pii*` actions,
+   `Variant`/`Candidate` domain types, `panel`/`popup` module names.
+
+Pseudonymization code went from 10,222 to 8,511 lines (tests 2,638 → 2,331),
+including the moved 128-line `mdoc-history`.
+
+### Decisions taken during implementation
+
+- **Q11**: the alias, owner and category pickers can be open together today,
+  so per Q11 they became one `Pickers` value with three flags, not an enum.
+- **Q12**: not implemented. After Q18e only the word popup and the field
+  chooser remain; they share no duplicated frame worth extracting.
+- **Q13**: `GroupKind`/`Mode::placeholder` became unnecessary once Anonymize was
+  removed. `Review` delegates to `Candidates`, `IdentityStore` and `Tracking`.
+- **Q17 / Q4 conflict**: `mdoc-pii` needed `EditorTransaction`/`SourceEdit` from
+  `mdoc-editor`, which depends on gpui. The gpui-free transaction module was
+  lifted into the dependency-free `crates/mdoc-history`; `mdoc-editor`
+  re-exports it at the same paths. `cargo tree -p mdoc-pii` shows no gpui.
+- **Q8**: "drop raw files" was narrowed to uncited build/test/clippy logs,
+  lockfiles and process dumps. Files linked from docs or read by documented
+  qualification commands moved with the READMEs. The frozen hybrid
+  `comparison.json` is test input and moved to
+  `tests/fixtures/pseudonymization/hybrid/`. Historical `provenance.json`
+  records keep their original paths and hashes unchanged.
+- **Q7 scope**: glossary alignment extended to domain types: `Group` → `Variant`
+  (the domain's own error text already said "Variant"), `CandidateOccurrence`
+  → `Candidate`. Debug selectors and key-context strings are unchanged.
+- Dead code found on the way: `Review.skipped_syntax_spans` (written, never
+  read after the anonymization bar), `Review::mappings`, `ui::replacement_transition`,
+  the chevron icon, the Alt+K binding (no handler in the word popup).
+
+### Behavior notes beyond ADR 0022
+
+- The toolbar icon stays enabled during a scan so it can hide/show the panel.
+- Apply after a mapping change restores the staged identity policy in every
+  stale-candidate case; previously one unreachable branch returned without it.
+- Test assertions changed only in commit 1 (ported to the Pseudonymize flow;
+  two marker-only tests deleted). Later commits changed paths and names only.
+
+### Not verified
+
+No native macOS run of the app was performed for this refactor; coverage is the
+headless gpui suite (including drawn-layout and click tests in both themes).
