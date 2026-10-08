@@ -64,7 +64,7 @@ The user authorized the pinned GLiNER2 option experimentally despite its blocker
    only email plus contextual checksum-valid INN/SNILS; other recognizers/full engines are
    deferred. macOS native restoration smoke checks and 2 MiB/20,000 occurrence CPU/storage
    checks passed; base-editor stress responsiveness and detector quality remain limited.
-   See [verification](tests/fixtures/pseudonymization/results/2026-10-07-restoration/README.md).
+   See [verification](docs/evidence/pseudonymization/2026-10-07-restoration/README.md).
 
 8. **Selected Rust Presidio reuse — implemented experimentally** — pinned
    `presidio-analyzer` 0.1.11 supplies selected pattern configuration and the

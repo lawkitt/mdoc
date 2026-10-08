@@ -1,0 +1,15 @@
+[package]
+name = "mdoc-pii"
+version = "0.1.0"
+edition = "2024"
+description = "Document-local pseudonymization review: candidates, identities and replacement provenance that follow editor history."
+license = "GPL-3.0-or-later"
+publish = false
+repository = "https://github.com/lawkitt/mdoc"
+
+# The review model is GUI-free: it follows editor history through plain
+# mdoc-history transactions. Detection models and UI stay in the application.
+[dependencies]
+aho-corasick = "=1.1.5"
+regex = "1"
+mdoc-history = { path = "../mdoc-history" }

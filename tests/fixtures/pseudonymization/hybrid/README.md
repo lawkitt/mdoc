@@ -3,7 +3,7 @@
 The user confirmed Q14: evaluate a small structured-rule prototype alongside
 GLiNER2 before choosing any production additions. This tooling is outside the
 app dependency graph. Q15 remains open; the restoration/refactor feature has not
-been implemented. Read the [measurements](../results/2026-10-07-hybrid/measurements.md)
+been implemented. Read the [measurements](../../../../docs/evidence/pseudonymization/2026-10-07-hybrid/measurements.md)
 and [OSS source review](../../../../docs/design/pii-oss-research.md).
 
 ## Corpus

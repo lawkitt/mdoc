@@ -313,7 +313,7 @@ mod captured_corpus {
         ))
         .unwrap();
         let comparison: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/fixtures/pseudonymization/results/2026-10-07-hybrid/comparison.json"
+            "../../tests/fixtures/pseudonymization/hybrid/comparison.json"
         ))
         .unwrap();
         for fixture in corpus {

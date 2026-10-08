@@ -1,9 +1,0 @@
-{
-  "deadline_exceeded": false,
-  "elapsed_ms": 14369.026625,
-  "exit_code": 0,
-  "machine": "Apple M4; 24 GiB; macOS 15.7.7; rustc 1.98.1",
-  "report_written": true,
-  "stderr": ".qualification/final/multi-v2.1-q8-t0.3.stderr.log",
-  "success": true
-}

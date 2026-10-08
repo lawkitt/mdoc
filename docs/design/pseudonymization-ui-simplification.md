@@ -1,7 +1,7 @@
 # Pseudonymization UI simplification — 2026-10-08
 
 Status: implemented and locally verified, 2026-10-08, following the user's
-"implement". See the [verification record](../../tests/fixtures/pseudonymization/results/2026-10-08-ui/README.md).
+"implement". See the [verification record](../evidence/pseudonymization/2026-10-08-ui/README.md).
 
 ## Purpose and evidence
 

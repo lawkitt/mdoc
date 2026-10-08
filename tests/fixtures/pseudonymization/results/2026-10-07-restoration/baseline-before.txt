@@ -1,3 +1,0 @@
-groups=1, source=2097152, mentions=20000, ingest_ms=80.604, refresh_ms=2.133, plan_ms=0.472
-groups=1000, source=2097152, mentions=20000, ingest_ms=316.674, refresh_ms=189.977, plan_ms=38.116
-groups=20000, source=2097152, mentions=20000, ingest_ms=4119.168, refresh_ms=2408.540, plan_ms=852.348

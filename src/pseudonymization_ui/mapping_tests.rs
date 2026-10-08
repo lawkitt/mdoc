@@ -1,5 +1,15 @@
 use super::*;
 
+/// Text edits Apply would make for pending mentions.
+fn plan_all(review: &Review, source: &str) -> Result<Vec<(Range<usize>, String)>, String> {
+    Ok(review
+        .pending_plans(source, &Default::default())?
+        .into_iter()
+        .filter(|plan| plan.before != plan.after)
+        .map(|plan| (plan.range, plan.after.to_string()))
+        .collect())
+}
+
 fn seed(app: &mut Workspace, source: &str, cx: &mut Context<Workspace>) -> (u64, u64) {
     app.editor.update(cx, |e, cx| e.set_text(source, cx));
     app.pseudonymization.review = Default::default();
@@ -153,8 +163,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
             .mentions[1]
             .clone();
         app.change_mapping(MappingAction::AssignCandidate(initials, range, None), cx);
-        let edits =
-            crate::pseudonymization::tests::plan_all(&app.pseudonymization.review, source).unwrap();
+        let edits = plan_all(&app.pseudonymization.review, source).unwrap();
         assert_eq!(
             edits.iter().map(|(_, a)| a.as_str()).collect::<Vec<_>>(),
             ["PERSON_1", "PERSON_1", "PERSON_2"]
@@ -188,9 +197,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
         assert_eq!(
-            crate::pseudonymization::tests::plan_all(&app.pseudonymization.review, source).unwrap()
-                [2]
-            .1,
+            plan_all(&app.pseudonymization.review, source).unwrap()[2].1,
             "PERSON_2"
         );
         app.pseudonymization
@@ -198,9 +205,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
             .ingest(source, Vec::new())
             .unwrap();
         assert_eq!(
-            crate::pseudonymization::tests::plan_all(&app.pseudonymization.review, source).unwrap()
-                [2]
-            .1,
+            plan_all(&app.pseudonymization.review, source).unwrap()[2].1,
             "PERSON_2"
         );
     });
@@ -208,9 +213,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
     cx.run_until_parked();
     app.update(cx, |app, _cx| {
         assert_eq!(
-            crate::pseudonymization::tests::plan_all(&app.pseudonymization.review, source).unwrap()
-                [2]
-            .1,
+            plan_all(&app.pseudonymization.review, source).unwrap()[2].1,
             "PERSON_1"
         )
     });
@@ -218,9 +221,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
     cx.run_until_parked();
     app.update(cx, |app, _cx| {
         assert_eq!(
-            crate::pseudonymization::tests::plan_all(&app.pseudonymization.review, source).unwrap()
-                [2]
-            .1,
+            plan_all(&app.pseudonymization.review, source).unwrap()[2].1,
             "PERSON_2"
         )
     });
@@ -376,12 +377,11 @@ fn bulk_apply_preserves_first_occurrence_split(cx: &mut gpui::TestAppContext) {
             .mentions[0]
             .clone();
         app.change_mapping(MappingAction::AssignCandidate(initials, first, None), cx);
-        let expected: Vec<_> =
-            crate::pseudonymization::tests::plan_all(&app.pseudonymization.review, source)
-                .unwrap()
-                .into_iter()
-                .map(|(_, alias)| alias)
-                .collect();
+        let expected: Vec<_> = plan_all(&app.pseudonymization.review, source)
+            .unwrap()
+            .into_iter()
+            .map(|(_, alias)| alias)
+            .collect();
         app.apply_identity_aliases(cx);
         assert_eq!(app.editor.read(cx).text(), expected.join(" · "));
         for applied in app.pseudonymization.review.applied() {

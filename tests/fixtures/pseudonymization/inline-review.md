@@ -79,7 +79,7 @@ The synthetic EN/RU clause was repeated 64 times (8,640 UTF-8 bytes).
 | Process peak RSS | 1884.3 MiB (includes both scan attempts and test harness) |
 | Exit status / offline execution | Passed under network denial |
 
-[Raw probe log](results/2026-10-02/inline-experimental-scan.log) retains process
+[Raw probe log](../../../docs/evidence/pseudonymization/2026-10-02/inline-experimental-scan.log) retains process
 output and `/usr/bin/time -l` memory statistics. This repeated smoke input does
 not measure recall, false positives, a legal holdout, stress/maximum document
 memory, idle RSS or native UI latency. The original quality blockers remain.
