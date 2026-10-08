@@ -26,7 +26,7 @@ impl Workspace {
         let id = id.into();
         let debug = id.to_string();
         let focus = self
-            .pseudonymization
+            .pii
             .mapping
             .controls
             .borrow_mut()
@@ -38,14 +38,14 @@ impl Workspace {
                 .when(cfg!(test), |v| v.debug_selector(move || debug.clone()))
                 .track_focus(&focus),
             focus,
-            self.pseudonymization.mapping.scroll.clone(),
+            self.pii.mapping.scroll.clone(),
         )
     }
 
     fn replacement_rows(&self, cx: &App) -> Arc<[ReplacementRow]> {
-        let review = &self.pseudonymization.review;
+        let review = &self.pii.review;
         let query = self
-            .pseudonymization
+            .pii
             .mapping
             .search
             .read(cx)
@@ -76,8 +76,8 @@ impl Workspace {
         };
         for c in review.candidates() {
             if let (Some(id), Some(group)) = (
-                review.occurrence_identity(c.group, &c.range),
-                review.group(c.group),
+                review.occurrence_identity(c.variant, &c.range),
+                review.variant(c.variant),
             ) {
                 add(id, group.original.clone(), true);
             }
@@ -95,7 +95,7 @@ impl Workspace {
     }
 
     fn replacement_commands(&self, cx: &mut Context<Self>) -> AnyElement {
-        let busy = self.pseudonymization.scanning();
+        let busy = self.pii.scanning();
         let selected = self
             .preferences
             .borrow()
@@ -124,9 +124,9 @@ impl Workspace {
                     cx,
                 )
                 .on_click(cx.listener(|this, _, _, cx| {
-                    if this.pseudonymization.scanning() {
-                        this.pseudonymization.cancel();
-                        this.pseudonymization.error = Some("Scan cancelled.".into());
+                    if this.pii.scanning() {
+                        this.pii.cancel();
+                        this.pii.error = Some("Scan cancelled.".into());
                         cx.notify();
                     } else {
                         this.start_pii_scan(cx);
@@ -136,40 +136,36 @@ impl Workspace {
             .child(
                 self.replacement_control("add-pseudonym-selection", "Add selected text", !busy, cx)
                     .on_click(cx.listener(|this, _, window, cx| {
-                        if this.pseudonymization.scanning() {
+                        if this.pii.scanning() {
                             return;
                         }
-                        this.pseudonymization.mapping.close_actions();
-                        this.add_pseudonym(&AddPseudonymCandidate, window, cx);
+                        this.pii.mapping.close_actions();
+                        this.add_pii_candidate(&PiiAddCandidate, window, cx);
                     })),
             )
             .child(
                 self.replacement_control(
                     "pseudonym-category",
-                    format!(
-                        "Selection type: {} ▾",
-                        self.pseudonymization.category.label()
-                    ),
+                    format!("Selection type: {} ▾", self.pii.category.label()),
                     !busy,
                     cx,
                 )
                 .on_click(cx.listener(|this, _, _, cx| {
-                    if this.pseudonymization.scanning() {
+                    if this.pii.scanning() {
                         return;
                     }
                     let index = Category::ALL
                         .iter()
-                        .position(|c| *c == this.pseudonymization.category)
+                        .position(|c| *c == this.pii.category)
                         .unwrap_or(0);
-                    this.pseudonymization.category =
-                        Category::ALL[(index + 1) % Category::ALL.len()];
+                    this.pii.category = Category::ALL[(index + 1) % Category::ALL.len()];
                     cx.notify();
                 })),
             )
             .child(
                 self.replacement_control("review-settings", "Model settings…", true, cx)
                     .on_click(cx.listener(|this, _, window, cx| {
-                        this.pseudonymization.mapping.close_actions();
+                        this.pii.mapping.close_actions();
                         this.model_panel
                             .update(cx, |panel, cx| panel.show(window, cx));
                     })),
@@ -190,7 +186,7 @@ impl Workspace {
                     })
                     .on_click(cx.listener(|this, _, window, cx| {
                         if !crate::model_work::busy() {
-                            this.setup_pseudonyms(window, cx);
+                            this.setup_pii_model(window, cx);
                         }
                     })),
                 )
@@ -199,26 +195,26 @@ impl Workspace {
             .into_any_element()
     }
 
-    pub(crate) fn replacement_panel_width(&self, window: &Window) -> gpui::Pixels {
-        if self.pseudonymization.mapping.open && self.can_copy_markdown() {
+    pub(crate) fn replacements_panel_width(&self, window: &Window) -> gpui::Pixels {
+        if self.pii.mapping.open && self.can_copy_markdown() {
             px((self.chrome_width(window) * 0.4).clamp(260., 340.))
         } else {
             px(0.)
         }
     }
-    pub(crate) fn identity_panel(
+    pub(crate) fn replacements_panel(
         &self,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        if !self.pseudonymization.mapping.open || !self.can_copy_markdown() {
+        if !self.pii.mapping.open || !self.can_copy_markdown() {
             return None;
         }
         let theme = self.theme.get();
         let palette = theme.pdf_style();
-        let mapping = &self.pseudonymization.mapping;
+        let mapping = &self.pii.mapping;
         let rows = self.replacement_rows(cx);
-        let selected = self.selected_identity();
+        let selected = self.selected_entity();
         let mut entries = Vec::new();
         for row in rows.iter() {
             let row = Arc::new(row.clone());
@@ -232,10 +228,10 @@ impl Workspace {
         let entries = Arc::new(entries);
         let count = entries.len();
         let bounds = mapping.bounds.clone();
-        let busy = self.pseudonymization.scanning();
-        let pending = self.pseudonymization.review.remaining();
-        let upgrade = self.pseudonymization.review.applied().iter().any(|a| {
-            self.pseudonymization
+        let busy = self.pii.scanning();
+        let pending = self.pii.review.remaining();
+        let upgrade = self.pii.review.applied().iter().any(|a| {
+            self.pii
                 .review
                 .identity(a.step.identity)
                 .is_some_and(|i| a.step.after.as_ref() != i.alias)
@@ -253,7 +249,7 @@ impl Workspace {
             .flex()
             .flex_col()
             .text_size(px(13.))
-            .w(self.replacement_panel_width(window))
+            .w(self.replacements_panel_width(window))
             .h_full()
             .relative()
             .child(
@@ -262,20 +258,15 @@ impl Workspace {
                     .inset_0(),
             )
             .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                ui::cycle(
-                    window,
-                    cx,
-                    Some(&this.pseudonymization.mapping.focus),
-                    false,
-                );
+                ui::cycle(window, cx, Some(&this.pii.mapping.focus), false);
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                ui::cycle(window, cx, Some(&this.pseudonymization.mapping.focus), true);
+                ui::cycle(window, cx, Some(&this.pii.mapping.focus), true);
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                if this.pseudonymization.mapping.close_actions() {
+                if this.pii.mapping.close_actions() {
                     cx.notify();
                 } else {
                     this.close_replacements(window, cx);
@@ -295,7 +286,7 @@ impl Workspace {
                         self.replacement_control("replacement-commands", "⋯", true, cx)
                             .aria_label("Scan and model actions")
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.pseudonymization.mapping.toggle_actions();
+                                this.pii.mapping.toggle_actions();
                                 cx.notify();
                             })),
                     )
@@ -343,7 +334,7 @@ impl Workspace {
                             .map(|index| {
                                 let (row, mention) = entries[index].clone();
                                 let id = row.id;
-                                let active = this.selected_identity() == Some(id);
+                                let active = this.selected_entity() == Some(id);
                                 let control = this
                                     .replacement_control(
                                         SharedString::from(format!("replacement-entry-{index}")),
@@ -365,7 +356,7 @@ impl Workspace {
                                     });
                                 if let Some((annotation, range)) = mention {
                                     let original = if annotation & APPLIED_ID != 0 {
-                                        this.pseudonymization
+                                        this.pii
                                             .review
                                             .applied_occurrence(annotation & !APPLIED_ID)
                                             .unwrap()
@@ -373,14 +364,11 @@ impl Workspace {
                                             .original_shared()
                                             .clone()
                                     } else {
-                                        let candidate = this
-                                            .pseudonymization
+                                        let candidate =
+                                            this.pii.review.candidate(annotation).unwrap();
+                                        this.pii
                                             .review
-                                            .candidate(annotation)
-                                            .unwrap();
-                                        this.pseudonymization
-                                            .review
-                                            .group(candidate.group)
+                                            .variant(candidate.variant)
                                             .unwrap()
                                             .original
                                             .clone()
@@ -525,7 +513,7 @@ impl Workspace {
                                     } else {
                                         format!(
                                             "{} applied mentions",
-                                            self.pseudonymization.review.applied().len()
+                                            self.pii.review.applied().len()
                                         )
                                     }),
                             )
@@ -542,15 +530,13 @@ impl Workspace {
                                         v.debug_selector(|| "apply-identity-map".into())
                                     })
                                     .aria_label("Apply remaining replacements as one undo step")
-                                    .on_click(cx.listener(
-                                        |this, _, _, cx| this.apply_replacements_direct(cx),
-                                    )),
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.apply_replacements(cx)),
+                                    ),
                                 )
                             })
                             .when(
-                                pending == 0
-                                    && !upgrade
-                                    && !self.pseudonymization.review.applied().is_empty(),
+                                pending == 0 && !upgrade && !self.pii.review.applied().is_empty(),
                                 |v| {
                                     v.child(
                                         self.replacement_control(
@@ -584,14 +570,14 @@ impl Workspace {
                                     )
                                     .on_click(cx.listener(
                                         |this, _, _, cx| {
-                                            this.pseudonymization.cancel();
+                                            this.pii.cancel();
                                             cx.notify();
                                         },
                                     )),
                                 )
                             }),
                     )
-                    .when_some(self.pseudonymization.error.clone(), |v, error| {
+                    .when_some(self.pii.error.clone(), |v, error| {
                         v.child(
                             div()
                                 .text_size(px(11.))

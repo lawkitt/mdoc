@@ -71,7 +71,7 @@ pub struct Detection {
     pub recognizer: Recognizer,
 }
 #[derive(Clone, Debug)]
-pub struct Group {
+pub struct Variant {
     pub id: u64,
     pub original: Arc<str>,
     pub identity: u64,
@@ -83,9 +83,9 @@ pub struct Group {
 }
 
 #[derive(Clone)]
-pub struct CandidateOccurrence {
+pub struct Candidate {
     pub id: u64,
-    pub group: u64,
+    pub variant: u64,
     pub range: Range<usize>,
 }
 /// One live document's review: pending candidates, the identity policy and
@@ -178,7 +178,7 @@ impl Review {
         let unchanged_source = self.source.as_ref() == source;
         if self.tracking.on_transaction(transaction) {
             self.identities.on_transaction(transaction);
-            self.sync_identity_groups();
+            self.sync_identity_variants();
             self.source = source.into();
             self.discovery_version += 1;
             for change in &transaction.changes {
@@ -191,17 +191,17 @@ impl Review {
         }
     }
 
-    pub fn groups(&self) -> &[Group] {
-        &self.candidates.groups
+    pub fn variants(&self) -> &[Variant] {
+        &self.candidates.variants
     }
-    pub fn group(&self, id: u64) -> Option<&Group> {
-        self.candidates.group(id)
+    pub fn variant(&self, id: u64) -> Option<&Variant> {
+        self.candidates.variant(id)
     }
     /// Pending mentions in source order.
-    pub fn candidates(&self) -> &[CandidateOccurrence] {
+    pub fn candidates(&self) -> &[Candidate] {
         self.candidates.occurrences()
     }
-    pub fn candidate(&self, id: u64) -> Option<&CandidateOccurrence> {
+    pub fn candidate(&self, id: u64) -> Option<&Candidate> {
         self.candidates.occurrence(id)
     }
     pub fn annotation_id(&self, group: u64, range: &Range<usize>) -> Option<u64> {
@@ -259,7 +259,7 @@ impl Review {
     pub fn refresh(&mut self, source: &str) {
         // A conservative source diff revalidates single-occurrence exclusions.
         // Anything crossing an edited region is invalidated rather than shifted
-        // speculatively. Group seeds/mappings survive edits and undo.
+        // speculatively. Variant seeds/mappings survive edits and undo.
         if self.source.as_ref() != source {
             let mut prefix = self
                 .source
@@ -308,8 +308,8 @@ impl Review {
         DiscoveryInput {
             source: self.source.clone(),
             version: self.discovery_version,
-            originals: self.groups().iter().map(|g| g.original.clone()).collect(),
-            enabled: self.groups().iter().map(|g| !g.kept).collect(),
+            originals: self.variants().iter().map(|g| g.original.clone()).collect(),
+            enabled: self.variants().iter().map(|g| !g.kept).collect(),
             excluded: self
                 .tracking
                 .exclusions
@@ -325,8 +325,12 @@ impl Review {
         }
         self.candidates.matcher = result.matcher;
         self.occupied_tokens = result.tokens;
-        self.occupied_tokens
-            .extend(self.candidates.groups.iter().map(|g| g.replacement.clone()));
+        self.occupied_tokens.extend(
+            self.candidates
+                .variants
+                .iter()
+                .map(|g| g.replacement.clone()),
+        );
         self.candidates.set_mentions(result.mentions);
         true
     }
@@ -425,7 +429,7 @@ impl Review {
         }
         self.identities
             .remember_normalized(original, category, identity);
-        self.candidates.push(Group {
+        self.candidates.push(Variant {
             id,
             original: original.into(),
             identity,
@@ -452,7 +456,7 @@ impl Review {
         self.refresh(source);
         let existed = self.candidates.by_original(original).is_some();
         let id = self.add_seed(original, category);
-        if !existed && let Some(group) = self.candidates.group_mut(id) {
+        if !existed && let Some(group) = self.candidates.variant_mut(id) {
             group.keep_default = true;
         }
         self.set_kept(id, false);
@@ -462,7 +466,7 @@ impl Review {
     }
     #[cfg(test)]
     pub fn set_replacement(&mut self, id: u64, replacement: &str) {
-        let Some(identity) = self.group_identity(id) else {
+        let Some(identity) = self.variant_identity(id) else {
             return;
         };
         let target = self
@@ -487,7 +491,7 @@ impl Review {
             .map(|candidate| {
                 let range = &candidate.range;
                 let group = self
-                    .group(candidate.group)
+                    .variant(candidate.variant)
                     .filter(|g| source.get(range.clone()) == Some(g.original.as_ref()))
                     .ok_or("Document changed. Review it again.")?;
                 let identity = assigned
@@ -528,7 +532,7 @@ impl Review {
         Ok(plans)
     }
     pub fn keep(&mut self, id: u64, single: Option<Range<usize>>) {
-        if let Some(group) = self.group(id) {
+        if let Some(group) = self.variant(id) {
             if let Some(range) = single {
                 if group.mentions.contains(&range) {
                     let original = group.original.clone();

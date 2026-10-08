@@ -12,8 +12,8 @@ fn plan_all(review: &Review, source: &str) -> Result<Vec<(Range<usize>, String)>
 
 fn seed(app: &mut Workspace, source: &str, cx: &mut Context<Workspace>) -> (u64, u64) {
     app.editor.update(cx, |e, cx| e.set_text(source, cx));
-    app.pseudonymization.review = Default::default();
-    app.pseudonymization.reviewing = true;
+    app.pii.review = Default::default();
+    app.pii.reviewing = true;
     let mut detections = Vec::new();
     for (value, category) in [
         ("Павлова Марина Сергеевна", Category::Person),
@@ -21,35 +21,32 @@ fn seed(app: &mut Workspace, source: &str, cx: &mut Context<Workspace>) -> (u64,
         ("marina@example.invalid", Category::Email),
     ] {
         for (at, _) in source.match_indices(value) {
-            detections.push(pseudonymization::Detection {
+            detections.push(pii::Detection {
                 range: at..at + value.len(),
                 category,
                 score: 0.9,
-                recognizer: pseudonymization::Recognizer::Model,
+                recognizer: pii::Recognizer::Model,
             });
         }
     }
-    app.pseudonymization
-        .review
-        .ingest(source, detections)
-        .unwrap();
+    app.pii.review.ingest(source, detections).unwrap();
     let full = app
-        .pseudonymization
+        .pii
         .review
-        .groups()
+        .variants()
         .iter()
         .find(|g| g.original.as_ref() == "Павлова Марина Сергеевна")
         .unwrap()
         .id;
     let initials = app
-        .pseudonymization
+        .pii
         .review
-        .groups()
+        .variants()
         .iter()
         .find(|g| g.original.as_ref() == "Павлова М.С.")
         .unwrap()
         .id;
-    app.pseudonymization.mapping.begin_review();
+    app.pii.mapping.begin_review();
     app.sync_annotations(cx);
     (full, initials)
 }
@@ -63,46 +60,36 @@ fn staging_merge_category_owner_apply_rename_and_undo_preserve_exact_originals(
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        let full_id = app.pseudonymization.review.group_identity(full).unwrap();
-        assert_eq!(
-            app.pseudonymization.review.suggestions(initials),
-            vec![full_id]
-        );
+        let full_id = app.pii.review.variant_identity(full).unwrap();
+        assert_eq!(app.pii.review.suggestions(initials), vec![full_id]);
         app.change_mapping(MappingAction::AssignVariant(initials, full_id), cx);
         assert_eq!(app.editor.read(cx).text(), source);
         assert_eq!(
-            app.pseudonymization
-                .review
-                .group(initials)
-                .unwrap()
-                .category,
+            app.pii.review.variant(initials).unwrap().category,
             Category::Person
         );
         let email = app
-            .pseudonymization
+            .pii
             .review
-            .groups()
+            .variants()
             .iter()
             .find(|g| g.category == Category::Email)
             .unwrap()
             .identity;
         app.change_mapping(MappingAction::Owner(email, Some(full_id)), cx);
-        app.apply_identity_aliases(cx);
+        app.apply_aliases(cx);
         assert_eq!(
             app.editor.read(cx).text(),
             "PERSON_1 · PERSON_1 · PERSON_1 · EMAIL_1"
         );
-        assert_eq!(app.pseudonymization.review.remaining(), 0);
-        assert_eq!(app.pseudonymization.review.applied().len(), 4);
+        assert_eq!(app.pii.review.remaining(), 0);
+        assert_eq!(app.pii.review.applied().len(), 4);
         app.change_mapping(MappingAction::Rename(full_id, "CLIENT_1".into()), cx);
         assert_eq!(
             app.editor.read(cx).text(),
             "CLIENT_1 · CLIENT_1 · CLIENT_1 · EMAIL_1"
         );
-        assert_eq!(
-            app.pseudonymization.review.applied()[1].step.original(),
-            "Павлова М.С."
-        );
+        assert_eq!(app.pii.review.applied()[1].step.original(), "Павлова М.С.");
     });
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
@@ -121,9 +108,9 @@ fn staging_merge_category_owner_apply_rename_and_undo_preserve_exact_originals(
             "PERSON_1 · PERSON_1 · PERSON_1 · EMAIL_1"
         );
         assert_eq!(
-            app.pseudonymization
+            app.pii
                 .review
-                .identity(app.pseudonymization.review.group_identity(full).unwrap())
+                .identity(app.pii.review.variant_identity(full).unwrap())
                 .unwrap()
                 .alias,
             "PERSON_1"
@@ -136,9 +123,9 @@ fn staging_merge_category_owner_apply_rename_and_undo_preserve_exact_originals(
             app.editor.read(cx).text(),
             "CLIENT_1 · CLIENT_1 · CLIENT_1 · EMAIL_1"
         );
-        let selected = app.pseudonymization.review.applied()[1].id;
+        let selected = app.pii.review.applied()[1].id;
         app.activate_annotation(APPLIED_ID | selected, window, cx);
-        app.restore_pii(&RestorePii, window, cx);
+        app.restore_pii(&PiiRestore, window, cx);
         assert_eq!(
             app.editor.read(cx).text(),
             "CLIENT_1 · Павлова М.С. · CLIENT_1 · EMAIL_1"
@@ -153,35 +140,26 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        let full_id = app.pseudonymization.review.group_identity(full).unwrap();
+        let full_id = app.pii.review.variant_identity(full).unwrap();
         app.change_mapping(MappingAction::AssignVariant(initials, full_id), cx);
-        let range = app
-            .pseudonymization
-            .review
-            .group(initials)
-            .unwrap()
-            .mentions[1]
-            .clone();
+        let range = app.pii.review.variant(initials).unwrap().mentions[1].clone();
         app.change_mapping(MappingAction::AssignCandidate(initials, range, None), cx);
-        let edits = plan_all(&app.pseudonymization.review, source).unwrap();
+        let edits = plan_all(&app.pii.review, source).unwrap();
         assert_eq!(
             edits.iter().map(|(_, a)| a.as_str()).collect::<Vec<_>>(),
             ["PERSON_1", "PERSON_1", "PERSON_2"]
         );
-        app.apply_identity_aliases(cx);
+        app.apply_aliases(cx);
         assert_eq!(app.editor.read(cx).text(), "PERSON_1 · PERSON_1 · PERSON_2");
-        let detached = app.pseudonymization.review.applied()[2].id;
-        app.select_identity(Selection::Applied(detached), cx);
+        let detached = app.pii.review.applied()[2].id;
+        app.select_occurrence(Selection::Applied(detached), cx);
         app.change_mapping(
             MappingAction::AssignApplied(detached, Some(full_id), false),
             cx,
         );
         assert_eq!(app.editor.read(cx).text(), "PERSON_1 · PERSON_1 · PERSON_1");
-        assert_eq!(app.selected_identity(), Some(full_id));
-        assert_eq!(
-            app.pseudonymization.mapping.alias.read(cx).value(),
-            "PERSON_1"
-        );
+        assert_eq!(app.selected_entity(), Some(full_id));
+        assert_eq!(app.pii.mapping.alias.read(cx).value(), "PERSON_1");
     });
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
@@ -196,34 +174,19 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(
-            plan_all(&app.pseudonymization.review, source).unwrap()[2].1,
-            "PERSON_2"
-        );
-        app.pseudonymization
-            .review
-            .ingest(source, Vec::new())
-            .unwrap();
-        assert_eq!(
-            plan_all(&app.pseudonymization.review, source).unwrap()[2].1,
-            "PERSON_2"
-        );
+        assert_eq!(plan_all(&app.pii.review, source).unwrap()[2].1, "PERSON_2");
+        app.pii.review.ingest(source, Vec::new()).unwrap();
+        assert_eq!(plan_all(&app.pii.review, source).unwrap()[2].1, "PERSON_2");
     });
     cx.dispatch_action(mdoc_editor::Undo);
     cx.run_until_parked();
     app.update(cx, |app, _cx| {
-        assert_eq!(
-            plan_all(&app.pseudonymization.review, source).unwrap()[2].1,
-            "PERSON_1"
-        )
+        assert_eq!(plan_all(&app.pii.review, source).unwrap()[2].1, "PERSON_1")
     });
     cx.dispatch_action(mdoc_editor::Redo);
     cx.run_until_parked();
     app.update(cx, |app, _cx| {
-        assert_eq!(
-            plan_all(&app.pseudonymization.review, source).unwrap()[2].1,
-            "PERSON_2"
-        )
+        assert_eq!(plan_all(&app.pii.review, source).unwrap()[2].1, "PERSON_2")
     });
 }
 
@@ -240,8 +203,8 @@ fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpu
                     "Павлова Марина Сергеевна · Павлова М.С. · marina@example.invalid",
                     cx,
                 );
-                app.pseudonymization.mapping.open = false;
-                app.toggle_identity_panel(window, cx);
+                app.pii.mapping.open = false;
+                app.toggle_replacements_panel(window, cx);
             });
             cx.run_until_parked();
             cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -286,22 +249,16 @@ fn alias_rename_ignores_pasted_lookalikes(cx: &mut gpui::TestAppContext) {
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        let identity = app.pseudonymization.review.group_identity(full).unwrap();
+        let identity = app.pii.review.variant_identity(full).unwrap();
         app.change_mapping(MappingAction::AssignVariant(initials, identity), cx);
         assert_eq!(app.editor.read(cx).text(), source);
-        app.apply_identity_aliases(cx);
+        app.apply_aliases(cx);
         assert_eq!(
             app.editor.read(cx).text(),
             "PERSON_1 · PERSON_1 · pasted CLIENT_9"
         );
         app.change_mapping(MappingAction::Rename(identity, "CLIENT_9".into()), cx);
-        assert!(
-            app.pseudonymization
-                .error
-                .as_ref()
-                .unwrap()
-                .contains("present")
-        );
+        assert!(app.pii.error.as_ref().unwrap().contains("present"));
         assert_eq!(
             app.editor.read(cx).text(),
             "PERSON_1 · PERSON_1 · pasted CLIENT_9"
@@ -312,13 +269,13 @@ fn alias_rename_ignores_pasted_lookalikes(cx: &mut gpui::TestAppContext) {
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        let identity = app.pseudonymization.review.group_identity(full).unwrap();
+        let identity = app.pii.review.variant_identity(full).unwrap();
         app.change_mapping(MappingAction::Rename(identity, "CLIENT_1".into()), cx);
         assert_eq!(
             app.editor.read(cx).text(),
             "CLIENT_1 · CLIENT_1 · pasted CLIENT_9 · PERSON_1"
         );
-        assert_eq!(app.pseudonymization.review.applied().len(), 2);
+        assert_eq!(app.pii.review.applied().len(), 2);
     });
 }
 
@@ -329,36 +286,26 @@ fn inline_keep_is_metadata_only_and_undoable(cx: &mut gpui::TestAppContext) {
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
-        let range = app
-            .pseudonymization
-            .review
-            .group(initials)
-            .unwrap()
-            .mentions[0]
-            .clone();
-        let annotation = app
-            .pseudonymization
-            .review
-            .annotation_id(initials, &range)
-            .unwrap();
+        let range = app.pii.review.variant(initials).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(initials, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
         app.keep_replacement(true, cx);
         window.focus(&app.editor.read(cx).focus_handle(cx), cx);
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(app.pseudonymization.review.remaining(), 2);
+        assert_eq!(app.pii.review.remaining(), 2);
     });
     cx.run_until_parked();
     cx.dispatch_action(mdoc_editor::Undo);
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(app.pseudonymization.review.remaining(), 3);
+        assert_eq!(app.pii.review.remaining(), 3);
     });
     cx.dispatch_action(mdoc_editor::Redo);
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(app.pseudonymization.review.remaining(), 2);
+        assert_eq!(app.pii.review.remaining(), 2);
     });
 }
 
@@ -369,25 +316,19 @@ fn bulk_apply_preserves_first_occurrence_split(cx: &mut gpui::TestAppContext) {
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        let first = app
-            .pseudonymization
-            .review
-            .group(initials)
-            .unwrap()
-            .mentions[0]
-            .clone();
+        let first = app.pii.review.variant(initials).unwrap().mentions[0].clone();
         app.change_mapping(MappingAction::AssignCandidate(initials, first, None), cx);
-        let expected: Vec<_> = plan_all(&app.pseudonymization.review, source)
+        let expected: Vec<_> = plan_all(&app.pii.review, source)
             .unwrap()
             .into_iter()
             .map(|(_, alias)| alias)
             .collect();
-        app.apply_identity_aliases(cx);
+        app.apply_aliases(cx);
         assert_eq!(app.editor.read(cx).text(), expected.join(" · "));
-        for applied in app.pseudonymization.review.applied() {
+        for applied in app.pii.review.applied() {
             assert_eq!(
                 applied.step.after.as_ref(),
-                app.pseudonymization
+                app.pii
                     .review
                     .identity(applied.step.identity)
                     .unwrap()
@@ -410,15 +351,8 @@ fn owner_picker_click_links_without_merging_identities(cx: &mut gpui::TestAppCon
                 cx,
             );
             app.change_mapping(MappingAction::AssignVariant(initials, full), cx);
-            app.apply_identity_aliases(cx);
-            let email = app
-                .pseudonymization
-                .review
-                .applied()
-                .last()
-                .unwrap()
-                .step
-                .identity;
+            app.apply_aliases(cx);
+            let email = app.pii.review.applied().last().unwrap().step.identity;
             app.reveal_replacement(email, window, cx);
             (full, email)
         });
@@ -429,14 +363,7 @@ fn owner_picker_click_links_without_merging_identities(cx: &mut gpui::TestAppCon
         cx.run_until_parked();
         let key = gpui::ElementId::from(gpui::SharedString::from(format!("direct-owner-{full}")));
         app.update_in(cx, |app, window, cx| {
-            window.focus(
-                app.pseudonymization
-                    .popup_controls
-                    .borrow()
-                    .get(&key)
-                    .unwrap(),
-                cx,
-            )
+            window.focus(app.pii.popup_controls.borrow().get(&key).unwrap(), cx)
         });
         cx.update(|window, cx| {
             window.refresh();
@@ -453,12 +380,9 @@ fn owner_picker_click_links_without_merging_identities(cx: &mut gpui::TestAppCon
         cx.simulate_click(target, Default::default());
         cx.run_until_parked();
         app.update(cx, |app, cx| {
-            assert_eq!(
-                app.pseudonymization.review.identity(email).unwrap().owner,
-                Some(full)
-            );
+            assert_eq!(app.pii.review.identity(email).unwrap().owner, Some(full));
             assert_eq!(app.editor.read(cx).text(), "PERSON_1 · PERSON_1 · EMAIL_1");
-            assert!(app.pseudonymization.popup.is_some());
+            assert!(app.pii.popup.is_some());
         });
     }
 }
@@ -471,30 +395,26 @@ fn entity_rename_then_apply_covers_all_normalized_variants(cx: &mut gpui::TestAp
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         let start = source.find("ПАВЛОВА").unwrap();
-        app.pseudonymization
+        app.pii
             .review
             .ingest(
                 source,
-                vec![pseudonymization::Detection {
+                vec![pii::Detection {
                     range: start..source.len(),
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: pseudonymization::Recognizer::Model,
+                    recognizer: pii::Recognizer::Model,
                 }],
             )
             .unwrap();
-        let identity = app.pseudonymization.review.group_identity(full).unwrap();
+        let identity = app.pii.review.variant_identity(full).unwrap();
         app.change_mapping(MappingAction::Rename(identity, "CLIENT_1".into()), cx);
-        app.apply_identity_aliases(cx);
+        app.apply_aliases(cx);
         assert_eq!(app.editor.read(cx).text(), "CLIENT_1 · ORG_1 · CLIENT_1");
-        for a in app.pseudonymization.review.applied() {
+        for a in app.pii.review.applied() {
             assert_eq!(
                 a.step.after.as_ref(),
-                app.pseudonymization
-                    .review
-                    .identity(a.step.identity)
-                    .unwrap()
-                    .alias
+                app.pii.review.identity(a.step.identity).unwrap().alias
             );
         }
     });
@@ -508,27 +428,21 @@ fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С.";
     app.update_in(cx, |app, window, cx| {
         let (full, initials) = seed(app, source, cx);
-        let identity = app.pseudonymization.review.group_identity(full).unwrap();
+        let identity = app.pii.review.variant_identity(full).unwrap();
         app.change_mapping(MappingAction::AssignVariant(initials, identity), cx);
-        let detached = app
-            .pseudonymization
-            .review
-            .group(initials)
-            .unwrap()
-            .mentions[1]
-            .clone();
+        let detached = app.pii.review.variant(initials).unwrap().mentions[1].clone();
         app.change_mapping(
             MappingAction::AssignCandidate(initials, detached.clone(), None),
             cx,
         );
         let detached_id = app
-            .pseudonymization
+            .pii
             .review
             .occurrence_identity(initials, &detached)
             .unwrap();
         let revision = app.editor.read(cx).revision();
         let dirty = app.dirty(cx);
-        app.select_identity(Selection::Entity(identity), cx);
+        app.select_occurrence(Selection::Entity(identity), cx);
         app.keep_replacement(false, cx);
         assert_eq!(app.editor.read(cx).text(), source);
         assert_ne!(
@@ -537,11 +451,9 @@ fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
             "Keep invalidates older scan revisions without editing source"
         );
         assert_eq!(app.dirty(cx), dirty);
-        assert_eq!(app.pseudonymization.review.remaining(), 1);
+        assert_eq!(app.pii.review.remaining(), 1);
         assert_eq!(
-            app.pseudonymization
-                .review
-                .occurrence_identity(initials, &detached),
+            app.pii.review.occurrence_identity(initials, &detached),
             Some(detached_id)
         );
         window.focus(&app.editor.read(cx).focus_handle(cx), cx);
@@ -551,21 +463,18 @@ fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(app.pseudonymization.review.remaining(), 3);
+        assert_eq!(app.pii.review.remaining(), 3);
     });
     cx.dispatch_action(mdoc_editor::Redo);
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        assert_eq!(app.pseudonymization.review.remaining(), 1);
-        app.pseudonymization
-            .review
-            .ingest(source, Vec::new())
-            .unwrap();
-        assert_eq!(app.pseudonymization.review.remaining(), 1);
-        app.apply_identity_aliases(cx);
+        assert_eq!(app.pii.review.remaining(), 1);
+        app.pii.review.ingest(source, Vec::new()).unwrap();
+        assert_eq!(app.pii.review.remaining(), 1);
+        app.apply_aliases(cx);
         let text = app.editor.read(cx).text();
         assert!(text.starts_with("Павлова Марина Сергеевна · Павлова М.С. · PERSON_"));
-        assert_eq!(app.pseudonymization.review.applied().len(), 1);
+        assert_eq!(app.pii.review.applied().len(), 1);
     });
 }
 
@@ -577,11 +486,11 @@ fn single_copy_with_pending_replacements_preserves_exact_source_and_history(
     let source = "# Review\n\nПавлова Марина Сергеевна · Павлова М.С.\n\n[mail](marina@example.invalid)\n<!-- untouched -->\n";
     app.update_in(cx, |app, window, cx| {
         let (full, _) = seed(app, source, cx);
-        let identity = app.pseudonymization.review.group_identity(full).unwrap();
+        let identity = app.pii.review.variant_identity(full).unwrap();
         let email = app
-            .pseudonymization
+            .pii
             .review
-            .groups()
+            .variants()
             .iter()
             .find(|g| g.category == Category::Email)
             .unwrap()
@@ -589,7 +498,7 @@ fn single_copy_with_pending_replacements_preserves_exact_source_and_history(
         app.change_mapping(MappingAction::Owner(email, Some(identity)), cx);
         let revision = app.editor.read(cx).revision();
         let history = app.editor.read(cx).history_id();
-        let pending = app.pseudonymization.review.remaining();
+        let pending = app.pii.review.remaining();
         app.copy_markdown(&crate::CopyMarkdown, window, cx);
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().as_deref(),
@@ -597,8 +506,8 @@ fn single_copy_with_pending_replacements_preserves_exact_source_and_history(
         );
         assert_eq!(app.editor.read(cx).revision(), revision);
         assert_eq!(app.editor.read(cx).history_id(), history);
-        assert_eq!(app.pseudonymization.review.remaining(), pending);
-        assert!(app.pseudonymization.review.applied().is_empty());
+        assert_eq!(app.pii.review.remaining(), pending);
+        assert!(app.pii.review.applied().is_empty());
     });
 }
 
@@ -621,11 +530,11 @@ fn panel_click_reveals_exact_word_with_popup_and_retains_workspace(cx: &mut gpui
                     "Павлова Марина Сергеевна · Павлова М.С. · marina@example.invalid",
                     cx,
                 );
-                app.pseudonymization
+                app.pii
                     .mapping
                     .search
                     .update(cx, |input, cx| input.set_value("Павлова".into(), cx));
-                app.pseudonymization.review.group_identity(full).unwrap()
+                app.pii.review.variant_identity(full).unwrap()
             });
             cx.run_until_parked();
             cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -648,8 +557,8 @@ fn panel_click_reveals_exact_word_with_popup_and_retains_workspace(cx: &mut gpui
                 "popup {popup:?} panel {panel:?}"
             );
             app.update_in(cx, |app, window, cx| {
-                assert_eq!(app.selected_identity(), Some(identity));
-                assert!(app.pseudonymization.popup.is_some());
+                assert_eq!(app.selected_entity(), Some(identity));
+                assert!(app.pii.popup.is_some());
                 let annotation = app.active_annotation().unwrap();
                 let word = app.editor.read(cx).annotation_bounds(annotation).unwrap();
                 assert!(
@@ -666,12 +575,9 @@ fn panel_click_reveals_exact_word_with_popup_and_retains_workspace(cx: &mut gpui
                         && popup.bottom() <= px(height)
                 );
                 assert!(panel.top() >= px(0.) && panel.bottom() <= px(height));
-                assert_eq!(
-                    app.pseudonymization.mapping.search.read(cx).value(),
-                    "Павлова"
-                );
+                assert_eq!(app.pii.mapping.search.read(cx).value(), "Павлова");
                 app.close_replacements(window, cx);
-                assert!(app.pseudonymization.popup.is_none());
+                assert!(app.pii.popup.is_none());
                 assert!(app.editor.read(cx).focus_handle(cx).is_focused(window));
             });
         }
@@ -688,12 +594,9 @@ fn visible_alias_draft_and_apply_share_one_undo_step(cx: &mut gpui::TestAppConte
             app.update_in(cx, |app, window, cx| {
                 app.theme.set(theme);
                 let (full, _) = seed(app, source, cx);
-                let identity = app.pseudonymization.review.group_identity(full).unwrap();
+                let identity = app.pii.review.variant_identity(full).unwrap();
                 app.reveal_replacement(identity, window, cx);
-                window.focus(
-                    &app.pseudonymization.mapping.alias.read(cx).focus_handle(cx),
-                    cx,
-                );
+                window.focus(&app.pii.mapping.alias.read(cx).focus_handle(cx), cx);
             });
             cx.simulate_input("CLIENT_7");
             cx.run_until_parked();
@@ -704,8 +607,8 @@ fn visible_alias_draft_and_apply_share_one_undo_step(cx: &mut gpui::TestAppConte
             cx.run_until_parked();
             app.update_in(cx, |app, window, cx| {
                 assert_eq!(app.editor.read(cx).text(), "CLIENT_7 · ORG_1");
-                assert!(app.pseudonymization.popup.is_some());
-                assert!(app.pseudonymization.mapping.field_error.is_none());
+                assert!(app.pii.popup.is_some());
+                assert!(app.pii.mapping.field_error.is_none());
                 window.focus(&app.editor.read(cx).focus_handle(cx), cx);
             });
             cx.dispatch_action(mdoc_editor::Undo);
@@ -713,12 +616,13 @@ fn visible_alias_draft_and_apply_share_one_undo_step(cx: &mut gpui::TestAppConte
             app.update(cx, |app, cx| {
                 assert_eq!(app.editor.read(cx).text(), source);
                 assert!(
-                    app.pseudonymization
+                    app.pii.review.active_identities().into_iter().all(|id| app
+                        .pii
                         .review
-                        .active_identities()
-                        .into_iter()
-                        .all(|id| app.pseudonymization.review.identity(id).unwrap().alias
-                            != "CLIENT_7")
+                        .identity(id)
+                        .unwrap()
+                        .alias
+                        != "CLIENT_7")
                 );
             });
             cx.dispatch_action(mdoc_editor::Redo);
@@ -740,59 +644,41 @@ fn same_wording_links_preserve_detached_homonyms_before_and_after_apply(
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
-        let ranges = app
-            .pseudonymization
-            .review
-            .group(initials)
-            .unwrap()
-            .mentions
-            .clone();
+        let ranges = app.pii.review.variant(initials).unwrap().mentions.clone();
         app.change_mapping(
             MappingAction::AssignCandidate(initials, ranges[1].clone(), None),
             cx,
         );
         let detached = app
-            .pseudonymization
+            .pii
             .review
             .occurrence_identity(initials, &ranges[1])
             .unwrap();
-        let annotation = app
-            .pseudonymization
-            .review
-            .annotation_id(initials, &ranges[0])
-            .unwrap();
+        let annotation = app.pii.review.annotation_id(initials, &ranges[0]).unwrap();
         app.activate_annotation(annotation, window, cx);
         assert_eq!(app.scoped_ranges(Scope::Wording).len(), 2);
-        app.link_direct(full, cx);
+        app.link_to_entity(full, cx);
         assert_eq!(
-            app.pseudonymization
-                .review
-                .occurrence_identity(initials, &ranges[1]),
+            app.pii.review.occurrence_identity(initials, &ranges[1]),
             Some(detached)
         );
         assert_eq!(app.editor.read(cx).text(), source);
-        app.apply_replacements_direct(cx);
+        app.apply_replacements(cx);
         assert_eq!(
             app.editor.read(cx).text(),
             "PERSON_1 · PERSON_1 · ORG_2 · PERSON_1"
         );
-        assert!(app.pseudonymization.popup.is_some());
+        assert!(app.pii.popup.is_some());
         assert_eq!(app.scoped_ranges(Scope::Wording).len(), 2);
         let anchor = app.active_replacement_range().unwrap().start;
-        app.new_alias_direct(cx);
+        app.separate_with_new_alias(cx);
         assert_eq!(app.active_replacement_range().unwrap().start, anchor);
         assert_eq!(
             app.editor.read(cx).text(),
             "PERSON_1 · PERSON_2 · ORG_2 · PERSON_2"
         );
-        assert_eq!(
-            app.pseudonymization.review.applied()[2].step.identity,
-            detached
-        );
-        assert_eq!(
-            app.pseudonymization.review.applied()[1].step.original(),
-            "Павлова М.С."
-        );
+        assert_eq!(app.pii.review.applied()[2].step.identity, detached);
+        assert_eq!(app.pii.review.applied()[1].step.original(), "Павлова М.С.");
     });
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
@@ -814,60 +700,43 @@ fn category_origin_existing_alias_and_draft_lifecycle_are_explicit(cx: &mut gpui
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
         app.reveal_replacement(initials, window, cx);
-        app.pseudonymization
+        app.pii
             .mapping
             .alias
             .update(cx, |input, cx| input.set_value("PERSON_1".into(), cx));
-        assert!(!app.confirm_alias_direct(false, false, cx));
-        assert_eq!(
-            app.pseudonymization.review.group_identity(initials),
-            Some(initials)
-        );
-        assert!(app.pseudonymization.mapping.field_error.is_some());
-        app.link_direct(full, cx);
-        assert_eq!(
-            app.pseudonymization.mapping.alias.read(cx).value(),
-            "PERSON_1"
-        );
-        assert!(app.pseudonymization.popup.is_some());
-        app.pseudonymization
+        assert!(!app.confirm_alias(false, false, cx));
+        assert_eq!(app.pii.review.variant_identity(initials), Some(initials));
+        assert!(app.pii.mapping.field_error.is_some());
+        app.link_to_entity(full, cx);
+        assert_eq!(app.pii.mapping.alias.read(cx).value(), "PERSON_1");
+        assert!(app.pii.popup.is_some());
+        app.pii
             .mapping
             .alias
             .update(cx, |input, cx| input.set_value("PERSON_99".into(), cx));
-        app.confirm_alias_direct(true, false, cx);
-        assert!(
-            app.pseudonymization
-                .review
-                .identity(full)
-                .unwrap()
-                .custom_alias
-        );
-        app.pseudonymization.mapping.scope = Scope::Entity;
-        app.category_direct(Category::Organization, cx);
+        app.confirm_alias(true, false, cx);
+        assert!(app.pii.review.identity(full).unwrap().custom_alias);
+        app.pii.mapping.scope = Scope::Entity;
+        app.correct_category(Category::Organization, cx);
         assert_eq!(
-            app.pseudonymization.review.identity(full).unwrap().alias,
+            app.pii.review.identity(full).unwrap().alias,
             "PERSON_99",
             "user-entered generated-looking name is still custom"
         );
-        app.pseudonymization
+        app.pii
             .mapping
             .alias
             .update(cx, |input, cx| input.set_value("DISCARDED".into(), cx));
         let email = app
-            .pseudonymization
+            .pii
             .review
             .candidates()
             .iter()
-            .find(|c| {
-                app.pseudonymization.review.group(c.group).unwrap().category == Category::Email
-            })
+            .find(|c| app.pii.review.variant(c.variant).unwrap().category == Category::Email)
             .unwrap()
             .id;
         app.navigate_identity_mention(email, source.find("marina@").unwrap(), window, cx);
-        assert_eq!(
-            app.pseudonymization.mapping.alias.read(cx).value(),
-            "EMAIL_1"
-        );
+        assert_eq!(app.pii.mapping.alias.read(cx).value(), "EMAIL_1");
         assert_eq!(app.editor.read(cx).text(), source);
     });
 }
@@ -899,7 +768,7 @@ fn table_occurrence_popup_uses_exact_painted_word_in_both_themes(cx: &mut gpui::
             assert!(popup.top() >= word.bottom() || popup.bottom() <= word.top());
             let context = app.readable_mention(&range, cx);
             assert!(!format!("{}{}{}", context.0, context.1, context.2).contains("<br>"));
-            assert!(app.pseudonymization.mapping.open && app.pseudonymization.popup.is_some());
+            assert!(app.pii.mapping.open && app.pii.popup.is_some());
         });
     }
 }
@@ -912,7 +781,7 @@ fn external_source_edit_discards_unconfirmed_mapping_draft(cx: &mut gpui::TestAp
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
         app.reveal_replacement(initials, window, cx);
-        app.pseudonymization
+        app.pii
             .mapping
             .alias
             .update(cx, |input, cx| input.set_value("UNCONFIRMED".into(), cx));
@@ -921,23 +790,18 @@ fn external_source_edit_discards_unconfirmed_mapping_draft(cx: &mut gpui::TestAp
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        assert!(app.pseudonymization.popup.is_none());
-        assert!(app.selected_identity().is_none());
+        assert!(app.pii.popup.is_none());
+        assert!(app.selected_entity().is_none());
+        assert!(app.pii.mapping.alias.read(cx).value().is_empty());
+        assert!(app.pii.mapping.open);
         assert!(
-            app.pseudonymization
-                .mapping
-                .alias
-                .read(cx)
-                .value()
-                .is_empty()
-        );
-        assert!(app.pseudonymization.mapping.open);
-        assert!(
-            !app.pseudonymization
+            !app.pii.review.active_identities().into_iter().any(|id| app
+                .pii
                 .review
-                .active_identities()
-                .into_iter()
-                .any(|id| app.pseudonymization.review.identity(id).unwrap().alias == "UNCONFIRMED")
+                .identity(id)
+                .unwrap()
+                .alias
+                == "UNCONFIRMED")
         );
     });
 }

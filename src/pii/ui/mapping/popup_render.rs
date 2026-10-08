@@ -38,7 +38,7 @@ impl Workspace {
             clean(&source[range.end..end]),
         )
     }
-    fn direct_control(
+    fn popup_control(
         &self,
         id: impl Into<gpui::ElementId>,
         label: impl Into<SharedString>,
@@ -47,27 +47,27 @@ impl Workspace {
     ) -> gpui::Stateful<gpui::Div> {
         let id = id.into();
         let debug = id.to_string();
-        self.pseudonymization.reveal_popup_control(
+        self.pii.reveal_popup_control(
             id.clone(),
             crate::ui::control(id, label, self.theme.get(), enabled)
                 .when(cfg!(test), |v| v.debug_selector(move || debug.clone())),
             cx,
         )
     }
-    pub(in crate::pseudonymization_ui) fn direct_replacement_popup(
+    pub(in crate::pii::ui) fn replacement_popup(
         &self,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let annotation = self.active_annotation()?;
-        let id = self.selected_identity()?;
-        let review = &self.pseudonymization.review;
+        let id = self.selected_entity()?;
+        let review = &self.pii.review;
         let identity = review.identity(id)?;
-        let mapping = &self.pseudonymization.mapping;
+        let mapping = &self.pii.mapping;
         let original = self.active_original()?;
         let theme = self.theme.get();
         let palette = theme.pdf_style();
-        let enabled = !self.pseudonymization.scanning();
+        let enabled = !self.pii.scanning();
         self.active_replacement_range()?;
         let mentions = self.identity_occurrences(id);
         let index = mentions
@@ -86,7 +86,7 @@ impl Workspace {
             String::new()
         };
         let targets: Arc<[_]> = if choices {
-            self.direct_targets(&query, false).into()
+            self.alias_targets(&query, false).into()
         } else {
             Vec::new().into()
         };
@@ -133,61 +133,59 @@ impl Workspace {
             })
             .tab_group()
             .tab_stop(false)
-            .track_focus(&self.pseudonymization.focus)
+            .track_focus(&self.pii.focus)
             .w(width)
             .max_h(height)
             .overflow_y_scroll()
-            .track_scroll(&self.pseudonymization.popup_scroll)
+            .track_scroll(&self.pii.popup_scroll)
             .p_3()
             .flex()
             .flex_col()
             .gap_2()
             .text_size(px(13.))
             .on_action(cx.listener(|this, _: &crate::ui::NextControl, window, cx| {
-                crate::ui::cycle(window, cx, Some(&this.pseudonymization.focus), false);
+                crate::ui::cycle(window, cx, Some(&this.pii.focus), false);
                 cx.stop_propagation();
             }))
             .on_action(
                 cx.listener(|this, _: &crate::ui::PreviousControl, window, cx| {
-                    crate::ui::cycle(window, cx, Some(&this.pseudonymization.focus), true);
+                    crate::ui::cycle(window, cx, Some(&this.pii.focus), true);
                     cx.stop_propagation();
                 }),
             )
-            .on_action(cx.listener(|this, _: &crate::NextPiiChoice, _, cx| {
+            .on_action(cx.listener(|this, _: &crate::PiiNextChoice, _, cx| {
                 this.step_alias_choice(false, cx);
                 cx.stop_propagation();
             }))
-            .on_action(cx.listener(|this, _: &crate::PreviousPiiChoice, _, cx| {
+            .on_action(cx.listener(|this, _: &crate::PiiPreviousChoice, _, cx| {
                 this.step_alias_choice(true, cx);
                 cx.stop_propagation();
             }))
-            .on_action(cx.listener(|this, _: &crate::OpenPiiChoice, window, cx| {
+            .on_action(cx.listener(|this, _: &crate::PiiOpenChoice, window, cx| {
                 this.open_alias_choice(window, cx);
                 cx.stop_propagation();
             }))
-            .on_action(cx.listener(|this, _: &ClosePseudonymPopup, window, cx| {
-                this.close_direct_popup(window, cx);
+            .on_action(cx.listener(|this, _: &PiiClosePopup, window, cx| {
+                this.escape_popup(window, cx);
                 cx.stop_propagation();
             }))
-            .on_action(
-                cx.listener(|this, _: &AcceptPseudonymCandidate, window, cx| {
-                    if this
-                        .pseudonymization
-                        .mapping
-                        .alias
-                        .read(cx)
-                        .focus_handle(cx)
-                        .is_focused(window)
-                    {
-                        this.open_alias_choice(window, cx);
-                    }
-                    cx.stop_propagation();
-                }),
-            )
+            .on_action(cx.listener(|this, _: &PiiConfirm, window, cx| {
+                if this
+                    .pii
+                    .mapping
+                    .alias
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window)
+                {
+                    this.open_alias_choice(window, cx);
+                }
+                cx.stop_propagation();
+            }))
             .on_mouse_down_out(
                 cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
                     if this
-                        .pseudonymization
+                        .pii
                         .mapping
                         .bounds
                         .get()
@@ -195,7 +193,7 @@ impl Workspace {
                     {
                         return;
                     }
-                    this.close_pseudonym_popup(&ClosePseudonymPopup, window, cx);
+                    this.close_pii_popup(&PiiClosePopup, window, cx);
                 }),
             )
             .child(
@@ -205,7 +203,7 @@ impl Workspace {
                     .items_center()
                     .gap_1()
                     .child(
-                        self.direct_control(
+                        self.popup_control(
                             "direct-category",
                             format!("{} ▾", identity.category.label()),
                             enabled,
@@ -213,13 +211,13 @@ impl Workspace {
                         )
                         .aria_label("Correct category for selected scope")
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.pseudonymization.mapping.toggle_category_picker();
+                            this.pii.mapping.toggle_category_picker();
                             cx.notify();
                         })),
                     )
                     .child(div().flex_1())
                     .child(
-                        self.direct_control("direct-prev", "‹", mentions.len() > 1, cx)
+                        self.popup_control("direct-prev", "‹", mentions.len() > 1, cx)
                             .aria_label("Previous mention")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.step_identity_occurrence(true, window, cx)
@@ -233,17 +231,17 @@ impl Workspace {
                             .child(format!("{} / {}", index + 1, mentions.len())),
                     )
                     .child(
-                        self.direct_control("direct-next", "›", mentions.len() > 1, cx)
+                        self.popup_control("direct-next", "›", mentions.len() > 1, cx)
                             .aria_label("Next mention")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.step_identity_occurrence(false, window, cx)
                             })),
                     )
                     .child(
-                        self.direct_control("direct-close", "×", true, cx)
+                        self.popup_control("direct-close", "×", true, cx)
                             .aria_label("Close replacement popup")
                             .on_click(cx.listener(|this, _, window, cx| {
-                                this.close_pseudonym_popup(&ClosePseudonymPopup, window, cx)
+                                this.close_pii_popup(&PiiClosePopup, window, cx)
                             })),
                     ),
             )
@@ -280,7 +278,7 @@ impl Workspace {
                             crate::ui::reveal_focus(
                                 v,
                                 mapping.alias.read(cx).focus_handle(cx),
-                                self.pseudonymization.popup_scroll.clone(),
+                                self.pii.popup_scroll.clone(),
                             )
                         } else {
                             v
@@ -289,7 +287,7 @@ impl Workspace {
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
-                            this.pseudonymization.mapping.show_alias_choices();
+                            this.pii.mapping.show_alias_choices();
                             cx.notify();
                         }),
                     ),
@@ -305,7 +303,7 @@ impl Workspace {
                                 Scope::Wording => format!("Same wording · {wording}"),
                                 Scope::Entity => format!("Entire entity · {}", mentions.len()),
                             };
-                            self.direct_control(
+                            self.popup_control(
                                 SharedString::from(format!("scope-{}", scope as u8)),
                                 label,
                                 enabled,
@@ -315,7 +313,7 @@ impl Workspace {
                             .when(mapping.scope == scope, |v| v.bg(palette.placeholder_bg))
                             .on_click(cx.listener(
                                 move |this, _, _, cx| {
-                                    this.pseudonymization.mapping.set_scope(scope);
+                                    this.pii.mapping.set_scope(scope);
                                     cx.notify();
                                 },
                             ))
@@ -342,52 +340,54 @@ impl Workspace {
                     } else {
                         review.next_alias(category)
                     };
-                    self.direct_control(
+                    self.popup_control(
                         SharedString::from(format!("direct-category-{}", category.token())),
                         format!("{} → {} · {selected_count}", category.label(), alias),
                         enabled,
                         cx,
                     )
                     .text_size(px(11.))
-                    .on_click(cx.listener(move |this, _, _, cx| this.category_direct(category, cx)))
+                    .on_click(
+                        cx.listener(move |this, _, _, cx| this.correct_category(category, cx)),
+                    )
                 }),
             ));
         }
         if choices {
             let new_alias = review.next_alias(identity.category);
             panel = panel.child(
-                self.direct_control(
+                self.popup_control(
                     "direct-new-alias",
                     format!("New alias · {new_alias}"),
                     enabled,
                     cx,
                 )
-                .on_click(cx.listener(|this, _, _, cx| this.new_alias_direct(cx))),
+                .on_click(cx.listener(|this, _, _, cx| this.separate_with_new_alias(cx))),
             );
             if changed {
                 panel = panel
                     .child(
-                        self.direct_control(
+                        self.popup_control(
                             "direct-use-alias",
                             format!("Use {draft} · {selected_count} mentions"),
                             enabled,
                             cx,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.confirm_alias_direct(false, false, cx);
-                            window.focus(&this.pseudonymization.focus, cx);
+                            this.confirm_alias(false, false, cx);
+                            window.focus(&this.pii.focus, cx);
                         })),
                     )
                     .when(mentions.len() > selected_count, |v| {
                         v.child(
-                            self.direct_control(
+                            self.popup_control(
                                 "direct-rename-all",
                                 format!("Rename alias for all {} mentions", mentions.len()),
                                 enabled,
                                 cx,
                             )
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.confirm_alias_direct(true, false, cx);
+                                this.confirm_alias(true, false, cx);
                             })),
                         )
                     });
@@ -400,17 +400,17 @@ impl Workspace {
                     cx.processor(move |this, indices: Range<usize>, _, cx| {
                         indices
                             .map(|index| {
-                                let direct::AliasTarget {
+                                let popup::AliasTarget {
                                     id: target,
                                     alias,
                                     original,
                                     category,
                                     ..
                                 } = targets[index].clone();
-                                this.direct_control(
+                                this.popup_control(
                                     SharedString::from(format!("direct-target-{target}")),
                                     "",
-                                    !this.pseudonymization.scanning(),
+                                    !this.pii.scanning(),
                                     cx,
                                 )
                                 .when(cfg!(test), |v| {
@@ -421,10 +421,9 @@ impl Workspace {
                                     category.label()
                                 ))
                                 .w_full()
-                                .when(
-                                    this.pseudonymization.mapping.target_index == Some(index),
-                                    |v| v.bg(this.theme.get().pdf_style().placeholder_bg),
-                                )
+                                .when(this.pii.mapping.target_index == Some(index), |v| {
+                                    v.bg(this.theme.get().pdf_style().placeholder_bg)
+                                })
                                 .h(px(48.))
                                 .flex_col()
                                 .items_start()
@@ -446,8 +445,8 @@ impl Workspace {
                                 )
                                 .on_click(cx.listener(
                                     move |this, _, window, cx| {
-                                        this.link_direct(target, cx);
-                                        window.focus(&this.pseudonymization.focus, cx);
+                                        this.link_to_entity(target, cx);
+                                        window.focus(&this.pii.focus, cx);
                                     },
                                 ))
                             })
@@ -466,7 +465,7 @@ impl Workspace {
                 .map(|owner| owner.alias.as_str())
                 .unwrap_or("…");
             panel = panel.child(
-                self.direct_control(
+                self.popup_control(
                     "direct-owner",
                     format!("Belongs to {owner} · all {} mentions", mentions.len()),
                     enabled,
@@ -474,19 +473,19 @@ impl Workspace {
                 )
                 .text_size(px(11.))
                 .on_click(cx.listener(|this, _, _, cx| {
-                    this.pseudonymization.mapping.toggle_owner_picker();
+                    this.pii.mapping.toggle_owner_picker();
                     cx.notify();
                 })),
             );
             if mapping.pickers.owner {
                 panel = panel.child(mapping.target.clone()).child(
-                    self.direct_control("direct-owner-none", "No owner", enabled, cx)
+                    self.popup_control("direct-owner-none", "No owner", enabled, cx)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.change_mapping(MappingAction::Owner(id, None), cx)
                         })),
                 );
                 let query = mapping.target.read(cx).value().trim().to_lowercase();
-                let owners: Arc<[_]> = self.direct_targets(&query, true).into();
+                let owners: Arc<[_]> = self.alias_targets(&query, true).into();
                 let count = owners.len();
                 panel = panel.child(
                     uniform_list(
@@ -495,16 +494,16 @@ impl Workspace {
                         cx.processor(move |this, indices: Range<usize>, _, cx| {
                             indices
                                 .map(|index| {
-                                    let direct::AliasTarget {
+                                    let popup::AliasTarget {
                                         id: target_id,
                                         alias,
                                         original,
                                         ..
                                     } = owners[index].clone();
-                                    this.direct_control(
+                                    this.popup_control(
                                         SharedString::from(format!("direct-owner-{target_id}")),
                                         format!("{alias} · {original}"),
-                                        !this.pseudonymization.scanning(),
+                                        !this.pii.scanning(),
                                         cx,
                                     )
                                     .w_full()
@@ -554,7 +553,7 @@ impl Workspace {
                 .flex_wrap()
                 .gap_1()
                 .child(
-                    self.direct_control(
+                    self.popup_control(
                         "direct-keep-restore",
                         if applied {
                             "Restore this mention"
@@ -566,7 +565,7 @@ impl Workspace {
                     )
                     .on_click(cx.listener(move |this, _, window, cx| {
                         if applied {
-                            this.restore_pii(&RestorePii, window, cx);
+                            this.restore_pii(&PiiRestore, window, cx);
                         } else {
                             this.keep_replacement(true, cx);
                         }
@@ -574,7 +573,7 @@ impl Workspace {
                 )
                 .when(matching > 1, |v| {
                     v.child(
-                        self.direct_control(
+                        self.popup_control(
                             "direct-keep-restore-all",
                             format!(
                                 "{} {matching} matching values",
@@ -586,9 +585,9 @@ impl Workspace {
                         .on_click(cx.listener(
                             move |this, _, window, cx| {
                                 if applied {
-                                    this.restore_all_pii(&RestoreAllPii, window, cx);
+                                    this.restore_all_pii(&PiiRestoreAll, window, cx);
                                 } else {
-                                    this.keep_wording_direct(cx);
+                                    this.keep_same_wording(cx);
                                 }
                             },
                         )),

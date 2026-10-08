@@ -42,20 +42,16 @@ impl Workspace {
                 )
                 .on_click(cx.listener(move |this, _, window, cx| {
                     if enabled {
-                        this.toggle_pseudonymization(window, cx);
+                        this.toggle_pii_review(window, cx);
                     }
                 })),
             )
             .into_any_element()
     }
-    pub(crate) fn pseudonym_popup(
-        &self,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        if let Popup::Choose { ids, selected } = self.pseudonymization.popup.as_ref()? {
+    pub(crate) fn pii_popup(&self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if let Popup::Choose { ids, selected } = self.pii.popup.as_ref()? {
             return Some(self.annotation_chooser(ids.clone(), *selected, cx));
         }
-        self.direct_replacement_popup(window, cx)
+        self.replacement_popup(window, cx)
     }
 }

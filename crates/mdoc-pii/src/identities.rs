@@ -13,7 +13,8 @@ pub struct Identity {
 #[derive(Clone, Default)]
 pub struct IdentityPolicy {
     edited: HashMap<u64, Arc<Identity>>,
-    groups: HashMap<u64, u64>,
+    /// Variant id → identity, overriding the identity the variant was seeded with.
+    variants: HashMap<u64, u64>,
     kept: HashMap<u64, bool>,
 }
 pub type IdentitySnapshot = Arc<IdentityPolicy>;
@@ -115,26 +116,26 @@ impl Review {
     pub fn identity(&self, id: u64) -> Option<&Identity> {
         self.identities.get(id)
     }
-    pub fn group_identity(&self, group: u64) -> Option<u64> {
+    pub fn variant_identity(&self, group: u64) -> Option<u64> {
         self.identities
             .policy
-            .groups
+            .variants
             .get(&group)
             .copied()
-            .or_else(|| self.group(group).map(|g| g.identity))
+            .or_else(|| self.variant(group).map(|g| g.identity))
     }
     pub fn occurrence_identity(&self, group: u64, range: &Range<usize>) -> Option<u64> {
         self.tracking
             .assignment(range)
             .map(|a| a.identity)
-            .or_else(|| self.group_identity(group))
+            .or_else(|| self.variant_identity(group))
     }
     pub fn identity_snapshot(&self) -> IdentitySnapshot {
         self.identities.policy.clone()
     }
     pub fn restore_identity_snapshot(&mut self, snapshot: IdentitySnapshot) {
         self.identities.policy = snapshot;
-        self.sync_identity_groups();
+        self.sync_identity_variants();
     }
     pub fn commit_identity_snapshot(&mut self, before: u64, after: u64, old: IdentitySnapshot) {
         self.identities.history.insert(before, old);
@@ -142,8 +143,8 @@ impl Review {
             .history
             .insert(after, self.identities.policy.clone());
     }
-    pub(super) fn sync_identity_groups(&mut self) {
-        for group in &mut self.candidates.groups {
+    pub(super) fn sync_identity_variants(&mut self) {
+        for group in &mut self.candidates.variants {
             group.kept = self
                 .identities
                 .policy
@@ -154,7 +155,7 @@ impl Review {
             let id = self
                 .identities
                 .policy
-                .groups
+                .variants
                 .get(&group.id)
                 .copied()
                 .unwrap_or(group.identity);
@@ -166,10 +167,10 @@ impl Review {
     }
     pub fn active_identities(&self) -> Vec<u64> {
         let mut ids: HashSet<_> = self
-            .groups()
+            .variants()
             .iter()
             .filter(|g| !g.kept)
-            .filter_map(|g| self.group_identity(g.id))
+            .filter_map(|g| self.variant_identity(g.id))
             .collect();
         ids.extend(
             self.applied()
@@ -185,7 +186,7 @@ impl Review {
     pub fn identity_count(&self, id: u64) -> usize {
         self.candidates()
             .iter()
-            .filter(|o| self.occurrence_identity(o.group, &o.range) == Some(id))
+            .filter(|o| self.occurrence_identity(o.variant, &o.range) == Some(id))
             .count()
             + self
                 .applied()
@@ -199,9 +200,9 @@ impl Review {
         let mentions: Vec<_> = self
             .candidates()
             .iter()
-            .filter(|c| self.occurrence_identity(c.group, &c.range) == Some(id))
+            .filter(|c| self.occurrence_identity(c.variant, &c.range) == Some(id))
             .filter_map(|c| {
-                self.group(c.group)
+                self.variant(c.variant)
                     .map(|g| (c.range.clone(), g.original.clone()))
             })
             .collect();
@@ -213,7 +214,7 @@ impl Review {
         Arc::make_mut(&mut self.identities.policy)
             .kept
             .insert(group, kept);
-        self.sync_identity_groups();
+        self.sync_identity_variants();
     }
     pub fn rename_identity(&mut self, id: u64, alias: &str) -> Result<(), String> {
         if !valid_replacement(alias) {
@@ -255,7 +256,7 @@ impl Review {
         Arc::make_mut(&mut self.identities.policy)
             .edited
             .insert(id, Arc::new(identity));
-        self.sync_identity_groups();
+        self.sync_identity_variants();
         Ok(())
     }
     pub fn recategorize_identity(&mut self, id: u64, category: Category) -> Result<(), String> {
@@ -272,7 +273,7 @@ impl Review {
             Arc::make_mut(&mut self.identities.policy)
                 .edited
                 .insert(id, Arc::new(identity));
-            self.sync_identity_groups();
+            self.sync_identity_variants();
             if !matches!(category, Category::Person | Category::Organization) {
                 let dependents: Vec<_> = self
                     .active_identities()
@@ -321,13 +322,14 @@ impl Review {
         id
     }
     pub fn assign_variant(&mut self, group: u64, target: u64) -> Result<(), String> {
-        self.group(group).ok_or("Variant is no longer available.")?;
+        self.variant(group)
+            .ok_or("Variant is no longer available.")?;
         self.identity(target)
             .ok_or("Identity is no longer available.")?;
         Arc::make_mut(&mut self.identities.policy)
-            .groups
+            .variants
             .insert(group, target);
-        self.sync_identity_groups();
+        self.sync_identity_variants();
         Ok(())
     }
     pub fn merge_identity(&mut self, from: u64, target: u64) -> Result<(), String> {
@@ -337,9 +339,9 @@ impl Review {
         self.identity(target)
             .ok_or("Identity is no longer available.")?;
         let groups: Vec<_> = self
-            .groups()
+            .variants()
             .iter()
-            .filter(|g| self.group_identity(g.id) == Some(from))
+            .filter(|g| self.variant_identity(g.id) == Some(from))
             .map(|g| g.id)
             .collect();
         for group in groups {
@@ -377,19 +379,19 @@ impl Review {
         Ok(())
     }
     pub fn suggestions(&self, group: u64) -> Vec<u64> {
-        let Some(variant) = self.group(group) else {
+        let Some(variant) = self.variant(group) else {
             return Vec::new();
         };
-        let current = self.group_identity(group);
+        let current = self.variant_identity(group);
         let mut ids: Vec<_> = self
-            .groups()
+            .variants()
             .iter()
             .filter(|g| {
                 g.category == Category::Person
                     && g.id != group
                     && related_name(&g.original, &variant.original)
             })
-            .filter_map(|g| self.group_identity(g.id))
+            .filter_map(|g| self.variant_identity(g.id))
             .filter(|id| Some(*id) != current)
             .collect();
         ids.sort_unstable();
@@ -405,7 +407,7 @@ impl Review {
         // One source pass; surname/signature indexing keeps large documents from
         // being rescanned once per identity. Ambiguous signatures stay separate.
         let mut signatures: HashSet<(String, char, char)> = HashSet::new();
-        for group in self.groups() {
+        for group in self.variants() {
             if group.category != Category::Person {
                 continue;
             }
@@ -493,7 +495,7 @@ mod tests {
                 .values()
                 .all(|state| Arc::ptr_eq(state, &policy))
         );
-        let id = review.groups()[0].identity;
+        let id = review.variants()[0].identity;
         review.rename_identity(id, "CLIENT_1").unwrap();
         assert!(!Arc::ptr_eq(&policy, &review.identity_snapshot()));
         assert_eq!(review.identities.policy.edited.len(), 1);

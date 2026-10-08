@@ -267,7 +267,7 @@ impl Panel {
                             }
                             ready
                         }),
-                        Model::Pii(m) => pseudonymization_detector::check_reserved(m),
+                        Model::Pii(m) => pii::detector::check_reserved(m),
                     };
                     if !ocr::SUPPORTED {
                         Status::Unavailable(
@@ -389,7 +389,7 @@ impl Panel {
                 if remove {
                     match model {
                         Model::Ocr(m) => ocr::remove_model(m),
-                        Model::Pii(m) => pseudonymization_detector::remove_model(m),
+                        Model::Pii(m) => pii::detector::remove_model(m),
                     }
                     .map(|_| None)
                 } else {
@@ -402,7 +402,7 @@ impl Panel {
                             &progress,
                         )
                         .map(Some),
-                        Model::Pii(m) => pseudonymization_detector::setup_config(
+                        Model::Pii(m) => pii::detector::setup_config(
                             &PiiConfig {
                                 model: m,
                                 ..Default::default()
@@ -481,7 +481,7 @@ impl Panel {
         let missing = matches!(status, Status::Missing | Status::Unknown);
         let bytes = match model {
             Model::Ocr(m) => m.manifest().artifacts.iter().map(|a| a.size).sum::<u64>(),
-            Model::Pii(m) => pseudonymization_detector::manifest_for(m)
+            Model::Pii(m) => pii::detector::manifest_for(m)
                 .files
                 .iter()
                 .map(|a| a.bytes)
@@ -529,7 +529,7 @@ impl Panel {
             .when(self.details == Some(model), |v| {
                 let (revision, path) = match model {
                     Model::Ocr(m) => (m.manifest().revision.to_string(), ocr::root().map(|root| ocr::model_root(&root, m))),
-                    Model::Pii(m) => (pseudonymization_detector::manifest_for(m).revision, pseudonymization_detector::root_for(m)),
+                    Model::Pii(m) => (pii::detector::manifest_for(m).revision, pii::detector::root_for(m)),
                 };
                 let evidence = match model { Model::Ocr(m) => m.evidence(), Model::Pii(m) => m.evidence() };
                 let license = match model { Model::Ocr(_) => "Apache-2.0", Model::Pii(m) => m.license() };
@@ -537,7 +537,7 @@ impl Panel {
                     .child(evidence)
                     .when_some(match status { Status::Damaged(e) | Status::Unavailable(e) => Some(e.clone()), _ => None }, |v, reason| v.child(reason));
                 if let Model::Pii(m) = model {
-                    let manifest = pseudonymization_detector::manifest_for(m);
+                    let manifest = pii::detector::manifest_for(m);
                     let export_url = format!("https://huggingface.co/{}/tree/{}", manifest.repository, manifest.revision);
                     details = details.child(m.description()).child(format!("Languages: {}", m.languages()))
                         .child(div().flex().flex_wrap().gap_2()

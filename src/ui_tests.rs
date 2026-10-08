@@ -7,7 +7,7 @@ pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTe
     cx.update(ui::bind_keys);
     cx.update(markdown_search::bind_keys);
     cx.update(bind_markdown_search_keys);
-    cx.update(pseudonymization_ui::bind_keys);
+    cx.update(pii::ui::bind_keys);
     cx.update(settings_ui::bind_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
         let mut tabs = tabs::Tabs::empty(window, cx);
@@ -63,7 +63,7 @@ pub(super) fn close_document(
 
 #[gpui::test]
 fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppContext) {
-    use crate::pseudonymization::{Category, Detection};
+    use crate::pii::{Category, Detection};
     let dir = tempfile::tempdir().unwrap();
     let source_path = dir.path().join("legal.md");
     let source = "# Contract\n\nAlice Morgan represents **Alice Morgan**. [contact](https://x.invalid/Alice_Morgan)\n";
@@ -73,16 +73,16 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
     let app = open_document(&app, source_path.clone(), cx);
     app.update_in(cx, |app, window, cx| {
         app.session.warning = Some("Review extraction".into());
-        app.pseudonymization.reviewing = true;
-        app.pseudonymization.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9, recognizer: crate::pseudonymization::Recognizer::Model }]).unwrap();
-        app.sync_pseudonym_theme(cx);
-        let id = app.pseudonymization.review.groups()[0].id;
-        let range=app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
-        let annotation=app.pseudonymization.review.annotation_id(id,&range).unwrap();
+        app.pii.reviewing = true;
+        app.pii.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9, recognizer: crate::pii::Recognizer::Model }]).unwrap();
+        app.sync_pii_theme(cx);
+        let id = app.pii.review.variants()[0].id;
+        let range=app.pii.review.variant(id).unwrap().mentions[0].clone();
+        let annotation=app.pii.review.annotation_id(id,&range).unwrap();
         app.activate_annotation(annotation,window,cx);
-        app.accept_all_pseudonyms(&AcceptAllPseudonyms, window, cx);
+        app.apply_all_pii(&PiiApplyAll, window, cx);
         assert_eq!(app.editor.read(cx).text(), "# Contract\n\nPERSON_1 represents **PERSON_1**. [contact](https://x.invalid/Alice_Morgan)\n");
-        assert_eq!(app.pseudonymization.review.remaining(), 0);
+        assert_eq!(app.pii.review.remaining(), 0);
         assert_eq!(app.session.document.path.as_ref(), Some(&source_path));
         assert!(app.session.warning.is_some());
         assert!(app.dirty(cx));
@@ -94,19 +94,19 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(app.pseudonymization.review.remaining(), 2);
+        assert_eq!(app.pii.review.remaining(), 2);
         assert!(!app.dirty(cx));
-        let id = app.pseudonymization.review.groups()[0].id;
-        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
+        let id = app.pii.review.variants()[0].id;
+        let range = app.pii.review.variant(id).unwrap().mentions[0].clone();
         let annotation = app
-            .pseudonymization
+            .pii
             .review
             .annotation_id(id, &range)
             .unwrap();
         app.activate_annotation(annotation, window, cx);
-        app.pseudonymization.review.keep(id, Some(range));
-        app.accept_all_pseudonyms(&AcceptAllPseudonyms, window, cx);
-        assert_eq!(app.pseudonymization.review.remaining(), 0);
+        app.pii.review.keep(id, Some(range));
+        app.apply_all_pii(&PiiApplyAll, window, cx);
+        assert_eq!(app.pii.review.remaining(), 0);
         assert_eq!(app.editor.read(cx).text(), "# Contract\n\nAlice Morgan represents **PERSON_1**. [contact](https://x.invalid/Alice_Morgan)\n");
         let text = app.editor.read(cx).text().to_owned();
         app.session
@@ -124,25 +124,25 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
             cx,
         );
         assert_ne!(app.session.generation, generation);
-        assert!(app.pseudonymization.review.groups().is_empty());
-        assert!(app.pseudonymization.popup.is_none());
+        assert!(app.pii.review.variants().is_empty());
+        assert!(app.pii.popup.is_none());
     });
     let app = close_document(&app, cx);
     cx.update(|_, cx| {
-        assert!(app.read(cx).pseudonymization.review.groups().is_empty());
-        assert!(app.read(cx).pseudonymization.popup.is_none());
+        assert!(app.read(cx).pii.review.variants().is_empty());
+        assert!(app.read(cx).pii.popup.is_none());
     });
 }
 
 #[gpui::test]
 fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut TestAppContext) {
-    use crate::pseudonymization::{Category, Detection};
+    use crate::pii::{Category, Detection};
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice Alice", cx));
-        app.pseudonymization.reviewing = true;
-        app.pseudonymization
+        app.pii.reviewing = true;
+        app.pii
             .review
             .ingest(
                 "Alice Alice",
@@ -150,31 +150,23 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
                     range: 0..5,
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: crate::pseudonymization::Recognizer::Model,
+                    recognizer: crate::pii::Recognizer::Model,
                 }],
             )
             .unwrap();
-        let id = app.pseudonymization.review.groups()[0].id;
-        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
-        let annotation = app
-            .pseudonymization
-            .review
-            .annotation_id(id, &range)
-            .unwrap();
+        let id = app.pii.review.variants()[0].id;
+        let range = app.pii.review.variant(id).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(id, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
-        app.pseudonymization.review.keep(id, None);
+        app.pii.review.keep(id, None);
         assert_eq!(app.editor.read(cx).text(), "Alice Alice");
-        assert_eq!(app.pseudonymization.review.remaining(), 0);
-        app.pseudonymization
+        assert_eq!(app.pii.review.remaining(), 0);
+        app.pii
             .review
             .add_manual("Alice Alice", 0..5, Category::Person)
             .unwrap();
-        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
-        let annotation = app
-            .pseudonymization
-            .review
-            .annotation_id(id, &range)
-            .unwrap();
+        let range = app.pii.review.variant(id).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(id, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
         app.editor.update(cx, |editor, cx| {
             let revision = editor.revision();
@@ -183,9 +175,9 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        assert!(app.pseudonymization.popup.is_none());
+        assert!(app.pii.popup.is_none());
         assert_eq!(app.editor.read(cx).text(), "Betty Alice");
-        assert_eq!(app.pseudonymization.review.remaining(), 1);
+        assert_eq!(app.pii.review.remaining(), 1);
     });
 }
 

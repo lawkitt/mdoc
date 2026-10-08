@@ -1,16 +1,16 @@
 //! Identity review and direct correction. All mutation uses editor history.
 use super::*;
-mod direct;
-mod render;
-use direct::Scope;
-mod direct_render;
+mod panel;
+mod popup;
+use popup::Scope;
+mod popup_render;
 
 /// What the workspace popup edits: a whole entity after a mapping change, or
 /// one exact pending or applied occurrence.
 #[derive(Clone)]
 pub(super) enum Selection {
     Entity(u64),
-    Candidate { group: u64, range: Range<usize> },
+    Candidate { variant: u64, range: Range<usize> },
     Applied(u64),
 }
 
@@ -153,8 +153,8 @@ impl MappingUi {
                 cx.subscribe(
                     &input,
                     |this, _, _: &markdown_search::SearchInputEvent, cx| {
-                        this.pseudonymization.mapping.draft_changed();
-                        this.pseudonymization
+                        this.pii.mapping.draft_changed();
+                        this.pii
                             .popup_scroll
                             .set_offset(gpui::point(px(0.), px(0.)));
                         cx.notify();
@@ -210,30 +210,29 @@ struct MappingChange {
     assignments: Vec<(Range<usize>, u64)>,
 }
 impl Workspace {
-    pub(super) fn toggle_identity_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.pseudonymization.mapping.open {
+    pub(super) fn toggle_replacements_panel(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pii.mapping.open {
             self.close_replacements(window, cx);
         } else {
-            self.pseudonymization.mapping.open_panel(window.focused(cx));
-            self.pseudonymization.reviewing = true;
+            self.pii.mapping.open_panel(window.focused(cx));
+            self.pii.reviewing = true;
             self.sync_annotations(cx);
-            let search = &self.pseudonymization.mapping.search;
+            let search = &self.pii.mapping.search;
             window.focus(&search.read(cx).focus_handle(cx), cx);
         }
         cx.notify();
     }
     fn close_replacements(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let previous = self.pseudonymization.mapping.close_panel();
-        self.pseudonymization.dismiss_popup();
+        let previous = self.pii.mapping.close_panel();
+        self.pii.dismiss_popup();
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(None, cx));
         if let Some(focus) = previous {
-            if !self
-                .pseudonymization
-                .mapping
-                .focus
-                .contains_focused(window, cx)
-            {
+            if !self.pii.mapping.focus.contains_focused(window, cx) {
                 window.focus(&self.editor.read(cx).focus_handle(cx), cx);
             } else {
                 window.focus(&focus, cx);
@@ -244,43 +243,46 @@ impl Workspace {
         cx.notify();
     }
     pub(super) fn selected_applied(&self) -> Option<u64> {
-        match self.pseudonymization.mapping.selected {
+        match self.pii.mapping.selected {
             Some(Selection::Applied(id)) => Some(id),
             _ => None,
         }
     }
-    fn selected_identity(&self) -> Option<u64> {
-        match self.pseudonymization.mapping.selected.as_ref()? {
+    fn selected_entity(&self) -> Option<u64> {
+        match self.pii.mapping.selected.as_ref()? {
             Selection::Entity(id) => Some(*id),
-            Selection::Candidate { group, range } => self
-                .pseudonymization
-                .review
-                .occurrence_identity(*group, range),
+            Selection::Candidate {
+                variant: group,
+                range,
+            } => self.pii.review.occurrence_identity(*group, range),
             Selection::Applied(id) => self
-                .pseudonymization
+                .pii
                 .review
                 .applied_occurrence(*id)
                 .map(|a| a.step.identity),
         }
     }
     fn keep_replacement(&mut self, single: bool, cx: &mut Context<Self>) {
-        if self.pseudonymization.scanning() || !self.can_copy_markdown() {
+        if self.pii.scanning() || !self.can_copy_markdown() {
             return;
         }
-        let Some(id) = self.selected_identity() else {
+        let Some(id) = self.selected_entity() else {
             return;
         };
-        let selection = self.pseudonymization.mapping.selected.clone();
+        let selection = self.pii.mapping.selected.clone();
         let mention = match selection {
-            Some(Selection::Candidate { group, range }) if single => Some((group, range)),
+            Some(Selection::Candidate {
+                variant: group,
+                range,
+            }) if single => Some((group, range)),
             _ if single => return,
             _ => None,
         };
-        let review = &self.pseudonymization.review;
+        let review = &self.pii.review;
         if !review
             .candidates()
             .iter()
-            .any(|c| review.occurrence_identity(c.group, &c.range) == Some(id))
+            .any(|c| review.occurrence_identity(c.variant, &c.range) == Some(id))
         {
             return;
         }
@@ -294,13 +296,13 @@ impl Workspace {
         if kept.is_none() {
             return;
         }
-        self.pseudonymization.dismiss_popup();
+        self.pii.dismiss_popup();
         self.sync_annotations(cx);
         cx.notify();
     }
     fn reveal_replacement(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let mentions = self.identity_occurrences(id);
-        let preferred = self.pseudonymization.mapping.remembered.get(&id).copied();
+        let preferred = self.pii.mapping.remembered.get(&id).copied();
         if let Some((annotation, range)) = mentions
             .iter()
             .find(|(_, r)| Some(r.start) == preferred)
@@ -318,14 +320,14 @@ impl Workspace {
             self.scroll.set_offset(scroll);
         }
     }
-    pub(super) fn select_identity(&mut self, selected: Selection, cx: &mut Context<Self>) {
-        self.pseudonymization.mapping.select(selected);
+    pub(super) fn select_occurrence(&mut self, selected: Selection, cx: &mut Context<Self>) {
+        self.pii.mapping.select(selected);
         if let Some(identity) = self
-            .selected_identity()
-            .and_then(|id| self.pseudonymization.review.identity(id))
+            .selected_entity()
+            .and_then(|id| self.pii.review.identity(id))
         {
             let alias = identity.alias.clone();
-            self.pseudonymization
+            self.pii
                 .mapping
                 .alias
                 .update(cx, |input, cx| input.set_value(alias, cx));
@@ -333,28 +335,28 @@ impl Workspace {
         cx.notify();
     }
     pub(super) fn sync_replacement_annotation(&mut self, annotation: u64, cx: &mut Context<Self>) {
-        self.pseudonymization.mapping.show();
-        let review = &self.pseudonymization.review;
+        self.pii.mapping.show();
+        let review = &self.pii.review;
         let selection = if annotation & APPLIED_ID != 0 {
             review
                 .applied_occurrence(annotation & !APPLIED_ID)
                 .map(|_| Selection::Applied(annotation & !APPLIED_ID))
         } else {
             review.candidate(annotation).map(|c| Selection::Candidate {
-                group: c.group,
+                variant: c.variant,
                 range: c.range.clone(),
             })
         };
         if let Some(selection) = selection {
-            self.select_identity(selection, cx);
+            self.select_occurrence(selection, cx);
         }
     }
     pub(super) fn sync_identity_selection_after_history(&mut self, cx: &mut Context<Self>) {
-        if let Some(selected) = self.pseudonymization.mapping.selected.clone() {
-            if self.selected_identity().is_some() {
-                self.select_identity(selected, cx);
+        if let Some(selected) = self.pii.mapping.selected.clone() {
+            if self.selected_entity().is_some() {
+                self.select_occurrence(selected, cx);
             } else {
-                self.pseudonymization.mapping.deselect();
+                self.pii.mapping.deselect();
             }
         }
     }
@@ -367,13 +369,13 @@ impl Workspace {
         apply: bool,
         cx: &mut Context<Self>,
     ) {
-        if !self.can_copy_markdown() || self.pseudonymization.scanning() {
+        if !self.can_copy_markdown() || self.pii.scanning() {
             return;
         }
         let active = self.active_replacement_range();
         let revision = self.editor.read(cx).revision();
         let source = self.editor.read(cx).text().to_owned();
-        let old = self.pseudonymization.review.identity_snapshot();
+        let old = self.pii.review.identity_snapshot();
         let result = self.prepare_mapping_change(&action, &source);
         let MappingChange {
             mut plans,
@@ -381,8 +383,8 @@ impl Workspace {
         } = match result {
             Ok(result) => result,
             Err(error) => {
-                self.pseudonymization.review.restore_identity_snapshot(old);
-                self.pseudonymization.error = Some(error);
+                self.pii.review.restore_identity_snapshot(old);
+                self.pii.error = Some(error);
                 cx.notify();
                 return;
             }
@@ -407,7 +409,7 @@ impl Workspace {
                 })
                 .or_else(|| plans.first().map(|p| p.identity)),
             MappingAction::AssignApplied(id, _, _) => self
-                .pseudonymization
+                .pii
                 .review
                 .applied_occurrence(*id)
                 .and_then(|a| plans.iter().find(|p| p.range == a.range))
@@ -418,15 +420,11 @@ impl Workspace {
                 .iter()
                 .map(|(r, id)| ((r.start, r.end), *id))
                 .collect();
-            match self
-                .pseudonymization
-                .review
-                .pending_plans(&source, &assigned)
-            {
+            match self.pii.review.pending_plans(&source, &assigned) {
                 Ok(pending) => plans.extend(pending),
                 Err(error) => {
-                    self.pseudonymization.review.restore_identity_snapshot(old);
-                    self.pseudonymization.error = Some(error);
+                    self.pii.review.restore_identity_snapshot(old);
+                    self.pii.error = Some(error);
                     return;
                 }
             }
@@ -437,8 +435,7 @@ impl Workspace {
             .map(|p| (p.range.clone(), p.after.to_string()))
             .collect();
         let Some(after) = self.commit_plans(revision, &plans, Some(old), cx) else {
-            self.pseudonymization.error =
-                Some("Document changed. Review the mapping again.".into());
+            self.pii.error = Some("Document changed. Review the mapping again.".into());
             cx.notify();
             return;
         };
@@ -459,17 +456,13 @@ impl Workspace {
             }
             let range =
                 range.start.saturating_add_signed(shift)..range.end.saturating_add_signed(shift);
-            self.pseudonymization
-                .review
-                .commit_assignment(after, range, identity);
+            self.pii.review.commit_assignment(after, range, identity);
         }
-        self.pseudonymization
-            .review
-            .refresh(self.editor.read(cx).text());
-        self.pseudonymization.error = None;
-        self.pseudonymization.dismiss_popup();
+        self.pii.review.refresh(self.editor.read(cx).text());
+        self.pii.error = None;
+        self.pii.dismiss_popup();
         if let Some(id) = selected_after {
-            self.select_identity(Selection::Entity(id), cx);
+            self.select_occurrence(Selection::Entity(id), cx);
         }
         self.sync_annotations(cx);
         self.restore_active_replacement(active, &edits, cx);
@@ -480,7 +473,7 @@ impl Workspace {
         action: &MappingAction,
         source: &str,
     ) -> Result<MappingChange, String> {
-        let review = &mut self.pseudonymization.review;
+        let review = &mut self.pii.review;
         let mut assignments = Vec::new();
         let mut changed: std::collections::HashMap<u64, u64> = Default::default();
         match *action {
@@ -515,10 +508,10 @@ impl Workspace {
                 }
                 for c in review.candidates() {
                     if ranges.contains(&(c.range.start, c.range.end))
-                        && review.occurrence_identity(c.group, &c.range) == Some(identity)
+                        && review.occurrence_identity(c.variant, &c.range) == Some(identity)
                     {
                         if source.get(c.range.clone())
-                            != review.group(c.group).map(|g| g.original.as_ref())
+                            != review.variant(c.variant).map(|g| g.original.as_ref())
                         {
                             return Err("Candidate changed. Review it again.".into());
                         }
@@ -556,7 +549,7 @@ impl Workspace {
             }
             MappingAction::AssignVariant(group, target) => {
                 let original = review
-                    .group(group)
+                    .variant(group)
                     .ok_or("Variant is no longer available.")?
                     .original
                     .clone();
@@ -566,18 +559,19 @@ impl Workspace {
                         changed.insert(a.id | APPLIED_ID, target);
                     }
                 }
-                let ranges = review.group(group).unwrap().mentions.clone();
+                let ranges = review.variant(group).unwrap().mentions.clone();
                 assignments.extend(ranges.into_iter().map(|range| (range, target)));
             }
             MappingAction::AssignCandidate(group, ref range, target) => {
-                if !review.group(group).is_some_and(|g| {
+                if !review.variant(group).is_some_and(|g| {
                     g.mentions.contains(range)
                         && source.get(range.clone()) == Some(g.original.as_ref())
                 }) {
                     return Err("Candidate changed. Review it again.".into());
                 }
-                let target = target
-                    .unwrap_or_else(|| review.new_identity(review.group(group).unwrap().category));
+                let target = target.unwrap_or_else(|| {
+                    review.new_identity(review.variant(group).unwrap().category)
+                });
                 review
                     .identity(target)
                     .ok_or("Identity is no longer available.")?;
@@ -594,7 +588,7 @@ impl Workspace {
                     .ok_or("Identity is no longer available.")?;
                 if all {
                     let group = review
-                        .groups()
+                        .variants()
                         .iter()
                         .find(|g| g.original.as_ref() == selected.step.original())
                         .map(|g| g.id)
@@ -634,17 +628,17 @@ impl Workspace {
         plans.sort_by_key(|p| p.range.start);
         Ok(MappingChange { plans, assignments })
     }
-    fn apply_identity_aliases(&mut self, cx: &mut Context<Self>) {
-        if self.pseudonymization.scanning() || !self.can_copy_markdown() {
+    fn apply_aliases(&mut self, cx: &mut Context<Self>) {
+        if self.pii.scanning() || !self.can_copy_markdown() {
             return;
         }
         let source = self.editor.read(cx).text().to_owned();
         let revision = self.editor.read(cx).revision();
-        let review = &self.pseudonymization.review;
+        let review = &self.pii.review;
         let mut plans = match review.alias_corrections(&source) {
             Ok(plans) => plans,
             Err(error) => {
-                self.pseudonymization.error = Some(error);
+                self.pii.error = Some(error);
                 cx.notify();
                 return;
             }
@@ -655,24 +649,22 @@ impl Workspace {
         plans.extend(pending);
         plans.sort_by_key(|p| p.range.start);
         if plans.windows(2).any(|p| p[0].range.end > p[1].range.start) {
-            self.pseudonymization.error = Some("Candidates overlap. Review them again.".into());
+            self.pii.error = Some("Candidates overlap. Review them again.".into());
             cx.notify();
             return;
         }
         if !plans.is_empty() && self.commit_plans(revision, &plans, None, cx).is_none() {
             return;
         }
-        self.pseudonymization.reviewing = true;
-        self.pseudonymization
-            .review
-            .refresh(self.editor.read(cx).text());
-        self.pseudonymization.dismiss_popup();
+        self.pii.reviewing = true;
+        self.pii.review.refresh(self.editor.read(cx).text());
+        self.pii.dismiss_popup();
         self.sync_annotations(cx);
         cx.notify();
     }
     fn assign_selected_identity(&mut self, target: u64, cx: &mut Context<Self>) {
-        if self.pseudonymization.mapping.scope == Scope::Entity {
-            if let Some(from) = self.selected_identity() {
+        if self.pii.mapping.scope == Scope::Entity {
+            if let Some(from) = self.selected_entity() {
                 self.change_mapping(MappingAction::Merge(from, target), cx);
             }
         } else if let Some(action) = self.scoped_mapping_action(Some(target), None, None) {
@@ -701,7 +693,7 @@ impl Workspace {
         }
         self.activate_annotation(annotation, window, cx);
         self.remember_active_replacement(cx);
-        window.focus(&self.pseudonymization.focus, cx);
+        window.focus(&self.pii.focus, cx);
         let revision = self.editor.read(cx).revision();
         let weak = cx.entity().downgrade();
         window.on_next_frame(move |window, cx| {
