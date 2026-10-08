@@ -1,6 +1,6 @@
 # Behavior-preserving pseudonymization refactoring
 
-Status: accepted, 2026-10-08; implementation in progress. The user confirmed the interview and requested full implementation; see the
+Status: accepted and implemented, 2026-10-08. The user confirmed the interview and requested full implementation; see the
 [design interview](../design/pseudonymization-refactoring.md).
 
 ## Problem
@@ -33,3 +33,17 @@ every commit; any behavior change requires its own ADR.
 Stable aliases, occurrence provenance, live-tab-only originals, Keep/Restore
 scopes, undo/redo travel, syntax protection, stale-result guards, exact Copy
 Markdown and experimental status remain unchanged.
+
+## Implementation
+
+Implemented in six green commits; see the design interview's implementation
+section for the per-step record, decisions taken during implementation and
+verification. Notable structure:
+
+- `crates/mdoc-pii`: GUI-free review model (`Review` façade over `Candidates`,
+  `IdentityStore`, `Tracking`); depends only on `aho-corasick`, `regex` and
+  `crates/mdoc-history`.
+- `crates/mdoc-history`: dependency-free edit transactions, re-exported by
+  `mdoc-editor` at their existing paths.
+- `src/pii/detector*` and `src/pii/ui*`: detection and the review workspace;
+  `MappingUi`/`ReviewUi` own every panel and popup state transition.

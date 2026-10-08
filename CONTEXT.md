@@ -90,6 +90,11 @@ not establish that the document is safe to share.
 One occurrence of identifying information in the Markdown source. Exact repeated
 mentions can be reviewed together; variants are linked by the lawyer.
 
+**Variant**:
+One exact original wording, such as "Павлова М.С.", whose pending mentions are
+found together. Each variant belongs to an identity; linking variants makes
+them share one alias. Code: `mdoc_pii::Variant`.
+
 **Placeholder**:
 A stable replacement token, such as PERSON_1, associated with selected identifying
 information while preserving useful references within a document.
