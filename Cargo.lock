@@ -4430,7 +4430,6 @@ dependencies = [
 name = "mdoc"
 version = "0.1.0"
 dependencies = [
- "aho-corasick",
  "anydoc",
  "dirs 6.0.0",
  "docxide-pdf",
@@ -4442,6 +4441,7 @@ dependencies = [
  "gpui-pre-platform",
  "image",
  "mdoc-editor",
+ "mdoc-pii",
  "ort",
  "pdf-inspector 1.25.2",
  "presidio-analyzer",
@@ -4468,10 +4468,15 @@ dependencies = [
  "gpui-bidi",
  "gpui-pre",
  "gpui-pre-platform",
+ "mdoc-history",
  "mdoc-markdown",
  "os-spellcheck",
  "unicode-segmentation",
 ]
+
+[[package]]
+name = "mdoc-history"
+version = "0.1.0"
 
 [[package]]
 name = "mdoc-markdown"
@@ -4480,6 +4485,15 @@ dependencies = [
  "gpui-bidi",
  "gpui-pre",
  "markdown",
+]
+
+[[package]]
+name = "mdoc-pii"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "mdoc-history",
+ "regex",
 ]
 
 [[package]]

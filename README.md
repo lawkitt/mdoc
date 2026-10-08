@@ -265,10 +265,11 @@ problem; conversion and OCR algorithm changes belong in the dependency forks.
 | `src/preview.rs`, `src/docx_preview.rs` | Preview ownership and supervised local DOCX worker |
 | `src/docx_comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
 | `src/markdown_search.rs`, `src/search_session.rs` | Markdown find controls and revision-aware search scheduling |
-| `src/pseudonymization.rs`, `src/pseudonymization_detector.rs`, `src/pseudonymization_ui.rs`, `src/pseudonymization_ui/` | Review/mapping policy, offline detection/setup, scan/edit controller, private rendering and regression tests |
+| `src/pseudonymization_detector.rs`, `src/pseudonymization_ui.rs`, `src/pseudonymization_ui/` | Offline detection/setup, scan/edit controller, private rendering and UI regression tests |
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
 | `src/ui_tests.rs`, `src/tabs_tests.rs`, `src/perf_tests.rs` | Headless flows, ownership/lifetime checks, and opt-in performance measurements |
 | `crates/mdoc-editor`, `crates/mdoc-markdown` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |
+| `crates/mdoc-pii`, `crates/mdoc-history` | GUI-free pseudonymization review model and the plain edit transactions it follows |
 | `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |
 | `crates/os-spellcheck` | Standalone editor demo dependency only |
 

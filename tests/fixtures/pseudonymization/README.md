@@ -14,7 +14,7 @@ qualification or accept the proposed numerical targets.
 
 The [tool instructions](../../../tools/pseudonymization/README.md) reproduce setup,
 offline inference, scoring and compatibility. The
-[generated measurements](results/2026-10-01/measurements.md) provide per-language,
+[generated measurements](../../../docs/evidence/pseudonymization/2026-10-01/measurements.md) provide per-language,
 per-category counts and each fixture's latency. Adjacent JSON files retain all
 predictions, misses, false positives, settings, hashes and process exit evidence.
 These are dated measurements, not output snapshots for normal tests.
@@ -93,13 +93,13 @@ explicitly evaluated rather than assumed to work from the multilingual name.
 
 All candidates loaded and inferred offline using the **installed OCR ONNX
 Runtime 1.27.0** library, with its expected SHA-256. GLiNER2 additionally passed
-[same-process coexistence](results/2026-10-01/ocr-coexistence.json): the pinned
+[same-process coexistence](../../../docs/evidence/pseudonymization/2026-10-01/ocr-coexistence.json): the pinned
 pdf-inspector OCR engine produced matching EN/RU scanned-PDF transcripts before
 PII load, while both were loaded, and after PII drop, with unchanged PDF bytes.
 
 `gline-rs` 1.1.0's exact `ort` rc.9 dependency cannot resolve in the same Cargo
 graph as pdf-inspector's exact rc.13; the
-[resolution failure](results/2026-10-01/gline-ocr-resolution.log) is retained.
+[resolution failure](../../../docs/evidence/pseudonymization/2026-10-01/gline-ocr-resolution.log) is retained.
 Standalone inference with the newer native library does not remove this blocker.
 Adopting it would require an upstream/fork wrapper migration or a separately
 approved worker design. GLiNER2 0.9.6 resolves with OCR's rc.13; its Hub feature

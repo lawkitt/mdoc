@@ -258,9 +258,9 @@ Windows/Linux execution and native UI acceptance were not rerun for this adapter
 
 ## Retained execution evidence
 
-[Probe results](../../tests/fixtures/pseudonymization/results/2026-10-08-oss/probe-results.json),
-[probe source](../../tests/fixtures/pseudonymization/results/2026-10-08-oss/probe-main.rs),
-[resolution results](../../tests/fixtures/pseudonymization/results/2026-10-08-oss/compatibility-results.json)
+[Probe results](../evidence/pseudonymization/2026-10-08-oss/probe-results.json),
+[probe source](../evidence/pseudonymization/2026-10-08-oss/probe-main.rs),
+[resolution results](../evidence/pseudonymization/2026-10-08-oss/compatibility-results.json)
 and adjacent manifests/lock/logs retain the checks. Reproduce by cloning the pinned
 Presidio/cloakrs source into sibling directories named `presidio-rs` and `cloakrs`,
 placing the probe manifest at `probe/Cargo.toml`, source at `probe/src/main.rs`,

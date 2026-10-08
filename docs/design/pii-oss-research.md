@@ -186,7 +186,7 @@ detector change follows measured results and a separate explicit selection.
 ## Evaluation result and next frontier — 2026-10-07
 
 The isolated evaluation is complete; see the
-[retained measurements](../../tests/fixtures/pseudonymization/results/2026-10-07-hybrid/measurements.md)
+[retained measurements](../evidence/pseudonymization/2026-10-07-hybrid/measurements.md)
 and [reproduction commands](../../tests/fixtures/pseudonymization/hybrid/README.md).
 The model ran with network access denied using the app's current FP16 label
 families, threshold and tokenizer-bounded windows. At this isolated evaluation checkpoint, no product source, dependency
@@ -216,5 +216,5 @@ origin/conflict policy and regression fixtures; defer phone/bank-rule expansion
 and full-engine adoption. A checksum rejection must not suppress model candidates.
 The user answered "agree". These three app-owned recognizers and the agreed
 restoration/refactor are implemented. All detector output remains experimental.
-The [implementation report](../../tests/fixtures/pseudonymization/results/2026-10-07-restoration/README.md)
+The [implementation report](../evidence/pseudonymization/2026-10-07-restoration/README.md)
 records the selected-rule parity checks and editor/lifecycle validation.

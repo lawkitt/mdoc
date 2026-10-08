@@ -54,8 +54,8 @@ pub use search::{SearchIndex, SearchMatch};
 
 mod input;
 use input::{EditKind, Snapshot};
+pub use mdoc_history::{EditorTransaction, HistoryChange, SourceEdit, inverse_edits};
 mod transactions;
-pub use transactions::{EditorTransaction, HistoryChange, SourceEdit, inverse_edits};
 
 mod tables;
 use tables::*;

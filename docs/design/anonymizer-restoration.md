@@ -2,7 +2,7 @@
 
 Status: confirmed and implemented, 2026-10-07. Q15 settled the final recognizer
 selection; all agreed restoration and subsystem-refactoring work is implemented.
-See the [verification report](../../tests/fixtures/pseudonymization/results/2026-10-07-restoration/README.md).
+See the [verification report](../evidence/pseudonymization/2026-10-07-restoration/README.md).
 
 ## Confirmed request
 
@@ -57,7 +57,7 @@ The user answered "agree" to Q14: evaluate an isolated structured-rule + GLiNER2
 prototype before selecting production recognizers. This permits research tools
 and synthetic fixtures, not detector activation in the app. The evaluation is
 complete with frozen holdout gold, per-rule ablations and retained offline
-execution evidence; see the [measurements](../../tests/fixtures/pseudonymization/results/2026-10-07-hybrid/measurements.md).
+execution evidence; see the [measurements](../evidence/pseudonymization/2026-10-07-hybrid/measurements.md).
 
 The next frontier at that checkpoint was Q15, subsequently confirmed in Round 7.
 The measured email/INN/SNILS subset is included in the feature/refactor.
@@ -274,6 +274,6 @@ Checksum rejection never suppresses otherwise eligible model candidates.
   email/contextual INN/SNILS rules live in `structured.rs`. Declining a checksum does
   not veto model output. No full anonymizer engine or phone/bank rule expansion shipped.
 
-The [retained report](../../tests/fixtures/pseudonymization/results/2026-10-07-restoration/README.md)
+The [retained report](../evidence/pseudonymization/2026-10-07-restoration/README.md)
 records numerical gates, the repeated-original overhead tradeoff, native smoke checks
 and the remaining base-editor/accuracy/platform limitations.

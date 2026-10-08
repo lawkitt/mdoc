@@ -21,7 +21,7 @@ mod ocr;
 #[cfg(test)]
 mod perf_tests;
 mod preview;
-mod pseudonymization;
+use mdoc_pii as pseudonymization;
 mod pseudonymization_detector;
 mod pseudonymization_ui;
 mod session_store;

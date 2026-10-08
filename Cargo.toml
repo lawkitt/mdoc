@@ -11,7 +11,7 @@ publish = false
 [workspace]
 # Upstream code with one Linux glyph-offset correction; not a workspace crate.
 exclude = ["vendor"]
-members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-markdown", "crates/gpui-pdf", "crates/os-spellcheck"]
+members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-history", "crates/mdoc-markdown", "crates/mdoc-pii", "crates/gpui-pdf", "crates/os-spellcheck"]
 resolver = "2"
 
 # Remove when an adopted GPUI release includes the combining-mark correction.
@@ -24,7 +24,6 @@ gpui = { package = "gpui-pre", version = "0.3" }
 gpui_platform = { package = "gpui-pre-platform", version = "0.3", features = ["font-kit", "wayland", "x11", "runtime_shaders"] }
 
 [dependencies]
-aho-corasick = "=1.1.5"
 regex = "1"
 presidio-analyzer = { version = "=0.1.11", default-features = false }
 anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "97d21d1f46086d84478da072ba1fdfa210461c80" }
@@ -43,6 +42,7 @@ serde_json = "1"
 gpui = { workspace = true }
 gpui_platform = { workspace = true }
 mdoc-editor = { path = "crates/mdoc-editor" }
+mdoc-pii = { path = "crates/mdoc-pii" }
 gpui-pdf = { path = "crates/gpui-pdf", features = ["search", "forms"] }
 tempfile = "3"
 url = "2"

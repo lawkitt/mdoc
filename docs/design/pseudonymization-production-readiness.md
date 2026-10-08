@@ -74,8 +74,8 @@ checks have been rerun in this interview.
   but do not establish full IME/accessibility or Windows/Linux runtime acceptance.
 
 Evidence: `tests/fixtures/pseudonymization/README.md`,
-`tests/fixtures/pseudonymization/results/2026-10-07-hybrid/measurements.md`,
-`tests/fixtures/pseudonymization/results/2026-10-07-restoration/README.md`.
+`docs/evidence/pseudonymization/2026-10-07-hybrid/measurements.md`,
+`docs/evidence/pseudonymization/2026-10-07-restoration/README.md`.
 
 ## Design tree before the broad implementation authorization
 

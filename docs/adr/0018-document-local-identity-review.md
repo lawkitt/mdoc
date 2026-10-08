@@ -69,4 +69,4 @@ and realistic editor/resource budgets. The return journey, persistent matter map
 and deliberate local erasure remain separate future decisions.
 
 Verification and native interaction evidence are recorded in
-[identity-review verification](../../tests/fixtures/pseudonymization/results/2026-10-08-identities/README.md).
+[identity-review verification](../evidence/pseudonymization/2026-10-08-identities/README.md).
