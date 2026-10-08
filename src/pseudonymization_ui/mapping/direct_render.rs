@@ -401,7 +401,13 @@ impl Workspace {
                     cx.processor(move |this, indices: Range<usize>, _, cx| {
                         indices
                             .map(|index| {
-                                let (target, alias, original, category, _) = targets[index].clone();
+                                let direct::AliasTarget {
+                                    id: target,
+                                    alias,
+                                    original,
+                                    category,
+                                    ..
+                                } = targets[index].clone();
                                 this.direct_control(
                                     SharedString::from(format!("direct-target-{target}")),
                                     "",
@@ -491,7 +497,12 @@ impl Workspace {
                         cx.processor(move |this, indices: Range<usize>, _, cx| {
                             indices
                                 .map(|index| {
-                                    let (target_id, alias, original, _, _) = owners[index].clone();
+                                    let direct::AliasTarget {
+                                        id: target_id,
+                                        alias,
+                                        original,
+                                        ..
+                                    } = owners[index].clone();
                                     this.direct_control(
                                         SharedString::from(format!("direct-owner-{target_id}")),
                                         format!("{alias} · {original}"),

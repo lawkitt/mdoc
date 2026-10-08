@@ -2,7 +2,7 @@
 //! every edit plan is checked against the current source and editor revision.
 mod discovery;
 mod identities;
-pub use identities::Identity;
+pub use identities::{Identity, IdentitySnapshot};
 mod syntax;
 pub mod tracking;
 pub use discovery::{DiscoveryInput, DiscoveryResult};
@@ -12,7 +12,7 @@ use std::{
     sync::Arc,
 };
 use syntax::protected_syntax;
-use tracking::Tracking;
+use tracking::{ReplacementPlan, Tracking};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Category {
@@ -474,36 +474,57 @@ impl Review {
             let _ = self.rename_identity(identity, replacement);
         }
     }
-    /// Plan all pending mentions against one source snapshot. Kept candidates
-    /// have no mentions; each mention takes its assigned identity's alias.
-    #[cfg(test)] // Step 2 moves Apply planning here; see ADR 0021.
-    pub fn plan_all(&self, source: &str) -> Result<Vec<(Range<usize>, String)>, String> {
-        if source != self.source.as_ref() {
-            return Err("The document changed. Review the candidates again.".into());
-        }
-        let mut edits = Vec::new();
-        for group in &self.groups {
-            for range in &group.mentions {
-                if source.get(range.clone()) != Some(group.original.as_ref()) {
-                    return Err("Candidate offsets changed.".into());
-                }
-                let value = self
-                    .occurrence_identity(group.id, range)
+    /// Plan every pending mention with its assigned identity's alias.
+    /// `assigned` overrides occurrence identities staged by a mapping change.
+    pub fn pending_plans(
+        &self,
+        source: &str,
+        assigned: &HashMap<(usize, usize), u64>,
+    ) -> Result<Vec<ReplacementPlan>, String> {
+        self.candidates
+            .iter()
+            .map(|candidate| {
+                let range = &candidate.range;
+                let group = self
+                    .group(candidate.group)
+                    .filter(|g| source.get(range.clone()) == Some(g.original.as_ref()))
+                    .ok_or("Document changed. Review it again.")?;
+                let identity = assigned
+                    .get(&(range.start, range.end))
+                    .copied()
+                    .or_else(|| self.occurrence_identity(group.id, range))
                     .and_then(|id| self.identity(id))
-                    .map_or_else(|| group.replacement.clone(), |i| i.alias.clone());
-                if !valid_replacement(&value) {
-                    return Err("Invalid replacement token.".into());
-                }
-                if group.original.as_ref() != value {
-                    edits.push((range.clone(), value));
-                }
+                    .ok_or("Identity is no longer available.")?;
+                Ok(ReplacementPlan {
+                    range: range.clone(),
+                    before: group.original.clone(),
+                    after: identity.alias.as_str().into(),
+                    category: identity.category,
+                    identity: identity.id,
+                })
+            })
+            .collect()
+    }
+    /// Re-alias applied mentions whose identity alias changed since application.
+    pub fn alias_corrections(&self, source: &str) -> Result<Vec<ReplacementPlan>, String> {
+        let mut plans = Vec::new();
+        for applied in &self.tracking.applied {
+            if source.get(applied.range.clone()) != Some(applied.step.after.as_ref()) {
+                return Err("Replacement changed. Review it again.".into());
+            }
+            if let Some(identity) = self.identity(applied.step.identity)
+                && applied.step.after.as_ref() != identity.alias
+            {
+                plans.push(ReplacementPlan {
+                    range: applied.range.clone(),
+                    before: applied.step.after.clone(),
+                    after: identity.alias.as_str().into(),
+                    category: identity.category,
+                    identity: identity.id,
+                });
             }
         }
-        edits.sort_by_key(|(range, _)| range.start);
-        if edits.windows(2).any(|pair| pair[0].0.end > pair[1].0.start) {
-            return Err("Candidate offsets overlap. Review the candidates again.".into());
-        }
-        Ok(edits)
+        Ok(plans)
     }
     pub fn keep(&mut self, id: u64, single: Option<Range<usize>>) {
         if let Some(&index) = self.group_lookup.get(&id) {
@@ -523,4 +544,4 @@ impl Review {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

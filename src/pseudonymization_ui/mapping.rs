@@ -125,10 +125,11 @@ pub(super) enum MappingAction {
         category: Option<Category>,
     },
 }
-type MappingPlans = (
-    Vec<pseudonymization::tracking::IdentifiedPlan>,
-    Vec<(Range<usize>, u64)>,
-);
+/// Text corrections and occurrence assignments staged by one mapping change.
+struct MappingChange {
+    plans: Vec<ReplacementPlan>,
+    assignments: Vec<(Range<usize>, u64)>,
+}
 impl Workspace {
     pub(super) fn toggle_identity_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.pseudonymization.mapping.open {
@@ -215,27 +216,16 @@ impl Workspace {
         {
             return;
         }
-        let old = review.identity_snapshot();
-        let before = self.editor.read(cx).history_id();
-        let revision = self.editor.read(cx).revision();
-        if !self
-            .editor
-            .update(cx, |e, cx| e.checkpoint_metadata(revision, cx))
-        {
+        let kept = self.checkpoint_review(cx, |review| {
+            if let Some((group, range)) = mention {
+                review.keep(group, Some(range));
+            } else {
+                review.keep_identity(id);
+            }
+        });
+        if kept.is_none() {
             return;
         }
-        let tx = self.editor.read(cx).last_transaction().cloned().unwrap();
-        self.pii_transaction(&tx, cx);
-        if let Some((group, range)) = mention {
-            self.pseudonymization.review.keep(group, Some(range));
-        } else {
-            self.pseudonymization.review.keep_identity(id);
-        }
-        self.pseudonymization.review.commit_identity_snapshot(
-            before,
-            self.editor.read(cx).history_id(),
-            old,
-        );
         self.pseudonymization.popup = None;
         self.sync_annotations(cx);
         cx.notify();
@@ -325,12 +315,14 @@ impl Workspace {
             return;
         }
         let active = self.active_replacement_range();
-        let before = self.editor.read(cx).history_id();
         let revision = self.editor.read(cx).revision();
         let source = self.editor.read(cx).text().to_owned();
         let old = self.pseudonymization.review.identity_snapshot();
         let result = self.prepare_mapping_change(&action, &source);
-        let (mut plans, assignments) = match result {
+        let MappingChange {
+            mut plans,
+            assignments,
+        } = match result {
             Ok(result) => result,
             Err(error) => {
                 self.pseudonymization.review.restore_identity_snapshot(old);
@@ -357,82 +349,44 @@ impl Workspace {
                         .find(|(r, _)| ranges.contains(r))
                         .map(|(_, id)| *id)
                 })
-                .or_else(|| plans.first().map(|p| p.1)),
+                .or_else(|| plans.first().map(|p| p.identity)),
             MappingAction::AssignApplied(id, _, _) => self
                 .pseudonymization
                 .review
                 .tracking
                 .get(*id)
-                .and_then(|a| plans.iter().find(|p| p.0.0 == a.range))
-                .map(|p| p.1),
+                .and_then(|a| plans.iter().find(|p| p.range == a.range))
+                .map(|p| p.identity),
         };
         if apply {
             let assigned: std::collections::HashMap<_, _> = assignments
                 .iter()
                 .map(|(r, id)| ((r.start, r.end), *id))
                 .collect();
-            let review = &self.pseudonymization.review;
-            for candidate in &review.candidates {
-                let Some(group) = review.group(candidate.group) else {
-                    return;
-                };
-                if source.get(candidate.range.clone()) != Some(group.original.as_ref()) {
+            match self
+                .pseudonymization
+                .review
+                .pending_plans(&source, &assigned)
+            {
+                Ok(pending) => plans.extend(pending),
+                Err(error) => {
                     self.pseudonymization.review.restore_identity_snapshot(old);
-                    self.pseudonymization.error = Some("Document changed. Review it again.".into());
+                    self.pseudonymization.error = Some(error);
                     return;
                 }
-                let id = assigned
-                    .get(&(candidate.range.start, candidate.range.end))
-                    .copied()
-                    .or_else(|| review.occurrence_identity(candidate.group, &candidate.range))
-                    .unwrap();
-                let identity = review.identity(id).unwrap();
-                plans.push((
-                    (
-                        candidate.range.clone(),
-                        group.original.clone(),
-                        identity.alias.as_str().into(),
-                        identity.category,
-                    ),
-                    id,
-                ));
             }
-            plans.sort_by_key(|p| p.0.0.start);
+            plans.sort_by_key(|p| p.range.start);
         }
-        let next = self.pseudonymization.review.identity_snapshot();
-        self.pseudonymization
-            .review
-            .restore_identity_snapshot(old.clone());
         let edits: Vec<_> = plans
             .iter()
-            .map(|((range, _, after, _), _)| (range.clone(), after.to_string()))
+            .map(|p| (p.range.clone(), p.after.to_string()))
             .collect();
-        let added = self
-            .pseudonymization
-            .review
-            .tracking
-            .prepare_corrections(&plans);
-        let committed = self.editor.update(cx, |e, cx| {
-            if edits.is_empty() {
-                e.checkpoint_metadata(revision, cx)
-            } else {
-                e.replace_ranges(revision, &edits, cx)
-            }
-        });
-        if !committed {
+        let Some(after) = self.commit_plans(revision, &plans, Some(old), cx) else {
             self.pseudonymization.error =
                 Some("Document changed. Review the mapping again.".into());
             cx.notify();
             return;
-        }
-        let transaction = self.editor.read(cx).last_transaction().cloned().unwrap();
-        self.pii_transaction(&transaction, cx);
-        let after = self.editor.read(cx).history_id();
-        self.pseudonymization.review.restore_identity_snapshot(next);
-        self.pseudonymization
-            .review
-            .commit_identity_snapshot(before, after, old);
-        self.pseudonymization.review.tracking.commit(after, added);
+        };
         let edited: std::collections::HashSet<_> =
             edits.iter().map(|(r, _)| (r.start, r.end)).collect();
         let mut assignments = assignments;
@@ -471,7 +425,7 @@ impl Workspace {
         &mut self,
         action: &MappingAction,
         source: &str,
-    ) -> Result<MappingPlans, String> {
+    ) -> Result<MappingChange, String> {
         let review = &mut self.pseudonymization.review;
         let mut assignments = Vec::new();
         let mut changed: std::collections::HashMap<u64, u64> = Default::default();
@@ -601,7 +555,7 @@ impl Workspace {
                 changed.insert(id | APPLIED_ID, target);
             }
         }
-        let mut plans: Vec<pseudonymization::tracking::IdentifiedPlan> = Vec::new();
+        let mut plans = Vec::new();
         for a in &review.tracking.applied {
             let Some(target) = changed
                 .get(&(a.id | APPLIED_ID))
@@ -617,18 +571,16 @@ impl Workspace {
                 .identity(target)
                 .ok_or("Identity is no longer available.")?;
             // An equal visible alias can still need a different identity/category.
-            plans.push((
-                (
-                    a.range.clone(),
-                    a.step.after.clone(),
-                    identity.alias.as_str().into(),
-                    identity.category,
-                ),
-                target,
-            ));
+            plans.push(ReplacementPlan {
+                range: a.range.clone(),
+                before: a.step.after.clone(),
+                after: identity.alias.as_str().into(),
+                category: identity.category,
+                identity: target,
+            });
         }
-        plans.sort_by_key(|p| p.0.0.start);
-        Ok((plans, assignments))
+        plans.sort_by_key(|p| p.range.start);
+        Ok(MappingChange { plans, assignments })
     }
     fn apply_identity_aliases(&mut self, cx: &mut Context<Self>) {
         if self.pseudonymization.scanning() || !self.can_copy_markdown() {
@@ -636,79 +588,27 @@ impl Workspace {
         }
         let source = self.editor.read(cx).text().to_owned();
         let revision = self.editor.read(cx).revision();
-        let mut plans: Vec<pseudonymization::tracking::IdentifiedPlan> = Vec::new();
         let review = &self.pseudonymization.review;
-        for a in &review.tracking.applied {
-            if source.get(a.range.clone()) != Some(a.step.after.as_ref()) {
-                self.pseudonymization.error = Some("Replacement changed. Review it again.".into());
+        let mut plans = match review.alias_corrections(&source) {
+            Ok(plans) => plans,
+            Err(error) => {
+                self.pseudonymization.error = Some(error);
                 cx.notify();
                 return;
             }
-            if let Some(identity) = review.identity(a.step.identity)
-                && a.step.after.as_ref() != identity.alias
-            {
-                plans.push((
-                    (
-                        a.range.clone(),
-                        a.step.after.clone(),
-                        identity.alias.as_str().into(),
-                        identity.category,
-                    ),
-                    identity.id,
-                ));
-            }
-        }
-        for candidate in &review.candidates {
-            let Some(group) = review.group(candidate.group) else {
-                return;
-            };
-            if source.get(candidate.range.clone()) != Some(group.original.as_ref()) {
-                return;
-            }
-            let Some(identity) = review
-                .occurrence_identity(group.id, &candidate.range)
-                .and_then(|id| review.identity(id))
-            else {
-                return;
-            };
-            plans.push((
-                (
-                    candidate.range.clone(),
-                    group.original.clone(),
-                    identity.alias.as_str().into(),
-                    identity.category,
-                ),
-                identity.id,
-            ));
-        }
-        plans.sort_by_key(|p| p.0.0.start);
-        if plans.windows(2).any(|p| p[0].0.0.end > p[1].0.0.start) {
+        };
+        let Ok(pending) = review.pending_plans(&source, &Default::default()) else {
+            return;
+        };
+        plans.extend(pending);
+        plans.sort_by_key(|p| p.range.start);
+        if plans.windows(2).any(|p| p[0].range.end > p[1].range.start) {
             self.pseudonymization.error = Some("Candidates overlap. Review them again.".into());
             cx.notify();
             return;
         }
-        let edits: Vec<_> = plans
-            .iter()
-            .map(|((range, _, after, _), _)| (range.clone(), after.to_string()))
-            .collect();
-        if !edits.is_empty() {
-            let added = self
-                .pseudonymization
-                .review
-                .tracking
-                .prepare_corrections(&plans);
-            if !self
-                .editor
-                .update(cx, |e, cx| e.replace_ranges(revision, &edits, cx))
-            {
-                return;
-            }
-            let tx = self.editor.read(cx).last_transaction().cloned().unwrap();
-            self.pii_transaction(&tx, cx);
-            self.pseudonymization
-                .review
-                .tracking
-                .commit(self.editor.read(cx).history_id(), added);
+        if !plans.is_empty() && self.commit_plans(revision, &plans, None, cx).is_none() {
+            return;
         }
         self.pseudonymization.review.open = true;
         self.pseudonymization
