@@ -70,6 +70,15 @@ The user authorized the pinned GLiNER2 option experimentally despite its blocker
    checks passed; base-editor stress responsiveness and detector quality remain limited.
    See [verification](tests/fixtures/pseudonymization/results/2026-10-07-restoration/README.md).
 
+8. **Selected Rust Presidio reuse — implemented experimentally** — pinned
+   `presidio-analyzer` 0.1.11 supplies selected pattern configuration and the
+   SNILS validator through the existing structured-detector seam. Unicode email
+   patterns, strict same-line context, INN validation and mdoc's evidence/overlap
+   policy preserve the frozen selected-rule predictions. The full analyzer,
+   anonymizer, gazetteers and extra ONNX runtime are not adopted. This changes no
+   production qualification or identity-association policy. See
+   [reuse scope and checks](docs/design/rust-presidio-reuse.md).
+
 A measured responsiveness/resource blocker moves ahead of features. Keep the
 app and reusable crates; refactor only where concrete ownership or testing
 problems appear. Extraction/OCR algorithm improvements belong in the AnyDoc and
@@ -140,3 +149,19 @@ confirmed on 2026-10-02. Its accepted scope and completion criteria are recorded
 in ADR 0006 and the linked specification. Implementation, offline model probes
 and the repository gate are complete; human native acceptance and new Windows
 runtime checks remain outstanding.
+
+9. **Document-local identity review — implemented experimentally** —
+   [ADR 0018](docs/adr/0018-document-local-identity-review.md) delivers the first
+   external AI journey: stable aliases, staged mappings, person-variant suggestions,
+   searchable identity/context review, occurrence/variant assignment and separation,
+   merge, rename, category correction and manual contact ownership. The subsequent
+   [simplification](docs/adr/0019-simpler-pseudonymization-ui.md) consolidates review
+   into a Replacements panel with contextual correction, batch Apply and scoped
+   Keep. [Direct interaction](docs/adr/0020-direct-replacement-workspace.md) now
+   pairs that overview with an exact-word popup, inline alias linking/creation,
+   counted scopes, readable occurrence context and a compact vertical panel.
+   Copy Markdown is the single handoff and copies exact current source;
+   relationship owners remain local. Tracked shared markers can be upgraded directly.
+   Decisions follow undo/redo and survive rescans. Labelled checksum-valid ОГРН/ОГРНИП
+   are structured identifiers. Holdout quality, correction time, platform acceptance
+   and explicit release gates still block removal of experimental status.

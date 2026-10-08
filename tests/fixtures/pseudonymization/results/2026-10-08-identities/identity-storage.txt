@@ -1,0 +1,18 @@
+warning: ignoring `registry.global-min-publish-age` without `-Zmin-publish-age`
+   Compiling mdoc v0.1.0 (/Users/tebriz/Developer/lawkitt/mdoc)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `mdoc` (bin "mdoc" test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.13s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (target/debug/deps/mdoc-785e9c00196ae283)
+
+running 1 test
+IDENTITY_STORAGE identities=20000 retained_states=256 shared_policy_during_typing=true edited_overrides=1 immutable_definitions=20000 (excludes editor snapshots/layout, allocator and matcher costs)
+test pseudonymization::identities::tests::identity_policy_history_shares_indices_and_prunes_states ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 206 filtered out; finished in 0.37s
+

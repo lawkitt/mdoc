@@ -307,6 +307,9 @@ impl Workspace {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(
             self.editor.read(cx).text().to_owned(),
         ));
+        self.show_copy_feedback(cx);
+    }
+    pub(crate) fn show_copy_feedback(&mut self, cx: &mut Context<Self>) {
         // Replacing the task restarts feedback; typing and document transitions cancel it.
         self.copy_feedback = Some(cx.spawn(async move |this, cx| {
             cx.background_executor()
@@ -1260,10 +1263,11 @@ impl Render for Workspace {
         let ocr_disabled =
             self.job.busy() || self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy();
         let width = self.chrome_width(window);
-        let narrow_preview = self.preview.visible && width < 620.;
+        let content_width = (width - f32::from(self.replacement_panel_width(window))).max(1.);
+        let narrow_preview = self.preview.visible && content_width < 620.;
         let show_original = self.preview.visible && (!narrow_preview || self.original_selected);
         let show_markdown = !narrow_preview || !self.original_selected;
-        let minimum = (280. / width.max(620.)).min(0.5);
+        let minimum = (280. / content_width.max(620.)).min(0.5);
         let split = self
             .preview
             .split_ratio
@@ -1275,11 +1279,12 @@ impl Render for Workspace {
             .child(gpui::canvas(move |bounds, _, cx| { if measured_bounds.replace(bounds) != bounds { let _ = measured_owner.update(cx, |_, cx| cx.notify()); } }, |_, _, _, _| {}).absolute().inset_0())
             .on_action(cx.listener(|_, _: &ui::NextControl, window, cx| ui::cycle(window, cx, None, false)))
             .on_action(cx.listener(|_, _: &ui::PreviousControl, window, cx| ui::cycle(window, cx, None, true)))
-            .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+            .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
                 if event.pressed_button != Some(gpui::MouseButton::Left) { this.split_dragging = false; }
                 if this.split_dragging {
                     let bounds = this.workspace_bounds.get();
-                    let ratio = f32::from(event.position.x - bounds.left()) / f32::from(bounds.size.width).max(1.);
+                    let width = f32::from(bounds.size.width - this.replacement_panel_width(window)).max(1.);
+                    let ratio = f32::from(event.position.x - bounds.left()) / width;
                     this.preview.split_ratio = Some(ratio.clamp(0.25, 0.75));
                     cx.notify();
                 }
@@ -1348,13 +1353,14 @@ impl Render for Workspace {
                         .when(!ocr::SUPPORTED, |v| v.child(div().text_size(px(12.)).text_color(palette.header_muted).child("Local OCR is unavailable on this platform."))))))
                 .when(self.preview.visible && !narrow_preview, |row| row.child(div().id("preview-divider").when(cfg!(test), |v| v.debug_selector(|| "preview-divider".into())).w(px(6.)).h_full().flex_shrink_0().cursor(gpui::CursorStyle::ResizeLeftRight).bg(palette.border)
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = true; cx.notify(); }))))
-                .when(show_original && self.preview.pdf.is_none(), |row| row.child(div().when(!narrow_preview, |v| v.w(gpui::relative(1. - split))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
+                .when(show_original && self.preview.pdf.is_none(), |row| row.child(div().when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
                     .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
                     .child(if self.preview.loading { ui::activity("preview-activity", "Preparing preview…", theme).into_any_element() } else { div().child(if self.preview.queued { "Waiting to prepare preview…" } else { "Preview unavailable" }).into_any_element() }).when_some(self.preview.message.clone(), |v, message| v.child(self.notice("preview-notice", "Preview", message, self.preview.retryable, cx)))))
-                .when_some(self.preview.pdf.clone().filter(|_| show_original), |row, pdf| row.child(div().when(!narrow_preview, |v| v.w(gpui::relative(1. - split))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
+                .when_some(self.preview.pdf.clone().filter(|_| show_original), |row, pdf| row.child(div().when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments))
-                    .children(preview_notice))))
+                    .children(preview_notice)))
+                .children(self.identity_panel(window, cx)))
             .children(setup_notice).children(error_notice)
             .children(self.pseudonym_popup(window, cx))
     }

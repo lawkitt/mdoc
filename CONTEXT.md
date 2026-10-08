@@ -24,6 +24,16 @@ extracted directly.
 The transfer of prepared Markdown to another tool, by saving a file or copying
 the full text.
 
+**AI analysis handoff**:
+Prepare Markdown in mdoc for analysis in an external AI tool, without bringing
+the response back into mdoc. This is the initial pseudonymization production
+journey selected on 2026-10-08.
+
+**AI analysis return journey**:
+Prepare Markdown for analysis in an external AI tool and bring its response
+back into mdoc. This is a later product journey; response import and identity
+restoration behavior have not yet been designed or implemented.
+
 **Pseudonymization**:
 Reviewable replacement of selected identifying information with consistent
 placeholders while retaining useful relationships in the text. It does not
@@ -98,3 +108,25 @@ information while preserving useful references within a document.
 Opening several selected files together for individual reading and conversion.
 It does not imply processing and saving the entire group automatically.
 _Avoid_: Batch conversion
+
+Document-local identity review (ADR 0018): an **identity** owns a stable neutral
+alias and original variants; an **occurrence assignment** can override a variant's
+identity to separate homonyms. **Sameness** joins mentions into one identity;
+**ownership** links a contact/address/identifier to a person or organization.
+**Proposed mapping** changes are staged against originals until Apply replacements;
+tracked replacements remain correctable afterward. The **Replacements panel**
+(ADRs 0019 and [0020](docs/adr/0020-direct-replacement-workspace.md)) is the searchable
+overview; selecting a row reveals the exact highlighted occurrence and its shared
+word popup. The popup provides direct alias choices and scoped sameness/category
+corrections, with separate ownership and Keep/Restore actions. One **Copy Markdown**
+action copies current full source exactly, including with pending proposals;
+it adds no relationship legend and never implicitly applies replacements.
+Owner assignments remain local. The panel stays vertical at the right edge with
+compact rows and full document-area height. Its width adapts to the window; the
+Original preview switches panes when the remaining document area is narrow,
+keeping the word popup available beside the panel.
+**Same wording** affects matching originals still assigned to the selected entity;
+**Entire entity** also includes its other variants. **Generated aliases** are
+allocated by mdoc; **custom aliases** preserve deliberate user names on category
+correction, regardless of their spelling.
+These mappings and originals are live-tab memory, not saved restoration metadata.

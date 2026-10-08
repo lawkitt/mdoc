@@ -656,6 +656,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
+name = "bincode"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bindgen"
 version = "0.72.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4435,6 +4444,7 @@ dependencies = [
  "mdoc-editor",
  "ort",
  "pdf-inspector 1.25.2",
+ "presidio-analyzer",
  "regex",
  "roxmltree 0.21.1",
  "serde",
@@ -5606,6 +5616,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "phonenumber-rs"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9004e76f437387944b5667583b0ed8115cd3f5c01eb3f2e36a3c91e45d03517a"
+dependencies = [
+ "bincode",
+ "once_cell",
+ "regex",
+ "roxmltree 0.20.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "pic-scale"
 version = "0.7.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5785,6 +5809,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
 dependencies = [
  "zerocopy",
+]
+
+[[package]]
+name = "presidio-analyzer"
+version = "0.1.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1420e37c6047e45160308046a01200f1d1fb44d0c7d56e119a5458d9d7deff3"
+dependencies = [
+ "phonenumber-rs",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

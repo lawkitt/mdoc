@@ -1,0 +1,27 @@
+{
+  "cloakrs_aliases": "😀 [PERSON_1] / [PERSON_2] / [PERSON_1]",
+  "cloakrs_exact_repeat_reuses_alias": true,
+  "cloakrs_inflection_remains_separate": true,
+  "cloakrs_strict_unicode_round_trip": true,
+  "cloakrs_unique_entries": 2,
+  "presidio_default_engine_ru_results": [
+    {
+      "end": 31,
+      "start": 17,
+      "text": "112-233-445 95",
+      "type": "RU_SNILS"
+    },
+    {
+      "end": 59,
+      "start": 39,
+      "text": "anna@example.invalid",
+      "type": "EMAIL_ADDRESS"
+    }
+  ],
+  "presidio_default_ner_person_found": false,
+  "presidio_default_replace": "😀 <PERSON> / <PERSON> / <PERSON>",
+  "presidio_invalid_utf8_public_span_panics": true,
+  "presidio_output_ranges_valid": true,
+  "presidio_ru_registry_size": 0,
+  "scope": "Synthetic mapping/registration/integrity probes, no model inference or corpus qualification"
+}

@@ -1,0 +1,28 @@
+warning: ignoring `registry.global-min-publish-age` without `-Zmin-publish-age`
+   Compiling mdoc v0.1.0 (/Users/tebriz/Developer/lawkitt/mdoc)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `mdoc` (bin "mdoc" test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.98s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/main.rs (target/debug/deps/mdoc-785e9c00196ae283)
+
+running 4 tests
+test pseudonymization::tests::utf8_matcher_storage_matrix ... PII_STORAGE bytes=2097152 occurrences=20000 groups=1 matcher_bytes=409 candidate_capacity_bytes=1048576 shared_source=true cached_matcher=true
+PII_STORAGE bytes=2097152 occurrences=20000 groups=1000 matcher_bytes=23184 candidate_capacity_bytes=1048576 shared_source=true cached_matcher=true
+PII_STORAGE bytes=2097152 occurrences=20000 groups=20000 matcher_bytes=453840 candidate_capacity_bytes=1048576 shared_source=true cached_matcher=true
+ok
+test pseudonymization::tracking::tests::metadata_history_stress_retains_shared_originals_and_prunes_reversible_deltas ... PII_STORAGE occurrences=20000 shared_steps=1 retained_deltas=255 occurrence_capacity_bytes=640000 delta_capacity_bytes=51000 lookup_capacity=28672 (excludes hash buckets/allocator overhead)
+ok
+test pseudonymization_detector::tests::experimental_model_offline_scan ... offline experimental scan: 8640 bytes, 397 spans, 7.98s
+active scan cancellation returned after 2.87s; no partial result accepted
+ok
+test pseudonymization_ui::tests::anonymization_installed_model_offline_smoke ... installed offline anonymization: 3 replacements; PERSON represents ORG Contact EMAIL.
+
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 201 filtered out; finished in 19.62s
+

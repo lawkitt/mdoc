@@ -32,6 +32,9 @@ impl Workspace {
         self.pseudonymization.completion = None;
         self.pseudonymization.popup = None;
         self.pseudonymization.review.open = true;
+        if matches!(intent, ScanIntent::Review(_)) {
+            self.pseudonymization.mapping.begin_review();
+        }
         let editor = self.editor.read(cx);
         let revision = editor.revision();
         let source = editor.text().to_owned();
@@ -88,6 +91,9 @@ impl Workspace {
         let config = job.config.clone();
         let intent = job.intent;
         self.pseudonymization.job = None;
+        if matches!(intent, ScanIntent::Review(_)) {
+            self.pseudonymization.mapping.open = true;
+        }
         let source = self.editor.read(cx).text().to_owned();
         match result.and_then(|detections| self.pseudonymization.review.ingest(&source, detections))
         {

@@ -1,6 +1,5 @@
 use super::*;
 use crate::{CopyMarkdown, document::Document, style::Theme};
-use gpui::InputEvent;
 fn install_automatic_scan(app: &mut Workspace, cx: &mut Context<Workspace>) -> (u64, u64, u64) {
     let revision = app.editor.read(cx).revision();
     let generation = app.pseudonymization.generation;
@@ -158,7 +157,7 @@ fn anonymization_applies_scan_as_one_undo_step_and_copy_is_explicit(cx: &mut gpu
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("anonymization-status").is_some());
-    assert!(cx.debug_bounds("review-menu").is_none());
+    assert!(cx.debug_bounds("replacement-commands").is_none());
     assert!(app.read_with(cx, |app, _| app.pseudonymization.completion.is_some()));
     app.update_in(cx, |app, window, cx| {
         app.copy_markdown(&CopyMarkdown, window, cx);
@@ -319,6 +318,7 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
     });
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
+        app.pseudonymization.mapping.open = true;
         let review = &mut app.pseudonymization.review;
         review.open = true;
         let anna = review.add_manual(source, 2..10, Category::Person).unwrap();
@@ -345,18 +345,15 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
             .unwrap();
         app.activate_annotation(annotation, window, cx);
         app.pseudonymization
-            .input
+            .mapping
+            .alias
             .update(cx, |input, cx| input.set_value("PERSON_CUSTOM".into(), cx));
         window.focus(&app.focus, cx);
         cx.notify();
     });
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
-    let more = cx.debug_bounds("review-menu").unwrap();
-    cx.simulate_click(more.center(), Default::default());
-    cx.run_until_parked();
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-    let bounds = cx.debug_bounds("accept-all-pseudonyms").unwrap();
+    let bounds = cx.debug_bounds("apply-identity-map").unwrap();
     cx.simulate_click(bounds.center(), gpui::Modifiers::none());
     cx.run_until_parked();
     app.update(cx, |app, cx| {
@@ -365,20 +362,14 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
             "**Анна** ORG_1 PERSON_CUSTOM [mail](EMAIL_1) Bob"
         );
         assert_eq!(app.pseudonymization.review.remaining(), 0);
-        assert!(app.pseudonymization.popup.is_none());
+        assert!(app.pseudonymization.popup.is_some());
         assert!(app.dirty(cx));
         assert!(app.pseudonymization.error.is_none());
     });
     // With no pending suggestions, another click must not add an undo step.
     let revision = app.read_with(cx, |app, cx| app.editor.read(cx).revision());
     cx.update(|window, cx| window.draw(cx).clear(cx));
-    let more = cx.debug_bounds("review-menu").unwrap();
-    cx.simulate_click(more.center(), Default::default());
-    cx.run_until_parked();
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-    let bounds = cx.debug_bounds("accept-all-pseudonyms").unwrap();
-    cx.simulate_click(bounds.center(), gpui::Modifiers::none());
-    cx.run_until_parked();
+    assert!(cx.debug_bounds("apply-identity-map").is_none());
     app.update_in(cx, |app, window, cx| {
         assert_eq!(app.editor.read(cx).revision(), revision);
         window.focus(&app.editor.read(cx).focus_handle(cx), cx);
@@ -400,9 +391,8 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
     });
 }
 #[gpui::test]
-fn keyboard_reveals_long_candidate_links_without_editing_source(cx: &mut gpui::TestAppContext) {
+fn keyboard_search_and_navigation_reach_virtualized_alias_targets(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::ui_tests::boot(cx);
-    app.update(cx, |app, cx| app.select_pii_mode(Mode::Pseudonymize, cx));
     cx.simulate_resize(gpui::size(px(640.), px(480.)));
     let source = (0..30)
         .map(|i| format!("Name{i:02}"))
@@ -411,6 +401,10 @@ fn keyboard_reveals_long_candidate_links_without_editing_source(cx: &mut gpui::T
     app.update_in(cx, |app, window, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text(&source, cx));
+        app.pseudonymization.review = Review::default();
+        app.pseudonymization
+            .review
+            .set_mode(Mode::Pseudonymize, &source);
         app.pseudonymization.review.open = true;
         for i in 0..30 {
             app.pseudonymization
@@ -418,80 +412,47 @@ fn keyboard_reveals_long_candidate_links_without_editing_source(cx: &mut gpui::T
                 .add_manual(&source, i * 7..i * 7 + 6, Category::Person)
                 .unwrap();
         }
-        app.sync_pseudonym_theme(cx);
-        let id = app.pseudonymization.review.groups[0].id;
-        let range = app.pseudonymization.review.group(id).unwrap().mentions[0].clone();
-        let annotation = app
-            .pseudonymization
-            .review
-            .annotation_id(id, &range)
-            .unwrap();
+        app.sync_annotations(cx);
+        let annotation = app.pseudonymization.review.candidates[0].id;
         app.activate_annotation(annotation, window, cx);
-        app.pseudonymization.popup.as_mut().unwrap().links_open = true;
-        cx.notify();
-    });
-    cx.run_until_parked();
-    let target = gpui::ElementId::from(gpui::SharedString::from("link-PERSON_30"));
-    let mut reached = false;
-    for _ in 0..50 {
-        cx.simulate_keystrokes("tab");
-        for _ in 0..3 {
-            cx.update(|window, cx| {
-                window.refresh();
-                window.draw(cx).clear(cx);
-            });
-        }
-        reached = cx.update(|window, cx| {
-            app.read(cx)
-                .pseudonymization
-                .popup_controls
-                .borrow()
-                .get(&target)
-                .is_some_and(|focus| focus.is_focused(window))
-        });
-        if reached {
-            break;
-        }
-    }
-    assert!(reached, "Tab must reach all disclosed linking choices");
-    let last = cx.debug_bounds("last-candidate-link").unwrap();
-    cx.update(|window, cx| {
-        let app = app.read(cx);
-        let viewport = app.pseudonymization.popup_scroll.bounds();
-        assert!(last.top() >= viewport.top() && last.bottom() <= viewport.bottom());
-        let offset = app.pseudonymization.popup_scroll.offset();
-        assert!(offset.y < px(0.), "focus must reveal the lower controls");
-        assert!(viewport.bottom() <= window.viewport_size().height);
-        assert_eq!(app.editor.read(cx).text(), source);
-        assert!(app.pseudonymization.popup.is_some());
-    });
-    cx.simulate_keystrokes("space");
-    cx.update(|window, cx| {
-        window.dispatch_event(
-            gpui::KeyUpEvent {
-                keystroke: gpui::Keystroke::parse("space").unwrap(),
-            }
-            .to_platform_input(),
+        app.pseudonymization.mapping.alias_choices = true;
+        window.focus(
+            &app.pseudonymization.mapping.alias.read(cx).focus_handle(cx),
             cx,
         );
     });
     cx.run_until_parked();
+    for _ in 0..29 {
+        cx.simulate_keystrokes("down");
+        cx.run_until_parked();
+    }
+    for _ in 0..3 {
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+    }
     app.update(cx, |app, cx| {
-        assert_eq!(app.pseudonymization.input.read(cx).value(), "PERSON_30");
+        assert_eq!(app.pseudonymization.mapping.target_index, Some(28));
         assert_eq!(app.editor.read(cx).text(), source);
     });
-    cx.simulate_keystrokes("escape");
-    cx.update(|window, cx| {
-        window.refresh();
-        window.draw(cx).clear(cx);
-    });
-    let close = cx.debug_bounds("leave-pseudonyms").unwrap();
-    cx.simulate_click(close.center(), Default::default());
-    app.update_in(cx, |app, window, cx| {
-        assert!(!app.pseudonymization.review.open);
-        assert!(app.editor.read(cx).focus_handle(cx).is_focused(window));
-        assert_eq!(app.pseudonymization.review.mappings().len(), 30);
+    let last = cx
+        .debug_bounds("target-30")
+        .expect("keyboard-selected target must be painted");
+    let popup = cx.debug_bounds("pseudonym-popup").unwrap();
+    assert!(
+        last.top() >= popup.top() && last.bottom() <= popup.bottom(),
+        "target {last:?} popup {popup:?}"
+    );
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(
+            app.pseudonymization.mapping.alias.read(cx).value(),
+            "PERSON_30"
+        );
         assert_eq!(app.editor.read(cx).text(), source);
+        assert!(app.pseudonymization.popup.is_some());
     });
 }
 
@@ -577,7 +538,7 @@ fn successful_scan_removes_setup_prompt_only_for_the_scanned_model(cx: &mut gpui
     });
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
-    let more = cx.debug_bounds("review-menu").unwrap();
+    let more = cx.debug_bounds("replacement-commands").unwrap();
     cx.simulate_click(more.center(), Default::default());
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -800,6 +761,13 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
                 assert!(control.top() >= panel.top() && control.bottom() <= panel.bottom());
             }
             assert!(panel.bottom() <= px(height) && panel.right() <= px(width));
+            // Neutral popup focus must never turn Enter into restoration.
+            cx.simulate_keystrokes("enter");
+            cx.run_until_parked();
+            app.update(cx, |app, cx| {
+                assert_eq!(app.editor.read(cx).text(), "PERSON PERSON PERSON");
+                assert!(app.pseudonymization.popup.is_some());
+            });
             // Click the actual secondary action, rather than calling its handler.
             let restore_all = cx.debug_bounds("restore-all").unwrap().center();
             cx.simulate_click(restore_all, Default::default());
@@ -829,91 +797,69 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
 }
 
 #[gpui::test]
-fn long_transition_wraps_and_keyboard_replacement_remains_undoable(cx: &mut gpui::TestAppContext) {
+fn long_original_and_neutral_enter_preserve_source_until_explicit_apply(
+    cx: &mut gpui::TestAppContext,
+) {
     let (app, cx) = crate::ui_tests::boot(cx);
     cx.simulate_resize(gpui::size(px(640.), px(480.)));
     let original = "Индивидуальный предприниматель Анна Александровна ".repeat(5);
     for theme in [Theme::Dark, Theme::Light] {
         app.update_in(cx, |app, window, cx| {
             app.theme.set(theme);
-            app.editor
-                .update(cx, |editor, cx| editor.set_text(&original, cx));
+            app.editor.update(cx, |e, cx| e.set_text(&original, cx));
+            app.pseudonymization.review = Review::default();
             app.pseudonymization
                 .review
                 .set_mode(Mode::Pseudonymize, &original);
             app.pseudonymization.review.open = true;
-            let id = app
-                .pseudonymization
+            app.pseudonymization
                 .review
                 .add_manual(&original, 0..original.len(), Category::Person)
                 .unwrap();
             app.sync_annotations(cx);
-            let annotation = app
-                .pseudonymization
-                .review
-                .annotation_id(id, &(0..original.len()))
-                .unwrap();
-            app.activate_annotation(annotation, window, cx);
-            app.pseudonymization
-                .input
-                .update(cx, |input, cx| input.set_value("CLIENT_1".into(), cx));
+            app.activate_annotation(app.pseudonymization.review.candidates[0].id, window, cx);
         });
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear(cx));
-        let panel = cx.debug_bounds("pseudonym-popup").unwrap();
-        let text = cx.debug_bounds("pseudonym-original").unwrap();
-        assert!(
-            text.size.height > px(26.),
-            "long original must wrap, not truncate"
-        );
-        assert!(text.left() >= panel.left() && text.right() <= panel.right());
-        assert!(panel.bottom() <= px(480.));
-        // The current popup initially focuses its token field. Tab navigation
-        // must reveal Replace even when the long transition makes it scroll.
-        let target = gpui::ElementId::from("Accept");
-        let mut reached = false;
-        for _ in 0..8 {
-            cx.simulate_keystrokes("tab");
-            cx.update(|window, cx| {
-                window.refresh();
-                window.draw(cx).clear(cx);
-            });
-            reached = cx.update(|window, cx| {
-                app.read(cx)
-                    .pseudonymization
-                    .popup_controls
-                    .borrow()
-                    .get(&target)
-                    .is_some_and(|focus| focus.is_focused(window))
-            });
-            if reached {
-                break;
-            }
-        }
-        assert!(reached);
         cx.simulate_keystrokes("enter");
-        cx.update(|window, cx| {
-            window.dispatch_event(
-                gpui::KeyUpEvent {
-                    keystroke: gpui::Keystroke::parse("enter").unwrap(),
-                }
-                .to_platform_input(),
-                cx,
-            );
-        });
-        cx.run_until_parked();
-        assert_eq!(
-            app.read_with(cx, |app, cx| app.editor.read(cx).text().to_owned()),
-            "CLIENT_1"
-        );
-        cx.dispatch_action(mdoc_editor::Undo);
         cx.run_until_parked();
         assert_eq!(
             app.read_with(cx, |app, cx| app.editor.read(cx).text().to_owned()),
             original
         );
+        app.update_in(cx, |app, window, cx| {
+            app.pseudonymization
+                .mapping
+                .alias
+                .update(cx, |input, cx| input.set_value("CLIENT_1".into(), cx));
+            window.focus(
+                &app.pseudonymization.mapping.alias.read(cx).focus_handle(cx),
+                cx,
+            );
+        });
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(
+            app.read_with(cx, |app, cx| app.editor.read(cx).text().to_owned()),
+            original
+        );
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let apply = cx.debug_bounds("apply-identity-map").unwrap();
+        cx.simulate_click(apply.center(), Default::default());
+        cx.run_until_parked();
+        app.update_in(cx, |app, window, cx| {
+            assert_eq!(app.editor.read(cx).text(), "CLIENT_1");
+            assert!(app.pseudonymization.popup.is_some());
+            window.focus(&app.pseudonymization.focus, cx);
+        });
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(
+            app.read_with(cx, |app, cx| app.editor.read(cx).text().to_owned()),
+            "CLIENT_1"
+        );
     }
 }
+
 #[gpui::test]
 fn editing_marker_invalidates_provenance_undo_recovers_it_and_paste_creates_none(
     cx: &mut gpui::TestAppContext,

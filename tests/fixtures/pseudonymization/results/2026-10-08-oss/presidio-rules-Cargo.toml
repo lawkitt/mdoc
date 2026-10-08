@@ -1,0 +1,11 @@
+[package]
+name = "mdoc-compat-presidio-rules"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+presidio-analyzer = { path = "../../presidio-rs/crates/presidio-analyzer", default-features = false }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
+gliner2-rs = { version = "=0.9.6", default-features = false }

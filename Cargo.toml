@@ -26,6 +26,7 @@ gpui_platform = { package = "gpui-pre-platform", version = "0.3", features = ["f
 [dependencies]
 aho-corasick = "=1.1.5"
 regex = "1"
+presidio-analyzer = { version = "=0.1.11", default-features = false }
 anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "97d21d1f46086d84478da072ba1fdfa210461c80" }
 pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "1baba87892a929e64d08069cb223b4a312f755cf", features = ["ocr"] }
 dirs = "6"

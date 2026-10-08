@@ -52,7 +52,8 @@ fn anonymization_converts_only_known_accepted_pseudonyms_and_restores_proposals(
     let original = "Alice Bob CLIENT_OTHER";
     let alice = review.add_manual(original, 0..5, Category::Person).unwrap();
     let bob = review.add_manual(original, 6..9, Category::Person).unwrap();
-    review.set_replacement(bob, "CLIENT_OTHER"); // proposed, never accepted
+    assert!(review.rename_identity(bob, "CLIENT_OTHER").is_err()); // raw token collision
+    review.set_replacement(bob, "CLIENT_B"); // proposed, never accepted
     let edits = review.plan(original, alice, None, "CLIENT_A").unwrap();
     let changed = "CLIENT_A Bob CLIENT_OTHER";
     let added =
@@ -85,7 +86,7 @@ fn anonymization_converts_only_known_accepted_pseudonyms_and_restores_proposals(
     review.set_mode(Mode::Pseudonymize, changed);
     assert_eq!(
         review.plan_all(changed, None).unwrap(),
-        vec![(9..12, "CLIENT_OTHER".into())]
+        vec![(9..12, "CLIENT_B".into())]
     );
     let mut reopened = Review::default();
     reopened.set_mode(Mode::Anonymize, changed);
@@ -320,4 +321,59 @@ fn utf8_matcher_storage_matrix() {
             review.candidates.capacity() * std::mem::size_of::<CandidateOccurrence>()
         );
     }
+}
+
+#[test]
+fn normalized_identities_preserve_bytes_and_legal_forms_without_guessing_relationships() {
+    let source = "Alice Morgan · ALICE   MORGAN · ООО «Берег» · ооо \"берег\" · ИП Берег";
+    let mut review = Review::default();
+    let a = review.add_manual(source, 0..12, Category::Person).unwrap();
+    let at = source.find("ALICE").unwrap();
+    let b = review
+        .add_manual(source, at..at + "ALICE   MORGAN".len(), Category::Person)
+        .unwrap();
+    assert_eq!(review.group_identity(a), review.group_identity(b));
+    assert_eq!(review.group(b).unwrap().original.as_ref(), "ALICE   MORGAN");
+    let mut ids = Vec::new();
+    for value in ["ООО «Берег»", "ооо \"берег\"", "ИП Берег"] {
+        let start = source.find(value).unwrap();
+        let group = review
+            .add_manual(source, start..start + value.len(), Category::Organization)
+            .unwrap();
+        ids.push(review.group_identity(group).unwrap());
+    }
+    assert_eq!(ids[0], ids[1]);
+    assert_ne!(ids[0], ids[2]);
+    assert!(
+        review
+            .active_identities()
+            .iter()
+            .all(|id| review.identity(*id).unwrap().owner.is_none())
+    );
+}
+
+#[test]
+fn initials_discovery_keeps_ambiguous_links_as_suggestions() {
+    let source = "Павлова Марина Сергеевна · Павлова Мария Степановна · Павлова М.С. · Павлова";
+    let mut review = Review::default();
+    let mut detections = Vec::new();
+    for value in ["Павлова Марина Сергеевна", "Павлова Мария Степановна"]
+    {
+        let start = source.find(value).unwrap();
+        detections.push(detection(start..start + value.len(), Category::Person));
+    }
+    review.ingest(source, detections).unwrap();
+    let initials = review
+        .groups
+        .iter()
+        .find(|g| g.original.as_ref() == "Павлова М.С.")
+        .unwrap();
+    assert_eq!(review.suggestions(initials.id).len(), 2);
+    assert_eq!(review.active_identities().len(), 3);
+    assert!(
+        review
+            .groups
+            .iter()
+            .all(|g| g.original.as_ref() != "Павлова")
+    );
 }

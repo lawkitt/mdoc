@@ -211,7 +211,7 @@ pub fn control(
     enabled: bool,
 ) -> gpui::Stateful<gpui::Div> {
     let label = label.into();
-    control_base(id, label.clone(), theme, enabled).child(label)
+    control_base(id, label.clone(), theme, enabled).when(!label.is_empty(), |v| v.child(label))
 }
 
 #[derive(Clone, Copy)]

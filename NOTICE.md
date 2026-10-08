@@ -49,3 +49,12 @@ shared ONNX Runtime notices remain beside the runtime. Model identities/digests
 live in the pinned [FP16 manifest](resources/pseudonymization-model.json) and
 [FP32 manifest](resources/pseudonymization-fp32-model.json), at the same export revision.
 No model weights are included in source or default packaging.
+
+The structured PII adapter uses presidio-analyzer 0.1.11, a Rust Presidio port
+by the presidio-rust contributors (MIT). Its complete license is retained in
+[resources/presidio-license.txt](resources/presidio-license.txt). Only selected
+email/INN/SNILS pattern configuration and the SNILS checksum validator are used;
+mdoc retains its Unicode patterns, strict context and boundary policy, INN
+checksum, review decisions and replacement/provenance implementation. Optional
+gazetteer and ONNX features are disabled. See the
+[reuse decision and verification](docs/design/rust-presidio-reuse.md).

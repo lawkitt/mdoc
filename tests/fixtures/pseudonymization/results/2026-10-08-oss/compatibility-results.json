@@ -1,0 +1,22 @@
+[
+  {
+    "variant": "presidio-rules",
+    "exit_code": 0,
+    "resolved": true,
+    "ort_versions": [
+      "2.0.0-rc.13"
+    ]
+  },
+  {
+    "variant": "presidio-onnx-pos",
+    "exit_code": 101,
+    "resolved": false,
+    "error": "warning: ignoring `registry.global-min-publish-age` without `-Zmin-publish-age`\n    Blocking waiting for file lock on package cache\n    Updating crates.io index\nerror: failed to select a version for `ort`.\n    ... required by package `presidio-analyzer v0.1.11 (/tmp/mdoc-pii-oss-20261008.Cfk56N/presidio-rs/crates/presidio-analyzer)`\n    ... which satisfies path dependency `presidio-analyzer` of package `mdoc-compat-presidio-onnx-pos v0.0.0 (/tmp/mdoc-pii-oss-20261008.Cfk56N/compatibility/presidio-onnx-pos)`\nversions that meet the requirements `=2.0.0-rc.10` are: 2.0.0-rc.10\n\nall possible versions conflict with previously selected packages\n\n  previously selected package `ort v2.0.0-rc.13`\n    ... which satisfies dependency `ort = \"=2.0.0-rc.13\"` of package `mdoc-compat-presidio-onnx-pos v0.0.0 (/tmp/mdoc-pii-oss-20261008.Cfk56N/compatibility/presidio-onnx-pos)`\n\nfailed to select a version for `ort` which could resolve this conflict\n"
+  },
+  {
+    "variant": "dbmcp-published",
+    "exit_code": 101,
+    "resolved": false,
+    "error": "warning: ignoring `registry.global-min-publish-age` without `-Zmin-publish-age`\n    Updating crates.io index\nerror: failed to select a version for `ort`.\n    ... required by package `dbmcp-pii v0.13.2 (/tmp/mdoc-pii-oss-20261008.Cfk56N/published/dbmcp-pii-0.13.2)`\n    ... which satisfies path dependency `dbmcp-pii` of package `mdoc-compat-dbmcp-published v0.0.0 (/tmp/mdoc-pii-oss-20261008.Cfk56N/compatibility/dbmcp-published)`\nversions that meet the requirements `=2.0.0-rc.10` are: 2.0.0-rc.10\n\nall possible versions conflict with previously selected packages\n\n  previously selected package `ort v2.0.0-rc.13`\n    ... which satisfies dependency `ort = \"=2.0.0-rc.13\"` of package `mdoc-compat-dbmcp-published v0.0.0 (/tmp/mdoc-pii-oss-20261008.Cfk56N/compatibility/dbmcp-published)`\n\nfailed to select a version for `ort` which could resolve this conflict\n"
+  }
+]

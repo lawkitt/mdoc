@@ -47,11 +47,9 @@ impl Workspace {
                         .on_action(cx.listener(Self::restore_pii))
                         .on_action(cx.listener(Self::restore_all_pii))
                         .on_action(cx.listener(Self::close_pseudonym_popup))
-                        .on_action(
-                            cx.listener(|this, _: &AcceptPseudonymCandidate, window, cx| {
-                                this.restore_pii(&RestorePii, window, cx)
-                            }),
-                        )
+                        .on_action(cx.listener(|_, _: &AcceptPseudonymCandidate, _, cx| {
+                            cx.stop_propagation();
+                        }))
                         .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
                             ui::cycle(window, cx, Some(&this.pseudonymization.focus), false);
                             cx.stop_propagation();
@@ -83,6 +81,18 @@ impl Workspace {
                                         cx,
                                     ),
                                 ),
+                        )
+                        .child(
+                            ui::control(
+                                "edit-identity",
+                                "Edit replacement…",
+                                self.theme.get(),
+                                true,
+                            )
+                            .when(cfg!(test), |v| v.debug_selector(|| "edit-identity".into()))
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.edit_annotation_identity(cx)),
+                            ),
                         )
                         .child(ui::replacement_transition(
                             div()

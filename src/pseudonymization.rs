@@ -1,6 +1,8 @@
 //! Live-document review policy. Source text is immutable during a detection job;
 //! every edit plan is checked against the current source and editor revision.
 mod discovery;
+mod identities;
+pub use identities::Identity;
 mod syntax;
 pub mod tracking;
 pub use discovery::{DiscoveryInput, DiscoveryResult};
@@ -85,10 +87,12 @@ pub struct Detection {
 pub struct Group {
     pub id: u64,
     pub original: Arc<str>,
+    pub identity: u64,
     pub category: Category,
     pub replacement: String,
     pub mentions: Vec<Range<usize>>,
     kept: bool,
+    keep_default: bool,
     conversion: bool,
 }
 
@@ -108,6 +112,7 @@ pub struct Review {
     candidate_lookup: HashMap<u64, usize>,
     candidate_counters: HashMap<u64, u64>,
     pub tracking: Tracking,
+    identities: identities::IdentityStore,
     group_lookup: HashMap<u64, usize>,
     original_lookup: HashMap<Arc<str>, u64>,
     occupied_tokens: HashSet<String>,
@@ -178,6 +183,7 @@ pub enum Recognizer {
     Email,
     Inn,
     Snils,
+    Ogrn,
 }
 impl Recognizer {
     fn rule(self) -> bool {
@@ -190,7 +196,10 @@ fn overlaps(a: &Range<usize>, b: &Range<usize>) -> bool {
 
 impl Review {
     pub fn on_transaction(&mut self, transaction: &mdoc_editor::EditorTransaction, source: &str) {
+        let unchanged_source = self.source.as_ref() == source;
         if self.tracking.on_transaction(transaction) {
+            self.identities.on_transaction(transaction);
+            self.sync_identity_groups();
             self.source = source.into();
             self.discovery_version += 1;
             for change in &transaction.changes {
@@ -205,6 +214,9 @@ impl Review {
                 .extend(self.candidates.iter().enumerate().map(|(i, o)| (o.id, i)));
             for group in &mut self.groups {
                 group.mentions.clear();
+            }
+            if unchanged_source {
+                self.refresh(source);
             }
         }
     }
@@ -221,6 +233,7 @@ impl Review {
         }
     }
     /// Only accepted replacements establish provenance for later conversion.
+    #[cfg(test)]
     pub fn record_acceptance(&mut self, id: u64, replacement: &str) {
         if self.mode == Mode::Pseudonymize {
             self.set_replacement(id, replacement);
@@ -454,6 +467,7 @@ impl Review {
         for detection in selected {
             self.add_seed(&source[detection.range], detection.category);
         }
+        self.discover_initial_variants(source);
         self.prepare_conversions(source);
         self.refresh(source);
         Ok(())
@@ -462,30 +476,46 @@ impl Review {
         if let Some(&id) = self.original_lookup.get(original) {
             return id;
         }
-        let count = self.counters.entry(category).or_default();
-        let replacement = loop {
-            *count += 1;
-            let value = format!("{}_{count}", category.token());
-            if !self.occupied_tokens.contains(&value) {
-                break value;
-            }
-        };
+        let normalized = self.identities.normalized_identity(original, category);
+        let replacement = normalized
+            .and_then(|id| self.identity(id))
+            .map(|i| i.alias.clone())
+            .unwrap_or_else(|| self.allocate_alias(category));
         self.next_id += 1;
         let id = self.next_id;
         self.group_lookup.insert(id, self.groups.len());
         self.original_lookup.insert(original.into(), id);
         self.occupied_tokens.insert(replacement.clone());
         self.matcher = None;
+        let identity = normalized.unwrap_or(id);
+        if normalized.is_none() {
+            self.identities.add(Identity {
+                id,
+                alias: replacement.clone(),
+                custom_alias: false,
+                category,
+                owner: None,
+            });
+        }
+        self.identities
+            .remember_normalized(original, category, identity);
         self.groups.push(Group {
             id,
             original: original.into(),
+            identity,
             category,
             replacement,
             mentions: Vec::new(),
             kept: false,
+            keep_default: false,
             conversion: false,
         });
         id
+    }
+    pub fn validate_manual(source: &str, range: Range<usize>) -> Result<&str, String> {
+        let protected = protected_syntax(source);
+        source.get(range.clone()).filter(|value|safe_span(value) && !protected.iter().any(|syntax|overlaps(&range,syntax)))
+            .ok_or_else(||"Select identifying text without Markdown delimiters. Narrow selections that cross syntax.".into())
     }
     pub fn add_manual(
         &mut self,
@@ -493,14 +523,15 @@ impl Review {
         range: Range<usize>,
         category: Category,
     ) -> Result<u64, String> {
-        let protected = protected_syntax(source);
-        let original = source.get(range.clone()).filter(|value| safe_span(value) && !protected.iter().any(|syntax| overlaps(&range, syntax))).ok_or("Select identifying text without Markdown delimiters. Narrow selections that cross syntax.")?;
+        let original = Self::validate_manual(source, range.clone())?;
         self.refresh(source);
+        let existed = self.original_lookup.contains_key(original);
         let id = self.add_seed(original, category);
-        self.groups[self.group_lookup[&id]].kept = false;
-        self.tracking
-            .exclusions
-            .retain(|excluded| excluded.original.as_ref() != original);
+        if !existed {
+            self.groups[self.group_lookup[&id]].keep_default = true;
+        }
+        self.set_kept(id, false);
+        self.tracking.remove_keeps_for(original);
         self.refresh(source);
         Ok(id)
     }
@@ -518,7 +549,14 @@ impl Review {
             return Err("Use a token of up to 128 ASCII letters, numbers, underscores or hyphens, starting with a letter and ending with a letter or number.".into());
         }
         let group = self.group(id).ok_or("Candidate is no longer available.")?;
-        if self.mode == Mode::Anonymize && replacement != group.category.token() {
+        if self.mode == Mode::Anonymize
+            && replacement != group.category.token()
+            && !single
+                .as_ref()
+                .and_then(|range| self.occurrence_identity(id, range))
+                .and_then(|id| self.identity(id))
+                .is_some_and(|i| replacement == i.category.token())
+        {
             return Err("Anonymization uses a fixed category marker.".into());
         }
         let ranges = match single {
@@ -535,13 +573,36 @@ impl Review {
         }
         Ok(ranges
             .into_iter()
-            .filter(|range| source.get(range.clone()) != Some(replacement))
-            .map(|range| (range, replacement.into()))
+            .filter_map(|range| {
+                let assigned = self
+                    .occurrence_identity(id, &range)
+                    .and_then(|id| self.identity(id));
+                let value = if self.mode == Mode::Anonymize {
+                    assigned
+                        .map_or(group.category.token(), |i| i.category.token())
+                        .to_owned()
+                } else if replacement == group.replacement {
+                    assigned.map_or_else(|| replacement.to_owned(), |i| i.alias.clone())
+                } else {
+                    replacement.to_owned()
+                };
+                (source.get(range.clone()) != Some(value.as_str())).then_some((range, value))
+            })
             .collect())
     }
+    #[cfg(test)]
     pub fn set_replacement(&mut self, id: u64, replacement: &str) {
-        if let Some(&index) = self.group_lookup.get(&id) {
-            self.groups[index].replacement = replacement.into();
+        let Some(identity) = self.group_identity(id) else {
+            return;
+        };
+        let target = self
+            .active_identities()
+            .into_iter()
+            .find(|i| self.identity(*i).is_some_and(|i| i.alias == replacement));
+        if let Some(target) = target {
+            let _ = self.assign_variant(id, target);
+        } else {
+            let _ = self.rename_identity(identity, replacement);
         }
     }
     /// Plan all pending mentions against one source snapshot. Kept candidates
@@ -570,8 +631,23 @@ impl Review {
                     if source.get(range.clone()) != Some(group.original.as_ref()) {
                         return Err("Candidate offsets changed.".into());
                     }
-                    if group.original.as_ref() != replacement {
-                        edits.push((range.clone(), replacement.to_owned()));
+                    let assigned = self
+                        .occurrence_identity(group.id, range)
+                        .and_then(|id| self.identity(id));
+                    let value = if self.mode == Mode::Anonymize {
+                        assigned
+                            .map_or(group.category.token(), |i| i.category.token())
+                            .to_owned()
+                    } else if draft.is_some_and(|(id, _)| id == group.id)
+                        && self.occurrence_identity(group.id, range)
+                            == self.group_identity(group.id)
+                    {
+                        replacement.to_owned()
+                    } else {
+                        assigned.map_or_else(|| replacement.to_owned(), |i| i.alias.clone())
+                    };
+                    if group.original.as_ref() != value {
+                        edits.push((range.clone(), value));
                     }
                 }
             }
@@ -591,7 +667,7 @@ impl Review {
                     self.tracking.keep(range, original);
                 }
             } else {
-                group.kept = true;
+                self.set_kept(id, true);
             }
         }
         let source = self.source.clone();

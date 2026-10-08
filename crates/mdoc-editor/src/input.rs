@@ -41,6 +41,26 @@ pub(super) enum EditKind {
 }
 
 impl EditorState {
+    /// A host metadata change shares Undo/Redo with text without changing source,
+    /// selection or emitting a text Changed event. The zero-length edit denotes
+    /// a new history state rather than history travel.
+    pub fn checkpoint_metadata(&mut self, revision: u64, cx: &mut Context<Self>) -> bool {
+        if revision != self.content_gen {
+            return false;
+        }
+        self.begin_history(
+            false,
+            vec![super::SourceEdit {
+                range: 0..0,
+                new_len: 0,
+            }],
+        );
+        self.content_gen += 1;
+        self.last_edit = EditKind::Other;
+        self.emit_transaction(cx);
+        cx.notify();
+        true
+    }
     /// Replace sorted, non-overlapping source ranges atomically as one undo step.
     /// Refuses stale revisions and invalid UTF-8 geometry without touching text.
     /// Selection is remapped; the operation never resets the existing undo history.
@@ -740,8 +760,13 @@ impl EditorState {
                 edits: Vec::new(),
             });
             self.redo_stack.push(self.snapshot());
+            let changed = self.content != prev.content;
             self.restore(prev);
-            self.emit_changed(cx);
+            if changed {
+                self.emit_changed(cx);
+            } else {
+                self.emit_transaction(cx);
+            }
             self.last_edit = EditKind::Other;
             cx.notify();
         }
@@ -755,8 +780,13 @@ impl EditorState {
                 edits: Vec::new(),
             });
             self.undo_stack.push(self.snapshot());
+            let changed = self.content != next.content;
             self.restore(next);
-            self.emit_changed(cx);
+            if changed {
+                self.emit_changed(cx);
+            } else {
+                self.emit_transaction(cx);
+            }
             self.last_edit = EditKind::Other;
             cx.notify();
         }
@@ -842,6 +872,11 @@ impl EditorState {
         self.last_transaction.as_ref()
     }
     pub(super) fn emit_changed(&mut self, cx: &mut Context<Self>) {
+        self.emit_transaction(cx);
+        cx.emit(EditorEvent::Changed);
+        cx.notify();
+    }
+    fn emit_transaction(&mut self, cx: &mut Context<Self>) {
         if !self.pending_changes.is_empty() {
             let mut retained: Vec<_> = self
                 .undo_stack
@@ -860,7 +895,6 @@ impl EditorState {
             self.last_transaction = Some(transaction.clone());
             cx.emit(EditorEvent::Transaction(transaction));
         }
-        cx.emit(EditorEvent::Changed);
     }
 
     // --- UTF-16 + grapheme boundaries (IME / cursor movement) ----------------
@@ -1103,6 +1137,45 @@ fn word_boundary_input(new_text: &str) -> bool {
 mod tests {
     use super::*;
     use crate::SelectAll;
+
+    #[gpui::test]
+    fn metadata_checkpoint_preserves_source_selection_and_emits_only_transactions(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        let changed = std::rc::Rc::new(std::cell::Cell::new(0));
+        let events = changed.clone();
+        let _subscription = cx.update(|_, cx| {
+            cx.subscribe(&editor, move |_, event: &EditorEvent, _| {
+                if matches!(event, EditorEvent::Changed) {
+                    events.set(events.get() + 1);
+                }
+            })
+        });
+        editor.update(cx, |e, cx| {
+            e.set_text("я😀 source", cx);
+            e.selected_range = 2..6;
+        });
+        cx.run_until_parked();
+        let before = changed.get();
+        editor.update_in(cx, |e, window, cx| {
+            let revision = e.revision();
+            let history = e.history_id();
+            assert!(!e.checkpoint_metadata(revision + 1, cx));
+            assert_eq!(e.history_id(), history);
+            assert!(e.checkpoint_metadata(revision, cx));
+            assert_eq!(e.text(), "я😀 source");
+            assert_eq!(e.selection(), 2..6);
+            assert_ne!(e.history_id(), history);
+            e.undo(&Undo, window, cx);
+            assert_eq!(e.history_id(), history);
+            assert_eq!(e.text(), "я😀 source");
+            e.redo(&Redo, window, cx);
+            assert_eq!(e.text(), "я😀 source");
+        });
+        cx.run_until_parked();
+        assert_eq!(changed.get(), before);
+    }
 
     #[gpui::test]
     fn unicode_typing_selection_and_clipboard_keep_undo_groups(cx: &mut gpui::TestAppContext) {

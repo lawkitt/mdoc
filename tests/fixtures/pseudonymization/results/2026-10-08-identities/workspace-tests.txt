@@ -1,0 +1,530 @@
+warning: ignoring `registry.global-min-publish-age` without `-Zmin-publish-age`
+   Compiling mdoc v0.1.0 (/Users/tebriz/Developer/lawkitt/mdoc)
+warning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `mdoc` (bin "mdoc" test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.66s
+warning: the following packages contain code that will be rejected by a future version of Rust: block v0.1.6
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+     Running unittests src/lib.rs (target/debug/deps/gpui_bidi-137c9f312af2d0f3)
+
+running 19 tests
+test paragraph::tests::highlighted_ranges_keep_their_colour_and_still_cover_the_text ... ok
+test paragraph::tests::sliced_runs_cover_exactly_the_requested_range ... ok
+test paragraph::tests::no_breaks_leaves_the_paragraph_untouched ... ok
+test tests::a_neutral_run_takes_the_direction_of_the_text_around_it ... ok
+test tests::a_selection_across_a_direction_change_is_visually_split ... ok
+test paragraph::tests::degenerate_offsets_never_make_an_empty_row ... ok
+test paragraph::tests::breaks_split_text_and_widen_the_run_that_holds_them ... ok
+test paragraph::tests::words_keep_trailing_spaces_and_never_split_on_a_non_joiner ... ok
+test paragraph::tests::a_break_does_not_slide_the_colours_after_it ... ok
+test tests::degenerate_lines_do_not_panic ... ok
+test paragraph::tests::a_break_falls_in_the_run_that_ends_at_it ... ok
+test paragraph::tests::breaks_land_on_char_boundaries_of_multibyte_text ... ok
+test tests::levels_fix_the_edges_of_an_embedded_run ... ok
+test tests::ltr_behaves_exactly_like_a_plain_line ... ok
+test tests::mixed_runs_keep_their_own_direction ... ok
+test tests::rtl_caret_walks_right_to_left_instead_of_collapsing ... ok
+test tests::rtl_clicks_map_back_to_the_right_characters ... ok
+test tests::selection_can_need_more_than_one_rect ... ok
+test tests::visual_steps_flow_through_an_embedded_run_instead_of_jumping_it ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/gpui_pdf-959bda11d1694277)
+
+running 35 tests
+test outline::tests::only_http_uris_survive ... ok
+test outline::tests::latin1_decodes_and_trims ... ok
+test outline::tests::utf16be_bom_decodes ... ok
+test perf_tests::long_document_scroll_budget ... ignored
+test scrollbar::tests::proportional_thumb_and_drag_clamp_without_jumping ... ok
+test forms::tests::untouched_documents_return_none ... ok
+test tests::current_page_tracks_scroll ... ok
+test tests::detects_pdf_extension ... ok
+test tests::empty_doc_is_safe ... ok
+test tests::is_pdf_sees_through_url_queries ... ok
+test tests::only_external_web_and_mail_links_are_openable ... ok
+test tests::page_top_y_accumulates ... ok
+test tests::render_scale_scales_with_dpi_quality_and_clamps ... ok
+test tests::window_at_top_covers_first_pages_plus_margin ... ok
+test tests::window_clamps_at_the_end ... ok
+test tests::window_follows_scroll ... ok
+test tests::zoom_widens_layout ... ok
+test forms::tests::fields_enumerate_with_kinds_and_values ... ok
+test text::tests::find_matches_returns_all_occurrences_in_reading_order ... ok
+test text::tests::letter_spacing_keeps_words_whole_and_recorded_space_breaks_them ... ok
+test text::tests::locate_ignores_case_and_whitespace ... ok
+test text::tests::locate_missing_is_empty ... ok
+test text::tests::locate_occurrence_index ... ok
+test text::tests::multi_line_match_yields_a_rect_per_line ... ok
+test text::tests::select_occurrence_counts_earlier_matches ... ok
+test text::tests::select_spans_runs_into_a_quote ... ok
+test text::tests::text_reconstruction_inserts_space_and_newline ... ok
+test forms::tests::state_dicts_resolve_and_missing_appearances_synthesize ... ok
+test forms::tests::set_form_value_writes_and_renders_everywhere ... ok
+test forms::tests::hayro_renders_normalized_forms ... ok
+test perf_tests::fit_width_converges_without_render_storm ... ok
+test perf_tests::initial_fit_waits_for_measured_viewport ... ok
+test scrolling_tests::horizontal_gestures_thumb_and_page_navigation_preserve_geometry ... ok
+test scrolling_tests::narrow_toolbar_exposes_and_wraps_pdf_tools ... ok
+test perf_tests::fast_scroll_bounds_raster_work ... ok
+
+test result: ok. 34 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running unittests src/main.rs (target/debug/deps/mdoc-70e28c2ce05faeec)
+
+running 207 tests
+test comparison::tests::settings_model_offline_probe ... ignored, actual installed models, no download; set MDOC_MODEL and MDOC_REPORT; run with network denied
+test comparison::tests::settings_model_setup_probe ... ignored, explicit verified model download and runtime load; set MDOC_MODEL
+test document_session::tests::identity_changes_once_and_clears_import_provenance ... ok
+test document::tests::failed_save_preserves_document_state ... ok
+test document::tests::relative_links_resolve_from_document ... ok
+test comparison::tests::frozen_input_and_ranges_are_independent_of_working_edits ... ok
+test docx_preview::comments::tests::no_comments_keeps_original_render_input ... ok
+test docx_preview::comments::tests::rendering_copy_removes_comment_markup_without_changing_source_text ... ok
+test comparison_ui::tests::comparison_results_keep_captured_config_and_ignore_cancelled_or_late_completion ... ok
+test comparison::tests::export_preserves_original_paths_and_symlink_aliases ... ok
+test docx_preview::tests::cancelled_job_never_starts_a_worker ... ok
+test document_session::tests::saving_changes_display_name_but_preserves_import_suggestion_and_provenance ... ok
+test docx_preview::tests::rejects_ole_encrypted_packages ... ok
+test docx_preview::tests::rejects_nested_archives ... ok
+test docx_preview::tests::rejects_macro_and_tracked_change_packages_before_layout ... ok
+test docx_preview::tests::reports_omitted_external_and_embedded_content ... ok
+test docx_preview::tests::rejects_traversal_disguised_archives_and_inflation_limits ... ok
+test docx_preview::tests::utf16_auxiliary_parts_are_validated_without_ignoring_revisions ... ok
+test document::tests::save_roundtrips_and_refuses_external_edits ... ok
+test document::tests::saving_through_symlink_preserves_link ... ok
+test docx_preview::tests::policy_uses_xml_namespaces_and_content_types ... ok
+test import_session::tests::completion_waits_for_dialog_and_refuses_second_job ... ok
+test import_session::tests::setup_failure_keeps_retry_continuation_until_next_import ... ok
+test import_session::tests::setup_success_consumes_continuation_but_only_resumes_current_document ... ok
+test import_session::tests::stale_completion_releases_job_without_returning_result ... ok
+test comparison::tests::cancelled_run_has_no_partial_predictions_and_export_has_no_mapping ... ok
+test import_session::tests::worker_keeps_global_slot_until_it_exits_after_tab_closes ... ok
+test markdown_search::tests::composition_selection_is_relative_to_inserted_text ... ok
+test markdown_search::tests::empty_placeholder_click_then_backspace ... ok
+test model_download::tests::verified_files_are_reused_offline_and_cancel_keeps_them ... ok
+test model_work::tests::cancellation_does_not_release_a_worker_owned_slot ... ok
+test ocr::tests::import_options_never_download_and_select_qualified_model ... ok
+test model_work::tests::shutdown_waits_for_worker_and_rejects_new_jobs ... ok
+test import::tests::failures_are_actionable ... ok
+test ocr::tests::incomplete_or_modified_installations_are_not_ready ... ok
+test ocr::tests::setup_and_offline_english_russian_smoke ... ignored, downloads OCR runtimes/models; requires Apple Silicon macOS or Windows x64
+test ocr::tests::shared_inference_runtime_does_not_claim_or_break_ocr_setup ... ok
+test ocr::tests::removing_a_bundle_preserves_other_bundles_and_shared_runtimes ... ok
+test ocr::tests::windows_pdfium_uses_bin_directory_and_replaces_damaged_library ... ok
+test perf_tests::host_performance_matrix ... ignored, host performance matrix; run serially on an idle machine
+test perf_tests::local_preview_performance ... ignored, local corpus; set MDOC_PERF_PREVIEW to a PDF or DOCX, run serially
+test perf_tests::pii_annotation_geometry_matrix ... ignored, 2 MiB / 20,000 annotation CPU matrix; run serially on an idle machine
+test preview::tests::dropping_preview_cancels_conversion ... ok
+test preview::tests::newer_request_cancels_old_job_and_rejects_stale_failure ... ok
+test ocr::tests::runtime_extraction_ignores_debug_files_and_symlinks ... ok
+test pseudonymization::identities::tests::identity_policy_history_shares_indices_and_prunes_states ... ignored, 20,000 identity policy history storage; excludes editor layout and source matching
+test import::tests::content_detection_and_csv_extension_fallback_work ... ok
+test pseudonymization::tests::anonymization_converts_only_known_accepted_pseudonyms_and_restores_proposals ... ok
+test pseudonymization::tests::batch_plan_preserves_kept_mentions_custom_tokens_and_hidden_source ... ok
+test pseudonymization::tests::batch_refresh_preserves_a_kept_mention_between_replacements ... ok
+test pseudonymization::tests::hidden_values_are_replaceable_but_html_names_quotes_and_list_prefixes_are_protected ... ok
+test ocr::tests::windows_zip_extracts_only_runtime_and_notices ... ok
+test pseudonymization::tests::anonymization_uses_shared_markers_keeps_exclusions_and_protects_markdown ... ok
+test pseudonymization::tests::mappings_link_variants_explicitly_and_never_collide_with_source_tokens ... ok
+test pseudonymization::tests::normalized_identities_preserve_bytes_and_legal_forms_without_guessing_relationships ... ok
+test preview::tests::stale_accept_cannot_consume_newer_pending_preview ... ok
+test pseudonymization::tests::keep_all_survives_rescan_and_single_keep_rebases ... ok
+test pseudonymization::tests::parenthesized_phone_values_do_not_consume_link_delimiters ... ok
+test pseudonymization::tests::utf8_matcher_storage_matrix ... ignored, 2 MiB / 20,000 UTF-8 occurrence matcher/storage matrix
+test pseudonymization::tests::plans_refuse_stale_or_invalid_ranges_and_syntax_replacements ... ok
+test pseudonymization::tests::unicode_exact_repeats_and_hidden_source_keep_source_syntax ... ok
+test pseudonymization::tracking::tests::metadata_history_stress_retains_shared_originals_and_prunes_reversible_deltas ... ignored, 20,000 occurrence metadata/history stress; run on an idle machine
+test pseudonymization::tracking::tests::coalesced_typing_invalidation_undo_redo_and_branching_preserve_occurrence_identity ... ok
+test pseudonymization::tracking::tests::pruned_history_releases_invalidated_original_but_retains_active_provenance ... ok
+test pseudonymization::tracking::tests::restoration_keep_and_chained_predecessors_travel_with_text_history ... ok
+test pseudonymization::tracking::tests::same_marker_is_not_same_original_and_pasted_tokens_have_no_provenance ... ok
+test pseudonymization::tests::initials_discovery_keeps_ambiguous_links_as_suggestions ... ok
+test pseudonymization::tracking::tests::coalesced_adjacent_typing_and_deletion_compact_without_losing_invalidated_fields ... ok
+test import::tests::partial_pdf_keeps_original_page_numbers_outside_markdown ... ok
+test import::tests::scan_requests_setup_and_explicit_skip_keeps_native_pages ... ok
+test import::tests::missing_runtime_requires_explicit_fallback ... ok
+test pseudonymization_detector::tests::cancellation_and_deadline_reject_results ... ok
+test pseudonymization_detector::tests::experimental_model_offline_scan ... ignored, requires preverified qualification cache and installed native runtime; no downloads
+test pseudonymization_detector::tests::pinned_artifacts_reject_partial_and_same_size_corruption ... ok
+test pseudonymization_detector::tests::resource_guards_reject_before_opening_any_model_and_deadlines_reject_partial_work ... ok
+test pseudonymization_detector::structured::tests::legal_numbers_and_invalid_checksums_decline_without_model_veto ... ok
+test pseudonymization_detector::structured::tests::registration_checksums_require_labels_and_preserve_unicode_byte_spans ... ok
+test pseudonymization_detector::structured::tests::exact_hidden_unicode_and_contextual_checksum_spans ... ok
+test pseudonymization_detector::structured::tests::only_selected_entities_with_strict_context_and_boundaries ... ok
+test pseudonymization_detector::structured::captured_corpus::selected_recognizers_match_the_frozen_research_predictions ... ok
+test docx_preview::tests::renders_representative_docx_to_a_owned_pdf ... ok
+test import::tests::representative_conversions_match_reviewable_upstream_snapshots ... ok
+test pseudonymization_ui::mapping::tests::inline_keep_is_metadata_only_and_undoable ... ok
+test pseudonymization_ui::mapping::tests::legacy_bulk_acceptance_preserves_first_occurrence_split ... ok
+test pseudonymization_ui::mapping::tests::homonym_split_survives_bulk_apply_rescan_undo_and_redo ... ok
+test pseudonymization_ui::mapping::tests::popup_bulk_draft_renames_all_variants_of_a_normalized_identity ... ok
+test pseudonymization_ui::tests::accept_all_refuses_pending_scans_and_invalid_popup_tokens ... ok
+test pseudonymization_ui::mapping::tests::shared_markers_upgrade_and_alias_rename_ignore_pasted_lookalikes ... ok
+test pseudonymization_ui::tests::anonymization_installed_model_offline_smoke ... ignored, requires installed verified GLiNER2 FP16 and ONNX Runtime; no downloads
+test pseudonymization_ui::mapping::tests::staging_merge_category_owner_apply_rename_and_undo_preserve_exact_originals ... ok
+test pseudonymization_ui::tests::anonymization_review_scan_proposes_without_applying ... ok
+test pseudonymization_ui::tests::anonymization_failed_cancelled_stale_and_switched_scans_do_not_edit ... ok
+test pseudonymization_ui::tests::cancelled_edited_and_replaced_document_results_are_rejected ... ok
+test pseudonymization_ui::tests::anonymization_applies_scan_as_one_undo_step_and_copy_is_explicit ... ok
+test pseudonymization_ui::tests::applied_highlights_restore_one_or_matching_originals_and_keep_survives_rescan ... ok
+test pseudonymization_ui::tests::editing_marker_invalidates_provenance_undo_recovers_it_and_paste_creates_none ... ok
+test pseudonymization_ui::tests::dense_hidden_fields_choose_and_restore_by_keyboard ... ok
+test pseudonymization_ui::tests::accept_all_button_applies_pending_replacements_as_one_undo_step ... ok
+test pseudonymization_ui::tests::anonymization_icon_menu_defaults_and_manual_popup_are_simple ... ok
+test search_session::tests::closing_drops_pending_input_and_never_publishes_running_result ... ok
+test search_session::tests::rapid_queries_share_one_build_and_only_latest_query_runs_next ... ok
+test search_session::tests::reset_rejects_old_projection_and_releases_its_snapshot ... ok
+test session_store::tests::corrupt_or_future_manifest_is_not_silently_accepted ... ok
+test session_store::tests::manifest_roundtrips_without_document_text_and_replaces_atomically ... ok
+test settings::tests::every_pii_model_roundtrips_without_changing_existing_defaults ... ok
+test settings::tests::removed_models_require_explicit_reset_without_rewriting_preferences ... ok
+test pseudonymization_ui::tests::successful_scan_removes_setup_prompt_only_for_the_scanned_model ... ok
+test settings::tests::settings_roundtrip_and_invalid_values_preserve_previous_file ... ok
+test pseudonymization_detector::structured::tests::dense_maximum_source_preserves_all_byte_spans ... ok
+test pseudonymization_ui::mapping::tests::owner_picker_click_links_without_merging_identities ... ok
+test settings_ui::tests::failed_apply_preserves_active_defaults ... ok
+test settings_ui::tests::apply_is_explicit_and_close_discards_draft ... ok
+test pseudonymization_ui::mapping::tests::live_identity_panel_and_popup_fit_both_themes_and_narrow_windows ... ok
+test pseudonymization_ui::tests::long_transition_wraps_and_keyboard_replacement_remains_undoable ... ok
+test pseudonymization_ui::tests::compact_restoration_buttons_preserve_matching_scope_in_both_themes ... ok
+test tabs::tests::background_import_finishes_in_its_own_tab_without_stealing_focus ... ok
+test tabs::tests::closing_queued_conversion_rejects_it_without_affecting_other_tabs ... ok
+test tabs::tests::checkpoint_serializes_latest_state_and_restores_pdf_position ... ok
+test tabs::tests::closing_source_rejects_conversion_even_when_view_is_retained ... ok
+test tabs::tests::collapsed_popup_escape_restores_its_opener_and_closing_it_keeps_focus_valid ... ok
+test tabs::tests::bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection ... ok
+test tabs::tests::collapsed_rail_keeps_new_and_tab_controls_and_context_close ... ok
+test tabs::tests::duplicate_names_show_distinguishing_parent_suffixes ... ok
+test tabs::tests::collapsed_icons_switch_tabs_with_list_open_until_selection_escape_or_outside_click ... ok
+test tabs::tests::failed_final_checkpoint_can_cancel_quit_without_losing_tabs ... ok
+test tabs::tests::copy_markdown_toolbar_uses_active_tab_without_editor_focus ... ok
+test tabs::tests::file_icons_route_save_save_as_and_open_to_the_active_document ... ok
+test settings_ui::tests::keyboard_focus_reveals_choices_in_small_scrolling_panel ... ok
+test tabs::tests::main_toolbar_wraps_without_hiding_actions_in_both_themes ... ok
+test tabs::tests::automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run ... ok
+test tabs::tests::edited_then_emptied_placeholder_is_not_disposable ... ok
+test tabs::tests::conversion_stays_in_source_tab_and_ready_ocr_requires_consent ... ok
+test tabs::tests::paired_preview_hides_reopens_and_failed_replacement_preserves_attachment ... ok
+test tabs::tests::automatic_conversion_is_disposable_until_edited_but_can_be_saved ... ok
+test tabs::tests::new_switch_reorder_and_close_preserve_live_editor_state ... ok
+test tabs::tests::placeholder_replacement_respects_explicit_new_and_survives_restart ... ok
+test tabs::tests::production_shell_queues_startup_opens_and_close_hook_keeps_dirty_tabs ... ok
+test tabs::tests::pseudonymization_mappings_survive_switches_and_end_with_the_tab ... ok
+test tabs::tests::ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot ... ok
+test tabs::tests::narrow_original_switch_and_divider_preserve_source_and_session ... ok
+test tabs::tests::restoration_is_lazy_and_missing_files_remain_retryable ... ok
+test tabs::tests::queued_docx_jobs_are_serial_and_closed_tabs_cannot_receive_results ... ok
+test tabs::tests::quit_cancel_keeps_all_tabs_and_save_as_collision_never_overwrites ... ok
+test tabs::tests::pdf_preview_refits_when_sidebar_changes ... ok
+test tabs::tests::sidebar_default_and_explicit_choice_survive_document_count_changes ... ok
+test tabs::tests::restored_pdf_keeps_auto_fit_and_manual_zoom_remains_manual ... ok
+test tabs::tests::tabs_host_performance ... ignored, host CPU measurements; run serially on an idle machine
+test tabs::tests::retained_search_selection_and_preview_position_survive_switch ... ok
+test tabs::tests::source_only_manifest_restores_multiple_sources_and_missing_source_is_retryable ... ok
+test tabs::tests::snapshot_keeps_saved_pairs_and_omits_unsaved_buffers ... ok
+test tabs::tests::toolbar_theme_toggle_works_without_editor_focus ... ok
+test ui_tests::accepted_document_transition_resets_search_state ... ok
+test tabs::tests::toolbar_preview_toggle_works_without_editor_focus ... ok
+test tabs::tests::markdown_scrollbar_drags_without_changing_preview_scroll ... ok
+test ui_tests::accepted_pdf_import_opens_source_pane ... ok
+test ui_tests::accepted_import_failure_clears_old_preview_and_pdf_retry_works ... ok
+test ui_tests::automatic_table_cells_keep_readable_wrapping_when_original_is_toggled ... ok
+test ui_tests::cancelled_document_transition_preserves_search_state ... ok
+test ui_tests::cancelling_save_as_does_not_continue_close ... ok
+test tabs::tests::toolbar_settings_opens_and_closes_without_editor_focus ... ok
+test ui_tests::accepted_docx_import_opens_source_pane ... ok
+test ui_tests::close_and_newer_request_discard_pending_completions ... ok
+test ui_tests::closing_search_clears_highlights_but_retains_query ... ok
+test ui_tests::copy_markdown_refuses_loading_unavailable_and_source_only_views ... ok
+test ui_tests::close_cancel_and_discard_protect_edits ... ok
+test ui_tests::copy_markdown_preserves_source_selection_undo_and_warning ... ok
+test ui_tests::copy_markdown_feedback_restarts_expires_and_stays_with_its_tab ... ok
+test ui_tests::empty_import_is_unsaved_and_source_cannot_be_overwritten ... ok
+test ui_tests::failed_docx_preview_keeps_retry_source ... ok
+test ui_tests::editing_refreshes_search_without_auto_scrolling_or_moving_the_query ... ok
+test ui_tests::failed_open_preserves_current_document ... ok
+test ui_tests::editing_save_and_new_roundtrip ... ok
+test ui_tests::import_completes_after_open_picker_cancel_and_refuses_second_job ... ok
+test ui_tests::import_action_converts_and_saves_without_touching_source ... ok
+test ui_tests::failed_save_does_not_discard_document ... ok
+test ui_tests::import_failure_and_stale_completion_keep_current_document ... ok
+test ui_tests::failed_replacement_preserves_loaded_preview_and_markdown ... ok
+test ui_tests::import_waits_for_dialog_and_discards_result_after_document_change ... ok
+test ui_tests::imported_warning_survives_save_and_stays_with_its_tab_until_dismissed ... ok
+test ui_tests::inline_ocr_wait_preserves_current_edits ... ok
+test ui_tests::large_markdown_scroll_budget ... ignored
+test ui_tests::import_completion_protects_edits_and_cancel_preserves_pdf ... ok
+test ui_tests::import_save_then_replace_preserves_original_edits ... ok
+test ui_tests::ocr_runtime_failure_enables_setup_retry ... ok
+test pseudonymization_ui::tests::hidden_annotations_follow_visible_wrapped_rows ... ok
+test ui_tests::comments_follow_preview_lifecycle ... ok
+test tabs::tests::settings_keyboard_traversal_does_not_expand_and_restores_opener ... ok
+test ui_tests::opening_and_saving_preserves_markdown_bytes ... ok
+test ui_tests::markdown_search_is_live_and_keeps_the_editor_caret ... ok
+test ui_tests::ocr_setup_failure_is_retryable_and_stale_success_does_not_import ... ok
+test ui_tests::pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated ... ok
+test ui_tests::reference_pdf_parses_and_renders ... ok
+test ui_tests::pdf_open_keeps_markdown_and_close_pdf_restores_editor ... ok
+test ui_tests::search_anchor_moves_after_insertion_at_occurrence_start ... ok
+test ui_tests::pdf_preview_does_not_change_markdown_search ... ok
+test ui_tests::pseudonymization_group_accept_undo_save_and_identity_reset ... ok
+test ui_tests::inline_ocr_skip_imports_native_content_and_keeps_page_warning ... ok
+test ui_tests::search_wraps_and_preserves_document_and_selection ... ok
+test ui_tests::search_preserves_selection_undo_and_save_as_state ... ok
+test ui_tests::wrapped_table_search_uses_painted_cell_geometry ... ok
+test docx_preview::tests::rejects_encrypted_entries_and_entry_count_limit ... ok
+test ui_tests::pending_large_search_cannot_survive_tab_close ... ok
+test ui_tests::search_reveals_last_wrapped_occurrence ... ok
+test pseudonymization_ui::tests::keyboard_reveals_long_candidate_links_without_editing_source ... ok
+test ui_tests::repeated_document_switches_release_preview_entities_and_backing_files ... ok
+test tabs::tests::keyboard_reveals_last_document_in_collapsed_list ... ok
+test ui_tests::large_search_publishes_latest_query ... ok
+
+test result: ok. 194 passed; 0 failed; 13 ignored; 0 measured; 0 filtered out; finished in 4.54s
+
+     Running tests/docx_worker.rs (target/debug/deps/docx_worker-54347d65526406e4)
+
+running 19 tests
+test docx_preview::tests::cancelled_job_never_starts_a_worker ... ok
+test docx_preview::tests::rejects_ole_encrypted_packages ... ok
+test docx_preview::tests::rejects_nested_archives ... ok
+test docx_preview::tests::rejects_traversal_disguised_archives_and_inflation_limits ... ok
+test docx_preview::comments::tests::no_comments_keeps_original_render_input ... ok
+test docx_preview::tests::reports_omitted_external_and_embedded_content ... ok
+test docx_preview::tests::rejects_macro_and_tracked_change_packages_before_layout ... ok
+test docx_preview::tests::policy_uses_xml_namespaces_and_content_types ... ok
+test uploaded_comments_preserved ... ignored, requires locally uploaded examples
+test docx_preview::comments::tests::rendering_copy_removes_comment_markup_without_changing_source_text ... ok
+test docx_preview::tests::utf16_auxiliary_parts_are_validated_without_ignoring_revisions ... ok
+test docx_preview::tests::renders_representative_docx_to_a_owned_pdf ... ok
+test docx_preview::tests::rejects_encrypted_entries_and_entry_count_limit ... ok
+test coverage_corpus_preserves_text_links_and_landscape ... ok
+test oversize_input_is_rejected_in_the_worker ... ok
+test timeout_and_cancellation_kill_and_reap_worker ... ok
+test worker_preserves_comments_and_source ... ok
+test crash_and_false_success_are_failures ... ok
+missing DOCX worker input or output
+test real_worker_renders_searchable_pdf_and_reports_failure ... ok
+
+test result: ok. 18 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.94s
+
+     Running unittests src/lib.rs (target/debug/deps/mdoc_editor-b622f17405b3545f)
+
+running 104 tests
+test input::tests::word_boundaries_offer_auto_replace_but_colon_never_does ... ok
+test markdown_syntax::tests::alert_fold_regions_span_the_quote_block ... ok
+test markdown_syntax::tests::alert_kinds_detected ... ok
+test markdown_syntax::tests::adjacent_tables_split_into_two_regions ... ok
+test markdown_syntax::tests::backtick_runs_match_commonmark ... ok
+test markdown_syntax::tests::backslash_escapes_stay_literal ... ok
+test markdown_syntax::tests::cells_split_and_trim ... ok
+test markdown_syntax::tests::colored_mark_and_span_tags_style_their_body ... ok
+test markdown_syntax::tests::copies_renumber_to_displayed_positions ... ok
+test markdown_syntax::tests::blockquote_prefix_and_hidden ... ok
+test markdown_syntax::tests::detects_a_gfm_table ... ok
+test markdown_syntax::tests::double_equals_highlight_hides_markers_and_tints_the_body ... ok
+test markdown_syntax::tests::escape_backslash_hides_like_the_reader ... ok
+test markdown_syntax::tests::escaped_pipes_are_cell_content ... ok
+test markdown_syntax::tests::escaped_underscores_stay_literal ... ok
+test markdown_syntax::tests::fmt_marker_pairs_stay_per_construct ... ok
+test markdown_syntax::tests::footnote_def_and_html_block ... ok
+test markdown_syntax::tests::forgiving_math_forms ... ok
+test markdown_syntax::tests::formatting_markers_never_reveal ... ok
+test markdown_syntax::tests::heading_and_image_line ... ok
+test markdown_syntax::tests::decoded_visible_text_agrees_with_search_and_source_map ... ok
+test markdown_syntax::tests::heading_nested_in_list_item ... ok
+test markdown_syntax::tests::hidden_runs_image_link_hides_the_bang_too ... ok
+test markdown_syntax::tests::hidden_runs_removes_markers_and_maps_back ... ok
+test markdown_syntax::tests::hidden_runs_reveals_only_caret_construct ... ok
+test markdown_syntax::tests::hidden_runs_squiggle_diagnostics ... ok
+test markdown_syntax::tests::highlight_projection_preserves_unicode_code_tables_and_source_offsets ... ok
+test markdown_syntax::tests::inline_display_math_double_dollar ... ok
+test markdown_syntax::tests::inline_math_basic ... ok
+test markdown_syntax::tests::inline_math_escapes_and_later_close ... ok
+test markdown_syntax::tests::inline_math_multibyte_safe ... ok
+test markdown_syntax::tests::inline_math_rejects_money_and_empties ... ok
+test markdown_syntax::tests::heading_fold_regions_span_their_section ... ok
+test markdown_syntax::tests::link_at_hits_every_linkable_construct ... ok
+test markdown_syntax::tests::list_prefix_detection ... ok
+test markdown_syntax::tests::mermaid_block_extraction ... ok
+test markdown_syntax::tests::nested_inline_styles_layer ... ok
+test markdown_syntax::tests::one_line_math_regions ... ok
+test markdown_syntax::tests::ordered_numbers_word_style ... ok
+test markdown_syntax::tests::property_regions_group_and_skip_code ... ok
+test markdown_syntax::tests::scan_line_survives_multibyte_text ... ok
+test markdown_syntax::tests::selection_reveal_shows_inline_but_not_prefix ... ok
+test markdown_syntax::tests::separator_required_and_alignment ... ok
+test markdown_syntax::tests::nested_styled_tags_restore_parent_and_keep_unsupported_inner_tags ... ok
+test markdown_syntax::tests::splice_one_formula ... ok
+test markdown_syntax::tests::splice_no_formulas_is_identity ... ok
+test markdown_syntax::tests::splice_two_formulas_and_leading ... ok
+test markdown_syntax::tests::table_style_marker_and_region ... ok
+test markdown_syntax::tests::task_prefix_detection ... ok
+test markdown_syntax::tests::thematic_break_detection ... ok
+test markdown_syntax::tests::toggle_task_checkbox_flips ... ok
+test markdown_syntax::tests::underline_tags_hide_and_style_the_body ... ok
+test markdown_syntax::tests::underscore_emphasis_at_word_boundaries ... ok
+test markdown_syntax::tests::underscores_inside_words_stay_plain ... ok
+test search::tests::code_entities_are_literal_and_objects_separate_words ... ok
+test search::tests::block_markers_are_not_visible_and_blocks_do_not_join ... ok
+test search::tests::code_newlines_are_not_soft_spaces ... ok
+test search::tests::code_preserves_whitespace_and_excludes_fences ... ok
+test search::tests::code_objects_remain_literal_and_rules_are_boundaries ... ok
+test search::tests::decodes_entities_and_full_case_folds_without_normalizing ... ok
+test search::tests::escapes_entities_sigma_and_emoji_keep_their_source_mapping ... ok
+test search::tests::full_folding_does_not_create_duplicate_matches_for_expansions ... ok
+test search::tests::heading_formatting_and_escaped_entities ... ok
+test search::tests::hides_formatting_but_matches_across_it ... ok
+test search::tests::link_destination_and_image_metadata_are_not_searchable ... ok
+test search::tests::literal_matching_is_non_overlapping_and_case_toggle_is_exact ... ok
+test search::tests::search_performance_matrix ... ignored, performance matrix; run separately on an idle machine
+test search::tests::malformed_markup_remains_searchable_source_text ... ok
+test search::tests::soft_breaks_join_and_hard_breaks_do_not ... ok
+test search::tests::table_matches_cross_inline_formatting ... ok
+test search::tests::tables_are_cell_local ... ok
+test search::tests::unicode_source_ranges_are_utf8_safe_and_non_overlapping ... ok
+test input::tests::ime_ranges_follow_composition_and_source_revisions ... ok
+test annotation_tests::grouped_replacements_are_atomic_revision_checked_and_one_undo ... ok
+test input::tests::unicode_typing_selection_and_clipboard_keep_undo_groups ... ok
+test tables::viewport_allocation_tests::fit_wraps_without_shrinking_short_columns_and_overflows_below_floor ... ok
+test annotation_tests::styled_mentions_keep_source_geometry_and_atomic_undo ... ok
+test tests::a_wide_table_scrolls_to_its_own_far_edge_either_way ... ok
+test tests::a_caret_offset_lands_on_the_row_that_holds_it ... ok
+test element::tests::image_grips_and_paint_agree_at_viewport_margin_boundaries ... ok
+test tests::an_rtl_table_hugs_the_right_edge_with_the_gutter_mirrored ... ok
+test tests::caret_off_marker_line_cases ... ok
+test tests::display_col_leftmost_for_inline_math_spacer ... ok
+test tables::viewport_allocation_tests::automatic_columns_have_a_font_scaled_readable_maximum_in_wide_panes ... ok
+test tests::image_width_splice ... ok
+test tests::find_in_source_cases ... ok
+test tests::rtl_markers_mirror_to_the_right_edge ... ok
+test tests::rtl_shift_mirrors_the_row_inset ... ok
+test tests::rtl_mirrors_the_column_order ... ok
+test tests::strip_block_prefix_cases ... ok
+test input::tests::metadata_checkpoint_preserves_source_selection_and_emits_only_transactions ... ok
+test annotation_tests::annotations_coexist_with_find_and_discard_stale_geometry ... ok
+test tests::the_visible_band_is_the_column_less_its_gutter ... ok
+test transactions::tests::batch_output_and_inverse_geometry_are_derived_in_order ... ok
+test tests::structural_scan_reuses_content_generation_not_caret_or_diagnostics ... ok
+test transactions::tests::exact_history_identity_includes_coalesced_typing_and_ime_commit ... ok
+test tests::table_width_cache_tracks_viewport_content_and_style ... ok
+test element::tests::scrolled_image_grips_match_painted_logical_rows ... ok
+test tests::table_viewport_fitting_preserves_edits_selection_and_explicit_widths ... ok
+test tests::tall_overflow_table_thumb_stays_visible_and_drags_without_edits ... ok
+test search_geometry::tests::indexed_positions_cover_multiple_styled_runs_and_unwrapped_lines ... ok
+test tests::active_search_navigation_retains_allocations ... ok
+test search_geometry::tests::indexed_positions_match_gpui_at_every_byte_and_wrap_boundary ... ok
+test tests::resizing_wrapped_table_preserves_other_columns_and_wrap_through_release ... ok
+
+test result: ok. 103 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src/lib.rs (target/debug/deps/mdoc_markdown-fa1e344e943edb99)
+
+running 61 tests
+test syntax::tests::base_direction_follows_the_first_strong_character ... ok
+test syntax::tests::markers_do_not_decide_a_line_s_direction ... ok
+test syntax::tests::alert_recognition_both_forms ... ok
+test syntax::tests::heading_anchors ... ok
+test syntax::tests::block_ids_and_anchor_links ... ok
+test syntax::tests::links_cover_every_kind ... ok
+test syntax::tests::embeds_and_extraction ... ok
+test syntax::tests::math_fence_normalization ... ok
+test syntax::tests::alert_fold_markers_and_toggle ... ok
+test syntax::tests::highlight_markers_follow_the_pairing_rules ... ok
+test syntax::tests::ordered_markers_cycle_word_style ... ok
+test syntax::tests::prefixed_property_tolerates_list_markers ... ok
+test syntax::tests::property_recognition ... ok
+test syntax::tests::property_value_segments_pill_and_plain ... ok
+test syntax::tests::table_style_markers_parse ... ok
+test syntax::tests::only_http_reaches_the_os_opener ... ok
+test syntax::tests::styled_tags_and_css_colors_parse ... ok
+test syntax::tests::unsupported_attributes_and_colors_are_not_styling ... ok
+test view::search_tests::map_to_source_interpolates_and_handles_empty ... ok
+test view::search_tests::math_align_marker_adjacency ... ok
+test view::search_tests::overlay_splits_and_merges_overlap ... ok
+test view::search_tests::scan_is_ascii_case_insensitive_and_nonoverlapping ... ok
+test view::search_tests::table_style_marker_parses ... ok
+test view::tests::aliased_wikilink_shows_label_links_target ... ok
+test view::search_tests::source_map_maps_rendered_clicks_back_to_source ... ok
+test view::tests::alert_marker_and_strip ... ok
+test view::search_tests::colored_mark_and_span_tags_style_their_body ... ok
+test view::search_tests::find_matches_reports_block_indices ... ok
+test view::search_tests::highlighted_search_uses_visible_text_in_paragraphs_and_tables ... ok
+test view::search_tests::highlight_markers_respect_decoding_code_and_line_boundaries ... ok
+test view::tests::empty_brackets_are_literal ... ok
+test view::tests::hashtags_become_clickable_links_targeting_bare_name ... ok
+test view::tests::heading_hash_with_space_is_not_a_tag ... ok
+test view::search_tests::nested_html_restores_parent_style_and_unsupported_tags_stay_literal ... ok
+test view::search_tests::double_equals_highlights_and_hides_its_markers ... ok
+test view::tests::list_continuation_ignores_non_lists ... ok
+test view::tests::document_extracts_inline_text_from_blocks ... ok
+test view::tests::footnote_reference_renders_marker ... ok
+test view::tests::list_continuation_uses_the_caret_line ... ok
+test view::tests::list_continues_blockquote_and_preserves_indent ... ok
+test view::tests::list_continues_bullets ... ok
+test view::tests::list_continues_ordered_incrementing ... ok
+test view::tests::list_continues_task_unchecked ... ok
+test view::tests::list_empty_item_exits ... ok
+test view::search_tests::match_count_searches_visible_text_not_markup ... ok
+test view::tests::mark_tag_highlights_text_other_html_stays_literal ... ok
+test view::tests::leading_image_detection ... ok
+test view::tests::parse_leading_width_variants ... ok
+test view::tests::plain_text_has_no_links ... ok
+test view::tests::mixed_property_clipping_survives_real_world_line_endings ... ok
+test view::tests::shift_tab_outdents ... ok
+test view::tests::reindent_converts_list_widths ... ok
+test view::tests::images_enumerates_list_items ... ok
+test view::tests::tab_ignores_non_list_lines ... ok
+test view::tests::tab_indents_list_lines ... ok
+test view::tests::wikilinks_become_clickable_runs_without_brackets ... ok
+test view::tests::property_block_detected_with_value_offsets ... ok
+test view::tests::reference_link_resolves_against_definition ... ok
+test view::tests::cheap_parse_scan_classifies_shapes ... ok
+test view::tests::parse_cache_hits_and_evicts ... ok
+test view::tests::warm_parse_crosses_threads ... ok
+
+test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/os_spellcheck-e2775c61136af877)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests gpui_bidi
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests gpui_pdf
+
+running 1 test
+test crates/gpui-pdf/src/lib.rs - (line 18) - compile ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.77s; merged doctests compilation took 0.58s
+   Doc-tests mdoc_editor
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests mdoc_markdown
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests os_spellcheck
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

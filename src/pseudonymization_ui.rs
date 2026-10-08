@@ -2,6 +2,7 @@
 mod applied;
 mod chooser;
 mod discovery;
+mod mapping;
 mod render;
 mod scan;
 use scan::{ScanIntent, ScanJob};
@@ -63,14 +64,10 @@ pub(super) struct ReviewUi {
     job: Option<ScanJob>,
     discovery_job: Option<discovery::DiscoveryJob>,
     discovery_pending: bool,
-    details: bool,
     pub scans: Vec<settings::PiiConfig>,
     pub error: Option<String>,
+    mapping: mapping::MappingUi,
     generation: u64,
-    menu_open: bool,
-    menu_focus: FocusHandle,
-    menu_previous: Option<FocusHandle>,
-    menu_bounds: Rc<Cell<gpui::Bounds<Pixels>>>,
     popup_previous: Option<FocusHandle>,
     popup_scroll: gpui::ScrollHandle,
     chooser_scroll: gpui::UniformListScrollHandle,
@@ -104,14 +101,10 @@ impl ReviewUi {
             job: None,
             discovery_job: None,
             discovery_pending: false,
-            details: false,
             scans: Vec::new(),
             error: None,
+            mapping: mapping::MappingUi::new(cx),
             generation: 0,
-            menu_open: false,
-            menu_focus: cx.focus_handle(),
-            menu_previous: None,
-            menu_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
             popup_previous: None,
             popup_scroll: gpui::ScrollHandle::new(),
             chooser_scroll: gpui::UniformListScrollHandle::new(),
@@ -174,9 +167,9 @@ impl Workspace {
         self.pseudonymization.completion = None;
         self.pseudonymization.mode_menu_open = false;
         self.pseudonymization.scans.clear();
-        self.pseudonymization.details = false;
         self.pseudonymization.popup = None;
         self.pseudonymization.error = None;
+        self.pseudonymization.mapping = mapping::MappingUi::new(cx);
         self.sync_annotations(cx);
     }
     pub(super) fn pseudonymization_edited(&mut self, cx: &mut Context<Self>) {
@@ -195,7 +188,12 @@ impl Workspace {
         }
         let was_scanning = self.pseudonymization.scanning();
         self.pseudonymization.cancel();
-        self.pseudonymization.popup = None;
+        if self.pseudonymization.mapping.popup_revision != Some(self.editor.read(cx).revision()) {
+            self.pseudonymization.popup = None;
+            self.pseudonymization.mapping.invalidate_source_edit(cx);
+            self.editor
+                .update(cx, |e, cx| e.set_active_annotation(None, cx));
+        }
         if was_scanning {
             self.pseudonymization.error =
                 Some("Document changed; scan cancelled. Rescan when ready.".into());
@@ -256,10 +254,12 @@ impl Workspace {
     pub(super) fn select_pii_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
         self.pseudonymization.cancel();
         self.pseudonymization.popup = None;
-        self.pseudonymization.menu_open = false;
         self.pseudonymization.manual_review = false;
         self.pseudonymization.completion = None;
         self.pseudonymization.error = None;
+        if mode == Mode::Anonymize {
+            self.pseudonymization.mapping.open = false;
+        }
         self.pseudonymization
             .review
             .set_mode(mode, self.editor.read(cx).text());
@@ -310,7 +310,6 @@ impl Workspace {
     fn leave_pseudonyms(&mut self, cx: &mut Context<Self>) {
         self.pseudonymization.cancel();
         self.pseudonymization.review.open = false;
-        self.pseudonymization.menu_open = false;
         self.pseudonymization.popup = None;
         self.sync_annotations(cx);
         cx.notify();
@@ -321,6 +320,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.sync_replacement_annotation(id, cx);
         if id & APPLIED_ID != 0 {
             let occurrence = id & !APPLIED_ID;
             if self
@@ -342,6 +342,7 @@ impl Workspace {
             self.pseudonymization
                 .popup_scroll
                 .set_offset(gpui::point(px(0.), px(0.)));
+            self.remember_active_replacement(cx);
             window.focus(&self.pseudonymization.focus, cx);
             cx.notify();
             return;
@@ -357,7 +358,19 @@ impl Workspace {
         let Some(group) = self.pseudonymization.review.group(group_id) else {
             return;
         };
-        let replacement = self.pseudonymization.review.replacement(group);
+        let replacement = self
+            .pseudonymization
+            .review
+            .occurrence_identity(group_id, &mention)
+            .and_then(|id| self.pseudonymization.review.identity(id))
+            .map(|i| {
+                if self.pseudonymization.review.mode == Mode::Anonymize {
+                    i.category.token().to_owned()
+                } else {
+                    i.alias.clone()
+                }
+            })
+            .unwrap_or_else(|| self.pseudonymization.review.replacement(group));
         self.pseudonymization.error = None;
         self.pseudonymization.popup = Some(Popup {
             target: PopupTarget::Candidate {
@@ -375,7 +388,10 @@ impl Workspace {
         self.pseudonymization
             .input
             .update(cx, |input, cx| input.set_value(replacement, cx));
-        if self.pseudonymization.review.mode == Mode::Anonymize {
+        if self.pseudonymization.review.mode == Mode::Anonymize
+            || self.pseudonymization.mapping.open
+        {
+            self.remember_active_replacement(cx);
             window.focus(&self.pseudonymization.focus, cx);
         } else {
             window.focus(&self.pseudonymization.input.read(cx).focus_handle(cx), cx);
@@ -456,19 +472,36 @@ impl Workspace {
         let range = editor.selection();
         self.pseudonymization.review.open = true;
         self.pseudonymization.manual_review = true;
-        match self.pseudonymization.review.add_manual(
-            &source,
-            range.clone(),
-            self.pseudonymization.category,
-        ) {
-            Ok(id) => {
-                self.pseudonymization.error = None;
-                self.sync_annotations(cx);
-                if let Some(annotation) = self.pseudonymization.review.annotation_id(id, &range) {
-                    self.activate_annotation(annotation, window, cx);
-                }
-            }
-            Err(error) => self.pseudonymization.error = Some(error),
+        if let Err(error) = Review::validate_manual(&source, range.clone()) {
+            self.pseudonymization.error = Some(error);
+            cx.notify();
+            return;
+        }
+        let old = self.pseudonymization.review.identity_snapshot();
+        let before = self.editor.read(cx).history_id();
+        let revision = self.editor.read(cx).revision();
+        if !self
+            .editor
+            .update(cx, |e, cx| e.checkpoint_metadata(revision, cx))
+        {
+            return;
+        }
+        let tx = self.editor.read(cx).last_transaction().cloned().unwrap();
+        self.pii_transaction(&tx, cx);
+        let id = self
+            .pseudonymization
+            .review
+            .add_manual(&source, range.clone(), self.pseudonymization.category)
+            .expect("validated unchanged selection");
+        self.pseudonymization.review.commit_identity_snapshot(
+            before,
+            self.editor.read(cx).history_id(),
+            old,
+        );
+        self.pseudonymization.error = None;
+        self.sync_annotations(cx);
+        if let Some(annotation) = self.pseudonymization.review.annotation_id(id, &range) {
+            self.activate_annotation(annotation, window, cx);
         }
         cx.notify();
     }
@@ -584,7 +617,11 @@ impl Workspace {
             })
             .collect();
         if !self.commit_pii_edits(revision, &edits, &accepted, cx) {
-            return Err("The document changed. Try again.".into());
+            return Err(self
+                .pseudonymization
+                .error
+                .clone()
+                .unwrap_or_else(|| "The document changed. Try again.".into()));
         }
         Ok(edits.len())
     }
@@ -597,38 +634,211 @@ impl Workspace {
         accepted: &[(u64, String)],
         cx: &mut Context<Self>,
     ) -> bool {
-        let originals: std::collections::HashMap<_, _> = accepted
-            .iter()
-            .filter_map(|(id, value)| {
-                self.pseudonymization.review.group(*id).map(|g| {
-                    (
-                        g.original.to_string(),
-                        (
-                            g.original.clone(),
-                            Arc::<str>::from(value.as_str()),
-                            g.category,
-                        ),
-                    )
-                })
-            })
-            .collect();
-        let plans: Vec<_> = edits
-            .iter()
-            .filter_map(|(range, _)| {
-                originals
-                    .get(&self.editor.read(cx).text()[range.clone()])
-                    .map(|(before, after, category)| {
-                        (range.clone(), before.clone(), after.clone(), *category)
-                    })
-            })
-            .collect();
-        if plans.len() != edits.len() {
+        let old = self.pseudonymization.review.identity_snapshot();
+        let history_before = self.editor.read(cx).history_id();
+        let source = self.editor.read(cx).text().to_owned();
+        if revision != self.editor.read(cx).revision() {
             return false;
         }
-        let added = self.pseudonymization.review.tracking.prepare(&plans);
+        let mut alias_ids: std::collections::HashMap<_, _> = self
+            .pseudonymization
+            .review
+            .active_identities()
+            .into_iter()
+            .filter_map(|id| {
+                self.pseudonymization
+                    .review
+                    .identity(id)
+                    .map(|i| (i.alias.clone(), id))
+            })
+            .collect();
+        let mut renamed = std::collections::HashSet::new();
+        let mut singles = std::collections::HashMap::new();
+        let mut reassigned_variants = std::collections::HashMap::new();
+        if self.pseudonymization.review.mode == Mode::Pseudonymize {
+            for (group, alias) in accepted {
+                let Some(g) = self.pseudonymization.review.group(*group) else {
+                    return false;
+                };
+                // The bulk plan already resolves each occurrence assignment.
+                // Only an edited draft can change policy during acceptance.
+                if g.replacement == *alias {
+                    continue;
+                }
+                let original = g.original.clone();
+                let Some(range) = edits
+                    .iter()
+                    .find(|(r, _)| source.get(r.clone()) == Some(original.as_ref()))
+                    .map(|(r, _)| r.clone())
+                else {
+                    continue;
+                };
+                let identity = self
+                    .pseudonymization
+                    .review
+                    .occurrence_identity(*group, &range)
+                    .unwrap();
+                if self
+                    .pseudonymization
+                    .review
+                    .identity(identity)
+                    .is_some_and(|i| i.alias == *alias)
+                {
+                    continue;
+                }
+                let all = self
+                    .pseudonymization
+                    .popup
+                    .as_ref()
+                    .filter(|p| p.candidate().is_some_and(|(id, _)| id == *group))
+                    .is_none_or(|p| p.all);
+                let result = if let Some(&target) = alias_ids.get(alias) {
+                    if all {
+                        reassigned_variants.insert(original.clone(), target);
+                        for (range, _) in edits {
+                            if source.get(range.clone()) == Some(original.as_ref()) {
+                                singles.insert(range.clone(), target);
+                            }
+                        }
+                        self.pseudonymization.review.assign_variant(*group, target)
+                    } else {
+                        singles.insert(range, target);
+                        Ok(())
+                    }
+                } else {
+                    renamed.insert(identity);
+                    let result = self
+                        .pseudonymization
+                        .review
+                        .rename_identity(identity, alias);
+                    if result.is_ok() {
+                        alias_ids.insert(alias.clone(), identity);
+                    }
+                    result
+                };
+                if let Err(error) = result {
+                    self.pseudonymization.review.restore_identity_snapshot(old);
+                    self.pseudonymization.error = Some(error);
+                    return false;
+                }
+            }
+        }
+        let originals: std::collections::HashMap<_, _> = accepted
+            .iter()
+            .filter_map(|(id, _)| {
+                self.pseudonymization
+                    .review
+                    .group(*id)
+                    .map(|g| (g.original.to_string(), (g.original.clone(), g.id)))
+            })
+            .collect();
+        let mut plans = Vec::new();
+        for (range, value) in edits {
+            let Some((original, group)) = source.get(range.clone()).and_then(|s| originals.get(s))
+            else {
+                self.pseudonymization.review.restore_identity_snapshot(old);
+                return false;
+            };
+            let identity = singles
+                .get(range)
+                .copied()
+                .or_else(|| {
+                    self.pseudonymization
+                        .review
+                        .occurrence_identity(*group, range)
+                })
+                .unwrap();
+            let policy = self.pseudonymization.review.identity(identity).unwrap();
+            let value = if renamed.contains(&identity) {
+                policy.alias.as_str()
+            } else {
+                value.as_str()
+            };
+            plans.push((
+                (
+                    range.clone(),
+                    original.clone(),
+                    Arc::<str>::from(value),
+                    policy.category,
+                ),
+                identity,
+            ));
+        }
+        let mut corrections = std::collections::HashSet::new();
+        for a in &self.pseudonymization.review.tracking.applied {
+            let target = reassigned_variants.get(a.step.original()).copied();
+            if !renamed.contains(&a.step.identity) && target.is_none() {
+                continue;
+            }
+            let identity = self
+                .pseudonymization
+                .review
+                .identity(target.unwrap_or(a.step.identity))
+                .unwrap();
+            if source.get(a.range.clone()) != Some(a.step.after.as_ref()) {
+                self.pseudonymization.review.restore_identity_snapshot(old);
+                return false;
+            }
+            if a.step.after.as_ref() != identity.alias {
+                corrections.insert(a.range.start);
+                plans.push((
+                    (
+                        a.range.clone(),
+                        a.step.after.clone(),
+                        identity.alias.as_str().into(),
+                        identity.category,
+                    ),
+                    identity.id,
+                ));
+            }
+        }
+        plans.sort_by_key(|p| p.0.0.start);
+        if plans.windows(2).any(|p| p[0].0.0.end > p[1].0.0.start) {
+            self.pseudonymization.review.restore_identity_snapshot(old);
+            return false;
+        }
+        let next = self.pseudonymization.review.identity_snapshot();
+        self.pseudonymization
+            .review
+            .restore_identity_snapshot(old.clone());
+        let mut added = self
+            .pseudonymization
+            .review
+            .tracking
+            .prepare_identified(&plans);
+        let mut shared = std::collections::HashMap::new();
+        for (added, ((range, _, _, _), _)) in added.iter_mut().zip(&plans) {
+            if corrections.contains(&range.start)
+                && let Some(previous) = &added.step.predecessor
+            {
+                let before: Arc<str> = previous.original().into();
+                let key = (
+                    before.clone(),
+                    added.step.after.clone(),
+                    added.step.category,
+                    added.step.identity,
+                );
+                added.step = shared
+                    .entry(key)
+                    .or_insert_with(|| {
+                        Arc::new(pseudonymization::tracking::Step {
+                            before,
+                            after: added.step.after.clone(),
+                            category: added.step.category,
+                            identity: added.step.identity,
+                            predecessor: None,
+                        })
+                    })
+                    .clone();
+            }
+        }
+        let edits: Vec<_> = plans
+            .iter()
+            .map(|((range, _, after, _), _)| (range.clone(), after.to_string()))
+            .collect();
         if !self
             .editor
-            .update(cx, |editor, cx| editor.replace_ranges(revision, edits, cx))
+            .update(cx, |editor, cx| editor.replace_ranges(revision, &edits, cx))
         {
             return false;
         }
@@ -639,15 +849,12 @@ impl Workspace {
             .cloned()
             .expect("committed edit transaction");
         self.pii_transaction(&transaction, cx);
+        let after = self.editor.read(cx).history_id();
+        self.pseudonymization.review.restore_identity_snapshot(next);
         self.pseudonymization
             .review
-            .tracking
-            .commit(self.editor.read(cx).history_id(), added);
-        for (id, replacement) in accepted {
-            self.pseudonymization
-                .review
-                .record_acceptance(*id, replacement);
-        }
+            .commit_identity_snapshot(history_before, after, old);
+        self.pseudonymization.review.tracking.commit(after, added);
         self.pseudonymization
             .review
             .refresh(self.editor.read(cx).text());
@@ -666,9 +873,25 @@ impl Workspace {
         let Some((group, mention)) = popup.candidate() else {
             return;
         };
+        let old = self.pseudonymization.review.identity_snapshot();
+        let before = self.editor.read(cx).history_id();
+        let revision = self.editor.read(cx).revision();
+        if !self
+            .editor
+            .update(cx, |e, cx| e.checkpoint_metadata(revision, cx))
+        {
+            return;
+        }
+        let tx = self.editor.read(cx).last_transaction().cloned().unwrap();
+        self.pii_transaction(&tx, cx);
         self.pseudonymization
             .review
             .keep(group, (!popup.all).then_some(mention));
+        self.pseudonymization.review.commit_identity_snapshot(
+            before,
+            self.editor.read(cx).history_id(),
+            old,
+        );
         self.sync_annotations(cx);
         window.focus(&self.editor.read(cx).focus_handle(cx), cx);
         cx.notify();
@@ -681,6 +904,15 @@ impl Workspace {
         self.pseudonymization
             .review
             .on_transaction(transaction, self.editor.read(cx).text());
+        if transaction
+            .changes
+            .iter()
+            .any(|change| change.edits.is_empty())
+        {
+            self.sync_identity_selection_after_history(cx);
+        }
+        self.sync_annotations(cx);
+        cx.notify();
     }
     pub(super) fn restore_pii(
         &mut self,
@@ -757,17 +989,12 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.pseudonymization.popup = None;
+        self.editor
+            .update(cx, |e, cx| e.set_active_annotation(None, cx));
         if let Some(focus) = self.pseudonymization.popup_previous.take() {
             window.focus(&focus, cx);
         } else {
             window.focus(&self.editor.read(cx).focus_handle(cx), cx);
-        }
-        cx.notify();
-    }
-    fn close_review_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.pseudonymization.menu_open = false;
-        if let Some(focus) = self.pseudonymization.menu_previous.take() {
-            window.focus(&focus, cx);
         }
         cx.notify();
     }

@@ -1470,7 +1470,9 @@ impl Element for EditorElement {
                     {
                         continue;
                     }
-                    let color = if editor.annotation_hover == Some(annotation.id) {
+                    let color = if editor.annotation_hover == Some(annotation.id)
+                        || editor.annotation_active == Some(annotation.id)
+                    {
                         annotation.active_color
                     } else {
                         annotation.color

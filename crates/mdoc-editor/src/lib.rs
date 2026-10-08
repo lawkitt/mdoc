@@ -723,6 +723,7 @@ pub struct EditorState {
     hidden_annotation_ids: std::collections::HashSet<u64>,
     annotation_bounds: Vec<(u64, Bounds<Pixels>)>,
     annotation_hover: Option<u64>,
+    annotation_active: Option<u64>,
     /// Last paint's wrapped lines (one per logical line) and each line's top
     /// offset relative to the editor's top — both used for hit-testing and
     /// cursor/IME positioning.
@@ -1033,6 +1034,7 @@ impl EditorState {
             hidden_annotation_ids: std::collections::HashSet::new(),
             annotation_bounds: Vec::new(),
             annotation_hover: None,
+            annotation_active: None,
             wrapped: Vec::new(),
             line_tops: Vec::new(),
             line_heights: Vec::new(),
@@ -1176,6 +1178,12 @@ impl EditorState {
         self.annotations = annotations;
         self.annotation_revision = revision;
         self.annotation_hover = None;
+        cx.notify();
+    }
+
+    /// Host-selected occurrence remains distinct while keyboard focus is in its popup.
+    pub fn set_active_annotation(&mut self, id: Option<u64>, cx: &mut Context<Self>) {
+        self.annotation_active = id;
         cx.notify();
     }
 

@@ -1,0 +1,13 @@
+[package]
+name = "mdoc-pii-reuse-probe"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+presidio-analyzer = { path = "../presidio-rs/crates/presidio-analyzer", default-features = false }
+presidio-anonymizer = { path = "../presidio-rs/crates/presidio-anonymizer" }
+cloakrs-core = { path = "../cloakrs/crates/cloakrs-core" }
+serde_json = "1"
+

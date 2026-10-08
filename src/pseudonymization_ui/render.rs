@@ -1,11 +1,8 @@
 //! PII toolbar, status and review rendering. State stays in the parent controller.
 use super::{PopupTarget, ReviewUi};
 use crate::{
-    AcceptAllPseudonyms, AcceptPseudonymCandidate, AddPseudonymCandidate, Anonymize,
-    ClosePseudonymPopup, KeepPseudonymCandidate, NextCandidate, PreviousCandidate, Pseudonymize,
-    Settings, Workspace, button, model_work,
-    pseudonymization::{Category, Mode},
-    pseudonymization_detector as detector, settings, settings_ui, style, ui,
+    AcceptPseudonymCandidate, Anonymize, ClosePseudonymPopup, KeepPseudonymCandidate, Pseudonymize,
+    Settings, Workspace, button, pseudonymization::Mode, style, ui,
 };
 use gpui::{
     AnyElement, App, Context, Focusable, Pixels, Point, Window, anchored, deferred, div,
@@ -143,6 +140,21 @@ impl Workspace {
                         )),
                 ))
             })
+            .when(
+                self.pseudonymization.review.open
+                    || !self.pseudonymization.review.groups.is_empty(),
+                |v| {
+                    v.child(
+                        ui::control("identities-toggle", "Replacements", theme, true)
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "identities-toggle".into())
+                            })
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.toggle_identity_panel(window, cx)
+                            })),
+                    )
+                },
+            )
             .into_any_element()
     }
     fn anonymization_bar(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -201,6 +213,7 @@ impl Workspace {
                                 })
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.pseudonymization.manual_review = true;
+                                    this.pseudonymization.mapping.begin_review();
                                     this.sync_annotations(cx);
                                     cx.notify();
                                 })),
@@ -241,96 +254,15 @@ impl Workspace {
             .into_any_element()
     }
     pub(crate) fn pseudonym_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if !self.pseudonymization.review.open || !self.can_copy_markdown() {
-            return None;
-        }
-        if self.pseudonymization.review.mode == Mode::Anonymize
+        if self.pseudonymization.review.open
+            && self.can_copy_markdown()
+            && self.pseudonymization.review.mode == Mode::Anonymize
             && !self.pseudonymization.manual_review
         {
-            return Some(self.anonymization_bar(cx));
+            Some(self.anonymization_bar(cx))
+        } else {
+            None
         }
-        let theme = self.theme.get();
-        let p = theme.pdf_style();
-        let scanning = self.pseudonymization.scanning();
-        let remaining = self.pseudonymization.review.remaining();
-        let can_accept_all = remaining > 0 && !scanning;
-        let accept_all_bounds = self.pseudonymization.accept_all_bounds.clone();
-        let menu_bounds = self.pseudonymization.menu_bounds.clone();
-        let selected = self
-            .preferences
-            .borrow()
-            .snapshot()
-            .ok()
-            .map(|p| p.pseudonymization.model);
-        let needs_setup = selected.is_some_and(|model| {
-            let model = settings::Model::Pii(model);
-            let index = settings::Model::ALL
-                .iter()
-                .position(|m| *m == model)
-                .unwrap();
-            !matches!(
-                self.model_panel.read(cx).statuses[index],
-                settings_ui::Status::Ready
-            )
-        });
-        Some(div().id("pseudonym-review-bar").relative().flex().flex_col().gap_1().px_2().py_1().text_size(px(12.)).border_b_1().border_color(p.border)
-            .child(div().flex().items_center().gap_1()
-                .child(div().flex_1().min_w_0().child(if scanning { ui::activity("review-activity", "Scanning…", theme).into_any_element() } else { div().child(format!("{remaining} candidates")).into_any_element() }))
-                .child(button("Previous", PreviousCandidate, theme))
-                .child(button("Next", NextCandidate, theme))
-                .child(ui::control("review-rescan", if scanning { "Cancel" } else { "Rescan" }, theme, true)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        if this.pseudonymization.scanning() { this.pseudonymization.cancel(); cx.notify(); }
-                        else { this.scan_pseudonyms(cx); }
-                    })))
-                .child(ui::control("review-menu", "More", theme, true)
-                    .child(gpui::canvas(move |bounds, _, _| menu_bounds.set(bounds), |_, _, _, _| {}).absolute().inset_0())
-                    .relative()
-                    .when(cfg!(test), |v| v.debug_selector(|| "review-menu".into()))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        if this.pseudonymization.menu_open { this.close_review_menu(window, cx); } else {
-                            this.pseudonymization.menu_previous = window.focused(cx);
-                            this.pseudonymization.menu_open = true;
-                            window.focus(&this.pseudonymization.menu_focus, cx); cx.notify();
-                        }
-                    })))
-                .child(ui::control("leave-pseudonyms", "Close review", theme, true)
-                    .when(cfg!(test), |v| v.debug_selector(|| "leave-pseudonyms".into()))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.leave_pseudonyms(cx);
-                        window.focus(&this.editor.read(cx).focus_handle(cx), cx);
-                    }))))
-            .child(div().flex().items_center().gap_1().text_color(p.header_muted)
-                .child(div().flex_1().min_w_0().text_size(px(11.)).child("Experimental · May miss identifying details. Review all Markdown before sharing."))
-                .child(ui::control("pseudonym-details", if self.pseudonymization.details { "Less" } else { "Details" }, theme, true)
-                    .on_click(cx.listener(|this, _, _, cx| { this.pseudonymization.details = !this.pseudonymization.details; cx.notify(); }))))
-            .when(self.pseudonymization.details, |v| v.child(div().text_size(px(11.)).text_color(p.header_muted)
-                .child(format!("Russian and hidden-source details may be missed. Completed scans: {}{}", self.pseudonymization.scans.iter().map(|c| format!("{} (threshold {})", c.model.name(), c.threshold)).collect::<Vec<_>>().join(", "), if self.pseudonymization.review.skipped_syntax_spans > 0 { ". Some spans cross Markdown syntax; add a narrower selection manually." } else { "" }))))
-            .when_some(self.pseudonymization.error.clone(), |v, error| v.child(div().text_color(style::markdown_style(theme).alert_warning).child(error)))
-            .when(self.pseudonymization.menu_open, |v| v.child(deferred(ui::panel("review-command-menu", theme).absolute().top(px(34.)).right(px(8.)).w(px(230.)).p_1().key_context("UiPanel UiMenu").track_focus(&self.pseudonymization.menu_focus).tab_group().tab_stop(false)
-                .flex().flex_col()
-                .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| { ui::cycle(window, cx, Some(&this.pseudonymization.menu_focus), false); cx.stop_propagation(); }))
-                    .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| { ui::cycle(window, cx, Some(&this.pseudonymization.menu_focus), true); cx.stop_propagation(); }))
-                    .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| this.close_review_menu(window, cx)))
-                .on_mouse_down_out(cx.listener(|this, _: &gpui::MouseDownEvent, window, cx| this.close_review_menu(window, cx)))
-                .child(ui::control("pseudonym-category", format!("Category: {}", self.pseudonymization.category.label()), theme, true)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        let index = Category::ALL.iter().position(|c| *c == this.pseudonymization.category).unwrap_or(0);
-                        this.pseudonymization.category = Category::ALL[(index + 1) % Category::ALL.len()]; cx.notify();
-                    })))
-                .child(ui::control("add-pseudonym-selection", "Add selection", theme, true)
-                    .on_click(cx.listener(|this, _, window, cx| { this.close_review_menu(window, cx); this.add_pseudonym(&AddPseudonymCandidate, window, cx); })))
-                .child(ui::control("accept-all-pseudonyms", "Accept all", theme, can_accept_all).relative()
-                    .when(cfg!(test), |v| v.debug_selector(|| "accept-all-pseudonyms".into()))
-                    .child(gpui::canvas(move |bounds, _, _| accept_all_bounds.set(Some(bounds)), |_, _, _, _| {}).absolute().inset_0())
-                    .on_click(cx.listener(move |this, _, window, cx| { if can_accept_all { this.close_review_menu(window, cx); this.accept_all_pseudonyms(&AcceptAllPseudonyms, window, cx); } })))
-                .child(ui::control("review-settings", "Settings", theme, true)
-                    .on_click(cx.listener(|this, _, window, cx| { this.close_review_menu(window, cx); this.model_panel.update(cx, |panel, cx| panel.show(window, cx)); })))
-                .when(needs_setup, |v| v.child(ui::control("review-download-model", format!("Download model ({} MB)", selected.map(detector::download_megabytes).unwrap_or(0)), theme, !model_work::busy())
-                    .when(cfg!(test), |v| v.debug_selector(|| "review-download-model".into()))
-                    .on_click(cx.listener(|this, _, window, cx| { if !model_work::busy() { this.close_review_menu(window, cx); this.setup_pseudonyms(window, cx); } }))))
-            )))
-            .into_any_element())
     }
     pub(crate) fn pseudonym_popup(
         &self,
@@ -341,6 +273,9 @@ impl Workspace {
         let popup = self.pseudonymization.popup.as_ref()?;
         if let PopupTarget::Choose { ids, selected } = &popup.target {
             return Some(self.annotation_chooser(ids.clone(), *selected, cx));
+        }
+        if self.pseudonymization.mapping.open {
+            return self.direct_replacement_popup(window, cx);
         }
         if let PopupTarget::Applied(id) = popup.target {
             return self.applied_popup(id, window, cx);
@@ -392,17 +327,11 @@ impl Workspace {
                             |this, event: &gpui::MouseDownEvent, window, cx| {
                                 // Keep the replacement draft until the bulk button's
                                 // click handler can validate and apply it.
-                                if this.pseudonymization.menu_open
-                                    || this
-                                        .pseudonymization
-                                        .menu_bounds
-                                        .get()
-                                        .contains(&event.position)
-                                    || this
-                                        .pseudonymization
-                                        .accept_all_bounds
-                                        .get()
-                                        .is_some_and(|bounds| bounds.contains(&event.position))
+                                if this
+                                    .pseudonymization
+                                    .accept_all_bounds
+                                    .get()
+                                    .is_some_and(|bounds| bounds.contains(&event.position))
                                 {
                                     return;
                                 }
@@ -426,6 +355,18 @@ impl Workspace {
                                     button("×", ClosePseudonymPopup, self.theme.get()),
                                     cx,
                                 )),
+                        )
+                        .child(
+                            ui::control(
+                                "edit-identity",
+                                "Edit replacement…",
+                                self.theme.get(),
+                                true,
+                            )
+                            .when(cfg!(test), |v| v.debug_selector(|| "edit-identity".into()))
+                            .on_click(
+                                cx.listener(|this, _, _, cx| this.edit_annotation_identity(cx)),
+                            ),
                         )
                         .child(ui::replacement_transition(
                             div()
