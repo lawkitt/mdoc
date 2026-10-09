@@ -77,7 +77,11 @@ impl VisualMap {
     ///
     /// `glyphs` may arrive in any order; it is sorted by `x` here, so callers
     /// can hand over a shaper's runs concatenated without pre-sorting.
-    pub fn from_glyphs(glyphs: impl IntoIterator<Item = Glyph>, width: f32, len: usize) -> Self {
+    pub(crate) fn from_glyphs(
+        glyphs: impl IntoIterator<Item = Glyph>,
+        width: f32,
+        len: usize,
+    ) -> Self {
         let mut glyphs: Vec<Glyph> = glyphs.into_iter().collect();
         glyphs.sort_by(|a, b| a.x.total_cmp(&b.x));
         let mut by_logical: Vec<usize> = (0..glyphs.len()).collect();
@@ -100,25 +104,10 @@ impl VisualMap {
     /// a lower index, which reads as "descending, therefore RTL". The caret
     /// then sits on that letter's far edge — one glyph out, which is what a
     /// reader sees as the caret skipping a character.
-    pub fn with_levels(mut self, text: &str) -> Self {
+    pub(crate) fn with_levels(mut self, text: &str) -> Self {
         let info = unicode_bidi::BidiInfo::new(text, None);
         self.levels = Some(info.levels.iter().map(|l| l.number()).collect());
         self
-    }
-
-    /// Whether any glyph sits out of logical order — i.e. the line contains
-    /// right-to-left text. A pure-LTR line answers `false`, and callers can
-    /// use that to skip straight to gpui's own (cheaper) lookups.
-    pub fn is_bidi(&self) -> bool {
-        self.glyphs.windows(2).any(|w| w[0].index > w[1].index)
-    }
-
-    pub fn width(&self) -> f32 {
-        self.width
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.glyphs.is_empty()
     }
 
     /// The x where a caret sitting *before* byte `offset` belongs.
@@ -291,22 +280,6 @@ impl VisualMap {
         stops
     }
 
-    /// Does the byte range read right-to-left?
-    ///
-    /// From the UAX #9 levels when they're available (see
-    /// [`Self::with_levels`]); otherwise from the glyph order, which is right
-    /// in the middle of a run and unreliable at its edges.
-    pub fn is_rtl_range(&self, range: Range<usize>) -> bool {
-        if let Some(levels) = &self.levels {
-            return levels
-                .get(range.start..range.end.min(levels.len()))
-                .is_some_and(|s| s.iter().any(|l| l % 2 == 1));
-        }
-        (0..self.glyphs.len())
-            .filter(|&gi| range.contains(&self.glyphs[gi].index))
-            .any(|gi| self.is_rtl_at(gi))
-    }
-
     /// The byte offset at one edge of the glyph at visual position `gi`.
     /// `trailing` means the edge further along in *reading* order.
     fn edge_offset(&self, gi: usize, trailing: bool) -> usize {
@@ -359,8 +332,10 @@ impl VisualMap {
     }
 }
 
-pub mod paragraph;
-pub mod shaped;
+mod paragraph;
+pub use paragraph::{Row, layout_rows, paint_row};
+mod shaped;
+pub use shaped::map_of_wrapped;
 
 #[cfg(test)]
 mod tests {
@@ -411,7 +386,6 @@ mod tests {
     #[test]
     fn ltr_behaves_exactly_like_a_plain_line() {
         let m = ltr();
-        assert!(!m.is_bidi());
         for i in 0..5 {
             assert_eq!(m.x_for_index(i), i as f32 * 8.0);
         }
@@ -427,7 +401,6 @@ mod tests {
     #[test]
     fn rtl_caret_walks_right_to_left_instead_of_collapsing() {
         let m = rtl();
-        assert!(m.is_bidi());
         // This is the bug the crate exists for: gpui returns 0.0 for every one
         // of these. Reading starts at the RIGHT edge and moves left.
         assert_eq!(m.x_for_index(0), 40.0, "first char sits at the right edge");
@@ -442,24 +415,6 @@ mod tests {
         sorted.sort_by(f32::total_cmp);
         sorted.dedup();
         assert_eq!(sorted.len(), xs.len(), "caret positions must be distinct");
-    }
-
-    #[test]
-    fn a_neutral_run_takes_the_direction_of_the_text_around_it() {
-        // "سلام [[x]] دنیا" — the bracket pair is neutral, so UAX #9 gives it
-        // the paragraph's direction (RTL). Painting a styled row re-shapes each
-        // run on its own, which loses that context and would render `[[` in
-        // LTR order; the run's direction has to come from the levels.
-        let text = "سلام [[x]] دنیا";
-        let m = VisualMap::from_glyphs([Glyph { index: 0, x: 0.0 }], 10.0, text.len())
-            .with_levels(text);
-        let open = text.find("[[").unwrap();
-        assert!(
-            m.is_rtl_range(open..open + 2),
-            "the brackets read RTL, like the prose around them"
-        );
-        let x = text.find('x').unwrap();
-        assert!(!m.is_rtl_range(x..x + 1), "the Latin between them does not");
     }
 
     #[test]
@@ -573,7 +528,6 @@ mod tests {
     #[test]
     fn mixed_runs_keep_their_own_direction() {
         let m = mixed();
-        assert!(m.is_bidi());
         // LTR head.
         assert_eq!(m.x_for_index(0), 0.0);
         assert_eq!(m.x_for_index(1), 10.0);
@@ -632,12 +586,10 @@ mod tests {
     #[test]
     fn degenerate_lines_do_not_panic() {
         let empty = VisualMap::from_glyphs([], 0.0, 0);
-        assert!(empty.is_empty());
         assert_eq!(empty.x_for_index(0), 0.0);
         assert_eq!(empty.x_for_index(99), 0.0);
         assert_eq!(empty.index_for_x(10.0), 0);
         assert!(empty.rects_for_range(0..5).is_empty());
-        assert!(!empty.is_bidi());
 
         let one = VisualMap::from_glyphs([Glyph { index: 0, x: 0.0 }], 12.0, 1);
         assert_eq!(one.x_for_index(0), 0.0);

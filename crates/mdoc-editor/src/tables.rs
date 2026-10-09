@@ -1306,7 +1306,7 @@ pub(crate) fn table_caret_pos(
     // Only an unwrapped cell can use it — a map's x's run along the single
     // pre-wrap line (same limit as elsewhere).
     if !wrapped && crate::syntax::contains_rtl(content) {
-        let map = gpui_bidi::shaped::map_of_wrapped(&wl, source_map.len().saturating_sub(1));
+        let map = gpui_bidi::map_of_wrapped(&wl, source_map.len().saturating_sub(1));
         pos.x = px(map.x_for_index(display_offset));
     }
     let full_w = wl.width();
@@ -1347,7 +1347,7 @@ fn cell_offset_for_point(
     };
     if wl.wrap_boundaries().is_empty() && crate::syntax::contains_rtl(content) {
         // Same reason as the caret above, in reverse.
-        let map = gpui_bidi::shaped::map_of_wrapped(&wl, source_map.len().saturating_sub(1));
+        let map = gpui_bidi::map_of_wrapped(&wl, source_map.len().saturating_sub(1));
         return source_map[map
             .index_for_x(f32::from(target.x))
             .min(source_map.len() - 1)];

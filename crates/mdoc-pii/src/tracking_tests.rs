@@ -78,7 +78,7 @@ fn restoration_keep_and_chained_predecessors_travel_with_text_history() {
     replace(&mut t, "Anna", "PERSON_1", 0..4, 1, 0, 1);
     let id = t.applied[0].id;
     replace(&mut t, "PERSON_1", "PERSON", 0..8, 2, 1, 2);
-    let plan = t.restore_plan("PERSON", id, false).unwrap();
+    let plan = t.reversion_plan("PERSON", &HashSet::from([id])).unwrap();
     assert_eq!(plan, vec![(0..6, "PERSON_1".into())]);
     let restored = t.prepare_restore(&plan);
     edit(&mut t, 3, 2, 3, 0..6, 8, &[0, 1, 2, 3]);
@@ -118,8 +118,10 @@ fn same_marker_is_not_same_original_and_pasted_tokens_have_no_provenance() {
     });
     t.commit(1, added);
     let id = t.applied[0].id;
+    let same_original = HashSet::from([id, t.applied[2].id]);
     assert_eq!(
-        t.restore_plan("PERSON PERSON PERSON", id, true).unwrap(),
+        t.reversion_plan("PERSON PERSON PERSON", &same_original)
+            .unwrap(),
         vec![(0..6, "Anna".into()), (14..20, "Anna".into())]
     );
     assert!(Arc::ptr_eq(&t.applied[0].step, &t.applied[2].step));
