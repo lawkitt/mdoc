@@ -53,9 +53,12 @@ Use the **Open**, **Save**, **Save As**, and anonymous-person icons alongside
 **Pseudonymize**: it scans once, then shows or hides the review. **Settings** and the sun/moon theme
 control are directly accessible icons with tooltips. **New** is the sidebar plus
 button. Toolbar groups wrap when space is limited; commands remain visible.
-The sidebar defaults to collapsed for any document count and remembers an explicit
-expand/collapse choice. Each compact tab opens the full filename list; selecting
-a filename activates that document. The File menu retains file commands.
+The sidebar is expanded by default when no choice is saved and remembers an
+explicit expand/collapse choice. **+** is a full-width row under the last
+document. Compact rail entries activate their document directly; hovering the
+collapsed rail (~200ms) or focusing it with the keyboard slides the full list
+out over the editor, closing ~300ms after the pointer leaves (Escape dismisses
+it). The File menu retains file commands.
 The corresponding shortcuts are Cmd+N/O/S/Shift+S on macOS and
 Ctrl+N/O/S/Shift+S on Windows/Linux. Cmd/Ctrl+W closes the active tab;
 Cmd/Ctrl+Q quits. Ctrl+Tab and Ctrl+Shift+Tab switch tabs.
