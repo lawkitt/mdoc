@@ -15,8 +15,8 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use super::{
     Backspace, Bold, Code, Copy, Cut, Delete, EditorEvent, EditorState, Indent, Italic, Newline,
-    Outdent, Paste, Redo, ShowCharacterPalette, Strike, Underline, Undo, caret_off_marker_line,
-    line_pos, markdown_syntax,
+    Outdent, Paste, Redo, ShowCharacterPalette, Strike, TAB_INDENT, Underline, Undo,
+    caret_off_marker_line, line_pos, markdown_syntax,
 };
 
 /// Cap on undo history (full snapshots) to bound memory.
@@ -508,7 +508,7 @@ impl EditorState {
         let line = &self.content[line_start..line_end];
         let item = markdown_syntax::list_prefix(line);
         let is_item = item.is_some() || markdown_syntax::blockquote_prefix(line).is_some();
-        let indent = " ".repeat(self.tab_indent);
+        let indent = " ".repeat(TAB_INDENT);
         if !is_item {
             self.replace_text_in_range(None, &indent, window, cx);
             return;
@@ -555,7 +555,7 @@ impl EditorState {
             1
         } else {
             line.bytes()
-                .take(self.tab_indent)
+                .take(TAB_INDENT)
                 .take_while(|b| *b == b' ')
                 .count()
         };

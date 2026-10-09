@@ -44,10 +44,6 @@ pub struct SyntaxStyle {
     pub alert_important: Hsla,
     pub alert_warning: Hsla,
     pub alert_caution: Hsla,
-    /// SVG asset paths for the alert title icons, resolved through the host's
-    /// `AssetSource`. `None` (the default host choice) paints the bold label
-    /// alone, keeping the crate asset-free.
-    pub alert_icons: Option<AlertIcons>,
     /// Thematic break (`---`) divider color.
     pub rule: Hsla,
     /// `<mark>` highlight background.
@@ -472,7 +468,6 @@ pub(crate) fn search_style() -> SyntaxStyle {
         alert_important: Hsla::default(),
         alert_warning: Hsla::default(),
         alert_caution: Hsla::default(),
-        alert_icons: None,
         rule: Hsla::default(),
         mark_bg: Hsla::default(),
         block_label: None,
@@ -1467,29 +1462,6 @@ pub(crate) fn html_block(line: &str) -> bool {
 // what a marker IS lives in one place; this crate only decides how to paint
 // it (hide the prefix, label + colored bar, reveal on caret).
 pub(crate) use crate::syntax::{AlertKind, alert_prefix};
-
-/// Per-kind SVG asset paths for the alert title icons.
-#[derive(Clone)]
-pub struct AlertIcons {
-    pub note: SharedString,
-    pub tip: SharedString,
-    pub important: SharedString,
-    pub warning: SharedString,
-    pub caution: SharedString,
-}
-
-impl AlertIcons {
-    /// The icon path for one alert kind.
-    pub(crate) fn get(&self, kind: AlertKind) -> SharedString {
-        match kind {
-            AlertKind::Note => self.note.clone(),
-            AlertKind::Tip => self.tip.clone(),
-            AlertKind::Important => self.important.clone(),
-            AlertKind::Warning => self.warning.clone(),
-            AlertKind::Caution => self.caution.clone(),
-        }
-    }
-}
 
 impl SyntaxStyle {
     /// The themed color for one alert kind.
@@ -2948,7 +2920,6 @@ mod tests {
             alert_important: c,
             alert_warning: c,
             alert_caution: c,
-            alert_icons: None,
             rule: c,
             mark_bg: c,
             popover_bg: c,

@@ -76,7 +76,6 @@ pub(crate) struct PrepaintState {
     inline_image_grips: Vec<Hitbox>,
     /// Icon asset paths for alert marker lines, cloned from the style so the
     /// paint can draw them next to the labels.
-    alert_icons: Option<markdown_syntax::AlertIcons>,
     /// Per-table hover zones (the grid plus pill reach) — repaint gating.
     table_zones: Vec<(Bounds<Pixels>, usize)>,
     table_thumbs: Vec<(TableThumb, Hitbox)>,
@@ -187,7 +186,6 @@ impl Element for EditorElement {
                     caret_row,
                     editor.block_image.as_ref(),
                     editor.block_chip.as_ref(),
-                    editor.tab_indent,
                     sf,
                     selection,
                     editor.image_resize,
@@ -354,7 +352,6 @@ impl Element for EditorElement {
                 caret_row,
                 editor.block_image.as_ref(),
                 editor.block_chip.as_ref(),
-                editor.tab_indent,
                 sf,
                 selection,
                 editor.image_resize,
@@ -617,7 +614,7 @@ impl Element for EditorElement {
                 } else {
                     format!("{lang} ▾").into()
                 };
-                let copy_text: SharedString = editor.labels.code_copy.clone();
+                let copy_text: SharedString = SharedString::new_static("Copy");
                 let lang_w = shape(window, &lang_text, st.quote) + px(12.);
                 let copy_w = shape(window, &copy_text, st.quote) + px(12.);
                 let right = bounds.origin.x + cb.width - px(6.);
@@ -823,7 +820,7 @@ impl Element for EditorElement {
             let all = Bounds::new(gpui::Point::default(), window.viewport_size());
             grip_hb = Some(window.insert_hitbox(all, HitboxBehavior::Normal));
         }
-        let gl = grip_left(bounds.origin.x, editor.grip_inset);
+        let gl = grip_left(bounds.origin.x);
         if editor.markdown_style.is_some()
             && editor.line_drag.is_none()
             && mouse.x >= gl - px(4.)
@@ -1622,10 +1619,6 @@ impl Element for EditorElement {
             link_rects,
             prop_pill_grips,
             inline_image_grips,
-            alert_icons: editor
-                .markdown_style
-                .as_ref()
-                .and_then(|st| st.alert_icons.clone()),
             table_zones,
             table_thumbs,
             row_aff,
@@ -1878,7 +1871,6 @@ impl Element for EditorElement {
             if let Some(LineMark::Alert {
                 bar,
                 label,
-                kind,
                 fold,
                 chevron_x,
                 ..
@@ -1938,24 +1930,8 @@ impl Element for EditorElement {
                         window.set_cursor_style(CursorStyle::PointingHand, hb);
                     }
                 }
-                // Icon (when the host supplies asset paths), then the bold label.
-                let mut label_x = origin.x + px(QUOTE_INSET);
-                if let Some(icons) = &prepaint.alert_icons {
-                    let sz = font_size;
-                    let icon_bounds = Bounds::new(
-                        point(amirror(label_x, sz), origin.y + (*lh - sz) / 2.),
-                        size(sz, sz),
-                    );
-                    let _ = window.paint_svg(
-                        icon_bounds,
-                        icons.get(kind),
-                        None,
-                        gpui::TransformationMatrix::unit(),
-                        bar,
-                        cx,
-                    );
-                    label_x += sz + px(6.);
-                }
+                // The bold label.
+                let label_x = origin.x + px(QUOTE_INSET);
                 let label_font = Font {
                     weight: FontWeight::BOLD,
                     ..font.clone()
@@ -2891,7 +2867,6 @@ fn shape_document(
     caret_row: Option<usize>,
     block_image: Option<&BlockImageFn>,
     block_chip: Option<&BlockChipFn>,
-    tab_indent: usize,
     scale_factor: f32,
     // The selected byte range; a line it touches keeps full source (markers
     // shown), the rest hide their markers (W6, reveal-on-caret).
@@ -3390,16 +3365,9 @@ fn shape_document(
                         ..base_font.clone()
                     };
                     let label_w = measure_width(window, kind.label(), &label_font, base_font_size);
-                    // The icon (when the host supplies paths) sits before the
-                    // label; both shift the same-line body's inset.
-                    let icon_w = if st.alert_icons.is_some() {
-                        base_font_size + px(6.)
-                    } else {
-                        px(0.)
-                    };
                     // A foldable callout's chevron sits after the label and
                     // pushes any same-line body further right.
-                    let chevron_x = px(QUOTE_INSET) + icon_w + label_w + px(8.);
+                    let chevron_x = px(QUOTE_INSET) + label_w + px(8.);
                     let chevron_w = if fold.is_some() {
                         measure_width(window, "▾", base_font, base_font_size) + px(8.)
                     } else {
@@ -3410,7 +3378,6 @@ fn shape_document(
                         LineMark::Alert {
                             bar: color,
                             label: kind.label(),
-                            kind,
                             text_inset: chevron_x + chevron_w,
                             fold,
                             chevron_x,
@@ -3428,10 +3395,10 @@ fn shape_document(
             } else if let Some((plen, indent, checked)) = markdown_syntax::task_prefix(line) {
                 // Reader-style geometry: each nesting level advances by
                 // marker + gap + (spaces × 4.5), not the raw spaces' width.
-                let depth = indent as f32 / tab_indent.max(1) as f32;
+                let depth = indent as f32 / TAB_INDENT as f32;
                 let box_w = base_font_size * CHECKBOX_SCALE;
                 let level =
-                    box_w + px(LIST_TEXT_GAP) + px(LIST_LEVEL_PER_SPACE) * tab_indent as f32;
+                    box_w + px(LIST_TEXT_GAP) + px(LIST_LEVEL_PER_SPACE) * TAB_INDENT as f32;
                 let bullet_x = level * depth;
                 let text_inset = bullet_x + box_w + px(LIST_TEXT_GAP);
                 Some((
@@ -3445,7 +3412,7 @@ fn shape_document(
                     },
                 ))
             } else if let Some((plen, indent, ordered, _)) = markdown_syntax::list_prefix(line) {
-                let depth = indent as f32 / tab_indent.max(1) as f32;
+                let depth = indent as f32 / TAB_INDENT as f32;
                 let (num, level) = ordered_nums[idx];
                 let glyph = if ordered {
                     // Word-style depth markers (1. -> a. -> i.), shared with
@@ -3468,7 +3435,7 @@ fn shape_document(
                 };
                 let step = marker_w.max(px(7.))
                     + px(LIST_TEXT_GAP)
-                    + px(LIST_LEVEL_PER_SPACE) * tab_indent as f32;
+                    + px(LIST_LEVEL_PER_SPACE) * TAB_INDENT as f32;
                 let bullet_x = step * depth;
                 let text_inset = bullet_x + glyph_w + px(LIST_TEXT_GAP);
                 Some((
