@@ -26,7 +26,7 @@ kurbo = "0.13"
 
 # PDF *writing* to normalize form-field appearance streams before hayro renders
 # (hayro reads; lopdf rewrites). Pure Rust, MIT.
-lopdf = { version = "0.44", default-features = false }
+lopdf = { version = "0.45", default-features = false }
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
