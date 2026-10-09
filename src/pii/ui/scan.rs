@@ -8,7 +8,7 @@ pub(super) struct ScanJob {
     pub(super) config: settings::PiiConfig,
 }
 
-impl Workspace {
+impl DocumentView {
     pub(super) fn start_pii_scan(&mut self, cx: &mut Context<Self>) {
         if !self.can_copy_markdown() {
             return;

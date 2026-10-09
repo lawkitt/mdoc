@@ -1,6 +1,6 @@
 //! Explicit host CPU measurements, not display latency or visual acceptance.
 use super::*;
-use crate::ui_tests::{boot, close_document, open_document};
+use crate::document_view_tests::{boot, close_document, open_document};
 use gpui::{TestAppContext, VisualTestContext};
 use std::time::Instant;
 

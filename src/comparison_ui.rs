@@ -24,7 +24,7 @@ pub struct View {
     generation: u64,
     theme: Rc<Cell<Theme>>,
     focus: FocusHandle,
-    owner: gpui::WeakEntity<tabs::Tabs>,
+    owner: gpui::WeakEntity<workspace::Workspace>,
     panel: Entity<settings_ui::Panel>,
     sources: Vec<PathBuf>,
 }
@@ -38,7 +38,7 @@ impl View {
         snapshot: (Input, String),
         defaults: Preferences,
         theme: Rc<Cell<Theme>>,
-        owner: gpui::WeakEntity<tabs::Tabs>,
+        owner: gpui::WeakEntity<workspace::Workspace>,
         panel: Entity<settings_ui::Panel>,
         sources: Vec<PathBuf>,
         cx: &mut Context<Self>,
@@ -316,7 +316,7 @@ impl Render for View {
                 if let Some(handle) = cx
                     .windows()
                     .into_iter()
-                    .find_map(|w| w.downcast::<tabs::Tabs>())
+                    .find_map(|w| w.downcast::<workspace::Workspace>())
                 {
                     cx.defer(move |cx| {
                         let _ =
@@ -328,7 +328,7 @@ impl Render for View {
                 if let Some(handle) = cx
                     .windows()
                     .into_iter()
-                    .find_map(|w| w.downcast::<tabs::Tabs>())
+                    .find_map(|w| w.downcast::<workspace::Workspace>())
                 {
                     cx.defer(move |cx| {
                         let _ = handle.update(cx, |tabs, window, cx| tabs.quit(window, cx));
@@ -663,7 +663,7 @@ mod tests {
     fn comparison_results_keep_captured_config_and_ignore_cancelled_or_late_completion(
         cx: &mut TestAppContext,
     ) {
-        let (owner, cx) = cx.add_window_view(tabs::Tabs::new);
+        let (owner, cx) = cx.add_window_view(workspace::Workspace::new);
         cx.run_until_parked();
         let shared = Store::new();
         let panel = cx.new(|cx| {

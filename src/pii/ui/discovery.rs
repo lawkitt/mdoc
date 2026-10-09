@@ -4,7 +4,7 @@ pub(super) struct DiscoveryJob {
     pub cancel: Arc<AtomicBool>,
     pub ticket: u64,
 }
-impl Workspace {
+impl DocumentView {
     pub(super) fn schedule_pii_discovery(&mut self, cx: &mut Context<Self>) {
         if self.pii.review.variants().is_empty() {
             return;

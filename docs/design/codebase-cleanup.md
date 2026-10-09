@@ -1,8 +1,10 @@
 # Codebase cleanup — 2026-10-09
 
-Status: interview in progress. Not authorized for implementation until the user
-confirms shared understanding. Decisions are recorded in
-[ADR 0029](../adr/0029-codebase-cleanup-charter.md) as they are settled.
+Status: implemented on branch `cleanup/codebase`, 2026-10-09, after the user
+confirmed shared understanding ("Implement"). Decisions are recorded in
+[ADR 0029](../adr/0029-codebase-cleanup-charter.md),
+[ADR 0030](../adr/0030-render-standard-markdown-only.md) and
+[ADR 0031](../adr/0031-remove-inert-host-interactions.md).
 
 ## Evidence (survey, 2026-10-09)
 
@@ -181,3 +183,22 @@ renames in step 10 move the document view out of `main.rs`.
 4. Strengthen `accepted_pdf_import_opens_source_pane`; make the OCR-failure
    test deterministic with a pre-failed result and report the actual error.
 5. No extra splits; proceed to the renames.
+
+## Implementation after the checkpoint (2026-10-09)
+
+- ADR 0031: PDF highlight tools removed; math is ordinary text for the caret,
+  deletion and context menu; inline image clicks place the caret. A regression
+  test (`math_is_ordinary_text_for_arrows_and_deletion`) fails on the old code.
+- Tests: `accepted_pdf_import_opens_source_pane` now checks the pane opened.
+  The OCR-failure flake was traced to the process-wide model-work permit
+  (`model_work::Permit`): a parallel test holding it fails the import with a
+  different message. Rather than replacing the worker with a pre-failed result
+  (the agreed approach, chosen before the cause was known), the test now asserts
+  the failure handling instead of the message, keeping the real worker and its
+  conversion-slot release under test.
+- Renames: `Workspace` → `DocumentView` (`src/document_view.rs`, chrome in
+  `src/document_view/chrome.rs`), `Tabs` → `workspace::Workspace`
+  (`src/workspace.rs`), test files renamed; `main.rs` is 229 lines of startup
+  code. Moving the view out of the crate root required `pub(crate)` on its
+  fields and the methods siblings call — the same effective visibility as
+  before in this binary crate.

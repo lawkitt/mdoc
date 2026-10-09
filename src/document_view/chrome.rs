@@ -1,8 +1,8 @@
 use super::*;
 
-impl Workspace {
-    pub(super) fn chrome_width(&self, window: &Window) -> f32 {
-        let width = f32::from(self.workspace_bounds.get().size.width);
+impl DocumentView {
+    pub(crate) fn chrome_width(&self, window: &Window) -> f32 {
+        let width = f32::from(self.view_bounds.get().size.width);
         if width > 0. {
             width
         } else {
@@ -88,7 +88,7 @@ impl Workspace {
                     .text_center()
                     .child(
                         gpui::svg()
-                            .data(include_bytes!("../resources/ui/document.svg"))
+                            .data(include_bytes!("../../resources/ui/document.svg"))
                             .size(px(40.))
                             .text_color(if self.file_drag == Some(true) {
                                 accent
@@ -206,9 +206,9 @@ impl Workspace {
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(Settings), cx)),
             );
         div()
-            .id("workspace-toolbar")
+            .id("document-toolbar")
             .when(cfg!(test), |v| {
-                v.debug_selector(|| "workspace-toolbar".into())
+                v.debug_selector(|| "document-toolbar".into())
             })
             .flex()
             .flex_wrap()

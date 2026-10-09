@@ -15,7 +15,7 @@ fn cue_glow(delta: f32, delay: f32, accent: Hsla) -> Hsla {
         ..accent
     }
 }
-impl Workspace {
+impl DocumentView {
     pub(super) fn readable_mention(
         &self,
         range: &Range<usize>,

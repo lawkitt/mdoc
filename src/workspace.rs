@@ -22,7 +22,7 @@ pub(super) enum TabEvent {
         cancel: Arc<AtomicBool>,
     },
 }
-impl EventEmitter<TabEvent> for Workspace {}
+impl EventEmitter<TabEvent> for DocumentView {}
 
 // Avoid repainting the sidebar for cursor movement, search results, or PDF raster
 // completions. Only sidebar-visible metadata invalidates the parent view.
@@ -37,7 +37,7 @@ struct SidebarStatus {
     error: bool,
 }
 impl SidebarStatus {
-    fn of(view: &Workspace) -> Self {
+    fn of(view: &DocumentView) -> Self {
         Self {
             path: view.session.document.path.clone(),
             source: view.preview.source.clone(),
@@ -54,7 +54,7 @@ struct Tab {
     id: u64,
     record: TabRecord,
     identity: Option<PathBuf>,
-    view: Option<Entity<Workspace>>,
+    view: Option<Entity<DocumentView>>,
     subscriptions: Vec<Subscription>,
 }
 struct DocxJob {
@@ -75,7 +75,7 @@ impl Render for TabDrag {
     }
 }
 
-pub(super) struct Tabs {
+pub(super) struct Workspace {
     focus: gpui::FocusHandle,
     tabs: Vec<Tab>,
     active: u64,
@@ -137,7 +137,7 @@ pub(super) struct Tabs {
     _checkpoint: Option<gpui::Task<()>>,
 }
 
-impl Tabs {
+impl Workspace {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let mut this = Self::empty(window, cx);
         this.ocr_state = OcrState::Checking;
@@ -562,7 +562,7 @@ impl Tabs {
         id
     }
 
-    pub(super) fn active_view(&self) -> Option<Entity<Workspace>> {
+    pub(super) fn active_view(&self) -> Option<Entity<DocumentView>> {
         self.tabs
             .iter()
             .find(|tab| tab.id == self.active)?
@@ -582,8 +582,8 @@ impl Tabs {
         let theme = self.theme.clone();
         let import_busy = self.import_busy.clone();
         let view = cx.new(|cx| {
-            let mut view = Workspace::new(
-                WorkspaceDependencies {
+            let mut view = DocumentView::new(
+                DocumentViewDependencies {
                     owner: (id, owner),
                     preferences: self.preferences.clone(),
                     model_panel: self.settings.clone(),
@@ -1115,7 +1115,7 @@ impl Tabs {
         }
     }
 
-    fn release(view: &Entity<Workspace>, window: &mut Window, cx: &mut App) {
+    fn release(view: &Entity<DocumentView>, window: &mut Window, cx: &mut App) {
         view.update(cx, |view, cx| {
             view.import_cancel.store(true, Ordering::Relaxed);
             view.session.generation = view.session.generation.wrapping_add(1);
@@ -2167,7 +2167,7 @@ fn disambiguating_parent(path: &std::path::Path, peers: &[PathBuf]) -> String {
     parent.to_string_lossy().into_owned()
 }
 
-impl Render for Tabs {
+impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sidebar_visible = self.sidebar_choice.unwrap_or(true);
         self.reveal_for_keyboard(window, cx);
@@ -2373,5 +2373,5 @@ impl Render for Tabs {
 }
 
 #[cfg(test)]
-#[path = "tabs_tests.rs"]
+#[path = "workspace_tests.rs"]
 mod tests;

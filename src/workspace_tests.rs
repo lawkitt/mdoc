@@ -1,7 +1,7 @@
 use super::*;
 use gpui::{TestAppContext, VisualTestContext};
 
-fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Tabs>, &mut VisualTestContext) {
+fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Workspace>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
     // Sidebar animations settle at once; timers still need the clock.
@@ -9,7 +9,7 @@ fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Tabs>, &mut Visual
     cx.update(markdown_search::bind_keys);
     cx.update(bind_markdown_search_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
-        let mut tabs = Tabs::empty(window, cx);
+        let mut tabs = Workspace::empty(window, cx);
         tabs.restore(session, window, cx);
         tabs
     });
@@ -17,7 +17,7 @@ fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Tabs>, &mut Visual
     (tabs, cx)
 }
 
-fn active(tabs: &Entity<Tabs>, cx: &mut VisualTestContext) -> Entity<Workspace> {
+fn active(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Entity<DocumentView> {
     cx.update(|_, cx| tabs.read(cx).active_view().unwrap())
 }
 
@@ -40,7 +40,7 @@ fn draw(cx: &mut VisualTestContext) {
     });
 }
 
-fn collapse(tabs: &Entity<Tabs>, cx: &mut VisualTestContext) {
+fn collapse(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
     tabs.update(cx, |tabs, cx| {
         tabs.sidebar_visible = false;
         tabs.sidebar_choice = Some(false);
@@ -63,7 +63,7 @@ fn hover(cx: &mut VisualTestContext, position: gpui::Point<gpui::Pixels>) {
 }
 
 /// Rest the pointer on the collapsed rail until the full list slides out.
-fn reveal_by_hover(tabs: &Entity<Tabs>, cx: &mut VisualTestContext) {
+fn reveal_by_hover(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
     hover(cx, gpui::point(px(20.), px(400.)));
     wait(cx, 250);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
@@ -79,7 +79,11 @@ fn reveal_by_keyboard(cx: &mut VisualTestContext, rail: &gpui::FocusHandle) {
     draw(cx);
 }
 
-fn compact_focus(tabs: &Entity<Tabs>, cx: &mut VisualTestContext, id: u64) -> gpui::FocusHandle {
+fn compact_focus(
+    tabs: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+    id: u64,
+) -> gpui::FocusHandle {
     cx.update(|_, cx| tabs.read(cx).compact_row_focus.borrow()[&id].clone())
 }
 
@@ -1162,7 +1166,7 @@ fn production_shell_queues_startup_opens_and_close_hook_keeps_dirty_tabs(cx: &mu
     std::fs::write(&path, "startup").unwrap();
     cx.update(mdoc_editor::bind_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
-        let mut tabs = Tabs::new(window, cx);
+        let mut tabs = Workspace::new(window, cx);
         tabs.open_path(path, window, cx);
         tabs
     });
@@ -1363,7 +1367,7 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
     tabs.update_in(cx, |tabs, window, cx| {
         for tab in &tabs.tabs {
             if let Some(view) = &tab.view {
-                Tabs::release(view, window, cx);
+                Workspace::release(view, window, cx);
             }
         }
         tabs.tabs.clear();
@@ -1505,7 +1509,7 @@ fn sidebar_default_and_explicit_choice_survive_document_count_changes(cx: &mut T
     assert!(!saved.sidebar_visible);
     let restored = cx.update(|window, cx| {
         cx.new(|cx| {
-            let mut restored = Tabs::empty(window, cx);
+            let mut restored = Workspace::empty(window, cx);
             restored.restore(saved, window, cx);
             restored
         })
@@ -1526,7 +1530,7 @@ fn sidebar_default_and_explicit_choice_survive_document_count_changes(cx: &mut T
     };
     let legacy = cx.update(|window, cx| {
         cx.new(|cx| {
-            let mut restored = Tabs::empty(window, cx);
+            let mut restored = Workspace::empty(window, cx);
             restored.restore(legacy, window, cx);
             restored
         })
@@ -1734,7 +1738,7 @@ fn main_toolbar_wraps_without_hiding_actions_in_both_themes(cx: &mut TestAppCont
                     });
                     cx.run_until_parked();
                 }
-                let toolbar = cx.debug_bounds("workspace-toolbar").unwrap();
+                let toolbar = cx.debug_bounds("document-toolbar").unwrap();
                 for selector in ["Open…", "Settings", "theme-toggle"] {
                     let bounds = cx.debug_bounds(selector).unwrap();
                     assert!(
@@ -2109,7 +2113,7 @@ fn drop_files(cx: &mut VisualTestContext, position: gpui::Point<gpui::Pixels>) {
     draw(cx);
 }
 
-fn tab_names(tabs: &Entity<Tabs>, cx: &mut VisualTestContext) -> Vec<String> {
+fn tab_names(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String> {
     cx.update(|_, cx| {
         tabs.read(cx)
             .tabs

@@ -165,8 +165,8 @@ writing. Also the whole-window file drop zone while shown (ADR 0028).
 
 **Workspace**:
 The window shell: the document sidebar, toolbar, settings and the tabs it owns,
-including unopened restored records. One per window. In code `Workspace`
-(currently `tabs::Tabs`; renamed per [ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)).
+including unopened restored records. One per window. In code
+`workspace::Workspace`.
 
 **Tab**:
 One sidebar entry. An initialized tab owns one document view; an unopened
@@ -174,6 +174,6 @@ restored tab allocates nothing until activated.
 
 **Document view**:
 Everything shown for one tab's document: Markdown editor, source preview,
-search, import/OCR state and pseudonymization review. In code `DocumentView`
-(currently `Workspace` in `src/main.rs`; renamed per ADR 0029).
+search, import/OCR state and pseudonymization review. In code
+`document_view::DocumentView`.
 _Avoid_: calling the per-document view a workspace

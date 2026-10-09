@@ -127,7 +127,7 @@ pub(super) struct MappingUi {
     focus: FocusHandle,
 }
 impl MappingUi {
-    pub(super) fn invalidate_source_edit(&mut self, cx: &mut Context<Workspace>) {
+    pub(super) fn invalidate_source_edit(&mut self, cx: &mut Context<DocumentView>) {
         self.selected = None;
         self.remembered.clear();
         self.pickers.alias = false;
@@ -271,7 +271,7 @@ impl MappingUi {
     pub(super) fn mark_popup_revision(&mut self, revision: u64) {
         self.popup_revision = Some(revision);
     }
-    pub fn new(cx: &mut Context<Workspace>) -> Self {
+    pub fn new(cx: &mut Context<DocumentView>) -> Self {
         let mut input = |placeholder| {
             let input = cx.new(|cx| {
                 markdown_search::SearchInput::new(cx)
@@ -360,7 +360,7 @@ struct MappingChange {
     plans: Vec<ReplacementPlan>,
     assignments: Vec<(Range<usize>, u64)>,
 }
-impl Workspace {
+impl DocumentView {
     pub(super) fn toggle_replacements_panel(
         &mut self,
         window: &mut Window,

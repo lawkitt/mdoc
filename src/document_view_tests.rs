@@ -2,7 +2,7 @@ use super::*;
 use crate::search_session::map_edit_offset;
 use gpui::{TestAppContext, VisualTestContext};
 
-pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTestContext) {
+pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
     cx.update(markdown_search::bind_keys);
@@ -10,7 +10,7 @@ pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTe
     cx.update(pii::ui::bind_keys);
     cx.update(settings_ui::bind_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
-        let mut tabs = tabs::Tabs::empty(window, cx);
+        let mut tabs = workspace::Workspace::empty(window, cx);
         tabs.restore(session_store::Session::default(), window, cx);
         tabs
     });
@@ -20,9 +20,9 @@ pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<Workspace>, &mut VisualTe
 }
 
 pub(super) fn active_document(
-    app: &Entity<Workspace>,
+    app: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
-) -> Entity<Workspace> {
+) -> Entity<DocumentView> {
     cx.update(|_, cx| {
         let tabs = app.read(cx).owner.1.upgrade().unwrap();
         tabs.read(cx).active_view().unwrap()
@@ -30,29 +30,29 @@ pub(super) fn active_document(
 }
 
 pub(super) fn open_document(
-    app: &Entity<Workspace>,
+    app: &Entity<DocumentView>,
     path: PathBuf,
     cx: &mut VisualTestContext,
-) -> Entity<Workspace> {
-    app.update(cx, |_, cx| cx.emit(tabs::TabEvent::Open(vec![path])));
+) -> Entity<DocumentView> {
+    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::Open(vec![path])));
     cx.run_until_parked();
     active_document(app, cx)
 }
 
 pub(super) fn new_document(
-    app: &Entity<Workspace>,
+    app: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
-) -> Entity<Workspace> {
-    app.update(cx, |_, cx| cx.emit(tabs::TabEvent::New));
+) -> Entity<DocumentView> {
+    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::New));
     cx.run_until_parked();
     active_document(app, cx)
 }
 
 pub(super) fn close_document(
-    app: &Entity<Workspace>,
+    app: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
-) -> Entity<Workspace> {
-    app.update(cx, |_, cx| cx.emit(tabs::TabEvent::CloseRequested));
+) -> Entity<DocumentView> {
+    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::CloseRequested));
     cx.run_until_parked();
     if cx.has_pending_prompt() {
         cx.simulate_prompt_answer("Discard");

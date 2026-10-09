@@ -272,7 +272,9 @@ problem; conversion and OCR algorithm changes belong in the dependency forks.
 
 | Location | Responsibility |
 | --- | --- |
-| `src/main.rs`, `src/tabs.rs` | Document views, native actions, tab identity, admission, scheduling, and chrome |
+| `src/main.rs` | Application startup, menus, key bindings and window creation |
+| `src/workspace.rs` | The window shell: document sidebar, tab identity, admission, scheduling and session persistence |
+| `src/document_view.rs`, `src/document_view/chrome.rs` | One tab's document view: editor, source preview, import/OCR state, actions and toolbar chrome |
 | `src/document.rs`, `src/document_session.rs` | Atomic saves, external-change checks, accepted document identity and provenance |
 | `src/session_store.rs` | Paths and view metadata restoration; no document text |
 | `src/import.rs`, `src/import_session.rs`, `src/ocr.rs` | Library integration, pending jobs, explicit verified setup and offline OCR |
@@ -281,7 +283,7 @@ problem; conversion and OCR algorithm changes belong in the dependency forks.
 | `src/markdown_search.rs`, `src/search_session.rs` | Markdown find controls and revision-aware search scheduling |
 | `src/pii.rs`, `src/pii/detector*`, `src/pii/ui*` | Pseudonymization: offline detection/setup, scan/edit controller, Replacements panel and word popup, UI regression tests |
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
-| `src/ui_tests.rs`, `src/tabs_tests.rs`, `src/perf_tests.rs` | Headless flows, ownership/lifetime checks, and opt-in performance measurements |
+| `src/document_view_tests.rs`, `src/workspace_tests.rs`, `src/perf_tests.rs` | Headless flows, ownership/lifetime checks, and opt-in performance measurements |
 | `crates/mdoc-editor` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |
 | `crates/mdoc-pii`, `crates/mdoc-history` | GUI-free pseudonymization review model and the plain edit transactions it follows |
 | `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |
