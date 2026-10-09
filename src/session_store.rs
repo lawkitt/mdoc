@@ -47,7 +47,7 @@ impl Default for Session {
             version: 1,
             tabs: Vec::new(),
             active: 0,
-            sidebar_visible: false,
+            sidebar_visible: true,
             sidebar_choice: None,
         }
     }
