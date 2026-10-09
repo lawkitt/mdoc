@@ -152,10 +152,10 @@ impl Tracking {
     pub fn matches_history(&self, history: u64) -> bool {
         self.current == Some(history)
     }
-    pub fn get(&self, id: u64) -> Option<&Applied> {
+    pub(crate) fn get(&self, id: u64) -> Option<&Applied> {
         self.lookup.get(&id).map(|&i| &self.applied[i])
     }
-    pub fn at(&self, range: &Range<usize>) -> Option<&Applied> {
+    pub(crate) fn at(&self, range: &Range<usize>) -> Option<&Applied> {
         let i = self
             .applied
             .partition_point(|o| o.range.start < range.start);
@@ -164,7 +164,10 @@ impl Tracking {
     pub fn keep(&mut self, range: Range<usize>, original: Arc<str>) {
         self.keep_many([(range, original)]);
     }
-    pub fn keep_many(&mut self, mentions: impl IntoIterator<Item = (Range<usize>, Arc<str>)>) {
+    pub(crate) fn keep_many(
+        &mut self,
+        mentions: impl IntoIterator<Item = (Range<usize>, Arc<str>)>,
+    ) {
         let mut exclusions: Vec<_> = mentions
             .into_iter()
             .map(|(range, original)| Exclusion {
@@ -180,7 +183,7 @@ impl Tracking {
         merge(&mut self.exclusions, exclusions, |o| o.range.start);
         self.index();
     }
-    pub fn remove_keeps_for(&mut self, original: &str) {
+    pub(crate) fn remove_keeps_for(&mut self, original: &str) {
         let mut removed = Vec::new();
         self.exclusions.retain(|e| {
             if e.original.as_ref() == original {
@@ -363,7 +366,7 @@ impl Tracking {
         self.journal.retain(|id, _| live.contains(id));
     }
     /// Prepare before the text commit; captured predecessor is occurrence-specific.
-    pub fn prepare(&mut self, plans: &[ReplacementPlan]) -> Vec<Applied> {
+    pub(crate) fn prepare(&mut self, plans: &[ReplacementPlan]) -> Vec<Applied> {
         let mut delta = 0isize;
         let mut steps: HashMap<StepKey, Arc<Step>> = HashMap::new();
         plans
@@ -403,7 +406,7 @@ impl Tracking {
             })
             .collect()
     }
-    pub fn assignment(&self, range: &Range<usize>) -> Option<&Assignment> {
+    pub(crate) fn assignment(&self, range: &Range<usize>) -> Option<&Assignment> {
         let index = self
             .assignments
             .partition_point(|a| a.range.start < range.start);
@@ -432,7 +435,7 @@ impl Tracking {
     }
     /// Identity correction retains the original, rather than adding an alias as
     /// another restoration layer. Undo still retains the previous exact Step.
-    pub fn prepare_corrections(&mut self, plans: &[ReplacementPlan]) -> Vec<Applied> {
+    pub(crate) fn prepare_corrections(&mut self, plans: &[ReplacementPlan]) -> Vec<Applied> {
         type CorrectionKey = (Arc<str>, Arc<str>, Category, u64);
         let mut shared: HashMap<CorrectionKey, Arc<Step>> = HashMap::new();
         let added = self.prepare(plans);
@@ -464,30 +467,15 @@ impl Tracking {
             })
             .collect()
     }
-    pub fn commit(&mut self, history: u64, added: Vec<Applied>) {
+    pub(crate) fn commit(&mut self, history: u64, added: Vec<Applied>) {
         if let Some(delta) = self.journal.get_mut(&history) {
             delta.added.extend(added.clone());
         }
         merge(&mut self.applied, added, |o| o.range.start);
         self.index();
     }
-    pub fn restore_plan(
-        &self,
-        source: &str,
-        id: u64,
-        all: bool,
-    ) -> Result<Vec<(Range<usize>, String)>, String> {
-        let selected = self.get(id).ok_or("Replacement is no longer available.")?;
-        let ids: HashSet<_> = self
-            .applied
-            .iter()
-            .filter(|o| o.id == id || (all && o.step.before == selected.step.before))
-            .map(|o| o.id)
-            .collect();
-        self.reversion_plan(source, &ids)
-    }
     /// Text edits returning exactly these applied occurrences to their prior values.
-    pub fn reversion_plan(
+    pub(crate) fn reversion_plan(
         &self,
         source: &str,
         ids: &HashSet<u64>,

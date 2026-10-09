@@ -4839,7 +4839,7 @@ struct ShapedDoc {
     /// rows we broke in logical order. `None` for lines with no RTL at all,
     /// which keep gpui's own wrapping. Drives that line's paint, caret,
     /// selection and hit-testing.
-    rtl_rows: Vec<Option<(bool, Vec<gpui_bidi::paragraph::Row>)>>,
+    rtl_rows: Vec<Option<(bool, Vec<gpui_bidi::Row>)>>,
 }
 
 impl ShapedDoc {
@@ -4972,7 +4972,7 @@ pub(crate) struct RtlRow {
     /// The line's visual rows, broken in LOGICAL order (gpui's own wrapping
     /// slices the reordered glyph run and gets them backwards). Each carries
     /// the map that turns an offset inside it into an x and back.
-    rows: Vec<gpui_bidi::paragraph::Row>,
+    rows: Vec<gpui_bidi::Row>,
     /// Each row's right-align shift, parallel to `rows`: added to the text
     /// origin so the row right-aligns in the content width (see [`rtl_shift`]).
     /// Per ROW, not per line — a short last row shifts further than a full one.

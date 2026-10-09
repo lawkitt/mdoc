@@ -28,16 +28,13 @@
 //! sequence of lines that already fit. Everything after that is ordinary
 //! painting.
 
-use std::cell::RefCell;
 use std::ops::Range;
-use std::rc::Rc;
 
 use crate::VisualMap;
 
 use gpui::{
-    App, AvailableSpace, Bounds, ContentMask, Element, ElementId, GlobalElementId, HighlightStyle,
-    Hitbox, HitboxBehavior, InspectorElementId, IntoElement, LayoutId, Pixels, Point, SharedString,
-    Size, TextAlign, TextRun, TextStyle, Window, WrappedLine, px,
+    App, Bounds, ContentMask, Pixels, Point, SharedString, TextAlign, TextRun, Window, WrappedLine,
+    px,
 };
 
 /// Split `text` into lines at `breaks` (logical byte offsets, ascending) by
@@ -51,7 +48,7 @@ use gpui::{
 ///
 /// Offsets at 0, at `text.len()`, or repeated are ignored: they would produce
 /// an empty line, which would paint as a blank row the reader never asked for.
-pub fn insert_breaks(
+pub(crate) fn insert_breaks(
     text: &str,
     runs: &[TextRun],
     breaks: &[usize],
@@ -197,66 +194,6 @@ fn wrap_at_words(
         line_has_word = true;
     }
     breaks
-}
-
-/// A paragraph laid out in logical order, then painted right-aligned.
-///
-/// Build it for blocks whose base direction is RTL; LTR text needs none of
-/// this and should keep using `StyledText`, which is cheaper and carries the
-/// interactive-text machinery.
-pub struct RtlText {
-    text: SharedString,
-    base_rtl: bool,
-    highlights: Vec<(Range<usize>, HighlightStyle)>,
-    pointer_ranges: Vec<Range<usize>>,
-    layout: RtlLayout,
-}
-
-/// Expand `highlights` into runs covering all of `text`, the way `StyledText`
-/// does — its own `compute_runs` is private, but it is only `to_run` and
-/// `highlight`, both public. Ranges must be sorted and non-overlapping.
-fn runs_from_highlights(
-    text: &str,
-    default_style: &TextStyle,
-    highlights: &[(Range<usize>, HighlightStyle)],
-) -> Vec<TextRun> {
-    let mut runs = Vec::new();
-    let mut ix = 0;
-    for (range, highlight) in highlights {
-        if range.start > text.len() || range.end > text.len() || range.start < ix {
-            continue;
-        }
-        if ix < range.start {
-            runs.push(default_style.clone().to_run(range.start - ix));
-        }
-        runs.push(
-            default_style
-                .clone()
-                .highlight(*highlight)
-                .to_run(range.len()),
-        );
-        ix = range.end;
-    }
-    if ix < text.len() {
-        runs.push(default_style.to_run(text.len() - ix));
-    }
-    runs
-}
-
-/// What the measure pass worked out, reused by paint.
-struct Laid {
-    /// Does the paragraph READ right-to-left? A left-to-right one can still
-    /// contain an RTL phrase and need all of this mapping.
-    base_rtl: bool,
-    /// The rows, in reading order: where each starts in the ORIGINAL text (the
-    /// injected `\n`s don't exist there) and how to read its glyphs.
-    rows: Vec<Row>,
-    line_height: Pixels,
-    wrap_width: Option<Pixels>,
-    size: Size<Pixels>,
-    /// Where the element was last painted — hit-testing is in window space, so
-    /// there is nothing to map against until it has been on screen once.
-    bounds: Option<Bounds<Pixels>>,
 }
 
 /// One laid-out row: its span in the original text, plus the visual map that
@@ -430,346 +367,6 @@ pub fn paint_row(
     }
 }
 
-/// Where row `row` starts, in window space.
-///
-/// An RTL paragraph is right-aligned, so each row hangs off the right edge; a
-/// left-to-right one containing an RTL phrase still starts at the left. Every
-/// lookup and the paint go through this, or the caret would sit somewhere the
-/// glyphs are not.
-fn row_left(laid: &Laid, bounds: Bounds<Pixels>, row: &Row) -> Pixels {
-    if laid.base_rtl {
-        bounds.origin.x + bounds.size.width - row.width
-    } else {
-        bounds.origin.x
-    }
-}
-
-/// A handle onto the last layout, for hosts that need to map between a point on
-/// screen and an offset in the text — link hit-testing, click-to-caret, and
-/// positioning an inline formula over its spacer.
-///
-/// Mirrors `StyledText::layout()`: cheap to clone, empty until first paint.
-#[derive(Clone, Default)]
-pub struct RtlLayout(Rc<RefCell<Option<Laid>>>);
-
-impl RtlLayout {
-    /// Height of one row, or zero before the first layout.
-    pub fn line_height(&self) -> Pixels {
-        self.0.borrow().as_ref().map_or(px(0.), |l| l.line_height)
-    }
-
-    /// The logical byte offset under `position`.
-    ///
-    /// `Ok` when the point is inside the painted text, `Err` with the nearest
-    /// offset when it is outside — the same contract as gpui's
-    /// `TextLayout::index_for_position`, so callers can treat them alike.
-    pub fn index_for_position(&self, position: Point<Pixels>) -> Result<usize, usize> {
-        let state = self.0.borrow();
-        let Some(laid) = state.as_ref() else {
-            return Err(0);
-        };
-        let Some(bounds) = laid.bounds else {
-            return Err(0);
-        };
-        if laid.rows.is_empty() {
-            return Err(0);
-        }
-
-        let rel_y = position.y - bounds.origin.y;
-        let row_f = f32::from(rel_y) / f32::from(laid.line_height).max(1.0);
-        let outside = row_f < 0.0 || row_f >= laid.rows.len() as f32;
-        let row_ix = (row_f.floor().max(0.0) as usize).min(laid.rows.len() - 1);
-        let row = &laid.rows[row_ix];
-
-        // Rows are right-aligned across the full width (see `paint`), so the
-        // row's own coordinate space starts at its left edge, not the element's.
-        let row_left = row_left(laid, bounds, row);
-        let local = f32::from(position.x - row_left);
-        let offset = row.start + row.map.index_for_x(local);
-        if outside || position.x < row_left || position.x > bounds.origin.x + bounds.size.width {
-            Err(offset)
-        } else {
-            Ok(offset)
-        }
-    }
-
-    /// Every window-space box logical `range` occupies, one per visual run per
-    /// row — a link wrapped across two rows gives two, and a range split by a
-    /// direction change inside a row gives one per piece.
-    pub fn rects_for_range(&self, range: Range<usize>) -> Vec<Bounds<Pixels>> {
-        let state = self.0.borrow();
-        let Some(laid) = state.as_ref() else {
-            return Vec::new();
-        };
-        let Some(bounds) = laid.bounds else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        for (row_ix, row) in laid.rows.iter().enumerate() {
-            let row_end = row.start + row.len;
-            if range.end <= row.start || range.start >= row_end {
-                continue;
-            }
-            let local = range.start.max(row.start) - row.start..range.end.min(row_end) - row.start;
-            let row_left = row_left(laid, bounds, row);
-            for (x0, x1) in row.map.rects_for_range(local) {
-                out.push(Bounds::new(
-                    Point {
-                        x: row_left + px(x0),
-                        y: bounds.origin.y + laid.line_height * row_ix,
-                    },
-                    Size {
-                        width: px(x1 - x0),
-                        height: laid.line_height,
-                    },
-                ));
-            }
-        }
-        out
-    }
-
-    /// Top-left corner of the visual box that logical `range` occupies.
-    ///
-    /// A logical range is one contiguous run of text but not necessarily one
-    /// contiguous box — in mixed text it can be split across the line — so the
-    /// leftmost edge of all its pieces is what's returned. That is where an
-    /// inline raster (a formula, an image) sits over the spacer it reserved:
-    /// anchoring to `range.start` would be the RIGHT edge in an RTL line and
-    /// would paint the raster over the neighbouring words.
-    pub fn left_edge_of(&self, range: Range<usize>) -> Option<Point<Pixels>> {
-        let state = self.0.borrow();
-        let laid = state.as_ref()?;
-        let bounds = laid.bounds?;
-        let (row_ix, row) = laid
-            .rows
-            .iter()
-            .enumerate()
-            .find(|(_, r)| range.start >= r.start && range.start <= r.start + r.len)?;
-        let local = range.start.saturating_sub(row.start)..range.end.saturating_sub(row.start);
-        let left = row
-            .map
-            .rects_for_range(local)
-            .into_iter()
-            .map(|(x0, _)| x0)
-            .fold(f32::INFINITY, f32::min);
-        if !left.is_finite() {
-            return None;
-        }
-        let row_left = row_left(laid, bounds, row);
-        Some(Point {
-            x: row_left + px(left),
-            y: bounds.origin.y + laid.line_height * row_ix,
-        })
-    }
-
-    /// Where the glyph at logical `offset` starts, in window space. `None`
-    /// before the first paint, or if the offset is past the end of the text.
-    pub fn position_for_index(&self, offset: usize) -> Option<Point<Pixels>> {
-        let state = self.0.borrow();
-        let laid = state.as_ref()?;
-        let bounds = laid.bounds?;
-        let (row_ix, row) = laid
-            .rows
-            .iter()
-            .enumerate()
-            .find(|(_, r)| offset >= r.start && offset <= r.start + r.len)?;
-        let row_left = row_left(laid, bounds, row);
-        Some(Point {
-            x: row_left + px(row.map.x_for_index(offset - row.start)),
-            y: bounds.origin.y + laid.line_height * row_ix,
-        })
-    }
-}
-
-impl RtlText {
-    pub fn new(text: impl Into<SharedString>) -> Self {
-        Self {
-            text: text.into(),
-            base_rtl: true,
-            highlights: Vec::new(),
-            pointer_ranges: Vec::new(),
-            layout: RtlLayout::default(),
-        }
-    }
-
-    /// Does the paragraph read right-to-left (so it right-aligns)? Default
-    /// `true`. Pass `false` for a left-to-right paragraph that merely CONTAINS
-    /// right-to-left text: it still needs the index↔x mapping, or the caret
-    /// misplaces inside that phrase, but it must stay left-aligned.
-    pub fn with_base_rtl(mut self, rtl: bool) -> Self {
-        self.base_rtl = rtl;
-        self
-    }
-
-    /// Ranges that should show the pointing-hand cursor on hover — links.
-    ///
-    /// `InteractiveText` does this for LTR text, but it hit-tests through
-    /// gpui's layout, which is the thing that's wrong for an RTL line. Same
-    /// approach as gpui's, though: one hitbox for the element, and the hover
-    /// test runs at paint time against the mouse's current position.
-    pub fn with_pointer_ranges(mut self, ranges: Vec<Range<usize>>) -> Self {
-        self.pointer_ranges = ranges;
-        self
-    }
-
-    /// The handle hosts hit-test through — clone it before the element is
-    /// consumed by the tree, exactly as `StyledText::layout()` is used.
-    pub fn layout(&self) -> &RtlLayout {
-        &self.layout
-    }
-
-    /// Styled ranges, exactly as `StyledText::with_highlights` takes them:
-    /// sorted, non-overlapping, on char boundaries.
-    pub fn with_highlights(
-        mut self,
-        highlights: impl IntoIterator<Item = (Range<usize>, HighlightStyle)>,
-    ) -> Self {
-        self.highlights = highlights.into_iter().collect();
-        self
-    }
-}
-
-impl IntoElement for RtlText {
-    type Element = Self;
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
-
-impl Element for RtlText {
-    type RequestLayoutState = ();
-    type PrepaintState = Vec<Hitbox>;
-
-    fn id(&self) -> Option<ElementId> {
-        None
-    }
-
-    fn source_location(&self) -> Option<&'static std::panic::Location<'static>> {
-        None
-    }
-
-    fn request_layout(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        window: &mut Window,
-        _cx: &mut App,
-    ) -> (LayoutId, ()) {
-        let text_style = window.text_style();
-        let font_size = text_style.font_size.to_pixels(window.rem_size());
-        let line_height = window.pixel_snap(
-            text_style
-                .line_height
-                .to_pixels(font_size.into(), window.rem_size()),
-        );
-        let text = self.text.clone();
-        let base_rtl = self.base_rtl;
-        let runs = runs_from_highlights(&text, &text_style, &self.highlights);
-        let state = self.layout.0.clone();
-
-        let id = window.request_measured_layout(
-            Default::default(),
-            move |known, available, window, _cx| {
-                let wrap_width = known.width.or(match available.width {
-                    AvailableSpace::Definite(w) => Some(w),
-                    _ => None,
-                });
-
-                if let Some(laid) = state.borrow().as_ref()
-                    && laid.wrap_width == wrap_width
-                {
-                    return laid.size;
-                }
-
-                let rows = layout_rows(&text, &runs, wrap_width, font_size, window);
-
-                let height = line_height * rows.len().max(1);
-                let widest = rows.iter().map(|r| r.width).fold(px(0.), Pixels::max);
-                let size = Size {
-                    width: wrap_width.unwrap_or(widest),
-                    height,
-                };
-                let bounds = state.borrow().as_ref().and_then(|l| l.bounds);
-                *state.borrow_mut() = Some(Laid {
-                    base_rtl,
-                    rows,
-                    line_height,
-                    wrap_width,
-                    size,
-                    bounds,
-                });
-                size
-            },
-        );
-        (id, ())
-    }
-
-    fn prepaint(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        _request_layout: &mut (),
-        window: &mut Window,
-        _cx: &mut App,
-    ) -> Vec<Hitbox> {
-        // Record where we landed here rather than in paint: hit-testing (and
-        // the hitboxes just below) need it, and prepaint is the first phase
-        // that knows.
-        if let Some(laid) = self.layout.0.borrow_mut().as_mut() {
-            laid.bounds = Some(bounds);
-        }
-        // One hitbox per link box, rather than gpui's one-per-element plus a
-        // paint-time "is the mouse over a link?" test. That test only re-runs
-        // when something else repaints the frame, so the cursor lagged or never
-        // changed at all; a hitbox is re-tested by the window on every mouse
-        // move, and it is exact — the hand appears over the link's glyphs and
-        // nowhere else.
-        self.pointer_ranges
-            .iter()
-            .flat_map(|range| self.layout.rects_for_range(range.clone()))
-            .map(|rect| window.insert_hitbox(rect, HitboxBehavior::Normal))
-            .collect()
-    }
-
-    fn paint(
-        &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
-        _request_layout: &mut (),
-        hitboxes: &mut Vec<Hitbox>,
-        window: &mut Window,
-        cx: &mut App,
-    ) {
-        // The hand over each link box. Registered unconditionally: the window
-        // decides which (if any) is hovered when it applies the cursor, so this
-        // doesn't depend on a repaint happening as the mouse moves.
-        for hitbox in hitboxes.iter() {
-            window.set_cursor_style(gpui::CursorStyle::PointingHand, hitbox);
-        }
-
-        let state = self.layout.0.borrow();
-        let Some(laid) = state.as_ref() else {
-            return;
-        };
-        // Top-to-bottom in the order we broke them: logical order. Each row is
-        // right-aligned, which is where an RTL reader starts.
-        for (i, row) in laid.rows.iter().enumerate() {
-            paint_row(
-                row,
-                Point {
-                    x: row_left(laid, bounds, row),
-                    y: bounds.origin.y + laid.line_height * i,
-                },
-                laid.line_height,
-                window,
-                cx,
-            );
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -869,18 +466,12 @@ mod tests {
             l: 0.5,
             a: 1.0,
         };
-        let style = TextStyle::default();
-        let runs = runs_from_highlights(
-            text,
-            &style,
-            &[(
-                6..10,
-                HighlightStyle {
-                    color: Some(blue),
-                    ..Default::default()
-                },
-            )],
-        );
+        let base = gpui::TextStyle::default();
+        let link = gpui::TextStyle {
+            color: blue,
+            ..base.clone()
+        };
+        let runs = [base.to_run(6), link.to_run(4), base.to_run(6)];
         // Break BEFORE the link and again after it, so the link sits on its own
         // row — the arrangement that shifts if the newline is charged wrong.
         let (broken, broken_runs) = insert_breaks(text, &runs, &[6, 11]);
@@ -897,35 +488,6 @@ mod tests {
                 &broken[i..(i + 1).min(broken.len())]
             );
         }
-    }
-
-    #[test]
-    fn highlighted_ranges_keep_their_colour_and_still_cover_the_text() {
-        // A link's colour reaches the shaper through these runs, so a gap or a
-        // dropped range shows up as unstyled text on screen.
-        let text = "before LINK after";
-        let blue = Hsla {
-            h: 0.6,
-            s: 1.0,
-            l: 0.5,
-            a: 1.0,
-        };
-        let style = TextStyle::default();
-        let runs = runs_from_highlights(
-            text,
-            &style,
-            &[(
-                7..11,
-                HighlightStyle {
-                    color: Some(blue),
-                    ..Default::default()
-                },
-            )],
-        );
-        assert_eq!(runs.iter().map(|r| r.len).sum::<usize>(), text.len());
-        let coloured: Vec<_> = runs.iter().filter(|r| r.color == blue).collect();
-        assert_eq!(coloured.len(), 1, "exactly the highlighted range is blue");
-        assert_eq!(coloured[0].len, 4, "and it covers LINK, nothing more");
     }
 
     #[test]

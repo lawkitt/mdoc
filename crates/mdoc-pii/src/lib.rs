@@ -119,7 +119,7 @@ pub struct Review {
 
 /// Tokens work unchanged in prose, table cells, destinations, code and HTML.
 /// Custom replacements must not introduce Markdown/URL/HTML delimiters.
-pub fn valid_replacement(value: &str) -> bool {
+pub(crate) fn valid_replacement(value: &str) -> bool {
     value
         .as_bytes()
         .first()
@@ -245,16 +245,6 @@ impl Review {
     /// Whether provenance was recorded against this editor history state.
     pub fn matches_history(&self, history: u64) -> bool {
         self.tracking.matches_history(history)
-    }
-    /// Text edits restoring one applied occurrence, or every occurrence of the
-    /// same immediate prior value.
-    pub fn restoration_edits(
-        &self,
-        source: &str,
-        id: u64,
-        all: bool,
-    ) -> Result<Vec<(Range<usize>, String)>, String> {
-        self.tracking.restore_plan(source, id, all)
     }
     pub fn prepare_restore(
         &self,
@@ -385,7 +375,7 @@ impl Review {
     /// Rebase Keep decisions using the exact batch just committed by the editor.
     /// A broad source diff would discard unchanged exclusions between edits.
     #[cfg(test)]
-    pub fn refresh_after_edits(&mut self, source: &str, edits: &[(Range<usize>, String)]) {
+    pub(crate) fn refresh_after_edits(&mut self, source: &str, edits: &[(Range<usize>, String)]) {
         self.tracking.exclusions.retain_mut(|excluded| {
             if edits
                 .iter()
@@ -489,7 +479,7 @@ impl Review {
         });
         id
     }
-    pub fn validate_manual(source: &str, range: Range<usize>) -> Result<&str, String> {
+    pub(crate) fn validate_manual(source: &str, range: Range<usize>) -> Result<&str, String> {
         let protected = protected_syntax(source);
         source
             .get(range.clone())
@@ -522,7 +512,7 @@ impl Review {
         Ok(id)
     }
     #[cfg(test)]
-    pub fn set_replacement(&mut self, id: u64, replacement: &str) {
+    pub(crate) fn set_replacement(&mut self, id: u64, replacement: &str) {
         let Some(identity) = self.variant_identity(id) else {
             return;
         };

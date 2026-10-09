@@ -26,16 +26,16 @@ pub(super) struct IdentityStore {
     history: HashMap<u64, IdentitySnapshot>,
 }
 impl IdentityStore {
-    pub fn normalized_identity(&self, value: &str, category: Category) -> Option<u64> {
+    pub(crate) fn normalized_identity(&self, value: &str, category: Category) -> Option<u64> {
         self.normalized
             .get(&(category, canonical(value)))
             .copied()
             .filter(|id| self.get(*id).is_some_and(|i| i.category == category))
     }
-    pub fn remember_normalized(&mut self, value: &str, category: Category, id: u64) {
+    pub(crate) fn remember_normalized(&mut self, value: &str, category: Category, id: u64) {
         self.normalized.insert((category, canonical(value)), id);
     }
-    pub fn add(&mut self, identity: Identity) {
+    pub(crate) fn add(&mut self, identity: Identity) {
         self.definitions.insert(identity.id, Arc::new(identity));
     }
     fn get(&self, id: u64) -> Option<&Identity> {
@@ -193,22 +193,6 @@ impl Review {
                 .iter()
                 .filter(|o| o.step.identity == id)
                 .count()
-    }
-    /// Keep current pending mentions of this identity, respecting occurrence
-    /// overrides for homonyms. Refresh once for the entire metadata operation.
-    pub fn keep_identity(&mut self, id: u64) {
-        let mentions: Vec<_> = self
-            .candidates()
-            .iter()
-            .filter(|c| self.occurrence_identity(c.variant, &c.range) == Some(id))
-            .filter_map(|c| {
-                self.variant(c.variant)
-                    .map(|g| (c.range.clone(), g.original.clone()))
-            })
-            .collect();
-        self.tracking.keep_many(mentions);
-        let source = self.source.clone();
-        self.refresh(&source);
     }
     pub(super) fn set_kept(&mut self, group: u64, kept: bool) {
         Arc::make_mut(&mut self.identities.policy)

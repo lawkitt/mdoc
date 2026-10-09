@@ -2199,7 +2199,7 @@ impl Element for EditorElement {
                     // further right than a full one. `paint_row` draws the run
                     // backgrounds (the inline-code tint) too.
                     for (k, row) in r.rows.iter().enumerate() {
-                        gpui_bidi::paragraph::paint_row(
+                        gpui_bidi::paint_row(
                             row,
                             point(
                                 origin.x + inset + r.shifts.get(k).copied().unwrap_or(px(0.)),
@@ -3887,9 +3887,7 @@ fn shape_document(
             // wrapping, so plain CJK is untouched.
             let has_rtl = line_rtl || crate::syntax::contains_rtl(line);
             let rtl_rows = (bg.is_none() && widget.is_none() && table.is_none() && has_rtl)
-                .then(|| {
-                    gpui_bidi::paragraph::layout_rows(&shaped_text, &runs, line_wrap, fs, window)
-                })
+                .then(|| gpui_bidi::layout_rows(&shaped_text, &runs, line_wrap, fs, window))
                 .filter(|rows| !rows.is_empty());
             let span = rtl_rows
                 .as_ref()
