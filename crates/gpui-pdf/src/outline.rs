@@ -176,10 +176,6 @@ pub fn page_links(doc: &Pdf) -> Vec<Vec<PdfLink>> {
 /// `ms-msdt:` run handlers). Whitespace and control characters anywhere are a
 /// rejection, not something to trim: openers strip them, so ` javascript:…`
 /// would otherwise walk past the prefix check.
-///
-/// Deliberately duplicated from `mdoc_markdown::syntax::is_safe_external_url`
-/// — five lines is cheaper than the cross-crate dependency the crates rule
-/// forbids. Keep the two in step.
 fn is_safe_external_uri(uri: &str) -> bool {
     !uri.chars().any(|c| c.is_whitespace() || c.is_control())
         && ["http://", "https://"].iter().any(|scheme| {

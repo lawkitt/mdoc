@@ -1,10 +1,6 @@
-//! Shared markdown-construct **recognition** — the definitions both of
-//! mdoc's engines consume so they can never drift apart (links navigated in
-//! the reader for months while WYSIWYG ignored clicks; alerts were once
-//! recognized in three separate places). The reader (this crate's view),
-//! the WYSIWYG editor (`mdoc-editor`), and any other consumer (PDF export)
-//! share *what counts as a construct and what's its payload*; each keeps its
-//! own rendering. Everything here is engine-neutral and gpui-free.
+//! Markdown-construct **recognition**: what counts as a construct and what its
+//! payload is, kept separate from the editor's rendering. Engine-neutral and
+//! gpui-free.
 
 /// The five GitHub alert kinds (`> [!NOTE]` …).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -36,33 +32,6 @@ impl AlertKind {
             Self::Caution => "Caution",
         }
     }
-}
-
-/// Match an alert marker at the start of a blockquote's text content: the
-/// marker must be uppercase and either alone on its first line (GitHub's
-/// form) or followed by a space and the body (`[!NOTE] like so` — the way
-/// people naturally type it). An Obsidian-style fold char directly after the
-/// `]` makes the callout foldable: `[!NOTE]-` = folded by default, `[!NOTE]+`
-/// = open (`None` = not foldable). Returns the kind, how many bytes to strip
-/// (marker, fold char, and the newline/space separator), and the fold state.
-pub fn alert_marker(value: &str) -> Option<(AlertKind, usize, Option<bool>)> {
-    for (kind, m) in ALERT_MARKERS {
-        if let Some(rest) = value.strip_prefix(m) {
-            let (fold, flen) = match rest.as_bytes().first() {
-                Some(b'-') => (Some(true), 1),
-                Some(b'+') => (Some(false), 1),
-                _ => (None, 0),
-            };
-            let rest = &rest[flen..];
-            if rest.is_empty() {
-                return Some((kind, m.len() + flen, fold));
-            }
-            if rest.starts_with('\n') || rest.starts_with(' ') {
-                return Some((kind, m.len() + flen + 1, fold));
-            }
-        }
-    }
-    None
 }
 
 /// [`alert_marker`] for a single line's body (text after a blockquote's `>`
@@ -106,26 +75,6 @@ pub fn alert_fold_char(line: &str) -> Option<(usize, bool)> {
     // The fold char sits right after the marker's closing `]`.
     let close = line[p..].find(']')? + p;
     Some((close + 1, folded))
-}
-
-/// Flip the fold state (`-` ↔ `+`) of the foldable alert marker on the line
-/// containing byte `offset`, returning the new content — what a click on a
-/// callout's chevron persists (the checkbox-toggle pattern).
-pub fn toggle_alert_fold_at(content: &str, offset: usize) -> Option<String> {
-    if offset > content.len() {
-        return None;
-    }
-    let line_start = content[..offset].rfind('\n').map_or(0, |p| p + 1);
-    let line_end = content[offset..]
-        .find('\n')
-        .map_or(content.len(), |p| offset + p);
-    let (at, folded) = alert_fold_char(&content[line_start..line_end])?;
-    let mut out = content.to_string();
-    out.replace_range(
-        line_start + at..line_start + at + 1,
-        if folded { "+" } else { "-" },
-    );
-    Some(out)
 }
 
 /// Visual style of a GFM table, chosen per-table via a `<!-- table:STYLE -->`
@@ -218,19 +167,6 @@ pub fn table_marker_text(style: TableStyle, widths: Option<&[f32]>) -> Option<St
     }
 }
 
-/// Font-size multiplier for a heading of the given depth (h1 largest, h6 =
-/// body) — one scale for reading, editing, and export.
-pub fn heading_scale(depth: u8) -> f32 {
-    match depth {
-        1 => 1.8,
-        2 => 1.5,
-        3 => 1.3,
-        4 => 1.15,
-        5 => 1.05,
-        _ => 1.0,
-    }
-}
-
 /// The marker for ordered item `n` (1-based) at nesting `depth`, Word-style:
 /// `1.` -> `a.` -> `i.`, cycling for deeper levels. Both views paint ordered
 /// lists with this scheme (a deliberate divergence from CommonMark's
@@ -293,37 +229,6 @@ pub enum LinkHit {
     /// A `((id))` block reference (Logseq-style frontend form) — the host
     /// resolves the id to its page + anchor.
     BlockRef(String),
-}
-
-/// Whether `url` may be handed to the OS URL opener (`cx.open_url` —
-/// `NSWorkspace openURL:` on macOS, `ShellExecute` on Windows).
-///
-/// Link targets are *attacker-authorable*: a synced note, an imported vault, a
-/// PDF's `/URI` annotation. The OS opener runs whichever handler owns the
-/// scheme, so `smb://` leaks NTLM hashes on Windows, `file://` launches local
-/// content, and app-registered schemes (`ms-msdt:` …) are reachable. Hence an
-/// allowlist, never a denylist: only `http://`, `https://`, and `mailto:`
-/// pass. Schemes are case-insensitive per RFC 3986, so `HTTP://` passes too.
-///
-/// `mailto:` is on the list because `[write us](mailto:x@y.com)` is ordinary
-/// markdown and dropping it would break real notes. It opens a compose window
-/// rather than running anything, and the mail client — not us — owns parsing
-/// its query (a percent-encoded `%0D%0A` can't be neutralized here, and
-/// clients have long restricted which headers a `mailto:` may set).
-///
-/// Whitespace and control characters anywhere are a rejection rather than
-/// something to trim — openers strip them, so ` javascript:…` and
-/// `java\tscript:…` would otherwise walk past a prefix check. Everything else
-/// is rejected: `javascript:`, `data:`, `file:`, `smb:`, UNC
-/// `\\server\share`, scheme-relative `//host/path`, and bare relative paths.
-/// A host that wants to resolve local files does so itself, before the opener.
-pub fn is_safe_external_url(url: &str) -> bool {
-    !url.chars().any(|c| c.is_whitespace() || c.is_control())
-        && ["http://", "https://", "mailto:"].iter().any(|scheme| {
-            url.as_bytes()
-                .get(..scheme.len())
-                .is_some_and(|got| got.eq_ignore_ascii_case(scheme.as_bytes()))
-        })
 }
 
 /// A block's base writing direction.
@@ -694,44 +599,6 @@ pub fn split_heading_anchor(target: &str) -> (&str, Option<&str>) {
     }
 }
 
-/// The byte offset of the start of the line carrying the ATX heading whose
-/// text matches `heading` (case-insensitive, trimmed; fenced code skipped),
-/// searching top to bottom. Drives navigation for `[[Note#Heading]]` links.
-pub fn find_heading_line(content: &str, heading: &str) -> Option<usize> {
-    let want = heading.trim().to_lowercase();
-    let mut start = 0;
-    let mut in_fence = false;
-    for line in content.split('\n') {
-        if line.trim_start().starts_with("```") {
-            in_fence = !in_fence;
-        } else if !in_fence {
-            let t = line.trim_start();
-            let level = t.bytes().take_while(|&b| b == b'#').count();
-            if (1..=6).contains(&level)
-                && let Some(text) = t[level..].strip_prefix(' ')
-                && text.trim().to_lowercase() == want
-            {
-                return Some(start);
-            }
-        }
-        start += line.len() + 1;
-    }
-    None
-}
-
-/// The byte offset of the start of the line carrying the block anchor `^id`,
-/// searching top to bottom. Drives navigation for `[[Note#^id]]` links.
-pub fn find_block_line(content: &str, id: &str) -> Option<usize> {
-    let mut start = 0;
-    for line in content.split('\n') {
-        if block_id(line).is_some_and(|(_, i)| i == id) {
-            return Some(start);
-        }
-        start += line.len() + 1;
-    }
-    None
-}
-
 /// The embed target when `line` is a standalone transclusion — exactly
 /// `![[target]]` (Obsidian's embed syntax) and nothing else on the line.
 /// Mid-text embeds don't count; they render as plain links.
@@ -739,58 +606,6 @@ pub fn embed_line(line: &str) -> Option<&str> {
     let t = line.trim();
     let inner = t.strip_prefix("![[")?.strip_suffix("]]")?;
     (!inner.trim().is_empty() && !inner.contains("]]")).then(|| inner.trim())
-}
-
-/// Every standalone embed target in `content`, in order — what a host
-/// pre-resolves before rendering (recursing into resolved content itself for
-/// nested embeds).
-pub fn embed_targets(content: &str) -> Vec<String> {
-    content
-        .split('\n')
-        .filter_map(embed_line)
-        .map(str::to_string)
-        .collect()
-}
-
-/// The source range of the block carrying the anchor `^id` — its whole line —
-/// for embedding (`![[Note#^id]]`).
-pub fn extract_block(content: &str, id: &str) -> Option<std::ops::Range<usize>> {
-    let start = find_block_line(content, id)?;
-    let end = content[start..]
-        .find('\n')
-        .map_or(content.len(), |p| start + p);
-    Some(start..end)
-}
-
-/// The source range of the section under `heading` — the heading line through
-/// the line before the next heading of the same or higher level (fenced code
-/// skipped) — for embedding (`![[Note#Heading]]`).
-pub fn extract_section(content: &str, heading: &str) -> Option<std::ops::Range<usize>> {
-    let start = find_heading_line(content, heading)?;
-    let level = content[start..]
-        .trim_start()
-        .bytes()
-        .take_while(|&b| b == b'#')
-        .count();
-    let mut pos = content[start..]
-        .find('\n')
-        .map_or(content.len(), |p| start + p + 1);
-    let mut in_fence = false;
-    while pos < content.len() {
-        let line_end = content[pos..].find('\n').map_or(content.len(), |p| pos + p);
-        let line = &content[pos..line_end];
-        let t = line.trim_start();
-        if t.starts_with("```") {
-            in_fence = !in_fence;
-        } else if !in_fence {
-            let l = t.bytes().take_while(|&b| b == b'#').count();
-            if (1..=level).contains(&l) && t[l..].starts_with(' ') {
-                return Some(start..pos.saturating_sub(1).max(start));
-            }
-        }
-        pos = line_end + 1;
-    }
-    Some(start..content.len())
 }
 
 /// Split a `key:: value` property line into `(key, value)`. The key must look
@@ -1088,31 +903,6 @@ fn code_span_end(line: &str, open: usize) -> usize {
     open + run
 }
 
-/// Byte offsets of every `==` highlight marker in `line` — openers and closers,
-/// ascending — skipping backtick code spans and backslash escapes. What both
-/// views hide; the text between an opener and its closer is highlighted.
-pub fn highlight_markers(line: &str) -> Vec<usize> {
-    let b = line.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        match b[i] {
-            b'`' => i = code_span_end(line, i),
-            b'\\' => i += 1 + line[i + 1..].chars().next().map_or(0, char::len_utf8),
-            b'=' if b.get(i + 1) == Some(&b'=') => match highlight_close(line, i) {
-                Some(close) => {
-                    out.push(i);
-                    out.push(close);
-                    i = close + 2;
-                }
-                None => i += b[i..].iter().take_while(|c| **c == b'=').count(),
-            },
-            _ => i += line[i..].chars().next().unwrap().len_utf8(),
-        }
-    }
-    out
-}
-
 /// Which inline-HTML tag a [`StyledTag`] is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StyledKind {
@@ -1122,17 +912,6 @@ pub enum StyledKind {
     Span,
     /// `<u>` — underline (markdown has none).
     Underline,
-}
-
-impl StyledKind {
-    /// The closing tag, as it appears in the source.
-    pub fn close(self) -> &'static str {
-        match self {
-            StyledKind::Mark => "</mark>",
-            StyledKind::Span => "</span>",
-            StyledKind::Underline => "</u>",
-        }
-    }
 }
 
 /// An inline-HTML opening tag both views style rather than print.
@@ -1367,14 +1146,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn highlight_markers_follow_the_pairing_rules() {
-        assert_eq!(highlight_markers("a ==b== c"), vec![2, 5]);
-        // Spaces inside, `===` runs, a lone opener, and code spans stay literal.
-        assert!(highlight_markers("a == b == c").is_empty());
-        assert!(highlight_markers("x ==== y").is_empty());
-        assert!(highlight_markers("==open only").is_empty());
-        assert!(highlight_markers("`a ==b== c`").is_empty());
-        assert_eq!(highlight_markers("==one== and ==two=="), vec![0, 5, 12, 17]);
+    fn highlight_close_follows_the_pairing_rules() {
         assert_eq!(highlight_close("a ==b== c", 2), Some(5));
         assert_eq!(highlight_close("a ==b=== c", 2), None);
     }
@@ -1516,54 +1288,7 @@ mod tests {
     }
 
     #[test]
-    fn only_http_reaches_the_os_opener() {
-        for ok in [
-            "http://example.com",
-            "https://example.com/a?b=c#d",
-            "HTTPS://EXAMPLE.COM",
-            "HtTp://example.com",
-            // Ordinary markdown — an email link opens a compose window.
-            "mailto:a@b.c",
-            "MAILTO:a@b.c",
-        ] {
-            assert!(is_safe_external_url(ok), "should allow {ok:?}");
-        }
-        for bad in [
-            "javascript:alert(1)",
-            "data:text/html,<script>x</script>",
-            "file:///etc/passwd",
-            "smb://evil/share",
-            "vbscript:msgbox",
-            "ms-msdt:/id",
-            "//evil.com/path",
-            r"\\evil\share",
-            "/local/path",
-            "example.com",
-            " javascript:alert(1)",
-            "\tjavascript:alert(1)",
-            "java\tscript:alert(1)",
-            "http\n://example.com",
-            "https://exa\u{0}mple.com",
-            "https://example.com\r\nHost: evil",
-            "",
-        ] {
-            assert!(!is_safe_external_url(bad), "should reject {bad:?}");
-        }
-    }
-
-    #[test]
     fn alert_recognition_both_forms() {
-        assert!(matches!(
-            alert_marker("[!NOTE]\nbody"),
-            Some((AlertKind::Note, 8, None))
-        ));
-        assert!(matches!(
-            alert_marker("[!NOTE] inline"),
-            Some((AlertKind::Note, 8, None))
-        ));
-        assert!(alert_marker("[!note] no").is_none());
-        assert!(alert_marker("[!NOTEXT]").is_none());
-
         assert!(matches!(
             alert_prefix("  [!TIP] x"),
             Some((AlertKind::Tip, 9, None))
@@ -1575,32 +1300,13 @@ mod tests {
     fn alert_fold_markers_and_toggle() {
         // `-` = folded, `+` = open; the strip consumes the fold char.
         assert!(matches!(
-            alert_marker("[!NOTE]-\nbody"),
-            Some((AlertKind::Note, 9, Some(true)))
-        ));
-        assert!(matches!(
-            alert_marker("[!NOTE]+ inline"),
-            Some((AlertKind::Note, 9, Some(false)))
-        ));
-        assert!(matches!(
             alert_prefix(" [!TIP]- x"),
             Some((AlertKind::Tip, 9, Some(true)))
-        ));
-        // A `-` not directly after `]` is body text, not a fold marker.
-        assert!(matches!(
-            alert_marker("[!NOTE] - item"),
-            Some((AlertKind::Note, 8, None))
         ));
 
         // The fold char locates + flips within a full source line.
         assert_eq!(alert_fold_char("> [!NOTE]- body"), Some((9, true)));
         assert_eq!(alert_fold_char("> [!NOTE] body"), None);
-        let src = "before\n> [!TIP]- hidden\n> more\nafter";
-        let toggled = toggle_alert_fold_at(src, 10).unwrap();
-        assert_eq!(toggled, "before\n> [!TIP]+ hidden\n> more\nafter");
-        let back = toggle_alert_fold_at(&toggled, 10).unwrap();
-        assert_eq!(back, src);
-        assert!(toggle_alert_fold_at("plain text", 2).is_none());
     }
 
     #[test]
@@ -1619,33 +1325,15 @@ mod tests {
         // A bare `#` is part of the title, not an anchor.
         assert_eq!(split_block_anchor("C# Notes"), ("C# Notes", None));
         assert_eq!(split_block_anchor("file.pdf#p3"), ("file.pdf#p3", None));
-
-        let src = "intro\nthe fact ^fact-1\nmore";
-        assert_eq!(find_block_line(src, "fact-1"), Some(6));
-        assert_eq!(find_block_line(src, "nope"), None);
     }
 
     #[test]
-    fn embeds_and_extraction() {
+    fn embed_lines() {
         assert_eq!(embed_line("![[Note]]"), Some("Note"));
         assert_eq!(embed_line("  ![[Note#^id]]  "), Some("Note#^id"));
         assert_eq!(embed_line("text ![[Note]]"), None); // not standalone
         assert_eq!(embed_line("![[]]"), None);
         assert_eq!(embed_line("[[Note]]"), None);
-
-        let src = "pre\nthe block ^b1\n## Sec\nbody\nmore\n### Sub\ndeep\n## Next\nafter";
-        assert_eq!(&src[extract_block(src, "b1").unwrap()], "the block ^b1");
-        // A section runs through its subsections, stopping at the next
-        // same-or-higher heading.
-        assert_eq!(
-            &src[extract_section(src, "Sec").unwrap()],
-            "## Sec\nbody\nmore\n### Sub\ndeep"
-        );
-        assert_eq!(
-            &src[extract_section(src, "Next").unwrap()],
-            "## Next\nafter"
-        );
-        assert!(extract_section(src, "missing").is_none());
     }
 
     #[test]
@@ -1660,13 +1348,6 @@ mod tests {
         assert_eq!(split_heading_anchor("file.pdf#p3"), ("file.pdf#p3", None));
         assert_eq!(split_heading_anchor("#Heading"), ("#Heading", None));
         assert_eq!(split_heading_anchor("Note#"), ("Note#", None));
-
-        let src = "intro\n## My Heading\nbody\n```\n# not a heading\n```\n### Deep One";
-        // Case-insensitive, trimmed; fences skipped.
-        assert_eq!(find_heading_line(src, "my heading"), Some(6));
-        assert_eq!(find_heading_line(src, " Deep One "), Some(49));
-        assert_eq!(find_heading_line(src, "not a heading"), None);
-        assert_eq!(find_heading_line(src, "missing"), None);
     }
 
     #[test]

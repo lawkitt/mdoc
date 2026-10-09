@@ -4469,7 +4469,6 @@ dependencies = [
  "gpui-pre",
  "gpui-pre-platform",
  "mdoc-history",
- "mdoc-markdown",
  "os-spellcheck",
  "unicode-segmentation",
 ]
@@ -4477,15 +4476,6 @@ dependencies = [
 [[package]]
 name = "mdoc-history"
 version = "0.1.0"
-
-[[package]]
-name = "mdoc-markdown"
-version = "0.9.0"
-dependencies = [
- "gpui-bidi",
- "gpui-pre",
- "markdown",
-]
 
 [[package]]
 name = "mdoc-pii"

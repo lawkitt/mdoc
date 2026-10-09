@@ -656,11 +656,11 @@ fn scan_line(text: &str, start: usize, end: usize, st: &SyntaxStyle, out: &mut V
     // place (Logseq-style; the anchor hitbox/click emit `refs:^id`).
     // Hidden BEFORE the heading fast-path — heading lines carry anchors too
     // (`### Notes ^id` used to show the raw tail).
-    let end = match mdoc_markdown::syntax::block_id(&text[start..end]) {
+    let end = match crate::syntax::block_id(&text[start..end]) {
         Some((at, id)) => {
             let refs = st.block_ref_count.as_ref().map_or(0, |f| f(id));
             if refs > 0 {
-                let badge = format!(" {}", mdoc_markdown::syntax::superscript(refs));
+                let badge = format!(" {}", crate::syntax::superscript(refs));
                 out.push(Span {
                     range: start + at..end,
                     style: Style {
@@ -953,7 +953,7 @@ fn scan_inline(
             && !is_backslash_escaped(b, i)
             && i + 1 < end
             && b[i + 1] == b'='
-            && let Some(close) = mdoc_markdown::syntax::highlight_close(&text[..end], i)
+            && let Some(close) = crate::syntax::highlight_close(&text[..end], i)
         {
             let id = *next_id;
             *next_id += 1;
@@ -1200,12 +1200,12 @@ fn scan_inline(
         // Recognition is the reading view's (`syntax::styled_tag`), so the two
         // views can't disagree about which tags count.
         if c == b'<'
-            && let Some(len) = mdoc_markdown::syntax::inline_tag_len(&text[i..end])
-            && let Some(tag) = mdoc_markdown::syntax::styled_tag(&text[i..i + len])
+            && let Some(len) = crate::syntax::inline_tag_len(&text[i..end])
+            && let Some(tag) = crate::syntax::styled_tag(&text[i..i + len])
             && let Some((rel, close_len)) =
-                mdoc_markdown::syntax::matching_styled_close(&text[i + len..end], tag.kind)
+                crate::syntax::matching_styled_close(&text[i + len..end], tag.kind)
         {
-            use mdoc_markdown::syntax::StyledKind;
+            use crate::syntax::StyledKind;
             let body = i + len;
             let close = body + rel;
             let id = *next_id;
@@ -1238,7 +1238,7 @@ fn scan_inline(
         if (b[i..end].starts_with(b"http://") || b[i..end].starts_with(b"https://"))
             && (i == start || !is_word(b[i - 1]))
         {
-            let j = i + mdoc_markdown::syntax::url_end(&text[i..end], 0);
+            let j = i + crate::syntax::url_end(&text[i..end], 0);
             if j > i + 8 {
                 push(
                     out,
@@ -1333,9 +1333,9 @@ fn find_underscore_close(b: &[u8], from: usize, end: usize, double: bool) -> Opt
 }
 
 // Linkables (wiki/tag/url/bare-url) are shared with the reader
-// (`mdoc_markdown::syntax`) — one grammar for clicks, hover cursors, and
+// (`crate::syntax`) — one grammar for clicks, hover cursors, and
 // styling in every renderer.
-pub(crate) use mdoc_markdown::syntax::{LinkHit, link_at, links};
+pub(crate) use crate::syntax::{LinkHit, link_at, links};
 
 /// ATX heading depth (1–6) if `line` is a heading: 1–6 leading `#` followed by
 /// a space or end-of-line. `None` otherwise.
@@ -1365,7 +1365,7 @@ pub(crate) fn line_heading_level(line: &str) -> Option<(u8, Option<usize>)> {
 /// sections: `folded` holds the trimmed source lines of folded headings
 /// (`## Goals`). A top-level section runs from its heading to the next
 /// heading of the same or a higher level, fence-aware — mirrors
-/// [`mdoc_markdown::syntax::extract_section`]. A LIST heading's section
+/// [`crate::syntax::extract_section`]. A LIST heading's section
 /// (`- ### Notes`) is its indented children: it runs while lines sit deeper
 /// than the heading's own indent (blank lines included). Every line matching
 /// a folded key folds (duplicate headings fold together; the key is the line
@@ -1463,10 +1463,10 @@ pub(crate) fn html_block(line: &str) -> bool {
 /// each with an optional trailing space — if `line` is a blockquote. `None`
 /// otherwise. The editor hides this marker (reveal-on-caret) and renders the line
 /// with a muted color + a left border.
-// Alert recognition is shared with the reader (`mdoc_markdown::syntax`) —
+// Alert recognition is shared with the reader (`crate::syntax`) —
 // what a marker IS lives in one place; this crate only decides how to paint
 // it (hide the prefix, label + colored bar, reveal on caret).
-pub(crate) use mdoc_markdown::syntax::{AlertKind, alert_prefix};
+pub(crate) use crate::syntax::{AlertKind, alert_prefix};
 
 /// Per-kind SVG asset paths for the alert title icons.
 #[derive(Clone)]
@@ -1505,7 +1505,7 @@ impl SyntaxStyle {
 }
 
 /// The alert kind if `body` — a blockquote line's text after its `>` prefix —
-/// starts with an alert marker (see [`mdoc_markdown::syntax::alert_prefix`]).
+/// starts with an alert marker (see [`crate::syntax::alert_prefix`]).
 pub(crate) fn alert_kind(body: &str) -> Option<AlertKind> {
     alert_prefix(body).map(|(kind, ..)| kind)
 }
@@ -2188,15 +2188,15 @@ pub(crate) enum Align {
     Right,
 }
 
-/// The shared table-style enum — recognition lives in `mdoc_markdown::syntax`
+/// The shared table-style enum — recognition lives in `crate::syntax`
 /// (the sanctioned dependency), including the marker's `cols=` widths.
-pub(crate) use mdoc_markdown::syntax::TableStyle;
+pub(crate) use crate::syntax::TableStyle;
 
 /// Parse a `<!-- table:STYLE -->` marker line into its [`TableStyle`]. `None` if
 /// the line isn't a recognized table-style marker (so an unknown marker stays a
 /// plain HTML comment).
 pub(crate) fn table_style_marker(line: &str) -> Option<TableStyle> {
-    mdoc_markdown::syntax::table_style_marker(line)
+    crate::syntax::table_style_marker(line)
 }
 
 /// A detected GFM table region: the half-open range of logical line indices it
@@ -2253,13 +2253,13 @@ pub(crate) fn table_regions(content: &str) -> Vec<TableRegion> {
                 _ => (TableStyle::Grid, None),
             };
             let col_widths_attr =
-                marker_line.and_then(|m| mdoc_markdown::syntax::table_col_widths(lines[m]));
+                marker_line.and_then(|m| crate::syntax::table_col_widths(lines[m]));
             // Writing direction of the whole table (#66) — the reader runs
             // `base_direction` over the table's byte span, so join the region's
             // lines and ask the same question: the first strong character
             // anywhere in the table decides (pipes, dashes and digits are
             // neutral under UAX #9). Once per scan, not per frame.
-            let rtl = mdoc_markdown::syntax::base_direction(&lines[start..end].join("\n")).is_rtl();
+            let rtl = crate::syntax::base_direction(&lines[start..end].join("\n")).is_rtl();
             out.push(TableRegion {
                 lines: start..end,
                 aligns,
@@ -2300,12 +2300,12 @@ pub(crate) fn property_regions(content: &str) -> Vec<Range<usize>> {
             i += 1;
             continue;
         }
-        if !in_fence && mdoc_markdown::syntax::prefixed_property(lines[i]).is_some() {
+        if !in_fence && crate::syntax::prefixed_property(lines[i]).is_some() {
             let start = i;
             i += 1;
             while i < lines.len()
                 && !lines[i].trim_start().starts_with("```")
-                && mdoc_markdown::syntax::prefixed_property(lines[i]).is_some()
+                && crate::syntax::prefixed_property(lines[i]).is_some()
             {
                 i += 1;
             }
@@ -2415,7 +2415,7 @@ fn is_word(c: u8) -> bool {
 }
 
 // One tag grammar with the reader (namespaced `#a/b` included).
-use mdoc_markdown::syntax::is_tag_char as is_tag;
+use crate::syntax::is_tag_char as is_tag;
 
 fn decode_entity(source: &str) -> Option<(usize, String)> {
     if source.as_bytes().first() != Some(&b'&') {
