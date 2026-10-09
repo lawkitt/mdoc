@@ -1,21 +1,26 @@
 # mdoc
 
-A local document-preparation utility for lawyers: convert PDF, DOCX, and other
-popular formats into editable Markdown for AI agents in other tools. Local OCR,
-source previews, and WYSIWYG editing support review before handoff.
-Built with Rust and GPUI for macOS, Windows, and Linux.
+A local document-preparation utility for lawyers: convert PDF (including scans),
+Word, Excel, PowerPoint, OpenDocument, RTF and other popular formats into
+editable Markdown for AI tools such as ChatGPT or Claude. Local OCR, source
+previews and WYSIWYG editing support review before handoff.
+
+Local pseudonymization is a core feature: mdoc proposes consistent replacements
+for names, organizations, contact details and identifiers, and the lawyer reviews
+and approves every one before copying. It runs on pinned local GLiNER2 FP16/FP32
+bundles. It is review assistance, not guaranteed anonymization: the
+[qualification results](tests/fixtures/pseudonymization/README.md) record known
+English/Russian and hidden-source misses.
+
+Built with Rust and GPUI. Full features (OCR and automatic pseudonymization) run
+on Apple Silicon macOS and Windows x64; Intel macOS, Windows ARM64 and Linux
+builds import native text only. Marketing site: https://lawkitt.com/tools/mdoc/
 
 See [ROADMAP.md](ROADMAP.md) for planned features and priorities,
 [CONTEXT.md](CONTEXT.md) for domain terms, and [ADRs](docs/adr/) for durable decisions.
-Inline pseudonymization is available experimentally using pinned local GLiNER2
-FP16 and FP32 bundles. The
-[initial GLiNER qualification](tests/fixtures/pseudonymization/README.md)
-found significant English/Russian and hidden-source misses; experimental use
-was explicitly authorized despite those blockers. This is review assistance,
-not guaranteed anonymization.
 
-Building requires access to the pinned private `lawkitt/anydoc` dependency.
-Authenticate Git with an account that has access before running Cargo.
+All dependencies, including the pinned `lawkitt/anydoc` converter, are public;
+no Git credentials are needed to build.
 
 ## Run
 
