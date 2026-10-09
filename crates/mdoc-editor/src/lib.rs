@@ -43,7 +43,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 mod markdown_syntax;
 mod syntax;
-pub use markdown_syntax::{AlertIcons, PropertyIconFn, SyntaxStyle};
+pub use markdown_syntax::{PropertyIconFn, SyntaxStyle};
 
 mod search;
 mod search_geometry;
@@ -51,7 +51,8 @@ pub use search::{SearchIndex, SearchMatch};
 
 mod input;
 use input::{EditKind, Snapshot};
-pub use mdoc_history::{EditorTransaction, HistoryChange, SourceEdit, inverse_edits};
+pub use mdoc_history::EditorTransaction;
+use mdoc_history::{HistoryChange, SourceEdit};
 mod transactions;
 
 mod tables;
@@ -160,7 +161,7 @@ pub fn bind_keys(cx: &mut App) {
 /// editor text). 1.45 for comfortable reading density while typing (1.25 felt
 /// cramped, especially stacking several list rows). Public so a host's scroll
 /// math (e.g. mdoc's click-to-edit caret prediction) can mirror row heights.
-pub const LINE_HEIGHT_RATIO: f32 = 1.45;
+const LINE_HEIGHT_RATIO: f32 = 1.45;
 
 /// Extra height under each list/task row in WYSIWYG, matching the reader's
 /// roomier item gap (its list column uses a 4px inter-item gap) — the one
@@ -284,19 +285,19 @@ impl TurnKind {
         TurnKind::Math,
     ];
 
-    fn label(self, labels: &Labels) -> SharedString {
+    fn label(self) -> SharedString {
         match self {
-            TurnKind::Text => labels.text.clone(),
-            TurnKind::H1 => labels.heading_1.clone(),
-            TurnKind::H2 => labels.heading_2.clone(),
-            TurnKind::H3 => labels.heading_3.clone(),
-            TurnKind::Bullet => labels.bulleted_list.clone(),
-            TurnKind::Numbered => labels.numbered_list.clone(),
-            TurnKind::Todo => labels.todo.clone(),
-            TurnKind::Quote => labels.quote.clone(),
-            TurnKind::Callout => labels.callout.clone(),
-            TurnKind::Code => labels.code_block.clone(),
-            TurnKind::Math => labels.math_block.clone(),
+            TurnKind::Text => SharedString::new_static("Text"),
+            TurnKind::H1 => SharedString::new_static("Heading 1"),
+            TurnKind::H2 => SharedString::new_static("Heading 2"),
+            TurnKind::H3 => SharedString::new_static("Heading 3"),
+            TurnKind::Bullet => SharedString::new_static("Bulleted list"),
+            TurnKind::Numbered => SharedString::new_static("Numbered list"),
+            TurnKind::Todo => SharedString::new_static("To-do"),
+            TurnKind::Quote => SharedString::new_static("Quote"),
+            TurnKind::Callout => SharedString::new_static("Callout"),
+            TurnKind::Code => SharedString::new_static("Code block"),
+            TurnKind::Math => SharedString::new_static("Math block"),
         }
     }
 }
@@ -531,7 +532,7 @@ pub enum EditorEvent {
 /// A table column's text alignment, for the host-driven alignment toolbar
 /// ([`EditorState::caret_table_align`] / [`EditorState::set_caret_table_align`]).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum CellAlign {
+pub(crate) enum CellAlign {
     Left,
     Center,
     Right,
@@ -552,111 +553,6 @@ type BlockImageFn = Box<dyn Fn(&str) -> Option<Arc<RenderImage>>>;
 /// [`EditorState::set_block_chip_provider`]; the editor renders such a line as a
 /// clickable chip (left-click emits [`EditorEvent::OpenLink`]).
 type BlockChipFn = Box<dyn Fn(&str) -> Option<SharedString>>;
-
-/// Host-supplied clipboard writer for Copy/Cut — receives the markdown text
-/// the editor would put on the clipboard, so a host can add flavors gpui's
-/// clipboard can't (e.g. rendered HTML beside the plain string). See
-/// [`EditorState::set_clipboard_writer`].
-pub type ClipboardWriter = std::rc::Rc<dyn Fn(&str, &mut App)>;
-
-/// The editor: text + cursor/selection state, an undo/redo history, plus a
-/// cached layout (the wrapped lines from the last paint) for hit-testing + IME.
-/// Renders the WYSIWYG view when a markdown [`SyntaxStyle`] is installed, the
-/// raw-markdown view otherwise.
-/// Host-injectable UI labels the editor renders in its context menus and
-/// chrome (right-click menu items, the code-block / math `Copy` chips, the
-/// table / "Turn into" menus). The crate stays host-agnostic so it never
-/// calls `t!()`; the app passes localized strings here via
-/// [`EditorState::set_labels`]. The default is English, keeping the crate
-/// usable standalone (and existing tests' expectations intact).
-#[derive(Clone)]
-pub struct Labels {
-    /// Text-selection right-click menu.
-    pub cut: SharedString,
-    pub copy: SharedString,
-    pub copy_as_markdown: SharedString,
-    pub paste: SharedString,
-    /// Code-block / formula chrome.
-    pub code_copy: SharedString,
-    pub math_copy: SharedString,
-    /// "Turn into" block-conversion menu.
-    pub turn_into: SharedString,
-    pub text: SharedString,
-    pub heading_1: SharedString,
-    pub heading_2: SharedString,
-    pub heading_3: SharedString,
-    pub bulleted_list: SharedString,
-    pub numbered_list: SharedString,
-    pub todo: SharedString,
-    pub quote: SharedString,
-    pub callout: SharedString,
-    pub code_block: SharedString,
-    pub math_block: SharedString,
-    /// Table right-click menu.
-    pub insert_row_above: SharedString,
-    pub insert_row_below: SharedString,
-    pub duplicate_row: SharedString,
-    pub insert_column_left: SharedString,
-    pub insert_column_right: SharedString,
-    pub align_left: SharedString,
-    pub align_center: SharedString,
-    pub align_right: SharedString,
-    pub grid_style: SharedString,
-    pub striped_style: SharedString,
-    pub header_style: SharedString,
-    pub minimal_style: SharedString,
-    pub delete_row: SharedString,
-    pub delete_column: SharedString,
-    pub delete_table: SharedString,
-    /// Property-panel menu.
-    pub edit_properties: SharedString,
-    pub delete_property: SharedString,
-    /// Image menu.
-    pub delete_image: SharedString,
-}
-
-impl Default for Labels {
-    fn default() -> Self {
-        Self {
-            cut: "Cut".into(),
-            copy: "Copy".into(),
-            copy_as_markdown: "Copy as Markdown".into(),
-            paste: "Paste".into(),
-            code_copy: "Copy".into(),
-            math_copy: "Copy".into(),
-            turn_into: "Turn into".into(),
-            text: "Text".into(),
-            heading_1: "Heading 1".into(),
-            heading_2: "Heading 2".into(),
-            heading_3: "Heading 3".into(),
-            bulleted_list: "Bulleted list".into(),
-            numbered_list: "Numbered list".into(),
-            todo: "To-do".into(),
-            quote: "Quote".into(),
-            callout: "Callout".into(),
-            code_block: "Code block".into(),
-            math_block: "Math block".into(),
-            insert_row_above: "Insert row above".into(),
-            insert_row_below: "Insert row below".into(),
-            duplicate_row: "Duplicate row".into(),
-            insert_column_left: "Insert column left".into(),
-            insert_column_right: "Insert column right".into(),
-            align_left: "Align left".into(),
-            align_center: "Align center".into(),
-            align_right: "Align right".into(),
-            grid_style: "Grid style".into(),
-            striped_style: "Striped style".into(),
-            header_style: "Header style".into(),
-            minimal_style: "Minimal style".into(),
-            delete_row: "Delete row".into(),
-            delete_column: "Delete column".into(),
-            delete_table: "Delete table".into(),
-            edit_properties: "Edit properties".into(),
-            delete_property: "Delete property".into(),
-            delete_image: "Delete image".into(),
-        }
-    }
-}
 
 pub struct EditorState {
     focus_handle: FocusHandle,
@@ -769,9 +665,6 @@ pub struct EditorState {
     /// backspace — the only edits auto-pairing should react to, so programmatic /
     /// structural edits (table ops, etc.) don't trip it.
     last_edit_keystroke: bool,
-    /// Spaces inserted per Tab / one list-nesting level (`Indent`/`Outdent`); set
-    /// by the host via [`Self::set_tab_indent`] to match its list-indent setting.
-    tab_indent: usize,
     /// The target x for vertical (Up/Down) movement, so the caret keeps its
     /// column across short lines. `Some` only during a run of Up/Down.
     goal_x: Option<Pixels>,
@@ -782,9 +675,6 @@ pub struct EditorState {
     /// view (W1), `None` = the raw view (plain text). Set by the host via
     /// [`Self::set_markdown_style`].
     markdown_style: Option<SyntaxStyle>,
-    /// Host-injectable UI labels for context menus / chrome; English by
-    /// default, localized through [`Self::set_labels`].
-    labels: Labels,
     /// The open right-click suggestions menu, if any.
     menu: Option<DiagMenu>,
     /// The open table right-click menu's anchor (window space), if any. Its actions
@@ -840,12 +730,6 @@ pub struct EditorState {
     code_card_rects: Vec<(usize, Bounds<Pixels>)>,
     /// The hovered code block's first body line, if any (chrome shows there).
     code_chip_hover: Option<usize>,
-    /// Open language picker for a code block: `(opening fence row, anchor)`.
-    code_lang_menu: Option<(usize, Point<Pixels>)>,
-    code_lang_scroll: ScrollHandle,
-    /// Languages the host's highlighter supports, offered in the code block's
-    /// language picker. Empty (the default) disables the picker.
-    code_langs: Vec<SharedString>,
     /// Painted chevron bounds of foldable callouts (`(line, rect)`, from the
     /// last paint) — a click flips the marker's `-`/`+` fold char.
     alert_fold_rects: Vec<(usize, Bounds<Pixels>)>,
@@ -894,9 +778,6 @@ pub struct EditorState {
     table_thumbs: Vec<TableThumb>,
     /// A live thumb drag: `(header row, grab x, scroll offset at grab)`.
     table_thumb_drag: Option<(usize, Pixels, f32)>,
-    /// Extra left offset for the drag grip — the host sets its line-number
-    /// gutter's width here so the grip sits beside the numbers, not on them.
-    grip_inset: Pixels,
     /// `content_gen` as of the last paint — a measure with the SAME generation
     /// but different heights means an async (non-edit) height change, the
     /// scroll-anchoring trigger.
@@ -1005,11 +886,9 @@ impl EditorState {
             last_transaction: None,
             last_edit: EditKind::Other,
             last_edit_keystroke: false,
-            tab_indent: 4,
             goal_x: None,
             diagnostics: Vec::new(),
             markdown_style: None,
-            labels: Labels::default(),
             menu: None,
             table_menu: None,
             table_menu_scroll: ScrollHandle::new(),
@@ -1024,9 +903,6 @@ impl EditorState {
             code_chip_rects: Vec::new(),
             code_card_rects: Vec::new(),
             code_chip_hover: None,
-            code_lang_menu: None,
-            code_lang_scroll: ScrollHandle::new(),
-            code_langs: Vec::new(),
             alert_fold_rects: Vec::new(),
             image_resize: None,
             table_col_resize: None,
@@ -1042,7 +918,6 @@ impl EditorState {
             table_scroll_x: std::collections::HashMap::new(),
             table_thumbs: Vec::new(),
             table_thumb_drag: None,
-            grip_inset: px(0.),
             content_gen: 0,
             utf16_anchor: std::cell::Cell::new((0, 0, 0)),
             inline_math_rects: Vec::new(),
@@ -1979,16 +1854,11 @@ impl EditorState {
             return;
         }
         // A press on a code card's chrome: Copy writes the block's body to the
-        // clipboard; the language tag opens the picker — neither places the caret.
+        // clipboard; neither it nor the language tag places the caret.
         if let Some((on_copy, fence_row)) = self.code_chip_at(event.position) {
-            if on_copy {
-                if let Some((_, body)) = self.code_block_at(fence_row) {
-                    let text = self.content[body].to_string();
-                    self.write_clipboard(text, cx);
-                }
-            } else if !self.code_langs.is_empty() {
-                self.code_lang_menu = Some((fence_row, event.position));
-                cx.notify();
+            if on_copy && let Some((_, body)) = self.code_block_at(fence_row) {
+                let text = self.content[body].to_string();
+                self.write_clipboard(text, cx);
             }
             return;
         }
@@ -2255,7 +2125,6 @@ impl EditorState {
         self.table_menu = None;
         self.image_menu = None;
         self.prop_menu = None;
-        self.code_lang_menu = None;
         self.goal_x = None;
         self.last_edit = EditKind::Other;
         match event.click_count {
@@ -2884,7 +2753,6 @@ impl EditorState {
             || self.table_menu.take().is_some()
             || self.image_menu.take().is_some()
             || self.prop_menu.take().is_some()
-            || self.code_lang_menu.take().is_some()
         {
             cx.notify();
         } else if self.live_selection_action().is_some()
@@ -3146,7 +3014,7 @@ impl EditorState {
         let bounds = self.last_bounds?;
         if self.markdown_style.is_none()
             || self.line_drag.is_some()
-            || position.x < grip_left(bounds.origin.x, self.grip_inset) - px(4.)
+            || position.x < grip_left(bounds.origin.x) - px(4.)
             || position.x > bounds.origin.x + bounds.size.width
             || position.y < bounds.origin.y
             || position.y > bounds.origin.y + bounds.size.height
@@ -3632,29 +3500,6 @@ impl EditorState {
         })
     }
 
-    /// Rewrite the block's opening fence to carry `lang` (one undo step).
-    fn set_code_lang(&mut self, fence_row: usize, lang: &str, cx: &mut Context<Self>) {
-        let starts = self.line_starts();
-        let Some(&start) = starts.get(fence_row) else {
-            return;
-        };
-        let end = self.line_end(fence_row);
-        let line = &self.content[start..end];
-        let trimmed = line.trim_start();
-        if !trimmed.starts_with("```") {
-            return;
-        }
-        let indent = &line[..line.len() - trimmed.len()];
-        let new_line = format!("{indent}```{}", if lang == "text" { "" } else { lang });
-        self.replace_range(start..end, &new_line, cx);
-        // replace_range parks the caret at the fence line's end, which reveals
-        // the raw ``` marker (reveal-on-caret). Step onto the body's first
-        // line instead so the fence stays hidden.
-        let caret = (start + new_line.len() + 1).min(self.content.len());
-        self.selected_range = caret..caret;
-        self.emit_changed(cx);
-    }
-
     fn checkbox_at(&self, position: Point<Pixels>) -> Option<usize> {
         let pad = px(4.);
         self.checkbox_rects.iter().find_map(|&(line, rect)| {
@@ -4012,7 +3857,7 @@ impl Render for EditorState {
                 if has_sel {
                     clipboard = clipboard
                         .child(
-                            clip_item("menu-cut", self.labels.cut.clone()).on_mouse_down(
+                            clip_item("menu-cut", SharedString::new_static("Cut")).on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|editor, _: &MouseDownEvent, window, cx| {
                                     cx.stop_propagation();
@@ -4022,7 +3867,7 @@ impl Render for EditorState {
                             ),
                         )
                         .child(
-                            clip_item("menu-copy", self.labels.copy.clone()).on_mouse_down(
+                            clip_item("menu-copy", SharedString::new_static("Copy")).on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|editor, _: &MouseDownEvent, window, cx| {
                                     cx.stop_propagation();
@@ -4035,7 +3880,7 @@ impl Render for EditorState {
                         // for pasting literal source into rich surfaces
                         // (email, chat) where Copy's HTML flavor would win.
                         .child(
-                            clip_item("menu-copy-md", self.labels.copy_as_markdown.clone())
+                            clip_item("menu-copy-md", SharedString::new_static("Copy as Markdown"))
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(|editor, _: &MouseDownEvent, window, cx| {
@@ -4047,7 +3892,7 @@ impl Render for EditorState {
                         );
                 }
                 let clipboard = clipboard.child(
-                    clip_item("menu-paste", self.labels.paste.clone()).on_mouse_down(
+                    clip_item("menu-paste", SharedString::new_static("Paste")).on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|editor, _: &MouseDownEvent, window, cx| {
                             cx.stop_propagation();
@@ -4169,7 +4014,7 @@ impl Render for EditorState {
                     .items_center()
                     .justify_between()
                     .gap(px(16.))
-                    .child(self.labels.turn_into.clone())
+                    .child(SharedString::new_static("Turn into"))
                     .child(div().text_size(px(10.)).child("\u{25b8}"))
                     .on_hover(cx.listener(|editor, hovered: &bool, _, cx| {
                         if *hovered
@@ -4180,7 +4025,6 @@ impl Render for EditorState {
                             cx.notify();
                         }
                     }));
-                let turn_labels = self.labels.clone();
                 let turn_flyout = menu_turn_into.then(|| {
                     let rows: Vec<_> = TurnKind::ALL
                         .iter()
@@ -4202,7 +4046,7 @@ impl Render for EditorState {
                                 } else {
                                     ""
                                 }))
-                                .child(k.label(&turn_labels))
+                                .child(k.label())
                                 .on_mouse_down(
                                     MouseButton::Left,
                                     cx.listener(move |editor, _: &MouseDownEvent, window, cx| {
@@ -4344,48 +4188,48 @@ impl Render for EditorState {
                 let specs = [
                     item(
                         "↑",
-                        self.labels.insert_row_above.clone(),
+                        SharedString::new_static("Insert row above"),
                         TableMenuAction::InsertRowAbove,
                     ),
                     item(
                         "↓",
-                        self.labels.insert_row_below.clone(),
+                        SharedString::new_static("Insert row below"),
                         TableMenuAction::InsertRowBelow,
                     ),
                     item(
                         "⧉",
-                        self.labels.duplicate_row.clone(),
+                        SharedString::new_static("Duplicate row"),
                         TableMenuAction::DuplicateRow,
                     ),
                     Row::Div,
                     item(
                         "←",
-                        self.labels.insert_column_left.clone(),
+                        SharedString::new_static("Insert column left"),
                         TableMenuAction::InsertColLeft,
                     ),
                     item(
                         "→",
-                        self.labels.insert_column_right.clone(),
+                        SharedString::new_static("Insert column right"),
                         TableMenuAction::InsertColRight,
                     ),
                     Row::Div,
                     Row::Item {
                         glyph: "",
-                        label: self.labels.align_left.clone(),
+                        label: SharedString::new_static("Align left"),
                         action: TableMenuAction::AlignLeft,
                         red: false,
                         checked: cur_align == Some(CellAlign::Left),
                     },
                     Row::Item {
                         glyph: "",
-                        label: self.labels.align_center.clone(),
+                        label: SharedString::new_static("Align center"),
                         action: TableMenuAction::AlignCenter,
                         red: false,
                         checked: cur_align == Some(CellAlign::Center),
                     },
                     Row::Item {
                         glyph: "",
-                        label: self.labels.align_right.clone(),
+                        label: SharedString::new_static("Align right"),
                         action: TableMenuAction::AlignRight,
                         red: false,
                         checked: cur_align == Some(CellAlign::Right),
@@ -4393,28 +4237,28 @@ impl Render for EditorState {
                     Row::Div,
                     Row::Item {
                         glyph: "▦",
-                        label: self.labels.grid_style.clone(),
+                        label: SharedString::new_static("Grid style"),
                         action: TableMenuAction::SetStyle(None),
                         red: false,
                         checked: cur_style == TS::Grid,
                     },
                     Row::Item {
                         glyph: "▤",
-                        label: self.labels.striped_style.clone(),
+                        label: SharedString::new_static("Striped style"),
                         action: TableMenuAction::SetStyle(Some("striped")),
                         red: false,
                         checked: cur_style == TS::Striped,
                     },
                     Row::Item {
                         glyph: "▥",
-                        label: self.labels.header_style.clone(),
+                        label: SharedString::new_static("Header style"),
                         action: TableMenuAction::SetStyle(Some("header")),
                         red: false,
                         checked: cur_style == TS::Header,
                     },
                     Row::Item {
                         glyph: "─",
-                        label: self.labels.minimal_style.clone(),
+                        label: SharedString::new_static("Minimal style"),
                         action: TableMenuAction::SetStyle(Some("minimal")),
                         red: false,
                         checked: cur_style == TS::Minimal,
@@ -4422,27 +4266,27 @@ impl Render for EditorState {
                     Row::Div,
                     item(
                         "⊞",
-                        self.labels.copy_as_markdown.clone(),
+                        SharedString::new_static("Copy as Markdown"),
                         TableMenuAction::CopyTable,
                     ),
                     Row::Div,
                     Row::Item {
                         glyph: "✕",
-                        label: self.labels.delete_row.clone(),
+                        label: SharedString::new_static("Delete row"),
                         action: TableMenuAction::DeleteRow,
                         red: true,
                         checked: false,
                     },
                     Row::Item {
                         glyph: "✕",
-                        label: self.labels.delete_column.clone(),
+                        label: SharedString::new_static("Delete column"),
                         action: TableMenuAction::DeleteColumn,
                         red: true,
                         checked: false,
                     },
                     Row::Item {
                         glyph: "✕",
-                        label: self.labels.delete_table.clone(),
+                        label: SharedString::new_static("Delete table"),
                         action: TableMenuAction::DeleteTable,
                         red: true,
                         checked: false,
@@ -4600,36 +4444,41 @@ impl Render for EditorState {
                                 cx.notify();
                             }))
                             .child(
-                                item("prop-menu-edit", self.labels.edit_properties.clone())
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(move |editor, _: &MouseDownEvent, _, cx| {
-                                            cx.stop_propagation();
-                                            editor.prop_menu = None;
-                                            if let Some((range, source)) =
-                                                editor.property_block_at(row)
-                                            {
-                                                let block_row = row - editor.row_col(range.start).0;
-                                                cx.emit(EditorEvent::EditProperties {
-                                                    range,
-                                                    source,
-                                                    at_end: false,
-                                                    row: Some(block_row),
-                                                });
-                                            }
-                                        }),
-                                    ),
+                                item(
+                                    "prop-menu-edit",
+                                    SharedString::new_static("Edit properties"),
+                                )
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |editor, _: &MouseDownEvent, _, cx| {
+                                        cx.stop_propagation();
+                                        editor.prop_menu = None;
+                                        if let Some((range, source)) = editor.property_block_at(row)
+                                        {
+                                            let block_row = row - editor.row_col(range.start).0;
+                                            cx.emit(EditorEvent::EditProperties {
+                                                range,
+                                                source,
+                                                at_end: false,
+                                                row: Some(block_row),
+                                            });
+                                        }
+                                    }),
+                                ),
                             )
                             .child(
-                                item("prop-menu-delete", self.labels.delete_property.clone())
-                                    .on_mouse_down(
-                                        MouseButton::Left,
-                                        cx.listener(move |editor, _: &MouseDownEvent, _, cx| {
-                                            cx.stop_propagation();
-                                            editor.prop_menu = None;
-                                            editor.delete_property_row(row, cx);
-                                        }),
-                                    ),
+                                item(
+                                    "prop-menu-delete",
+                                    SharedString::new_static("Delete property"),
+                                )
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |editor, _: &MouseDownEvent, _, cx| {
+                                        cx.stop_propagation();
+                                        editor.prop_menu = None;
+                                        editor.delete_property_row(row, cx);
+                                    }),
+                                ),
                             ),
                     ),
                 )
@@ -4665,7 +4514,7 @@ impl Render for EditorState {
                                     .px(px(10.))
                                     .py(px(3.))
                                     .hover(move |s| s.bg(hover))
-                                    .child(self.labels.delete_image.clone())
+                                    .child(SharedString::new_static("Delete image"))
                                     .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(move |editor, _: &MouseDownEvent, _, cx| {
@@ -4675,97 +4524,6 @@ impl Render for EditorState {
                                         }),
                                     ),
                             ),
-                    ),
-                )
-            }))
-            .children(self.code_lang_menu.map(|(row, anchor)| {
-                // The code block's language picker (Cditor-inspired): the host's
-                // highlighter languages, scrollable past the cap, current one
-                // checked. Selecting rewrites the opening fence (one undo step).
-                let st = self.markdown_style.as_ref();
-                let menu_bg = st.map_or(rgb(0x26262b).into(), |s| s.popover_bg);
-                let menu_border = st.map_or(rgb(0x45454c).into(), |s| s.popover_border);
-                let menu_fg = st.map_or(rgb(0xe6e6e6).into(), |s| s.popover_fg);
-                let hover = st.map_or(rgba(0x2f6fd628).into(), |s| s.popover_hover);
-                let mut thumb_c = st.map_or(rgba(0xffffff66).into(), |s| s.marker);
-                thumb_c.a = 0.5;
-                let current = self.code_block_at(row).map(|(l, _)| l).unwrap_or_default();
-                const ROW_H: f32 = 22.0;
-                const MAX_H: f32 = 260.0;
-                const PAD: f32 = 4.0;
-                let langs = self.code_langs.clone();
-                let rows_h = langs.len() as f32 * ROW_H;
-                let view_h = MAX_H - 2.0 * PAD;
-                let thumb = (rows_h > view_h).then(|| {
-                    let scrolled =
-                        (-f32::from(self.code_lang_scroll.offset().y)).clamp(0.0, rows_h - view_h);
-                    let thumb_h = (view_h * view_h / rows_h).max(24.0);
-                    let thumb_top = PAD + scrolled / (rows_h - view_h) * (view_h - thumb_h);
-                    div()
-                        .absolute()
-                        .top(px(thumb_top))
-                        .right(px(2.))
-                        .w(px(6.))
-                        .h(px(thumb_h))
-                        .rounded(px(3.))
-                        .bg(thumb_c)
-                });
-                gpui::deferred(
-                    gpui::anchored().position(anchor).snap_to_window().child(
-                        div()
-                            .relative()
-                            .occlude()
-                            .min_w(px(140.))
-                            .cursor(CursorStyle::Arrow)
-                            .bg(menu_bg)
-                            .border_1()
-                            .border_color(menu_border)
-                            .rounded(px(6.))
-                            .shadow_md()
-                            .overflow_hidden()
-                            .text_color(menu_fg)
-                            .text_size(px(13.))
-                            .py(px(PAD))
-                            .on_mouse_down_out(cx.listener(|editor, _: &MouseDownEvent, _, cx| {
-                                editor.code_lang_menu = None;
-                                cx.notify();
-                            }))
-                            .child(
-                                div()
-                                    .id("code-lang-list")
-                                    .max_h(px(MAX_H - 2.0 * PAD))
-                                    .overflow_y_scroll()
-                                    .track_scroll(&self.code_lang_scroll)
-                                    .children(langs.into_iter().enumerate().map(|(i, lang)| {
-                                        let is_current = *lang == current
-                                            || (current.is_empty() && *lang == *"text");
-                                        let label: SharedString = if is_current {
-                                            format!("{lang} ✓").into()
-                                        } else {
-                                            lang.clone()
-                                        };
-                                        div()
-                                            .id(("code-lang-row", i))
-                                            .flex_shrink_0()
-                                            .h(px(ROW_H))
-                                            .px(px(10.))
-                                            .py(px(2.))
-                                            .hover(move |s| s.bg(hover))
-                                            .child(label)
-                                            .on_mouse_down(
-                                                MouseButton::Left,
-                                                cx.listener(
-                                                    move |editor, _: &MouseDownEvent, _, cx| {
-                                                        cx.stop_propagation();
-                                                        editor.code_lang_menu = None;
-                                                        editor.set_code_lang(row, &lang, cx);
-                                                    },
-                                                ),
-                                            )
-                                            .into_any_element()
-                                    })),
-                            )
-                            .children(thumb),
                     ),
                 )
             }))
@@ -5003,7 +4761,6 @@ enum LineMark {
     Alert {
         bar: Hsla,
         label: &'static str,
-        kind: markdown_syntax::AlertKind,
         text_inset: Pixels,
         /// Foldable callout (`[!NOTE]-`/`+`): `Some(true)` = folded. A chevron
         /// paints at `chevron_x` (after the label) and clicking it flips the
@@ -5356,11 +5113,14 @@ pub(crate) fn paint_doc_icon(
 
 /// How many wrap rows table row `cells` need at `col_widths` — 1 for content
 /// that fits; more once a drag-narrowed column forces its text to wrap.
+/// Spaces inserted per Tab / list-nesting level.
+const TAB_INDENT: usize = 4;
+
 /// The gutter grip's left edge for an editor whose content starts at
 /// `bounds_left` — THE grip x formula, shared by prepaint (fresh geometry)
 /// and the event-time hover mirror so the two can't drift.
-fn grip_left(bounds_left: Pixels, inset: Pixels) -> Pixels {
-    bounds_left - px(22.) - inset
+fn grip_left(bounds_left: Pixels) -> Pixels {
+    bounds_left - px(22.)
 }
 
 /// One markdown line's built display + runs, cached across frames (see
@@ -5431,12 +5191,6 @@ fn line_run_epoch(font: &Font, st: Option<&SyntaxStyle>) -> u64 {
     }
     h.finish()
 }
-
-/// Host hook for scroll anchoring: called from the measure pass when an
-/// ASYNC height change (a math/mermaid/image raster arriving) lands ABOVE
-/// the window's viewport, with the height delta — the host shifts its scroll
-/// container's offset by it so the content being read doesn't jump.
-pub type ScrollCompensatorFn = std::rc::Rc<dyn Fn(Pixels, &mut Window, &mut App)>;
 
 /// Content-derived structural scans — tables, ordered-list numbering,
 /// mermaid/math regions, property runs, foldable callouts, and per-line

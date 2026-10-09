@@ -80,7 +80,6 @@ pub fn markdown_style(theme: Theme) -> SyntaxStyle {
         alert_important: hsla(0.74, 0.85, 0.73, 1.),
         alert_warning: hsla(0.12, 0.7, 0.48, 1.),
         alert_caution: hsla(0.01, 0.9, 0.63, 1.),
-        alert_icons: None,
         rule: hsla(0., 0., 1., 0.18),                // `---` divider
         mark_bg: hsla(0.13, 1., 0.5, 0.4),           // yellow <mark> highlight
         popover_bg: hsla(0., 0., 0.16, 1.),          // dark menu surface

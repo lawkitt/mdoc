@@ -1,6 +1,6 @@
 //! Batch text construction and history-identity tests for editor transactions.
 #[cfg(test)]
-use crate::{SourceEdit, inverse_edits};
+use mdoc_history::{SourceEdit, inverse_edits};
 use std::ops::Range;
 
 pub(crate) fn build_batch(source: &str, edits: &[(Range<usize>, String)]) -> String {
