@@ -68,7 +68,9 @@ automated success does not establish native or Windows/Linux acceptance. Deliver
 a local reviewable diff; commit, PR publication, merge and release are outside
 this first-change scope unless separately requested.
 
-See [the quick investigation and decision tree](../design/maintainability-review.md).
+The quick investigation and decision tree (`docs/design/maintainability-review.md`)
+was removed in `d10fba0`; read it with
+`git show d10fba0^:docs/design/maintainability-review.md`.
 
 ## Implementation and verification
 
