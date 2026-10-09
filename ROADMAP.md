@@ -132,6 +132,10 @@ stale-result protection. No detector establishes guaranteed anonymization.
   as one group; until then folders are skipped (ADR 0028). Needs its own
   grilling session (grouping model, persistence, interaction with batch
   conversion) and a future ADR.
+- OS spell-check experiment: wire the retained `os-spellcheck` crate (macOS and
+  Windows checkers) into the Markdown editor's diagnostics. Kept as groundwork by
+  the 2026-10-09 codebase cleanup ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md));
+  behaviour, languages and legal-vocabulary handling need their own session.
 - Additional product ideas such as optional source/page references: discuss
   concrete workflows before committing scope.
 
