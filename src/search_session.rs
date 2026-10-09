@@ -62,7 +62,7 @@ impl SearchSession {
     }
 }
 
-impl Workspace {
+impl DocumentView {
     pub(super) fn find_markdown(
         &mut self,
         _: &FindMarkdown,
@@ -319,21 +319,16 @@ impl Workspace {
     ) {
         let weak = cx.entity().downgrade();
         window.on_next_frame(move |window, cx| {
-            let _ = weak.update(cx, |workspace, cx| {
-                if !workspace.search.open || workspace.search.revision != revision {
+            let _ = weak.update(cx, |view, cx| {
+                if !view.search.open || view.search.revision != revision {
                     return;
                 }
-                if let Some(index) = workspace.search.active {
-                    workspace.scroll_to_markdown_search(index, cx);
+                if let Some(index) = view.search.active {
+                    view.scroll_to_markdown_search(index, cx);
                     // on_next_frame runs before paint: new query highlights or
                     // focus-dependent wrapping may only acquire bounds afterward.
                     if remaining > 0 {
-                        workspace.refine_markdown_search_scroll(
-                            revision,
-                            remaining - 1,
-                            window,
-                            cx,
-                        );
+                        view.refine_markdown_search_scroll(revision, remaining - 1, window, cx);
                         cx.notify();
                     }
                 }

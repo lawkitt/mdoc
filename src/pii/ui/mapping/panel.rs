@@ -17,7 +17,7 @@ struct ReplacementRow {
 /// One panel line: an entity row, or one of the expanded entity's mentions.
 type PanelEntry = (Arc<ReplacementRow>, Option<(u64, Range<usize>)>);
 
-impl Workspace {
+impl DocumentView {
     fn replacement_control(
         &self,
         id: impl Into<gpui::ElementId>,

@@ -16,7 +16,7 @@ pub(super) struct AliasTarget {
     pub category: Category,
     pub suggested: bool,
 }
-impl Workspace {
+impl DocumentView {
     pub(super) fn alias_targets(&self, query: &str, owner: bool) -> Vec<AliasTarget> {
         let review = &self.pii.review;
         let active = self.selected_entity();

@@ -1,6 +1,6 @@
 //! PII toolbar and popup routing. State stays in the parent controller.
 use super::{Popup, ReviewUi};
-use crate::{Workspace, ui};
+use crate::{DocumentView, ui};
 use gpui::{AnyElement, App, Context, Window, div, prelude::*};
 
 impl ReviewUi {
@@ -24,7 +24,7 @@ impl ReviewUi {
     }
 }
 
-impl Workspace {
+impl DocumentView {
     pub(crate) fn pii_toolbar_control(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let enabled = self.can_copy_markdown();

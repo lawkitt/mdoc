@@ -9,8 +9,8 @@ use scan::ScanJob;
 mod tests;
 
 use crate::{
-    PiiAddCandidate, PiiApplyAll, PiiClosePopup, PiiConfirm, PiiNextCandidate,
-    PiiPreviousCandidate, PiiReviewCandidate, Pseudonymize, Workspace, markdown_search,
+    DocumentView, PiiAddCandidate, PiiApplyAll, PiiClosePopup, PiiConfirm, PiiNextCandidate,
+    PiiPreviousCandidate, PiiReviewCandidate, Pseudonymize, markdown_search,
     pii::detector,
     pii::{self, Category, IdentitySnapshot, Review, tracking::ReplacementPlan},
     settings, settings_ui, style,
@@ -67,7 +67,7 @@ impl Drop for ReviewUi {
     }
 }
 impl ReviewUi {
-    pub fn new(cx: &mut Context<Workspace>) -> Self {
+    pub fn new(cx: &mut Context<DocumentView>) -> Self {
         Self {
             review: Review::default(),
             reviewing: false,
@@ -165,7 +165,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
     ]);
 }
 
-impl Workspace {
+impl DocumentView {
     pub(crate) fn reset_pii(&mut self, cx: &mut Context<Self>) {
         self.pii.cancel();
         self.pii.review = Review::default();

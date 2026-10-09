@@ -2,7 +2,7 @@
 use super::*;
 use crate::{PiiNextChoice, PiiOpenChoice, PiiPreviousChoice, ui};
 use gpui::{AnyElement, anchored, deferred, div, prelude::*, uniform_list};
-impl Workspace {
+impl DocumentView {
     pub(crate) fn choose_annotations(
         &mut self,
         ids: Vec<u64>,

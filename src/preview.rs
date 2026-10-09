@@ -79,7 +79,7 @@ impl PreviewState {
         generation: u64,
         theme: Rc<Cell<Theme>>,
         window: &mut Window,
-        cx: &mut Context<Workspace>,
+        cx: &mut Context<DocumentView>,
     ) -> bool {
         if !self.is_current(generation) {
             return false;
@@ -155,7 +155,7 @@ impl Drop for PreviewState {
     }
 }
 
-impl Workspace {
+impl DocumentView {
     pub(super) fn toggle_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.preview.visible = !self.preview.visible;
         if !self.preview.visible && self.active && !self.loading && !self.unavailable {
@@ -268,7 +268,7 @@ impl Workspace {
         let cancel = Arc::new(AtomicBool::new(false));
         self.preview.cancel = Some(cancel.clone());
         self.preview.queued = true;
-        cx.emit(tabs::TabEvent::Docx {
+        cx.emit(workspace::TabEvent::Docx {
             path,
             generation,
             cancel,
@@ -362,7 +362,7 @@ mod tests {
 
     #[gpui::test]
     fn stale_accept_cannot_consume_newer_pending_preview(cx: &mut gpui::TestAppContext) {
-        let (app, cx) = crate::ui_tests::boot(cx);
+        let (app, cx) = crate::document_view_tests::boot(cx);
         app.update_in(cx, |app, window, cx| {
             let old = app.begin_preview("old.pdf".into());
             let current = app.begin_preview("new.pdf".into());
