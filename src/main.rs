@@ -224,7 +224,6 @@ impl Workspace {
                         cx.emit(tabs::TabEvent::Open(vec![path]));
                     }
                 }
-                _ => {}
             });
         let markdown_search_subscription = cx.subscribe_in(
             &markdown_search,
