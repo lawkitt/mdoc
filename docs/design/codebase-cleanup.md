@@ -145,7 +145,7 @@ deletion.
 - Crates internal (`publish = false`, short READMEs, no `API.md`).
 - Third-party licenses regenerated (the list predated `mdoc-pii`); no unused
   dependencies found.
-- Tests: 463 → 418 passing, every removal named in its commit message.
+- Tests: 463 → 408 passing, every removal named in its commit message.
 
 ## Checkpoint (step 8) — open questions
 
