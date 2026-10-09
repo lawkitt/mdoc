@@ -3,6 +3,7 @@
 mod candidates;
 mod discovery;
 mod identities;
+mod manual;
 pub use identities::{Identity, IdentitySnapshot};
 mod syntax;
 pub mod tracking;
@@ -13,7 +14,7 @@ use std::{
     ops::Range,
     sync::Arc,
 };
-use syntax::protected_syntax;
+use syntax::{plain_text_span, protected_syntax};
 use tracking::{Applied, Assignment, ReplacementPlan, Tracking};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -26,6 +27,9 @@ pub enum Category {
     Identity,
     Tax,
     Bank,
+    /// Manual additions only; the detector never emits Date or Other.
+    Date,
+    Other,
 }
 impl Category {
     pub fn label(self) -> &'static str {
@@ -38,17 +42,22 @@ impl Category {
             Self::Identity => "Identity",
             Self::Tax => "Tax identifier",
             Self::Bank => "Bank details",
+            Self::Date => "Date",
+            Self::Other => "Other",
         }
     }
-    pub const ALL: [Self; 8] = [
+    /// Picker order; Other is the catch-all and comes last.
+    pub const ALL: [Self; 10] = [
         Self::Person,
         Self::Organization,
         Self::Email,
         Self::Phone,
         Self::Address,
+        Self::Date,
         Self::Identity,
         Self::Tax,
         Self::Bank,
+        Self::Other,
     ];
     pub fn token(self) -> &'static str {
         match self {
@@ -60,6 +69,8 @@ impl Category {
             Self::Identity => "IDENTITY",
             Self::Tax => "TAX",
             Self::Bank => "BANK",
+            Self::Date => "DATE",
+            Self::Other => "REDACTED",
         }
     }
 }
@@ -80,6 +91,8 @@ pub struct Variant {
     pub mentions: Vec<Range<usize>>,
     kept: bool,
     keep_default: bool,
+    /// Manual additions win discovery overlaps, the latest first; 0 when detected.
+    priority: u64,
 }
 
 #[derive(Clone)]
@@ -100,6 +113,8 @@ pub struct Review {
     discovery_version: u64,
     counters: HashMap<Category, usize>,
     next_id: u64,
+    /// Last manual-addition priority handed out; see `Variant::priority`.
+    manual_priority: u64,
 }
 
 /// Tokens work unchanged in prose, table cells, destinations, code and HTML.
@@ -124,6 +139,13 @@ fn safe_span(value: &str) -> bool {
         && !value.starts_with('_')
         && !value.ends_with('_')
         && !value.chars().any(|ch| "\n\r[]<>`*|\\#~".contains(ch))
+}
+/// Like `safe_span`, but escapes and emphasis characters are allowed; the
+/// caller checks them structurally with `plain_text_span`.
+fn manual_span(value: &str) -> bool {
+    value.len() <= 1024
+        && value.chars().any(char::is_alphanumeric)
+        && !value.chars().any(|ch| "\n\r[]<>`|#$".contains(ch))
 }
 fn exact_boundary(source: &str, range: &Range<usize>, original: &str) -> bool {
     let left = original.chars().next().is_some_and(char::is_alphanumeric)
@@ -334,6 +356,7 @@ impl Review {
             version: self.discovery_version,
             originals: self.variants().iter().map(|g| g.original.clone()).collect(),
             enabled: self.variants().iter().map(|g| !g.kept).collect(),
+            priority: self.variants().iter().map(|g| g.priority).collect(),
             excluded: self
                 .tracking
                 .exclusions
@@ -462,13 +485,20 @@ impl Review {
             mentions: Vec::new(),
             kept: false,
             keep_default: false,
+            priority: 0,
         });
         id
     }
     pub fn validate_manual(source: &str, range: Range<usize>) -> Result<&str, String> {
         let protected = protected_syntax(source);
-        source.get(range.clone()).filter(|value|safe_span(value) && !protected.iter().any(|syntax|overlaps(&range,syntax)))
-            .ok_or_else(||"Select identifying text without Markdown delimiters. Narrow selections that cross syntax.".into())
+        source
+            .get(range.clone())
+            .filter(|value| {
+                manual_span(value)
+                    && !protected.iter().any(|syntax| overlaps(&range, syntax))
+                    && plain_text_span(source, range.clone())
+            })
+            .ok_or_else(|| "Selection crosses Markdown formatting.".into())
     }
     pub fn add_manual(
         &mut self,
@@ -480,8 +510,11 @@ impl Review {
         self.refresh(source);
         let existed = self.candidates.by_original(original).is_some();
         let id = self.add_seed(original, category);
-        if !existed && let Some(group) = self.candidates.variant_mut(id) {
-            group.keep_default = true;
+        self.manual_priority += 1;
+        let priority = self.manual_priority;
+        if let Some(group) = self.candidates.variant_mut(id) {
+            group.keep_default |= !existed;
+            group.priority = priority;
         }
         self.set_kept(id, false);
         self.tracking.remove_keeps_for(original);

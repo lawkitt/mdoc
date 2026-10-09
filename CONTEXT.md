@@ -88,6 +88,22 @@ accepted Markdown edits, clickable applied highlights and the live document's
 restoration provenance. It does
 not establish that the document is safe to share.
 
+**Manual addition**:
+Text the lawyer selects and turns into a proposed replacement after
+Pseudonymize, when detection missed it. All exact repeats are proposed together
+with a guessed, correctable category
+([ADR 0024](docs/adr/0024-replace-custom-selection.md)). Code: `Review::add_manual`.
+_UI label_: Replace
+
+**Scope outline**:
+A thin outline in the editor around the mentions a selected panel group or
+popup scope chip would affect; display only
+([ADR 0025](docs/adr/0025-review-refinements.md)).
+
+**Other category**:
+The neutral category for manually added text with no recognisable shape;
+placeholder `REDACTED_n`. Manual additions only; the detector never emits it.
+
 **Mention**:
 One occurrence of identifying information in the Markdown source. Exact repeated
 mentions can be reviewed together; variants are linked by the lawyer.

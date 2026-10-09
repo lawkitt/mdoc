@@ -166,35 +166,6 @@ impl Workspace {
                 })),
             )
             .child(
-                self.replacement_control("add-pseudonym-selection", "Add selected text", !busy, cx)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        if this.pii.scanning() {
-                            return;
-                        }
-                        this.pii.mapping.close_actions();
-                        this.add_pii_candidate(&PiiAddCandidate, window, cx);
-                    })),
-            )
-            .child(
-                self.replacement_control(
-                    "pseudonym-category",
-                    format!("Selection type: {} ▾", self.pii.category.label()),
-                    !busy,
-                    cx,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    if this.pii.scanning() {
-                        return;
-                    }
-                    let index = Category::ALL
-                        .iter()
-                        .position(|c| *c == this.pii.category)
-                        .unwrap_or(0);
-                    this.pii.category = Category::ALL[(index + 1) % Category::ALL.len()];
-                    cx.notify();
-                })),
-            )
-            .child(
                 self.replacement_control("review-settings", "Model settings…", true, cx)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.pii.mapping.close_actions();
@@ -227,6 +198,83 @@ impl Workspace {
             .into_any_element()
     }
 
+    /// Collapse the open group: deselect it and close its popup.
+    fn collapse_replacement(&mut self, cx: &mut Context<Self>) {
+        self.pii.mapping.deselect();
+        self.pii.dismiss_popup();
+        self.editor
+            .update(cx, |e, cx| e.set_active_annotation(None, cx));
+        cx.notify();
+    }
+    /// A panel drop leaves the popup as it was: a mapping change otherwise
+    /// reopens it on the previously active mention.
+    fn after_drop(&mut self, had_popup: bool, cx: &mut Context<Self>) {
+        if !had_popup && self.pii.popup.is_some() {
+            self.pii.dismiss_popup();
+            self.editor
+                .update(cx, |e, cx| e.set_active_annotation(None, cx));
+        }
+    }
+    /// Drop a dragged row on a group: link one mention, or merge an entity.
+    pub(super) fn drop_on_entity(&mut self, drag: &PanelDrag, target: u64, cx: &mut Context<Self>) {
+        self.pii.mapping.dragging = None;
+        self.pii.mapping.drop_target = None;
+        self.pii.mapping.drag_in_panel = false;
+        let had_popup = self.pii.popup.is_some();
+        match drag.clone() {
+            PanelDrag::Mention {
+                identity, range, ..
+            } if identity != target => self.change_mapping(
+                MappingAction::Scoped {
+                    identity,
+                    ranges: vec![range],
+                    target: Some(target),
+                    alias: None,
+                    category: None,
+                },
+                cx,
+            ),
+            PanelDrag::Entity { identity, .. } if identity != target => {
+                self.change_mapping(MappingAction::Merge(identity, target), cx)
+            }
+            _ => {}
+        }
+        self.after_drop(had_popup, cx);
+        cx.notify();
+    }
+    /// Drop a dragged mention on "New entity": separate it with a new alias.
+    pub(super) fn drop_as_new_entity(&mut self, drag: &PanelDrag, cx: &mut Context<Self>) {
+        self.pii.mapping.dragging = None;
+        self.pii.mapping.drop_target = None;
+        self.pii.mapping.drag_in_panel = false;
+        let had_popup = self.pii.popup.is_some();
+        if let PanelDrag::Mention {
+            identity, range, ..
+        } = drag.clone()
+            && self.pii.review.identity_count(identity) > 1
+        {
+            self.change_mapping(
+                MappingAction::Scoped {
+                    identity,
+                    ranges: vec![range],
+                    target: None,
+                    alias: None,
+                    category: None,
+                },
+                cx,
+            );
+        }
+        self.after_drop(had_popup, cx);
+        cx.notify();
+    }
+    /// Track the row under a drag so it can show "Link to ALIAS".
+    fn drag_over_target(&mut self, target: DropTarget, cx: &mut Context<Self>) {
+        if self.pii.mapping.drop_target != Some(target) {
+            self.pii.mapping.drop_target = Some(target);
+            cx.notify();
+        }
+    }
+
     fn undo_last_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.editor.read(cx).focus_handle(cx), cx);
         window.dispatch_action(Box::new(mdoc_editor::Undo), cx);
@@ -256,6 +304,21 @@ impl Workspace {
         let busy = self.pii.scanning();
         let pending = self.pii.review.remaining();
         let kept = mapping.kept_at(self.editor.read(cx).history_id());
+        let added = mapping
+            .added_at(self.editor.read(cx).history_id())
+            .map(|(added, _)| added.original.clone());
+        // A mention of a multi-mention entity dragged over the panel can get a
+        // new alias: the next free token of its entity's category.
+        let new_alias = (cx.has_active_drag() && mapping.drag_in_panel)
+            .then_some(mapping.dragging.as_ref())
+            .flatten()
+            .filter(|d| {
+                matches!(d, PanelDrag::Mention { .. })
+                    && self.pii.review.identity_count(d.identity()) > 1
+            })
+            .and_then(|d| self.pii.review.identity(d.identity()))
+            .map(|identity| self.pii.review.next_alias(identity.category));
+        let rows_height = px(48. * count as f32);
         let upgrade = self.pii.review.applied().iter().any(|a| {
             self.pii
                 .review
@@ -264,6 +327,19 @@ impl Workspace {
         });
         let panel = ui::panel("identity-panel", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "identity-panel".into()))
+            .on_drag_move::<PanelDrag>(cx.listener(
+                |this, e: &gpui::DragMoveEvent<PanelDrag>, _, cx| {
+                    let inside = e.bounds.contains(&e.event.position);
+                    let mapping = &mut this.pii.mapping;
+                    if mapping.drag_in_panel != inside {
+                        mapping.drag_in_panel = inside;
+                        if !inside && mapping.drop_target == Some(DropTarget::NewEntity) {
+                            mapping.drop_target = None;
+                        }
+                        cx.notify();
+                    }
+                },
+            ))
             .rounded_none()
             .shadow_none()
             .key_context("IdentityPanel UiPanel UiMenu")
@@ -367,6 +443,29 @@ impl Workspace {
                                     this.pii.popup.is_some()
                                         && this.active_annotation() == Some(*annotation)
                                 });
+                                let weak = cx.entity().downgrade();
+                                let accent = theme.search_accent();
+                                // "Link to ALIAS" while another group's row is dragged here.
+                                let link_hint = cx.has_active_drag()
+                                    && this.pii.mapping.drop_target == Some(DropTarget::Entity(id))
+                                    && this
+                                        .pii
+                                        .mapping
+                                        .dragging
+                                        .as_ref()
+                                        .is_some_and(|d| d.identity() != id);
+                                let start_drag = move |drag: &PanelDrag, cx: &mut App| {
+                                    let _ = weak.update(cx, |this, _| {
+                                        this.pii.mapping.dragging = Some(drag.clone());
+                                        this.pii.mapping.drop_target = None;
+                                        this.pii.mapping.drag_in_panel = false;
+                                    });
+                                    let label = match drag {
+                                        PanelDrag::Mention { original, .. }
+                                        | PanelDrag::Entity { original, .. } => original.clone(),
+                                    };
+                                    cx.new(|_| DragGhost { label, theme })
+                                };
                                 let control = this
                                     .replacement_control(
                                         SharedString::from(format!("replacement-entry-{index}")),
@@ -390,6 +489,24 @@ impl Workspace {
                                             ..palette.placeholder_bg
                                         })
                                     })
+                                    // Every row of a group accepts drops for that group.
+                                    .drag_over::<PanelDrag>(move |s, drag, _, _| {
+                                        if drag.identity() == id {
+                                            s
+                                        } else {
+                                            s.border_1().border_color(accent)
+                                        }
+                                    })
+                                    .on_drag_move::<PanelDrag>(cx.listener(
+                                        move |this, e: &gpui::DragMoveEvent<PanelDrag>, _, cx| {
+                                            if e.bounds.contains(&e.event.position) {
+                                                this.drag_over_target(DropTarget::Entity(id), cx);
+                                            }
+                                        },
+                                    ))
+                                    .on_drop(cx.listener(move |this, drag: &PanelDrag, _, cx| {
+                                        this.drop_on_entity(drag, id, cx)
+                                    }))
                                     .when(current, |v| {
                                         // The accent bar keeps it identifiable under hover.
                                         v.bg(theme.sidebar_selected()).child(
@@ -422,6 +539,11 @@ impl Workspace {
                                             .clone()
                                     };
                                     let (before, word, after) = this.readable_mention(&range, cx);
+                                    let drag = PanelDrag::Mention {
+                                        identity: id,
+                                        range: range.clone(),
+                                        original: original.clone(),
+                                    };
                                     let applied = annotation & APPLIED_ID != 0;
                                     let accent = theme.search_accent();
                                     let undo = applied
@@ -521,6 +643,7 @@ impl Workspace {
                                                 cx,
                                             )
                                         }))
+                                        .on_drag(drag, move |drag, _, _, cx| start_drag(drag, cx))
                                         .into_any_element()
                                 } else {
                                     control
@@ -534,8 +657,28 @@ impl Workspace {
                                         .child(
                                             div()
                                                 .w_full()
-                                                .text_ellipsis()
-                                                .child(row.original.to_string()),
+                                                .flex()
+                                                .items_center()
+                                                .gap_1()
+                                                .child(
+                                                    div()
+                                                        .flex_shrink_0()
+                                                        .w(px(10.))
+                                                        .text_size(px(10.))
+                                                        .text_color(palette.header_muted)
+                                                        .child(if expanded {
+                                                            "▾"
+                                                        } else {
+                                                            "▸"
+                                                        }),
+                                                )
+                                                .child(
+                                                    div()
+                                                        .min_w_0()
+                                                        .flex_1()
+                                                        .text_ellipsis()
+                                                        .child(row.original.to_string()),
+                                                ),
                                         )
                                         .child(
                                             div()
@@ -562,7 +705,11 @@ impl Workspace {
                                                                 .pdf_style()
                                                                 .header_muted,
                                                         )
+                                                        .when(link_hint, |v| v.text_color(accent))
                                                         .child(match row.applied {
+                                                            _ if link_hint => {
+                                                                format!("Link to {}", row.alias)
+                                                            }
                                                             0 => format!(
                                                                 "{} · proposed",
                                                                 row.mentions
@@ -578,18 +725,94 @@ impl Workspace {
                                                 ),
                                         )
                                         .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.reveal_replacement(id, window, cx)
+                                            // A click toggles the open group.
+                                            if this.selected_entity() == Some(id) {
+                                                this.collapse_replacement(cx)
+                                            } else {
+                                                this.reveal_replacement(id, window, cx)
+                                            }
                                         }))
+                                        .on_drag(
+                                            PanelDrag::Entity {
+                                                identity: id,
+                                                original: row.original.clone(),
+                                            },
+                                            move |drag, _, _, cx| start_drag(drag, cx),
+                                        )
                                         .into_any_element()
                                 }
                             })
                             .collect()
                     }),
                 )
-                .flex_1()
+                .map(|v| {
+                    // While the new-alias area shows, the list keeps its rows'
+                    // height (shrinking if needed) and the area takes the rest.
+                    if new_alias.is_some() {
+                        v.flex_basis(rows_height).flex_shrink(1.)
+                    } else {
+                        v.flex_1()
+                    }
+                })
                 .min_h_0()
                 .track_scroll(&mapping.list_scroll),
             )
+            .when_some(new_alias, |v, alias| {
+                // The free space under the rows becomes a contoured drop area
+                // that names the alias a separated mention would get.
+                let accent = theme.search_accent();
+                let over = mapping.drop_target == Some(DropTarget::NewEntity);
+                v.child(
+                    div()
+                        .id("replacement-new-entity")
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "replacement-new-entity".into())
+                        })
+                        .flex_grow(1.)
+                        .min_h(px(72.))
+                        .mx_3()
+                        .my_2()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_center()
+                        .gap_1()
+                        .rounded_lg()
+                        .border_1()
+                        .border_dashed()
+                        .border_color(if over {
+                            accent
+                        } else {
+                            Hsla {
+                                a: 0.5,
+                                ..palette.header_muted
+                            }
+                        })
+                        .when(over, |v| v.bg(Hsla { a: 0.08, ..accent }))
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(palette.header_muted)
+                                .child("Drop to give it a new alias"),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(13.))
+                                .text_color(accent)
+                                .child(format!("→ {alias}")),
+                        )
+                        .on_drag_move::<PanelDrag>(cx.listener(
+                            |this, e: &gpui::DragMoveEvent<PanelDrag>, _, cx| {
+                                if e.bounds.contains(&e.event.position) {
+                                    this.drag_over_target(DropTarget::NewEntity, cx);
+                                }
+                            },
+                        ))
+                        .on_drop(cx.listener(|this, drag: &PanelDrag, _, cx| {
+                            this.drop_as_new_entity(drag, cx)
+                        })),
+                )
+            })
             .when(count == 0, |v| {
                 v.child(div().px_3().text_size(px(12.)).child(if busy {
                     "Scanning…"
@@ -712,6 +935,38 @@ impl Workspace {
                                     })
                                     .on_click(cx.listener(
                                         |this, _, window, cx| this.undo_last_step(window, cx),
+                                    )),
+                                ),
+                        )
+                    })
+                    .when_some(added, |v, original| {
+                        v.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .min_w_0()
+                                        .text_ellipsis()
+                                        .text_size(px(12.))
+                                        .text_color(palette.header_muted)
+                                        .child(format!("Added “{original}”")),
+                                )
+                                .child(
+                                    ui::icon_button(
+                                        "replacement-cancel-addition",
+                                        "Cancel addition",
+                                        ui::Icon::Undo,
+                                        theme,
+                                        true,
+                                    )
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "replacement-cancel-addition".into())
+                                    })
+                                    .on_click(cx.listener(
+                                        |this, _, window, cx| this.cancel_addition(window, cx),
                                     )),
                                 ),
                         )

@@ -27,6 +27,62 @@ impl Pickers {
     }
 }
 
+/// A manual addition while it (and an immediate Apply) is the latest history.
+#[derive(Clone)]
+pub(super) struct Added {
+    pub original: Arc<str>,
+    after_add: u64,
+    after_apply: Option<u64>,
+}
+/// A panel row being dragged: one mention, or a whole entity.
+#[derive(Clone)]
+pub(super) enum PanelDrag {
+    Mention {
+        identity: u64,
+        range: Range<usize>,
+        original: Arc<str>,
+    },
+    Entity {
+        identity: u64,
+        original: Arc<str>,
+    },
+}
+impl PanelDrag {
+    pub(super) fn identity(&self) -> u64 {
+        match self {
+            Self::Mention { identity, .. } | Self::Entity { identity, .. } => *identity,
+        }
+    }
+}
+/// The drag ghost: the dragged original as a compact chip.
+pub(super) struct DragGhost {
+    pub label: Arc<str>,
+    pub theme: crate::style::Theme,
+}
+impl gpui::Render for DragGhost {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl gpui::IntoElement {
+        use gpui::{ParentElement, Styled};
+        let palette = self.theme.pdf_style();
+        gpui::div()
+            .px_2()
+            .py_1()
+            .rounded_md()
+            .bg(palette.bg)
+            .border_1()
+            .border_color(self.theme.search_accent())
+            .text_size(px(12.))
+            .text_color(palette.header_fg)
+            .shadow_md()
+            .child(self.label.to_string())
+    }
+}
+/// Where a panel drag would drop.
+#[derive(Clone, Copy, PartialEq)]
+pub(super) enum DropTarget {
+    Entity(u64),
+    NewEntity,
+}
+
 #[cfg(test)]
 #[path = "mapping_tests.rs"]
 mod tests;
@@ -45,6 +101,20 @@ pub(super) struct MappingUi {
     kept: Option<(usize, u64)>,
     /// The panel mention row under the pointer.
     pub(super) hovered: Option<u64>,
+    /// The latest manual addition, for Cancel addition (ADR 0025).
+    added: Option<Added>,
+    /// A popup scope chip under the pointer previews its outline.
+    pub(super) scope_hover: Option<Scope>,
+    /// The panel row being dragged and the row it would drop on.
+    pub(super) dragging: Option<PanelDrag>,
+    pub(super) drop_target: Option<DropTarget>,
+    /// The drag pointer is over the panel (shows the new-alias area).
+    pub(super) drag_in_panel: bool,
+    /// The alias cue to play: (generation, include the category chip).
+    pub(super) cue: Option<(u64, bool)>,
+    cue_generation: u64,
+    /// The first detected-mention popup in this tab already played the cue.
+    cued_detected: bool,
     selected: Option<Selection>,
     search: Entity<markdown_search::SearchInput>,
     pub(super) alias: Entity<markdown_search::SearchInput>,
@@ -158,6 +228,46 @@ impl MappingUi {
             .filter(|(_, at)| *at == history)
             .map(|(count, _)| count)
     }
+    pub(super) fn record_added(&mut self, original: Arc<str>, history: u64) {
+        self.added = Some(Added {
+            original,
+            after_add: history,
+            after_apply: None,
+        });
+    }
+    /// An Apply right after the addition joins what Cancel addition reverts.
+    pub(super) fn record_apply(&mut self, before: u64, after: u64) {
+        if let Some(added) = &mut self.added
+            && added.after_apply.is_none()
+            && added.after_add == before
+        {
+            added.after_apply = Some(after);
+        }
+    }
+    /// The addition and how many undo steps cancel it, while still current.
+    pub(super) fn added_at(&self, history: u64) -> Option<(&Added, usize)> {
+        let added = self.added.as_ref()?;
+        if added.after_apply == Some(history) {
+            Some((added, 2))
+        } else if added.after_add == history && added.after_apply.is_none() {
+            Some((added, 1))
+        } else {
+            None
+        }
+    }
+    pub(super) fn clear_added(&mut self) {
+        self.added = None;
+    }
+    /// Play the alias cue for a manual addition, or once per tab for a
+    /// detected mention; `chip` also cues the category chip.
+    pub(super) fn request_cue(&mut self, manual: bool, chip: bool) {
+        if !manual && std::mem::replace(&mut self.cued_detected, true) {
+            self.cue = None;
+            return;
+        }
+        self.cue_generation += 1;
+        self.cue = Some((self.cue_generation, chip));
+    }
     pub(super) fn mark_popup_revision(&mut self, revision: u64) {
         self.popup_revision = Some(revision);
     }
@@ -200,6 +310,14 @@ impl MappingUi {
             popup_revision: None,
             kept: None,
             hovered: None,
+            added: None,
+            scope_hover: None,
+            dragging: None,
+            drop_target: None,
+            drag_in_panel: false,
+            cue: None,
+            cue_generation: 0,
+            cued_detected: false,
             selected: None,
             search: input("Find an alias or original"),
             alias: input("Alias"),

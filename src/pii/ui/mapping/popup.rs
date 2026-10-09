@@ -361,6 +361,48 @@ impl Workspace {
         }
     }
     /// Pending candidates and applied occurrence ids inside the selected scope.
+    /// Outline what the popup's scope (or a hovered chip) covers, or the
+    /// selected panel group's mentions (ADR 0025). Display only.
+    pub(crate) fn sync_scope_outlines(&mut self, cx: &mut Context<Self>) {
+        let proposed = style::markdown_style(self.theme.get()).alert_warning;
+        let applied = self.theme.get().search_accent();
+        let visible = self.pii.reviewing && (self.pii.mapping.open || self.pii.popup.is_some());
+        let ranges = match self.selected_entity().filter(|_| visible) {
+            Some(_) if self.pii.popup.is_some() => self.scoped_ranges(
+                self.pii
+                    .mapping
+                    .scope_hover
+                    .unwrap_or(self.pii.mapping.scope),
+            ),
+            Some(id) => self
+                .identity_occurrences(id)
+                .into_iter()
+                .map(|(_, r)| r)
+                .collect(),
+            None => Vec::new(),
+        };
+        let applied_ranges: std::collections::HashSet<_> = self
+            .pii
+            .review
+            .applied()
+            .iter()
+            .map(|a| (a.range.start, a.range.end))
+            .collect();
+        let outlines = ranges
+            .into_iter()
+            .map(|r| {
+                let color = if applied_ranges.contains(&(r.start, r.end)) {
+                    applied
+                } else {
+                    proposed
+                };
+                (r, Hsla { a: 0.85, ..color })
+            })
+            .collect();
+        self.editor.update(cx, |editor, cx| {
+            editor.set_outlines(editor.revision(), outlines, cx)
+        });
+    }
     pub(super) fn scoped_mentions(&self) -> (Vec<(u64, Range<usize>)>, Vec<u64>) {
         let ranges: std::collections::HashSet<_> = self
             .scoped_ranges(self.pii.mapping.scope)
@@ -421,15 +463,36 @@ impl Workspace {
             .iter()
             .map(|p| (p.range.clone(), p.after.to_string()))
             .collect();
-        if self.commit_plans(revision, &plans, None, cx).is_none() {
+        let before = self.editor.read(cx).history_id();
+        let Some(after) = self.commit_plans(revision, &plans, None, cx) else {
             self.pii.error = Some("Document changed. Review the replacement again.".into());
             cx.notify();
             return;
-        }
+        };
+        self.pii.mapping.record_apply(before, after);
         self.pii.review.refresh(self.editor.read(cx).text());
         self.pii.error = None;
         self.sync_annotations(cx);
         self.restore_active_replacement(active, &edits, cx);
+        cx.notify();
+    }
+    /// Undo a mistaken manual addition (and an Apply right after it) while
+    /// those are the latest history steps (ADR 0025).
+    pub(in crate::pii::ui) fn cancel_addition(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let history = self.editor.read(cx).history_id();
+        let Some((_, steps)) = self.pii.mapping.added_at(history) else {
+            return;
+        };
+        self.pii.mapping.clear_added();
+        self.close_pii_popup(&PiiClosePopup, window, cx);
+        window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+        for _ in 0..steps {
+            window.dispatch_action(Box::new(mdoc_editor::Undo), cx);
+        }
         cx.notify();
     }
     /// Return applied occurrences to their prior text as one undo step. `keep`

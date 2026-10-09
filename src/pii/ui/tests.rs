@@ -925,3 +925,162 @@ fn hidden_annotations_follow_visible_wrapped_rows(cx: &mut gpui::TestAppContext)
         );
     });
 }
+#[gpui::test]
+fn selection_replace_supersedes_partial_proposals_and_enter_applies(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    let source = "Contact Иван Петров today. Иван agreed.";
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text(source, cx));
+    });
+    cx.run_until_parked();
+    let first = source.find("Иван").unwrap();
+    let full = first..source.find(" today").unwrap();
+    let select = |range: Range<usize>, cx: &mut gpui::VisualTestContext| {
+        app.update(cx, |app, cx| {
+            app.editor.update(cx, |e, cx| e.set_selection(range, cx))
+        });
+        cx.run_until_parked();
+        app.read_with(cx, |app, cx| {
+            app.editor.read(cx).selection_action().cloned()
+        })
+    };
+    // Not offered before Pseudonymize has run.
+    assert!(select(full.clone(), cx).is_none());
+    app.update(cx, |app, cx| {
+        let (generation, identity, revision) = install_scan(app, cx);
+        app.complete_pii_scan(
+            generation,
+            identity,
+            revision,
+            Ok(vec![pii::Detection {
+                range: first..first + "Иван".len(),
+                category: Category::Person,
+                score: 0.9,
+                recognizer: crate::pii::Recognizer::Model,
+            }]),
+            cx,
+        );
+        assert_eq!(app.pii.review.remaining(), 2);
+    });
+    cx.run_until_parked();
+    // A partial word explains itself instead of adding.
+    let action = select(first..first + 4, cx).unwrap();
+    assert_eq!(action.disabled.as_deref(), Some("Select whole words."));
+    // Edge whitespace and punctuation are trimmed; the pill offers Replace.
+    let action = select(first - 1..full.end + 1, cx).unwrap();
+    assert_eq!(action.disabled, None);
+    assert_eq!(action.label.as_ref(), "Replace");
+    app.update_in(cx, |app, window, cx| {
+        app.add_pii_candidate(&PiiAddCandidate, window, cx);
+        let review = &app.pii.review;
+        let added = review
+            .variants()
+            .iter()
+            .find(|v| v.original.as_ref() == "Иван Петров")
+            .unwrap();
+        assert_eq!(added.category, Category::Person);
+        assert_eq!(added.mentions, vec![full.clone()]);
+        assert_eq!(review.remaining(), 2);
+        assert!(app.pii.popup.is_some() && app.pii.enter_applies);
+        assert!(app.pii.mapping.open);
+        assert!(app.pii.focus.is_focused(window));
+    });
+    cx.dispatch_action(PiiConfirm);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        let text = app.editor.read(cx).text().to_owned();
+        assert!(text.starts_with("Contact PERSON_2 today."), "{text}");
+        assert!(text.ends_with("Иван agreed."), "{text}");
+        assert_eq!(app.pii.review.remaining(), 1);
+    });
+    // Apply and the addition are separate undo steps.
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.editor.read(cx).focus_handle(cx), cx)
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), source);
+        assert_eq!(app.pii.review.candidates()[0].range, full);
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), source);
+        let first = &app.pii.review.candidates()[0].range;
+        assert_eq!(first.len(), "Иван".len());
+    });
+}
+#[gpui::test]
+fn unknown_wording_is_other_cued_and_cancel_reverts_addition_and_apply(
+    cx: &mut gpui::TestAppContext,
+) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    let source = "Планируемая дата поступления. Анна agreed.";
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text(source, cx));
+    });
+    cx.run_until_parked();
+    let anna = source.find("Анна").unwrap();
+    app.update(cx, |app, cx| {
+        let (generation, identity, revision) = install_scan(app, cx);
+        app.complete_pii_scan(
+            generation,
+            identity,
+            revision,
+            Ok(vec![pii::Detection {
+                range: anna..anna + "Анна".len(),
+                category: Category::Person,
+                score: 0.9,
+                recognizer: crate::pii::Recognizer::Model,
+            }]),
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    let date = 0.."Планируемая дата".len();
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |e, cx| e.set_selection(date.clone(), cx))
+    });
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        app.add_pii_candidate(&PiiAddCandidate, window, cx);
+        let added = app
+            .pii
+            .review
+            .variants()
+            .iter()
+            .find(|v| v.original.as_ref() == "Планируемая дата")
+            .unwrap();
+        assert_eq!(added.category, Category::Other);
+        assert_eq!(added.replacement, "REDACTED_1");
+        // A fallback guess cues the alias and the category chip.
+        assert!(matches!(app.pii.mapping.cue, Some((_, true))));
+        let history = app.editor.read(cx).history_id();
+        assert_eq!(app.pii.mapping.added_at(history).map(|(_, n)| n), Some(1));
+    });
+    cx.dispatch_action(PiiConfirm);
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert!(
+            app.editor
+                .read(cx)
+                .text()
+                .starts_with("REDACTED_1 поступления.")
+        );
+        let history = app.editor.read(cx).history_id();
+        assert_eq!(app.pii.mapping.added_at(history).map(|(_, n)| n), Some(2));
+        app.cancel_addition(window, cx);
+        assert!(app.pii.popup.is_none());
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), source);
+        assert_eq!(app.pii.review.remaining(), 1);
+        let history = app.editor.read(cx).history_id();
+        assert!(app.pii.mapping.added_at(history).is_none());
+    });
+}

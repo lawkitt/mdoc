@@ -328,3 +328,158 @@ fn initials_discovery_keeps_ambiguous_links_as_suggestions() {
             .all(|g| g.original.as_ref() != "Павлова")
     );
 }
+#[test]
+fn manual_selections_trim_edges_but_keep_balanced_pairs_and_initials() {
+    use crate::manual::trim_selection;
+    let trim = |source: &str| trim_selection(source, 0..source.len()).map(|r| source[r].to_owned());
+    assert_eq!(trim(" **Иван Петров**, ").as_deref(), Some("Иван Петров"));
+    assert_eq!(trim("«Ромашка».").as_deref(), Some("Ромашка"));
+    assert_eq!(trim("ООО «Ромашка»,").as_deref(), Some("ООО «Ромашка»"));
+    assert_eq!(trim("(Павлова М.С.)").as_deref(), Some("Павлова М.С."));
+    assert_eq!(trim("Acme Ltd.").as_deref(), Some("Acme Ltd."));
+    assert_eq!(trim("Петров.").as_deref(), Some("Петров"));
+    assert_eq!(
+        trim("+7 (495) 123-45-67;").as_deref(),
+        Some("+7 (495) 123-45-67")
+    );
+    assert_eq!(trim("(495) 123").as_deref(), Some("(495) 123"));
+    assert_eq!(trim(" .,; "), None);
+}
+#[test]
+fn manual_targets_explain_invalid_selections() {
+    let source = "Иван Петров met **Anna** and PERSON_1 in Ивановка.";
+    let mut review = Review::default();
+    review.add_manual(source, 0..8, Category::Person).unwrap();
+    let ivan_petrov = 0..source.find(" met").unwrap();
+    // The wider selection may contain the pending "Иван"; it supersedes it.
+    assert_eq!(
+        review.manual_target(source, ivan_petrov.clone()),
+        Ok(ivan_petrov.clone())
+    );
+    let anna = source.find("**Anna**").unwrap();
+    assert_eq!(
+        review.manual_target(source, anna..anna + 8),
+        Ok(anna + 2..anna + 6)
+    );
+    let token = source.find("PERSON_1").unwrap();
+    assert_eq!(
+        review.manual_target(source, token..token + 8).unwrap_err(),
+        "Already replaced."
+    );
+    let village = source.find("Ивановка").unwrap();
+    assert_eq!(
+        review
+            .manual_target(source, village..village + "Иван".len())
+            .unwrap_err(),
+        "Select whole words."
+    );
+    assert_eq!(
+        review.manual_target(source, 2..4).unwrap_err(),
+        "Select whole words."
+    );
+    let petrov = source.find("Петров").unwrap();
+    assert_eq!(
+        review.manual_target(source, 4..petrov + 2).unwrap_err(),
+        "Select whole words."
+    );
+    assert_eq!(
+        review.manual_target(source, 0..4).unwrap_err(),
+        "Select whole words."
+    );
+    assert_eq!(
+        review
+            .manual_target(source, 6..petrov + "Петров".len())
+            .unwrap_err(),
+        "Select whole words."
+    );
+    let short = "Иван Петров met";
+    let mut nested = Review::default();
+    let met = short.find(" met").unwrap();
+    nested.add_manual(short, 0..met, Category::Person).unwrap();
+    assert_eq!(
+        nested.manual_target(short, 9..short.len()).unwrap_err(),
+        "Select all of the proposed replacement, or none of it."
+    );
+    assert_eq!(
+        nested.manual_target(short, 0..8).unwrap_err(),
+        "Already part of a proposed replacement."
+    );
+}
+#[test]
+fn a_manual_addition_supersedes_contained_pending_mentions_only_there() {
+    let source = "Иван Петров signed. Иван agreed.";
+    let mut review = Review::default();
+    let ivan = review.add_manual(source, 0..8, Category::Person).unwrap();
+    assert_eq!(review.variant(ivan).unwrap().mentions.len(), 2);
+    let full = review
+        .manual_target(source, 0..source.find(" signed").unwrap())
+        .unwrap();
+    let id = review
+        .add_manual(source, full.clone(), Category::Person)
+        .unwrap();
+    assert_eq!(review.variant(id).unwrap().mentions, vec![full.clone()]);
+    let second = source.rfind("Иван").unwrap();
+    assert_eq!(
+        review.variant(ivan).unwrap().mentions,
+        vec![second..second + 8]
+    );
+    assert!(review.annotation_id(id, &full).is_some());
+}
+#[test]
+fn a_manual_addition_of_new_wording_adds_pending_mentions() {
+    let source = "Анна met Приемка. Приемка again.";
+    let mut review = Review::default();
+    review.add_manual(source, 0..8, Category::Person).unwrap();
+    assert_eq!(review.remaining(), 1);
+    let start = source.find("Приемка").unwrap();
+    review
+        .add_manual(source, start..start + "Приемка".len(), Category::Person)
+        .unwrap();
+    assert_eq!(review.remaining(), 3);
+}
+#[test]
+fn escaped_and_literal_delimiters_are_text_but_emphasis_is_structure() {
+    let source = "Планируемая дата: «\\_\\__» __________ 2026 г.\n\nNext *Anna Lee* here.";
+    let mut review = Review::default();
+    let value = "«\\_\\__» __________ 2026 г.";
+    let start = source.find(value).unwrap();
+    let range = start..start + value.len();
+    assert_eq!(
+        review.manual_target(source, range.clone()),
+        Ok(range.clone())
+    );
+    review
+        .add_manual(source, range.clone(), Category::Person)
+        .unwrap();
+    assert_eq!(
+        plan_all(&review, source).unwrap(),
+        vec![(range, "PERSON_1".into())]
+    );
+    let anna = source.find("Anna").unwrap();
+    let here = source.find(" here").unwrap();
+    assert_eq!(
+        review.manual_target(source, anna..here + 5).unwrap_err(),
+        "Selection crosses Markdown formatting."
+    );
+    let lee = source.find("Lee").unwrap();
+    assert_eq!(
+        review.manual_target(source, anna..lee + 3),
+        Ok(anna..lee + 3)
+    );
+}
+#[test]
+fn date_and_other_have_their_own_tokens_and_existing_tokens_stay_reserved() {
+    let source = "REDACTED_1 on 12.03.2026 about Планируемая дата";
+    let mut review = Review::default();
+    let date = source.find("12.03.2026").unwrap();
+    let d = review
+        .add_manual(source, date..date + 10, Category::Date)
+        .unwrap();
+    let other = source.find("Планируемая").unwrap();
+    let o = review
+        .add_manual(source, other..source.len(), Category::Other)
+        .unwrap();
+    assert_eq!(review.variant(d).unwrap().replacement, "DATE_1");
+    assert_eq!(review.variant(o).unwrap().replacement, "REDACTED_2");
+    assert_eq!(Category::ALL.last(), Some(&Category::Other));
+}

@@ -95,6 +95,8 @@ pub(crate) struct PrepaintState {
     search: Vec<PaintQuad>,
     search_bounds: Vec<Option<Bounds<Pixels>>>,
     annotations: Vec<PaintQuad>,
+    /// Host outlines (review scope), painted over annotation fills.
+    outlines: Vec<PaintQuad>,
     annotation_bounds: Vec<(u64, Bounds<Pixels>)>,
     hidden_annotation_hits: Vec<(Vec<u64>, Hitbox)>,
     annotation_counts: Vec<(SharedString, Bounds<Pixels>, Hsla)>,
@@ -1521,6 +1523,37 @@ impl Element for EditorElement {
                 }
             }
         }
+        let mut outlines = Vec::new();
+        if editor.outline_revision == editor.content_gen {
+            for (range, color) in &editor.outlines {
+                if range.start >= range.end
+                    || range.end > editor.content.len()
+                    || !editor.content.is_char_boundary(range.start)
+                    || !editor.content.is_char_boundary(range.end)
+                {
+                    continue;
+                }
+                outlines.extend(
+                    range_quads(range.start, range.end, *color, window)
+                        .into_iter()
+                        .filter(|q| {
+                            q.bounds.size.width > px(1.)
+                                && q.bounds.bottom() > low
+                                && q.bounds.top() < high
+                        })
+                        .map(|q| {
+                            gpui::quad(
+                                q.bounds,
+                                px(3.),
+                                gpui::transparent_black(),
+                                px(1.),
+                                *color,
+                                BorderStyle::Solid,
+                            )
+                        }),
+                );
+            }
+        }
         for ((row, visual_row), mut markers) in hidden_annotations {
             markers.sort_by_key(|(id, _)| *id);
             markers.dedup_by_key(|(id, _)| *id);
@@ -1690,6 +1723,7 @@ impl Element for EditorElement {
             search,
             search_bounds,
             annotations,
+            outlines,
             annotation_bounds,
             hidden_annotation_hits,
             annotation_counts,
@@ -1716,8 +1750,23 @@ impl Element for EditorElement {
         for quad in prepaint.annotations.drain(..) {
             window.paint_quad(quad);
         }
+        for quad in prepaint.outlines.drain(..) {
+            window.paint_quad(quad);
+        }
         for quad in prepaint.search.drain(..) {
             window.paint_quad(quad);
+        }
+        // The selection pill anchors on the painted selection (table cells,
+        // wraps, resizes); re-render once when that geometry moves.
+        let selection_bounds: Vec<_> = prepaint.selections.iter().map(|q| q.bounds).collect();
+        let moved = self.editor.update(cx, |editor, _| {
+            let moved = editor.selection_bounds != selection_bounds;
+            editor.selection_bounds = selection_bounds;
+            moved && editor.selection_action.is_some()
+        });
+        if moved {
+            let editor = self.editor.clone();
+            window.on_next_frame(move |_, cx| editor.update(cx, |_, cx| cx.notify()));
         }
         for sel in prepaint.selections.drain(..) {
             window.paint_quad(sel);

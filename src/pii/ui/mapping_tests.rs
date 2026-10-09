@@ -961,3 +961,181 @@ fn panel_mention_undo_icon_reverts_only_that_mention(cx: &mut gpui::TestAppConte
         });
     }
 }
+
+#[gpui::test]
+fn group_rows_toggle_and_scope_outlines_follow_group_chip_and_hover(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let identity = app.update(cx, |app, cx| {
+        let (_, initials) = seed(app, source, cx);
+        app.pii.review.variant_identity(initials).unwrap()
+    });
+    cx.run_until_parked();
+    let selector = Box::leak(format!("identity-{identity}").into_boxed_str());
+    let click_row = |cx: &mut gpui::VisualTestContext| {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let row = cx.debug_bounds(selector).unwrap();
+        cx.simulate_click(row.center(), Default::default());
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    };
+    let outlines = |cx: &mut gpui::VisualTestContext| {
+        app.read_with(cx, |app, cx| app.editor.read(cx).outlines().len())
+    };
+    click_row(cx);
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.selected_entity(), Some(identity));
+        assert!(app.pii.popup.is_some());
+    });
+    // Same wording: both initials.
+    assert_eq!(outlines(cx), 2);
+    app.update(cx, |app, cx| {
+        app.pii.mapping.scope_hover = Some(Scope::Mention);
+        cx.notify();
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert_eq!(outlines(cx), 1);
+    app.update(cx, |app, cx| {
+        app.pii.mapping.scope_hover = None;
+        app.pii.dismiss_popup();
+        cx.notify();
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    // The selected group alone outlines all of its mentions.
+    assert_eq!(outlines(cx), 2);
+    click_row(cx);
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.selected_entity(), None);
+        assert!(app.pii.popup.is_none());
+    });
+    assert_eq!(outlines(cx), 0);
+}
+
+#[gpui::test]
+fn panel_drops_link_one_mention_merge_entities_and_split_new_entities(
+    cx: &mut gpui::TestAppContext,
+) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    app.update(cx, |app, cx| {
+        let (full, initials) = seed(app, source, cx);
+        let review = &app.pii.review;
+        let full_id = review.variant_identity(full).unwrap();
+        let initials_id = review.variant_identity(initials).unwrap();
+        let first = review.variant(initials).unwrap().mentions[0].clone();
+        let second = review.variant(initials).unwrap().mentions[1].clone();
+        // A mention dropped on another group links only that mention.
+        app.drop_on_entity(
+            &PanelDrag::Mention {
+                identity: initials_id,
+                range: first.clone(),
+                original: "Павлова М.С.".into(),
+            },
+            full_id,
+            cx,
+        );
+        // A panel drop does not open the popup.
+        assert!(app.pii.popup.is_none());
+        let review = &app.pii.review;
+        assert_eq!(review.occurrence_identity(initials, &first), Some(full_id));
+        assert_eq!(
+            review.occurrence_identity(initials, &second),
+            Some(initials_id)
+        );
+        // Dropping on its own group does nothing.
+        app.drop_on_entity(
+            &PanelDrag::Mention {
+                identity: full_id,
+                range: first.clone(),
+                original: "Павлова М.С.".into(),
+            },
+            full_id,
+            cx,
+        );
+        assert_eq!(
+            app.pii.review.occurrence_identity(initials, &first),
+            Some(full_id)
+        );
+        // "New entity" separates a mention from a multi-mention entity.
+        app.drop_as_new_entity(
+            &PanelDrag::Mention {
+                identity: full_id,
+                range: first.clone(),
+                original: "Павлова М.С.".into(),
+            },
+            cx,
+        );
+        let split = app
+            .pii
+            .review
+            .occurrence_identity(initials, &first)
+            .unwrap();
+        assert!(split != full_id && split != initials_id);
+        // A group dropped on a group merges the entities.
+        app.drop_on_entity(
+            &PanelDrag::Entity {
+                identity: split,
+                original: "Павлова М.С.".into(),
+            },
+            initials_id,
+            cx,
+        );
+        assert_eq!(
+            app.pii.review.occurrence_identity(initials, &first),
+            Some(initials_id)
+        );
+        assert_eq!(app.editor.read(cx).text(), source);
+    });
+}
+
+#[gpui::test]
+fn dragging_a_mention_over_free_panel_space_offers_the_next_alias(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (initials, identity) = app.update(cx, |app, cx| {
+        let (_, initials) = seed(app, source, cx);
+        let identity = app.pii.review.variant_identity(initials).unwrap();
+        app.select_occurrence(Selection::Entity(identity), cx);
+        (initials, identity)
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let (annotation, second) =
+        app.read_with(cx, |app, _| app.identity_occurrences(identity)[1].clone());
+    let row = cx
+        .debug_bounds(Box::leak(format!("mention-{annotation}").into_boxed_str()))
+        .unwrap();
+    assert!(cx.debug_bounds("replacement-new-entity").is_none());
+    let left = gpui::MouseButton::Left;
+    cx.simulate_mouse_down(row.center(), left, Default::default());
+    let panel = cx.debug_bounds("identity-panel").unwrap();
+    let free = gpui::point(panel.center().x, panel.bottom() - px(160.));
+    for y in [row.center().y + px(6.), row.center().y + px(40.), free.y] {
+        cx.simulate_mouse_move(gpui::point(row.center().x, y), left, Default::default());
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    }
+    cx.simulate_mouse_move(free, left, Default::default());
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let zone = cx
+        .debug_bounds("replacement-new-entity")
+        .expect("the free panel space offers a new alias while dragging");
+    let expected = app.read_with(cx, |app, _| {
+        app.pii.review.next_alias(Category::Organization)
+    });
+    assert_eq!(expected, "ORG_2");
+    // The area fills the free space under the rows.
+    assert!(zone.size.height > px(72.));
+    cx.simulate_mouse_move(zone.center(), left, Default::default());
+    cx.simulate_mouse_up(zone.center(), left, Default::default());
+    cx.run_until_parked();
+    app.read_with(cx, |app, _| {
+        let review = &app.pii.review;
+        let split = review.occurrence_identity(initials, &second).unwrap();
+        assert_ne!(split, identity);
+        assert_eq!(review.identity(split).unwrap().alias, "ORG_2");
+        assert!(app.pii.popup.is_none());
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("replacement-new-entity").is_none());
+}

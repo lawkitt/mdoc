@@ -12,4 +12,7 @@ repository = "https://github.com/lawkitt/mdoc"
 [dependencies]
 aho-corasick = "=1.1.5"
 regex = "1"
+# CommonMark/GFM structure checks for manual selections with escapes or
+# emphasis characters.
+markdown = "1"
 mdoc-history = { path = "../mdoc-history" }
