@@ -1118,7 +1118,6 @@ fn shape_cell(
     let mut style = markdown_syntax::search_style();
     style.code = color;
     style.link = color;
-    style.tag = color;
     style.mono = font.clone();
     let (display, runs, map) =
         markdown_syntax::hidden_runs(content, font, color, &[], None, 0, 0, false, &style);

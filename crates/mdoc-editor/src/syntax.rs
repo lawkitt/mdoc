@@ -218,17 +218,11 @@ fn roman(mut n: u32) -> String {
 
 // --- Linkables ---
 
-/// What a click on a link-like construct targets. `Page` opens a page by
-/// title (a `[[wiki-link]]` or a `#tag` — Logseq semantics); `Url` is an
-/// inline or bare URL (hosts open http(s) externally, resolve files
-/// themselves).
+/// What a click on a link targets: an inline or bare URL (hosts open http(s)
+/// externally, resolve files themselves).
 #[derive(Debug, PartialEq, Clone)]
 pub enum LinkHit {
-    Page(String),
     Url(String),
-    /// A `((id))` block reference (Logseq-style frontend form) — the host
-    /// resolves the id to its page + anchor.
-    BlockRef(String),
 }
 
 /// A block's base writing direction.
@@ -265,17 +259,6 @@ pub(crate) fn base_direction(text: &str) -> Direction {
         }
     }
     Direction::Ltr
-}
-
-/// The direction of a source line's CONTENT, ignoring its markdown markers.
-///
-/// [`base_direction`] takes the first strong character, and a marker can supply
-/// one: the `x` in `- [x] یک کار` is strong left-to-right, so a COMPLETED task
-/// read as LTR while the identical unchecked line read as RTL, and the two sat
-/// on opposite sides of the note. Blockquote arrows, list bullets, task boxes
-/// and heading hashes are syntax, not prose, so they are skipped first.
-pub(crate) fn content_direction(line: &str) -> Direction {
-    content_direction_opt(line).unwrap_or(Direction::Ltr)
 }
 
 /// [`content_direction`], but `None` when the line has no strong character at
@@ -386,25 +369,7 @@ fn is_strong_ltr(c: char) -> bool {
     c.is_alphabetic() && !is_strong_rtl(c)
 }
 
-/// Split a wiki-link's inner text into `(target, display)`:
-/// `target|label` shows `label` (falling back to the target when the label is
-/// empty); `name` shows itself. Both sides trimmed.
-pub(crate) fn wiki_target_display(inner: &str) -> (&str, &str) {
-    match inner.split_once('|') {
-        Some((t, l)) if !l.trim().is_empty() => (t.trim(), l.trim()),
-        Some((t, _)) => (t.trim(), t.trim()),
-        None => (inner.trim(), inner.trim()),
-    }
-}
-
-/// Whether `c` can appear inside a `#tag` name (after the `#`). `/` is
-/// included — Logseq-style namespaced tags (`#area/sub`) are one tag.
-pub(crate) fn is_tag_char(c: u8) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'/')
-}
-
-/// A word character for boundary checks (a `#` glued to a word isn't a tag;
-/// a URL glued to a word isn't a link).
+/// A word character for boundary checks (a URL glued to a word isn't a link).
 pub(crate) fn is_word_char(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
 }
@@ -431,9 +396,8 @@ pub(crate) fn url_end(line: &str, start: usize) -> usize {
     j
 }
 
-/// Every clickable link in `line`, as `(source byte range, target)`.
-/// Wiki-links (anywhere on one opens its target; the alias is display-only),
-/// inline `[text](url)` links, `#tags`, and bare `http(s)://` URLs. Images
+/// Every clickable link in `line`, as `(source byte range, target)`:
+/// inline `[text](url)` links and bare `http(s)://` URLs. Images
 /// (`![](src)`), footnote refs, and anything inside inline code are opaque —
 /// not links. One grammar for every renderer's click hit-tests, hover
 /// cursors, and styling.
@@ -450,36 +414,6 @@ pub(crate) fn links(line: &str) -> Vec<(std::ops::Range<usize>, LinkHit)> {
         {
             i = close + 1;
             continue;
-        }
-        // Wiki-link: [[target]] / [[target|alias]].
-        if c == b'['
-            && i + 1 < end
-            && b[i + 1] == b'['
-            && let Some(close) = find2(b, i + 2, end, b']', b']')
-        {
-            let (target, _) = wiki_target_display(&line[i + 2..close]);
-            if !target.is_empty() {
-                out.push((i..close + 2, LinkHit::Page(target.to_string())));
-            }
-            i = close + 2;
-            continue;
-        }
-        // Block ref: `((id))` — an anchor-shaped id (word chars / `-`).
-        if c == b'('
-            && i + 1 < end
-            && b[i + 1] == b'('
-            && let Some(close) = find2(b, i + 2, end, b')', b')')
-        {
-            let id = &line[i + 2..close];
-            if !id.is_empty()
-                && id
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
-            {
-                out.push((i..close + 2, LinkHit::BlockRef(id.to_string())));
-                i = close + 2;
-                continue;
-            }
         }
         // Footnote reference [^label]: styled like a link but not one.
         if c == b'['
@@ -507,18 +441,6 @@ pub(crate) fn links(line: &str) -> Vec<(std::ops::Range<usize>, LinkHit)> {
             i = rp + 1;
             continue;
         }
-        // Tag: #tag → the page of that name (Logseq semantics).
-        if c == b'#' && (i == 0 || !is_word_char(b[i - 1])) {
-            let mut j = i + 1;
-            while j < end && is_tag_char(b[j]) {
-                j += 1;
-            }
-            if j > i + 1 {
-                out.push((i..j, LinkHit::Page(line[i + 1..j].to_string())));
-                i = j;
-                continue;
-            }
-        }
         // Bare URL: http(s)://… at a word boundary (GFM autolink literal).
         // Compare BYTES: `i` walks bytes, so a str slice here would panic
         // mid-char on any non-ASCII text.
@@ -545,174 +467,8 @@ pub(crate) fn link_at(line: &str, col: usize) -> Option<LinkHit> {
         .map(|(_, hit)| hit)
 }
 
-/// The Obsidian block-id anchor at the end of `line` (` ^some-id`): the byte
-/// where its leading space starts (so renderers can hide the whole tail) and
-/// the id itself. The id must be non-empty, made of word chars / `-`, and sit
-/// at the line's end (trailing whitespace tolerated).
-pub(crate) fn block_id(line: &str) -> Option<(usize, &str)> {
-    let trimmed = line.trim_end();
-    let (before, id) = trimmed.rsplit_once(" ^")?;
-    if id.is_empty() || !id.bytes().all(|b| is_word_char(b) || b == b'-') {
-        return None;
-    }
-    Some((before.len(), id))
-}
-
-/// Split a wiki-link target into `(page, block id)`: `Note#^id` links to the
-/// block carrying `^id` on the page `Note`; anything else is a plain page
-/// target. Only the `#^` form is an anchor — a bare `#` stays part of the
-/// title (page names may contain it, and `file.pdf#p3` has its own meaning).
-/// Superscript digits (`¹²…`) for the block reference-count badge — reads
-/// small at any text size, so the badge doesn't shout on heading lines.
-pub(crate) fn superscript(n: usize) -> String {
-    const DIGITS: [char; 10] = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
-    n.to_string()
-        .bytes()
-        .map(|b| DIGITS[(b - b'0') as usize])
-        .collect()
-}
-
-pub(crate) fn split_block_anchor(target: &str) -> (&str, Option<&str>) {
-    match target.split_once("#^") {
-        Some((page, id)) if !page.is_empty() && !id.is_empty() => (page, Some(id)),
-        _ => (target, None),
-    }
-}
-
-/// Split a wiki-link target into `(page, heading)`: `Note#My Heading` links to
-/// the heading on the page `Note`. Splits at the first `#` when both sides are
-/// non-empty and the page part isn't a PDF (`file.pdf#p3` keeps its page-jump
-/// meaning). Block anchors (`#^`) are the caller's first check —
-/// [`split_block_anchor`] — and a mdoc page title may itself contain `#`, so
-/// navigation should prefer an existing literal-titled page before splitting.
-pub(crate) fn split_heading_anchor(target: &str) -> (&str, Option<&str>) {
-    match target.split_once('#') {
-        Some((page, heading))
-            if !page.is_empty()
-                && !heading.trim().is_empty()
-                && !heading.starts_with('^')
-                && !page.to_ascii_lowercase().ends_with(".pdf") =>
-        {
-            (page, Some(heading))
-        }
-        _ => (target, None),
-    }
-}
-
-/// The embed target when `line` is a standalone transclusion — exactly
-/// `![[target]]` (Obsidian's embed syntax) and nothing else on the line.
-/// Mid-text embeds don't count; they render as plain links.
-pub(crate) fn embed_line(line: &str) -> Option<&str> {
-    let t = line.trim();
-    let inner = t.strip_prefix("![[")?.strip_suffix("]]")?;
-    (!inner.trim().is_empty() && !inner.contains("]]")).then(|| inner.trim())
-}
-
-/// Split a `key:: value` property line into `(key, value)`. The key must look
-/// like an identifier (starts with a letter; letters/digits/`-_.` after) so
-/// prose containing `::` — mdoc `[[wiki]]` links, `C++::method` — isn't
-/// mistaken for a property. Leading indentation is ignored; the value is
-/// trimmed. One grammar for the reader, the editor, and the importers.
-pub(crate) fn property(line: &str) -> Option<(&str, &str)> {
-    let rest = line.trim_start();
-    let idx = rest.find("::")?;
-    let key = &rest[..idx];
-    if key.is_empty()
-        || !key
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-        || !key.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-    {
-        return None;
-    }
-    Some((key, rest[idx + 2..].trim()))
-}
-
-/// [`property`], tolerating a leading list marker — the Logseq shape for a
-/// props-only block (`- key:: value`, also `* ` / `+ ` / `1. ` / `1) `).
-/// Returns `(prefix, key, value)`; `prefix` is everything before the key
-/// (indent + marker), so editors can write the line back unchanged.
-pub(crate) fn prefixed_property(line: &str) -> Option<(&str, &str, &str)> {
-    let ws = line.len() - line.trim_start().len();
-    if let Some((k, v)) = property(line) {
-        return Some((&line[..ws], k, v));
-    }
-    let rest = &line[ws..];
-    let body = if let Some(r) = ["- ", "* ", "+ "].iter().find_map(|m| rest.strip_prefix(m)) {
-        r
-    } else {
-        let d = rest.bytes().take_while(u8::is_ascii_digit).count();
-        let b = rest.as_bytes();
-        if d > 0 && rest.len() > d + 1 && matches!(b[d], b'.' | b')') && b[d + 1] == b' ' {
-            &rest[d + 2..]
-        } else {
-            return None;
-        }
-    };
-    let (k, v) = property(body)?;
-    Some((&line[..line.len() - body.len()], k, v))
-}
-
-/// A rendered piece of a property value: literal text, or a link "pill" (a
-/// wiki-link, `#tag`, or URL shown as a rounded chip). Both panels render values
-/// through this so they pill-ify identically.
-pub enum PropSeg {
-    Text(String),
-    Pill {
-        /// The chip's display text: a wiki-link's label, a tag without its `#`,
-        /// or a link's text.
-        label: String,
-        target: LinkHit,
-        /// A `#tag` (vs a wiki-link / URL) — panels tint tags differently.
-        is_tag: bool,
-    },
-}
-
-/// Split a property value into display segments — plain runs and link pills
-/// (wiki-links show their label, tags drop the `#`, `[text](url)` shows its
-/// text, bare URLs show themselves). Built on [`links`], so the pill spans match
-/// the reader's and editor's click hit-tests.
-pub(crate) fn property_value_segments(value: &str) -> Vec<PropSeg> {
-    let mut out = Vec::new();
-    let mut pos = 0;
-    for (range, hit) in links(value) {
-        if range.start > pos {
-            out.push(PropSeg::Text(value[pos..range.start].to_string()));
-        }
-        let raw = &value[range.clone()];
-        let (label, is_tag) =
-            if let Some(inner) = raw.strip_prefix("[[").and_then(|s| s.strip_suffix("]]")) {
-                (wiki_target_display(inner).1.to_string(), false)
-            } else if let Some(tag) = raw.strip_prefix('#') {
-                (tag.to_string(), true)
-            } else if let Some(rest) = raw.strip_prefix('[') {
-                // `[text](url)` — show the text.
-                (
-                    rest.split_once(']').map_or(raw, |(t, _)| t).to_string(),
-                    false,
-                )
-            } else {
-                (raw.to_string(), false) // bare URL
-            };
-        out.push(PropSeg::Pill {
-            label,
-            target: hit,
-            is_tag,
-        });
-        pos = range.end;
-    }
-    if pos < value.len() {
-        out.push(PropSeg::Text(value[pos..].to_string()));
-    }
-    out
-}
-
 fn find1(b: &[u8], from: usize, end: usize, c: u8) -> Option<usize> {
     (from..end).find(|&i| b[i] == c)
-}
-
-fn find2(b: &[u8], from: usize, end: usize, c1: u8, c2: u8) -> Option<usize> {
-    (from..end.saturating_sub(1)).find(|&i| b[i] == c1 && b[i + 1] == c2)
 }
 
 // --- Forgiving `$$` fences (words attached) ----------------------------------
@@ -1234,30 +990,31 @@ mod tests {
 
     #[test]
     fn markers_do_not_decide_a_line_s_direction() {
+        let dir = |line| content_direction_opt(line).unwrap_or(Direction::Ltr);
         // The bug: `x` is strong left-to-right, so a COMPLETED task read LTR
         // while the same line unchecked read RTL — the two sat on opposite
         // sides of the note.
-        assert!(content_direction("- [x] یک کار انجام‌شده").is_rtl());
-        assert!(content_direction("- [ ] یک کار انجام‌نشده").is_rtl());
-        assert!(content_direction("- مورد فهرست").is_rtl());
-        assert!(content_direction("1. مورد شماره‌دار").is_rtl());
-        assert!(content_direction("## سلام دنیا").is_rtl());
-        assert!(content_direction("> یک نقل‌قول").is_rtl());
+        assert!(dir("- [x] یک کار انجام‌شده").is_rtl());
+        assert!(dir("- [ ] یک کار انجام‌نشده").is_rtl());
+        assert!(dir("- مورد فهرست").is_rtl());
+        assert!(dir("1. مورد شماره‌دار").is_rtl());
+        assert!(dir("## سلام دنیا").is_rtl());
+        assert!(dir("> یک نقل‌قول").is_rtl());
         // An alert's label is Latin whatever the prose is.
-        assert!(content_direction("> [!NOTE]\n> یک هشدار فارسی").is_rtl());
-        assert!(content_direction("> [!WARNING]- یک هشدار").is_rtl());
-        assert!(!content_direction("> [!NOTE]\n> an english callout").is_rtl());
+        assert!(dir("> [!NOTE]\n> یک هشدار فارسی").is_rtl());
+        assert!(dir("> [!WARNING]- یک هشدار").is_rtl());
+        assert!(!dir("> [!NOTE]\n> an english callout").is_rtl());
         // A marker-only line has NO direction of its own — the caller decides
         // whether that means the line above or the content below.
         assert_eq!(content_direction_opt("> [!NOTE]"), None);
         assert_eq!(content_direction_opt("- "), None);
         assert_eq!(content_direction_opt(""), None);
-        assert!(!content_direction("> > [!NOTE]\n").is_rtl(), "no content");
+        assert!(!dir("> > [!NOTE]\n").is_rtl(), "no content");
         // Latin content still reads left-to-right, markers or not.
-        assert!(!content_direction("- [x] a done task").is_rtl());
-        assert!(!content_direction("## English heading").is_rtl());
+        assert!(!dir("- [x] a done task").is_rtl());
+        assert!(!dir("## English heading").is_rtl());
         // A line that is only markers has no direction of its own.
-        assert!(!content_direction("- [ ] ").is_rtl());
+        assert!(!dir("- [ ] ").is_rtl());
     }
 
     #[test]
@@ -1310,99 +1067,14 @@ mod tests {
     }
 
     #[test]
-    fn block_ids_and_anchor_links() {
-        assert_eq!(
-            block_id("Decision made. ^decision1"),
-            Some((14, "decision1"))
-        );
-        assert_eq!(block_id("trailing space ^id  "), Some((14, "id")));
-        assert_eq!(block_id("no anchor"), None);
-        assert_eq!(block_id("mid ^id not at end"), None);
-        assert_eq!(block_id("bad chars ^a b"), None);
-
-        assert_eq!(split_block_anchor("Note#^id"), ("Note", Some("id")));
-        assert_eq!(split_block_anchor("Note"), ("Note", None));
-        // A bare `#` is part of the title, not an anchor.
-        assert_eq!(split_block_anchor("C# Notes"), ("C# Notes", None));
-        assert_eq!(split_block_anchor("file.pdf#p3"), ("file.pdf#p3", None));
-    }
-
-    #[test]
-    fn embed_lines() {
-        assert_eq!(embed_line("![[Note]]"), Some("Note"));
-        assert_eq!(embed_line("  ![[Note#^id]]  "), Some("Note#^id"));
-        assert_eq!(embed_line("text ![[Note]]"), None); // not standalone
-        assert_eq!(embed_line("![[]]"), None);
-        assert_eq!(embed_line("[[Note]]"), None);
-    }
-
-    #[test]
-    fn heading_anchors() {
-        assert_eq!(
-            split_heading_anchor("Note#My Heading"),
-            ("Note", Some("My Heading"))
-        );
-        assert_eq!(split_heading_anchor("Note"), ("Note", None));
-        // Block anchors, PDFs, and empty sides don't split as headings.
-        assert_eq!(split_heading_anchor("Note#^id"), ("Note#^id", None));
-        assert_eq!(split_heading_anchor("file.pdf#p3"), ("file.pdf#p3", None));
-        assert_eq!(split_heading_anchor("#Heading"), ("#Heading", None));
-        assert_eq!(split_heading_anchor("Note#"), ("Note#", None));
-    }
-
-    #[test]
-    fn property_recognition() {
-        assert_eq!(
-            property("attendees:: Bob, Sue"),
-            Some(("attendees", "Bob, Sue"))
-        );
-        assert_eq!(property("  time::3:00pm"), Some(("time", "3:00pm")));
-        assert_eq!(property("owner:: [[Sue]]"), Some(("owner", "[[Sue]]")));
-        // Not properties: prose with `::`, wiki links, empty/bad keys.
-        assert_eq!(property("See [[Page::sub]] here"), None);
-        assert_eq!(property("just prose"), None);
-        assert_eq!(property(":: value"), None);
-        assert_eq!(property("1key:: v"), None);
-    }
-
-    #[test]
-    fn prefixed_property_tolerates_list_markers() {
-        // Plain / indented lines: prefix is the indent.
-        assert_eq!(prefixed_property("k:: v"), Some(("", "k", "v")));
-        assert_eq!(prefixed_property("  k:: v"), Some(("  ", "k", "v")));
-        // List markers (Logseq props-only block), bullets and numbers.
-        assert_eq!(prefixed_property("- k:: v"), Some(("- ", "k", "v")));
-        assert_eq!(prefixed_property("  * k:: v"), Some(("  * ", "k", "v")));
-        assert_eq!(prefixed_property("2. k:: v"), Some(("2. ", "k", "v")));
-        // Not properties: a plain bullet, a task, a numberless dot.
-        assert_eq!(prefixed_property("- plain bullet"), None);
-        assert_eq!(prefixed_property("- [ ] k:: v"), None);
-        assert_eq!(prefixed_property(". k:: v"), None);
-    }
-
-    #[test]
-    fn property_value_segments_pill_and_plain() {
-        let segs = property_value_segments("[[Bob]], [[Sue|Susan]] and #work done");
-        // Bob pill, ", " text, Susan pill, " and " text, work tag, " done" text.
-        assert!(matches!(&segs[0], PropSeg::Pill { label, is_tag: false, .. } if label == "Bob"));
-        assert!(matches!(&segs[1], PropSeg::Text(t) if t == ", "));
-        assert!(matches!(&segs[2], PropSeg::Pill { label, .. } if label == "Susan"));
-        assert!(matches!(&segs[4], PropSeg::Pill { label, is_tag: true, .. } if label == "work"));
-        // A plain value is a single text segment.
-        assert!(
-            matches!(property_value_segments("active").as_slice(), [PropSeg::Text(t)] if t == "active")
-        );
-    }
-
-    #[test]
-    fn links_cover_every_kind() {
-        let hits = links("see [[Page|alias]] and [x](https://a.io) #tag/sub https://b.io/p, done");
+    fn links_cover_urls_only() {
+        // Note-taking syntax is plain text (ADR 0030): `[[wiki]]`, `#tag`, `((id))`.
+        let hits =
+            links("see [[Page|alias]] and [x](https://a.io) #tag/sub ((b1)) https://b.io/p, done");
         assert_eq!(
             hits.iter().map(|(_, h)| h).collect::<Vec<_>>(),
             vec![
-                &LinkHit::Page("Page".into()),
                 &LinkHit::Url("https://a.io".into()),
-                &LinkHit::Page("tag/sub".into()),
                 &LinkHit::Url("https://b.io/p".into()), // trailing comma trimmed
             ]
         );

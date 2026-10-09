@@ -4,6 +4,12 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- Standard Markdown only: note-taking syntax inherited from Zorite —
+  `[[wiki links]]`, `#tags`, `key:: value` property panels, `((block refs))`,
+  `^block-ids` and `![[embeds]]` — now displays as ordinary text. Their links
+  never opened anything in mdoc. Saved files and Copy Markdown are unchanged
+  (ADR 0030).
+
 - Empty page: a blank Markdown tab shows a centered **Open files…** button,
   supported formats, the multi-file hint and ⌘O, and still accepts typing.
   Files dragged from the OS open when dropped on the empty page or on the

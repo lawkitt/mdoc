@@ -66,15 +66,11 @@ impl Theme {
 
 pub fn markdown_style(theme: Theme) -> SyntaxStyle {
     let mut style = SyntaxStyle {
-        block_label: None,
-        block_label_gen: 0,
-        block_ref_count: None,
-        marker: hsla(0., 0., 0.5, 0.55), // dimmed gray syntax markers
-        code: hsla(0.09, 0.6, 0.72, 1.), // warm inline code text
-        code_bg: hsla(0., 0., 1., 0.06), // faint code chip background
-        link: hsla(0.58, 0.75, 0.66, 1.), // blue links / wiki-links
-        tag: hsla(0.33, 0.45, 0.62, 1.), // green tags
-        quote: hsla(0., 0., 0.6, 1.),    // muted blockquote text/border
+        marker: hsla(0., 0., 0.5, 0.55),       // dimmed gray syntax markers
+        code: hsla(0.09, 0.6, 0.72, 1.),       // warm inline code text
+        code_bg: hsla(0., 0., 1., 0.06),       // faint code chip background
+        link: hsla(0.58, 0.75, 0.66, 1.),      // blue links / wiki-links
+        quote: hsla(0., 0., 0.6, 1.),          // muted blockquote text/border
         alert_note: hsla(0.58, 0.9, 0.62, 1.), // GitHub alert blues/greens…
         alert_tip: hsla(0.36, 0.5, 0.48, 1.),
         alert_important: hsla(0.74, 0.85, 0.73, 1.),
@@ -89,14 +85,12 @@ pub fn markdown_style(theme: Theme) -> SyntaxStyle {
         popover_divider: hsla(0., 0., 1., 0.18),     // group divider
         popover_danger: gpui::rgb(0xE5484D).into(),  // destructive rows
         mono: font("Menlo"),
-        property_icon: None,
     };
     if theme == Theme::Light {
         style.marker = hsla(0., 0., 0.35, 0.7);
         style.code = rgb(0x934115).into();
         style.code_bg = hsla(0., 0., 0., 0.05);
         style.link = rgb(0x175bb5).into();
-        style.tag = rgb(0x287442).into();
         style.quote = rgb(0x666670).into();
         style.alert_note = rgb(0x175bb5).into();
         style.alert_tip = rgb(0x287442).into();

@@ -244,14 +244,6 @@ impl EditorState {
                 self.emit_changed(cx);
                 return;
             }
-            // Backspacing from the line below a property panel joins as
-            // usual — but the caret would land inside the panel and reveal
-            // its raw `key:: value` source. Seat the in-place form after the
-            // join instead (the same landing as arrowing in from below).
-            let join_into_props = col == 0
-                && row > 0
-                && self.property_block_at(row).is_none()
-                && self.property_block_at(row - 1).is_some();
             // Cditor-style around hidden formatting markers: delete the
             // previous VISIBLE character (never a marker byte), and take an
             // emptied construct's marker pair with it.
@@ -266,9 +258,6 @@ impl EditorState {
             }
             self.select_to(prev, cx);
             self.replace_text_in_range(None, "", window, cx);
-            if join_into_props {
-                self.edit_properties_at_caret(true, cx);
-            }
             return;
         }
         self.replace_text_in_range(None, "", window, cx);
@@ -309,11 +298,6 @@ impl EditorState {
                 self.emit_changed(cx);
                 return;
             }
-            // Mirroring backspace's property join: pulling the panel's first
-            // line up would seat a raw caret in the block — open the form.
-            let join_into_props = off == self.line_end(row)
-                && self.property_block_at(row).is_none()
-                && self.property_block_at(row + 1).is_some();
             // Cditor-style around hidden formatting markers (see backspace).
             if let Some(range) = self.fmt_delete_range(off, false) {
                 self.replace_range(range, "", cx);
@@ -326,9 +310,6 @@ impl EditorState {
             }
             self.select_to(next, cx);
             self.replace_text_in_range(None, "", window, cx);
-            if join_into_props {
-                self.edit_properties_at_caret(false, cx);
-            }
             return;
         }
         self.replace_text_in_range(None, "", window, cx);
@@ -365,16 +346,6 @@ impl EditorState {
             self.selected_range = end..end;
             self.replace_text_in_range(None, "\n", window, cx);
             return;
-        }
-        // Inside a property panel a raw newline would split a `key:: value`
-        // line. Enter opens the panel's editor instead — the same route as a
-        // click or arrow-in (the form's own Enter then commits).
-        if self.selected_range.is_empty() {
-            let (row, _) = self.row_col(self.cursor_offset());
-            if self.property_block_at(row).is_some() {
-                self.edit_properties_at_caret(false, cx);
-                return;
-            }
         }
         // List auto-continuation: Enter on a list/task item opens the next item
         // (same marker + indent; ordered numbers increment); Enter on an *empty*
