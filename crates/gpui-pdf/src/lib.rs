@@ -44,27 +44,21 @@ use gpui::{
     px,
 };
 // Only the forms layer maps field rects to window space.
-#[cfg(feature = "forms")]
 use gpui::{Bounds, Pixels};
 use hayro::hayro_interpret::InterpreterSettings;
 use hayro::hayro_syntax::{DecryptionError, LoadPdfError, Pdf};
 use image::{Frame, RgbaImage};
 
-#[cfg(feature = "markup")]
 use gpui::{MouseMoveEvent, deferred};
 
-#[cfg(feature = "markup")]
 mod text;
-#[cfg(feature = "markup")]
 pub use text::{NormPoint, NormRect, PageText, Selection, extract_page_text};
 
 /// PDF outline / table-of-contents + link extraction (always available — no deps).
 mod outline;
 pub use outline::{LinkTarget, OutlineItem, PdfLink, outline, page_links};
 
-#[cfg(feature = "forms")]
 mod forms;
-#[cfg(feature = "forms")]
 pub use forms::{FieldKind, FormField, form_fields, normalize_form_appearances, set_form_value};
 
 // ─────────────────────────────── Low-level primitives ───────────────────────────────
@@ -102,7 +96,6 @@ pub fn parse_with_password(
     // Form display correctness: give every form widget a directly-renderable
     // appearance stream before hayro sees the bytes (see `forms`). A no-op
     // (or an encrypted/unparseable file) keeps the original bytes.
-    #[cfg(feature = "forms")]
     let bytes = normalize_form_appearances(&bytes)
         .map(Arc::new)
         .unwrap_or(bytes);
@@ -122,7 +115,6 @@ struct Prepared {
     links: Vec<Vec<PdfLink>>,
     /// Enumerated from the ORIGINAL bytes (not the display-normalized ones), so
     /// values/rects match what [`set_form_value`] will rewrite on disk.
-    #[cfg(feature = "forms")]
     fields: Vec<FormField>,
 }
 
@@ -130,7 +122,6 @@ struct Prepared {
 /// shared by the initial open, a password [`PdfView::unlock`], and
 /// [`PdfView::replace_bytes`].
 fn prepare(bytes: Arc<Vec<u8>>, password: &str) -> Result<Prepared, LoadError> {
-    #[cfg(feature = "forms")]
     let fields = form_fields(&bytes);
     let doc = parse_with_password(bytes, password)?;
     let dims = page_dims(&doc);
@@ -141,7 +132,6 @@ fn prepare(bytes: Arc<Vec<u8>>, password: &str) -> Result<Prepared, LoadError> {
         dims,
         toc,
         links,
-        #[cfg(feature = "forms")]
         fields,
     })
 }
@@ -381,7 +371,6 @@ pub type PdfQualityFn = Rc<dyn Fn() -> f32>;
 /// its own store (e.g. the markdown blocks that link this PDF) and hands them to the
 /// viewer via [`PdfView::set_highlights`]; the viewer finds the quote with the text
 /// layer and draws a translucent box over each line it spans. (`markup` feature.)
-#[cfg(feature = "markup")]
 #[derive(Clone)]
 pub struct Highlight {
     /// Host identifier, echoed back on click (e.g. to jump to the source note).
@@ -401,14 +390,12 @@ pub struct Highlight {
 }
 
 /// Invoked with a [`Highlight`]'s `id` when the user clicks it. (`markup` feature.)
-#[cfg(feature = "markup")]
 pub type HighlightClickFn = Rc<dyn Fn(u64, &mut Window, &mut gpui::App)>;
 
 /// Invoked when the user finishes a drag-selection in "highlight mode": the page
 /// (0-based), the selected one-line quote, which occurrence of it on the page, and the
 /// label of the picked color (the opaque tag from [`set_highlight_palette`], for the
 /// host to store). The host turns this into a stored note. (`markup` feature.)
-#[cfg(feature = "markup")]
 pub type CreateHighlightFn =
     Rc<dyn Fn(usize, String, usize, SharedString, &mut Window, &mut gpui::App)>;
 
@@ -416,12 +403,10 @@ pub type CreateHighlightFn =
 /// dragged rect in normalized page coordinates, and the label of the picked color.
 /// The host stores it and hands it back as a [`Highlight`] with `region` set.
 /// (`markup` feature.)
-#[cfg(feature = "markup")]
 pub type CreateAreaFn = Rc<dyn Fn(usize, NormRect, SharedString, &mut Window, &mut gpui::App)>;
 
 /// The normalized rect spanned by two drag endpoints, in either direction.
 /// (`markup` feature.)
-#[cfg(feature = "markup")]
 fn norm_rect_between(a: NormPoint, b: NormPoint) -> NormRect {
     NormRect {
         x: a.x.min(b.x),
@@ -441,7 +426,6 @@ pub type OpenExternalFn = Rc<dyn Fn(&mut Window, &mut gpui::App)>;
 pub type CloseFn = Rc<dyn Fn(&mut Window, &mut gpui::App)>;
 
 /// Cache state for a page's extracted text layer. (`markup` feature.)
-#[cfg(feature = "markup")]
 enum TextSlot {
     Loading,
     Ready(PageText),
@@ -450,7 +434,6 @@ enum TextSlot {
 
 /// One find-in-PDF match: the page it's on and one normalized rect per line it spans.
 /// (`search` feature.)
-#[cfg(feature = "search")]
 struct SearchMatch {
     page: usize,
     rects: Vec<NormRect>,
@@ -485,7 +468,6 @@ pub enum PdfEvent {
     /// needs to toggle a checkbox or seat a text input right over the widget,
     /// write through [`set_form_value`], persist, and call
     /// [`PdfView::replace_bytes`].
-    #[cfg(feature = "forms")]
     FieldClicked {
         field: FormField,
         bounds: Bounds<Pixels>,
@@ -561,63 +543,44 @@ pub struct PdfView {
     /// Form-field widgets (`forms` feature), enumerated on load from the
     /// original bytes. Overlaid like `links`; a click emits
     /// [`PdfEvent::FieldClicked`].
-    #[cfg(feature = "forms")]
     form_fields: Vec<FormField>,
     /// Highlights to draw (markup), provided by the host.
-    #[cfg(feature = "markup")]
     highlights: Vec<Highlight>,
     /// Per-page extracted text layer, built lazily for pages with highlights.
-    #[cfg(feature = "markup")]
     page_text: std::collections::HashMap<usize, TextSlot>,
     /// Click handler for a highlight (markup).
-    #[cfg(feature = "markup")]
     on_highlight: Option<HighlightClickFn>,
     /// "Area mode" (only meaningful while `selecting`): a drag marks a page
     /// region instead of selecting text (markup).
-    #[cfg(feature = "markup")]
     area_mode: bool,
     /// Called when an area drag finishes, so the host stores it (markup).
-    #[cfg(feature = "markup")]
     on_create_area: Option<CreateAreaFn>,
     /// "Highlight mode": dragging over text selects + creates a highlight (markup).
-    #[cfg(feature = "markup")]
     selecting: bool,
     /// In-progress drag selection: (page, start, current) in normalized coords.
-    #[cfg(feature = "markup")]
     sel_drag: Option<(usize, NormPoint, NormPoint)>,
     /// Called when a drag-selection finishes, so the host stores the note (markup).
-    #[cfg(feature = "markup")]
     on_create: Option<CreateHighlightFn>,
     /// Host-supplied highlight colors `(label, fill)`; the picker shows these and the
     /// label is echoed back on create. Empty → a single default yellow.
-    #[cfg(feature = "markup")]
     palette: Vec<(SharedString, Hsla)>,
     /// Index into `palette` for new highlights.
-    #[cfg(feature = "markup")]
     active_color: usize,
     /// Whether the color picker dropdown is showing.
-    #[cfg(feature = "markup")]
     palette_open: bool,
     /// Page whose highlights are briefly flashing (after a jump from a note), if any.
-    #[cfg(feature = "markup")]
     flash: Option<usize>,
     /// Bumped on each reveal; the deferred clear no-ops if a newer flash superseded it.
-    #[cfg(feature = "markup")]
     flash_gen: u64,
     /// A reveal requested before the document finished loading; applied once it does.
-    #[cfg(feature = "markup")]
     pending_reveal: Option<usize>,
     /// Whether the find-in-PDF bar is open. (`search` feature.)
-    #[cfg(feature = "search")]
     search_open: bool,
     /// The current search query (edited in the find bar).
-    #[cfg(feature = "search")]
     search_query: String,
     /// Matches across the document, in reading order (page, then top-to-bottom).
-    #[cfg(feature = "search")]
     matches: Vec<SearchMatch>,
     /// Index into `matches` of the focused match (the one ↑/↓/Enter cycle through).
-    #[cfg(feature = "search")]
     current_match: Option<usize>,
 }
 
@@ -705,43 +668,24 @@ impl PdfView {
             outline: Vec::new(),
             toc_open: false,
             links: Vec::new(),
-            #[cfg(feature = "forms")]
             form_fields: Vec::new(),
-            #[cfg(feature = "markup")]
             highlights: Vec::new(),
-            #[cfg(feature = "markup")]
             page_text: std::collections::HashMap::new(),
-            #[cfg(feature = "markup")]
             on_highlight: None,
-            #[cfg(feature = "markup")]
             selecting: false,
-            #[cfg(feature = "markup")]
             area_mode: false,
-            #[cfg(feature = "markup")]
             on_create_area: None,
-            #[cfg(feature = "markup")]
             sel_drag: None,
-            #[cfg(feature = "markup")]
             on_create: None,
-            #[cfg(feature = "markup")]
             palette: Vec::new(),
-            #[cfg(feature = "markup")]
             active_color: 0,
-            #[cfg(feature = "markup")]
             palette_open: false,
-            #[cfg(feature = "markup")]
             flash: None,
-            #[cfg(feature = "markup")]
             flash_gen: 0,
-            #[cfg(feature = "markup")]
             pending_reveal: None,
-            #[cfg(feature = "search")]
             search_open: false,
-            #[cfg(feature = "search")]
             search_query: String::new(),
-            #[cfg(feature = "search")]
             matches: Vec::new(),
-            #[cfg(feature = "search")]
             current_match: None,
         }
     }
@@ -755,7 +699,6 @@ impl PdfView {
         self.dims = prepared.dims;
         self.outline = prepared.toc;
         self.links = prepared.links;
-        #[cfg(feature = "forms")]
         {
             self.form_fields = prepared.fields;
         }
@@ -774,14 +717,12 @@ impl PdfView {
             }
         }
         // Stale text layers would locate highlights against the old bytes.
-        #[cfg(feature = "markup")]
         self.page_text.clear();
         self.locked = false;
         self.unlock_failed = false;
         cx.emit(PdfEvent::LockChanged);
         cx.notify();
         // A note→PDF jump that arrived before the document loaded: apply it now.
-        #[cfg(feature = "markup")]
         if let Some(p) = self.pending_reveal.take() {
             self.reveal_highlight(p, cx);
         }
@@ -791,7 +732,6 @@ impl PdfView {
     /// — the inverse of `point_to_page`'s mapping (`bounds_for_item` is in the
     /// scroll element's unscrolled frame; y shifts by the scroll offset).
     /// `None` before the page has laid out. (`forms` feature.)
-    #[cfg(feature = "forms")]
     fn field_screen_bounds(
         &self,
         page: usize,
@@ -816,7 +756,6 @@ impl PdfView {
     /// The document's form fields, as enumerated at load — for a host driving
     /// field-to-field navigation (Tab order is the enumeration order: page,
     /// then document order). (`forms` feature.)
-    #[cfg(feature = "forms")]
     pub fn form_fields(&self) -> &[FormField] {
         &self.form_fields
     }
@@ -825,7 +764,6 @@ impl PdfView {
     /// fresh window-space bounds — what a host needs to seat an input on a
     /// field reached by Tab rather than by click. `None` before layout.
     /// (`forms` feature.)
-    #[cfg(feature = "forms")]
     pub fn reveal_field(
         &mut self,
         field: &FormField,
@@ -986,7 +924,6 @@ impl PdfView {
     /// the markdown blocks that link this PDF). Pages with highlights extract their
     /// text layer lazily as they scroll into view, then each quote is located and
     /// boxed. (`markup` feature.)
-    #[cfg(feature = "markup")]
     pub fn set_highlights(&mut self, highlights: Vec<Highlight>, cx: &mut Context<Self>) {
         self.highlights = highlights;
         cx.notify();
@@ -994,20 +931,17 @@ impl PdfView {
 
     /// Set the handler invoked with a highlight's `id` when it's clicked (e.g. to jump
     /// to the source note). (`markup` feature.)
-    #[cfg(feature = "markup")]
     pub fn set_on_highlight(&mut self, handler: HighlightClickFn) {
         self.on_highlight = Some(handler);
     }
 
     /// Set the handler invoked when a drag-selection finishes. (`markup` feature.)
-    #[cfg(feature = "markup")]
     pub fn set_on_create_highlight(&mut self, handler: CreateHighlightFn) {
         self.on_create = Some(handler);
     }
 
     /// Toggle "highlight mode": when on, dragging over text selects it and fires the
     /// create handler instead of doing nothing. (`markup` feature.)
-    #[cfg(feature = "markup")]
     pub fn toggle_select_mode(&mut self, cx: &mut Context<Self>) {
         self.selecting = !self.selecting;
         self.area_mode = false;
@@ -1022,7 +956,6 @@ impl PdfView {
     /// on release. Turning it on turns text-highlight mode's selection off (they
     /// share the pen state); turning either mode off clears the other.
     /// (`markup` feature.)
-    #[cfg(feature = "markup")]
     pub fn toggle_area_mode(&mut self, cx: &mut Context<Self>) {
         if self.selecting && self.area_mode {
             self.selecting = false;
@@ -1037,7 +970,6 @@ impl PdfView {
     }
 
     /// Set the handler invoked when an area (box) drag finishes. (`markup` feature.)
-    #[cfg(feature = "markup")]
     pub fn set_on_create_area(&mut self, f: CreateAreaFn, _cx: &mut Context<Self>) {
         self.on_create_area = Some(f);
     }
@@ -1045,7 +977,6 @@ impl PdfView {
     /// Set the highlight colors the picker offers, as `(label, fill)` pairs. The label
     /// is opaque to the viewer — it's echoed back via [`CreateHighlightFn`] so the host
     /// can store it (and map it back to a fill for [`set_highlights`]). (`markup`.)
-    #[cfg(feature = "markup")]
     pub fn set_highlight_palette(
         &mut self,
         palette: Vec<(SharedString, Hsla)>,
@@ -1059,7 +990,6 @@ impl PdfView {
     }
 
     /// The fill of the currently-selected palette color (default yellow if unset).
-    #[cfg(feature = "markup")]
     fn active_color_hsla(&self) -> Hsla {
         self.palette
             .get(self.active_color)
@@ -1068,7 +998,6 @@ impl PdfView {
     }
 
     /// The label of the currently-selected palette color (empty if unset).
-    #[cfg(feature = "markup")]
     fn active_color_name(&self) -> SharedString {
         self.palette
             .get(self.active_color)
@@ -1079,7 +1008,6 @@ impl PdfView {
     /// Jump to a highlight from its note: scroll `page` into view (bringing its first
     /// highlight near the top when that page's text is already extracted) and briefly
     /// flash the page's highlights so the eye finds them. (`markup` feature.)
-    #[cfg(feature = "markup")]
     pub fn reveal_highlight(&mut self, page: usize, cx: &mut Context<Self>) {
         if self.dims.is_empty() {
             // The document is still loading; apply the jump once it's measured.
@@ -1127,7 +1055,6 @@ impl PdfView {
 
     /// Toggle the find bar. On open, extract every page's text (off-thread, cached)
     /// and compute matches; on close, drop them. (`search` feature.)
-    #[cfg(feature = "search")]
     pub fn toggle_search(&mut self, cx: &mut Context<Self>) {
         self.search_open = !self.search_open;
         if self.search_open {
@@ -1144,7 +1071,6 @@ impl PdfView {
     }
 
     /// Close the find bar and clear matches. (`search` feature.)
-    #[cfg(feature = "search")]
     pub fn close_search(&mut self, cx: &mut Context<Self>) {
         self.search_open = false;
         self.matches.clear();
@@ -1154,7 +1080,6 @@ impl PdfView {
 
     /// Re-run the search after the query changed: recompute matches and jump to the
     /// first one. (`search` feature.)
-    #[cfg(feature = "search")]
     fn on_search_query_changed(&mut self, cx: &mut Context<Self>) {
         self.ensure_all_text(cx);
         self.recompute_matches(true, cx);
@@ -1165,7 +1090,6 @@ impl PdfView {
 
     /// Kick off text extraction for every page (idempotent, cached), so a search sees
     /// pages that were never scrolled into view. (`search` feature.)
-    #[cfg(feature = "search")]
     fn ensure_all_text(&mut self, cx: &mut Context<Self>) {
         for p in 0..self.dims.len() {
             self.ensure_page_text(p, cx);
@@ -1175,7 +1099,6 @@ impl PdfView {
     /// Rebuild the match list from every page whose text is ready. With
     /// `reset_current`, focus the first match; otherwise keep the focused match (by
     /// page + position) across the rebuild, so a mid-sweep refresh doesn't jump. (`search`.)
-    #[cfg(feature = "search")]
     fn recompute_matches(&mut self, reset_current: bool, cx: &mut Context<Self>) {
         let prev = if reset_current {
             None
@@ -1222,7 +1145,6 @@ impl PdfView {
     /// the find bar (or editing the query) starts from the page being read rather than
     /// the start of the document. Wraps to the first match if none are below. Matches
     /// are in reading order, so the first one past the fold is just `position`. (`search`.)
-    #[cfg(feature = "search")]
     fn match_from_viewport(&self) -> Option<usize> {
         if self.matches.is_empty() {
             return None;
@@ -1238,7 +1160,6 @@ impl PdfView {
     }
 
     /// Focus the next match (wrapping) and scroll to it. (`search` feature.)
-    #[cfg(feature = "search")]
     pub fn next_match(&mut self, cx: &mut Context<Self>) {
         if self.matches.is_empty() {
             return;
@@ -1250,7 +1171,6 @@ impl PdfView {
     }
 
     /// Focus the previous match (wrapping) and scroll to it. (`search` feature.)
-    #[cfg(feature = "search")]
     pub fn prev_match(&mut self, cx: &mut Context<Self>) {
         if self.matches.is_empty() {
             return;
@@ -1264,7 +1184,6 @@ impl PdfView {
     /// Bring match `idx` into view — but only scroll if it isn't already comfortably
     /// visible, so starting a search on the page you're reading doesn't yank it around.
     /// When it does scroll, the match lands a little below the viewport top. (`search`.)
-    #[cfg(feature = "search")]
     fn goto_match(&mut self, idx: usize, cx: &mut Context<Self>) {
         if self.dims.is_empty() {
             return;
@@ -1297,7 +1216,6 @@ impl PdfView {
     /// couple of text rows off the cursor. `bounds_for_item` is in the scroll element's
     /// unscrolled frame, so the cursor is shifted by the scroll offset to match.
     /// (`markup` feature.)
-    #[cfg(feature = "markup")]
     fn point_to_page(&self, pos: gpui::Point<gpui::Pixels>) -> Option<(usize, NormPoint)> {
         let probe = f32::from(pos.y) - f32::from(self.scroll.offset().y);
         for i in 0..self.dims.len() {
@@ -1324,7 +1242,6 @@ impl PdfView {
 
     /// Extract `page`'s text layer off-thread (cached), so its highlights can be
     /// located on the next frame. (`markup` feature.)
-    #[cfg(feature = "markup")]
     fn ensure_page_text(&mut self, page: usize, cx: &mut Context<Self>) {
         if self.page_text.contains_key(&page) {
             return;
@@ -1350,7 +1267,6 @@ impl PdfView {
                 // If a search is running and this was the last page to extract, fold in
                 // its matches (keeping the focused one). Doing it once at the end keeps
                 // the whole-document sweep from re-searching on every page.
-                #[cfg(feature = "search")]
                 if this.search_open
                     && !this.search_query.trim().is_empty()
                     && !this
@@ -1599,7 +1515,6 @@ impl PdfView {
         // highlight mode, *every* visible page, so a drag can select text even on a
         // page that has no highlights yet. Before the early-out below, so an
         // already-rendered page still gets its text extracted.
-        #[cfg(feature = "markup")]
         {
             let mut pages: Vec<usize> = self
                 .highlights
@@ -1886,7 +1801,6 @@ impl Render for PdfView {
             };
             // Markup: overlay a translucent, clickable box on each line of every
             // located quote on this page.
-            #[cfg(feature = "markup")]
             let slot = {
                 let mut slot = slot;
                 // Brighten + outline the page's highlights briefly after a jump from
@@ -1960,7 +1874,6 @@ impl Render for PdfView {
                     }
                 }
                 // Find-in-PDF: box every match on this page; emphasize the focused one.
-                #[cfg(feature = "search")]
                 for (mi, m) in self.matches.iter().enumerate() {
                     if m.page != i {
                         continue;
@@ -2014,7 +1927,6 @@ impl Render for PdfView {
             // with a faint hover so a fillable field reads as interactive. A
             // click emits FieldClicked with the widget's live window bounds —
             // the host toggles/seats an input and writes via set_form_value.
-            #[cfg(feature = "forms")]
             {
                 let (pw_pt, ph_pt) = self.dims[i];
                 for (fi, field) in self.form_fields.iter().enumerate() {
@@ -2203,7 +2115,6 @@ impl Render for PdfView {
 
         // Highlight-mode toggle + color picker (markup): the pen turns drag-to-select
         // on and pops a palette down; the active color shows as a chip beneath it.
-        #[cfg(feature = "markup")]
         let header = {
             let mark_bg = if self.selecting {
                 style.placeholder_bg
@@ -2334,7 +2245,6 @@ impl Render for PdfView {
         };
 
         // Find toggle (search): a magnifier that opens the find bar.
-        #[cfg(feature = "search")]
         let header = {
             let bg = if self.search_open {
                 style.placeholder_bg
@@ -2368,7 +2278,6 @@ impl Render for PdfView {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|_this, _ev: &MouseDownEvent, _window, _cx| {
-                    #[cfg(feature = "markup")]
                     if _this.selecting
                         && let Some((pg, n)) = _this.point_to_page(_ev.position)
                     {
@@ -2433,7 +2342,6 @@ impl Render for PdfView {
                     cx.notify();
                     return;
                 }
-                #[cfg(feature = "search")]
                 {
                     // ⌘F toggles the find bar; ⌘G / ⌘⇧G step matches (bar open or not).
                     if secondary && key == "f" {
@@ -2485,7 +2393,6 @@ impl Render for PdfView {
                     }
                 }
                 // ⌘⇧H: toggle highlight mode.
-                #[cfg(feature = "markup")]
                 if secondary && ev.keystroke.modifiers.shift && key == "h" {
                     this.toggle_select_mode(cx);
                     return;
@@ -2507,7 +2414,6 @@ impl Render for PdfView {
 
         // Highlight-mode drag handlers (markup): update the selection on move, and on
         // release resolve it to a quote and hand it to the host to store.
-        #[cfg(feature = "markup")]
         let root = root
             .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _window, cx| {
                 let Some((pg, start, _)) = this.sel_drag else {
@@ -2557,7 +2463,6 @@ impl Render for PdfView {
 
         // Find bar overlay (search): a floating bar with the query, match count, and
         // prev/next/close. Deferred so it paints over the page area below the header.
-        #[cfg(feature = "search")]
         let root = if self.search_open {
             let searching = !self.search_query.trim().is_empty()
                 && self
@@ -3076,9 +2981,7 @@ mod scrolling_tests {
                     "{selector} at {width}"
                 );
             }
-            #[cfg(feature = "search")]
             assert!(cx.debug_bounds("pdf-find").is_some());
-            #[cfg(feature = "markup")]
             for selector in ["pdf-mark", "pdf-area"] {
                 let bounds = cx.debug_bounds(selector).unwrap();
                 assert!(
@@ -3099,7 +3002,6 @@ mod scrolling_tests {
         cx.simulate_click(zoom.center(), Default::default());
         cx.run_until_parked();
         cx.update(|_, cx| assert_eq!(view.read(cx).fit_mode(), None));
-        #[cfg(feature = "search")]
         {
             draw(cx);
             let find = cx.debug_bounds("pdf-find").unwrap();
@@ -3179,12 +3081,10 @@ mod scrolling_tests {
             let x = v.scroll.offset().x;
             v.go_to_page(0, cx);
             assert_eq!(v.scroll.offset().x, x);
-            #[cfg(feature = "forms")]
             {
                 let cb = v.scroll.bounds_for_item(0).unwrap();
                 let bounds = v.field_screen_bounds(0, (0.5, 0.2, 0.1, 0.1)).unwrap();
                 assert_eq!(bounds.origin.x, cb.origin.x + x + cb.size.width * 0.5);
-                #[cfg(feature = "markup")]
                 {
                     let (page, normalized) = v.point_to_page(bounds.origin).unwrap();
                     assert_eq!(page, 0);
