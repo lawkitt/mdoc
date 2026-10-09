@@ -226,12 +226,6 @@ impl PageText {
         }
     }
 
-    /// Whether the page has any extractable text (false for pure scans with no OCR
-    /// layer — the host should then fall back to area markup).
-    pub fn is_empty(&self) -> bool {
-        self.runs.is_empty()
-    }
-
     /// The whitespace-stripped, lowercased search key for `s` — the same normalization
     /// `letters` is built with, so a key produced here matches against it.
     fn search_key(s: &str) -> String {
@@ -283,7 +277,7 @@ impl PageText {
     /// Locate the `occurrence`-th (0-based) case- and whitespace-insensitive match of
     /// `needle` on the page and return one normalized rect per line it spans (so a
     /// wrapped quote highlights as multiple line boxes). Empty if not found.
-    pub fn locate(&self, needle: &str, occurrence: usize) -> Vec<NormRect> {
+    pub(crate) fn locate(&self, needle: &str, occurrence: usize) -> Vec<NormRect> {
         let key = Self::search_key(needle);
         if key.is_empty() {
             return Vec::new();
@@ -317,7 +311,7 @@ impl PageText {
     /// Every (non-overlapping) case- and whitespace-insensitive match of `needle` on
     /// the page, each as one normalized rect per line it spans (for find-in-PDF).
     /// Matches are returned in reading order. (`search` feature.)
-    pub fn find_matches(&self, needle: &str) -> Vec<Vec<NormRect>> {
+    pub(crate) fn find_matches(&self, needle: &str) -> Vec<Vec<NormRect>> {
         let key = Self::search_key(needle);
         if key.is_empty() {
             return Vec::new();
@@ -407,7 +401,7 @@ impl PageText {
     /// the nearest glyphs (draw order ≈ reading order), its one-line quote, the
     /// occurrence index, and the rects to draw. `None` if there's no text or the
     /// selection is empty.
-    pub fn select(&self, from: NormPoint, to: NormPoint) -> Option<Selection> {
+    pub(crate) fn select(&self, from: NormPoint, to: NormPoint) -> Option<Selection> {
         let i0 = self.nearest_run(from)?;
         let i1 = self.nearest_run(to)?;
         let (lo, hi) = (i0.min(i1), i0.max(i1));
