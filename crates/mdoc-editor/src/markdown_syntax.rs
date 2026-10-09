@@ -32,10 +32,8 @@ pub struct SyntaxStyle {
     pub code: Hsla,
     /// Inline `code` background.
     pub code_bg: Hsla,
-    /// `[text](url)` and `[[wiki-links]]`.
+    /// `[text](url)` links.
     pub link: Hsla,
-    /// `#tags`.
-    pub tag: Hsla,
     /// Blockquote text + left-border color (a muted tone).
     pub quote: Hsla,
     /// GitHub-style alert (`> [!NOTE]` …) border + marker colors, per kind.
@@ -48,19 +46,6 @@ pub struct SyntaxStyle {
     pub rule: Hsla,
     /// `<mark>` highlight background.
     pub mark_bg: Hsla,
-    /// Resolves a block link's display text: `(page, id)` → the target
-    /// block's text, host-supplied. `None` (or a `None` return) keeps the
-    /// `Page → id` form.
-    #[allow(clippy::type_complexity)]
-    pub block_label: Option<std::rc::Rc<dyn Fn(&str, &str) -> Option<String>>>,
-    /// Bumped by the host when resolved labels change — part of the line-run
-    /// cache epoch, so cached lines re-key when a target block edits.
-    pub block_label_gen: u64,
-    /// How many pages reference a block id — a non-zero count paints a small
-    /// badge in place of the hidden ` ^id` anchor (Logseq-style; clicking it
-    /// emits `OpenWikiLink("refs:^id")` for the host to list the referencers).
-    /// Count changes ride `block_label_gen` for cache re-keying.
-    pub block_ref_count: Option<BlockRefCountFn>,
     /// Popover/menu surface background (e.g. the right-click table menu).
     pub popover_bg: Hsla,
     /// Popover/menu border.
@@ -75,10 +60,6 @@ pub struct SyntaxStyle {
     pub popover_danger: Hsla,
     /// Monospace font for inline code.
     pub mono: Font,
-    /// Resolves a property key (`tags`, `status`, …) to an icon shown before it
-    /// in the property panel. Host-provided (asset path through the host's
-    /// `AssetSource`) so the crate stays asset-agnostic; `None` = no icons.
-    pub property_icon: Option<PropertyIconFn>,
 }
 
 impl Style {
@@ -100,13 +81,6 @@ impl Style {
         self
     }
 }
-
-/// Maps a property key to an icon asset path the host serves, or `None` for no
-/// icon. Host-provided so the crate makes no assumption about which assets exist.
-pub type PropertyIconFn = std::rc::Rc<dyn Fn(&str) -> Option<gpui::SharedString>>;
-
-/// Maps a block id to how many pages reference it (0 = no badge).
-pub type BlockRefCountFn = std::rc::Rc<dyn Fn(&str) -> usize>;
 
 /// Styling a scanned span adds on top of the editor's base run.
 #[derive(Clone, Default)]
@@ -461,7 +435,6 @@ pub(crate) fn search_style() -> SyntaxStyle {
         code: Hsla::default(),
         code_bg: Hsla::default(),
         link: Hsla::default(),
-        tag: Hsla::default(),
         quote: Hsla::default(),
         alert_note: Hsla::default(),
         alert_tip: Hsla::default(),
@@ -470,9 +443,6 @@ pub(crate) fn search_style() -> SyntaxStyle {
         alert_caution: Hsla::default(),
         rule: Hsla::default(),
         mark_bg: Hsla::default(),
-        block_label: None,
-        block_label_gen: 0,
-        block_ref_count: None,
         popover_bg: Hsla::default(),
         popover_border: Hsla::default(),
         popover_fg: Hsla::default(),
@@ -480,7 +450,6 @@ pub(crate) fn search_style() -> SyntaxStyle {
         popover_divider: Hsla::default(),
         popover_danger: Hsla::default(),
         mono: Font::default(),
-        property_icon: None,
     }
 }
 
@@ -645,33 +614,6 @@ fn apply_heading(
 /// UTF-8-safe (an ASCII byte never appears inside a multi-byte char).
 fn scan_line(text: &str, start: usize, end: usize, st: &SyntaxStyle, out: &mut Vec<Span>) {
     let b = text.as_bytes();
-    // An Obsidian block-id anchor at the line's end (` ^some-id`) is addressing,
-    // not content: a marker span dims it and W6 hides it (reveal-on-caret).
-    // A referenced block instead paints a small count badge in the anchor's
-    // place (Logseq-style; the anchor hitbox/click emit `refs:^id`).
-    // Hidden BEFORE the heading fast-path — heading lines carry anchors too
-    // (`### Notes ^id` used to show the raw tail).
-    let end = match crate::syntax::block_id(&text[start..end]) {
-        Some((at, id)) => {
-            let refs = st.block_ref_count.as_ref().map_or(0, |f| f(id));
-            if refs > 0 {
-                let badge = format!(" {}", crate::syntax::superscript(refs));
-                out.push(Span {
-                    range: start + at..end,
-                    style: Style {
-                        color: Some(st.tag),
-                        hide: true,
-                        replace: Some(SharedString::from(badge)),
-                        ..Default::default()
-                    },
-                });
-            } else {
-                marker(out, start + at..end, st.marker);
-            }
-            start + at
-        }
-        None => end,
-    };
     if apply_heading(text, start, end, st, out) {
         return;
     }
@@ -1030,111 +972,6 @@ fn scan_inline(
             i = rb + 1;
             continue;
         }
-        // Block ref, frontend form: `((id))` — a construct ONLY when the
-        // host's resolver knows the id (so prose parens stay prose). Renders
-        // as the target block's text, link-colored; raw on caret.
-        if c == b'('
-            && !is_backslash_escaped(b, i)
-            && i + 1 < end
-            && b[i + 1] == b'('
-            && let Some(close) = find2(b, i + 2, end, b')', b')')
-        {
-            let id = &text[i + 2..close];
-            let label = (!id.is_empty()
-                && id
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_'))
-            .then(|| st.block_label.as_ref().and_then(|f| f("", id)))
-            .flatten();
-            if let Some(label) = label {
-                out.push(Span {
-                    range: i..close + 2,
-                    style: Style {
-                        color: Some(st.link),
-                        hide: true,
-                        replace: Some(SharedString::from(label)),
-                        ..Default::default()
-                    },
-                });
-                i = close + 2;
-                continue;
-            }
-        }
-        // Wiki-link: [[Page]] (check before single-[ link).
-        if c == b'['
-            && !is_backslash_escaped(b, i)
-            && i + 1 < end
-            && b[i + 1] == b'['
-            && let Some(close) = find2(b, i + 2, end, b']', b']')
-        {
-            marker(out, i..i + 2, st.marker);
-            let link = Style {
-                color: Some(st.link),
-                ..Default::default()
-            }
-            .over(base);
-            // An anchor in the target — a block ref (`[[Note#^id]]`) or a
-            // heading (`[[Note#My Heading]]`) — renders its `#^`/`#` as ` → `
-            // (the reader does the same), keeping the anchor text readable:
-            // `Note → id`. Raw form comes back on caret like any marker; a PDF
-            // page jump (`file.pdf#p3`) keeps its literal `#`. Any `|alias`
-            // after it keeps the link color.
-            let inner = &text[i + 2..close];
-            let target_end = inner.find('|').unwrap_or(inner.len());
-            let anchor = match inner[..target_end].find('#') {
-                Some(a) if !inner[..a].to_ascii_lowercase().ends_with(".pdf") => {
-                    let alen = if inner[a + 1..target_end].starts_with('^') {
-                        2
-                    } else {
-                        1
-                    };
-                    Some((a, alen))
-                }
-                _ => None,
-            };
-            // (See also the `((id))` frontend form handled below.)
-            // A resolvable `[[Page#^id]]` (no alias) displays the TARGET
-            // BLOCK'S TEXT instead of `Page → id` — the whole inner span
-            // swaps for the resolved label (reveal-on-caret shows the raw
-            // form for editing, like any hidden construct).
-            let resolved = match anchor {
-                Some((a, 2)) if a > 0 && a + 2 < target_end && target_end == inner.len() => st
-                    .block_label
-                    .as_ref()
-                    .and_then(|f| f(&inner[..a], &inner[a + 2..target_end])),
-                _ => None,
-            };
-            match (resolved, anchor) {
-                (Some(label), _) => {
-                    out.push(Span {
-                        range: i + 2..close,
-                        style: Style {
-                            color: Some(st.link),
-                            hide: true,
-                            replace: Some(SharedString::from(label)),
-                            ..Default::default()
-                        },
-                    });
-                }
-                (None, Some((a, alen))) if a > 0 && a + alen < target_end => {
-                    push(out, i + 2..i + 2 + a, link.clone());
-                    out.push(Span {
-                        range: i + 2 + a..i + 2 + a + alen,
-                        style: Style {
-                            color: Some(st.marker),
-                            hide: true,
-                            replace: Some(" → ".into()),
-                            ..Default::default()
-                        },
-                    });
-                    push(out, i + 2 + a + alen..close, link);
-                }
-                _ => push(out, i + 2..close, link),
-            }
-            marker(out, close..close + 2, st.marker);
-            i = close + 2;
-            continue;
-        }
         // Link: [text](url) — or an image `![alt](src)` (the caret's own line
         // falls through to this generic scan, since the block-image widget is
         // suppressed there — W4's image_row() only handles other lines). Treated
@@ -1248,26 +1085,6 @@ fn scan_inline(
                 continue;
             }
         }
-        // Tag: #tag (at a non-word boundary; needs at least one tag char).
-        if c == b'#' && (i == start || !is_word(b[i - 1])) {
-            let mut j = i + 1;
-            while j < end && is_tag(b[j]) {
-                j += 1;
-            }
-            if j > i + 1 {
-                push(
-                    out,
-                    i..j,
-                    Style {
-                        color: Some(st.tag),
-                        ..Default::default()
-                    }
-                    .over(base),
-                );
-                i = j;
-                continue;
-            }
-        }
         i += 1;
     }
 }
@@ -1285,11 +1102,6 @@ fn find1(b: &[u8], from: usize, end: usize, c: u8) -> Option<usize> {
 /// preceding backslash run) is literal text, not a marker (CommonMark).
 fn find1_unescaped(b: &[u8], from: usize, end: usize, c: u8) -> Option<usize> {
     (from..end).find(|&k| b[k] == c && !is_backslash_escaped(b, k))
-}
-
-/// First index of the pair `c1 c2` in `b[from..end]`.
-fn find2(b: &[u8], from: usize, end: usize, c1: u8, c2: u8) -> Option<usize> {
-    (from..end.saturating_sub(1)).find(|&k| b[k] == c1 && b[k + 1] == c2)
 }
 
 /// First UNESCAPED index of the pair — see [`find1_unescaped`].
@@ -2213,42 +2025,6 @@ pub(crate) fn is_table_row(line: &str) -> bool {
     line.trim_start().starts_with('|')
 }
 
-/// Contiguous runs of `key:: value` property lines (Obsidian/Logseq-style
-/// metadata) — each renders as a two-column panel, the WYSIWYG twin of the
-/// reader's `render_property_table`. A run is one or more adjacent property
-/// lines; any non-property line ends it. A leading list marker is tolerated
-/// (`- key:: value`, the Logseq props-only-block shape — the reader's parser
-/// consumes the marker and panels it, so the editor matches). Fenced code is
-/// skipped so a `Type::method()` code line isn't mistaken for a property.
-/// Returns line-index ranges in order.
-pub(crate) fn property_regions(content: &str) -> Vec<Range<usize>> {
-    let lines: Vec<&str> = content.split('\n').collect();
-    let mut out = Vec::new();
-    let mut in_fence = false;
-    let mut i = 0;
-    while i < lines.len() {
-        if lines[i].trim_start().starts_with("```") {
-            in_fence = !in_fence;
-            i += 1;
-            continue;
-        }
-        if !in_fence && crate::syntax::prefixed_property(lines[i]).is_some() {
-            let start = i;
-            i += 1;
-            while i < lines.len()
-                && !lines[i].trim_start().starts_with("```")
-                && crate::syntax::prefixed_property(lines[i]).is_some()
-            {
-                i += 1;
-            }
-            out.push(start..i);
-        } else {
-            i += 1;
-        }
-    }
-    out
-}
-
 /// Split a `| a | b |` row into trimmed cell strings (the bounding pipes drop the
 /// empty leading/trailing cells they'd otherwise create).
 pub(crate) fn table_cells(line: &str) -> Vec<&str> {
@@ -2347,7 +2123,6 @@ fn is_word(c: u8) -> bool {
 }
 
 // One tag grammar with the reader (namespaced `#a/b` included).
-use crate::syntax::is_tag_char as is_tag;
 
 fn decode_entity(source: &str) -> Option<(usize, String)> {
     if source.as_bytes().first() != Some(&b'&') {
@@ -2861,22 +2636,19 @@ mod tests {
     }
 
     #[test]
-    fn link_at_hits_every_linkable_construct() {
+    fn link_at_hits_only_urls() {
         use LinkHit::*;
         let line = "see [[Ops Net|the net]] and #scada plus [docs](https://x.io/d) `#not` [[]]";
-        // Anywhere on the wiki link (brackets included) → its target, not the alias.
-        assert_eq!(link_at(line, 4), Some(Page("Ops Net".into())));
-        assert_eq!(link_at(line, 15), Some(Page("Ops Net".into())));
-        // The tag, including its `#`.
-        assert_eq!(link_at(line, 28), Some(Page("scada".into())));
-        assert_eq!(link_at(line, 33), Some(Page("scada".into())));
+        // Wiki links and tags are plain text (ADR 0030).
+        assert_eq!(link_at(line, 4), None);
+        assert_eq!(link_at(line, 15), None);
+        assert_eq!(link_at(line, 28), None);
         // The inline link: label, brackets, or url all navigate.
         assert_eq!(link_at(line, 41), Some(Url("https://x.io/d".into())));
         assert_eq!(link_at(line, 55), Some(Url("https://x.io/d".into())));
-        // Plain text, a tag inside code, and an empty wiki link are not links.
+        // Plain text and code are not links.
         assert_eq!(link_at(line, 0), None);
         assert_eq!(link_at(line, 66), None); // inside `#not`
-        assert_eq!(link_at(line, 72), None); // [[]]
         // An image is a widget, not a link — even on its url.
         assert_eq!(link_at("![alt](images/a.png)", 10), None);
         // A footnote ref is styled like a link but isn't one.
@@ -2903,17 +2675,25 @@ mod tests {
         assert_eq!(disp, "Notes");
     }
 
+    #[test]
+    fn note_taking_syntax_renders_as_plain_text() {
+        // ADR 0030: wiki links, tags, block ids and block refs are ordinary text.
+        let font = gpui::font("Helvetica");
+        let c = hsla(0., 0., 0., 1.);
+        let st = test_style();
+        for src in ["[[Page|alias]]", "a #tag", "see ((b1))", "Decision ^d1"] {
+            let (disp, ..) = hidden_runs(src, &font, c, &[], None, 0, 0, false, &st);
+            assert_eq!(disp, src);
+        }
+    }
+
     fn test_style() -> SyntaxStyle {
         let c = hsla(0., 0., 0.5, 1.);
         SyntaxStyle {
-            block_label: None,
-            block_label_gen: 0,
-            block_ref_count: None,
             marker: c,
             code: c,
             code_bg: c,
             link: c,
-            tag: c,
             quote: c,
             alert_note: c,
             alert_tip: c,
@@ -2929,7 +2709,6 @@ mod tests {
             popover_divider: c,
             popover_danger: c,
             mono: gpui::font("monospace"),
-            property_icon: None,
         }
     }
 
@@ -3500,19 +3279,5 @@ mod tests {
         let src = "* ### Notes: ^abc\n  - one\n\n  - two\n* sibling\n# After";
         let folded: std::collections::HashSet<String> = ["* ### Notes: ^abc".to_string()].into();
         assert_eq!(heading_fold_regions(src, &folded), vec![0..4]);
-    }
-
-    #[test]
-    fn property_regions_group_and_skip_code() {
-        // Two adjacent property lines form one region; prose breaks it.
-        let r = property_regions("attendees:: Bob\ntime:: 3pm\n\nprose\nowner:: Sue");
-        assert_eq!(r, vec![0..2, 4..5]);
-        // A `Type::method()` line inside a code fence isn't a property.
-        let r2 = property_regions("```rust\nFoo::bar()\n```\nkey:: v");
-        assert_eq!(r2, vec![3..4]);
-        // A list-marker property line (Logseq props-only block) counts too;
-        // an ordinary bullet doesn't.
-        let r3 = property_regions("- status:: open\n  time:: 3pm\n- plain bullet");
-        assert_eq!(r3, vec![0..2]);
     }
 }

@@ -43,7 +43,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 mod markdown_syntax;
 mod syntax;
-pub use markdown_syntax::{PropertyIconFn, SyntaxStyle};
+pub use markdown_syntax::SyntaxStyle;
 
 mod search;
 mod search_geometry;
@@ -473,9 +473,6 @@ pub enum EditorEvent {
     /// left-clicked — the host opens the `src`/url (http externally, files
     /// via its own resolution). A navigation hint; the text is untouched.
     OpenLink(SharedString),
-    /// A `[[wiki-link]]` or `#tag` was left-clicked — the host opens the page
-    /// with this title (Logseq semantics, matching the reading view).
-    OpenWikiLink(SharedString),
     /// The caret / selection moved without a text change — so a host can update a
     /// caret-anchored affordance (e.g. the table-alignment toolbar). Also sent
     /// when a mouse selection drag ends.
@@ -504,20 +501,6 @@ pub enum EditorEvent {
     MathMenu {
         source: SharedString,
         position: Point<Pixels>,
-    },
-    /// A property panel was clicked or arrowed into: the byte `range` of the whole
-    /// `key:: value` block and its `source`, so the host can seat an in-place
-    /// property editor (via `set_editing_block`) and replace the block's text on
-    /// commit — the same seat/commit pattern as [`EditorEvent::EditMath`] for a
-    /// `$$` block. `at_end` seats focus on the last field (entered by arrowing up
-    /// from below) vs the first (click / arrowing down from above). A click also
-    /// carries `row` — the property line's index within the block — so the host
-    /// focuses the row the user actually clicked; arrows pass `None`.
-    EditProperties {
-        range: Range<usize>,
-        source: SharedString,
-        at_end: bool,
-        row: Option<usize>,
     },
     /// An inline `![](src)` image was left-clicked — the host opens a full-size
     /// preview. The text is untouched.
@@ -685,9 +668,6 @@ pub struct EditorState {
     /// The open image right-click menu, if any: the image's logical line + the
     /// menu's anchor (window space). Offers Word-style object actions (Delete).
     image_menu: Option<(usize, Point<Pixels>)>,
-    /// Right-clicked property-panel row: its source line + click position
-    /// (anchors the Edit/Delete property menu).
-    prop_menu: Option<(usize, Point<Pixels>)>,
     /// Supplies replacement suggestions for a flagged word, fetched lazily when
     /// the user right-clicks it. Set by the host via [`Self::on_suggest`];
     /// without it, the right-click menu has nothing to offer.
@@ -713,7 +693,7 @@ pub struct EditorState {
     /// `text_em / this`, so they sit at text size. `None` disables inline math rendering.
     /// Per-logical-line `src` for rows painted as a file chip (from the last
     /// paint), so a left-click can open it and a right-click can edit it.
-    chip_rows: Vec<Option<(SharedString, bool)>>,
+    chip_rows: Vec<Option<SharedString>>,
     /// Window-space painted bounds of each inline image, with its logical line
     /// index (from the last paint), so a press near a corner can start a resize
     /// and know which `![](src)` line to rewrite. One entry per rendered image.
@@ -797,25 +777,11 @@ pub struct EditorState {
     /// inner LaTeX (from the last paint), so a click can open its structural editor and the
     /// seated editor can be positioned at the formula's spot.
     inline_math_rects: Vec<(Range<usize>, SharedString, Bounds<Pixels>)>,
-    /// An inline `$…$` formula under structural edit: its byte range + the host's editor view,
-    /// overlaid at the formula's spot. `None` = none.
-    /// Painted bounds + target of each property-panel pill (from the last paint),
-    /// so a left-click opens it (`OpenWikiLink` / `OpenLink`).
-    prop_pill_rects: Vec<(Bounds<Pixels>, crate::syntax::LinkHit)>,
     /// Inline links' painted boxes + targets from the last paint (the same
     /// geometry as the hand-cursor hitboxes), for hover → `HoverLink`.
     link_rects: Vec<(Bounds<Pixels>, crate::syntax::LinkHit)>,
     /// The link under the pointer, if any — `HoverLink` fires on change.
     hovered_link: Option<(crate::syntax::LinkHit, Bounds<Pixels>)>,
-    /// Painted bounds of each property-panel row (from the last paint), so
-    /// `on_mouse_move` repaints when the hovered row changes (the panel's hover
-    /// border reads the live pointer during paint).
-    /// Each painted property-panel row's bounds + its source line (for
-    /// hover borders and the right-click property menu).
-    prop_row_rects: Vec<(Bounds<Pixels>, usize)>,
-    /// The property row the pointer was last over — drives `on_mouse_move`'s
-    /// repaint-on-change (like the table hover).
-    prop_hover_row: Option<usize>,
     /// Collapsed headings, keyed by the heading's trimmed source line
     /// (`## Goals`). View-local — markdown has no heading-fold syntax (unlike
     /// callouts' `-`/`+`), so folds live for the editor's lifetime and a key
@@ -893,7 +859,6 @@ impl EditorState {
             table_menu: None,
             table_menu_scroll: ScrollHandle::new(),
             image_menu: None,
-            prop_menu: None,
             suggest: None,
             block_image: None,
             block_chip: None,
@@ -921,11 +886,8 @@ impl EditorState {
             content_gen: 0,
             utf16_anchor: std::cell::Cell::new((0, 0, 0)),
             inline_math_rects: Vec::new(),
-            prop_pill_rects: Vec::new(),
             link_rects: Vec::new(),
             hovered_link: None,
-            prop_row_rects: Vec::new(),
-            prop_hover_row: None,
             folded_headings: std::collections::HashSet::new(),
             heading_fold_rects: Vec::new(),
             heading_row_rects: Vec::new(),
@@ -1237,7 +1199,6 @@ impl EditorState {
             tables: markdown_syntax::table_regions(&self.content),
             mermaid: markdown_syntax::mermaid_blocks(&self.content),
             math: markdown_syntax::math_regions(&self.content),
-            props: markdown_syntax::property_regions(&self.content),
             alert_folds: markdown_syntax::alert_fold_regions(&self.content),
             fence_odd,
         });
@@ -1447,16 +1408,6 @@ impl EditorState {
             });
             return;
         }
-        // Left into a property panel opens its editor at the last field.
-        if let Some((range, source)) = self.property_block_at(self.row_col(off).0) {
-            cx.emit(EditorEvent::EditProperties {
-                range,
-                source,
-                at_end: true,
-                row: None,
-            });
-            return;
-        }
         self.move_to(off, cx);
     }
 
@@ -1496,16 +1447,6 @@ impl EditorState {
             });
             return;
         }
-        // Right into a property panel opens its editor at the first field.
-        if let Some((range, source)) = self.property_block_at(self.row_col(off).0) {
-            cx.emit(EditorEvent::EditProperties {
-                range,
-                source,
-                at_end: false,
-                row: None,
-            });
-            return;
-        }
         self.move_to(off, cx);
     }
 
@@ -1534,17 +1475,6 @@ impl EditorState {
                 source,
                 at_end: true,
                 inline: false,
-            });
-            return;
-        }
-        // Arrowing UP into a property panel opens its editor at the LAST field
-        // (entered from below), not the raw source.
-        if let Some((range, source)) = self.property_block_at(self.row_col(off).0) {
-            cx.emit(EditorEvent::EditProperties {
-                range,
-                source,
-                at_end: true,
-                row: None,
             });
             return;
         }
@@ -1578,16 +1508,6 @@ impl EditorState {
                 source,
                 at_end: false,
                 inline: false,
-            });
-            return;
-        }
-        // Arrowing DOWN into a property panel opens its editor at the FIRST field.
-        if let Some((range, source)) = self.property_block_at(self.row_col(off).0) {
-            cx.emit(EditorEvent::EditProperties {
-                range,
-                source,
-                at_end: false,
-                row: None,
             });
             return;
         }
@@ -1735,48 +1655,7 @@ impl EditorState {
             });
             return true;
         }
-        if let Some((range, source)) = self.property_block_at(row) {
-            let block_row = row - self.row_col(range.start).0;
-            cx.emit(EditorEvent::EditProperties {
-                range,
-                source,
-                at_end,
-                row: Some(block_row),
-            });
-            return true;
-        }
         false
-    }
-
-    /// If the caret sits inside a property block, ask the host to seat the
-    /// in-place form there (focused on the caret's row; `at_end` = caret at
-    /// the value's end) — the recovery for any edit that lands a raw caret in
-    /// the panel, mirroring what arrows and clicks do on entry.
-    fn edit_properties_at_caret(&mut self, at_end: bool, cx: &mut Context<Self>) {
-        let (row, _) = self.row_col(self.cursor_offset());
-        if let Some((range, source)) = self.property_block_at(row) {
-            let block_row = row - self.row_col(range.start).0;
-            cx.emit(EditorEvent::EditProperties {
-                range,
-                source,
-                at_end,
-                row: Some(block_row),
-            });
-        }
-    }
-
-    /// The property block whose lines cover `row`, as an absolute byte range +
-    /// source — so a click or an arrow into the panel opens the property editor
-    /// instead of landing in (and revealing) the raw `key:: value` lines.
-    /// WYSIWYG-only, like [`Self::math_block_at`].
-    fn property_block_at(&self, row: usize) -> Option<(Range<usize>, SharedString)> {
-        self.markdown_style.as_ref()?;
-        let region = markdown_syntax::property_regions(&self.content)
-            .into_iter()
-            .find(|r| r.contains(&row))?;
-        let start = *self.line_starts().get(region.start)?;
-        let end = self.line_end(region.end - 1);
-        Some((start..end, self.content[start..end].to_string().into()))
     }
 
     /// The inline `$…$` span strictly containing source byte `off` (between the `$` delimiters),
@@ -1832,7 +1711,6 @@ impl EditorState {
             self.menu = None;
             self.table_menu = None;
             self.image_menu = None;
-            self.prop_menu = None;
             cx.notify();
             return;
         }
@@ -1904,12 +1782,8 @@ impl EditorState {
         }
         // Left-click a file chip (e.g. a PDF embed) opens it rather than editing —
         // the host handles the link. Right-click edits (see on_right_mouse_down).
-        if let Some((src, wiki)) = self.chip_at(event.position) {
-            cx.emit(if wiki {
-                EditorEvent::OpenWikiLink(src)
-            } else {
-                EditorEvent::OpenLink(src)
-            });
+        if let Some(src) = self.chip_at(event.position) {
+            cx.emit(EditorEvent::OpenLink(src));
             return;
         }
         // Left-click an inline `$…$` formula opens its structural editor at the formula's spot
@@ -1926,49 +1800,6 @@ impl EditorState {
             });
             return;
         }
-        // Left-click a property-panel pill opens its target — the pill is painted
-        // over a collapsed source line, so hit-test the painted bounds directly
-        // (not the raw text like `link_at` below).
-        if event.click_count == 1
-            && !event.modifiers.shift
-            && !event.modifiers.control
-            && let Some((_, hit)) = self
-                .prop_pill_rects
-                .iter()
-                .find(|(b, _)| b.contains(&event.position))
-        {
-            match hit {
-                crate::syntax::LinkHit::Page(t) => {
-                    cx.emit(EditorEvent::OpenWikiLink(t.clone().into()))
-                }
-                crate::syntax::LinkHit::BlockRef(id) => {
-                    cx.emit(EditorEvent::OpenWikiLink(format!("#^{id}").into()))
-                }
-                crate::syntax::LinkHit::Url(u) => cx.emit(EditorEvent::OpenLink(u.clone().into())),
-            }
-            return;
-        }
-        // Left-click on (or beside) a property panel opens the in-place editor
-        // for its whole block — the panel edits its properties, not the raw
-        // markdown. Keyed off the ROW the click maps to, not the painted panel
-        // rects, so a click in the empty space right of the panel opens the
-        // editor too instead of seating the caret in (and revealing) the source.
-        if event.click_count == 1 && !event.modifiers.shift && !event.modifiers.control {
-            let offset = self.index_for_mouse_position(event.position);
-            let row = self.row_col(offset).0;
-            if let Some((range, source)) = self.property_block_at(row) {
-                // Which property line within the block was clicked — the host
-                // focuses that row's field instead of always the first.
-                let block_row = row - self.row_col(range.start).0;
-                cx.emit(EditorEvent::EditProperties {
-                    range,
-                    source,
-                    at_end: false,
-                    row: Some(block_row),
-                });
-                return;
-            }
-        }
         // Left-click an inline image opens a full-size preview (host-shown).
         if !event.modifiers.shift
             && !event.modifiers.control
@@ -1977,9 +1808,8 @@ impl EditorState {
             cx.emit(EditorEvent::PreviewImage(src));
             return;
         }
-        // Left-click a link navigates, like the reading view: a `[[wiki]]` /
-        // `#tag` opens that page, a `[text](url)` opens the url — consistent
-        // with chips and inline math above. Only a plain single click: a
+        // Left-click a link opens its url — consistent with chips and inline
+        // math above. Only a plain single click: a
         // double-click still selects the word, shift still extends the
         // selection, and the caret goes anywhere else as usual (to edit a
         // link's own text, click beside it and arrow in — reveal-on-caret).
@@ -1993,36 +1823,11 @@ impl EditorState {
             let start = self.line_starts()[row];
             let line = &self.content[start..self.line_end(row)];
             match markdown_syntax::link_at(line, offset - start) {
-                Some(markdown_syntax::LinkHit::Page(title)) => {
-                    cx.emit(EditorEvent::OpenWikiLink(title.into()));
-                    return;
-                }
-                Some(markdown_syntax::LinkHit::BlockRef(id)) => {
-                    cx.emit(EditorEvent::OpenWikiLink(format!("#^{id}").into()));
-                    return;
-                }
                 Some(markdown_syntax::LinkHit::Url(url)) => {
                     cx.emit(EditorEvent::OpenLink(url.into()));
                     return;
                 }
                 None => {}
-            }
-            // The reference-count badge painted over a hidden ` ^id` anchor:
-            // a click on its (replaced) range lists the referencers. Only when
-            // the anchor is hidden — with the caret on the line the raw text
-            // is revealed for editing and clicks place the caret as usual.
-            if self.row_col(self.selected_range.start).0 != row
-                && let Some((at, id)) = crate::syntax::block_id(line)
-                && offset - start >= at
-                && self
-                    .markdown_style
-                    .as_ref()
-                    .and_then(|st| st.block_ref_count.as_ref().map(|f| f(id)))
-                    .unwrap_or(0)
-                    > 0
-            {
-                cx.emit(EditorEvent::OpenWikiLink(format!("refs:^{id}").into()));
-                return;
             }
         }
         // A press on a table's hover "+" strip adds a row (below) or column (right).
@@ -2124,17 +1929,15 @@ impl EditorState {
         self.menu = None;
         self.table_menu = None;
         self.image_menu = None;
-        self.prop_menu = None;
         self.goal_x = None;
         self.last_edit = EditKind::Other;
         match event.click_count {
             // Double-click selects the word under the cursor. On a $$…$$ block
-            // or property panel the FIRST click of the pair already opened the
-            // in-place editor — word-selecting the hidden source underneath
+            // the FIRST click of the pair already opened the in-place editor — word-selecting the hidden source underneath
             // would fight the seated editor, so those clicks are swallowed.
             2 => {
                 let (row, _) = self.row_col(offset);
-                if self.math_block_at(row).is_some() || self.property_block_at(row).is_some() {
+                if self.math_block_at(row).is_some() {
                     return;
                 }
                 self.is_selecting = false;
@@ -2147,7 +1950,7 @@ impl EditorState {
             // a block construct, where it would select the raw hidden fences.
             n if n >= 3 => {
                 let (row, _) = self.row_col(offset);
-                if self.math_block_at(row).is_some() || self.property_block_at(row).is_some() {
+                if self.math_block_at(row).is_some() {
                     return;
                 }
                 self.is_selecting = false;
@@ -2251,7 +2054,6 @@ impl EditorState {
         let over_link = self
             .link_rects
             .iter()
-            .chain(self.prop_pill_rects.iter())
             .find(|(b, _)| b.contains(&event.position))
             .map(|(b, hit)| (hit.clone(), *b));
         if over_link != self.hovered_link {
@@ -2350,16 +2152,6 @@ impl EditorState {
             self.table_resize_hover = on_band;
             cx.notify();
         }
-        // Repaint the property-panel hover border when the pointer moves between
-        // rows (the border itself reads the live pointer during paint).
-        let prow = self
-            .prop_row_rects
-            .iter()
-            .position(|(b, _)| b.contains(&event.position));
-        if prow != self.prop_hover_row {
-            self.prop_hover_row = prow;
-            cx.notify();
-        }
         // Repaint the heading fold chevron when the pointer enters/leaves a
         // heading row (the chevron is hover-revealed).
         let hrow = self
@@ -2437,18 +2229,6 @@ impl EditorState {
         Some(start..(end + 1).min(self.content.len()))
     }
 
-    /// Delete the `key:: value` line at `row` (+ its newline) — the panel's
-    /// right-click "Delete property". One undoable edit; deleting the last
-    /// property removes the panel.
-    fn delete_property_row(&mut self, row: usize, cx: &mut Context<Self>) {
-        let Some(&start) = self.line_starts().get(row) else {
-            return;
-        };
-        let end = (self.line_end(row) + 1).min(self.content.len());
-        self.replace_range(start..end, "", cx);
-        self.emit_changed(cx);
-    }
-
     /// Delete the image occupying logical line `row` — line + trailing newline,
     /// one undoable edit. Backs the right-click "Delete image" and the
     /// Word-style Backspace/Delete on an image row.
@@ -2482,21 +2262,6 @@ impl EditorState {
             self.table_menu = None;
             self.focus(window, cx);
             self.image_menu = Some((line, event.position));
-            cx.notify();
-            return;
-        }
-        // Right-click a property-panel row: Edit / Delete property menu — the
-        // panel renders as a widget, there's no text under the pointer.
-        if let Some(&(_, row)) = self
-            .prop_row_rects
-            .iter()
-            .find(|(rect, _)| rect.contains(&event.position))
-        {
-            self.menu = None;
-            self.table_menu = None;
-            self.image_menu = None;
-            self.focus(window, cx);
-            self.prop_menu = Some((row, event.position));
             cx.notify();
             return;
         }
@@ -2752,7 +2517,6 @@ impl EditorState {
         if self.menu.take().is_some()
             || self.table_menu.take().is_some()
             || self.image_menu.take().is_some()
-            || self.prop_menu.take().is_some()
         {
             cx.notify();
         } else if self.live_selection_action().is_some()
@@ -2980,9 +2744,6 @@ impl EditorState {
             let first = t.marker_line.unwrap_or(t.lines.start).min(t.lines.start);
             return (first, t.lines.end.saturating_sub(1).max(t.lines.start));
         }
-        if let Some(p) = scan.props.iter().find(|r| r.contains(&row)) {
-            return (p.start, p.end.saturating_sub(1).max(p.start));
-        }
         if scan.fence_odd.get(row).copied().unwrap_or(false)
             || line_at(row).trim_start().starts_with("```")
         {
@@ -3065,9 +2826,6 @@ impl EditorState {
         for t in scan.tables.iter() {
             let s = t.marker_line.unwrap_or(t.lines.start).min(t.lines.start);
             b = snap(b, s, t.lines.end);
-        }
-        for p in scan.props.iter() {
-            b = snap(b, p.start, p.end);
         }
         // Inside a code fence: snap to the opening fence or past the close.
         if scan.fence_odd.get(b).copied().unwrap_or(false) {
@@ -3394,7 +3152,7 @@ impl EditorState {
 
     /// The `src` of a file chip on the row at window `position`, if that row is a
     /// chip (from the last paint) — left-click opens it, right-click edits.
-    fn chip_at(&self, position: Point<Pixels>) -> Option<(SharedString, bool)> {
+    fn chip_at(&self, position: Point<Pixels>) -> Option<SharedString> {
         if self.wrapped.is_empty() || self.chip_rows.iter().all(Option::is_none) {
             return None;
         }
@@ -4410,79 +4168,6 @@ impl Render for EditorState {
             }))
             // The image right-click menu: Word-style object actions on an inline
             // image (Delete), anchored at the click. Chrome matches the table menu.
-            .children(self.prop_menu.map(|(row, anchor)| {
-                let st = self.markdown_style.as_ref();
-                let menu_bg = st.map_or(rgb(0x26262b).into(), |s| s.popover_bg);
-                let menu_border = st.map_or(rgb(0x45454c).into(), |s| s.popover_border);
-                let menu_fg = st.map_or(rgb(0xe6e6e6).into(), |s| s.popover_fg);
-                let hover = st.map_or(rgba(0x2f6fd628).into(), |s| s.popover_hover);
-                let item = |id: &'static str, label: SharedString| {
-                    div()
-                        .id(id)
-                        .px(px(10.))
-                        .py(px(3.))
-                        .hover(move |s| s.bg(hover))
-                        .child(label)
-                };
-                gpui::deferred(
-                    gpui::anchored().position(anchor).snap_to_window().child(
-                        div()
-                            .occlude()
-                            .min_w(px(160.))
-                            .cursor(CursorStyle::Arrow)
-                            .bg(menu_bg)
-                            .border_1()
-                            .border_color(menu_border)
-                            .rounded(px(6.))
-                            .shadow_md()
-                            .overflow_hidden()
-                            .text_color(menu_fg)
-                            .text_size(px(13.))
-                            .py(px(4.))
-                            .on_mouse_down_out(cx.listener(|editor, _: &MouseDownEvent, _, cx| {
-                                editor.prop_menu = None;
-                                cx.notify();
-                            }))
-                            .child(
-                                item(
-                                    "prop-menu-edit",
-                                    SharedString::new_static("Edit properties"),
-                                )
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |editor, _: &MouseDownEvent, _, cx| {
-                                        cx.stop_propagation();
-                                        editor.prop_menu = None;
-                                        if let Some((range, source)) = editor.property_block_at(row)
-                                        {
-                                            let block_row = row - editor.row_col(range.start).0;
-                                            cx.emit(EditorEvent::EditProperties {
-                                                range,
-                                                source,
-                                                at_end: false,
-                                                row: Some(block_row),
-                                            });
-                                        }
-                                    }),
-                                ),
-                            )
-                            .child(
-                                item(
-                                    "prop-menu-delete",
-                                    SharedString::new_static("Delete property"),
-                                )
-                                .on_mouse_down(
-                                    MouseButton::Left,
-                                    cx.listener(move |editor, _: &MouseDownEvent, _, cx| {
-                                        cx.stop_propagation();
-                                        editor.prop_menu = None;
-                                        editor.delete_property_row(row, cx);
-                                    }),
-                                ),
-                            ),
-                    ),
-                )
-            }))
             .children(self.image_menu.map(|(line, anchor)| {
                 let st = self.markdown_style.as_ref();
                 let menu_bg = st.map_or(rgb(0x26262b).into(), |s| s.popover_bg);
@@ -4616,51 +4301,7 @@ enum Block {
         bg: Hsla,
         border: Hsla,
         height: Pixels,
-        /// `src` is a wiki target (an `![[embed]]` chip → OpenWikiLink, which
-        /// navigates + jumps to any anchor) vs a file path (→ OpenLink).
-        wiki: bool,
     },
-    /// A run of `key:: value` properties as a two-column panel (the reader's
-    /// `render_property_table` twin). Painted on the region's first line; the
-    /// rest of the region's lines collapse. The caret entering the region
-    /// reveals the raw source (like a math block).
-    Properties(PropPanel),
-}
-
-/// A rendered piece of a property value in the panel: plain text, or a colored
-/// pill (tag / wiki-link / URL).
-#[derive(Clone)]
-enum PanelSeg {
-    Plain(SharedString),
-    Pill {
-        text: SharedString,
-        color: Hsla,
-        target: crate::syntax::LinkHit,
-    },
-}
-
-/// Layout for a WYSIWYG property panel: the measured rows (key + value
-/// segments), the column widths + per-row height, and the key/value colors. No
-/// grid lines — rows read clean (Obsidian-style); the value's tags and
-/// wiki-links render as pills.
-#[derive(Clone)]
-struct PropPanel {
-    /// `(key, icon asset path, value segments)` per property line, in order.
-    rows: Vec<(SharedString, Option<SharedString>, Vec<PanelSeg>)>,
-    key_w: Pixels,
-    /// Panel width (shared by every row) so hover borders align.
-    width: Pixels,
-    row_h: Pixels,
-    height: Pixels,
-    /// Icon draw size (0 when the host resolves no icons); the key text is inset
-    /// by `key_indent` to leave room for it.
-    icon_sz: Pixels,
-    key_indent: Pixels,
-    key_color: Hsla,
-    value_color: Hsla,
-    /// The rounded border drawn around the row under the pointer (Obsidian-style
-    /// whole-row hover).
-    hover_border: Hsla,
 }
 
 impl Block {
@@ -4668,7 +4309,6 @@ impl Block {
         match self {
             Block::Image(i) => i.height,
             Block::Chip { height, .. } => *height,
-            Block::Properties(p) => p.height,
         }
     }
 }
@@ -5182,12 +4822,11 @@ fn line_run_epoch(font: &Font, st: Option<&SyntaxStyle>) -> u64 {
     };
     if let Some(st) = st {
         for c in [
-            st.marker, st.code, st.code_bg, st.link, st.tag, st.quote, st.mark_bg,
+            st.marker, st.code, st.code_bg, st.link, st.quote, st.mark_bg,
         ] {
             hash_hsla(c, &mut h);
         }
         st.mono.family.hash(&mut h);
-        st.block_label_gen.hash(&mut h);
     }
     h.finish()
 }
@@ -5206,7 +4845,6 @@ pub(crate) struct ScanData {
     tables: Vec<markdown_syntax::TableRegion>,
     mermaid: Vec<(Range<usize>, String)>,
     math: Vec<markdown_syntax::MathRegion>,
-    props: Vec<Range<usize>>,
     alert_folds: Vec<(Range<usize>, bool)>,
     /// Whether each line STARTS inside a fenced code block (odd count of ```
     /// fences above it).

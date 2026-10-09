@@ -1,6 +1,6 @@
 # Render standard Markdown only
 
-Status: accepted in interview, 2026-10-09; not yet implemented. See the
+Status: accepted and implemented, 2026-10-09. See the
 [codebase cleanup interview](../design/codebase-cleanup.md), round 2.
 
 ## Problem
