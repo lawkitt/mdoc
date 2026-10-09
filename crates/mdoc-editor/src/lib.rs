@@ -505,11 +505,6 @@ pub enum EditorEvent {
     /// An inline `![](src)` image was left-clicked — the host opens a full-size
     /// preview. The text is untouched.
     PreviewImage(SharedString),
-    /// The pointer moved onto an inline link (`Some` — the target and the
-    /// link's window-space box, from this frame's layout) or off every link
-    /// (`None`). Emitted only on change, so a host can show a preview card
-    /// anchored to the link.
-    HoverLink(Option<(crate::syntax::LinkHit, Bounds<Pixels>)>),
 }
 
 /// A table column's text alignment, for the host-driven alignment toolbar
@@ -777,11 +772,6 @@ pub struct EditorState {
     /// inner LaTeX (from the last paint), so a click can open its structural editor and the
     /// seated editor can be positioned at the formula's spot.
     inline_math_rects: Vec<(Range<usize>, SharedString, Bounds<Pixels>)>,
-    /// Inline links' painted boxes + targets from the last paint (the same
-    /// geometry as the hand-cursor hitboxes), for hover → `HoverLink`.
-    link_rects: Vec<(Bounds<Pixels>, crate::syntax::LinkHit)>,
-    /// The link under the pointer, if any — `HoverLink` fires on change.
-    hovered_link: Option<(crate::syntax::LinkHit, Bounds<Pixels>)>,
     /// Collapsed headings, keyed by the heading's trimmed source line
     /// (`## Goals`). View-local — markdown has no heading-fold syntax (unlike
     /// callouts' `-`/`+`), so folds live for the editor's lifetime and a key
@@ -886,8 +876,6 @@ impl EditorState {
             content_gen: 0,
             utf16_anchor: std::cell::Cell::new((0, 0, 0)),
             inline_math_rects: Vec::new(),
-            link_rects: Vec::new(),
-            hovered_link: None,
             folded_headings: std::collections::HashSet::new(),
             heading_fold_rects: Vec::new(),
             heading_row_rects: Vec::new(),
@@ -1822,12 +1810,9 @@ impl EditorState {
             let (row, _) = self.row_col(offset);
             let start = self.line_starts()[row];
             let line = &self.content[start..self.line_end(row)];
-            match markdown_syntax::link_at(line, offset - start) {
-                Some(markdown_syntax::LinkHit::Url(url)) => {
-                    cx.emit(EditorEvent::OpenLink(url.into()));
-                    return;
-                }
-                None => {}
+            if let Some(url) = markdown_syntax::link_at(line, offset - start) {
+                cx.emit(EditorEvent::OpenLink(url.into()));
+                return;
             }
         }
         // A press on a table's hover "+" strip adds a row (below) or column (right).
@@ -2049,17 +2034,6 @@ impl EditorState {
             cx.notify();
         }
 
-        // Link under the pointer → `HoverLink` on change (a host shows a preview
-        // card there). Painted boxes from the last frame, like the hand cursor.
-        let over_link = self
-            .link_rects
-            .iter()
-            .find(|(b, _)| b.contains(&event.position))
-            .map(|(b, hit)| (hit.clone(), *b));
-        if over_link != self.hovered_link {
-            self.hovered_link = over_link.clone();
-            cx.emit(EditorEvent::HoverLink(over_link));
-        }
         // While dragging an image's grip, track the pointer: the new width is the
         // grab width plus the horizontal travel, floored at `IMG_MIN_W` and capped
         // to the content width left of the image's inset (so a bulleted image's cap
