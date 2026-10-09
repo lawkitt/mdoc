@@ -119,3 +119,56 @@ confirms shared understanding. Decisions are recorded in
    split proposals written here for approval.
 9. Approved test changes.
 10. Renames, CONTEXT.md and doc references.
+
+## Implementation, steps 1–7 (2026-10-09)
+
+Branch `cleanup/codebase`, 12 commits, each passing fmt, strict Clippy and
+workspace tests; about −16.2k lines. Unused public API was found mechanically:
+every crate's `pub fn` was made crate-private, only those the app, tests or the
+spell-check demo needed were restored, and rustc's dead-code analysis drove
+deletion.
+
+- Hygiene: Zorite `.gitignore` entries; dangling `maintainability-review.md`
+  links now name the removing commit (`d10fba0`).
+- `gpui-pdf`: features unconditional, examples deleted; unlock, byte
+  replacement, form writing/reveal, texture detaching, open-in-system-viewer
+  and highlight setters deleted.
+- `mdoc-markdown` folded into `mdoc-editor` (`syntax` module); reader view and
+  12 unused recognizers deleted.
+- `mdoc-editor`: math/Mermaid/embed providers, in-place math editing, code
+  highlighter and language picker, auto-replace, clipboard writer, scroll
+  compensation, labels, alert icons, tab indent/grip inset settings and
+  `HoverLink` deleted; `LinkHit` collapsed to a URL string. Spell-check hooks
+  and a trimmed demo kept.
+- ADR 0030 implemented with a regression test that fails on the old code.
+- `gpui-bidi` RtlText element and `mdoc-pii` restore/keep helpers deleted.
+- Crates internal (`publish = false`, short READMEs, no `API.md`).
+- Third-party licenses regenerated (the list predated `mdoc-pii`); no unused
+  dependencies found.
+- Tests: 463 → 418 passing, every removal named in its commit message.
+
+## Checkpoint (step 8) — open questions
+
+Test audit against criteria (ii)–(iv): no assertion-free tests (one asserts
+inside its helper); a token-similarity scan of all 411 tests found no
+duplicate pairs — similar pairs test different constructs or formats. Findings:
+
+- `accepted_pdf_import_opens_source_pane` asserts only that loading started;
+  unlike its DOCX twin it never checks the source pane opened.
+- `ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot`
+  failed once in the baseline full run (`error` lacked "Local OCR failed") and
+  passed in seven later runs; it runs the real import worker.
+
+Behaviour found during removal that needs a decision (visible changes):
+
+- PDF toolbar **Highlight** (✎, ⌘⇧H) and **Area highlight** (⬚) tools let the
+  user drag a selection but create nothing — mdoc has no annotation store.
+- The editor routes arrow keys and clicks into `$$…$$` / `$…$` math to an
+  `EditMath` event (and right-click to `MathMenu`) for a host math editor;
+  mdoc ignores both, so the caret does not enter math and the click does
+  nothing.
+- Clicking an inline image emits `PreviewImage`, which mdoc ignores; the click
+  neither previews nor places the caret.
+
+Split proposals after dead-code removal: none on cohesion grounds yet; the
+renames in step 10 move the document view out of `main.rs`.
