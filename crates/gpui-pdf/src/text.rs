@@ -317,7 +317,6 @@ impl PageText {
     /// Every (non-overlapping) case- and whitespace-insensitive match of `needle` on
     /// the page, each as one normalized rect per line it spans (for find-in-PDF).
     /// Matches are returned in reading order. (`search` feature.)
-    #[cfg(feature = "search")]
     pub fn find_matches(&self, needle: &str) -> Vec<Vec<NormRect>> {
         let key = Self::search_key(needle);
         if key.is_empty() {
@@ -557,7 +556,6 @@ mod tests {
         assert_eq!(sel.occurrence, 1);
     }
 
-    #[cfg(feature = "search")]
     #[test]
     fn find_matches_returns_all_occurrences_in_reading_order() {
         let pt = PageText::new(vec![
