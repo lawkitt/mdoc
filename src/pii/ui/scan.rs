@@ -29,6 +29,18 @@ impl Workspace {
                 return;
             }
         };
+        // Never start a scan that cannot load its model: ask first (ADR 0026).
+        if detector::SUPPORTED
+            && self
+                .model_panel
+                .read(cx)
+                .needs_setup(settings::Model::Pii(config.model))
+        {
+            self.pii.setup = true;
+            cx.notify();
+            return;
+        }
+        self.pii.setup = false;
         let generation = self.pii.generation;
         let identity = self.session.generation;
         let cancel = Arc::new(AtomicBool::new(false));
@@ -78,11 +90,7 @@ impl Workspace {
                 self.pii.error = None;
                 self.model_panel.update(cx, |panel, cx| {
                     let model = settings::Model::Pii(config.model);
-                    let index = settings::Model::ALL
-                        .iter()
-                        .position(|m| *m == model)
-                        .unwrap();
-                    panel.statuses[index] = settings_ui::Status::Ready;
+                    panel.statuses[settings_ui::Panel::index(model)] = settings_ui::Status::Ready;
                     cx.notify();
                 });
                 self.pii.scans.push(config);

@@ -148,6 +148,82 @@ fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
 }
 
 #[gpui::test]
+fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mut TestAppContext) {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/import/handmade-partly-scanned.pdf");
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![source], window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
+    let draw = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        })
+    };
+    view.update(cx, |view, cx| {
+        view.ocr_state = OcrState::Missing;
+        cx.notify();
+    });
+    draw(cx);
+    cx.update(|_, cx| assert!(view.read(cx).ocr_required.is_some()));
+    assert_eq!(settings::OcrModel::V6Small.languages(), "English");
+    for selector in [
+        "ocr-language-hint",
+        "conversion-card",
+        "Download & recognize",
+        "Use native text only",
+        "choose-ocr-model",
+    ] {
+        assert!(cx.debug_bounds(selector).is_some(), "{selector}");
+    }
+    // Setup progress replaces the actions with Cancel.
+    view.update(cx, |view, cx| {
+        view.ocr_state = OcrState::Installing;
+        cx.notify();
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("cancel-ocr-setup").is_some());
+    assert!(cx.debug_bounds("Download & recognize").is_none());
+    // Cancel or failure returns to the card with Retry.
+    view.update(cx, |view, cx| {
+        view.ocr_state = OcrState::Failed("Download cancelled.".into());
+        cx.notify();
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("Retry").is_some());
+    // A download finished from Settings only enables one-click Run OCR.
+    panel.update(cx, |_, cx| {
+        cx.emit(settings_ui::Event::Finished(
+            settings::Model::Ocr(settings::OcrModel::V6Small),
+            Ok(Some(ocr::Installed {
+                config: settings::OcrConfig::default(),
+                models: "models".into(),
+                pdfium: "pdfium".into(),
+                onnx: "onnx".into(),
+            })),
+        ))
+    });
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(matches!(view.ocr_state, OcrState::Ready(_)));
+        assert!(!view.job.busy());
+        assert!(view.source_only);
+        assert!(view.editor.read(cx).text().is_empty());
+        assert!(!panel.read(cx).open);
+    });
+    assert!(cx.debug_bounds("Run OCR").is_some());
+    click_toolbar(cx, "choose-ocr-model");
+    cx.update(|_, cx| assert!(panel.read(cx).open));
+}
+
+#[gpui::test]
 fn closing_source_rejects_conversion_even_when_view_is_retained(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source.csv");
@@ -394,10 +470,9 @@ fn toolbar_settings_opens_and_closes_without_editor_focus(cx: &mut TestAppContex
     let dialog = cx.debug_bounds("settings-dialog").unwrap();
     assert!(dialog.size.width <= px(640.));
     assert!(dialog.size.height <= px(480.));
-    for selector in ["settings-close", "settings-apply"] {
-        let bounds = cx.debug_bounds(selector).unwrap();
-        assert!(bounds.top() >= px(0.) && bounds.bottom() <= px(480.));
-    }
+    // Done stays in the footer; Save scrolls with the Advanced fields.
+    let bounds = cx.debug_bounds("settings-close").unwrap();
+    assert!(bounds.top() >= px(0.) && bounds.bottom() <= px(480.));
     cx.dispatch_action(settings_ui::CloseSettings);
     cx.run_until_parked();
     cx.update(|window, cx| {

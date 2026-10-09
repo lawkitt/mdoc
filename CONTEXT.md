@@ -51,6 +51,18 @@ A pinned set of mutually compatible model artifacts, including the required
 dictionary or tokenizer, offered as one selectable configuration. Availability
 and installation do not establish recognition or detection quality.
 
+**Setup consent card**:
+The inline prompt shown where OCR or Pseudonymize is first needed while its
+selected model bundle is missing. It names the bundle and total download size;
+**Download & continue** installs it and resumes the task
+([ADR 0026](docs/adr/0026-first-use-model-setup.md)).
+_Avoid_: automatic setup, setup wizard
+
+**State card**:
+The centred card in the Markdown pane for a document not yet converted
+(ready, waiting, converting, needs recognition, failed). It changes in place
+and hosts the setup consent card for OCR ([ADR 0026](docs/adr/0026-first-use-model-setup.md)).
+
 **Configuration snapshot**:
 The model identity and settings captured for one processing run. Later changes
 to application defaults do not change the configuration attributed to that run.

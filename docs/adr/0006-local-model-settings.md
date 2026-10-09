@@ -1,6 +1,6 @@
 # Inspect and select local model settings
 
-Status: implemented, 2026-10-02. The user authorized implementation after the
+Status: implemented, 2026-10-02; defaults and Settings controls amended by [ADR 0026](0026-first-use-model-setup.md). The user authorized implementation after the
 completed design interview. [Verification](../../tests/fixtures/model-settings/README.md)
 records offline operation of all four bundles on Apple Silicon macOS and the
 remaining human/native and Windows checks.

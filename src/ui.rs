@@ -95,8 +95,8 @@ pub fn activity(
         .child(div().min_w_0().child(label))
 }
 
-/// Per-artifact bytes only: the caller must not pass stale counts from a
-/// verification/runtime phase or claim this is overall setup completion.
+/// Real byte counts only: the caller must not pass stale counts from a
+/// verification/runtime phase.
 pub fn progress_bar(received: u64, total: u64, theme: Theme) -> gpui::Div {
     let fraction = if total == 0 {
         0.
@@ -115,6 +115,208 @@ pub fn progress_bar(received: u64, total: u64, theme: Theme) -> gpui::Div {
                 .rounded_full()
                 .bg(theme.search_accent()),
         )
+}
+
+/// A card button without the shared hover/focus styles, which callers set.
+fn card_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let label = label.into();
+    div()
+        .id(id)
+        .role(gpui::Role::Button)
+        .aria_label(label.clone())
+        .key_context("UiControl")
+        .tab_index(0)
+        .tab_stop(enabled)
+        .flex_shrink_0()
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .text_size(px(13.))
+        .child(label)
+        .when(enabled, |v| v.cursor_pointer())
+        .when(!enabled, |v| v.opacity(0.45))
+}
+
+/// The one prominent action of a card or dialog: filled with the accent.
+pub fn primary_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    theme: Theme,
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    let accent = theme.search_accent();
+    card_button(id, label, enabled)
+        .px_3()
+        .bg(accent)
+        .text_color(p.bg)
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .border_1()
+        .border_color(accent)
+        .focus_visible(move |s| s.border_color(p.header_fg))
+        .when(enabled, |v| v.hover(|s| s.opacity(0.88)))
+}
+
+/// A tertiary text action, such as "Choose model…".
+pub fn link_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    theme: Theme,
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    card_button(id, label, enabled)
+        .text_color(theme.search_accent())
+        .focus_visible(move |s| s.bg(p.placeholder_bg))
+        .when(enabled, |v| v.hover(|s| s.underline()))
+}
+
+/// A centred card for a pane that has no content yet (ADR 0026). Callers add
+/// the title, one sentence, actions and a footnote, in that order.
+pub fn state_card(id: impl Into<gpui::ElementId>, theme: Theme) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    div()
+        .id(id)
+        .w_full()
+        .max_w(px(440.))
+        .flex()
+        .flex_col()
+        .gap_2()
+        .p_5()
+        .rounded_lg()
+        .border_1()
+        .border_color(p.border)
+        .bg(theme.sidebar_bg())
+        .text_size(px(13.))
+        .text_color(p.header_fg)
+        .child(
+            gpui::svg()
+                .data(include_bytes!("../resources/ui/document.svg"))
+                .size(px(24.))
+                .mb_1()
+                .text_color(p.header_muted),
+        )
+}
+pub fn card_title(text: impl Into<gpui::SharedString>) -> gpui::Div {
+    div()
+        .text_size(px(16.))
+        .font_weight(gpui::FontWeight::SEMIBOLD)
+        .child(text.into())
+}
+pub fn card_text(text: impl Into<gpui::SharedString>, theme: Theme) -> gpui::Div {
+    div()
+        .text_size(px(13.))
+        .text_color(theme.pdf_style().header_muted)
+        .child(text.into())
+}
+pub fn card_note(text: impl Into<gpui::SharedString>, theme: Theme) -> gpui::Div {
+    div()
+        .pt_1()
+        .text_size(px(11.))
+        .text_color(theme.pdf_style().header_muted)
+        .child(text.into())
+}
+/// A secondary explanation under a card's actions, e.g. language scope.
+pub fn card_hint(text: impl Into<gpui::SharedString>, theme: Theme) -> gpui::Div {
+    let p = theme.pdf_style();
+    div()
+        .flex()
+        .gap_1()
+        .text_size(px(12.))
+        .text_color(p.header_muted)
+        .child(div().flex_shrink_0().child("ⓘ"))
+        .child(div().min_w_0().child(text.into()))
+}
+pub fn card_error(text: impl Into<gpui::SharedString>, theme: Theme) -> gpui::Div {
+    div()
+        .text_size(px(12.))
+        .text_color(crate::style::markdown_style(theme).alert_caution)
+        .child(text.into())
+}
+pub fn card_actions() -> gpui::Div {
+    div().flex().flex_wrap().items_center().gap_2().pt_2()
+}
+
+/// Download progress: total bundle bytes while downloading, otherwise the
+/// current phase (Verifying, Checking runtime) without a percentage.
+pub fn setup_progress(
+    id: impl Into<gpui::ElementId>,
+    state: &crate::model_download::State,
+    cancelling: bool,
+    theme: Theme,
+) -> gpui::Div {
+    let (received, total) = state.overall();
+    let label = if cancelling {
+        "Cancelling…".to_owned()
+    } else if state.downloading() {
+        format!(
+            "Downloading {}%",
+            (received * 100).checked_div(total).unwrap_or(0)
+        )
+    } else if state.phase.is_empty() {
+        "Preparing…".to_owned()
+    } else {
+        format!("{}…", state.phase.trim_end_matches('…'))
+    };
+    div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .w_full()
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(activity(id, label, theme).flex_1())
+                .when(state.downloading(), |v| {
+                    v.child(
+                        div()
+                            .flex_shrink_0()
+                            .text_size(px(11.))
+                            .text_color(theme.pdf_style().header_muted)
+                            .child(format!(
+                                "{} / {} MB",
+                                received / 1_000_000,
+                                crate::model_download::megabytes(total)
+                            )),
+                    )
+                }),
+        )
+        .when(state.downloading(), |v| {
+            v.child(progress_bar(received, total, theme))
+        })
+}
+
+/// "3–7, 12", truncated after `limit` runs.
+pub fn page_ranges(pages: &[u32], limit: usize) -> String {
+    let mut runs: Vec<(u32, u32)> = Vec::new();
+    for &page in pages {
+        match runs.last_mut() {
+            Some((_, end)) if page == *end + 1 => *end = page,
+            _ => runs.push((page, page)),
+        }
+    }
+    let mut text = runs
+        .iter()
+        .take(limit)
+        .map(|&(a, b)| {
+            if a == b {
+                a.to_string()
+            } else {
+                format!("{a}–{b}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    if runs.len() > limit {
+        text.push_str(", …");
+    }
+    text
 }
 
 actions!(ui, [NextControl, PreviousControl, CloseMenu]);
@@ -284,4 +486,15 @@ pub fn reveal_focus(
         .absolute()
         .inset_0(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn page_lists_compress_to_ranges() {
+        assert_eq!(super::page_ranges(&[3, 4, 5, 6, 7, 12], 8), "3–7, 12");
+        assert_eq!(super::page_ranges(&[1], 8), "1");
+        assert_eq!(super::page_ranges(&[1, 3, 5, 7], 2), "1, 3, …");
+        assert_eq!(super::page_ranges(&[], 8), "");
+    }
 }

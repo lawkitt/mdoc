@@ -151,6 +151,9 @@ struct Workspace {
     original_selected: bool,
     ocr_notice_dismissed: bool,
     setup_error_dismissed: bool,
+    /// The card's primary action takes focus once when OCR consent appears.
+    card_focus: gpui::FocusHandle,
+    focus_card: bool,
     prompting: bool,
     job: import_session::ImportSession,
     ocr_state: OcrState,
@@ -265,6 +268,8 @@ impl Workspace {
             split_dragging: false,
             original_selected: false,
             ocr_notice_dismissed: false,
+            card_focus: cx.focus_handle(),
+            focus_card: false,
             setup_error_dismissed: false,
             prompting: false,
             job: import_session::ImportSession::default(),
@@ -645,9 +650,7 @@ impl Workspace {
         }
         let started = panel.update(cx, |panel, cx| {
             panel.setup(settings::Model::Ocr(config.model), false, cx);
-            let started = panel.working == Some(settings::Model::Ocr(config.model));
-            panel.show(window, cx);
-            started
+            panel.working == Some(settings::Model::Ocr(config.model))
         });
         if started {
             self.ocr_state = OcrState::Installing;
@@ -697,6 +700,7 @@ impl Workspace {
         self.conversion_source = Some(path);
         self.ocr_required.get_or_insert_with(Vec::new);
         self.ocr_notice_dismissed = false;
+        self.focus_card = true;
         self.job.finish();
         self.import_permit = None;
         cx.emit(tabs::TabEvent::ImportState);
@@ -750,6 +754,227 @@ impl Workspace {
         self.start_import(path, window, cx);
     }
 
+    /// The Markdown pane before conversion: one card that changes in place
+    /// through conversion, OCR consent, setup and recognition (ADR 0026).
+    fn conversion_card(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let model = self
+            .preferences
+            .borrow()
+            .snapshot()
+            .ok()
+            .map(|p| settings::Model::Ocr(p.ocr.model));
+        let panel = self.model_panel.read(cx);
+        let progress = model.and_then(|m| panel.progress_of(m));
+        let cancelling = panel.cancelling();
+        let pending = model
+            .map(|m| panel.pending[settings_ui::Panel::index(m)].total())
+            .unwrap_or(0);
+        let ready = matches!(self.ocr_state, OcrState::Ready(_));
+        let installing = progress.is_some() || matches!(self.ocr_state, OcrState::Installing);
+        let card = ui::state_card("conversion-card", theme)
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "conversion-card".into())
+            })
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(palette.header_muted)
+                    .text_ellipsis()
+                    .child(self.display_name()),
+            );
+        let Some(pages) = self.ocr_required.clone() else {
+            let (title, busy) = if self.job.busy() {
+                (
+                    if self.job.recognizing() {
+                        "Recognizing text…"
+                    } else {
+                        "Converting to Markdown…"
+                    },
+                    true,
+                )
+            } else if self.auto_convert_pending {
+                ("Waiting to convert…", true)
+            } else if self.error.is_some() {
+                ("Conversion could not be completed", false)
+            } else {
+                ("Convert this document to begin editing", false)
+            };
+            return card
+                .child(if busy {
+                    ui::activity("conversion-activity", title, theme)
+                        .text_size(px(14.))
+                        .into_any_element()
+                } else {
+                    ui::card_title(title).into_any_element()
+                })
+                .when(self.error.is_some() && !busy, |v| {
+                    v.child(ui::card_text(
+                        "The notice above explains what went wrong.",
+                        theme,
+                    ))
+                })
+                .into_any_element();
+        };
+        let count = pages.len();
+        let card = card
+            .child(ui::card_title(if count == 0 { "Text recognition needs your attention" } else { "Some pages need text recognition" }))
+            .when(count > 0, |v| v.child(ui::card_text(format!(
+                "{count} {} no usable text ({}). Recognition reads {} on this computer; the original stays in the preview.",
+                if count == 1 { "page has" } else { "pages have" },
+                ui::page_ranges(&pages, 8),
+                if count == 1 { "it" } else { "them" },
+            ), theme)));
+        if !ocr::SUPPORTED {
+            return card
+                .child(ui::card_text(
+                    "Local OCR is unavailable on this platform.",
+                    theme,
+                ))
+                .child(
+                    ui::card_actions().child(
+                        ui::primary_button("extract-native", "Use native text only", theme, true)
+                            .on_click(|_, window, cx| {
+                                window.dispatch_action(Box::new(ExtractNative), cx)
+                            }),
+                    ),
+                )
+                .into_any_element();
+        }
+        if self.job.recognizing() {
+            return card
+                .child(ui::activity(
+                    "recognition-activity",
+                    "Recognizing text…",
+                    theme,
+                ))
+                .into_any_element();
+        }
+        if installing {
+            return card
+                .child(match &progress {
+                    Some(state) => {
+                        ui::setup_progress("ocr-setup-progress", state, cancelling, theme)
+                            .into_any_element()
+                    }
+                    None => {
+                        ui::activity("ocr-setup-progress", "Preparing…", theme).into_any_element()
+                    }
+                })
+                .child(
+                    ui::card_actions().child(
+                        settings_ui::control(
+                            "cancel-ocr-setup",
+                            "Cancel",
+                            theme,
+                            progress.is_some() && !cancelling,
+                        )
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "cancel-ocr-setup".into())
+                        })
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.model_panel
+                                .update(cx, |panel, cx| panel.cancel_setup(cx))
+                        })),
+                    ),
+                )
+                .into_any_element();
+        }
+        let disabled =
+            self.job.busy() || self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy();
+        let failed = match &self.ocr_state {
+            OcrState::Failed(error) => Some(error.clone()),
+            _ => None,
+        };
+        let primary = if ready {
+            "Run OCR"
+        } else if failed.is_some() {
+            "Retry"
+        } else {
+            "Download & recognize"
+        };
+        if std::mem::take(&mut self.focus_card)
+            && (self.focus.contains_focused(window, cx) || window.focused(cx).is_none())
+        {
+            let focus = self.card_focus.clone();
+            window.defer(cx, move |window, cx| window.focus(&focus, cx));
+        }
+        let name = model
+            .map(|m| m.short_name())
+            .unwrap_or_else(|| "OCR".into());
+        let language = match model {
+            Some(settings::Model::Ocr(m)) => Some(m.languages()),
+            _ => None,
+        };
+        card.when_some(failed, |v, error| v.child(ui::card_error(error, theme)))
+            .child(
+                ui::card_actions()
+                    .child(
+                        ui::primary_button("run-ocr", primary, theme, !disabled)
+                            .track_focus(&self.card_focus)
+                            .when(cfg!(test), move |v| {
+                                v.debug_selector(move || primary.into())
+                            })
+                            .on_click(move |_, window, cx| {
+                                if !disabled {
+                                    window.dispatch_action(Box::new(RunOcr), cx)
+                                }
+                            }),
+                    )
+                    .child(
+                        settings_ui::control(
+                            "extract-native",
+                            "Use native text only",
+                            theme,
+                            !disabled,
+                        )
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "Use native text only".into())
+                        })
+                        .on_click(move |_, window, cx| {
+                            if !disabled {
+                                window.dispatch_action(Box::new(ExtractNative), cx)
+                            }
+                        }),
+                    )
+                    .child(
+                        ui::link_button("choose-ocr-model", "Choose model…", theme, true)
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "choose-ocr-model".into())
+                            })
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                if let Some(model) = model {
+                                    this.model_panel.update(cx, |panel, cx| {
+                                        panel.show_section(model, window, cx)
+                                    });
+                                }
+                            })),
+                    ),
+            )
+            .when_some(language, |v, languages| {
+                v.child(ui::card_hint(
+                    format!(
+                        "This model reads {languages}. If the document is in another language, choose a model that supports it."
+                    ),
+                    theme,
+                )
+                .when(cfg!(test), |v| v.debug_selector(|| "ocr-language-hint".into())))
+            })
+            .child(ui::card_note(
+                if ready || pending == 0 {
+                    format!("{name} · runs on this computer")
+                } else {
+                    format!(
+                        "{name} · {} MB download, once · then runs on this computer",
+                        model_download::megabytes(pending)
+                    )
+                },
+                theme,
+            ))
+            .into_any_element()
+    }
+
     fn notice(
         &self,
         id: &'static str,
@@ -801,6 +1026,14 @@ impl Workspace {
                     )
                     .when(id == "preview-notice" && self.preview.retryable, |v| {
                         v.child(button("Retry", RetryPreview, theme))
+                    })
+                    .when(id == "ocr-notice", |v| {
+                        v.child(ui::control("show-markdown", "Show", theme, true).on_click(
+                            cx.listener(|this, _, _, cx| {
+                                this.original_selected = false;
+                                cx.notify();
+                            }),
+                        ))
                     })
                     .child(
                         div()
@@ -1229,7 +1462,7 @@ impl Render for Workspace {
             self.notice(
                 "ocr-notice",
                 "Text recognition required",
-                "Choose an action in the Markdown pane to continue.".into(),
+                "Some pages need text recognition.".into(),
                 false,
                 cx,
             )
@@ -1253,15 +1486,6 @@ impl Render for Workspace {
             .error
             .clone()
             .map(|detail| self.notice("error-notice", "Needs attention", detail, true, cx));
-        let ocr_pages = self.ocr_required.as_ref().map(|pages| {
-            pages
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        });
-        let ocr_disabled =
-            self.job.busy() || self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy();
         let width = self.chrome_width(window);
         let content_width = (width - f32::from(self.replacements_panel_width(window))).max(1.);
         let narrow_preview = self.preview.visible && content_width < 620.;
@@ -1323,7 +1547,7 @@ impl Render for Workspace {
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
-            .children(import_notice).children(ocr_notice)
+            .children(import_notice).children(ocr_notice.filter(|_| !show_markdown))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx)))
             .child(div().flex().flex_1().min_h_0()
                 .when(!self.source_only && show_markdown, |row| row.child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
@@ -1337,21 +1561,8 @@ impl Render for Workspace {
                         .child(markdown_scrollbar).into_any_element() })))
                 // Replacements sit beside the text they describe, before Original.
                 .children(self.replacements_panel(window, cx))
-                .when(self.source_only && show_markdown, |row| row.child(div().flex_1().min_w_0().p_6().flex().flex_col().justify_center().gap_2()
-                    .child(div().text_size(px(18.)).child(self.display_name()))
-                    .child(if self.job.busy() || matches!(self.ocr_state, OcrState::Installing) {
-                        ui::activity("conversion-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme).into_any_element()
-                    } else { div().text_color(palette.header_muted).child(if self.ocr_required.is_some() { "Text recognition required" }
-                    else if self.auto_convert_pending { "Waiting to convert…" }
-                    else if self.error.is_some() { "Conversion could not be completed" } else { "Convert this document to begin editing" }).into_any_element() })
-                    .when_some(ocr_pages, |v, pages| v
-                        .child(div().text_size(px(13.)).text_color(palette.header_muted).child(if pages.is_empty() { "Recognition needs your attention.".into() } else { format!("Pages {pages} need OCR. The original remains available in the source preview.") }))
-                        .when(ocr::SUPPORTED && !matches!(self.ocr_state, OcrState::Ready(_)), |v| v.child(div().text_size(px(12.)).text_color(palette.header_muted)
-                            .child(format!("Setup downloads about {} MB once. Recognition runs locally on this device.", ocr::download_megabytes()))))
-                        .child(div().flex().flex_wrap().gap_2().text_size(px(13.)).when(!ocr_disabled, |v| v
-                            .when(ocr::SUPPORTED, |v| v.child(button(if matches!(self.ocr_state, OcrState::Ready(_)) { "Run OCR" } else { "Set up OCR" }, RunOcr, theme)))
-                            .child(button("Extract native text only", ExtractNative, theme))))
-                        .when(!ocr::SUPPORTED, |v| v.child(div().text_size(px(12.)).text_color(palette.header_muted).child("Local OCR is unavailable on this platform."))))))
+                .when(self.source_only && show_markdown, |row| row.child(div().id("conversion-pane").flex_1().min_w_0().p_6().flex().items_center().justify_center().overflow_y_scroll()
+                    .child(self.conversion_card(window, cx))))
                 .when(self.preview.visible && !narrow_preview, |row| row.child(div().id("preview-divider").when(cfg!(test), |v| v.debug_selector(|| "preview-divider".into())).w(px(6.)).h_full().flex_shrink_0().cursor(gpui::CursorStyle::ResizeLeftRight).bg(palette.border)
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = true; cx.notify(); }))))
                 .when(show_original && self.preview.pdf.is_none(), |row| row.child(div().when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
@@ -1362,7 +1573,7 @@ impl Render for Workspace {
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments))
                     .children(preview_notice)))
 )
-            .children(setup_notice).children(error_notice)
+            .children(setup_notice.filter(|_| !(show_markdown && self.source_only && self.ocr_required.is_some()))).children(error_notice)
             .children(self.pii_popup(window, cx))
     }
 }
