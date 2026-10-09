@@ -40,8 +40,10 @@ placeholders while retaining useful relationships in the text. It does not
 guarantee that the document's subjects cannot be identified. It is the only PII
 replacement behavior ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)):
 scanning proposes, explicit Apply replaces as one undo step. Applied fields stay
-highlighted and clickable; Restore creates Keep decisions and travels with text
-undo/redo. Originals live only in the open document; Save does not serialize them.
+highlighted (teal; proposals are amber) and clickable. Apply also works per
+popup scope. **Undo replacement** returns applied text to a proposal with the
+same alias; **Keep original** reverts and records a Keep decision. Both travel
+with text undo/redo ([ADR 0023](docs/adr/0023-pseudonymization-ui-polish.md)). Originals live only in the open document; Save does not serialize them.
 _Avoid_: Guaranteed anonymization, Anonymize, shared category markers
 
 **Model bundle**:
@@ -116,8 +118,10 @@ word popup. The popup provides direct alias choices and scoped sameness/category
 corrections, with separate ownership and Keep/Restore actions. One **Copy Markdown**
 action copies current full source exactly, including with pending proposals;
 it adds no relationship legend and never implicitly applies replacements.
-Owner assignments remain local. The panel stays vertical at the right edge with
-compact rows and full document-area height. Its width adapts to the window; the
+Owner assignments remain local. The panel stays vertical directly right of the
+Markdown editor (before Original, ADR 0023) with compact rows and full
+document-area height. One popup **scope** (This mention / Same wording / Entire
+entity) governs alias, category, Apply, Undo and Keep actions. Its width adapts to the window; the
 Original preview switches panes when the remaining document area is narrow,
 keeping the word popup available beside the panel.
 **Same wording** affects matching originals still assigned to the selected entity;

@@ -240,9 +240,33 @@ impl Review {
     ) -> Vec<(Applied, Range<usize>)> {
         self.tracking.prepare_restore(edits)
     }
+    /// Text edits returning these applied occurrences to their prior values.
+    pub fn reversion_edits(
+        &self,
+        source: &str,
+        ids: &HashSet<u64>,
+    ) -> Result<Vec<(Range<usize>, String)>, String> {
+        self.tracking.reversion_plan(source, ids)
+    }
     /// Record restorations committed as history state `history`; each becomes Keep.
     pub fn commit_restore(&mut self, history: u64, restored: Vec<(Applied, Range<usize>)>) {
-        self.tracking.commit_restore(history, restored);
+        self.tracking.commit_restore(history, restored, true);
+    }
+    /// Record reversions committed as `history` that become proposals again.
+    /// A mention separated from its variant's identity stays pinned to it.
+    pub fn commit_unapply(&mut self, history: u64, restored: Vec<(Applied, Range<usize>)>) {
+        for (old, range) in &restored {
+            let separated = self
+                .candidates
+                .by_original(&old.step.before)
+                .and_then(|group| self.variant_identity(group))
+                .is_some_and(|id| id != old.step.identity);
+            if separated {
+                self.tracking
+                    .commit_assignment(history, range.clone(), old.step.identity);
+            }
+        }
+        self.tracking.commit_restore(history, restored, false);
     }
     /// Prepare provenance for plans before their text is committed.
     pub fn prepare_replacements(&mut self, plans: &[ReplacementPlan]) -> Vec<Applied> {
@@ -530,6 +554,22 @@ impl Review {
             }
         }
         Ok(plans)
+    }
+    /// Keep these pending mentions as one metadata change, refreshing once.
+    pub fn keep_mentions(&mut self, mentions: impl IntoIterator<Item = (u64, Range<usize>)>) {
+        let mentions: Vec<_> = mentions
+            .into_iter()
+            .filter_map(|(id, range)| {
+                let group = self.variant(id)?;
+                group
+                    .mentions
+                    .contains(&range)
+                    .then(|| (range, group.original.clone()))
+            })
+            .collect();
+        self.tracking.keep_many(mentions);
+        let source = self.source.clone();
+        self.refresh(&source);
     }
     pub fn keep(&mut self, id: u64, single: Option<Range<usize>>) {
         if let Some(group) = self.variant(id) {

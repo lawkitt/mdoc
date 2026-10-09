@@ -2,7 +2,7 @@
 use super::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Scope {
+pub(in crate::pii::ui) enum Scope {
     Mention,
     Wording,
     Entity,
@@ -111,7 +111,7 @@ impl Workspace {
             .focus_handle(cx)
             .is_focused(window)
         {
-            self.confirm_alias(false, false, cx);
+            self.confirm_alias(false, Applying::Nothing, cx);
         }
         window.focus(&self.pii.focus, cx);
         cx.notify();
@@ -206,6 +206,7 @@ impl Workspace {
         let annotation = self.active_annotation();
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(annotation, cx));
+        self.reveal_active_row(cx);
     }
     pub(super) fn restore_active_replacement(
         &mut self,
@@ -310,7 +311,7 @@ impl Workspace {
     pub(super) fn confirm_alias(
         &mut self,
         whole: bool,
-        apply: bool,
+        apply: Applying,
         cx: &mut Context<Self>,
     ) -> bool {
         let Some(id) = self.selected_entity() else {
@@ -359,50 +360,198 @@ impl Workspace {
             }
         }
     }
-    pub(super) fn keep_same_wording(&mut self, cx: &mut Context<Self>) {
-        if self.pii.scanning() || !self.can_copy_markdown() {
-            return;
-        }
+    /// Pending candidates and applied occurrence ids inside the selected scope.
+    pub(super) fn scoped_mentions(&self) -> (Vec<(u64, Range<usize>)>, Vec<u64>) {
         let ranges: std::collections::HashSet<_> = self
-            .scoped_ranges(Scope::Wording)
+            .scoped_ranges(self.pii.mapping.scope)
             .into_iter()
             .map(|r| (r.start, r.end))
             .collect();
-        let candidates: Vec<_> = self
-            .pii
-            .review
+        let review = &self.pii.review;
+        let candidates = review
             .candidates()
             .iter()
             .filter(|c| ranges.contains(&(c.range.start, c.range.end)))
             .map(|c| (c.variant, c.range.clone()))
             .collect();
-        if candidates.is_empty() {
+        let applied = review
+            .applied()
+            .iter()
+            .filter(|a| ranges.contains(&(a.range.start, a.range.end)))
+            .map(|a| a.id)
+            .collect();
+        (candidates, applied)
+    }
+    fn alias_draft_changed(&self, cx: &App) -> bool {
+        self.selected_entity()
+            .and_then(|id| self.pii.review.identity(id))
+            .is_some_and(|i| i.alias != self.pii.mapping.alias.read(cx).value().trim())
+    }
+    /// Apply the pending mentions in scope as one undo step, keeping the popup
+    /// on the active mention. A visible alias draft is confirmed in the same step.
+    pub(in crate::pii::ui) fn apply_scope(&mut self, cx: &mut Context<Self>) {
+        if self.pii.scanning() || !self.can_copy_markdown() {
             return;
         }
-        let kept = self.checkpoint_review(cx, |review| {
-            for (group, range) in candidates {
-                review.keep(group, Some(range));
+        let (candidates, _) = self.scoped_mentions();
+        let ranges: std::collections::HashSet<_> =
+            candidates.iter().map(|(_, r)| (r.start, r.end)).collect();
+        if ranges.is_empty() {
+            return;
+        }
+        if self.alias_draft_changed(cx) {
+            self.confirm_alias(false, Applying::Ranges(ranges), cx);
+            return;
+        }
+        let active = self.active_replacement_range();
+        let revision = self.editor.read(cx).revision();
+        let source = self.editor.read(cx).text().to_owned();
+        let plans: Vec<_> = match self.pii.review.pending_plans(&source, &Default::default()) {
+            Ok(plans) => plans
+                .into_iter()
+                .filter(|p| ranges.contains(&(p.range.start, p.range.end)))
+                .collect(),
+            Err(error) => {
+                self.pii.error = Some(error);
+                cx.notify();
+                return;
             }
-        });
-        if kept.is_none() {
+        };
+        let edits: Vec<_> = plans
+            .iter()
+            .map(|p| (p.range.clone(), p.after.to_string()))
+            .collect();
+        if self.commit_plans(revision, &plans, None, cx).is_none() {
+            self.pii.error = Some("Document changed. Review the replacement again.".into());
+            cx.notify();
             return;
         }
+        self.pii.review.refresh(self.editor.read(cx).text());
+        self.pii.error = None;
+        self.sync_annotations(cx);
+        self.restore_active_replacement(active, &edits, cx);
+        cx.notify();
+    }
+    /// Return applied occurrences to their prior text as one undo step. `keep`
+    /// records Keep decisions; otherwise they become proposals again.
+    fn revert_applied(
+        &mut self,
+        ids: &std::collections::HashSet<u64>,
+        keep: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<Vec<(Range<usize>, String)>> {
+        let editor = self.editor.read(cx);
+        let revision = editor.revision();
+        if !self.pii.review.matches_history(editor.history_id()) {
+            self.pii.error = Some("Document changed. Review the replacement again.".into());
+            cx.notify();
+            return None;
+        }
+        let edits = match self.pii.review.reversion_edits(editor.text(), ids) {
+            Ok(edits) => edits,
+            Err(error) => {
+                self.pii.error = Some(error);
+                cx.notify();
+                return None;
+            }
+        };
+        let restored = self.pii.review.prepare_restore(&edits);
+        if !self
+            .editor
+            .update(cx, |e, cx| e.replace_ranges(revision, &edits, cx))
+        {
+            return None;
+        }
+        let transaction = self.editor.read(cx).last_transaction().cloned().unwrap();
+        self.pii_transaction(&transaction, cx);
+        let history = self.editor.read(cx).history_id();
+        let review = &mut self.pii.review;
+        if keep {
+            review.commit_restore(history, restored);
+        } else {
+            review.commit_unapply(history, restored);
+        }
+        review.refresh(self.editor.read(cx).text());
+        self.pii.error = None;
+        Some(edits)
+    }
+    /// Return applied occurrences to proposals with their aliases, keeping the
+    /// popup on the active mention when it was among them.
+    pub(in crate::pii::ui) fn undo_replacements(
+        &mut self,
+        ids: std::collections::HashSet<u64>,
+        cx: &mut Context<Self>,
+    ) {
+        if ids.is_empty() || self.pii.scanning() || !self.can_copy_markdown() {
+            return;
+        }
+        let active = self.active_replacement_range();
+        let Some(edits) = self.revert_applied(&ids, false, cx) else {
+            return;
+        };
+        self.sync_annotations(cx);
+        if self.pii.popup.is_some() {
+            self.restore_active_replacement(active, &edits, cx);
+        } else {
+            self.remember_active_replacement(cx);
+        }
+        cx.notify();
+    }
+    /// Keep every original in scope: pending mentions stop being proposed and
+    /// applied ones return to their originals, as one undo step.
+    pub(in crate::pii::ui) fn keep_originals(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pii.scanning() || !self.can_copy_markdown() {
+            return;
+        }
+        let (candidates, applied) = self.scoped_mentions();
+        let count = candidates.len() + applied.len();
+        if count == 0 {
+            return;
+        }
+        if applied.is_empty() {
+            if self
+                .checkpoint_review(cx, |review| review.keep_mentions(candidates))
+                .is_none()
+            {
+                return;
+            }
+        } else {
+            let Some(edits) = self.revert_applied(&applied.into_iter().collect(), true, cx) else {
+                return;
+            };
+            let shifted = candidates.into_iter().map(|(group, range)| {
+                let shift: isize = edits
+                    .iter()
+                    .filter(|(r, _)| r.end <= range.start)
+                    .map(|(r, text)| text.len() as isize - r.len() as isize)
+                    .sum();
+                (
+                    group,
+                    range.start.saturating_add_signed(shift)
+                        ..range.end.saturating_add_signed(shift),
+                )
+            });
+            self.pii.review.keep_mentions(shifted);
+        }
+        let history = self.editor.read(cx).history_id();
+        self.pii.mapping.record_kept(count, history);
         self.pii.dismiss_popup();
         self.sync_annotations(cx);
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(None, cx));
+        window.focus(&self.editor.read(cx).focus_handle(cx), cx);
         cx.notify();
     }
     pub(in crate::pii::ui) fn apply_replacements(&mut self, cx: &mut Context<Self>) {
         if self.pii.scanning() || !self.can_copy_markdown() {
             return;
         }
-        let draft = self
-            .selected_entity()
-            .and_then(|id| self.pii.review.identity(id))
-            .is_some_and(|i| i.alias != self.pii.mapping.alias.read(cx).value().trim());
-        if draft {
-            self.confirm_alias(false, true, cx);
+        if self.alias_draft_changed(cx) {
+            self.confirm_alias(false, Applying::All, cx);
             return;
         }
         let active = self.active_replacement_range();

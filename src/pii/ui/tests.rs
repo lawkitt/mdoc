@@ -623,7 +623,8 @@ fn applied_highlights_restore_one_or_matching_originals_and_keep_survives_rescan
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("pseudonym-original").is_some());
     app.update_in(cx, |app, window, cx| {
-        app.restore_pii(&PiiRestore, window, cx)
+        app.pii.mapping.set_scope(mapping::Scope::Mention);
+        app.keep_originals(window, cx)
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
@@ -648,7 +649,7 @@ fn applied_highlights_restore_one_or_matching_originals_and_keep_survives_rescan
         assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1");
         let id = app.pii.review.applied()[0].id;
         app.activate_annotation(APPLIED_ID | id, window, cx);
-        app.restore_all_pii(&PiiRestoreAll, window, cx);
+        app.keep_originals(window, cx);
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
@@ -689,8 +690,8 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
             for id in [
                 "pseudonym-original",
                 "direct-alias",
-                "direct-keep-restore",
-                "direct-keep-restore-all",
+                "direct-undo",
+                "direct-keep",
             ] {
                 let control = cx
                     .debug_bounds(id)
@@ -707,7 +708,7 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
                 assert!(app.pii.popup.is_some());
             });
             // Click the actual secondary action, rather than calling its handler.
-            let restore_all = cx.debug_bounds("direct-keep-restore-all").unwrap().center();
+            let restore_all = cx.debug_bounds("direct-keep").unwrap().center();
             cx.simulate_click(restore_all, Default::default());
             cx.run_until_parked();
             app.update(cx, |app, cx| {
@@ -720,10 +721,8 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
             });
             cx.run_until_parked();
             cx.update(|window, cx| window.draw(cx).clear(cx));
-            assert!(
-                cx.debug_bounds("direct-keep-restore-all").is_none(),
-                "one match needs only Restore this"
-            );
+            assert!(cx.debug_bounds("direct-applied").is_some());
+            assert!(cx.debug_bounds("direct-undo").is_some());
             cx.simulate_keystrokes("escape");
             cx.run_until_parked();
             app.update_in(cx, |app, window, cx| {
@@ -855,7 +854,8 @@ fn dense_hidden_fields_choose_and_restore_by_keyboard(cx: &mut gpui::TestAppCont
     cx.simulate_keystrokes("down enter");
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
-        app.restore_pii(&PiiRestore, window, cx)
+        app.pii.mapping.set_scope(mapping::Scope::Mention);
+        app.keep_originals(window, cx)
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {

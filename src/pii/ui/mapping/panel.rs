@@ -12,8 +12,10 @@ struct ReplacementRow {
     original: Arc<str>,
     alias: String,
     mentions: usize,
-    pending: bool,
+    applied: usize,
 }
+/// One panel line: an entity row, or one of the expanded entity's mentions.
+type PanelEntry = (Arc<ReplacementRow>, Option<(u64, Range<usize>)>);
 
 impl Workspace {
     fn replacement_control(
@@ -54,7 +56,7 @@ impl Workspace {
             .to_lowercase();
         let mut rows = std::collections::BTreeMap::<u64, ReplacementRow>::new();
         let mut matches = std::collections::HashSet::new();
-        let mut add = |id, original: Arc<str>, pending| {
+        let mut add = |id, original: Arc<str>, applied: bool| {
             let Some(identity) = review.identity(id) else {
                 return;
             };
@@ -69,29 +71,59 @@ impl Workspace {
                 original,
                 alias: identity.alias.clone(),
                 mentions: 0,
-                pending: false,
+                applied: 0,
             });
             row.mentions += 1;
-            row.pending |= pending;
+            row.applied += applied as usize;
         };
         for c in review.candidates() {
             if let (Some(id), Some(group)) = (
                 review.occurrence_identity(c.variant, &c.range),
                 review.variant(c.variant),
             ) {
-                add(id, group.original.clone(), true);
+                add(id, group.original.clone(), false);
             }
         }
         for a in review.applied() {
-            let proposed = review
-                .identity(a.step.identity)
-                .is_some_and(|i| a.step.after.as_ref() != i.alias);
-            add(a.step.identity, a.step.original_shared().clone(), proposed);
+            add(a.step.identity, a.step.original_shared().clone(), true);
         }
         rows.into_values()
             .filter(|row| matches.contains(&row.id))
             .collect::<Vec<_>>()
             .into()
+    }
+
+    /// Entity rows in order, each followed by its mentions while it is expanded.
+    fn replacement_entries(&self, cx: &App) -> Vec<PanelEntry> {
+        let selected = self.selected_entity();
+        let mut entries = Vec::new();
+        for row in self.replacement_rows(cx).iter() {
+            let row = Arc::new(row.clone());
+            entries.push((row.clone(), None));
+            if selected == Some(row.id) {
+                for mention in self.identity_occurrences(row.id) {
+                    entries.push((row.clone(), Some(mention)));
+                }
+            }
+        }
+        entries
+    }
+
+    /// Keep the active mention's panel row in view, e.g. after ‹ › navigation.
+    pub(super) fn reveal_active_row(&self, cx: &App) {
+        let Some(annotation) = self.active_annotation() else {
+            return;
+        };
+        if let Some(index) = self
+            .replacement_entries(cx)
+            .iter()
+            .position(|(_, mention)| mention.as_ref().is_some_and(|(a, _)| *a == annotation))
+        {
+            self.pii
+                .mapping
+                .list_scroll
+                .scroll_to_item(index, gpui::ScrollStrategy::Nearest);
+        }
     }
 
     fn replacement_commands(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -195,6 +227,11 @@ impl Workspace {
             .into_any_element()
     }
 
+    fn undo_last_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+        window.dispatch_action(Box::new(mdoc_editor::Undo), cx);
+    }
+
     pub(crate) fn replacements_panel_width(&self, window: &Window) -> gpui::Pixels {
         if self.pii.mapping.open && self.can_copy_markdown() {
             px((self.chrome_width(window) * 0.4).clamp(260., 340.))
@@ -213,23 +250,12 @@ impl Workspace {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let mapping = &self.pii.mapping;
-        let rows = self.replacement_rows(cx);
-        let selected = self.selected_entity();
-        let mut entries = Vec::new();
-        for row in rows.iter() {
-            let row = Arc::new(row.clone());
-            entries.push((row.clone(), None));
-            if selected == Some(row.id) {
-                for (annotation, range) in self.identity_occurrences(row.id) {
-                    entries.push((row.clone(), Some((annotation, range))));
-                }
-            }
-        }
-        let entries = Arc::new(entries);
+        let entries = Arc::new(self.replacement_entries(cx));
         let count = entries.len();
         let bounds = mapping.bounds.clone();
         let busy = self.pii.scanning();
         let pending = self.pii.review.remaining();
+        let kept = mapping.kept_at(self.editor.read(cx).history_id());
         let upgrade = self.pii.review.applied().iter().any(|a| {
             self.pii
                 .review
@@ -334,7 +360,13 @@ impl Workspace {
                             .map(|index| {
                                 let (row, mention) = entries[index].clone();
                                 let id = row.id;
-                                let active = this.selected_entity() == Some(id);
+                                let theme = this.theme.get();
+                                let palette = theme.pdf_style();
+                                let expanded = this.selected_entity() == Some(id);
+                                let current = mention.as_ref().is_some_and(|(annotation, _)| {
+                                    this.pii.popup.is_some()
+                                        && this.active_annotation() == Some(*annotation)
+                                });
                                 let control = this
                                     .replacement_control(
                                         SharedString::from(format!("replacement-entry-{index}")),
@@ -346,13 +378,29 @@ impl Workspace {
                                     .h(px(48.))
                                     .line_height(px(17.))
                                     .overflow_hidden()
+                                    .relative()
                                     .flex_col()
                                     .items_start()
                                     .justify_center()
                                     .gap_1()
                                     .px_3()
-                                    .when(active, |v| {
-                                        v.bg(this.theme.get().pdf_style().placeholder_bg)
+                                    .when(expanded && !current, |v| {
+                                        v.bg(Hsla {
+                                            a: 0.5,
+                                            ..palette.placeholder_bg
+                                        })
+                                    })
+                                    .when(current, |v| {
+                                        // The accent bar keeps it identifiable under hover.
+                                        v.bg(theme.sidebar_selected()).child(
+                                            div()
+                                                .absolute()
+                                                .left_0()
+                                                .top_0()
+                                                .bottom_0()
+                                                .w(px(3.))
+                                                .bg(theme.search_accent()),
+                                        )
                                     });
                                 if let Some((annotation, range)) = mention {
                                     let original = if annotation & APPLIED_ID != 0 {
@@ -374,23 +422,83 @@ impl Workspace {
                                             .clone()
                                     };
                                     let (before, word, after) = this.readable_mention(&range, cx);
+                                    let applied = annotation & APPLIED_ID != 0;
+                                    let accent = theme.search_accent();
+                                    let undo = applied
+                                        && (current
+                                            || this.pii.mapping.hovered == Some(annotation));
                                     control
-                                        .aria_label(format!("{original}: {before}{word}{after}"))
+                                        .aria_label(format!(
+                                            "{original}: {before}{word}{after}{}",
+                                            if applied { ", applied" } else { "" }
+                                        ))
                                         .when(cfg!(test), |v| {
                                             v.debug_selector(move || {
                                                 format!("mention-{annotation}")
                                             })
                                         })
+                                        .on_hover(cx.listener(
+                                            move |this, hovered: &bool, _, cx| {
+                                                if this
+                                                    .pii
+                                                    .mapping
+                                                    .hover_mention(annotation, *hovered)
+                                                {
+                                                    cx.notify();
+                                                }
+                                            },
+                                        ))
+                                        .when(undo, |v| v.pr(px(36.)))
                                         .child(
                                             div()
                                                 .w_full()
-                                                .text_ellipsis()
+                                                .flex()
+                                                .items_center()
+                                                .gap_1()
                                                 .text_size(px(11.))
-                                                .text_color(
-                                                    this.theme.get().pdf_style().header_muted,
+                                                .child(
+                                                    div()
+                                                        .min_w_0()
+                                                        .flex_1()
+                                                        .text_ellipsis()
+                                                        .text_color(palette.header_muted)
+                                                        .child(original.to_string()),
                                                 )
-                                                .child(original.to_string()),
+                                                .when(applied, |v| {
+                                                    v.child(
+                                                        div()
+                                                            .flex_shrink_0()
+                                                            .text_color(accent)
+                                                            .child("✓ applied"),
+                                                    )
+                                                }),
                                         )
+                                        .when(undo, |v| {
+                                            let id = annotation & !APPLIED_ID;
+                                            v.child(
+                                                ui::icon_button(
+                                                    SharedString::from(format!(
+                                                        "mention-undo-{annotation}"
+                                                    )),
+                                                    "Undo this replacement (back to proposed)",
+                                                    ui::Icon::Undo,
+                                                    theme,
+                                                    !this.pii.scanning(),
+                                                )
+                                                .when(cfg!(test), |v| {
+                                                    v.debug_selector(move || {
+                                                        format!("mention-undo-{annotation}")
+                                                    })
+                                                })
+                                                .absolute()
+                                                .right(px(4.))
+                                                .top(px(8.))
+                                                .on_click(cx.listener(move |this, _, _, cx| {
+                                                    cx.stop_propagation();
+                                                    this.undo_replacements([id].into(), cx);
+                                                })),
+                                            )
+                                        })
                                         .child(
                                             div().w_full().text_ellipsis().child(
                                                 StyledText::new(format!("{before}{word}{after}"))
@@ -454,15 +562,19 @@ impl Workspace {
                                                                 .pdf_style()
                                                                 .header_muted,
                                                         )
-                                                        .child(format!(
-                                                            "{} · {}",
-                                                            row.mentions,
-                                                            if row.pending {
-                                                                "proposed"
-                                                            } else {
-                                                                "applied"
+                                                        .child(match row.applied {
+                                                            0 => format!(
+                                                                "{} · proposed",
+                                                                row.mentions
+                                                            ),
+                                                            n if n == row.mentions => {
+                                                                format!("{n} · applied")
                                                             }
-                                                        )),
+                                                            n => format!(
+                                                                "{n} of {} applied",
+                                                                row.mentions
+                                                            ),
+                                                        }),
                                                 ),
                                         )
                                         .on_click(cx.listener(move |this, _, window, cx| {
@@ -539,22 +651,19 @@ impl Workspace {
                                 pending == 0 && !upgrade && !self.pii.review.applied().is_empty(),
                                 |v| {
                                     v.child(
-                                        self.replacement_control(
+                                        ui::icon_button(
                                             "replacement-undo",
-                                            "Undo",
+                                            "Undo applying replacements",
+                                            ui::Icon::Undo,
+                                            theme,
                                             true,
-                                            cx,
                                         )
+                                        .when(cfg!(test), |v| {
+                                            v.debug_selector(|| "replacement-undo".into())
+                                        })
                                         .on_click(
                                             cx.listener(|this, _, window, cx| {
-                                                window.focus(
-                                                    &this.editor.read(cx).focus_handle(cx),
-                                                    cx,
-                                                );
-                                                window.dispatch_action(
-                                                    Box::new(mdoc_editor::Undo),
-                                                    cx,
-                                                );
+                                                this.undo_last_step(window, cx)
                                             }),
                                         ),
                                     )
@@ -577,6 +686,36 @@ impl Workspace {
                                 )
                             }),
                     )
+                    .when_some(kept, |v, kept| {
+                        v.child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .text_size(px(12.))
+                                        .text_color(palette.header_muted)
+                                        .child(format!("Kept {kept}")),
+                                )
+                                .child(
+                                    ui::icon_button(
+                                        "replacement-undo-keep",
+                                        format!("Undo keeping {kept} originals"),
+                                        ui::Icon::Undo,
+                                        theme,
+                                        true,
+                                    )
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "replacement-undo-keep".into())
+                                    })
+                                    .on_click(cx.listener(
+                                        |this, _, window, cx| this.undo_last_step(window, cx),
+                                    )),
+                                ),
+                        )
+                    })
                     .when_some(self.pii.error.clone(), |v, error| {
                         v.child(
                             div()

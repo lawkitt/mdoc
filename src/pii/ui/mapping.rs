@@ -2,7 +2,7 @@
 use super::*;
 mod panel;
 mod popup;
-use popup::Scope;
+pub(super) use popup::Scope;
 mod popup_render;
 
 /// What the workspace popup edits: a whole entity after a mapping change, or
@@ -41,6 +41,10 @@ pub(super) struct MappingUi {
     remembered: std::collections::HashMap<u64, usize>,
     bounds: Rc<Cell<Option<gpui::Bounds<Pixels>>>>,
     pub(super) popup_revision: Option<u64>,
+    /// Mentions kept by the last Keep and the history state it created.
+    kept: Option<(usize, u64)>,
+    /// The panel mention row under the pointer.
+    pub(super) hovered: Option<u64>,
     selected: Option<Selection>,
     search: Entity<markdown_search::SearchInput>,
     pub(super) alias: Entity<markdown_search::SearchInput>,
@@ -97,7 +101,7 @@ impl MappingUi {
         self.actions_open = false;
         self.scroll.set_offset(gpui::point(px(0.), px(0.)));
     }
-    fn set_scope(&mut self, scope: Scope) {
+    pub(super) fn set_scope(&mut self, scope: Scope) {
         self.scope = scope;
     }
     pub(super) fn toggle_actions(&mut self) {
@@ -133,6 +137,26 @@ impl MappingUi {
     }
     pub(super) fn set_field_error(&mut self, error: Option<String>) {
         self.field_error = error;
+    }
+    /// Track the hovered mention row; true when it changed.
+    pub(super) fn hover_mention(&mut self, annotation: u64, hovered: bool) -> bool {
+        let next = if hovered {
+            Some(annotation)
+        } else if self.hovered == Some(annotation) {
+            None
+        } else {
+            self.hovered
+        };
+        std::mem::replace(&mut self.hovered, next) != next
+    }
+    pub(super) fn record_kept(&mut self, count: usize, history: u64) {
+        self.kept = Some((count, history));
+    }
+    /// Mentions kept by the most recent history step, while it is current.
+    pub(super) fn kept_at(&self, history: u64) -> Option<usize> {
+        self.kept
+            .filter(|(_, at)| *at == history)
+            .map(|(count, _)| count)
     }
     pub(super) fn mark_popup_revision(&mut self, revision: u64) {
         self.popup_revision = Some(revision);
@@ -174,6 +198,8 @@ impl MappingUi {
             remembered: Default::default(),
             bounds: Rc::new(Cell::new(None)),
             popup_revision: None,
+            kept: None,
+            hovered: None,
             selected: None,
             search: input("Find an alias or original"),
             alias: input("Alias"),
@@ -203,6 +229,13 @@ pub(super) enum MappingAction {
         alias: Option<String>,
         category: Option<Category>,
     },
+}
+/// Pending mentions a mapping change also applies, as source ranges.
+#[derive(Clone)]
+pub(super) enum Applying {
+    Nothing,
+    All,
+    Ranges(std::collections::HashSet<(usize, usize)>),
 }
 /// Text corrections and occurrence assignments staged by one mapping change.
 struct MappingChange {
@@ -242,12 +275,6 @@ impl Workspace {
         }
         cx.notify();
     }
-    pub(super) fn selected_applied(&self) -> Option<u64> {
-        match self.pii.mapping.selected {
-            Some(Selection::Applied(id)) => Some(id),
-            _ => None,
-        }
-    }
     fn selected_entity(&self) -> Option<u64> {
         match self.pii.mapping.selected.as_ref()? {
             Selection::Entity(id) => Some(*id),
@@ -261,44 +288,6 @@ impl Workspace {
                 .applied_occurrence(*id)
                 .map(|a| a.step.identity),
         }
-    }
-    fn keep_replacement(&mut self, single: bool, cx: &mut Context<Self>) {
-        if self.pii.scanning() || !self.can_copy_markdown() {
-            return;
-        }
-        let Some(id) = self.selected_entity() else {
-            return;
-        };
-        let selection = self.pii.mapping.selected.clone();
-        let mention = match selection {
-            Some(Selection::Candidate {
-                variant: group,
-                range,
-            }) if single => Some((group, range)),
-            _ if single => return,
-            _ => None,
-        };
-        let review = &self.pii.review;
-        if !review
-            .candidates()
-            .iter()
-            .any(|c| review.occurrence_identity(c.variant, &c.range) == Some(id))
-        {
-            return;
-        }
-        let kept = self.checkpoint_review(cx, |review| {
-            if let Some((group, range)) = mention {
-                review.keep(group, Some(range));
-            } else {
-                review.keep_identity(id);
-            }
-        });
-        if kept.is_none() {
-            return;
-        }
-        self.pii.dismiss_popup();
-        self.sync_annotations(cx);
-        cx.notify();
     }
     fn reveal_replacement(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let mentions = self.identity_occurrences(id);
@@ -361,12 +350,12 @@ impl Workspace {
         }
     }
     fn change_mapping(&mut self, action: MappingAction, cx: &mut Context<Self>) {
-        self.change_mapping_with_apply(action, false, cx);
+        self.change_mapping_with_apply(action, Applying::Nothing, cx);
     }
     fn change_mapping_with_apply(
         &mut self,
         action: MappingAction,
-        apply: bool,
+        apply: Applying,
         cx: &mut Context<Self>,
     ) {
         if !self.can_copy_markdown() || self.pii.scanning() {
@@ -415,13 +404,16 @@ impl Workspace {
                 .and_then(|a| plans.iter().find(|p| p.range == a.range))
                 .map(|p| p.identity),
         };
-        if apply {
+        if !matches!(apply, Applying::Nothing) {
             let assigned: std::collections::HashMap<_, _> = assignments
                 .iter()
                 .map(|(r, id)| ((r.start, r.end), *id))
                 .collect();
             match self.pii.review.pending_plans(&source, &assigned) {
-                Ok(pending) => plans.extend(pending),
+                Ok(pending) => plans.extend(pending.into_iter().filter(|p| match &apply {
+                    Applying::Ranges(ranges) => ranges.contains(&(p.range.start, p.range.end)),
+                    _ => true,
+                })),
                 Err(error) => {
                     self.pii.review.restore_identity_snapshot(old);
                     self.pii.error = Some(error);
@@ -447,7 +439,7 @@ impl Workspace {
         let mut index = 0;
         let mut shift = 0isize;
         for (range, identity) in assignments {
-            if apply && edited.contains(&(range.start, range.end)) {
+            if !matches!(apply, Applying::Nothing) && edited.contains(&(range.start, range.end)) {
                 continue;
             }
             while index < edits.len() && edits[index].0.end <= range.start {

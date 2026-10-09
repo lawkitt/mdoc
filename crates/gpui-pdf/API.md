@@ -26,6 +26,8 @@ public. Items in the **Feature** column require that Cargo feature (`search` imp
 | [`PdfView::replace_bytes`](#pdfviewreplace_bytes) | method | — | `fn replace_bytes(&mut self, bytes: Vec<u8>, cx)` | Hot-swap the document (scroll/zoom kept, no blanking) |
 | [`PdfView::set_on_open_external`](#pdfviewset_on_open_external) | method | — | `fn set_on_open_external(&mut self, f: OpenExternalFn)` | Button on the failure pane → host opens the OS viewer |
 | [`OpenExternalFn`](#type-openexternalfn) | type alias | — | `Rc<dyn Fn(&mut Window, &mut App)>` | The failure pane's hand-off callback |
+| [`PdfView::set_on_close`](#pdfviewset_on_close) | method | — | `fn set_on_close(&mut self, f: CloseFn)` | ✕ beside the source name → host hides the viewer |
+| [`CloseFn`](#type-closefn) | type alias | — | `Rc<dyn Fn(&mut Window, &mut App)>` | The source-name row's close callback |
 | `PdfEvent::FieldClicked` | event variant | `forms` | `{ field: FormField, bounds: Bounds<Pixels> }` | A form widget was clicked — toggle or seat an input |
 | [`parse_with_password`](#parse_with_password) | fn | — | `fn parse_with_password(bytes: Arc<Vec<u8>>, password: &str) -> Result<Arc<Document>, LoadError>` | Parse an encrypted PDF |
 | [`page_dims`](#page_dims) | fn | — | `fn page_dims(doc: &Document) -> Vec<(f32, f32)>` | Per-page `(w, h)` in points, no rasterization |
@@ -764,6 +766,22 @@ Without a handler the pane shows only the error text.
 | --- | --- | --- |
 | `f` | [`OpenExternalFn`](#type-openexternalfn) | Called from the button with `(&mut Window, &mut App)`. |
 
+### `PdfView::set_on_close`
+
+```rust
+pub fn set_on_close(&mut self, f: CloseFn)
+```
+
+Show a close (✕) control at the end of the source-name row. The viewer does not
+hide itself; the host decides what closing means. Without a handler the row shows
+only the name.
+
+**Parameters**
+
+| Name | Type | Description |
+| --- | --- | --- |
+| `f` | [`CloseFn`](#type-closefn) | Called from the control with `(&mut Window, &mut App)`. |
+
 ### `PdfView::unlock`
 
 ```rust
@@ -1294,6 +1312,17 @@ pub type OpenExternalFn = Rc<dyn Fn(&mut Window, &mut gpui::App)>;
 
 Invoked from the load-failure pane's "Open in system viewer" button (see
 [`set_on_open_external`](#pdfviewset_on_open_external)).
+
+---
+
+## `type CloseFn`
+
+```rust
+pub type CloseFn = Rc<dyn Fn(&mut Window, &mut gpui::App)>;
+```
+
+Invoked from the source-name row's close control (see
+[`set_on_close`](#pdfviewset_on_close)).
 
 ---
 

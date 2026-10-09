@@ -68,6 +68,7 @@ impl Workspace {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let enabled = !self.pii.scanning();
+        let applied = annotation & APPLIED_ID != 0;
         self.active_replacement_range()?;
         let mentions = self.identity_occurrences(id);
         let index = mentions
@@ -215,6 +216,20 @@ impl Workspace {
                             cx.notify();
                         })),
                     )
+                    .when(applied, |v| {
+                        let accent = theme.search_accent();
+                        v.child(
+                            div()
+                                .flex_shrink_0()
+                                .when(cfg!(test), |v| v.debug_selector(|| "direct-applied".into()))
+                                .px_1()
+                                .rounded_sm()
+                                .text_size(px(11.))
+                                .text_color(accent)
+                                .bg(Hsla { a: 0.16, ..accent })
+                                .child("Applied"),
+                        )
+                    })
                     .child(div().flex_1())
                     .child(
                         self.popup_control("direct-prev", "‹", mentions.len() > 1, cx)
@@ -374,7 +389,7 @@ impl Workspace {
                             cx,
                         )
                         .on_click(cx.listener(|this, _, window, cx| {
-                            this.confirm_alias(false, false, cx);
+                            this.confirm_alias(false, Applying::Nothing, cx);
                             window.focus(&this.pii.focus, cx);
                         })),
                     )
@@ -387,7 +402,7 @@ impl Workspace {
                                 cx,
                             )
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.confirm_alias(true, false, cx);
+                                this.confirm_alias(true, Applying::Nothing, cx);
                             })),
                         )
                     });
@@ -526,73 +541,64 @@ impl Workspace {
                 );
             }
         }
-        let applied = annotation & APPLIED_ID != 0;
-        let matching = if applied {
-            let selected = review.applied_occurrence(annotation & !APPLIED_ID)?;
-            review
-                .applied()
-                .iter()
-                .filter(|a| a.step.before == selected.step.before)
-                .count()
-        } else {
-            let ranges: std::collections::HashSet<_> = self
-                .scoped_ranges(Scope::Wording)
-                .into_iter()
-                .map(|r| (r.start, r.end))
-                .collect();
-            review
-                .candidates()
-                .iter()
-                .filter(|c| ranges.contains(&(c.range.start, c.range.end)))
-                .count()
-        };
+        let (scoped_candidates, scoped_applied) = self.scoped_mentions();
+        let in_scope = scoped_candidates.len() + scoped_applied.len();
         panel = panel.child(
             div()
                 .flex_shrink_0()
                 .flex()
                 .flex_wrap()
+                .items_center()
                 .gap_1()
+                .map(|v| {
+                    if applied {
+                        let ids: std::collections::HashSet<_> =
+                            scoped_applied.iter().copied().collect();
+                        let count = ids.len();
+                        v.child(
+                            self.pii
+                                .reveal_popup_control(
+                                    "direct-undo",
+                                    crate::ui::icon_button(
+                                        "direct-undo",
+                                        format!("Undo replacement · {count} (back to proposed)"),
+                                        crate::ui::Icon::Undo,
+                                        theme,
+                                        enabled && count > 0,
+                                    )
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "direct-undo".into())
+                                    }),
+                                    cx,
+                                )
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.undo_replacements(ids.clone(), cx)
+                                })),
+                        )
+                    } else {
+                        let count = scoped_candidates.len();
+                        v.child(
+                            self.popup_control(
+                                "direct-apply",
+                                format!("Apply · {count}"),
+                                enabled && count > 0,
+                                cx,
+                            )
+                            .aria_label(format!("Apply {count} replacements in scope"))
+                            .on_click(cx.listener(|this, _, _, cx| this.apply_scope(cx))),
+                        )
+                    }
+                })
                 .child(
                     self.popup_control(
-                        "direct-keep-restore",
-                        if applied {
-                            "Restore this mention"
-                        } else {
-                            "Keep this mention"
-                        },
-                        enabled,
+                        "direct-keep",
+                        format!("Keep original · {in_scope}"),
+                        enabled && in_scope > 0,
                         cx,
                     )
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        if applied {
-                            this.restore_pii(&PiiRestore, window, cx);
-                        } else {
-                            this.keep_replacement(true, cx);
-                        }
-                    })),
-                )
-                .when(matching > 1, |v| {
-                    v.child(
-                        self.popup_control(
-                            "direct-keep-restore-all",
-                            format!(
-                                "{} {matching} matching values",
-                                if applied { "Restore" } else { "Keep" }
-                            ),
-                            enabled,
-                            cx,
-                        )
-                        .on_click(cx.listener(
-                            move |this, _, window, cx| {
-                                if applied {
-                                    this.restore_all_pii(&PiiRestoreAll, window, cx);
-                                } else {
-                                    this.keep_same_wording(cx);
-                                }
-                            },
-                        )),
-                    )
-                }),
+                    .aria_label(format!("Keep {in_scope} originals in scope"))
+                    .on_click(cx.listener(|this, _, window, cx| this.keep_originals(window, cx))),
+                ),
         );
 
         // The editor records word geometry during paint, after this popup is rendered.

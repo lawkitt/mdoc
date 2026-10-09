@@ -437,6 +437,9 @@ fn norm_rect_between(a: NormPoint, b: NormPoint) -> NormRect {
 /// without it the pane shows no button.
 pub type OpenExternalFn = Rc<dyn Fn(&mut Window, &mut gpui::App)>;
 
+/// Invoked from the source-name row's close control. Set via [`PdfView::set_on_close`].
+pub type CloseFn = Rc<dyn Fn(&mut Window, &mut gpui::App)>;
+
 /// Cache state for a page's extracted text layer. (`markup` feature.)
 #[cfg(feature = "markup")]
 enum TextSlot {
@@ -518,6 +521,7 @@ pub struct PdfView {
     load_error: Option<SharedString>,
     /// Handler behind the failure pane's "Open in system viewer" button.
     on_open_external: Option<OpenExternalFn>,
+    on_close: Option<CloseFn>,
     /// `(width, height)` in points per page — drives page-slot sizing.
     dims: Vec<(f32, f32)>,
     /// Per-page render state; only pages near the viewport hold a bitmap.
@@ -683,6 +687,7 @@ impl PdfView {
             unlock_failed: false,
             load_error: None,
             on_open_external: None,
+            on_close: None,
             dims: Vec::new(),
             pages: Vec::new(),
             active_renders: 0,
@@ -969,6 +974,12 @@ impl PdfView {
     /// only the error text.
     pub fn set_on_open_external(&mut self, f: OpenExternalFn) {
         self.on_open_external = Some(f);
+    }
+
+    /// Show a close (✕) control beside the source name that calls `f`, so the
+    /// host can hide this viewer. Without one, the name row has no control.
+    pub fn set_on_close(&mut self, f: CloseFn) {
+        self.on_close = Some(f);
     }
 
     /// Set the highlights to draw — the host derives these from its own store (e.g.
@@ -2732,12 +2743,16 @@ impl Render for PdfView {
             col
         });
 
+        let on_close = self.on_close.clone();
         root.child(
             div()
                 .px_2()
                 .py_1()
                 .min_w_0()
                 .flex_shrink_0()
+                .flex()
+                .items_center()
+                .gap_1()
                 .text_size(px(11.))
                 .text_color(style.header_muted)
                 .child(
@@ -2746,10 +2761,20 @@ impl Render for PdfView {
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "pdf-source-name".into())
                         })
+                        .min_w_0()
+                        .flex_1()
                         .truncate()
                         .child(name.clone())
                         .tooltip(self.tip(name)),
-                ),
+                )
+                .when_some(on_close, |row, on_close| {
+                    row.child(
+                        self.control("pdf-close", "✕")
+                            .aria_label("Close original")
+                            .tooltip(self.tip("Close original"))
+                            .on_click(move |_, window, cx| on_close(window, cx)),
+                    )
+                }),
         )
         .child(header)
         .child(

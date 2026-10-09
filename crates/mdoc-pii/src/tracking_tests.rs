@@ -82,7 +82,7 @@ fn restoration_keep_and_chained_predecessors_travel_with_text_history() {
     assert_eq!(plan, vec![(0..6, "PERSON_1".into())]);
     let restored = t.prepare_restore(&plan);
     edit(&mut t, 3, 2, 3, 0..6, 8, &[0, 1, 2, 3]);
-    t.commit_restore(3, restored);
+    t.commit_restore(3, restored, true);
     assert_eq!(t.get(id).unwrap().step.before.as_ref(), "Anna");
     assert_eq!(t.exclusions[0].original.as_ref(), "PERSON_1");
     travel(&mut t, 4, 3, 2, &[0, 1, 2, 3]);

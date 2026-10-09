@@ -213,6 +213,16 @@ impl Workspace {
             }));
             pdf.fit_width(cx);
         });
+        let owner = cx.entity().downgrade();
+        pdf.update(cx, |pdf, _| {
+            pdf.set_on_close(Rc::new(move |window, cx| {
+                let _ = owner.update(cx, |this, cx| {
+                    if this.preview.visible {
+                        this.toggle_preview(window, cx);
+                    }
+                });
+            }))
+        });
         let generation = self.preview.generation;
         let subscription = cx.subscribe_in(&pdf, window, move |this, pdf, _, window, cx| {
             if !this.preview.is_current(generation) {
