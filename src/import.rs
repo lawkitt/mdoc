@@ -5,6 +5,12 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
+/// Whether a file dragged from the OS looks openable by its extension alone;
+/// drag feedback cannot afford `supported_source`'s content reads (ADR 0028).
+pub fn supported_extension(path: &Path) -> bool {
+    crate::document::is_markdown(path) || anydoc::Format::from_path(path).is_some()
+}
+
 /// Admission does not convert documents. Unknown extensions retain AnyDoc's
 /// content detection, with bounded reads performed on the background executor.
 pub fn supported_source(path: &Path) -> bool {

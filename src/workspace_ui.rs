@@ -10,6 +10,97 @@ impl Workspace {
         }
     }
 
+    /// The centered start view over an empty Markdown tab (ADR 0028). It has no
+    /// hitbox of its own, so clicks outside the button reach the editor.
+    pub(super) fn empty_page(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let accent = theme.search_accent();
+        let shortcut = if cfg!(target_os = "macos") {
+            "⌘O"
+        } else {
+            "Ctrl+O"
+        };
+        let body = match self.file_drag {
+            Some(true) => div()
+                .text_size(px(15.))
+                .text_color(accent)
+                .child("Drop to open")
+                .into_any_element(),
+            Some(false) => div()
+                .text_size(px(15.))
+                .text_color(p.header_muted)
+                .child("No supported files")
+                .into_any_element(),
+            None => div()
+                .flex()
+                .flex_col()
+                .items_center()
+                .gap_2()
+                .child(
+                    ui::primary_button("empty-page-open", "Open files…", theme, true)
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_4()
+                        .py_2()
+                        .text_size(px(14.))
+                        .child(div().opacity(0.7).child(shortcut))
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "empty-page-open".into())
+                        })
+                        .on_click(cx.listener(|this, _, window, cx| this.open(&Open, window, cx))),
+                )
+                .child(
+                    div().text_size(px(12.)).text_color(p.header_muted).child(
+                        "PDF, DOCX or Markdown · select several to open each in its own tab",
+                    ),
+                )
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(p.header_muted)
+                        .opacity(0.7)
+                        .child("or just start typing"),
+                )
+                .into_any_element(),
+        };
+        div()
+            .absolute()
+            .inset_0()
+            .m_2()
+            .rounded_lg()
+            .flex()
+            .items_center()
+            .justify_center()
+            .when(cfg!(test), |v| v.debug_selector(|| "empty-page".into()))
+            .when(self.file_drag == Some(true), |v| {
+                v.border_2().border_dashed().border_color(accent)
+            })
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap_3()
+                    .max_w(px(420.))
+                    .px_4()
+                    .text_center()
+                    .child(
+                        gpui::svg()
+                            .data(include_bytes!("../resources/ui/document.svg"))
+                            .size(px(40.))
+                            .text_color(if self.file_drag == Some(true) {
+                                accent
+                            } else {
+                                p.header_muted
+                            }),
+                    )
+                    .child(body),
+            )
+            .into_any_element()
+    }
+
     pub(super) fn toolbar(
         &mut self,
         _window: &mut Window,

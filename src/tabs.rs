@@ -98,6 +98,12 @@ pub(super) struct Tabs {
     reveal_return: Option<gpui::FocusHandle>,
     /// A rail control focused by Escape that must not reveal again.
     reveal_escaped: Option<gpui::FocusHandle>,
+    /// An OS file drag over the sidebar (ADR 0028): the row under the pointer
+    /// with the insertion index its half selects, the list under the pointer,
+    /// and the collapsed rail under the pointer.
+    file_drop_row: Option<(u64, usize)>,
+    file_drop_list: bool,
+    file_drag_rail: bool,
     rail_toggle_focus: gpui::FocusHandle,
     rail_new_focus: gpui::FocusHandle,
     panel_toggle_focus: gpui::FocusHandle,
@@ -224,6 +230,9 @@ impl Tabs {
             reveal_focus: cx.focus_handle(),
             reveal_return: None,
             reveal_escaped: None,
+            file_drop_row: None,
+            file_drop_list: false,
+            file_drag_rail: false,
             rail_toggle_focus: cx.focus_handle().tab_stop(true),
             rail_new_focus: cx.focus_handle().tab_stop(true),
             panel_toggle_focus: cx.focus_handle().tab_stop(true),
@@ -780,6 +789,18 @@ impl Tabs {
     }
 
     pub fn open_paths(&mut self, paths: Vec<PathBuf>, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_paths_at(paths, None, window, cx);
+    }
+
+    /// Open paths as new tabs before the tab now at `at` (ADR 0028), or after
+    /// the last tab. Already-open paths keep their position.
+    pub fn open_paths_at(
+        &mut self,
+        paths: Vec<PathBuf>,
+        at: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if !self.ready {
             self.pending_open.extend(paths);
             return;
@@ -799,7 +820,9 @@ impl Tabs {
         });
         cx.spawn_in(window, async move |this, cx| {
             let paths = task.await;
-            let _ = this.update_in(cx, |this, window, cx| this.finish_open(paths, window, cx));
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.finish_open(paths, at, window, cx)
+            });
         })
         .detach();
     }
@@ -807,12 +830,16 @@ impl Tabs {
     fn finish_open(
         &mut self,
         paths: Vec<(PathBuf, bool)>,
+        at: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.quitting.is_some() || self.finishing {
             return;
         }
+        // Anchor on a tab, not an index: tabs may close while paths resolve.
+        let anchor = at.and_then(|at| self.tabs.get(at).map(|tab| tab.id));
+        let mut created = Vec::new();
         let mut first = None;
         let mut unsupported = Vec::new();
         for (path, supported) in paths {
@@ -841,6 +868,7 @@ impl Tabs {
                     .map(|tab| tab.id)
             });
             let id = existing.unwrap_or_else(|| {
+                created.push(self.next_id);
                 if document::is_markdown(&path) {
                     self.push(TabRecord {
                         markdown: path,
@@ -856,6 +884,16 @@ impl Tabs {
                 }
             });
             first.get_or_insert(id);
+        }
+        if at.is_some() && !created.is_empty() {
+            let (moved, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.tabs)
+                .into_iter()
+                .partition(|tab| created.contains(&tab.id));
+            self.tabs = kept;
+            let index = anchor
+                .and_then(|anchor| self.tabs.iter().position(|tab| tab.id == anchor))
+                .unwrap_or(self.tabs.len());
+            self.tabs.splice(index..index, moved);
         }
         if !unsupported.is_empty() {
             self.notice = Some(format!(
@@ -1347,11 +1385,18 @@ impl Tabs {
         } else {
             self.reveal_hover.0 = hovered;
         }
+        self.update_reveal(window, cx);
+    }
+
+    /// Open or close the reveal for the pointer, or for OS files dragged over
+    /// the rail, which GPUI does not report as hover (ADR 0028).
+    fn update_reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.sidebar_visible {
             return;
         }
         let pending = self.reveal_pending.map(|(open, _)| open);
-        match (self.reveal_hover.0 || self.reveal_hover.1, self.reveal) {
+        let hovered = self.reveal_hover.0 || self.reveal_hover.1 || self.file_drag_rail;
+        match (hovered, self.reveal) {
             (true, Reveal::Shown) => self.reveal_pending = None,
             (true, Reveal::Hiding) => self.show_reveal(false, cx),
             (true, Reveal::Hidden) if pending != Some(true) => {
@@ -1502,6 +1547,39 @@ impl Tabs {
         }
     }
 
+    /// Where files dropped on the document list would open (ADR 0028).
+    fn file_drop_index(&self) -> Option<usize> {
+        self.file_drop_row
+            .map(|(_, index)| index)
+            .or(self.file_drop_list.then_some(self.tabs.len()))
+    }
+
+    fn clear_file_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let rail = std::mem::take(&mut self.file_drag_rail);
+        self.file_drop_row = None;
+        self.file_drop_list = false;
+        if rail {
+            self.update_reveal(window, cx);
+        }
+        cx.notify();
+    }
+
+    /// Open OS files dropped on the sidebar: at the insertion line on the
+    /// list, or after the last tab on the bare rail.
+    fn drop_files(
+        &mut self,
+        paths: &gpui::ExternalPaths,
+        list: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let at = list.then(|| self.file_drop_index()).flatten();
+        self.clear_file_drag(window, cx);
+        if self.quitting.is_none() {
+            self.open_paths_at(paths.paths().to_vec(), at, window, cx);
+        }
+    }
+
     fn reorder(&mut self, from: u64, to: u64, cx: &mut Context<Self>) {
         if self.quitting.is_some() {
             return;
@@ -1523,10 +1601,13 @@ impl Tabs {
         let expanded = self.sidebar_visible;
         let revealed = !expanded && self.reveal != Reveal::Hidden;
         let mut compact_rows = Vec::with_capacity(self.tabs.len());
+        let accent = theme.search_accent();
+        let drop_index = self.file_drop_index();
         let rows = self
             .tabs
             .iter()
-            .map(|tab| {
+            .enumerate()
+            .map(|(index, tab)| {
                 let id = tab.id;
                 let view = tab.view.as_ref().map(|v| v.read(cx));
                 let name = view.map(|v| v.display_name()).unwrap_or_else(|| {
@@ -1797,6 +1878,28 @@ impl Tabs {
                     .drag_over::<TabDrag>(move |v, _, _, _| {
                         v.border_t_2().border_color(theme.search_accent())
                     })
+                    // The same line marks where dropped OS files open.
+                    .when(drop_index == Some(index), |v| {
+                        v.border_t_2().border_color(accent)
+                    })
+                    .on_drag_move(cx.listener(
+                        move |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                            let position = event.event.position;
+                            let row = event.bounds.contains(&position).then(|| {
+                                let lower = position.y > event.bounds.center().y;
+                                (id, index + usize::from(lower))
+                            });
+                            if row.is_some() && this.file_drop_row != row {
+                                this.file_drop_row = row;
+                                cx.notify();
+                            } else if row.is_none()
+                                && this.file_drop_row.is_some_and(|(row, _)| row == id)
+                            {
+                                this.file_drop_row = None;
+                                cx.notify();
+                            }
+                        },
+                    ))
                     .on_drop(
                         cx.listener(move |this, drag: &TabDrag, _, cx| {
                             this.reorder(drag.id, id, cx)
@@ -1816,15 +1919,33 @@ impl Tabs {
             .text_size(px(16.))
             .border_1()
             .border_color(palette.border)
+            .when(drop_index == Some(self.tabs.len()), |v| {
+                v.border_t_2().border_color(accent)
+            })
             .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx));
         // The full list, either pinned open or revealed over the editor. Its
         // width is fixed so animations clip it rather than reflow it.
         let mut panel = (expanded || revealed).then(|| {
             div()
+                .id("sidebar-panel")
                 .w(px(PANEL_WIDTH - 1.))
                 .h_full()
                 .flex()
                 .flex_col()
+                .on_drag_move(cx.listener(
+                    |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                        let over = event.bounds.contains(&event.event.position);
+                        if this.file_drop_list != over {
+                            this.file_drop_list = over;
+                            cx.notify();
+                        }
+                    },
+                ))
+                .on_drop(
+                    cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
+                        this.drop_files(paths, true, window, cx)
+                    }),
+                )
                 .child(
                     div()
                         .flex()
@@ -1920,6 +2041,20 @@ impl Tabs {
                 v.on_hover(cx.listener(|this, hovered: &bool, window, cx| {
                     this.hover_sidebar(false, *hovered, window, cx)
                 }))
+                .on_drag_move(cx.listener(
+                    |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, window, cx| {
+                        let over = event.bounds.contains(&event.event.position);
+                        if this.file_drag_rail != over {
+                            this.file_drag_rail = over;
+                            this.update_reveal(window, cx);
+                        }
+                    },
+                ))
+                .on_drop(cx.listener(
+                    |this, paths: &gpui::ExternalPaths, window, cx| {
+                        this.drop_files(paths, false, window, cx)
+                    },
+                ))
             });
         if let Some(panel) = panel.filter(|_| revealed) {
             let (from, to) = if self.reveal == Reveal::Shown {
@@ -2036,6 +2171,12 @@ impl Render for Tabs {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sidebar_visible = self.sidebar_choice.unwrap_or(true);
         self.reveal_for_keyboard(window, cx);
+        // A finished or abandoned OS drag leaves no insertion line or reveal.
+        if !cx.has_active_drag()
+            && (self.file_drag_rail || self.file_drop_list || self.file_drop_row.is_some())
+        {
+            self.clear_file_drag(window, cx);
+        }
         let palette = self.theme.get().pdf_style();
         div()
             .track_focus(&self.focus)

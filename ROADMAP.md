@@ -127,6 +127,11 @@ stale-result protection. No detector establishes guaranteed anonymization.
   decisions belong in a future grilling session.
 - Cross-document identity mapping, persistent/exported replacement maps, and
   stronger anonymization claims.
+- Grouped tabs (Chrome-style tab groups) in the document sidebar: named,
+  colored, collapsible groups. A dropped folder would open its supported files
+  as one group; until then folders are skipped (ADR 0028). Needs its own
+  grilling session (grouping model, persistence, interaction with batch
+  conversion) and a future ADR.
 - Additional product ideas such as optional source/page references: discuss
   concrete workflows before committing scope.
 

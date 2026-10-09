@@ -157,3 +157,8 @@ keeping the word popup available beside the panel.
 allocated by mdoc; **custom aliases** preserve deliberate user names on category
 correction, regardless of their spelling.
 These mappings and originals are live-tab memory, not saved restoration metadata.
+
+**Empty page**:
+The centered start view of a Markdown tab with empty content: Open files…,
+supported formats, the multi-file hint and ⌘O. Non-blocking — typing starts
+writing. Also the whole-window file drop zone while shown (ADR 0028).

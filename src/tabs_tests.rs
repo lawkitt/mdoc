@@ -1313,7 +1313,7 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
     let placeholder = cx.update(|_, cx| tabs.read(cx).active);
     // Rejected selections and canceled pickers cannot consume the placeholder.
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.finish_open(vec![(dir.path().join("bad.bin"), false)], window, cx)
+        tabs.finish_open(vec![(dir.path().join("bad.bin"), false)], None, window, cx)
     });
     cx.dispatch_action(Open);
     cx.run_until_parked();
@@ -2086,5 +2086,185 @@ fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).active, last_id);
         assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
+    });
+}
+
+fn drag_files(cx: &mut VisualTestContext, paths: &[PathBuf], position: gpui::Point<gpui::Pixels>) {
+    draw(cx);
+    cx.simulate_event(gpui::FileDropEvent::Entered {
+        position,
+        paths: gpui::ExternalPaths(paths.iter().cloned().collect()),
+    });
+    cx.simulate_event(gpui::FileDropEvent::Pending { position });
+    draw(cx);
+}
+
+fn drop_files(cx: &mut VisualTestContext, position: gpui::Point<gpui::Pixels>) {
+    cx.simulate_event(gpui::FileDropEvent::Pending { position });
+    cx.simulate_event(gpui::FileDropEvent::Submit { position });
+    cx.run_until_parked();
+    draw(cx);
+}
+
+fn tab_names(tabs: &Entity<Tabs>, cx: &mut VisualTestContext) -> Vec<String> {
+    cx.update(|_, cx| {
+        tabs.read(cx)
+            .tabs
+            .iter()
+            .map(|tab| {
+                tab.view
+                    .as_ref()
+                    .map(|view| view.read(cx).display_name())
+                    .unwrap_or_else(|| {
+                        tab.record
+                            .markdown
+                            .file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .into()
+                    })
+            })
+            .collect()
+    })
+}
+
+#[gpui::test]
+fn empty_page_opens_several_files_and_yields_to_typing(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
+    std::fs::write(&a, "a").unwrap();
+    std::fs::write(&b, "b").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    draw(cx);
+    assert!(cx.debug_bounds("empty-page").is_some());
+    click_toolbar(cx, "empty-page-open");
+    cx.simulate_path_prompt_response(|_| Some(vec![a.clone(), b.clone()]));
+    cx.run_until_parked();
+    draw(cx);
+    // The untouched blank tab gives way to the opened files.
+    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    assert!(cx.debug_bounds("empty-page").is_none());
+
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+    });
+    cx.run_until_parked();
+    draw(cx);
+    assert!(cx.debug_bounds("empty-page").is_some());
+    cx.simulate_input("x");
+    draw(cx);
+    assert!(cx.debug_bounds("empty-page").is_none());
+    cx.simulate_keystrokes("backspace");
+    draw(cx);
+    assert!(cx.debug_bounds("empty-page").is_some());
+}
+
+#[gpui::test]
+fn empty_page_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
+    let unknown = dir.path().join("unknown.bin");
+    for path in [&a, &b, &unknown] {
+        std::fs::write(path, "x").unwrap();
+    }
+    let (tabs, cx) = boot(cx, Session::default());
+    draw(cx);
+    let center = cx.debug_bounds("empty-page").unwrap().center();
+    let view = active(&tabs, cx);
+
+    drag_files(cx, std::slice::from_ref(&unknown), center);
+    cx.update(|_, cx| assert_eq!(view.read(cx).file_drag, Some(false)));
+    drop_files(cx, center);
+    cx.update(|_, cx| {
+        assert_eq!(view.read(cx).file_drag, None);
+        assert_eq!(tabs.read(cx).tabs.len(), 1);
+    });
+
+    drag_files(cx, &[a.clone(), b.clone(), unknown.clone()], center);
+    cx.update(|_, cx| assert_eq!(view.read(cx).file_drag, Some(true)));
+    drop_files(cx, center);
+    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    cx.update(|_, cx| {
+        assert!(
+            tabs.read(cx)
+                .notice
+                .as_ref()
+                .unwrap()
+                .contains("unknown.bin")
+        );
+    });
+
+    // A non-empty document is no drop target.
+    assert!(cx.debug_bounds("empty-page").is_none());
+    drag_files(cx, std::slice::from_ref(&b), center);
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| assert_eq!(view.read(cx).file_drag, None));
+    drop_files(cx, center);
+    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+}
+
+#[gpui::test]
+fn sidebar_drop_opens_files_at_the_insertion_line(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let [a, b, c, d] = ["a.md", "b.md", "c.md", "d.md"].map(|name| dir.path().join(name));
+    for path in [&a, &b, &c, &d] {
+        std::fs::write(path, "x").unwrap();
+    }
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![a.clone(), b.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let b_id = cx.update(|_, cx| tabs.read(cx).tabs[1].id);
+    let row = cx
+        .debug_bounds(Box::leak(format!("tab-{b_id}").into_boxed_str()))
+        .unwrap();
+    // The upper half of b inserts before it; already-open a does not move.
+    let upper = gpui::point(row.center().x, row.top() + row.size.height / 4.);
+    drag_files(cx, &[c.clone(), a.clone()], upper);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), Some(1)));
+    drop_files(cx, upper);
+    assert_eq!(tab_names(&tabs, cx), ["a.md", "c.md", "b.md"]);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), None));
+
+    // Below the last row the files open at the end.
+    let new = cx.debug_bounds("sidebar-new").unwrap();
+    let below = gpui::point(new.center().x, new.bottom() + px(40.));
+    drag_files(cx, std::slice::from_ref(&d), below);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), Some(3)));
+    drop_files(cx, below);
+    assert_eq!(tab_names(&tabs, cx), ["a.md", "c.md", "b.md", "d.md"]);
+}
+
+#[gpui::test]
+fn file_drag_over_collapsed_rail_reveals_the_list(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
+    std::fs::write(&a, "a").unwrap();
+    std::fs::write(&b, "b").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![a.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    collapse(&tabs, cx);
+    let rail = gpui::point(px(20.), px(400.));
+    drag_files(cx, std::slice::from_ref(&b), rail);
+    wait(cx, 250);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+    let list = gpui::point(px(120.), px(400.));
+    cx.simulate_event(gpui::FileDropEvent::Pending { position: list });
+    draw(cx);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), Some(1)));
+    drop_files(cx, list);
+    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+    // The reveal behaves as for hover: it closes once the pointer leaves.
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+    hover(cx, gpui::point(px(600.), px(400.)));
+    wait(cx, 350);
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
+        assert_eq!(tabs.read(cx).sidebar_choice, Some(false));
     });
 }
