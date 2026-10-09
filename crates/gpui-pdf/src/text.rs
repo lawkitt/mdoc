@@ -1,13 +1,11 @@
-//! **Text layer** (`markup` feature): pull a page's text and per-glyph rectangles
-//! out of the PDF by running a custom [`hayro`] [`Device`] over it — no
-//! rasterization, no heavyweight PDF library (only `kurbo` geometry, already in
-//! hayro's tree).
+//! **Text layer**: pull a page's text and per-glyph rectangles out of the PDF
+//! by running a custom [`hayro`] [`Device`] over it — no rasterization, no
+//! heavyweight PDF library (only `kurbo` geometry, already in hayro's tree).
 //!
-//! This is the substrate for text-anchored markup. A host can take a quote stored in
-//! a note, [`PageText::locate`] it on the page, and draw a highlight over the
-//! returned rectangles — all in **normalized** (0..1) page coordinates, so it's
-//! independent of zoom and display DPI. Matching ignores whitespace, so a quote
-//! survives the small spacing quirks of PDF text extraction.
+//! Find-in-PDF matches against it and draws boxes over the returned rectangles,
+//! all in **normalized** (0..1) page coordinates, so they are independent of
+//! zoom and display DPI. Matching ignores whitespace, so a query survives the
+//! small spacing quirks of PDF text extraction.
 
 use hayro::hayro_interpret::font::Glyph;
 use hayro::hayro_interpret::hayro_cmap::BfString;
@@ -40,30 +38,6 @@ impl NormRect {
     fn center_y(&self) -> f32 {
         self.y + self.h / 2.0
     }
-}
-
-/// A point in normalized page coordinates (0..1 of width/height, top-left origin).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct NormPoint {
-    pub x: f32,
-    pub y: f32,
-}
-
-/// The result of a drag selection: the selected text (as a single-line quote), which
-/// occurrence of that quote on the page it is (so it re-locates unambiguously), and
-/// the rects to draw while selecting.
-#[derive(Clone, Debug)]
-pub struct Selection {
-    pub quote: String,
-    pub occurrence: usize,
-    pub rects: Vec<NormRect>,
-}
-
-/// Squared distance from a normalized point to a rect (0 if inside).
-fn dist2(p: NormPoint, r: NormRect) -> f32 {
-    let dx = (r.x - p.x).max(p.x - r.right()).max(0.0);
-    let dy = (r.y - p.y).max(p.y - r.bottom()).max(0.0);
-    dx * dx + dy * dy
 }
 
 /// One extracted glyph cluster: its text (usually one char; a ligature may be
@@ -274,40 +248,6 @@ impl PageText {
         out
     }
 
-    /// Locate the `occurrence`-th (0-based) case- and whitespace-insensitive match of
-    /// `needle` on the page and return one normalized rect per line it spans (so a
-    /// wrapped quote highlights as multiple line boxes). Empty if not found.
-    pub(crate) fn locate(&self, needle: &str, occurrence: usize) -> Vec<NormRect> {
-        let key = Self::search_key(needle);
-        if key.is_empty() {
-            return Vec::new();
-        }
-        // Find the nth occurrence's byte range in `letters`.
-        let mut from = 0;
-        let mut hit = None;
-        for _ in 0..=occurrence {
-            match self.letters[from..].find(&key) {
-                Some(rel) => {
-                    let start = from + rel;
-                    hit = Some(start);
-                    from = start + 1;
-                }
-                None => {
-                    hit = None;
-                    break;
-                }
-            }
-        }
-        let Some(start) = hit else {
-            return Vec::new();
-        };
-        let end = start + key.len();
-        // Map the matched byte range to the set of runs it covers (in order).
-        let mut run_ids: Vec<usize> = self.owner[start..end].to_vec();
-        run_ids.dedup();
-        self.group_lines(&run_ids)
-    }
-
     /// Every (non-overlapping) case- and whitespace-insensitive match of `needle` on
     /// the page, each as one normalized rect per line it spans (for find-in-PDF).
     /// Matches are returned in reading order. (`search` feature.)
@@ -362,62 +302,6 @@ impl PageText {
         }
         lines
     }
-
-    /// The index of the run nearest a normalized point (0 distance if inside it).
-    fn nearest_run(&self, p: NormPoint) -> Option<usize> {
-        self.runs
-            .iter()
-            .enumerate()
-            .min_by(|(_, a), (_, b)| {
-                dist2(p, a.rect)
-                    .partial_cmp(&dist2(p, b.rect))
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .map(|(i, _)| i)
-    }
-
-    /// The text of runs `lo..=hi` joined into one line (gaps and line breaks become
-    /// spaces), suitable for storing as a one-line quote.
-    fn runs_text(&self, lo: usize, hi: usize) -> String {
-        let out = Self::join_runs(&self.runs[lo..=hi], false);
-        // Collapse recorded + inserted spaces to single spaces, trim.
-        out.split_whitespace().collect::<Vec<_>>().join(" ")
-    }
-
-    /// Which occurrence (0-based) of `quote` on the page the run at `lo` begins — so
-    /// the stored highlight re-locates to the right match.
-    fn occurrence_at(&self, lo: usize, quote: &str) -> usize {
-        let key = Self::search_key(quote);
-        if key.is_empty() {
-            return 0;
-        }
-        let start = self.owner.iter().position(|&r| r == lo).unwrap_or(0);
-        self.letters
-            .get(..start)
-            .map_or(0, |s| s.matches(&key).count())
-    }
-
-    /// Resolve a drag from `from` to `to` into a [`Selection`]: the run range between
-    /// the nearest glyphs (draw order ≈ reading order), its one-line quote, the
-    /// occurrence index, and the rects to draw. `None` if there's no text or the
-    /// selection is empty.
-    pub(crate) fn select(&self, from: NormPoint, to: NormPoint) -> Option<Selection> {
-        let i0 = self.nearest_run(from)?;
-        let i1 = self.nearest_run(to)?;
-        let (lo, hi) = (i0.min(i1), i0.max(i1));
-        let quote = self.runs_text(lo, hi);
-        if quote.trim().is_empty() {
-            return None;
-        }
-        let occurrence = self.occurrence_at(lo, &quote);
-        let ids: Vec<usize> = (lo..=hi).collect();
-        let rects = self.group_lines(&ids);
-        Some(Selection {
-            quote,
-            occurrence,
-            rects,
-        })
-    }
 }
 
 #[cfg(test)]
@@ -438,42 +322,6 @@ mod tests {
             run("World", 0.22, 0.10, 0.10, 0.02),
             run("second", 0.10, 0.14, 0.12, 0.02),
         ])
-    }
-
-    #[test]
-    fn locate_ignores_case_and_whitespace() {
-        let pt = sample();
-        // "hello world" with a space matches "Hello"+"World" (no space stored).
-        let rects = pt.locate("hello world", 0);
-        assert_eq!(rects.len(), 1); // one line
-        let r = rects[0];
-        // Spans from Hello's x to World's right edge.
-        assert!((r.x - 0.10).abs() < 1e-4);
-        assert!((r.right() - 0.32).abs() < 1e-4);
-    }
-
-    #[test]
-    fn locate_missing_is_empty() {
-        assert!(sample().locate("absent", 0).is_empty());
-    }
-
-    #[test]
-    fn locate_occurrence_index() {
-        let pt = PageText::new(vec![
-            run("cat", 0.1, 0.1, 0.06, 0.02),
-            run("cat", 0.1, 0.2, 0.06, 0.02),
-        ]);
-        assert_eq!(pt.locate("cat", 0)[0].y, 0.1);
-        assert_eq!(pt.locate("cat", 1)[0].y, 0.2);
-        assert!(pt.locate("cat", 2).is_empty());
-    }
-
-    #[test]
-    fn multi_line_match_yields_a_rect_per_line() {
-        // "Helloworldsecond" spans two lines (Hello+World on line 1, second on line 2).
-        let rects = sample().locate("HelloWorldsecond", 0);
-        assert_eq!(rects.len(), 2);
-        assert!(rects[0].y < rects[1].y);
     }
 
     #[test]
@@ -511,43 +359,6 @@ mod tests {
         }
         let pt = PageText::new(runs);
         assert_eq!(pt.text(), "Counters for");
-        // And a drag across both words yields the same clean, single-spaced quote.
-        let sel = pt
-            .select(
-                NormPoint { x: 0.105, y: 0.11 },
-                NormPoint { x: 0.370, y: 0.11 },
-            )
-            .unwrap();
-        assert_eq!(sel.quote, "Counters for");
-    }
-
-    #[test]
-    fn select_spans_runs_into_a_quote() {
-        let pt = sample();
-        // Drag from inside "Hello" to inside "World".
-        let sel = pt
-            .select(
-                NormPoint { x: 0.12, y: 0.11 },
-                NormPoint { x: 0.27, y: 0.11 },
-            )
-            .unwrap();
-        assert_eq!(sel.quote, "Hello World");
-        assert_eq!(sel.occurrence, 0);
-        assert_eq!(sel.rects.len(), 1);
-    }
-
-    #[test]
-    fn select_occurrence_counts_earlier_matches() {
-        let pt = PageText::new(vec![
-            run("cat", 0.1, 0.1, 0.06, 0.02),
-            run("cat", 0.1, 0.2, 0.06, 0.02),
-        ]);
-        // Selecting the second "cat" reports occurrence 1.
-        let sel = pt
-            .select(NormPoint { x: 0.12, y: 0.2 }, NormPoint { x: 0.14, y: 0.2 })
-            .unwrap();
-        assert_eq!(sel.quote, "cat");
-        assert_eq!(sel.occurrence, 1);
     }
 
     #[test]

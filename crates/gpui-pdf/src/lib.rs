@@ -49,11 +49,11 @@ use hayro::hayro_interpret::InterpreterSettings;
 use hayro::hayro_syntax::{DecryptionError, LoadPdfError, Pdf};
 use image::{Frame, RgbaImage};
 
-use gpui::{MouseMoveEvent, deferred};
+use gpui::deferred;
 
 mod text;
 pub use text::extract_page_text;
-pub(crate) use text::{NormPoint, NormRect, PageText};
+pub(crate) use text::{NormRect, PageText};
 
 /// PDF outline / table-of-contents + link extraction (always available — no deps).
 mod outline;
@@ -369,59 +369,10 @@ pub type PdfStyleFn = Rc<dyn Fn() -> PdfStyle>;
 /// window — automatically. Clamped to a sane range internally.
 pub type PdfQualityFn = Rc<dyn Fn() -> f32>;
 
-/// A highlight to draw on the PDF, located by its quote. The host derives these from
-/// its own store (e.g. the markdown blocks that link this PDF) and hands them to the
-/// viewer via [`PdfView::set_highlights`]; the viewer finds the quote with the text
-/// layer and draws a translucent box over each line it spans. (`markup` feature.)
-#[derive(Clone)]
-pub struct Highlight {
-    /// Host identifier, echoed back on click (e.g. to jump to the source note).
-    pub id: u64,
-    /// 0-based page the quote is on.
-    pub page: usize,
-    /// The quoted text to locate (matched case- and whitespace-insensitively).
-    pub quote: String,
-    /// Which occurrence on the page (0-based), for a quote that repeats.
-    pub occurrence: usize,
-    /// Fill color; drawn translucent.
-    pub color: Hsla,
-    /// An **area (image-region) highlight**: a normalized page rect drawn
-    /// directly — no text layer involved, so it works on scans and figures.
-    /// When set, `quote`/`occurrence` are not used for locating.
-    pub region: Option<NormRect>,
-}
-
-/// Invoked with a [`Highlight`]'s `id` when the user clicks it. (`markup` feature.)
-pub type HighlightClickFn = Rc<dyn Fn(u64, &mut Window, &mut gpui::App)>;
-
-/// Invoked when the user finishes a drag-selection in "highlight mode": the page
-/// (0-based), the selected one-line quote, which occurrence of it on the page, and the
-/// label of the picked color (the opaque tag from [`set_highlight_palette`], for the
-/// host to store). The host turns this into a stored note. (`markup` feature.)
-pub type CreateHighlightFn =
-    Rc<dyn Fn(usize, String, usize, SharedString, &mut Window, &mut gpui::App)>;
-
-/// Invoked when the user finishes a box-drag in "area mode": the page (0-based), the
-/// dragged rect in normalized page coordinates, and the label of the picked color.
-/// The host stores it and hands it back as a [`Highlight`] with `region` set.
-/// (`markup` feature.)
-pub type CreateAreaFn = Rc<dyn Fn(usize, NormRect, SharedString, &mut Window, &mut gpui::App)>;
-
-/// The normalized rect spanned by two drag endpoints, in either direction.
-/// (`markup` feature.)
-fn norm_rect_between(a: NormPoint, b: NormPoint) -> NormRect {
-    NormRect {
-        x: a.x.min(b.x),
-        y: a.y.min(b.y),
-        w: (a.x - b.x).abs(),
-        h: (a.y - b.y).abs(),
-    }
-}
-
 /// Invoked from the source-name row's close control. Set via [`PdfView::set_on_close`].
 pub type CloseFn = Rc<dyn Fn(&mut Window, &mut gpui::App)>;
 
-/// Cache state for a page's extracted text layer. (`markup` feature.)
+/// Cache state for a page's extracted text layer.
 enum TextSlot {
     Loading,
     Ready(PageText),
@@ -534,36 +485,8 @@ pub struct PdfView {
     /// original bytes. Overlaid like `links`; a click emits
     /// [`PdfEvent::FieldClicked`].
     form_fields: Vec<FormField>,
-    /// Highlights to draw (markup), provided by the host.
-    highlights: Vec<Highlight>,
-    /// Per-page extracted text layer, built lazily for pages with highlights.
+    /// Per-page extracted text layer, built lazily for search.
     page_text: std::collections::HashMap<usize, TextSlot>,
-    /// Click handler for a highlight (markup).
-    on_highlight: Option<HighlightClickFn>,
-    /// "Area mode" (only meaningful while `selecting`): a drag marks a page
-    /// region instead of selecting text (markup).
-    area_mode: bool,
-    /// Called when an area drag finishes, so the host stores it (markup).
-    on_create_area: Option<CreateAreaFn>,
-    /// "Highlight mode": dragging over text selects + creates a highlight (markup).
-    selecting: bool,
-    /// In-progress drag selection: (page, start, current) in normalized coords.
-    sel_drag: Option<(usize, NormPoint, NormPoint)>,
-    /// Called when a drag-selection finishes, so the host stores the note (markup).
-    on_create: Option<CreateHighlightFn>,
-    /// Host-supplied highlight colors `(label, fill)`; the picker shows these and the
-    /// label is echoed back on create. Empty → a single default yellow.
-    palette: Vec<(SharedString, Hsla)>,
-    /// Index into `palette` for new highlights.
-    active_color: usize,
-    /// Whether the color picker dropdown is showing.
-    palette_open: bool,
-    /// Page whose highlights are briefly flashing (after a jump from a note), if any.
-    flash: Option<usize>,
-    /// Bumped on each reveal; the deferred clear no-ops if a newer flash superseded it.
-    flash_gen: u64,
-    /// A reveal requested before the document finished loading; applied once it does.
-    pending_reveal: Option<usize>,
     /// Whether the find-in-PDF bar is open. (`search` feature.)
     search_open: bool,
     /// The current search query (edited in the find bar).
@@ -657,20 +580,7 @@ impl PdfView {
             toc_open: false,
             links: Vec::new(),
             form_fields: Vec::new(),
-            highlights: Vec::new(),
             page_text: std::collections::HashMap::new(),
-            on_highlight: None,
-            selecting: false,
-            area_mode: false,
-            on_create_area: None,
-            sel_drag: None,
-            on_create: None,
-            palette: Vec::new(),
-            active_color: 0,
-            palette_open: false,
-            flash: None,
-            flash_gen: 0,
-            pending_reveal: None,
             search_open: false,
             search_query: String::new(),
             matches: Vec::new(),
@@ -704,15 +614,11 @@ impl PdfView {
                 }
             }
         }
-        // Stale text layers would locate highlights against the old bytes.
+        // Stale text layers would match search against the old bytes.
         self.page_text.clear();
         self.locked = false;
         cx.emit(PdfEvent::LockChanged);
         cx.notify();
-        // A note→PDF jump that arrived before the document loaded: apply it now.
-        if let Some(p) = self.pending_reveal.take() {
-            self.reveal_highlight(p, cx);
-        }
     }
 
     /// A field's window-space bounds right now, from its page-normalized rect
@@ -775,97 +681,6 @@ impl PdfView {
     /// host can hide this viewer. Without one, the name row has no control.
     pub fn set_on_close(&mut self, f: CloseFn) {
         self.on_close = Some(f);
-    }
-
-    /// Toggle "highlight mode": when on, dragging over text selects it and fires the
-    /// create handler instead of doing nothing. (`markup` feature.)
-    pub(crate) fn toggle_select_mode(&mut self, cx: &mut Context<Self>) {
-        self.selecting = !self.selecting;
-        self.area_mode = false;
-        self.sel_drag = None;
-        // Turning highlight mode on pops the color picker down; off hides it.
-        self.palette_open = self.selecting && !self.palette.is_empty();
-        cx.notify();
-    }
-
-    /// Toggle "area mode": like highlight mode, but a drag marks a page *region*
-    /// (an image/figure box) instead of selecting text, firing [`CreateAreaFn`]
-    /// on release. Turning it on turns text-highlight mode's selection off (they
-    /// share the pen state); turning either mode off clears the other.
-    /// (`markup` feature.)
-    pub(crate) fn toggle_area_mode(&mut self, cx: &mut Context<Self>) {
-        if self.selecting && self.area_mode {
-            self.selecting = false;
-            self.area_mode = false;
-        } else {
-            self.selecting = true;
-            self.area_mode = true;
-        }
-        self.sel_drag = None;
-        self.palette_open = self.selecting && !self.palette.is_empty();
-        cx.notify();
-    }
-
-    /// The fill of the currently-selected palette color (default yellow if unset).
-    fn active_color_hsla(&self) -> Hsla {
-        self.palette
-            .get(self.active_color)
-            .map(|(_, c)| *c)
-            .unwrap_or_else(|| hsla(0.14, 0.95, 0.55, 1.0))
-    }
-
-    /// The label of the currently-selected palette color (empty if unset).
-    fn active_color_name(&self) -> SharedString {
-        self.palette
-            .get(self.active_color)
-            .map(|(n, _)| n.clone())
-            .unwrap_or_default()
-    }
-
-    /// Jump to a highlight from its note: scroll `page` into view (bringing its first
-    /// highlight near the top when that page's text is already extracted) and briefly
-    /// flash the page's highlights so the eye finds them. (`markup` feature.)
-    pub(crate) fn reveal_highlight(&mut self, page: usize, cx: &mut Context<Self>) {
-        if self.dims.is_empty() {
-            // The document is still loading; apply the jump once it's measured.
-            self.pending_reveal = Some(page);
-            return;
-        }
-        let page = page.min(self.dims.len() - 1);
-        let pw = self.page_width();
-        // Default to the page top (like `go_to_page`); if the text is ready, scroll so
-        // the first highlight on the page sits just below the viewport top.
-        let mut y = if page == 0 {
-            0.0
-        } else {
-            page_top_y(&self.dims, pw, page)
-        };
-        if let Some(TextSlot::Ready(pt)) = self.page_text.get(&page)
-            && let Some(h) = self.highlights.iter().find(|h| h.page == page)
-            && let Some(r) = pt.locate(&h.quote, h.occurrence).first()
-        {
-            let disp_h = display_height(self.dims[page], pw);
-            y = (page_top_y(&self.dims, pw, page) + r.y * disp_h - 48.0).max(0.0);
-        }
-        self.scroll
-            .set_offset(point(self.scroll.offset().x, px(-y)));
-        // Flash, then clear after a beat (unless a newer reveal supersedes this one).
-        self.flash = Some(page);
-        self.flash_gen = self.flash_gen.wrapping_add(1);
-        let token = self.flash_gen;
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(1200))
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                if this.flash_gen == token {
-                    this.flash = None;
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
-        cx.notify();
     }
 
     // ───────────────────────────── Find-in-PDF (search) ─────────────────────────────
@@ -1025,40 +840,8 @@ impl PdfView {
         cx.notify();
     }
 
-    /// Map a window-space point to the page it's over and normalized page coords.
-    ///
-    /// Uses gpui's *actual* per-page laid-out bounds (`bounds_for_item`) rather than
-    /// re-summing `display_height`. That sum drifts from gpui's pixel-snapped layout
-    /// (~0.18px per Letter page), which by ~page 150 of a long PDF lands the highlight a
-    /// couple of text rows off the cursor. `bounds_for_item` is in the scroll element's
-    /// unscrolled frame, so the cursor is shifted by the scroll offset to match.
-    /// (`markup` feature.)
-    fn point_to_page(&self, pos: gpui::Point<gpui::Pixels>) -> Option<(usize, NormPoint)> {
-        let probe = f32::from(pos.y) - f32::from(self.scroll.offset().y);
-        for i in 0..self.dims.len() {
-            let Some(cb) = self.scroll.bounds_for_item(i) else {
-                continue;
-            };
-            let top = f32::from(cb.origin.y);
-            let h = f32::from(cb.size.height);
-            if h > 0.0 && probe >= top && probe < top + h {
-                let left = f32::from(cb.origin.x);
-                let w = f32::from(cb.size.width).max(1.0);
-                return Some((
-                    i,
-                    NormPoint {
-                        x: ((f32::from(pos.x) - f32::from(self.scroll.offset().x) - left) / w)
-                            .clamp(0.0, 1.0),
-                        y: ((probe - top) / h).clamp(0.0, 1.0),
-                    },
-                ));
-            }
-        }
-        None
-    }
-
-    /// Extract `page`'s text layer off-thread (cached), so its highlights can be
-    /// located on the next frame. (`markup` feature.)
+    /// Extract `page`'s text layer off-thread (cached), so search can match it
+    /// on the next frame.
     fn ensure_page_text(&mut self, page: usize, cx: &mut Context<Self>) {
         if self.page_text.contains_key(&page) {
             return;
@@ -1310,29 +1093,6 @@ impl PdfView {
         let viewport_h = f32::from(self.scroll.bounds().size.height);
         let (start, end) = keep_window(&self.dims, page_width, scroll_y, viewport_h);
         let generation = self.generation;
-
-        // Extract the text layer (off-thread, cached) for visible pages that need it:
-        // pages with highlights, so they can be located + drawn — and, while in
-        // highlight mode, *every* visible page, so a drag can select text even on a
-        // page that has no highlights yet. Before the early-out below, so an
-        // already-rendered page still gets its text extracted.
-        {
-            let mut pages: Vec<usize> = self
-                .highlights
-                .iter()
-                .filter(|h| h.region.is_none())
-                .map(|h| h.page)
-                .filter(|p| (start..=end).contains(p))
-                .collect();
-            if self.selecting && !self.area_mode {
-                pages.extend(start..=end);
-            }
-            pages.sort_unstable();
-            pages.dedup();
-            for p in pages {
-                self.ensure_page_text(p, cx);
-            }
-        }
 
         // Decide what to (re-)render and what to evict. A visible page renders if it
         // has no bitmap or a stale-generation one; it keeps showing the old bitmap
@@ -1599,80 +1359,8 @@ impl Render for PdfView {
                         },
                     ),
             };
-            // Markup: overlay a translucent, clickable box on each line of every
-            // located quote on this page.
             let slot = {
                 let mut slot = slot;
-                // Brighten + outline the page's highlights briefly after a jump from
-                // a note, so the clicked one is easy to spot.
-                let flashing = self.flash == Some(i);
-                for h in self.highlights.iter().filter(|h| h.page == i) {
-                    let fill = Hsla {
-                        a: if flashing { 0.6 } else { 0.35 },
-                        ..h.color
-                    };
-                    // An area highlight is its stored rect; a quote highlight is
-                    // one rect per located line (needs the page's text layer).
-                    let rects: Vec<NormRect> = match h.region {
-                        Some(r) => vec![r],
-                        None => match self.page_text.get(&i) {
-                            Some(TextSlot::Ready(pt)) => pt.locate(&h.quote, h.occurrence),
-                            _ => Vec::new(),
-                        },
-                    };
-                    for (ri, r) in rects.into_iter().enumerate() {
-                        let id = h.id;
-                        let mut hl = div()
-                            .id(gpui::SharedString::from(format!(
-                                "pdf-hl-{i}-{}-{ri}",
-                                h.id
-                            )))
-                            .absolute()
-                            .left(px(r.x * page_width))
-                            .top(px(r.y * disp_h))
-                            .w(px(r.w * page_width))
-                            .h(px(r.h * disp_h))
-                            .rounded(px(1.0))
-                            .bg(fill)
-                            .cursor_pointer()
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                if let Some(cb) = this.on_highlight.clone() {
-                                    cb(id, window, cx);
-                                }
-                            }));
-                        if flashing {
-                            hl = hl.border_1().border_color(Hsla { a: 0.95, ..h.color });
-                        }
-                        slot = slot.child(hl);
-                    }
-                }
-                // Live drag feedback: the raw box in area mode, the text
-                // selection's line rects in highlight mode.
-                if let Some((pg, a, b)) = self.sel_drag
-                    && pg == i
-                {
-                    let rects: Vec<NormRect> = if self.area_mode {
-                        vec![norm_rect_between(a, b)]
-                    } else if let Some(TextSlot::Ready(pt)) = self.page_text.get(&i)
-                        && let Some(sel) = pt.select(a, b)
-                    {
-                        sel.rects
-                    } else {
-                        Vec::new()
-                    };
-                    for r in rects {
-                        slot = slot.child(
-                            div()
-                                .absolute()
-                                .left(px(r.x * page_width))
-                                .top(px(r.y * disp_h))
-                                .w(px(r.w * page_width))
-                                .h(px(r.h * disp_h))
-                                .rounded(px(1.0))
-                                .bg(hsla(0.58, 0.9, 0.55, 0.3)),
-                        );
-                    }
-                }
                 // Find-in-PDF: box every match on this page; emphasize the focused one.
                 for (mi, m) in self.matches.iter().enumerate() {
                     if m.page != i {
@@ -1699,7 +1387,7 @@ impl Render for PdfView {
             };
             // Clickable link annotations: transparent overlays that navigate on click
             // (internal page jump or external URL), with a faint hover so they read as
-            // links. Coordinates are normalized to the page, like highlights.
+            // links. Coordinates are normalized to the page, like search matches.
             let mut slot = slot;
             if let Some(links) = self.links.get(i) {
                 for (li, link) in links.iter().enumerate() {
@@ -1913,137 +1601,6 @@ impl Render for PdfView {
             .child(zoom)
             .child(fit);
 
-        // Highlight-mode toggle + color picker (markup): the pen turns drag-to-select
-        // on and pops a palette down; the active color shows as a chip beneath it.
-        let header = {
-            let mark_bg = if self.selecting {
-                style.placeholder_bg
-            } else {
-                Hsla { a: 0.0, ..style.bg }
-            };
-            let active = self.active_color_hsla();
-            let pen = div()
-                .id("pdf-mark")
-                .when(cfg!(test), |v| v.debug_selector(|| "pdf-mark".into()))
-                .key_context("PdfControl")
-                .tab_index(0)
-                .role(gpui::Role::Button)
-                .aria_label("Highlight text")
-                .focus_visible(|s| s.bg(style.placeholder_bg))
-                .flex_shrink_0()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .gap(px(1.0))
-                .min_w(px(20.0))
-                .px(px(6.0))
-                .py(px(1.0))
-                .rounded(px(4.0))
-                .cursor_pointer()
-                .text_color(style.header_fg)
-                .bg(mark_bg)
-                .hover(|s| s.bg(style.placeholder_bg))
-                .child("✎")
-                .child(div().w(px(12.0)).h(px(2.0)).rounded(px(1.0)).bg(active))
-                .on_click(cx.listener(|this, _, _window, cx| this.toggle_select_mode(cx)))
-                .tooltip(self.tip("Highlight — pick a color (⌘⇧H)"));
-            // The area (box) tool: same pen state + palette, but a drag marks a
-            // page region instead of selecting text — for figures and scans.
-            let area_bg = if self.selecting && self.area_mode {
-                style.placeholder_bg
-            } else {
-                Hsla { a: 0.0, ..style.bg }
-            };
-            let area = div()
-                .id("pdf-area")
-                .when(cfg!(test), |v| v.debug_selector(|| "pdf-area".into()))
-                .key_context("PdfControl")
-                .tab_index(0)
-                .role(gpui::Role::Button)
-                .aria_label("Highlight area")
-                .focus_visible(|s| s.bg(style.placeholder_bg))
-                .flex_shrink_0()
-                .flex()
-                .flex_col()
-                .items_center()
-                .justify_center()
-                .gap(px(1.0))
-                .min_w(px(20.0))
-                .px(px(6.0))
-                .py(px(1.0))
-                .rounded(px(4.0))
-                .cursor_pointer()
-                .text_color(style.header_fg)
-                .bg(area_bg)
-                .hover(|s| s.bg(style.placeholder_bg))
-                .child("⬚")
-                .child(div().w(px(12.0)).h(px(2.0)).rounded(px(1.0)).bg(active))
-                .on_click(cx.listener(|this, _, _window, cx| this.toggle_area_mode(cx)))
-                .tooltip(self.tip("Area highlight — drag a box over a region"));
-
-            // Color-picker dropdown, deferred so it paints over the page area below.
-            let dropdown = if self.palette_open && !self.palette.is_empty() {
-                let mut row = div()
-                    .absolute()
-                    .top(px(30.0))
-                    .right(px(0.0))
-                    .flex()
-                    .flex_row()
-                    .gap_1()
-                    .p(px(5.0))
-                    .rounded(px(6.0))
-                    .border_1()
-                    .border_color(style.border)
-                    .bg(style.bg);
-                for (i, (name, color)) in self.palette.iter().enumerate() {
-                    let selected = i == self.active_color;
-                    let color = *color;
-                    row = row.child(
-                        div()
-                            .id(SharedString::from(format!("pdf-swatch-{i}")))
-                            .key_context("PdfControl")
-                            .tab_index(0)
-                            .role(gpui::Role::Button)
-                            .aria_label(format!("Highlight color: {name}"))
-                            .focus_visible(|s| s.border_color(style.header_fg))
-                            .w(px(16.0))
-                            .h(px(16.0))
-                            .rounded(px(8.0))
-                            .bg(color)
-                            .border_2()
-                            .border_color(if selected {
-                                style.header_fg
-                            } else {
-                                Hsla { a: 0.0, ..style.bg }
-                            })
-                            .cursor_pointer()
-                            .tooltip(self.tip(name.clone()))
-                            .on_click(cx.listener(move |this, _, _window, cx| {
-                                this.active_color = i;
-                                this.selecting = true;
-                                this.palette_open = false;
-                                cx.notify();
-                            })),
-                    );
-                }
-                Some(deferred(row))
-            } else {
-                None
-            };
-
-            header.child(
-                div()
-                    .relative()
-                    .flex()
-                    .flex_shrink_0()
-                    .gap(px(2.0))
-                    .child(pen)
-                    .child(area)
-                    .children(dropdown),
-            )
-        };
-
         // Find toggle (search): a magnifier that opens the find bar.
         let header = {
             let bg = if self.search_open {
@@ -2074,18 +1631,6 @@ impl Render for PdfView {
                     window.focus(&this.focus, cx);
                 }
             }))
-            // In highlight mode a mouse-down also starts a drag selection.
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|_this, _ev: &MouseDownEvent, _window, _cx| {
-                    if _this.selecting
-                        && let Some((pg, n)) = _this.point_to_page(_ev.position)
-                    {
-                        _this.sel_drag = Some((pg, n, n));
-                        _cx.notify();
-                    }
-                }),
-            )
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, _window, cx| {
                 let key = ev.keystroke.key.as_str();
                 if key == "tab" {
@@ -2192,11 +1737,6 @@ impl Render for PdfView {
                         }
                     }
                 }
-                // ⌘⇧H: toggle highlight mode.
-                if secondary && ev.keystroke.modifiers.shift && key == "h" {
-                    this.toggle_select_mode(cx);
-                    return;
-                }
                 match key {
                     "pagedown" => this.next_page(cx),
                     "pageup" => this.prev_page(cx),
@@ -2211,55 +1751,6 @@ impl Render for PdfView {
                     _ => {}
                 }
             }));
-
-        // Highlight-mode drag handlers (markup): update the selection on move, and on
-        // release resolve it to a quote and hand it to the host to store.
-        let root = root
-            .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _window, cx| {
-                let Some((pg, start, _)) = this.sel_drag else {
-                    return;
-                };
-                if let Some((p, n)) = this.point_to_page(ev.position)
-                    && p == pg
-                {
-                    this.sel_drag = Some((pg, start, n));
-                    cx.notify();
-                }
-            }))
-            .on_mouse_up(
-                MouseButton::Left,
-                cx.listener(|this, _ev, window, cx| {
-                    let Some((pg, a, b)) = this.sel_drag.take() else {
-                        return;
-                    };
-                    // Require a real drag: a bare click (or tiny jitter) must not create a
-                    // highlight. Threshold is in normalized page coords (~a few pixels).
-                    const MIN_DRAG: f32 = 0.005;
-                    if (a.x - b.x).abs() < MIN_DRAG && (a.y - b.y).abs() < MIN_DRAG {
-                        cx.notify();
-                        return;
-                    }
-                    if this.area_mode {
-                        if let Some(cb) = this.on_create_area.clone() {
-                            let color = this.active_color_name();
-                            cb(pg, norm_rect_between(a, b), color, window, cx);
-                        }
-                        cx.notify();
-                        return;
-                    }
-                    let sel = match this.page_text.get(&pg) {
-                        Some(TextSlot::Ready(pt)) => pt.select(a, b),
-                        _ => None,
-                    };
-                    if let Some(sel) = sel
-                        && let Some(cb) = this.on_create.clone()
-                    {
-                        let color = this.active_color_name();
-                        cb(pg, sel.quote, sel.occurrence, color, window, cx);
-                    }
-                    cx.notify();
-                }),
-            );
 
         // Find bar overlay (search): a floating bar with the query, match count, and
         // prev/next/close. Deferred so it paints over the page area below the header.
@@ -2760,11 +2251,9 @@ mod scrolling_tests {
                 );
             }
             assert!(cx.debug_bounds("pdf-find").is_some());
+            // The highlight tools are gone (ADR 0031).
             for selector in ["pdf-mark", "pdf-area"] {
-                let bounds = cx.debug_bounds(selector).unwrap();
-                assert!(
-                    toolbar.contains(&bounds.origin) && toolbar.contains(&bounds.bottom_right())
-                );
+                assert!(cx.debug_bounds(selector).is_none());
             }
             assert!(cx.debug_bounds("pdf-tools").is_none());
             assert!(toolbar.bottom() < px(150.));
@@ -2863,12 +2352,6 @@ mod scrolling_tests {
                 let cb = v.scroll.bounds_for_item(0).unwrap();
                 let bounds = v.field_screen_bounds(0, (0.5, 0.2, 0.1, 0.1)).unwrap();
                 assert_eq!(bounds.origin.x, cb.origin.x + x + cb.size.width * 0.5);
-                {
-                    let (page, normalized) = v.point_to_page(bounds.origin).unwrap();
-                    assert_eq!(page, 0);
-                    assert!((normalized.x - 0.5).abs() < 0.001);
-                    assert!((normalized.y - 0.2).abs() < 0.001);
-                }
             }
         });
     }
