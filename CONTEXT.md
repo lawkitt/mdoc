@@ -162,3 +162,18 @@ These mappings and originals are live-tab memory, not saved restoration metadata
 The centered start view of a Markdown tab with empty content: Open files…,
 supported formats, the multi-file hint and ⌘O. Non-blocking — typing starts
 writing. Also the whole-window file drop zone while shown (ADR 0028).
+
+**Workspace**:
+The window shell: the document sidebar, toolbar, settings and the tabs it owns,
+including unopened restored records. One per window. In code `Workspace`
+(currently `tabs::Tabs`; renamed per [ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)).
+
+**Tab**:
+One sidebar entry. An initialized tab owns one document view; an unopened
+restored tab allocates nothing until activated.
+
+**Document view**:
+Everything shown for one tab's document: Markdown editor, source preview,
+search, import/OCR state and pseudonymization review. In code `DocumentView`
+(currently `Workspace` in `src/main.rs`; renamed per ADR 0029).
+_Avoid_: calling the per-document view a workspace
