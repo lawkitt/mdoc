@@ -1142,7 +1142,7 @@ fn find_underscore_close(b: &[u8], from: usize, end: usize, double: bool) -> Opt
 // Linkables (wiki/tag/url/bare-url) are shared with the reader
 // (`crate::syntax`) — one grammar for clicks, hover cursors, and
 // styling in every renderer.
-pub(crate) use crate::syntax::{LinkHit, link_at, links};
+pub(crate) use crate::syntax::{link_at, links};
 
 /// ATX heading depth (1–6) if `line` is a heading: 1–6 leading `#` followed by
 /// a space or end-of-line. `None` otherwise.
@@ -2637,15 +2637,14 @@ mod tests {
 
     #[test]
     fn link_at_hits_only_urls() {
-        use LinkHit::*;
         let line = "see [[Ops Net|the net]] and #scada plus [docs](https://x.io/d) `#not` [[]]";
         // Wiki links and tags are plain text (ADR 0030).
         assert_eq!(link_at(line, 4), None);
         assert_eq!(link_at(line, 15), None);
         assert_eq!(link_at(line, 28), None);
         // The inline link: label, brackets, or url all navigate.
-        assert_eq!(link_at(line, 41), Some(Url("https://x.io/d".into())));
-        assert_eq!(link_at(line, 55), Some(Url("https://x.io/d".into())));
+        assert_eq!(link_at(line, 41), Some("https://x.io/d".into()));
+        assert_eq!(link_at(line, 55), Some("https://x.io/d".into()));
         // Plain text and code are not links.
         assert_eq!(link_at(line, 0), None);
         assert_eq!(link_at(line, 66), None); // inside `#not`

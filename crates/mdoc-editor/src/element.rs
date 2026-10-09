@@ -63,11 +63,9 @@ pub(crate) struct PrepaintState {
     /// Window-space bounds of every heading's first visual row, for
     /// `on_mouse_move`'s hover tracking (committed to the editor in paint).
     heading_row_rects: Vec<(usize, Bounds<Pixels>)>,
-    /// Pointer-cursor hitboxes over inline links (`[[wiki]]` / `#tag` /
-    /// `[text](url)`), so hovering a clickable link shows a hand.
+    /// Pointer-cursor hitboxes over inline links (`[text](url)` and bare
+    /// URLs), so hovering a clickable link shows a hand.
     link_grips: Vec<Hitbox>,
-    /// The links' boxes + targets, committed to the editor for hover → `HoverLink`.
-    link_rects: Vec<(Bounds<Pixels>, crate::syntax::LinkHit)>,
     /// Pointer-cursor hitboxes over inline images (they open a preview on
     /// click, so hovering shows a hand rather than the text caret).
     inline_image_grips: Vec<Hitbox>,
@@ -694,7 +692,6 @@ impl Element for EditorElement {
         // a 3+-row link are skipped). Widget/code/table rows carry no inline
         // links (images and chips have their own machinery).
         let mut link_grips = Vec::new();
-        let mut link_rects: Vec<(Bounds<Pixels>, crate::syntax::LinkHit)> = Vec::new();
         let mut inline_image_grips = Vec::new();
         if editor.markdown_style.is_some() && !editor.content.is_empty() {
             let starts = &line_starts;
@@ -710,7 +707,7 @@ impl Element for EditorElement {
                 };
                 let line = &editor.content[start..line_end(i)];
                 let inset = row_x(i);
-                for (range, target) in markdown_syntax::links(line) {
+                for (range, _) in markdown_syntax::links(line) {
                     let map = maps.get(i).and_then(Option::as_ref);
                     let d1 = display_col_in(map, range.start);
                     let d2 = display_col_in(map, range.end);
@@ -732,7 +729,6 @@ impl Element for EditorElement {
                             size((p2.x - p1.x).abs(), *lh),
                         );
                         link_grips.push(window.insert_hitbox(hit, HitboxBehavior::Normal));
-                        link_rects.push((hit, target));
                     } else {
                         // Wrapped: head runs to the row's end, tail from its row's start.
                         let head = Bounds::new(
@@ -742,8 +738,6 @@ impl Element for EditorElement {
                         let tail = Bounds::new(point(origin.x, origin.y + p2.y), size(p2.x, *lh));
                         link_grips.push(window.insert_hitbox(head, HitboxBehavior::Normal));
                         link_grips.push(window.insert_hitbox(tail, HitboxBehavior::Normal));
-                        link_rects.push((head, target.clone()));
-                        link_rects.push((tail, target));
                     }
                 }
                 // Inline images on this line get a pointer-cursor hitbox (they
@@ -1577,7 +1571,6 @@ impl Element for EditorElement {
             heading_fold_grips,
             heading_row_rects,
             link_grips,
-            link_rects,
             inline_image_grips,
             table_zones,
             table_thumbs,
@@ -2569,7 +2562,6 @@ impl Element for EditorElement {
             editor.table_rows = table_rows;
             editor.image_rects = image_rects;
             editor.inline_math_rects = inline_math_rects;
-            editor.link_rects = std::mem::take(&mut prepaint.link_rects);
             editor.checkbox_rects = checkbox_rects;
             editor.table_thumbs = prepaint.table_thumbs.iter().map(|(t, _)| *t).collect();
             editor.code_chip_rects = code_chip_rects;

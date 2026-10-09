@@ -218,13 +218,6 @@ fn roman(mut n: u32) -> String {
 
 // --- Linkables ---
 
-/// What a click on a link targets: an inline or bare URL (hosts open http(s)
-/// externally, resolve files themselves).
-#[derive(Debug, PartialEq, Clone)]
-pub enum LinkHit {
-    Url(String),
-}
-
 /// A block's base writing direction.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Direction {
@@ -401,7 +394,9 @@ pub(crate) fn url_end(line: &str, start: usize) -> usize {
 /// (`![](src)`), footnote refs, and anything inside inline code are opaque —
 /// not links. One grammar for every renderer's click hit-tests, hover
 /// cursors, and styling.
-pub(crate) fn links(line: &str) -> Vec<(std::ops::Range<usize>, LinkHit)> {
+/// Targets are inline or bare URLs; hosts open http(s) externally and
+/// resolve files themselves.
+pub(crate) fn links(line: &str) -> Vec<(std::ops::Range<usize>, String)> {
     let b = line.as_bytes();
     let end = line.len();
     let mut out = Vec::new();
@@ -436,7 +431,7 @@ pub(crate) fn links(line: &str) -> Vec<(std::ops::Range<usize>, LinkHit)> {
             let is_image = i > 0 && b[i - 1] == b'!';
             let url = line[rb + 2..rp].trim();
             if !is_image && !url.is_empty() {
-                out.push((i..rp + 1, LinkHit::Url(url.to_string())));
+                out.push((i..rp + 1, url.to_string()));
             }
             i = rp + 1;
             continue;
@@ -449,7 +444,7 @@ pub(crate) fn links(line: &str) -> Vec<(std::ops::Range<usize>, LinkHit)> {
         {
             let j = url_end(line, i);
             if j > i + 8 {
-                out.push((i..j, LinkHit::Url(line[i..j].to_string())));
+                out.push((i..j, line[i..j].to_string()));
                 i = j;
                 continue;
             }
@@ -460,7 +455,7 @@ pub(crate) fn links(line: &str) -> Vec<(std::ops::Range<usize>, LinkHit)> {
 }
 
 /// The link under byte `col` of `line`, if any (see [`links`]).
-pub(crate) fn link_at(line: &str, col: usize) -> Option<LinkHit> {
+pub(crate) fn link_at(line: &str, col: usize) -> Option<String> {
     links(line)
         .into_iter()
         .find(|(r, _)| r.contains(&col))
@@ -1074,8 +1069,8 @@ mod tests {
         assert_eq!(
             hits.iter().map(|(_, h)| h).collect::<Vec<_>>(),
             vec![
-                &LinkHit::Url("https://a.io".into()),
-                &LinkHit::Url("https://b.io/p".into()), // trailing comma trimmed
+                "https://a.io",
+                "https://b.io/p", // trailing comma trimmed
             ]
         );
         // Opaque: code spans, images, footnotes, glued #.
