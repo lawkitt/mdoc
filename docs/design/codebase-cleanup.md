@@ -172,3 +172,12 @@ Behaviour found during removal that needs a decision (visible changes):
 
 Split proposals after dead-code removal: none on cohesion grounds yet; the
 renames in step 10 move the document view out of `main.rs`.
+
+## Checkpoint — answered 2026-10-09 ("agree")
+
+1. Remove the PDF highlight tools ([ADR 0031](../adr/0031-remove-inert-host-interactions.md)).
+2. Math is ordinary text for the caret and context menu (ADR 0031).
+3. Inline image clicks behave like text clicks; no hand cursor (ADR 0031).
+4. Strengthen `accepted_pdf_import_opens_source_pane`; make the OCR-failure
+   test deterministic with a pre-failed result and report the actual error.
+5. No extra splits; proceed to the renames.
