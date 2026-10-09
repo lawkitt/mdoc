@@ -4,6 +4,12 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- First-use model setup asks in place: a Markdown-pane card for OCR and a
+  Replacements-panel card for Pseudonymize show the download size, total-byte
+  progress, Cancel and Retry, then continue the task. Settings no longer opens
+  by itself; model choices save immediately with plain-language rows.
+  English OCR (PP-OCRv6 Small) is the new default (ADR 0026).
+
 - Multi-file opening with lazy retained tabs, paths-only session restoration,
   compact sidebar navigation, and automatic PDF/DOCX conversion when OCR is
   unnecessary; explicit inline OCR choices preserve the original source.

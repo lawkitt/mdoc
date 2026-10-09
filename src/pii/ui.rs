@@ -50,6 +50,10 @@ pub(crate) struct ReviewUi {
     discovery_pending: bool,
     pub scans: Vec<settings::PiiConfig>,
     pub error: Option<String>,
+    /// The panel shows the setup consent card instead of a review (ADR 0026).
+    pub setup: bool,
+    /// Download & scan was chosen here: scan this document once setup succeeds.
+    setup_subscription: Option<gpui::Subscription>,
     mapping: mapping::MappingUi,
     generation: u64,
     popup_previous: Option<FocusHandle>,
@@ -76,6 +80,8 @@ impl ReviewUi {
             discovery_pending: false,
             scans: Vec::new(),
             error: None,
+            setup: false,
+            setup_subscription: None,
             mapping: mapping::MappingUi::new(cx),
             generation: 0,
             popup_previous: None,
@@ -266,6 +272,8 @@ impl Workspace {
             self.start_pii_scan(cx);
         }
     }
+    /// Download the selected model, then scan this document once if it is
+    /// still the same document. Settings stays closed.
     fn setup_pii_model(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !detector::SUPPORTED {
             return;
@@ -278,10 +286,50 @@ impl Workspace {
                 return;
             }
         };
-        self.model_panel.update(cx, |panel, cx| {
-            panel.setup(settings::Model::Pii(config.model), false, cx);
-            panel.show(window, cx);
+        let model = settings::Model::Pii(config.model);
+        self.pii.error = None;
+        let started = self.model_panel.update(cx, |panel, cx| {
+            panel.setup(model, false, cx);
+            panel.working == Some(model)
         });
+        if !started {
+            self.pii.error = Some("Another model job is running. Retry when it finishes.".into());
+            cx.notify();
+            return;
+        }
+        self.watch_pii_setup(model, window, cx);
+        cx.notify();
+    }
+    /// Scan once when `model`'s setup succeeds, only for the same document.
+    fn watch_pii_setup(
+        &mut self,
+        model: settings::Model,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let identity = self.session.generation;
+        self.pii.setup_subscription = Some(cx.subscribe_in(
+            &self.model_panel.clone(),
+            window,
+            move |this, _, event, _, cx| {
+                let settings_ui::Event::Finished(finished, result) = event else {
+                    return;
+                };
+                if *finished != model {
+                    return;
+                }
+                this.pii.setup_subscription = None;
+                match result {
+                    Ok(_) if this.pii.setup && this.session.generation == identity => {
+                        this.pii.setup = false;
+                        this.start_pii_scan(cx);
+                    }
+                    Ok(_) => {}
+                    Err(e) => this.pii.error = Some(e.clone()),
+                }
+                cx.notify();
+            },
+        ));
     }
 
     pub(crate) fn activate_annotation(

@@ -7,7 +7,7 @@ use std::{
 
 use pdf_inspector::vision::{
     ModelArtifactKind, ModelDownloadPolicy, ModelStore, OarOcrEngine, OcrMode, OcrOptions,
-    OcrPdfOptions, PP_OCR_CYRILLIC, PdfiumRenderer,
+    OcrPdfOptions, PdfiumRenderer,
 };
 use sha2::{Digest, Sha256};
 
@@ -101,14 +101,42 @@ const RUNTIMES: &[Runtime] = WINDOWS_RUNTIMES;
 #[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
 const RUNTIMES: &[Runtime] = MAC_RUNTIMES;
 
-pub fn download_megabytes() -> u64 {
-    let runtimes: u64 = RUNTIMES.iter().map(|runtime| runtime.size).sum();
-    let models: u64 = PP_OCR_CYRILLIC
-        .artifacts
-        .iter()
-        .map(|model| model.size)
-        .sum();
-    (runtimes + models).div_ceil(1_000_000)
+/// Bytes OCR setup still needs for `model`: missing model files plus any
+/// runtime archive not yet installed. Tests always report a full download.
+pub fn pending(model: crate::settings::OcrModel) -> crate::model_download::Pending {
+    pending_in(root().ok().filter(|_| !cfg!(test)).as_deref(), model)
+}
+fn pending_in(
+    root: Option<&Path>,
+    model: crate::settings::OcrModel,
+) -> crate::model_download::Pending {
+    let model_root = root.map(|root| model_root(root, model));
+    crate::model_download::Pending {
+        model: model
+            .manifest()
+            .artifacts
+            .iter()
+            .filter(|a| {
+                model_root
+                    .as_ref()
+                    .is_none_or(|dir| crate::model_download::missing(&dir.join(a.filename), a.size))
+            })
+            .map(|a| a.size)
+            .sum(),
+        runtime: RUNTIMES
+            .iter()
+            .filter(|r| root.is_none_or(|root| !root.join(r.library).exists()))
+            .map(|r| r.size)
+            .sum(),
+    }
+}
+/// Bytes of the shared ONNX Runtime archive when it is not installed yet.
+pub(crate) fn onnx_runtime_pending() -> u64 {
+    let runtime = &RUNTIMES[1];
+    match root() {
+        Ok(root) if !cfg!(test) && root.join(runtime.library).exists() => 0,
+        _ => runtime.size,
+    }
 }
 
 pub(crate) fn root() -> Result<PathBuf, String> {
@@ -157,9 +185,18 @@ fn check_in(root: &Path) -> Result<Option<Installed>, String> {
     validate(root).map(Some)
 }
 
+/// The English/Russian qualification bundle, independent of the app default.
+#[cfg(test)]
+fn qualification_config() -> crate::settings::OcrConfig {
+    crate::settings::OcrConfig {
+        model: crate::settings::OcrModel::Cyrillic,
+        ..Default::default()
+    }
+}
+
 #[cfg(test)]
 fn validate(root: &Path) -> Result<Installed, String> {
-    validate_config(root, &crate::settings::OcrConfig::default())
+    validate_config(root, &qualification_config())
 }
 
 fn validate_config(root: &Path, config: &crate::settings::OcrConfig) -> Result<Installed, String> {
@@ -234,7 +271,7 @@ pub(crate) fn onnx_runtime_with_progress(
 fn install_in(root: &Path) -> Result<Installed, String> {
     install_config_in(
         root,
-        &crate::settings::OcrConfig::default(),
+        &qualification_config(),
         &crate::model_download::Progress::default(),
     )
 }
@@ -413,6 +450,7 @@ fn copy_runtime_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::OcrModel;
 
     #[test]
     fn removing_a_bundle_preserves_other_bundles_and_shared_runtimes() {
@@ -450,6 +488,21 @@ mod tests {
     }
 
     #[test]
+    fn pending_counts_only_missing_model_files_and_runtimes() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = OcrModel::V6Small;
+        let full = pending_in(None, model);
+        assert_eq!(pending_in(Some(dir.path()), model), full);
+        let model_bytes: u64 = model.manifest().artifacts.iter().map(|a| a.size).sum();
+        assert_eq!(full.model, model_bytes);
+        fs::write(dir.path().join(RUNTIMES[1].library), b"shared-runtime").unwrap();
+        assert_eq!(
+            pending_in(Some(dir.path()), model).runtime,
+            full.runtime - RUNTIMES[1].size
+        );
+    }
+
+    #[test]
     fn incomplete_or_modified_installations_are_not_ready() {
         let dir = tempfile::tempdir().unwrap();
         assert!(validate(dir.path()).is_err());
@@ -467,7 +520,10 @@ mod tests {
         };
         let options = installed.options();
         assert_eq!(options.ocr.model_downloads, ModelDownloadPolicy::Offline);
-        assert_eq!(options.model_manifest.id, PP_OCR_CYRILLIC.id);
+        assert_eq!(
+            options.model_manifest.id,
+            pdf_inspector::vision::PP_OCR_V6_SMALL.id
+        );
         assert_eq!(options.ocr.model_directory, Some(installed.models));
         assert_eq!(options.pdfium_library, Some(installed.pdfium));
     }
@@ -582,10 +638,15 @@ mod tests {
     ))]
     fn setup_and_offline_english_russian_smoke() {
         let dir = tempfile::tempdir().unwrap();
+        assert!(pending_in(Some(dir.path()), OcrModel::Cyrillic).total() > 0);
         let installed = install_in(dir.path()).unwrap();
         // Second setup verifies a complete installation without network recovery.
         let ready = validate(dir.path()).unwrap();
         assert_eq!(installed.models, ready.models);
+        assert_eq!(
+            pending_in(Some(dir.path()), OcrModel::Cyrillic),
+            Default::default()
+        );
         for language in ["english", "russian"] {
             let base =
                 Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ocr-qualification");

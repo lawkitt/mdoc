@@ -10,12 +10,14 @@ use std::{
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OcrModel {
-    #[default]
     Cyrillic,
+    /// English-first default (ADR 0026).
+    #[default]
     V6Small,
 }
 impl OcrModel {
-    pub const ALL: [Self; 2] = [Self::Cyrillic, Self::V6Small];
+    /// Recommended first.
+    pub const ALL: [Self; 2] = [Self::V6Small, Self::Cyrillic];
     pub fn manifest(self) -> &'static ModelManifest {
         match self {
             Self::Cyrillic => &PP_OCR_CYRILLIC,
@@ -26,6 +28,26 @@ impl OcrModel {
         match self {
             Self::Cyrillic => "PP-OCRv5 Cyrillic + v6 detector",
             Self::V6Small => "PP-OCRv6 Small",
+        }
+    }
+    /// Plain-language row title.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::V6Small => "English",
+            Self::Cyrillic => "English & Russian",
+        }
+    }
+    /// Languages the bundle recognizes, for setup hints.
+    pub fn languages(self) -> &'static str {
+        match self {
+            Self::V6Small => "English",
+            Self::Cyrillic => "English and Russian",
+        }
+    }
+    pub fn summary(self) -> &'static str {
+        match self {
+            Self::V6Small => "Exact on English test scans",
+            Self::Cyrillic => "For documents with Russian text",
         }
     }
     pub fn evidence(self) -> &'static str {
@@ -81,6 +103,18 @@ impl PiiModel {
             }
         }
     }
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Fp16 => "Standard",
+            Self::Fp32 => "Full precision",
+        }
+    }
+    pub fn summary(self) -> &'static str {
+        match self {
+            Self::Fp16 => "About 2 GB of memory while scanning",
+            Self::Fp32 => "Slower, more memory; not shown to be more accurate",
+        }
+    }
     pub fn evidence(self) -> &'static str {
         "Experimental · Known EN/RU misses; neither precision is qualified. Review the complete document."
     }
@@ -98,8 +132,8 @@ pub enum Model {
 }
 impl Model {
     pub const ALL: [Self; 4] = [
-        Self::Ocr(OcrModel::Cyrillic),
         Self::Ocr(OcrModel::V6Small),
+        Self::Ocr(OcrModel::Cyrillic),
         Self::Pii(PiiModel::Fp16),
         Self::Pii(PiiModel::Fp32),
     ];
@@ -107,6 +141,38 @@ impl Model {
         match self {
             Self::Ocr(m) => m.name(),
             Self::Pii(m) => m.name(),
+        }
+    }
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Ocr(m) => m.title(),
+            Self::Pii(m) => m.title(),
+        }
+    }
+    pub fn summary(self) -> &'static str {
+        match self {
+            Self::Ocr(m) => m.summary(),
+            Self::Pii(m) => m.summary(),
+        }
+    }
+    /// The bundle's application default, shown as Recommended.
+    pub fn recommended(self) -> bool {
+        match self {
+            Self::Ocr(m) => m == OcrModel::default(),
+            Self::Pii(m) => m == PiiModel::default(),
+        }
+    }
+    /// How setup prompts name the bundle, e.g. "English OCR".
+    pub fn short_name(self) -> String {
+        match self {
+            Self::Ocr(m) => format!("{} OCR", m.title()),
+            Self::Pii(m) => format!("{} model", m.title()),
+        }
+    }
+    pub fn pending(self) -> crate::model_download::Pending {
+        match self {
+            Self::Ocr(m) => crate::ocr::pending(m),
+            Self::Pii(m) => crate::pii::detector::pending(m),
         }
     }
 }
@@ -254,6 +320,20 @@ mod tests {
         assert_eq!(load(&path).unwrap().ocr.dpi, 300);
         std::fs::write(&path, b"{\"version\":9}").unwrap();
         assert!(load(&path).is_err());
+    }
+    #[test]
+    fn defaults_are_english_first_and_stored_choices_are_kept() {
+        let defaults = Preferences::default();
+        assert_eq!(defaults.ocr.model, OcrModel::V6Small);
+        assert_eq!(defaults.pseudonymization.model, PiiModel::Fp16);
+        assert!(Model::Ocr(OcrModel::V6Small).recommended());
+        assert!(!Model::Pii(PiiModel::Fp32).recommended());
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut stored = Preferences::default();
+        stored.ocr.model = OcrModel::Cyrillic;
+        save(&path, &stored).unwrap();
+        assert_eq!(load(&path).unwrap().ocr.model, OcrModel::Cyrillic);
     }
     #[test]
     fn every_pii_model_roundtrips_without_changing_existing_defaults() {

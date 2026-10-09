@@ -128,22 +128,6 @@ impl Workspace {
 
     fn replacement_commands(&self, cx: &mut Context<Self>) -> AnyElement {
         let busy = self.pii.scanning();
-        let selected = self
-            .preferences
-            .borrow()
-            .snapshot()
-            .ok()
-            .map(|p| p.pseudonymization.model);
-        let needs_setup = selected.is_some_and(|m| {
-            let index = settings::Model::ALL
-                .iter()
-                .position(|model| *model == settings::Model::Pii(m))
-                .unwrap();
-            !matches!(
-                self.model_panel.read(cx).statuses[index],
-                settings_ui::Status::Ready
-            )
-        });
         div()
             .flex()
             .flex_col()
@@ -169,32 +153,143 @@ impl Workspace {
                 self.replacement_control("review-settings", "Model settings…", true, cx)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.pii.mapping.close_actions();
-                        this.model_panel
-                            .update(cx, |panel, cx| panel.show(window, cx));
+                        this.show_pii_settings(window, cx);
                     })),
             )
-            .when(needs_setup, |v| {
-                v.child(
-                    self.replacement_control(
-                        "review-download-model",
-                        format!(
-                            "Set up model ({} MB)",
-                            selected.map(detector::download_megabytes).unwrap_or(0)
-                        ),
-                        !crate::model_work::busy(),
-                        cx,
-                    )
-                    .when(cfg!(test), |v| {
-                        v.debug_selector(|| "review-download-model".into())
-                    })
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        if !crate::model_work::busy() {
-                            this.setup_pii_model(window, cx);
-                        }
-                    })),
-                )
-            })
             .text_size(px(12.))
+            .into_any_element()
+    }
+    fn show_pii_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let model = self
+            .preferences
+            .borrow()
+            .snapshot()
+            .map(|p| p.pseudonymization.model)
+            .unwrap_or_default();
+        self.model_panel.update(cx, |panel, cx| {
+            panel.show_section(settings::Model::Pii(model), window, cx)
+        });
+    }
+    /// The panel while the selected model is missing: consent, progress and
+    /// retry in place of the review (ADR 0026).
+    fn pii_setup_panel(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let model = self
+            .preferences
+            .borrow()
+            .snapshot()
+            .ok()
+            .map(|p| settings::Model::Pii(p.pseudonymization.model));
+        let panel = self.model_panel.read(cx);
+        let progress = model.and_then(|m| panel.progress_of(m));
+        let cancelling = panel.cancelling();
+        let needs_setup = model.is_none_or(|m| panel.needs_setup(m));
+        let pending = model.map_or(0, |m| panel.pending[settings_ui::Panel::index(m)].total());
+        let idle = panel.working.is_none() && !crate::model_work::busy();
+        let error = self.pii.error.clone();
+        let primary = if !needs_setup {
+            "Pseudonymize"
+        } else if error.is_some() {
+            "Retry"
+        } else {
+            "Download & scan"
+        };
+        let card = ui::state_card("pii-setup-card", theme)
+            .when(cfg!(test), |v| v.debug_selector(|| "pii-setup-card".into()))
+            .max_w_full()
+            .child(ui::card_title("Set up pseudonymization"))
+            .child(ui::card_text(
+                "Detects names, organizations and identifiers on this computer. Experimental — review the whole document before sharing.",
+                theme,
+            ));
+        let card = if let Some(state) = progress {
+            card.child(ui::setup_progress(
+                "pii-setup-progress",
+                &state,
+                cancelling,
+                theme,
+            ))
+            .child(
+                ui::card_actions().child(
+                    settings_ui::control("cancel-pii-setup", "Cancel", theme, !cancelling)
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "cancel-pii-setup".into())
+                        })
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.model_panel
+                                .update(cx, |panel, cx| panel.cancel_setup(cx))
+                        })),
+                ),
+            )
+        } else {
+            card.when_some(error, |v, e| v.child(ui::card_error(e, theme)))
+                .child(
+                    ui::card_actions()
+                        .child(
+                            ui::primary_button(
+                                "pii-setup-primary",
+                                primary,
+                                theme,
+                                idle || !needs_setup,
+                            )
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "pii-setup-primary".into())
+                            })
+                            .on_click(cx.listener(
+                                move |this, _, window, cx| {
+                                    if !needs_setup {
+                                        this.start_pii_scan(cx);
+                                    } else if idle {
+                                        this.setup_pii_model(window, cx);
+                                    }
+                                },
+                            )),
+                        )
+                        .child(
+                            settings_ui::control("pii-setup-cancel", "Cancel", theme, true)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.close_replacements(window, cx)
+                                })),
+                        )
+                        .child(
+                            ui::link_button("choose-pii-model", "Choose model…", theme, true)
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "choose-pii-model".into())
+                                })
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.show_pii_settings(window, cx)
+                                })),
+                        ),
+                )
+        };
+        let note = match model {
+            Some(m) if pending > 0 => format!(
+                "{} · {} MB, once",
+                m.short_name(),
+                crate::model_download::megabytes(pending)
+            ),
+            Some(m) => format!("{} · runs on this computer", m.short_name()),
+            None => String::new(),
+        };
+        ui::panel("identity-panel", theme)
+            .when(cfg!(test), |v| v.debug_selector(|| "identity-panel".into()))
+            .rounded_none()
+            .shadow_none()
+            .key_context("IdentityPanel UiPanel UiMenu")
+            .tab_group()
+            .tab_stop(false)
+            .track_focus(&self.pii.mapping.focus)
+            .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                this.close_replacements(window, cx);
+                cx.stop_propagation();
+            }))
+            .flex_shrink_0()
+            .flex()
+            .flex_col()
+            .w(self.replacements_panel_width(window))
+            .h_full()
+            .p_3()
+            .child(card.child(ui::card_note(note, theme)))
             .into_any_element()
     }
 
@@ -294,6 +389,9 @@ impl Workspace {
     ) -> Option<AnyElement> {
         if !self.pii.mapping.open || !self.can_copy_markdown() {
             return None;
+        }
+        if self.pii.setup {
+            return Some(self.pii_setup_panel(window, cx));
         }
         let theme = self.theme.get();
         let palette = theme.pdf_style();

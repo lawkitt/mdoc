@@ -66,10 +66,12 @@ wrapper or metadata. Brief **Copied** feedback confirms the handoff; conversion
 warnings remain visible below the toolbar for review.
 
 **Settings** (Cmd/Ctrl+comma) opens application defaults, including with no
-document open. Choose the Cyrillic or original v6 OCR bundle, or GLiNER2 FP16/FP32.
-FP16 and Cyrillic remain the defaults. Installation,
-language evidence and experimental status are shown separately. Selection never
-downloads a model: use **Download** explicitly. **Details** contains **Repair**
+document open. Text recognition offers **English** (PP-OCRv6 Small, recommended)
+and **English & Russian** (Cyrillic bundle); pseudonymization offers **Standard**
+(GLiNER2 FP16, recommended) and **Full precision** (FP32). Choices save
+immediately. Each row shows one status; a selected model that is not downloaded
+reads "Downloads on first use". Selection never downloads a model: use
+**Download** explicitly, or approve the download where the feature is first used. **Details** contains **Repair**
 and **Remove model**, along with evidence and technical information. Shared
 runtimes are retained and model files cannot be removed during model work.
 **Details** includes model description, languages/category coverage, license,
@@ -79,9 +81,10 @@ Language claims do not establish accuracy on your files.
 
 **Advanced** exposes OCR resolution (150/200/300 DPI), minimum recognition
 confidence (0–1), and detection threshold (0–1). Explicit OCR recognizes every
-selected page using fixed Force routing. **Apply** atomically persists defaults
-for future runs; **Close/Escape** discards drafts. **Reset defaults** restores
-the default models, 150 DPI, confidence 0 and threshold 0.5. Existing results keep
+selected page using fixed Force routing. Numeric fields are saved with **Save**;
+**Done/Escape** discards unsaved numbers. **Reset defaults** saves the
+recommended models, 150 DPI, confidence 0 and threshold 0.5. Saved choices of
+other models are kept when defaults change. Existing results keep
 their captured configuration. Setup continues after the dialog closes;
 cancellation retains completed verified artifacts. Quitting waits for active
 model work before releasing the native runtimes.
@@ -103,10 +106,13 @@ See [model settings verification](tests/fixtures/model-settings/README.md).
 **Pseudonymize** (anonymous-person icon or Cmd/Ctrl+Shift+P) explicitly scans the complete current
 Markdown source in the background, including link destinations, image paths,
 code and HTML. Automatic scanning is experimental on Apple Silicon macOS and
-Windows x64; manual review remains available on every platform. The first use
-offers a separate **Download experimental model** action (default FP16: up to
-709 MB including the native runtime if absent; FP32: up to 1,323 MB). Setup verifies pinned sizes and SHA-256 digests;
-subsequent scans run offline. Ordinary opening and editing need no model.
+Windows x64; manual review remains available on every platform. When the
+selected model is missing, the Replacements panel shows a setup card with the
+download size (Standard: up to 709 MB including the native runtime if absent;
+Full precision: up to 1,323 MB) and **Download & scan**, **Cancel** and
+**Choose model…**; no scan starts until the model is installed. Progress counts
+total bytes, and the scan starts once setup succeeds. Setup verifies pinned
+sizes and SHA-256 digests; subsequent scans run offline. Ordinary opening and editing need no model.
 Scans use bounded 512-token schema/text windows with overlapping context,
 a 2 MiB source limit and a two-minute cooperative deadline. Comparison reports
 identify the model precision, engine and captured configuration.
@@ -174,11 +180,12 @@ editing enables normal unsaved-change protection. Converted tabs cannot be
 converted again over subsequent edits.
 
 Conversion retains text and structure, not embedded images. On Apple Silicon macOS
-and Windows x64, **Set up OCR** in the main bar downloads verified components
-(about 54 MB on macOS, 99 MB on Windows) for
-printed English and Russian. Setup is also offered when converting a PDF that
-needs recognition. The Markdown pane highlights affected pages and offers
-**Run OCR** or **Set up OCR**, plus **Extract native text only**. Recognition
+and Windows x64, a PDF that needs recognition shows a card in the Markdown pane
+listing the affected pages, with **Download & recognize** (or **Run OCR** once
+installed), **Use native text only** and **Choose model…**. Its footnote states
+the one-time download (English OCR: about 67 MB on macOS including runtimes).
+Download progress, cancellation and failures with **Retry** appear in the same
+card, and recognition continues automatically after setup. Recognition
 requires an explicit choice even when OCR is ready; you can keep reading the
 preview without converting. Recognition runs locally and offline;
 document contents are never uploaded. The original PDF remains unchanged.

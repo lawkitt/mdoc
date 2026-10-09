@@ -64,6 +64,11 @@ fn scan_proposes_without_applying_until_explicit_apply(cx: &mut gpui::TestAppCon
 fn installed_model_offline_smoke(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::ui_tests::boot(cx);
     let source = "Alice Morgan represents Northbridge Legal Ltd. Contact alice@example.invalid.\n";
+    // Tests report every model as missing; this smoke uses the installed one.
+    app.update(cx, |app, cx| {
+        app.model_panel
+            .update(cx, |panel, _| panel.pending.fill(Default::default()));
+    });
     app.update(cx, |app, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text(source, cx));
@@ -462,83 +467,78 @@ fn accept_all_refuses_pending_scans_and_invalid_alias_drafts(cx: &mut gpui::Test
     });
 }
 #[gpui::test]
-fn successful_scan_removes_setup_prompt_only_for_the_scanned_model(cx: &mut gpui::TestAppContext) {
+fn missing_model_asks_first_and_resumes_only_after_this_setup(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::ui_tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1000.), px(700.)));
     let panel = cx.update(|_, cx| app.read(cx).model_panel.clone());
+    let fp16 = settings::Model::Pii(settings::PiiModel::Fp16);
     app.update(cx, |app, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice", cx));
-        app.pii.reviewing = true;
-        let revision = app.editor.read(cx).revision();
-        app.pii.job = Some(ScanJob {
-            cancel: Arc::new(AtomicBool::new(false)),
-            revision,
-            generation: 7,
-            config: settings::PiiConfig::default(),
-        });
-        app.complete_pii_scan(
-            7,
-            app.session.generation,
-            revision,
-            Ok(vec![pii::Detection {
-                range: 0..5,
-                category: Category::Person,
-                score: 0.9,
-                recognizer: crate::pii::Recognizer::Model,
-            }]),
-            cx,
-        );
     });
+    let draw = |cx: &mut gpui::VisualTestContext| {
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        })
+    };
+    draw(cx);
+    let bounds = cx.debug_bounds("Pseudonymize").unwrap();
+    cx.simulate_click(bounds.center(), Default::default());
     cx.run_until_parked();
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-    let more = cx.debug_bounds("replacement-commands").unwrap();
-    cx.simulate_click(more.center(), Default::default());
+    draw(cx);
+    // Tests always report the model as missing: ask, never start a scan.
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.setup);
+        assert!(app.pii.mapping.open);
+        assert!(!app.pii.scanning());
+    });
+    assert!(cx.debug_bounds("pii-setup-card").is_some());
+    assert!(cx.debug_bounds("replacement-commands").is_none());
+    cx.update(|_, cx| assert!(panel.read(cx).working.is_none()));
+
+    // A download finished elsewhere (Settings) never scans by itself.
+    panel.update(cx, |panel, cx| {
+        panel.pending.fill(Default::default());
+        panel.statuses[settings_ui::Panel::index(fp16)] = settings_ui::Status::Ready;
+        cx.emit(settings_ui::Event::Finished(fp16, Ok(None)));
+    });
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.setup);
+        assert!(!app.pii.scanning());
+    });
+
+    // Failure keeps the card with the error for Retry.
+    app.update_in(cx, |app, window, cx| app.watch_pii_setup(fp16, window, cx));
+    panel.update(cx, |_, cx| {
+        cx.emit(settings_ui::Event::Finished(
+            fp16,
+            Err("Download cancelled.".into()),
+        ))
+    });
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.setup);
+        assert_eq!(app.pii.error.as_deref(), Some("Download cancelled."));
+    });
+
+    // Download & scan resumes this document once.
+    app.update_in(cx, |app, window, cx| app.watch_pii_setup(fp16, window, cx));
+    panel.update(cx, |_, cx| {
+        cx.emit(settings_ui::Event::Finished(fp16, Ok(None)))
+    });
+    app.read_with(cx, |app, _| {
+        assert!(!app.pii.setup);
+        assert!(app.pii.scanning());
+    });
+    app.update(cx, |app, _| app.pii.cancel());
     cx.run_until_parked();
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-    assert!(cx.debug_bounds("review-download-model").is_none());
-    cx.update(|_, cx| {
-        let index = settings::Model::ALL
-            .iter()
-            .position(|m| *m == settings::Model::Pii(settings::PiiModel::Fp16))
-            .unwrap();
-        assert!(matches!(
-            panel.read(cx).statuses[index],
-            settings_ui::Status::Ready
-        ));
+
+    // Closing the panel discards the card.
+    app.update_in(cx, |app, window, cx| {
+        app.pii.setup = true;
+        app.close_replacements(window, cx);
+        assert!(!app.pii.setup);
     });
-    app.update(cx, |app, cx| {
-        app.preferences
-            .borrow_mut()
-            .current
-            .as_mut()
-            .unwrap()
-            .pseudonymization
-            .model = settings::PiiModel::Fp32;
-        cx.notify();
-    });
-    cx.run_until_parked();
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-    assert!(cx.debug_bounds("review-download-model").is_some());
-    panel.update(cx, |panel, _| {
-        let index = settings::Model::ALL
-            .iter()
-            .position(|m| *m == settings::Model::Pii(settings::PiiModel::Fp16))
-            .unwrap();
-        panel.statuses[index] = settings_ui::Status::Missing;
-    });
-    app.update(cx, |app, cx| {
-        app.preferences
-            .borrow_mut()
-            .current
-            .as_mut()
-            .unwrap()
-            .pseudonymization
-            .model = settings::PiiModel::Fp16;
-        cx.notify();
-    });
-    cx.run_until_parked();
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-    assert!(cx.debug_bounds("review-download-model").is_some());
 }
 #[gpui::test]
 fn cancelled_edited_and_replaced_document_results_are_rejected(cx: &mut gpui::TestAppContext) {

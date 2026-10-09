@@ -377,7 +377,8 @@ impl Workspace {
         }
         cx.notify();
     }
-    fn close_replacements(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn close_replacements(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.pii.setup = false;
         let previous = self.pii.mapping.close_panel();
         self.pii.dismiss_popup();
         self.editor

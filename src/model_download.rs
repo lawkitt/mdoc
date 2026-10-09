@@ -1,4 +1,5 @@
-//! Explicit bounded artifact acquisition; progress is per file, never estimated.
+//! Explicit bounded artifact acquisition. Progress counts real bytes only:
+//! the current file, plus completed downloads against the planned bundle.
 use sha2::{Digest, Sha256};
 use std::{
     fs::File,
@@ -14,6 +15,40 @@ pub struct State {
     pub phase: String,
     pub received: u64,
     pub total: u64,
+    /// Bytes still missing when setup started; 0 when nothing was planned.
+    pub planned: u64,
+    /// Bytes of files downloaded and verified during this setup.
+    pub done: u64,
+}
+impl State {
+    pub fn downloading(&self) -> bool {
+        self.phase.starts_with("Downloading") && self.total > 0
+    }
+    /// Bundle bytes received so far, never beyond the plan.
+    pub fn overall(&self) -> (u64, u64) {
+        if self.planned == 0 {
+            return (self.received, self.total);
+        }
+        ((self.done + self.received).min(self.planned), self.planned)
+    }
+}
+/// Bytes a setup still has to download: model files and a shared runtime.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Pending {
+    pub model: u64,
+    pub runtime: u64,
+}
+impl Pending {
+    pub fn total(self) -> u64 {
+        self.model + self.runtime
+    }
+}
+/// A cheap presence check by size; digests are verified during setup and use.
+pub fn missing(path: &Path, bytes: u64) -> bool {
+    std::fs::metadata(path).map_or(true, |m| m.len() != bytes)
+}
+pub fn megabytes(bytes: u64) -> u64 {
+    bytes.div_ceil(1_000_000)
 }
 #[derive(Clone, Default)]
 pub struct Progress {
@@ -71,14 +106,15 @@ pub fn fetch(
     }
     let parent = path.parent().ok_or("Invalid artifact path")?;
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    *progress.state.lock().unwrap() = State {
-        phase: format!(
+    {
+        let mut state = progress.state.lock().unwrap();
+        state.phase = format!(
             "Downloading {}",
             path.file_name().unwrap_or_default().to_string_lossy()
-        ),
-        received: 0,
-        total: bytes,
-    };
+        );
+        state.received = 0;
+        state.total = bytes;
+    }
     let agent = ureq::Agent::new_with_config(
         ureq::Agent::config_builder()
             .https_only(true)
@@ -109,6 +145,9 @@ pub fn fetch(
     progress.check()?;
     file.as_file().sync_all().map_err(|e| e.to_string())?;
     file.persist(path).map_err(|e| e.to_string())?;
+    let mut state = progress.state.lock().unwrap();
+    state.done += bytes;
+    state.received = 0;
     Ok(())
 }
 
@@ -129,5 +168,28 @@ mod tests {
         progress.cancel.store(true, Ordering::Relaxed);
         assert!(fetch("https://invalid.invalid/model", 3, &sha, &path, &progress).is_err());
         assert_eq!(std::fs::read(path).unwrap(), b"abc");
+        assert_eq!(progress.state.lock().unwrap().done, 0);
+    }
+    #[test]
+    fn overall_progress_counts_completed_files_within_the_plan() {
+        let mut state = State {
+            phase: "Downloading model.onnx".into(),
+            received: 20,
+            total: 50,
+            planned: 100,
+            done: 40,
+        };
+        assert!(state.downloading());
+        assert_eq!(state.overall(), (60, 100));
+        state.done = 90;
+        assert_eq!(state.overall(), (100, 100));
+        state.planned = 0;
+        assert_eq!(state.overall(), (20, 50));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file");
+        assert!(missing(&path, 3));
+        std::fs::write(&path, b"abc").unwrap();
+        assert!(!missing(&path, 3));
+        assert!(missing(&path, 4));
     }
 }
