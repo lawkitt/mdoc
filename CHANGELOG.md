@@ -4,6 +4,12 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- Empty page: a blank Markdown tab shows a centered **Open files…** button,
+  supported formats, the multi-file hint and ⌘O, and still accepts typing.
+  Files dragged from the OS open when dropped on the empty page or on the
+  sidebar, at an insertion line between documents; dragging over the collapsed
+  rail reveals the list (ADR 0028).
+
 - Chrome-style document sidebar: expanded by default with a + row under the
   last document. When collapsed, hovering or keyboard focus slides the full
   list out over the editor; it slides back shortly after the pointer leaves.

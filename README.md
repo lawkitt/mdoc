@@ -161,7 +161,11 @@ The collapsible left sidebar lists open files. Tabs and **+** remain visible in
 its compact rail, with filename tooltips and status indicators. Use **+** for an
 empty Markdown tab, drag tabs to reorder them, and **×** or the compact tab's
 context menu to close one. **Open…** accepts one or more files (no folders),
-appends tabs in selection order, and activates the first selected file. Reopening
+appends tabs in selection order, and activates the first selected file. An empty
+Markdown tab shows a centered **Open files…** button with the supported formats;
+typing starts writing instead. Files dragged from Finder or Explorer open when
+dropped on that empty page, or on the sidebar at the accent insertion line
+(dragging over the collapsed rail slides the list out). Reopening
 a file selects its existing tab and preserves edits. Other tabs load when
 selected. Each tab keeps its undo history, selection, search, and reading
 positions; unsupported files are summarized and load failures can be retried.

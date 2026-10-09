@@ -130,6 +130,8 @@ struct Workspace {
     automatic_import: bool,
     generated_unedited: bool,
     blank_disposable: bool,
+    /// External files over the empty page: whether any is supported (ADR 0028).
+    file_drag: Option<bool>,
     ocr_required: Option<Vec<u32>>,
     import_permit: Option<Arc<import_session::ImportPermit>>,
     conversion_source: Option<PathBuf>,
@@ -181,8 +183,8 @@ impl Workspace {
     ) -> Self {
         let markdown_search = cx.new(markdown_search::SearchInput::new);
         let editor = cx.new(|cx| {
-            let mut editor = EditorState::new(window, cx)
-                .with_placeholder("Start writing, or open a PDF, DOCX, or Markdown file.");
+            // Ghost text at the caret; the empty page centers the rest (ADR 0028).
+            let mut editor = EditorState::new(window, cx).with_placeholder("Type here…");
             editor.set_markdown_style(style::markdown_style(dependencies.theme.get()), cx);
             editor.set_block_chip_provider(|src| {
                 gpui_pdf::is_pdf(src).then(|| src.to_owned().into())
@@ -248,6 +250,7 @@ impl Workspace {
             automatic_import: false,
             generated_unedited: false,
             blank_disposable: false,
+            file_drag: None,
             ocr_required: None,
             import_permit: None,
             conversion_source: None,
@@ -297,6 +300,17 @@ impl Workspace {
         }
         self.session.dirty(self.editor.read(cx).text())
             || (self.session.document.path.is_none() && self.preview.attachment.is_some())
+    }
+
+    /// A Markdown tab with no content and no source shows the empty page (ADR 0028).
+    fn shows_empty_page(&self, cx: &App) -> bool {
+        !self.loading
+            && !self.unavailable
+            && !self.source_only
+            && self.session.source.is_none()
+            && self.preview.source.is_none()
+            && self.preview.attachment.is_none()
+            && self.editor.read(cx).text().is_empty()
     }
 
     fn can_copy_markdown(&self) -> bool {
@@ -1277,6 +1291,11 @@ impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Derived display state; set_outlines only notifies on change.
         self.sync_scope_outlines(cx);
+        // A finished or abandoned OS drag leaves no feedback behind.
+        if !cx.has_active_drag() {
+            self.file_drag = None;
+        }
+        let empty_page = self.shows_empty_page(cx);
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let search_focused = self
@@ -1515,6 +1534,19 @@ impl Render for Workspace {
                 }
             }))
             .on_mouse_up(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = false; cx.notify(); }))
+            // While the empty page shows, the whole workspace accepts OS file drops.
+            .when(empty_page, |v| v
+                .on_drag_move(cx.listener(|this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                    let over = event.bounds.contains(&event.event.position);
+                    let state = over.then(|| event.drag(cx).paths().iter().any(|path| import::supported_extension(path)));
+                    if this.file_drag != state { this.file_drag = state; cx.notify(); }
+                }))
+                .can_drop(|drag, _, _| drag.downcast_ref::<gpui::ExternalPaths>().is_some_and(|drag| drag.paths().iter().any(|path| import::supported_extension(path))))
+                .on_drop(cx.listener(|this, drag: &gpui::ExternalPaths, _, cx| {
+                    this.file_drag = None;
+                    cx.emit(tabs::TabEvent::Open(drag.paths().to_vec()));
+                    cx.notify();
+                })))
             // Toolbar clicks must dispatch inside this workspace, not the outer tab shell.
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::toggle_theme))
@@ -1558,7 +1590,7 @@ impl Render for Workspace {
                     } else { div().relative().flex_1().min_w_0().min_h_0()
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6()
                             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))
-                        .child(markdown_scrollbar).into_any_element() })))
+                        .child(markdown_scrollbar).children(empty_page.then(|| self.empty_page(cx))).into_any_element() })))
                 // Replacements sit beside the text they describe, before Original.
                 .children(self.replacements_panel(window, cx))
                 .when(self.source_only && show_markdown, |row| row.child(div().id("conversion-pane").flex_1().min_w_0().p_6().flex().items_center().justify_center().overflow_y_scroll()
