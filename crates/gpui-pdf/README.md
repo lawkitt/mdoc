@@ -12,7 +12,4 @@ the mdoc workspace (`publish = false`).
 - PDF link actions reach the OS opener only for `http(s)` URLs.
 - Encrypted documents report `is_locked`; the app shows a notice instead.
 
-The highlight pen and area tools are inherited from Zorite and create nothing
-in mdoc; see the codebase cleanup interview for their status.
-
 MIT-licensed (see [LICENSE](LICENSE)), derived from Zorite.
