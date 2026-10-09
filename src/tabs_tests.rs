@@ -4,6 +4,8 @@ use gpui::{TestAppContext, VisualTestContext};
 fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Tabs>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
+    // Sidebar animations settle at once; timers still need the clock.
+    cx.update(|cx| cx.set_reduce_motion(true));
     cx.update(markdown_search::bind_keys);
     cx.update(bind_markdown_search_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
@@ -31,9 +33,54 @@ fn click_toolbar(cx: &mut VisualTestContext, label: &'static str) {
     cx.run_until_parked();
 }
 
-fn open_document_list(tabs: &Entity<Tabs>, cx: &mut VisualTestContext) {
-    let id = cx.update(|_, cx| tabs.read(cx).tabs[0].id);
-    click_toolbar(cx, Box::leak(format!("compact-tab-{id}").into_boxed_str()));
+fn draw(cx: &mut VisualTestContext) {
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+}
+
+fn collapse(tabs: &Entity<Tabs>, cx: &mut VisualTestContext) {
+    tabs.update(cx, |tabs, cx| {
+        tabs.sidebar_visible = false;
+        tabs.sidebar_choice = Some(false);
+        cx.notify();
+    });
+    draw(cx);
+}
+
+fn wait(cx: &mut VisualTestContext, millis: u64) {
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(millis));
+    cx.run_until_parked();
+    draw(cx);
+}
+
+fn hover(cx: &mut VisualTestContext, position: gpui::Point<gpui::Pixels>) {
+    cx.simulate_mouse_move(position, None, gpui::Modifiers::none());
+    cx.run_until_parked();
+    draw(cx);
+}
+
+/// Rest the pointer on the collapsed rail until the full list slides out.
+fn reveal_by_hover(tabs: &Entity<Tabs>, cx: &mut VisualTestContext) {
+    hover(cx, gpui::point(px(20.), px(400.)));
+    wait(cx, 250);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+}
+
+/// Keyboard focus on a rail control reveals the list at its matching control.
+fn reveal_by_keyboard(cx: &mut VisualTestContext, rail: &gpui::FocusHandle) {
+    cx.update(|window, cx| window.focus(rail, cx));
+    // An unbound key makes the focus keyboard-driven.
+    cx.simulate_keystrokes("f19");
+    draw(cx);
+    cx.run_until_parked();
+    draw(cx);
+}
+
+fn compact_focus(tabs: &Entity<Tabs>, cx: &mut VisualTestContext, id: u64) -> gpui::FocusHandle {
+    cx.update(|_, cx| tabs.read(cx).compact_row_focus.borrow()[&id].clone())
 }
 
 #[gpui::test]
@@ -1441,7 +1488,7 @@ fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
 #[gpui::test]
 fn sidebar_default_and_explicit_choice_survive_document_count_changes(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
-    cx.update(|_, cx| assert!(!tabs.read(cx).sidebar_visible));
+    cx.update(|_, cx| assert!(tabs.read(cx).sidebar_visible));
     tabs.update_in(cx, |tabs, window, cx| {
         for _ in 0..3 {
             tabs.new_tab(window, cx);
@@ -1451,8 +1498,8 @@ fn sidebar_default_and_explicit_choice_survive_document_count_changes(cx: &mut T
     click_toolbar(cx, "sidebar-toggle");
     tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     let saved = tabs.update(cx, |tabs, cx| tabs.snapshot(cx));
-    assert_eq!(saved.sidebar_choice, Some(true));
-    assert!(saved.sidebar_visible);
+    assert_eq!(saved.sidebar_choice, Some(false));
+    assert!(!saved.sidebar_visible);
     let restored = cx.update(|window, cx| {
         cx.new(|cx| {
             let mut restored = Tabs::empty(window, cx);
@@ -1461,20 +1508,34 @@ fn sidebar_default_and_explicit_choice_survive_document_count_changes(cx: &mut T
         })
     });
     cx.run_until_parked();
-    cx.update(|_, cx| {
-        assert_eq!(restored.read(cx).sidebar_choice, Some(true));
-        assert!(restored.read(cx).sidebar_visible);
-    });
+    cx.update(|_, cx| assert_eq!(restored.read(cx).sidebar_choice, Some(false)));
     click_toolbar(cx, "sidebar-toggle");
     tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     cx.run_until_parked();
     let saved = tabs.update(cx, |tabs, cx| tabs.snapshot(cx));
-    assert_eq!(saved.sidebar_choice, Some(false));
-    assert!(!saved.sidebar_visible);
+    assert_eq!(saved.sidebar_choice, Some(true));
+    assert!(saved.sidebar_visible);
+    // A session saved without an explicit choice opens expanded.
+    let legacy = Session {
+        sidebar_visible: false,
+        sidebar_choice: None,
+        ..Session::default()
+    };
+    let legacy = cx.update(|window, cx| {
+        cx.new(|cx| {
+            let mut restored = Tabs::empty(window, cx);
+            restored.restore(legacy, window, cx);
+            restored
+        })
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(legacy.read(cx).sidebar_choice, None));
+    let legacy = cx.update(|_, cx| legacy.read(cx).snapshot(cx));
+    assert!(legacy.sidebar_choice.is_none());
 }
 
 #[gpui::test]
-fn collapsed_popup_escape_restores_its_opener_and_closing_it_keeps_focus_valid(
+fn keyboard_reveal_escape_restores_rail_control_and_closing_opener_keeps_focus_valid(
     cx: &mut TestAppContext,
 ) {
     let (tabs, cx) = boot(cx, Session::default());
@@ -1482,18 +1543,41 @@ fn collapsed_popup_escape_restores_its_opener_and_closing_it_keeps_focus_valid(
     let first_id = cx.update(|_, cx| tabs.read(cx).active);
     tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     cx.run_until_parked();
-    open_document_list(&tabs, cx);
-    cx.simulate_keystrokes("escape");
+    collapse(&tabs, cx);
+    let opener = compact_focus(&tabs, cx, first_id);
+    reveal_by_keyboard(cx, &opener);
     cx.update(|window, cx| {
-        assert!(!tabs.read(cx).document_list_open);
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.reveal, Reveal::Shown);
+        assert!(tabs.sidebar_row_focus.borrow()[&first_id].is_focused(window));
+        assert_eq!(tabs.sidebar_choice, Some(false), "a reveal never pins");
+    });
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    cx.update(|window, cx| {
+        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
         assert!(tabs.read(cx).compact_row_focus.borrow()[&first_id].is_focused(window));
     });
-    open_document_list(&tabs, cx);
+    // Escape's target stays put rather than revealing again.
+    draw(cx);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Hidden));
+    // The toggle reveals too, at the reveal's own toggle.
+    let toggle = cx.update(|_, cx| tabs.read(cx).rail_toggle_focus.clone());
+    reveal_by_keyboard(cx, &toggle);
+    cx.update(|window, cx| {
+        assert_eq!(tabs.read(cx).reveal, Reveal::Shown);
+        assert!(tabs.read(cx).panel_toggle_focus.is_focused(window));
+    });
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    reveal_by_keyboard(cx, &opener);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
     tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(first_id, window, cx));
     cx.run_until_parked();
+    draw(cx);
     cx.update(|window, cx| {
-        assert!(!tabs.read(cx).document_list_open);
-        assert!(tabs.read(cx).document_list_previous.is_none());
+        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
+        assert!(tabs.read(cx).reveal_return.is_none());
         assert!(
             tabs.read(cx)
                 .active_view()
@@ -1508,55 +1592,65 @@ fn collapsed_popup_escape_restores_its_opener_and_closing_it_keeps_focus_valid(
 }
 
 #[gpui::test]
-fn collapsed_icons_switch_tabs_with_list_open_until_selection_escape_or_outside_click(
-    cx: &mut TestAppContext,
-) {
+fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
     let first = cx.update(|_, cx| tabs.read(cx).active);
     let second = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
-    let third = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     cx.run_until_parked();
+    collapse(&tabs, cx);
     let compact = |id| Box::leak(format!("compact-tab-{id}").into_boxed_str()) as &'static str;
     let row = |id| Box::leak(format!("tab-{id}").into_boxed_str()) as &'static str;
 
-    // The first click reveals names without changing the active document.
+    // A click before hover intent activates without revealing.
     click_toolbar(cx, compact(first));
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).active, third);
-        assert!(tabs.read(cx).document_list_open);
-    });
-    // Subsequent rail clicks switch directly, including the original opener.
-    for id in [first, second, second, third] {
-        click_toolbar(cx, compact(id));
-        cx.update(|window, cx| {
-            assert_eq!(tabs.read(cx).active, id);
-            assert!(tabs.read(cx).document_list_open);
-            assert!(
-                tabs.read(cx)
-                    .document_list_focus
-                    .contains_focused(window, cx)
-            );
-        });
-    }
-    cx.simulate_keystrokes("escape");
-    cx.update(|window, cx| {
-        assert!(!tabs.read(cx).document_list_open);
-        assert!(tabs.read(cx).compact_row_focus.borrow()[&third].is_focused(window));
-    });
-    click_toolbar(cx, compact(second));
-    click_toolbar(cx, row(first));
-    cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).active, first);
-        assert!(!tabs.read(cx).document_list_open);
+        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
     });
-    click_toolbar(cx, compact(second));
-    cx.simulate_click(gpui::point(px(850.), px(500.)), Default::default());
-    cx.run_until_parked();
+    // A pointer passing over the rail does not reveal.
+    hover(cx, gpui::point(px(850.), px(500.)));
+    wait(cx, 250);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Hidden));
+
+    reveal_by_hover(&tabs, cx);
+    let overlay = cx.debug_bounds("sidebar-reveal").unwrap();
+    assert_eq!(overlay.size.width, px(200.));
+    let editor_left = cx.update(|_, cx| tabs.read(cx).sidebar_scroll.bounds().left());
+    assert!(
+        editor_left < px(40.),
+        "reveal overlays from the window edge"
+    );
+    // Rows in the reveal activate and keep it open while the pointer is inside.
+    click_toolbar(cx, row(second));
     cx.update(|_, cx| {
-        assert!(!tabs.read(cx).document_list_open);
-        assert!(tabs.read(cx).document_list_previous.is_none());
-        assert_eq!(tabs.read(cx).active, first);
+        assert_eq!(tabs.read(cx).active, second);
+        assert_eq!(tabs.read(cx).reveal, Reveal::Shown);
+        assert_eq!(tabs.read(cx).sidebar_choice, Some(false));
+    });
+    // Leaving starts a grace period that re-entering cancels.
+    hover(cx, gpui::point(px(850.), px(500.)));
+    wait(cx, 200);
+    hover(cx, gpui::point(px(100.), px(400.)));
+    wait(cx, 400);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+    hover(cx, gpui::point(px(850.), px(500.)));
+    wait(cx, 200);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+    wait(cx, 200);
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
+        assert_eq!(tabs.read(cx).active, second);
+    });
+    assert!(cx.debug_bounds("sidebar-reveal").is_none());
+    // The reveal's toggle pins the sidebar open.
+    reveal_by_hover(&tabs, cx);
+    click_toolbar(cx, "sidebar-toggle");
+    cx.update(|_, cx| {
+        assert!(tabs.read(cx).sidebar_visible);
+        assert_eq!(tabs.read(cx).sidebar_choice, Some(true));
+        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
     });
 }
 
@@ -1667,60 +1761,56 @@ fn main_toolbar_wraps_without_hiding_actions_in_both_themes(cx: &mut TestAppCont
 }
 
 #[gpui::test]
-fn collapsed_rail_keeps_new_and_tab_controls_and_context_close(cx: &mut TestAppContext) {
+fn new_follows_the_last_document_and_context_close_holds_the_reveal(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
-    tabs.update(cx, |tabs, cx| {
-        tabs.sidebar_visible = false;
-        tabs.sidebar_choice = Some(false);
-        cx.notify();
-    });
-    let first_id = cx.update(|_, cx| tabs.read(cx).active);
-    let draw = |cx: &mut VisualTestContext| {
-        cx.update(|window, cx| {
-            window.refresh();
-            window.draw(cx).clear(cx);
-        })
-    };
     draw(cx);
-    let plus = cx.debug_bounds("sidebar-new-collapsed").unwrap();
+    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    let row = |id| Box::leak(format!("tab-{id}").into_boxed_str()) as &'static str;
+    let compact = |id| Box::leak(format!("compact-tab-{id}").into_boxed_str()) as &'static str;
+    // Expanded: a full-width row directly under the last document.
+    let plus = cx.debug_bounds("sidebar-new").unwrap();
+    let last = cx.debug_bounds(row(first_id)).unwrap();
+    assert!(plus.top() >= last.bottom() && plus.top() < last.bottom() + px(8.));
+    assert!(plus.size.width > px(150.));
     cx.simulate_click(plus.center(), Default::default());
     cx.run_until_parked();
     draw(cx);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 2));
-    let before_popup = cx.update(|_, cx| tabs.read(cx).active);
-    open_document_list(&tabs, cx);
-    cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).active, before_popup);
-        assert!(tabs.read(cx).document_list_open);
+    let second_id = cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).tabs.len(), 2);
+        tabs.read(cx).active
     });
-    let first = cx
-        .debug_bounds(Box::leak(format!("tab-{first_id}").into_boxed_str()))
-        .unwrap();
-    cx.simulate_click(first.center(), Default::default());
+    assert!(cx.debug_bounds("sidebar-new").unwrap().top() > plus.top());
+
+    // Collapsed: a square below the compact entries.
+    collapse(&tabs, cx);
+    let plus = cx.debug_bounds("sidebar-new-collapsed").unwrap();
+    assert!(plus.top() >= cx.debug_bounds(compact(second_id)).unwrap().bottom());
+    assert_eq!(plus.size.width, px(32.));
+    cx.simulate_click(plus.center(), Default::default());
     cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).active, first_id));
-    open_document_list(&tabs, cx);
-    draw(cx);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 3));
+
+    // The context menu keeps the reveal open after the pointer leaves it.
+    reveal_by_hover(&tabs, cx);
+    let first = cx.debug_bounds(row(first_id)).unwrap();
     cx.simulate_mouse_down(first.center(), gpui::MouseButton::Right, Default::default());
     cx.simulate_mouse_up(first.center(), gpui::MouseButton::Right, Default::default());
     cx.run_until_parked();
     draw(cx);
     let close = cx.debug_bounds("context-close-tab").unwrap();
+    hover(cx, close.center());
+    wait(cx, 1000);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
     cx.simulate_click(close.center(), Default::default());
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).tabs.len(), 1);
+        assert_eq!(tabs.read(cx).tabs.len(), 2);
         assert!(tabs.read(cx).tab_menu.is_none());
     });
-    // New remains fixed above the scrollable list even with many tabs.
-    tabs.update_in(cx, |tabs, window, cx| {
-        for _ in 0..25 {
-            tabs.new_tab(window, cx);
-        }
-    });
-    draw(cx);
-    assert_eq!(cx.debug_bounds("sidebar-new-collapsed").unwrap(), plus);
+    hover(cx, gpui::point(px(850.), px(500.)));
+    wait(cx, 1000);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Hidden));
 }
 
 #[gpui::test]
@@ -1910,6 +2000,21 @@ fn narrow_original_switch_and_divider_preserve_source_and_session(cx: &mut TestA
     );
 }
 
+#[gpui::test]
+fn unsaved_duplicate_names_keep_single_line_rows(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    draw(cx);
+    let first = cx.update(|_, cx| tabs.read(cx).active);
+    let row = |id| Box::leak(format!("tab-{id}").into_boxed_str()) as &'static str;
+    let single = cx.debug_bounds(row(first)).unwrap().size.height;
+    let second = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    draw(cx);
+    for id in [first, second] {
+        assert_eq!(cx.debug_bounds(row(id)).unwrap().size.height, single);
+    }
+}
+
 #[test]
 fn duplicate_names_show_distinguishing_parent_suffixes() {
     let peers = vec![
@@ -1933,7 +2038,9 @@ fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
         cx.notify();
         tabs.tabs.last().unwrap().id
     });
-    open_document_list(&tabs, cx);
+    draw(cx);
+    let toggle = cx.update(|_, cx| tabs.read(cx).rail_toggle_focus.clone());
+    reveal_by_keyboard(cx, &toggle);
     let mut reached = false;
     for _ in 0..45 {
         cx.simulate_keystrokes("tab");
@@ -1978,6 +2085,6 @@ fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).active, last_id);
-        assert!(!tabs.read(cx).document_list_open);
+        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
     });
 }

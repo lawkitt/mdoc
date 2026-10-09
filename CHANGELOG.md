@@ -4,6 +4,12 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- Chrome-style document sidebar: expanded by default with a + row under the
+  last document. When collapsed, hovering or keyboard focus slides the full
+  list out over the editor; it slides back shortly after the pointer leaves.
+  Compact entries switch documents directly, replacing the filename popup
+  (ADR 0027).
+
 - First-use model setup asks in place: a Markdown-pane card for OCR and a
   Replacements-panel card for Pseudonymize show the download size, total-byte
   progress, Cancel and Retry, then continue the task. Settings no longer opens

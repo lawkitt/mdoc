@@ -3,6 +3,8 @@
 Status: shared understanding confirmed and implementation authorized by the user's
 "Implement" on 2026-10-06. Implemented locally; verification is recorded below.
 The design frontier is empty.
+The sidebar default and document list popup are superseded by the
+[Chrome-style vertical sidebar](sidebar-vertical-tabs.md) (ADR 0027).
 This revision revisits decisions 5, 6, 14, 15, and 16 of [the UI review](ui-review.md)
 and [ADR 0012](../adr/0012-document-preparation-ui.md).
 

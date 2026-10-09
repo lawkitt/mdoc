@@ -390,6 +390,7 @@ pub enum Icon {
     Settings,
     Anonymous,
     Undo,
+    Sidebar,
 }
 
 impl Icon {
@@ -403,6 +404,7 @@ impl Icon {
             Self::Settings => include_bytes!("../resources/ui/settings.svg"),
             Self::Anonymous => include_bytes!("../resources/ui/anonymous.svg"),
             Self::Undo => include_bytes!("../resources/ui/undo.svg"),
+            Self::Sidebar => include_bytes!("../resources/ui/sidebar.svg"),
         }
     }
 }

@@ -2,7 +2,7 @@
 //! unopened session records allocate no editor, PDF, or conversion worker.
 use super::*;
 use crate::session_store::{Session, TabRecord};
-use gpui::{AnyElement, EventEmitter};
+use gpui::{Animation, AnimationExt, AnyElement, EventEmitter};
 use std::{collections::VecDeque, time::Duration};
 
 pub(super) enum TabEvent {
@@ -82,9 +82,28 @@ pub(super) struct Tabs {
     next_id: u64,
     sidebar_visible: bool,
     sidebar_choice: Option<bool>,
-    document_list_open: bool,
-    document_list_focus: gpui::FocusHandle,
-    document_list_previous: Option<gpui::FocusHandle>,
+    /// Bumped by explicit toggles so only they animate the sidebar width.
+    sidebar_generation: u64,
+    reveal: Reveal,
+    reveal_generation: u64,
+    /// Opened by keyboard focus, so focus inside it also keeps it open.
+    reveal_keyboard: bool,
+    /// Pointer over (rail, reveal).
+    reveal_hover: (bool, bool),
+    /// The timer still allowed to open (`true`) or close (`false`) the reveal.
+    reveal_pending: Option<(bool, u64)>,
+    reveal_ticket: u64,
+    reveal_focus: gpui::FocusHandle,
+    /// The rail control that keyboard focus came from; Escape returns there.
+    reveal_return: Option<gpui::FocusHandle>,
+    /// A rail control focused by Escape that must not reveal again.
+    reveal_escaped: Option<gpui::FocusHandle>,
+    rail_toggle_focus: gpui::FocusHandle,
+    rail_new_focus: gpui::FocusHandle,
+    panel_toggle_focus: gpui::FocusHandle,
+    panel_new_focus: gpui::FocusHandle,
+    menu_focus: gpui::FocusHandle,
+    menu_return: Option<gpui::FocusHandle>,
     sidebar_scroll: gpui::ScrollHandle,
     compact_scroll: gpui::ScrollHandle,
     compact_row_focus: std::cell::RefCell<std::collections::HashMap<u64, gpui::FocusHandle>>,
@@ -193,11 +212,24 @@ impl Tabs {
             tabs: Vec::new(),
             active: 0,
             next_id: 1,
-            sidebar_visible: false,
+            sidebar_visible: true,
             sidebar_choice: None,
-            document_list_open: false,
-            document_list_focus: cx.focus_handle(),
-            document_list_previous: None,
+            sidebar_generation: 0,
+            reveal: Reveal::Hidden,
+            reveal_generation: 0,
+            reveal_keyboard: false,
+            reveal_hover: (false, false),
+            reveal_pending: None,
+            reveal_ticket: 0,
+            reveal_focus: cx.focus_handle(),
+            reveal_return: None,
+            reveal_escaped: None,
+            rail_toggle_focus: cx.focus_handle().tab_stop(true),
+            rail_new_focus: cx.focus_handle().tab_stop(true),
+            panel_toggle_focus: cx.focus_handle().tab_stop(true),
+            panel_new_focus: cx.focus_handle().tab_stop(true),
+            menu_focus: cx.focus_handle(),
+            menu_return: None,
             sidebar_scroll: gpui::ScrollHandle::new(),
             compact_scroll: gpui::ScrollHandle::new(),
             compact_row_focus: Default::default(),
@@ -472,9 +504,7 @@ impl Tabs {
         cx: &mut Context<Self>,
     ) {
         self.sidebar_visible = session.sidebar_visible;
-        self.sidebar_choice = session
-            .sidebar_choice
-            .or((!session.sidebar_visible).then_some(false));
+        self.sidebar_choice = session.sidebar_choice;
         let selected = session.active;
         // Session paths were normalized when opened/saved. Do not stat every file
         // during startup; missing files are diagnosed when activated.
@@ -1060,12 +1090,11 @@ impl Tabs {
     fn remove(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         self.sidebar_row_focus.borrow_mut().remove(&id);
         let removed_opener = self.compact_row_focus.borrow_mut().remove(&id);
-        let removed_list_opener =
-            removed_opener.is_some() && self.document_list_previous == removed_opener;
-        let closed_popup = self.document_list_open && removed_list_opener;
-        if removed_list_opener {
-            self.document_list_open = false;
-            self.document_list_previous = None;
+        let removed_reveal_opener =
+            removed_opener.is_some() && self.reveal_return == removed_opener;
+        let closed_reveal = self.reveal == Reveal::Shown && removed_reveal_opener;
+        if removed_reveal_opener {
+            self.reveal_return = None;
         }
         let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
             return;
@@ -1084,16 +1113,9 @@ impl Tabs {
             self.activate(id, window, cx);
         } else if self.active == id {
             self.activate(self.tabs[index.min(self.tabs.len() - 1)].id, window, cx);
-        } else if closed_popup && let Some(view) = self.active_view() {
-            let view = view.read(cx);
-            let focus = if view.source_only {
-                view.focus.clone()
-            } else if view.loading || view.unavailable {
-                self.focus.clone()
-            } else {
-                view.editor.read(cx).focus_handle(cx)
-            };
-            window.focus(&focus, cx);
+        } else if closed_reveal {
+            self.dismiss_reveal(window, cx);
+            self.focus_active(window, cx);
         }
         self.checkpoint(window, cx);
         cx.notify();
@@ -1296,6 +1318,190 @@ impl Tabs {
         self.activate(self.tabs[next].id, window, cx);
     }
 
+    /// Focus the active document without changing which document is active.
+    fn focus_active(&self, window: &mut Window, cx: &mut App) {
+        let Some(view) = self.active_view() else {
+            return;
+        };
+        let view = view.read(cx);
+        let focus = if view.source_only {
+            view.focus.clone()
+        } else if view.loading || view.unavailable {
+            self.focus.clone()
+        } else {
+            view.editor.read(cx).focus_handle(cx)
+        };
+        window.focus(&focus, cx);
+    }
+
+    /// Track the pointer over the collapsed rail or its reveal (ADR 0027).
+    fn hover_sidebar(
+        &mut self,
+        panel: bool,
+        hovered: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if panel {
+            self.reveal_hover.1 = hovered;
+        } else {
+            self.reveal_hover.0 = hovered;
+        }
+        if self.sidebar_visible {
+            return;
+        }
+        let pending = self.reveal_pending.map(|(open, _)| open);
+        match (self.reveal_hover.0 || self.reveal_hover.1, self.reveal) {
+            (true, Reveal::Shown) => self.reveal_pending = None,
+            (true, Reveal::Hiding) => self.show_reveal(false, cx),
+            (true, Reveal::Hidden) if pending != Some(true) => {
+                self.schedule_reveal(true, window, cx)
+            }
+            (false, Reveal::Shown) if pending != Some(false) => {
+                self.schedule_reveal(false, window, cx)
+            }
+            (false, Reveal::Hidden) => self.reveal_pending = None,
+            _ => {}
+        }
+    }
+
+    /// Open after hover intent, or close after the grace period. Only the most
+    /// recently scheduled timer acts.
+    fn schedule_reveal(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.reveal_ticket += 1;
+        let ticket = self.reveal_ticket;
+        self.reveal_pending = Some((open, ticket));
+        let delay = if open { REVEAL_DELAY } else { REVEAL_GRACE };
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(delay).await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if this.reveal_pending != Some((open, ticket)) {
+                    return;
+                }
+                this.reveal_pending = None;
+                if open {
+                    this.show_reveal(false, cx);
+                } else if this.reveal_held(window, cx) {
+                    this.schedule_reveal(false, window, cx);
+                } else {
+                    let focused = this.reveal_focus.contains_focused(window, cx);
+                    this.dismiss_reveal(window, cx);
+                    if focused {
+                        this.focus_active(window, cx);
+                    }
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// A context menu, drag, the pointer, or keyboard focus keeps the reveal open.
+    fn reveal_held(&self, window: &Window, cx: &App) -> bool {
+        self.tab_menu.is_some()
+            || cx.has_active_drag()
+            || self.reveal_hover.0
+            || self.reveal_hover.1
+            || (self.reveal_keyboard && self.reveal_focus.contains_focused(window, cx))
+    }
+
+    fn show_reveal(&mut self, keyboard: bool, cx: &mut Context<Self>) {
+        self.reveal_pending = None;
+        if self.reveal != Reveal::Shown {
+            self.reveal_generation += 1;
+            self.reveal = Reveal::Shown;
+            self.reveal_keyboard = keyboard;
+        }
+        cx.notify();
+    }
+
+    /// Slide the reveal back; it unmounts once the animation has finished.
+    fn dismiss_reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.reveal_pending = None;
+        if self.reveal != Reveal::Shown {
+            return;
+        }
+        self.reveal_keyboard = false;
+        self.reveal_return = None;
+        self.reveal_generation += 1;
+        if cx.reduce_motion() {
+            self.reveal = Reveal::Hidden;
+            self.reveal_hover.1 = false;
+        } else {
+            self.reveal = Reveal::Hiding;
+            let generation = self.reveal_generation;
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor().timer(SLIDE).await;
+                let _ = this.update(cx, |this, cx| {
+                    if this.reveal == Reveal::Hiding && this.reveal_generation == generation {
+                        this.reveal = Reveal::Hidden;
+                        this.reveal_hover.1 = false;
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
+        cx.notify();
+    }
+
+    /// Keyboard focus on a rail control reveals the full list at once and moves
+    /// focus to the matching control there; focus leaving the reveal closes it.
+    fn reveal_for_keyboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.sidebar_visible {
+            return;
+        }
+        if self
+            .reveal_escaped
+            .as_ref()
+            .is_some_and(|focus| !focus.is_focused(window))
+        {
+            self.reveal_escaped = None;
+        }
+        let mut focused = [
+            (&self.rail_toggle_focus, &self.panel_toggle_focus),
+            (&self.rail_new_focus, &self.panel_new_focus),
+        ]
+        .into_iter()
+        .find(|(rail, _)| rail.is_focused(window))
+        .map(|(rail, panel)| (rail.clone(), panel.clone()));
+        if focused.is_none() {
+            let compact = self
+                .compact_row_focus
+                .borrow()
+                .iter()
+                .find(|(_, focus)| focus.is_focused(window))
+                .map(|(id, focus)| (*id, focus.clone()));
+            focused = compact.map(|(id, rail)| {
+                let row = self
+                    .sidebar_row_focus
+                    .borrow_mut()
+                    .entry(id)
+                    .or_insert_with(|| cx.focus_handle().tab_stop(true))
+                    .clone();
+                (rail, row)
+            });
+        }
+        match focused {
+            Some((rail, panel))
+                if self.reveal != Reveal::Shown
+                    && self.reveal_escaped.is_none()
+                    && window.last_input_was_keyboard() =>
+            {
+                self.show_reveal(true, cx);
+                self.reveal_keyboard = true;
+                self.reveal_return = Some(rail);
+                window.defer(cx, move |window, cx| window.focus(&panel, cx));
+            }
+            None if self.reveal == Reveal::Shown
+                && self.reveal_keyboard
+                && !self.reveal_held(window, cx) =>
+            {
+                self.dismiss_reveal(window, cx);
+            }
+            _ => {}
+        }
+    }
+
     fn reorder(&mut self, from: u64, to: u64, cx: &mut Context<Self>) {
         if self.quitting.is_some() {
             return;
@@ -1311,14 +1517,12 @@ impl Tabs {
         cx.notify();
     }
 
-    fn sidebar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let expanded = self.sidebar_visible;
+        let revealed = !expanded && self.reveal != Reveal::Hidden;
         let mut compact_rows = Vec::with_capacity(self.tabs.len());
-        let mut compact_bounds = Vec::with_capacity(self.tabs.len());
-        let compact_viewport = Rc::new(Cell::new(None::<gpui::Bounds<gpui::Pixels>>));
-        let measured_viewport = compact_viewport.clone();
         let rows = self
             .tabs
             .iter()
@@ -1405,20 +1609,23 @@ impl Tabs {
                     })
                     .collect();
                 let parent_label = disambiguating_parent(identity, &peers);
+                // Unsaved duplicates have no folder; an empty second line would
+                // lift the name off the row's centre.
+                let duplicate = duplicate && !parent_label.is_empty();
                 let focus = self
                     .sidebar_row_focus
                     .borrow_mut()
                     .entry(id)
                     .or_insert_with(|| cx.focus_handle().tab_stop(true))
                     .clone();
+                // Rail controls leave the tab order while the reveal covers them.
                 let compact_focus = self
                     .compact_row_focus
                     .borrow_mut()
                     .entry(id)
                     .or_insert_with(|| cx.focus_handle().tab_stop(true))
-                    .clone();
-                let bounds = Rc::new(Cell::new(None::<gpui::Bounds<gpui::Pixels>>));
-                compact_bounds.push(bounds.clone());
+                    .clone()
+                    .tab_stop(!revealed);
                 compact_rows.push(
                     ui::control(("compact-tab", id), format.clone(), theme, true)
                         .map(|v| {
@@ -1428,20 +1635,10 @@ impl Tabs {
                                 self.compact_scroll.clone(),
                             )
                         })
-                        .tab_stop(!self.document_list_open)
-                        .aria_label(format!("Show documents: {name}"))
+                        .aria_label(name.clone())
                         .when(cfg!(test), |v| {
                             v.debug_selector(move || format!("compact-tab-{id}"))
                         })
-                        .relative()
-                        .child(
-                            gpui::canvas(
-                                move |measured, _, _| bounds.set(Some(measured)),
-                                |_, _, _, _| {},
-                            )
-                            .absolute()
-                            .inset_0(),
-                        )
                         .p_0()
                         .size(px(32.))
                         .flex()
@@ -1450,7 +1647,7 @@ impl Tabs {
                         .text_size(px(9.))
                         .mb(px(2.))
                         .when(self.active == id, |v| v.bg(theme.sidebar_selected()))
-                        .when(!self.document_list_open, |v| {
+                        .when(!revealed, |v| {
                             v.tooltip(style::tooltip(tooltip.clone(), theme))
                         })
                         .when(dirty || busy || error, |v| {
@@ -1482,21 +1679,14 @@ impl Tabs {
                         })
                         .on_click(cx.listener(move |this, _, window, cx| {
                             if this.quitting.is_none() {
-                                if this.document_list_open && this.active != id {
-                                    this.activate(id, window, cx);
-                                }
-                                this.document_list_previous = Some(compact_focus.clone());
-                                this.document_list_open = true;
-                                window.focus(&this.document_list_focus, cx);
-                                cx.notify();
+                                this.activate(id, window, cx);
                             }
                         }))
                         .on_mouse_down(
                             gpui::MouseButton::Right,
                             cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
-                                this.document_list_previous = window.focused(cx);
-                                window.focus(&this.document_list_focus, cx);
-                                this.document_list_open = false;
+                                this.menu_return = window.focused(cx);
+                                window.focus(&this.menu_focus, cx);
                                 this.tab_menu = Some((id, event.position));
                                 cx.notify();
                             }),
@@ -1588,17 +1778,14 @@ impl Tabs {
                     )
                     .on_click(cx.listener(move |this, _, window, cx| {
                         if this.quitting.is_none() {
-                            this.document_list_open = false;
-                            this.document_list_previous = None;
                             this.activate(id, window, cx);
                         }
                     }))
                     .on_mouse_down(
                         gpui::MouseButton::Right,
                         cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
-                            this.document_list_previous = window.focused(cx);
-                            window.focus(&this.document_list_focus, cx);
-                            this.document_list_open = false;
+                            this.menu_return = window.focused(cx);
+                            window.focus(&this.menu_focus, cx);
                             this.tab_menu = Some((id, event.position));
                             cx.notify();
                         }),
@@ -1617,176 +1804,214 @@ impl Tabs {
                     )
             })
             .collect::<Vec<_>>();
-        let list = div()
-            .id("sidebar-tabs")
-            .track_scroll(&self.sidebar_scroll)
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .px_1()
-            .children(rows);
-        let mut rail = div()
+        let new_row = ui::control("sidebar-new", "+", theme, true)
+            .track_focus(&self.panel_new_focus)
+            .aria_label("New Markdown tab")
+            .tooltip(style::tooltip("New Markdown tab".into(), theme))
+            .when(cfg!(test), |v| v.debug_selector(|| "sidebar-new".into()))
+            .flex()
+            .items_center()
+            .justify_center()
+            .min_h(px(32.))
+            .text_size(px(16.))
+            .border_1()
+            .border_color(palette.border)
+            .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx));
+        // The full list, either pinned open or revealed over the editor. Its
+        // width is fixed so animations clip it rather than reflow it.
+        let mut panel = (expanded || revealed).then(|| {
+            div()
+                .w(px(PANEL_WIDTH - 1.))
+                .h_full()
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .p_1()
+                        .min_h(px(40.))
+                        .flex_shrink_0()
+                        .child(sidebar_toggle(&self.panel_toggle_focus, expanded, theme)),
+                )
+                .child(
+                    div()
+                        .id("sidebar-tabs")
+                        .track_scroll(&self.sidebar_scroll)
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .px_1()
+                        .pb_1()
+                        .children(rows)
+                        .child(new_row),
+                )
+        });
+        let content = if expanded {
+            div().size_full().children(panel.take()).into_any_element()
+        } else {
+            div()
+                .w(px(RAIL_WIDTH - 1.))
+                .h_full()
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .p_1()
+                        .min_h(px(40.))
+                        .flex_shrink_0()
+                        .child(sidebar_toggle(
+                            &self.rail_toggle_focus.clone().tab_stop(!revealed),
+                            false,
+                            theme,
+                        )),
+                )
+                .child(
+                    div()
+                        .id("compact-tabs")
+                        .track_scroll(&self.compact_scroll)
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .px_1()
+                        .pb_1()
+                        .children(compact_rows)
+                        .child(
+                            ui::control("sidebar-new-collapsed", "+", theme, true)
+                                .track_focus(&self.rail_new_focus.clone().tab_stop(!revealed))
+                                .aria_label("New Markdown tab")
+                                .when(!revealed, |v| {
+                                    v.tooltip(style::tooltip("New Markdown tab".into(), theme))
+                                })
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "sidebar-new-collapsed".into())
+                                })
+                                .p_0()
+                                .size(px(32.))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(px(16.))
+                                .border_1()
+                                .border_color(palette.border)
+                                .on_click(|_, window, cx| {
+                                    window.dispatch_action(Box::new(New), cx)
+                                }),
+                        ),
+                )
+                .into_any_element()
+        };
+        let width = |open: bool| if open { PANEL_WIDTH } else { RAIL_WIDTH };
+        let mut sidebar = div()
+            .id("sidebar")
             .relative()
-            .w(px(if expanded { 200. } else { 40. }))
+            .w(px(width(expanded)))
             .flex_shrink_0()
             .h_full()
-            .flex()
-            .flex_col()
             .bg(theme.sidebar_bg())
             .text_size(px(13.))
             .border_r_1()
             .border_color(palette.border)
-            .child(
+            .child(div().size_full().overflow_hidden().child(content))
+            .when(!expanded, |v| {
+                v.on_hover(cx.listener(|this, hovered: &bool, window, cx| {
+                    this.hover_sidebar(false, *hovered, window, cx)
+                }))
+            });
+        if let Some(panel) = panel.filter(|_| revealed) {
+            let (from, to) = if self.reveal == Reveal::Shown {
+                (RAIL_WIDTH, PANEL_WIDTH)
+            } else {
+                (PANEL_WIDTH, RAIL_WIDTH)
+            };
+            sidebar = sidebar.child(gpui::deferred(
                 div()
-                    .flex()
-                    .when(!expanded, |v| v.flex_col())
-                    .items_center()
-                    .gap_1()
-                    .p_1()
-                    .min_h(px(40.))
-                    .flex_shrink_0()
-                    .child(
-                        ui::control(
-                            "sidebar-toggle",
-                            if expanded { "‹" } else { "›" },
-                            theme,
-                            true,
-                        )
-                        .aria_label(if expanded {
-                            "Collapse sidebar"
-                        } else {
-                            "Expand sidebar"
-                        })
-                        .when(cfg!(test), |v| v.debug_selector(|| "sidebar-toggle".into()))
-                        .on_click(|_, window, cx| {
-                            window.dispatch_action(Box::new(ToggleSidebar), cx)
-                        }),
-                    )
-                    .when(expanded, |v| {
-                        v.child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .text_size(px(12.))
-                                .text_color(palette.header_muted)
-                                .child("Documents"),
-                        )
-                    })
-                    .child(
-                        ui::control(
-                            if expanded {
-                                "sidebar-new"
-                            } else {
-                                "sidebar-new-collapsed"
-                            },
-                            "+",
-                            theme,
-                            true,
-                        )
-                        .aria_label("New Markdown tab")
-                        .when(cfg!(test), |v| {
-                            v.debug_selector(move || {
-                                if expanded {
-                                    "sidebar-new".into()
-                                } else {
-                                    "sidebar-new-collapsed".into()
-                                }
-                            })
-                        })
-                        .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx)),
-                    ),
-            );
-        if expanded {
-            rail = rail.child(list);
-        } else {
-            rail = rail.child(
-                div()
-                    .id("compact-tabs")
-                    .relative()
-                    .child(
-                        gpui::canvas(
-                            move |bounds, _, _| measured_viewport.set(Some(bounds)),
-                            |_, _, _, _| {},
-                        )
-                        .absolute()
-                        .inset_0(),
-                    )
-                    .track_scroll(&self.compact_scroll)
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .px_1()
-                    .children(compact_rows),
-            );
-            if self.document_list_open {
-                rail = rail.child(gpui::deferred(
-                    ui::panel("document-list-menu", theme)
-                        .absolute()
-                        .left(px(40.))
-                        .top(px(76.))
-                        .w(px(300.))
-                        .max_h(
-                            (window.viewport_size().height - px(92.))
-                                .min(px(360.))
-                                .max(px(80.)),
-                        )
-                        .flex()
-                        .flex_col()
-                        .when(cfg!(test), |v| {
-                            v.debug_selector(|| "document-list-menu".into())
-                        })
-                        .key_context("UiPanel UiMenu")
-                        .track_focus(&self.document_list_focus)
-                        .tab_group()
-                        .tab_stop(false)
-                        .occlude()
-                        .rounded_md()
-                        .shadow_md()
-                        .border_1()
-                        .border_color(palette.border)
-                        .bg(palette.bg)
-                        .py_1()
-                        .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                            ui::cycle(window, cx, Some(&this.document_list_focus), false);
-                            cx.stop_propagation();
-                        }))
-                        .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                            ui::cycle(window, cx, Some(&this.document_list_focus), true);
-                            cx.stop_propagation();
-                        }))
-                        .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                            this.document_list_open = false;
-                            if let Some(focus) = this.document_list_previous.take() {
+                    .id("sidebar-reveal")
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .h_full()
+                    .w(px(to))
+                    .when(cfg!(test), |v| v.debug_selector(|| "sidebar-reveal".into()))
+                    .key_context("UiPanel UiMenu")
+                    .track_focus(&self.reveal_focus)
+                    // Ahead of the editor in tab order, as the rail it covers.
+                    .tab_index(-1)
+                    .tab_group()
+                    .tab_stop(false)
+                    .occlude()
+                    .overflow_hidden()
+                    .bg(theme.sidebar_bg())
+                    .border_r_1()
+                    .border_color(palette.border)
+                    .shadow_lg()
+                    .on_hover(cx.listener(|this, hovered: &bool, window, cx| {
+                        this.hover_sidebar(true, *hovered, window, cx)
+                    }))
+                    .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                        match this.reveal_return.clone() {
+                            Some(focus) => {
                                 window.focus(&focus, cx);
+                                this.reveal_escaped = Some(focus);
                             }
-                            cx.notify();
-                        }))
-                        .on_mouse_down_out(cx.listener(
-                            move |this, event: &gpui::MouseDownEvent, _, cx| {
-                                // Rail controls switch documents without dismissing the list.
-                                // Clip row bounds to the scroll viewport for offscreen tabs.
-                                if compact_viewport
-                                    .get()
-                                    .is_some_and(|bounds| bounds.contains(&event.position))
-                                    && compact_bounds.iter().any(|bounds| {
-                                        bounds
-                                            .get()
-                                            .is_some_and(|bounds| bounds.contains(&event.position))
-                                    })
-                                {
-                                    return;
-                                }
-                                this.document_list_open = false;
-                                this.document_list_previous = None;
-                                cx.notify();
-                            },
-                        ))
-                        .child(list),
-                ));
-            }
+                            None => this.focus_active(window, cx),
+                        }
+                        this.dismiss_reveal(window, cx);
+                    }))
+                    .child(panel)
+                    .with_animation(
+                        ("sidebar-reveal", self.reveal_generation),
+                        Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
+                        move |v, delta| v.w(px(from + (to - from) * delta)),
+                    ),
+            ));
         }
-        rail.into_any_element()
+        if self.sidebar_generation == 0 {
+            return sidebar.into_any_element();
+        }
+        let (from, to) = (width(!expanded), width(expanded));
+        sidebar
+            .with_animation(
+                ("sidebar-width", self.sidebar_generation),
+                Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
+                move |v, delta| v.w(px(from + (to - from) * delta)),
+            )
+            .into_any_element()
     }
+}
+
+const RAIL_WIDTH: f32 = 40.;
+const PANEL_WIDTH: f32 = 200.;
+const REVEAL_DELAY: Duration = Duration::from_millis(200);
+const REVEAL_GRACE: Duration = Duration::from_millis(300);
+const SLIDE: Duration = Duration::from_millis(150);
+
+/// The collapsed rail's hover reveal of the full document list (ADR 0027).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reveal {
+    Hidden,
+    Shown,
+    /// Sliding back; unmounted when the animation ends.
+    Hiding,
+}
+
+fn sidebar_toggle(
+    focus: &gpui::FocusHandle,
+    expanded: bool,
+    theme: Theme,
+) -> gpui::Stateful<gpui::Div> {
+    let label = if expanded {
+        "Collapse sidebar"
+    } else {
+        "Expand sidebar"
+    };
+    ui::icon_button("sidebar-toggle", label, ui::Icon::Sidebar, theme, true)
+        .track_focus(focus)
+        .when(cfg!(test), |v| v.debug_selector(|| "sidebar-toggle".into()))
+        .on_click(|_, window, cx| window.dispatch_action(Box::new(ToggleSidebar), cx))
 }
 
 /// Show the shortest parent suffix that distinguishes this document's location.
@@ -1809,7 +2034,8 @@ fn disambiguating_parent(path: &std::path::Path, peers: &[PathBuf]) -> String {
 
 impl Render for Tabs {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.sidebar_visible = self.sidebar_choice.unwrap_or(false);
+        self.sidebar_visible = self.sidebar_choice.unwrap_or(true);
+        self.reveal_for_keyboard(window, cx);
         let palette = self.theme.get().pdf_style();
         div()
             .track_focus(&self.focus)
@@ -1843,10 +2069,22 @@ impl Render for Tabs {
             }))
             .on_action(cx.listener(|this, _: &NextTab, window, cx| this.cycle(1, window, cx)))
             .on_action(cx.listener(|this, _: &PreviousTab, window, cx| this.cycle(-1, window, cx)))
-            .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| {
+            .on_action(cx.listener(|this, _: &ToggleSidebar, window, cx| {
                 this.sidebar_visible = !this.sidebar_visible;
                 this.sidebar_choice = Some(this.sidebar_visible);
-                this.document_list_open = false;
+                this.sidebar_generation += 1;
+                this.reveal = Reveal::Hidden;
+                this.reveal_pending = None;
+                this.reveal_hover = (false, false);
+                this.reveal_keyboard = false;
+                this.reveal_return = None;
+                // Keep keyboard focus on the toggle that replaces the clicked one.
+                if this.sidebar_visible && this.rail_toggle_focus.is_focused(window) {
+                    window.focus(&this.panel_toggle_focus, cx);
+                } else if !this.sidebar_visible && this.panel_toggle_focus.is_focused(window) {
+                    window.focus(&this.rail_toggle_focus, cx);
+                    this.reveal_escaped = Some(this.rail_toggle_focus.clone());
+                }
                 cx.notify();
             }))
             .on_action(
@@ -1863,61 +2101,69 @@ impl Render for Tabs {
                 }
             }))
             .when_some(self.tab_menu, |view, (id, position)| {
-                view.child(gpui::deferred(
-                    gpui::anchored().position(position).snap_to_window().child(
-                        ui::panel("tab-context-menu", self.theme.get())
-                            .key_context("UiPanel UiMenu")
-                            .track_focus(&self.document_list_focus)
-                            .tab_group()
-                            .tab_stop(false)
-                            .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                                this.tab_menu = None;
-                                if let Some(focus) = this.document_list_previous.take() {
-                                    window.focus(&focus, cx);
-                                }
-                                cx.notify();
-                            }))
-                            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                                ui::cycle(window, cx, Some(&this.document_list_focus), false);
-                                cx.stop_propagation();
-                            }))
-                            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                                ui::cycle(window, cx, Some(&this.document_list_focus), true);
-                                cx.stop_propagation();
-                            }))
-                            .p_1()
-                            .on_mouse_down_out(cx.listener(
-                                |this, _: &gpui::MouseDownEvent, _, cx| {
+                view.child(
+                    gpui::deferred(
+                        gpui::anchored().position(position).snap_to_window().child(
+                            ui::panel("tab-context-menu", self.theme.get())
+                                .key_context("UiPanel UiMenu")
+                                .track_focus(&self.menu_focus)
+                                .tab_group()
+                                .tab_stop(false)
+                                .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
                                     this.tab_menu = None;
+                                    if let Some(focus) = this.menu_return.take() {
+                                        window.focus(&focus, cx);
+                                    }
                                     cx.notify();
-                                },
-                            ))
-                            .child(
-                                div()
-                                    .id("context-close-tab")
-                                    .role(gpui::Role::Button)
-                                    .aria_label("Close tab")
-                                    .key_context("UiControl")
-                                    .tab_index(0)
-                                    .focus_visible(|s| {
-                                        s.bg(self.theme.get().pdf_style().placeholder_bg)
-                                    })
-                                    .when(cfg!(test), |v| {
-                                        v.debug_selector(|| "context-close-tab".into())
-                                    })
-                                    .px_3()
-                                    .py_1()
-                                    .rounded_sm()
-                                    .cursor_pointer()
-                                    .hover(|v| v.bg(self.theme.get().pdf_style().placeholder_bg))
-                                    .child("Close tab")
-                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                }))
+                                .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
+                                    ui::cycle(window, cx, Some(&this.menu_focus), false);
+                                    cx.stop_propagation();
+                                }))
+                                .on_action(cx.listener(
+                                    |this, _: &ui::PreviousControl, window, cx| {
+                                        ui::cycle(window, cx, Some(&this.menu_focus), true);
+                                        cx.stop_propagation();
+                                    },
+                                ))
+                                .p_1()
+                                .on_mouse_down_out(cx.listener(
+                                    |this, _: &gpui::MouseDownEvent, _, cx| {
                                         this.tab_menu = None;
-                                        this.close_tab(id, window, cx);
-                                    })),
-                            ),
-                    ),
-                ))
+                                        cx.notify();
+                                    },
+                                ))
+                                .child(
+                                    div()
+                                        .id("context-close-tab")
+                                        .role(gpui::Role::Button)
+                                        .aria_label("Close tab")
+                                        .key_context("UiControl")
+                                        .tab_index(0)
+                                        .focus_visible(|s| {
+                                            s.bg(self.theme.get().pdf_style().placeholder_bg)
+                                        })
+                                        .when(cfg!(test), |v| {
+                                            v.debug_selector(|| "context-close-tab".into())
+                                        })
+                                        .px_3()
+                                        .py_1()
+                                        .rounded_sm()
+                                        .cursor_pointer()
+                                        .hover(|v| {
+                                            v.bg(self.theme.get().pdf_style().placeholder_bg)
+                                        })
+                                        .child("Close tab")
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.tab_menu = None;
+                                            this.close_tab(id, window, cx);
+                                        })),
+                                ),
+                        ),
+                    )
+                    // Above the sidebar reveal it was opened from.
+                    .with_priority(1),
+                )
             })
             .when_some(self.notice.clone(), |view, notice| {
                 let palette = self.theme.get().pdf_style();
@@ -1970,7 +2216,7 @@ impl Render for Tabs {
                     .flex()
                     .flex_1()
                     .min_h_0()
-                    .child(self.sidebar(window, cx))
+                    .child(self.sidebar(cx))
                     .child(
                         div()
                             .flex_1()
