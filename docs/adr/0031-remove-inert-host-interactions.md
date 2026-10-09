@@ -1,6 +1,6 @@
 # Remove inert host interactions
 
-Status: accepted, 2026-10-09. See the
+Status: accepted and implemented, 2026-10-09. See the
 [codebase cleanup interview](../design/codebase-cleanup.md), checkpoint.
 
 ## Problem
@@ -21,7 +21,8 @@ never implemented, so they look interactive but do nothing:
 
 Remove the highlight tools with highlight rendering, palette and selection
 drag. Treat math as ordinary Markdown text: the caret enters it like other
-revealed syntax and right-click shows the normal menu. Inline image clicks
+revealed syntax, Backspace/Delete edit it character by character instead of
+removing whole formulas, and right-click shows the normal menu. Inline image clicks
 behave like clicks on text, without the hand cursor. Image previews would be a
 new feature and need their own design.
 
