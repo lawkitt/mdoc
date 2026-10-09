@@ -1581,16 +1581,6 @@ pub(crate) fn mermaid_blocks(content: &str) -> Vec<(Range<usize>, String)> {
     out
 }
 
-/// `$$…$$` math blocks: each entry is `(line_range, source)` — the range covering both
-/// `$$` fence lines (so it collapses) and the LaTeX between them. The fences are bare
-/// `$$` lines (markdown's `math_flow` form, no info word).
-pub(crate) fn math_blocks(content: &str) -> Vec<(Range<usize>, String)> {
-    math_regions(content)
-        .into_iter()
-        .map(|r| (r.range, r.source))
-        .collect()
-}
-
 /// Whether `line` is a `<!-- math:left|center|right -->` alignment marker.
 /// The editor hides it like a table style marker; standard Markdown viewers
 /// ignore the comment.
@@ -1607,12 +1597,11 @@ fn math_align_name(line: &str) -> Option<&str> {
     Some(inner.strip_prefix("math:")?.trim())
 }
 
-/// A detected `$$…$$` block: its line range (both fences), the LaTeX between them, and
-/// the optional `<!-- math:ALIGN -->` marker line directly above it.
+/// A detected `$$…$$` block: its line range (both fences) and the optional
+/// `<!-- math:ALIGN -->` marker line directly above it.
 #[derive(Clone)]
 pub(crate) struct MathRegion {
     pub range: Range<usize>,
-    pub source: String,
     pub marker_line: Option<usize>,
 }
 
@@ -1638,7 +1627,6 @@ pub(crate) fn math_regions(content: &str) -> Vec<MathRegion> {
             while j < lines.len() && lines[j].trim() != "$$" {
                 j += 1;
             }
-            let source = lines[start + 1..j].join("\n");
             let end = (j + 1).min(lines.len()); // include the closing fence
             // An alignment marker on the line directly above the opening fence.
             let marker_line = start
@@ -1646,17 +1634,15 @@ pub(crate) fn math_regions(content: &str) -> Vec<MathRegion> {
                 .filter(|&m| is_math_align_marker(lines[m]));
             out.push(MathRegion {
                 range: start..end,
-                source,
                 marker_line,
             });
             i = end;
-        } else if let Some(inner) = one_line_math(lines[i]) {
+        } else if one_line_math(lines[i]).is_some() {
             // `$$x^2$$` ALONE on a line is display math (issue #54): block
             // treatment, including its alignment marker.
             let marker_line = i.checked_sub(1).filter(|&m| is_math_align_marker(lines[m]));
             out.push(MathRegion {
                 range: i..i + 1,
-                source: inner.to_string(),
                 marker_line,
             });
             i += 1;
@@ -1738,17 +1724,6 @@ pub(crate) fn inline_image_spans(line: &str) -> Vec<(Range<usize>, Range<usize>)
         }
     }
     out
-}
-
-/// The LaTeX inside an inline-math `span` of `line` — strips one `$` per
-/// side, or two for a same-line `$$…$$` display pair.
-pub(crate) fn inline_math_latex<'a>(line: &'a str, span: &Range<usize>) -> &'a str {
-    let d = if line[span.clone()].starts_with("$$") {
-        2
-    } else {
-        1
-    };
-    &line[span.start + d..span.end - d]
 }
 
 pub(crate) fn inline_math_spans(line: &str) -> Vec<Range<usize>> {
@@ -2479,7 +2454,6 @@ mod tests {
         let r = math_regions("before\n$$x^2$$\nafter");
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].range, 1..2);
-        assert_eq!(r[0].source, "x^2");
         // The alignment marker above applies, as with fenced blocks.
         let r = math_regions("<!-- math:right -->\n$$x$$");
         assert_eq!(r[0].marker_line, Some(0));
@@ -2505,8 +2479,6 @@ mod tests {
         // both delimiter pairs, spaces inside allowed.
         assert_eq!(spans("$$E=mc^2$$"), vec!["$$E=mc^2$$"]);
         assert_eq!(spans("a $$ x + y $$ b"), vec!["$$ x + y $$"]);
-        assert_eq!(inline_math_latex("$$E=mc^2$$", &(0..10)), "E=mc^2");
-        assert_eq!(inline_math_latex("$x$", &(0..3)), "x");
         // Unclosed / empty pairs match nothing; a lone `$$` fence line is
         // the BLOCK scanner's business.
         assert_eq!(spans("$$"), Vec::<&str>::new());

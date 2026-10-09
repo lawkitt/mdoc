@@ -36,7 +36,7 @@ pub(crate) struct PrepaintState {
     rtl: Vec<Option<RtlRow>>,
     /// Per-line inline `$…$` formulas (image + display offset + source range), painted over
     /// their spacers in the shaped text.
-    inline_maths: Vec<Vec<InlineMath>>,
+    inline_images: Vec<Vec<InlineImage>>,
     /// Corner-grip hitbox for each painted inline image, keyed by logical line
     /// like `checkbox_grips` — so paint can set the resize cursor over each
     /// (hitboxes must be inserted in prepaint). Parallels the images paint
@@ -66,11 +66,6 @@ pub(crate) struct PrepaintState {
     /// Pointer-cursor hitboxes over inline links (`[text](url)` and bare
     /// URLs), so hovering a clickable link shows a hand.
     link_grips: Vec<Hitbox>,
-    /// Pointer-cursor hitboxes over inline images (they open a preview on
-    /// click, so hovering shows a hand rather than the text caret).
-    inline_image_grips: Vec<Hitbox>,
-    /// Icon asset paths for alert marker lines, cloned from the style so the
-    /// paint can draw them next to the labels.
     /// Per-table hover zones (the grid plus pill reach) — repaint gating.
     table_zones: Vec<(Bounds<Pixels>, usize)>,
     table_thumbs: Vec<(TableThumb, Hitbox)>,
@@ -305,7 +300,7 @@ impl Element for EditorElement {
             tables,
             maps,
             marks,
-            inline_maths,
+            inline_images,
             wrap_rows,
             rtl_rows: rtl_layout,
         } = if let Some(m) = memo {
@@ -329,7 +324,7 @@ impl Element for EditorElement {
                 tables: vec![None; n],
                 maps: vec![None; n],
                 marks: vec![None; n],
-                inline_maths: vec![Vec::new(); n],
+                inline_images: vec![Vec::new(); n],
                 wrap_rows: rows,
                 // The placeholder is the host's own string; no RTL layout.
                 rtl_rows: (0..n).map(|_| None).collect(),
@@ -692,7 +687,6 @@ impl Element for EditorElement {
         // a 3+-row link are skipped). Widget/code/table rows carry no inline
         // links (images and chips have their own machinery).
         let mut link_grips = Vec::new();
-        let mut inline_image_grips = Vec::new();
         if editor.markdown_style.is_some() && !editor.content.is_empty() {
             let starts = &line_starts;
             for (i, line_shaped) in wrapped.iter().enumerate() {
@@ -738,24 +732,6 @@ impl Element for EditorElement {
                         let tail = Bounds::new(point(origin.x, origin.y + p2.y), size(p2.x, *lh));
                         link_grips.push(window.insert_hitbox(head, HitboxBehavior::Normal));
                         link_grips.push(window.insert_hitbox(tail, HitboxBehavior::Normal));
-                    }
-                }
-                // Inline images on this line get a pointer-cursor hitbox (they
-                // open a preview) — bounds mirror the paint math (inset + the
-                // spacer's wrap-row position, centered in the row).
-                for im in inline_maths.get(i).into_iter().flatten() {
-                    if !im.latex.is_empty() {
-                        continue; // a `$…$` formula, not an image
-                    }
-                    if let Some(p) = line_shaped.position_for_index(im.display_off, *lh) {
-                        let hit = Bounds::new(
-                            point(
-                                bounds.origin.x + inset + p.x,
-                                bounds.origin.y + line_tops[i] + p.y + (*lh - im.height) / 2.,
-                            ),
-                            size(im.width, im.height),
-                        );
-                        inline_image_grips.push(window.insert_hitbox(hit, HitboxBehavior::Normal));
                     }
                 }
             }
@@ -1560,7 +1536,7 @@ impl Element for EditorElement {
             maps,
             marks,
             rtl,
-            inline_maths,
+            inline_images,
             image_grips,
             checkbox_grips,
             code_chips,
@@ -1571,7 +1547,6 @@ impl Element for EditorElement {
             heading_fold_grips,
             heading_row_rects,
             link_grips,
-            inline_image_grips,
             table_zones,
             table_thumbs,
             row_aff,
@@ -1668,9 +1643,6 @@ impl Element for EditorElement {
         // Window-space bounds of each painted image + its logical line, collected
         // for the next frame's grip hit-testing (committed below).
         let mut image_rects: Vec<(usize, Bounds<Pixels>)> = Vec::new();
-        // Window-space bounds of each inline `$…$` formula + its absolute range and LaTeX, for
-        // the next frame's click-to-edit hit-testing + seating the structural editor.
-        let mut inline_math_rects: Vec<(Range<usize>, SharedString, Bounds<Pixels>)> = Vec::new();
         // Window-space box bounds of each painted task checkbox + its line, for the
         // next frame's click-to-toggle hit-testing (committed below).
         let mut checkbox_rects: Vec<(usize, Bounds<Pixels>)> = Vec::new();
@@ -2160,7 +2132,7 @@ impl Element for EditorElement {
                 // Inline `$…$` formulas: paint each typeset raster over its spacer, centered on
                 // the text row. Record each formula's window bounds for click-to-edit; the one
                 // being edited shows the seated editor instead of its raster.
-                for im in prepaint.inline_maths.get(i).into_iter().flatten() {
+                for im in prepaint.inline_images.get(i).into_iter().flatten() {
                     // The spacer's LEFT edge and which row it landed on. On an
                     // RTL row `display_off` is its RIGHT edge — anchoring there
                     // paints the formula over the words beside it and leaves
@@ -2185,10 +2157,9 @@ impl Element for EditorElement {
                     };
                     if let Some((x, row_y)) = seat {
                         let x = origin.x + x;
-                        // Center the formula in the (grown-to-fit) wrap row.
+                        // Center the image in the (grown-to-fit) wrap row.
                         let y = origin.y + row_y + (*lh - im.height) / 2.0;
                         let b = Bounds::new(point(x, y), size(im.width, im.height));
-                        inline_math_rects.push((im.source.clone(), im.latex.clone(), b));
                         let _ =
                             window.paint_image(b, b, Corners::default(), im.img.clone(), 0, false);
                     }
@@ -2539,9 +2510,6 @@ impl Element for EditorElement {
         for hb in &prepaint.link_grips {
             window.set_cursor_style(CursorStyle::PointingHand, hb);
         }
-        for hb in &prepaint.inline_image_grips {
-            window.set_cursor_style(CursorStyle::PointingHand, hb);
-        }
         self.editor.update(cx, |editor, _| {
             editor.search_bounds = std::mem::take(&mut prepaint.search_bounds);
             editor.hidden_annotation_ids = prepaint
@@ -2561,7 +2529,6 @@ impl Element for EditorElement {
             editor.rtl_rows = std::mem::take(&mut prepaint.rtl);
             editor.table_rows = table_rows;
             editor.image_rects = image_rects;
-            editor.inline_math_rects = inline_math_rects;
             editor.checkbox_rects = checkbox_rects;
             editor.table_thumbs = prepaint.table_thumbs.iter().map(|(t, _)| *t).collect();
             editor.code_chip_rects = code_chip_rects;
@@ -2695,16 +2662,13 @@ fn line_pads(bg: Option<CodeBg>, table: Option<&TableRow>) -> (Pixels, Pixels) {
 }
 
 /// Inline `![](src)` images: swap each ready image's glyphs for a spacer to
-/// paint the raster over, reusing the inline-math machinery — the returned
-/// [`InlineMath`] entries carry an empty `latex` (so the click-to-edit path
-/// treats them as images, not formulas). A caret strictly inside an image's
+/// paint the raster over. A caret strictly inside an image's
 /// `![…](…)` leaves it raw for editing. Sizing matches the reader: ~40px tall,
 /// capped 240px wide, aspect from the raster's pixels.
 #[allow(clippy::too_many_arguments)]
 fn shape_inline_images(
     window: &mut Window,
     line: &str,
-    line_start: usize,
     disp: String,
     runs: Vec<TextRun>,
     map: Vec<usize>,
@@ -2712,7 +2676,7 @@ fn shape_inline_images(
     base_font: &Font,
     fs: Pixels,
     block_image: &BlockImageFn,
-) -> (String, Vec<TextRun>, Vec<usize>, Vec<InlineMath>) {
+) -> (String, Vec<TextRun>, Vec<usize>, Vec<InlineImage>) {
     let spans = markdown_syntax::inline_image_spans(line);
     if spans.is_empty() {
         return (disp, runs, map, Vec::new());
@@ -2759,11 +2723,9 @@ fn shape_inline_images(
     let inline = placed
         .into_iter()
         .zip(imgs)
-        .map(|(p, (img, width, height))| InlineMath {
+        .map(|(p, (img, width, height))| InlineImage {
             display_off: p.display_off,
             len: p.len,
-            source: line_start + p.source.start..line_start + p.source.end,
-            latex: SharedString::default(), // empty = image, not a formula
             img,
             width,
             height,
@@ -3373,7 +3335,7 @@ fn shape_document(
             _ => muted_line.unwrap_or(base_color),
         };
         // Inline `$…$` formulas spliced into this line (populated by the hidden-markers branch).
-        let mut line_inline_math: Vec<InlineMath> = Vec::new();
+        let mut line_inline_images: Vec<InlineImage> = Vec::new();
         // Set (in the markdown branch below) when this line is eligible for the
         // per-line height cache — its (row height, wrap rows) get recorded at
         // push time so a later frame can window it out without shaping.
@@ -3584,7 +3546,6 @@ fn shape_document(
                     let (disp, runs, m, imgs) = shape_inline_images(
                         window,
                         line,
-                        line_start,
                         disp.to_string(),
                         runs.as_ref().clone(),
                         m.as_ref().clone(),
@@ -3593,7 +3554,7 @@ fn shape_document(
                         fs,
                         imgf,
                     );
-                    line_inline_math.extend(imgs);
+                    line_inline_images.extend(imgs);
                     (
                         SharedString::from(disp),
                         std::rc::Rc::new(runs),
@@ -3685,7 +3646,7 @@ fn shape_document(
                         // A text row grows to fit its tallest inline `$…$` formula (a fraction
                         // is taller than the text), so the formula doesn't overlap neighbours.
                         None => {
-                            let math_h = line_inline_math
+                            let math_h = line_inline_images
                                 .iter()
                                 .map(|im| im.height)
                                 .max()
@@ -3770,7 +3731,7 @@ fn shape_document(
             out.tables.push(table);
             out.maps.push(map);
             out.marks.push(mark);
-            out.inline_maths.push(line_inline_math);
+            out.inline_images.push(line_inline_images);
             // Track a (visible) code line + its width so the block's box can be
             // sized to its widest line and its last line marked.
             if is_code && !collapse_fence {

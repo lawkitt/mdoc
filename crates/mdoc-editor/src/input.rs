@@ -220,30 +220,6 @@ impl EditorState {
                 self.emit_changed(cx);
                 return;
             }
-            // The same Word-style treatment for math: backspacing onto an
-            // inline formula's closing `$` removes the whole formula, and at
-            // the start of the line below a `$$` block removes the whole
-            // block — never stripping one hidden delimiter and dumping raw
-            // LaTeX. A caret strictly INSIDE a span (revealed source) still
-            // edits character-wise.
-            if let Some((range, _)) = self
-                .inline_math_span_at(self.previous_boundary(off))
-                .filter(|(r, _)| off == r.end)
-            {
-                self.replace_range(range, "", cx);
-                self.emit_changed(cx);
-                return;
-            }
-            if col == 0
-                && row > 0
-                && self.math_block_at(row).is_none() // inside = raw editing
-                && let Some((range, _)) = self.math_block_at(row - 1)
-            {
-                let range = self.math_delete_range(range);
-                self.replace_range(range, "", cx);
-                self.emit_changed(cx);
-                return;
-            }
             // Cditor-style around hidden formatting markers: delete the
             // previous VISIBLE character (never a marker byte), and take an
             // emptied construct's marker pair with it.
@@ -274,26 +250,6 @@ impl EditorState {
                     .then(|| self.image_row_range(row + 1))
                     .flatten()
             }) {
-                self.replace_range(range, "", cx);
-                self.emit_changed(cx);
-                return;
-            }
-            // Math mirrors of the backspace guards: deleting onto an inline
-            // formula's opening `$` removes the whole formula; at the end of
-            // the line above a `$$` block removes the whole block.
-            if let Some((range, _)) = self
-                .inline_math_span_at(self.next_boundary(off))
-                .filter(|(r, _)| off == r.start)
-            {
-                self.replace_range(range, "", cx);
-                self.emit_changed(cx);
-                return;
-            }
-            if off == self.line_end(row)
-                && self.math_block_at(row).is_none() // inside = raw editing
-                && let Some((range, _)) = self.math_block_at(row + 1)
-            {
-                let range = self.math_delete_range(range);
                 self.replace_range(range, "", cx);
                 self.emit_changed(cx);
                 return;
@@ -1039,6 +995,28 @@ impl EntityInputHandler for EditorState {
 mod tests {
     use super::*;
     use crate::SelectAll;
+
+    #[gpui::test]
+    fn math_is_ordinary_text_for_arrows_and_deletion(cx: &mut gpui::TestAppContext) {
+        // ADR 0031: mdoc has no math editor, so the caret enters math and
+        // Backspace edits it character by character instead of deferring.
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update_in(cx, |e, window, cx| {
+            e.set_markdown_style(crate::markdown_syntax::search_style(), cx);
+            e.set_text("a $x$ b", cx);
+            e.set_cursor(3, cx);
+            e.right(&crate::Right, window, cx);
+            assert_eq!(e.cursor(), 4, "the caret moves inside the formula");
+            e.set_cursor(5, cx);
+            e.backspace(&Backspace, window, cx);
+            assert_eq!(e.text(), "a $x b", "only the closing `$` is deleted");
+
+            e.set_text("$$\nx\n$$\nafter", cx);
+            e.set_cursor(e.text().find("after").unwrap(), cx);
+            e.backspace(&Backspace, window, cx);
+            assert_eq!(e.text(), "$$\nx\n$$after", "the block stays");
+        });
+    }
 
     #[gpui::test]
     fn metadata_checkpoint_preserves_source_selection_and_emits_only_transactions(
