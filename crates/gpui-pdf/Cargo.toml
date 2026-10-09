@@ -2,12 +2,10 @@
 name = "gpui-pdf"
 version = "0.6.0"
 edition = "2024"
-description = "A PDF viewer for GPUI, rendered in pure Rust with hayro: virtualized pages, text search, highlights, and fillable forms."
+description = "The PDF preview for mdoc: a virtualized GPUI viewer rendered in pure Rust with hayro, with text search and form-appearance normalization."
 license = "MIT"
+publish = false
 repository = "https://github.com/lawkitt/mdoc"
-homepage = "https://github.com/lawkitt/mdoc/tree/main/crates/gpui-pdf"
-keywords = ["gpui", "pdf", "viewer", "hayro", "acroform"]
-categories = ["gui", "rendering"]
 
 [dependencies]
 # Shared workspace spec (the root pins the rev) so Cargo unifies to one gpui.

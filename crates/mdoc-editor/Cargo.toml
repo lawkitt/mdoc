@@ -2,13 +2,10 @@
 name = "mdoc-editor"
 version = "0.10.0"
 edition = "2024"
-description = "A multi-line text editor for GPUI with live Markdown preview, tables, images, and math. The editor behind mdoc's notes."
+description = "mdoc's Markdown editor for GPUI: live-preview (WYSIWYG) and raw editing, tables, images, search geometry and annotations."
 license = "MIT"
 publish = false
 repository = "https://github.com/lawkitt/mdoc"
-homepage = "https://github.com/lawkitt/mdoc/tree/main/crates/mdoc-editor"
-keywords = ["gpui", "editor", "markdown", "wysiwyg", "text-editor"]
-categories = ["gui", "text-editors"]
 
 [dependencies]
 # Shared workspace spec (the root pins the rev) so Cargo unifies to one gpui.
@@ -26,7 +23,7 @@ entities = "1"
 # Bidi index↔x mapping (#66). gpui's own `x_for_index` / `index_for_x` assume
 # byte index and x rise together, which is false for a right-to-left line — so
 # every caret/click lookup in this crate goes through `VisualMap` on RTL rows.
-gpui-bidi = { path = "../gpui-bidi", version = "0.1" }
+gpui-bidi = { path = "../gpui-bidi" }
 
 # Source-edit transactions emitted to history-following host models. A
 # dependency-free leaf, so those models need not depend on this crate or gpui.

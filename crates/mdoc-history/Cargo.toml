@@ -6,7 +6,6 @@ description = "Plain source-edit transactions and text-history identity shared b
 license = "MIT"
 publish = false
 repository = "https://github.com/lawkitt/mdoc"
-homepage = "https://github.com/lawkitt/mdoc/tree/main/crates/mdoc-history"
 
 # Deliberately dependency-free: models that follow editor history (such as
 # mdoc-pii) can consume transactions without depending on gpui.

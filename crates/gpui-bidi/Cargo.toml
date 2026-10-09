@@ -2,12 +2,10 @@
 name = "gpui-bidi"
 version = "0.1.0"
 edition = "2024"
-description = "Right-to-left and mixed-direction text for GPUI: correct caret, selection, and click positions over reordered glyphs, plus row layout and painting."
+description = "Right-to-left and mixed-direction text for GPUI: caret, selection and click positions over reordered glyphs, plus logical-order row layout."
 license = "MIT"
+publish = false
 repository = "https://github.com/lawkitt/mdoc"
-homepage = "https://github.com/lawkitt/mdoc/tree/main/crates/gpui-bidi"
-keywords = ["bidi", "rtl", "gpui", "text", "unicode"]
-categories = ["text-processing", "gui"]
 
 # The core (`VisualMap`) is deliberately gpui-free: it works on plain
 # `(logical byte index, x)` glyph pairs, so every rule is unit-testable
