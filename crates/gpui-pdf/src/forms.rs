@@ -26,7 +26,7 @@ use lopdf::{Dictionary, Document, Object, ObjectId, Stream};
 /// stream. `Some(fixed)` only when something actually changed; `None` means
 /// nothing to do (no forms, already normalized, encrypted, or unparseable) —
 /// the caller keeps the original bytes either way.
-pub fn normalize_form_appearances(bytes: &[u8]) -> Option<Vec<u8>> {
+pub(crate) fn normalize_form_appearances(bytes: &[u8]) -> Option<Vec<u8>> {
     let mut doc = Document::load_mem(bytes).ok()?;
     if doc.is_encrypted() {
         return None;
@@ -216,7 +216,7 @@ pub struct FormField {
 /// Every form-field widget in the document, in page order — what a host needs
 /// to overlay inputs on the viewer. Pushbuttons (no value) are skipped; an
 /// encrypted or unparseable file yields an empty list.
-pub fn form_fields(bytes: &[u8]) -> Vec<FormField> {
+pub(crate) fn form_fields(bytes: &[u8]) -> Vec<FormField> {
     let Ok(doc) = Document::load_mem(bytes) else {
         return Vec::new();
     };
@@ -246,109 +246,6 @@ pub fn form_fields(bytes: &[u8]) -> Vec<FormField> {
         }
     }
     out
-}
-
-/// Set the value of the field named `name` (fully qualified, as reported by
-/// [`form_fields`]) and regenerate its appearance so the result renders in
-/// any viewer — not just ours. For `Text`/`Choice` pass the literal text; for
-/// `Checkbox`/`Radio` pass an on-state name from [`FormField::options`] (or
-/// `"Off"` to clear). Returns the rewritten bytes, or `None` when nothing
-/// matched (unknown/read-only/signature field, encrypted or unparseable
-/// file).
-pub fn set_form_value(bytes: &[u8], name: &str, value: &str) -> Option<Vec<u8>> {
-    let mut doc = Document::load_mem(bytes).ok()?;
-    if doc.is_encrypted() {
-        return None;
-    }
-    // All widgets carrying that qualified name — a radio group is one field
-    // with several widgets, and each needs its /AS set.
-    let widgets: Vec<ObjectId> = doc
-        .objects
-        .iter()
-        .filter_map(|(id, obj)| {
-            let d = obj.as_dict().ok()?;
-            (d.get(b"Subtype").ok()?.as_name().ok()? == b"Widget"
-                && qualified_name(&doc, d)? == name)
-                .then_some(*id)
-        })
-        .collect();
-    if widgets.is_empty() {
-        return None;
-    }
-
-    let mut changed = false;
-    let mut helv = None;
-    for id in widgets {
-        let (Some(w), Some(kind)) = (
-            doc.get_object(id).ok().and_then(|o| o.as_dict().ok()),
-            doc.get_object(id)
-                .ok()
-                .and_then(|o| o.as_dict().ok())
-                .and_then(|d| kind_of(&doc, d)),
-        ) else {
-            continue;
-        };
-        if matches!(kind, FieldKind::Signature)
-            || field_attr(&doc, w, b"Ff")
-                .and_then(|o| o.as_i64().ok())
-                .is_some_and(|f| f & 1 != 0)
-        {
-            continue;
-        }
-        match kind {
-            FieldKind::Text | FieldKind::Choice => {
-                let Some(rect) = rect_of(&doc, w) else {
-                    continue;
-                };
-                set_value_object(&mut doc, id, Object::string_literal(value));
-                changed |= write_text_appearance(&mut doc, id, &mut helv, rect, value);
-            }
-            FieldKind::Checkbox | FieldKind::Radio => {
-                // This widget shows `value` if its own /AP carries that
-                // state; every other widget in the group turns Off.
-                let has_state = deref(&doc, w.get(b"AP").ok()?)
-                    .and_then(|o| o.as_dict().ok())
-                    .and_then(|ap| deref(&doc, ap.get(b"N").ok()?))
-                    .and_then(|o| o.as_dict().ok())
-                    .is_some_and(|states| states.has(value.as_bytes()));
-                let state = if has_state { value } else { "Off" };
-                set_value_object(&mut doc, id, Object::Name(value.as_bytes().to_vec()));
-                if let Ok(wd) = doc.get_object_mut(id).and_then(|o| o.as_dict_mut()) {
-                    wd.set("AS", Object::Name(state.as_bytes().to_vec()));
-                    changed = true;
-                }
-            }
-            FieldKind::Signature => unreachable!(),
-        }
-    }
-    if !changed {
-        return None;
-    }
-    let mut out = Vec::with_capacity(bytes.len() + 4096);
-    doc.save_to(&mut out).ok()?;
-    Some(out)
-}
-
-/// Write `/V` where the field keeps it: on the widget itself when merged, on
-/// the parent field dict when split (so sibling widgets agree).
-fn set_value_object(doc: &mut Document, widget: ObjectId, value: Object) {
-    // Find the dict that OWNS /FT — that's the field; /V belongs beside it.
-    let mut target = widget;
-    for _ in 0..32 {
-        let Some(d) = doc.get_object(target).ok().and_then(|o| o.as_dict().ok()) else {
-            break;
-        };
-        if d.has(b"FT") {
-            break;
-        }
-        let Some(parent) = d.get(b"Parent").ok().and_then(|p| p.as_reference().ok()) else {
-            break;
-        };
-        target = parent;
-    }
-    if let Ok(d) = doc.get_object_mut(target).and_then(|o| o.as_dict_mut()) {
-        d.set("V", value);
-    }
 }
 
 /// Describe one widget for [`form_fields`]. `None` skips it (pushbutton, no
@@ -693,60 +590,6 @@ mod tests {
         let split = by_name("name2");
         assert_eq!(split.value, "Inherited value");
         assert_eq!(split.rect, (20.0, 200.0, 220.0, 240.0));
-    }
-
-    #[test]
-    fn set_form_value_writes_and_renders_everywhere() {
-        let bytes = build_test_pdf();
-
-        // Text: new value lands in /V and in a regenerated appearance.
-        let out = set_form_value(&bytes, "name1", "Rewritten").expect("text write");
-        let n = widget_n(&out, "name1");
-        let content = String::from_utf8_lossy(&n.as_stream().unwrap().content).into_owned();
-        assert!(content.contains("Rewritten"), "{content}");
-        assert_eq!(
-            form_fields(&out)
-                .iter()
-                .find(|f| f.name == "name1")
-                .unwrap()
-                .value,
-            "Rewritten"
-        );
-
-        // Checkbox: turning it Off flips /V + /AS; back on restores them.
-        let out = set_form_value(&bytes, "check1", "Off").expect("uncheck");
-        assert_eq!(
-            form_fields(&out)
-                .iter()
-                .find(|f| f.name == "check1")
-                .unwrap()
-                .value,
-            "Off"
-        );
-        let out = set_form_value(&out, "check1", "Yes").expect("recheck");
-        assert_eq!(
-            form_fields(&out)
-                .iter()
-                .find(|f| f.name == "check1")
-                .unwrap()
-                .value,
-            "Yes"
-        );
-
-        // The split field writes /V on the PARENT (so siblings agree) and the
-        // appearance on the widget.
-        let out = set_form_value(&bytes, "name2", "Via parent").expect("split write");
-        assert_eq!(
-            form_fields(&out)
-                .iter()
-                .find(|f| f.name == "name2")
-                .unwrap()
-                .value,
-            "Via parent"
-        );
-
-        // Unknown field → None.
-        assert!(set_form_value(&bytes, "nope", "x").is_none());
     }
 
     #[test]

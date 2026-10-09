@@ -52,14 +52,16 @@ use image::{Frame, RgbaImage};
 use gpui::{MouseMoveEvent, deferred};
 
 mod text;
-pub use text::{NormPoint, NormRect, PageText, Selection, extract_page_text};
+pub use text::extract_page_text;
+pub(crate) use text::{NormPoint, NormRect, PageText};
 
 /// PDF outline / table-of-contents + link extraction (always available — no deps).
 mod outline;
-pub use outline::{LinkTarget, OutlineItem, PdfLink, outline, page_links};
+pub use outline::{LinkTarget, page_links};
+pub(crate) use outline::{OutlineItem, PdfLink};
 
 mod forms;
-pub use forms::{FieldKind, FormField, form_fields, normalize_form_appearances, set_form_value};
+pub(crate) use forms::{FormField, form_fields, normalize_form_appearances};
 
 // ─────────────────────────────── Low-level primitives ───────────────────────────────
 
@@ -89,7 +91,7 @@ pub fn parse(bytes: Arc<Vec<u8>>) -> Result<Arc<Document>, LoadError> {
 /// Like [`parse`], but supplies a decryption `password` for an encrypted PDF.
 /// Returns [`LoadError::Locked`] if the file is password-protected and `password`
 /// is missing or incorrect.
-pub fn parse_with_password(
+pub(crate) fn parse_with_password(
     bytes: Arc<Vec<u8>>,
     password: &str,
 ) -> Result<Arc<Document>, LoadError> {
@@ -217,7 +219,7 @@ fn display_height((w, h): (f32, f32), page_width: f32) -> f32 {
 /// (mirrors [`PdfView`]'s slot layout) so it's unit-testable. `page_width` is the
 /// on-screen column width (base × zoom); `scroll_y` is how far the content is
 /// scrolled down (px ≥ 0); `viewport_h` is the visible height (px).
-pub fn keep_window(
+pub(crate) fn keep_window(
     dims: &[(f32, f32)],
     page_width: f32,
     scroll_y: f32,
@@ -416,12 +418,6 @@ fn norm_rect_between(a: NormPoint, b: NormPoint) -> NormRect {
     }
 }
 
-/// Invoked from the load-failure pane's "Open in system viewer" button, so the
-/// host can hand the file to the OS default app — the viewer itself stays
-/// host-agnostic (no process spawning). Set via [`PdfView::set_on_open_external`];
-/// without it the pane shows no button.
-pub type OpenExternalFn = Rc<dyn Fn(&mut Window, &mut gpui::App)>;
-
 /// Invoked from the source-name row's close control. Set via [`PdfView::set_on_close`].
 pub type CloseFn = Rc<dyn Fn(&mut Window, &mut gpui::App)>;
 
@@ -492,17 +488,11 @@ pub struct PdfView {
     /// The raw file bytes, kept so an encrypted PDF can be retried with a password
     /// without re-reading the file. `None` until the load reads them.
     bytes: Option<Arc<Vec<u8>>>,
-    /// The PDF is encrypted and not yet unlocked — the host shows a password prompt
-    /// and calls [`PdfView::unlock`] instead of rendering the viewer.
+    /// The PDF is encrypted — the host shows a notice instead of the viewer.
     locked: bool,
-    /// The most recent [`PdfView::unlock`] used a wrong password — drives the
-    /// prompt's "incorrect password" message; cleared on the next attempt.
-    unlock_failed: bool,
     /// A terminal read/parse failure — the viewer renders this message
     /// instead of sitting on "Loading PDF…" forever.
     load_error: Option<SharedString>,
-    /// Handler behind the failure pane's "Open in system viewer" button.
-    on_open_external: Option<OpenExternalFn>,
     on_close: Option<CloseFn>,
     /// `(width, height)` in points per page — drives page-slot sizing.
     dims: Vec<(f32, f32)>,
@@ -647,9 +637,7 @@ impl PdfView {
             pdf: None,
             bytes: None,
             locked: false,
-            unlock_failed: false,
             load_error: None,
-            on_open_external: None,
             on_close: None,
             dims: Vec::new(),
             pages: Vec::new(),
@@ -719,7 +707,6 @@ impl PdfView {
         // Stale text layers would locate highlights against the old bytes.
         self.page_text.clear();
         self.locked = false;
-        self.unlock_failed = false;
         cx.emit(PdfEvent::LockChanged);
         cx.notify();
         // A note→PDF jump that arrived before the document loaded: apply it now.
@@ -753,88 +740,6 @@ impl PdfView {
         ))
     }
 
-    /// The document's form fields, as enumerated at load — for a host driving
-    /// field-to-field navigation (Tab order is the enumeration order: page,
-    /// then document order). (`forms` feature.)
-    pub fn form_fields(&self) -> &[FormField] {
-        &self.form_fields
-    }
-
-    /// Scroll so `field`'s widget is comfortably on-screen, then return its
-    /// fresh window-space bounds — what a host needs to seat an input on a
-    /// field reached by Tab rather than by click. `None` before layout.
-    /// (`forms` feature.)
-    pub fn reveal_field(
-        &mut self,
-        field: &FormField,
-        cx: &mut Context<Self>,
-    ) -> Option<Bounds<Pixels>> {
-        let (pw, ph) = *self.dims.get(field.page)?;
-        if pw <= 0.0 || ph <= 0.0 {
-            return None;
-        }
-        let (x0, y0, x1, y1) = field.rect;
-        let nrect = (x0 / pw, 1.0 - y1 / ph, (x1 - x0) / pw, (y1 - y0) / ph);
-        let cb = self.scroll.bounds_for_item(field.page)?;
-        let vp = self.scroll.bounds();
-        // Window-space y of the field at the current offset (bounds_for_item is
-        // the unscrolled frame; window y = frame y + offset — see point_to_page).
-        let field_top = f32::from(cb.origin.y) + nrect.1 * f32::from(cb.size.height);
-        let field_h = nrect.3 * f32::from(cb.size.height);
-        let off = f32::from(self.scroll.offset().y);
-        let (vp_top, vp_bot) = (
-            f32::from(vp.origin.y),
-            f32::from(vp.origin.y) + f32::from(vp.size.height),
-        );
-        const MARGIN: f32 = 56.0;
-        let win_y = field_top + off;
-        let mut new_off = off;
-        if win_y < vp_top + MARGIN {
-            new_off = vp_top + MARGIN - field_top;
-        } else if win_y + field_h > vp_bot - MARGIN {
-            new_off = vp_bot - MARGIN - field_h - field_top;
-        }
-        let max = f32::from(self.scroll.max_offset().y);
-        let new_off = new_off.clamp(-max.max(0.0), 0.0);
-        let field_left = f32::from(cb.origin.x) + nrect.0 * f32::from(cb.size.width);
-        let field_w = nrect.2 * f32::from(cb.size.width);
-        let off_x = f32::from(self.scroll.offset().x);
-        let left = f32::from(vp.left()) + 12.;
-        let right = f32::from(vp.right()) - 12.;
-        let new_x = if field_left + off_x < left {
-            left - field_left
-        } else if field_left + field_w + off_x > right {
-            right - field_left - field_w
-        } else {
-            off_x
-        }
-        .clamp(-f32::from(self.scroll.max_offset().x).max(0.), 0.);
-        if (new_off - off).abs() > 0.5 || (new_x - off_x).abs() > 0.5 {
-            self.scroll.set_offset(point(px(new_x), px(new_off)));
-            cx.notify();
-        }
-        self.field_screen_bounds(field.page, nrect)
-    }
-
-    /// Swap in a new version of the document — e.g. after a form-field write
-    /// rewrote the file — keeping the scroll position, zoom, and view state.
-    /// Re-parses off-thread; pages re-render as they come back on screen.
-    pub fn replace_bytes(&mut self, bytes: Vec<u8>, cx: &mut Context<Self>) {
-        let bytes = Arc::new(bytes);
-        self.bytes = Some(bytes.clone());
-        cx.spawn(async move |this, cx| {
-            let prepared = cx
-                .background_executor()
-                .spawn(async move { prepare(bytes, "") })
-                .await;
-            let _ = this.update(cx, |this, cx| match prepared {
-                Ok(p) => this.install_document(p, cx),
-                Err(e) => log::error!("replace pdf bytes: {e:?}"),
-            });
-        })
-        .detach();
-    }
-
     /// Whether parsing and page preparation completed successfully. Hosts can
     /// keep an existing preview until a replacement reaches this state.
     pub fn is_loaded(&self) -> bool {
@@ -845,46 +750,6 @@ impl PdfView {
     /// prompt and call [`PdfView::unlock`] rather than rendering the viewer.
     pub fn is_locked(&self) -> bool {
         self.locked
-    }
-
-    /// Whether the most recent [`PdfView::unlock`] used a wrong password.
-    pub fn unlock_failed(&self) -> bool {
-        self.unlock_failed
-    }
-
-    /// Retry an encrypted PDF (see [`PdfView::is_locked`]) with `password`, reusing
-    /// the bytes already read. Success renders the viewer; a wrong password sets
-    /// [`PdfView::unlock_failed`] and leaves it locked. Emits [`PdfEvent::LockChanged`]
-    /// either way so a host's password prompt can react.
-    pub fn unlock(&mut self, password: String, cx: &mut Context<Self>) {
-        let Some(bytes) = self.bytes.clone() else {
-            return;
-        };
-        self.unlock_failed = false;
-        cx.spawn(async move |this, cx| {
-            let prepared = cx
-                .background_executor()
-                .spawn(async move { prepare(bytes, &password) })
-                .await;
-            let _ = this.update(cx, |this, cx| match prepared {
-                Ok(p) => this.install_document(p, cx),
-                Err(LoadError::Locked) => {
-                    this.unlock_failed = true;
-                    cx.emit(PdfEvent::LockChanged);
-                    cx.notify();
-                }
-                Err(LoadError::Other(e)) => {
-                    // Not a wrong password — e.g. an unsupported encryption
-                    // handler discovered at unlock time. Terminal: swap the
-                    // prompt for the error pane.
-                    log::error!("unlock pdf: {e}");
-                    this.locked = false;
-                    this.fail_load(format!("Couldn’t open the PDF: {e}"), cx);
-                    cx.emit(PdfEvent::LockChanged);
-                }
-            });
-        })
-        .detach();
     }
 
     /// Record a terminal load failure (the message renders in the viewer) and
@@ -906,43 +771,15 @@ impl PdfView {
         self.loading_indicator = Some(render);
     }
 
-    /// Set the handler behind the failure pane's "Open in system viewer"
-    /// button — a graceful hand-off for files hayro can't parse (unsupported
-    /// encryption handlers, exotic features). Without one, the pane shows
-    /// only the error text.
-    pub fn set_on_open_external(&mut self, f: OpenExternalFn) {
-        self.on_open_external = Some(f);
-    }
-
     /// Show a close (✕) control beside the source name that calls `f`, so the
     /// host can hide this viewer. Without one, the name row has no control.
     pub fn set_on_close(&mut self, f: CloseFn) {
         self.on_close = Some(f);
     }
 
-    /// Set the highlights to draw — the host derives these from its own store (e.g.
-    /// the markdown blocks that link this PDF). Pages with highlights extract their
-    /// text layer lazily as they scroll into view, then each quote is located and
-    /// boxed. (`markup` feature.)
-    pub fn set_highlights(&mut self, highlights: Vec<Highlight>, cx: &mut Context<Self>) {
-        self.highlights = highlights;
-        cx.notify();
-    }
-
-    /// Set the handler invoked with a highlight's `id` when it's clicked (e.g. to jump
-    /// to the source note). (`markup` feature.)
-    pub fn set_on_highlight(&mut self, handler: HighlightClickFn) {
-        self.on_highlight = Some(handler);
-    }
-
-    /// Set the handler invoked when a drag-selection finishes. (`markup` feature.)
-    pub fn set_on_create_highlight(&mut self, handler: CreateHighlightFn) {
-        self.on_create = Some(handler);
-    }
-
     /// Toggle "highlight mode": when on, dragging over text selects it and fires the
     /// create handler instead of doing nothing. (`markup` feature.)
-    pub fn toggle_select_mode(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_select_mode(&mut self, cx: &mut Context<Self>) {
         self.selecting = !self.selecting;
         self.area_mode = false;
         self.sel_drag = None;
@@ -956,7 +793,7 @@ impl PdfView {
     /// on release. Turning it on turns text-highlight mode's selection off (they
     /// share the pen state); turning either mode off clears the other.
     /// (`markup` feature.)
-    pub fn toggle_area_mode(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_area_mode(&mut self, cx: &mut Context<Self>) {
         if self.selecting && self.area_mode {
             self.selecting = false;
             self.area_mode = false;
@@ -966,26 +803,6 @@ impl PdfView {
         }
         self.sel_drag = None;
         self.palette_open = self.selecting && !self.palette.is_empty();
-        cx.notify();
-    }
-
-    /// Set the handler invoked when an area (box) drag finishes. (`markup` feature.)
-    pub fn set_on_create_area(&mut self, f: CreateAreaFn, _cx: &mut Context<Self>) {
-        self.on_create_area = Some(f);
-    }
-
-    /// Set the highlight colors the picker offers, as `(label, fill)` pairs. The label
-    /// is opaque to the viewer — it's echoed back via [`CreateHighlightFn`] so the host
-    /// can store it (and map it back to a fill for [`set_highlights`]). (`markup`.)
-    pub fn set_highlight_palette(
-        &mut self,
-        palette: Vec<(SharedString, Hsla)>,
-        cx: &mut Context<Self>,
-    ) {
-        self.palette = palette;
-        if self.active_color >= self.palette.len() {
-            self.active_color = 0;
-        }
         cx.notify();
     }
 
@@ -1008,7 +825,7 @@ impl PdfView {
     /// Jump to a highlight from its note: scroll `page` into view (bringing its first
     /// highlight near the top when that page's text is already extracted) and briefly
     /// flash the page's highlights so the eye finds them. (`markup` feature.)
-    pub fn reveal_highlight(&mut self, page: usize, cx: &mut Context<Self>) {
+    pub(crate) fn reveal_highlight(&mut self, page: usize, cx: &mut Context<Self>) {
         if self.dims.is_empty() {
             // The document is still loading; apply the jump once it's measured.
             self.pending_reveal = Some(page);
@@ -1055,7 +872,7 @@ impl PdfView {
 
     /// Toggle the find bar. On open, extract every page's text (off-thread, cached)
     /// and compute matches; on close, drop them. (`search` feature.)
-    pub fn toggle_search(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_search(&mut self, cx: &mut Context<Self>) {
         self.search_open = !self.search_open;
         if self.search_open {
             self.ensure_all_text(cx);
@@ -1071,7 +888,7 @@ impl PdfView {
     }
 
     /// Close the find bar and clear matches. (`search` feature.)
-    pub fn close_search(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn close_search(&mut self, cx: &mut Context<Self>) {
         self.search_open = false;
         self.matches.clear();
         self.current_match = None;
@@ -1160,7 +977,7 @@ impl PdfView {
     }
 
     /// Focus the next match (wrapping) and scroll to it. (`search` feature.)
-    pub fn next_match(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn next_match(&mut self, cx: &mut Context<Self>) {
         if self.matches.is_empty() {
             return;
         }
@@ -1171,7 +988,7 @@ impl PdfView {
     }
 
     /// Focus the previous match (wrapping) and scroll to it. (`search` feature.)
-    pub fn prev_match(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn prev_match(&mut self, cx: &mut Context<Self>) {
         if self.matches.is_empty() {
             return;
         }
@@ -1298,22 +1115,6 @@ impl PdfView {
         }
     }
 
-    /// Free the viewer's GPU textures but **keep** its rendered page bitmaps —
-    /// for a host moving this view to a different window (e.g. a tab drag). The
-    /// old window's textures are released now; the kept bitmaps re-upload
-    /// wherever the view next paints, so its pages appear there immediately,
-    /// with scroll, zoom, and (for an encrypted file) the unlocked state intact.
-    pub fn detach_textures(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        for arc in std::mem::take(&mut self.pending_drops) {
-            cx.drop_image(arc, Some(window));
-        }
-        for slot in &self.pages {
-            if let Some(arc) = &slot.image {
-                cx.drop_image(arc.clone(), Some(window));
-            }
-        }
-    }
-
     /// Current reading position for a host's lightweight session restoration.
     pub fn reading_position(&self) -> (usize, f32) {
         (self.current_page_index(), self.zoom)
@@ -1403,17 +1204,17 @@ impl PdfView {
     }
 
     /// Zoom in one step.
-    pub fn zoom_in(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn zoom_in(&mut self, cx: &mut Context<Self>) {
         self.set_zoom(self.zoom * ZOOM_STEP, cx);
     }
 
     /// Zoom out one step.
-    pub fn zoom_out(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn zoom_out(&mut self, cx: &mut Context<Self>) {
         self.set_zoom(self.zoom / ZOOM_STEP, cx);
     }
 
     /// Reset zoom to 100%.
-    pub fn reset_zoom(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn reset_zoom(&mut self, cx: &mut Context<Self>) {
         self.set_zoom(1.0, cx);
     }
 
@@ -1437,23 +1238,23 @@ impl PdfView {
     }
 
     /// Toggle the table-of-contents (outline) panel.
-    pub fn toggle_toc(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_toc(&mut self, cx: &mut Context<Self>) {
         self.toc_open = !self.toc_open;
         cx.notify();
     }
 
     /// Whether the document has an outline (bookmarks) to show.
-    pub fn has_outline(&self) -> bool {
+    pub(crate) fn has_outline(&self) -> bool {
         !self.outline.is_empty()
     }
 
     /// Go to the next page.
-    pub fn next_page(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn next_page(&mut self, cx: &mut Context<Self>) {
         self.go_to_page(self.current_page_index() + 1, cx);
     }
 
     /// Go to the previous page.
-    pub fn prev_page(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn prev_page(&mut self, cx: &mut Context<Self>) {
         self.go_to_page(self.current_page_index().saturating_sub(1), cx);
     }
 
@@ -1723,8 +1524,7 @@ impl Render for PdfView {
         let style = (self.style)();
 
         if let Some(err) = &self.load_error {
-            return load_failed(style, err.clone(), self.on_open_external.clone())
-                .into_any_element();
+            return load_failed(style, err.clone()).into_any_element();
         }
         if self.dims.is_empty() {
             return div()
@@ -2745,11 +2545,7 @@ fn allowed_uri(uri: &str) -> bool {
 
 /// The terminal-failure pane: the file name stays in the tab; the pane says
 /// why the viewer is empty (instead of an eternal "Loading PDF…").
-fn load_failed(
-    style: PdfStyle,
-    err: SharedString,
-    open_external: Option<OpenExternalFn>,
-) -> impl IntoElement {
+fn load_failed(style: PdfStyle, err: SharedString) -> impl IntoElement {
     div()
         .size_full()
         .flex()
@@ -2770,24 +2566,6 @@ fn load_failed(
                 .max_w(px(520.))
                 .child(err),
         )
-        // Graceful hand-off: the file may still open fine in the OS viewer
-        // (unsupported encryption handler, exotic features).
-        .children(open_external.map(|handler| {
-            div()
-                .id("pdf-open-external")
-                .mt(px(8.))
-                .px(px(10.))
-                .py(px(4.))
-                .rounded(px(5.))
-                .border_1()
-                .border_color(style.border)
-                .text_size(px(12.))
-                .text_color(style.header_fg)
-                .cursor_pointer()
-                .hover(|s| s.bg(style.placeholder_bg))
-                .child("Open in system viewer")
-                .on_click(move |_, window, cx| handler(window, cx))
-        }))
 }
 
 fn loading(style: PdfStyle) -> impl IntoElement {

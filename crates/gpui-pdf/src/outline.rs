@@ -30,7 +30,7 @@ const MAX_DEPTH: usize = 32;
 
 /// Extract the document outline (bookmarks), flattened depth-first. Returns an
 /// empty vec when the PDF has no `/Outlines`.
-pub fn outline(doc: &Pdf) -> Vec<OutlineItem> {
+pub(crate) fn outline(doc: &Pdf) -> Vec<OutlineItem> {
     let xref = doc.xref();
     let Some(catalog) = xref.get::<Dict>(xref.root_id()) else {
         return Vec::new();
