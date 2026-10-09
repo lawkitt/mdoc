@@ -4,6 +4,12 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- Removed interactions that did nothing in mdoc (ADR 0031): the PDF
+  toolbar's Highlight (⌘⇧H) and Area highlight tools; the caret now enters
+  `$…$` and `$$…$$` math like other Markdown, Backspace/Delete edit it
+  character by character, and right-click shows the normal menu; clicking
+  an inline image places the caret instead of showing a hand cursor.
+
 - Standard Markdown only: note-taking syntax inherited from Zorite —
   `[[wiki links]]`, `#tags`, `key:: value` property panels, `((block refs))`,
   `^block-ids` and `![[embeds]]` — now displays as ordinary text. Their links

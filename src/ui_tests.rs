@@ -1219,6 +1219,12 @@ fn accepted_pdf_import_opens_source_pane(cx: &mut TestAppContext) {
         assert!(app.dirty(cx));
     });
     cx.run_until_parked();
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        assert!(!app.preview.loading);
+        assert!(app.preview.pdf.is_some(), "the source pane opened");
+        assert!(app.preview.docx.is_none());
+    });
 }
 
 #[gpui::test]
