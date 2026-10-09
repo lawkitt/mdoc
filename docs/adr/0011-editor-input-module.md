@@ -25,7 +25,7 @@ trait hierarchy, runtime indirection or independently synchronized state.
 
 The practical benefit is one place to review and test input behavior. File-size
 reduction is incidental. This completes the targeted cleanup selected in the
-[maintainability review](../design/maintainability-review.md). Lifecycle state
+maintainability review (removed in `d10fba0`; see ADR 0010). Lifecycle state
 redesign, further rendering splits, API/feature removal and a generalized
 artifact framework have no demonstrated need in this review.
 
