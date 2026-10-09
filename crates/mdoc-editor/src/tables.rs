@@ -435,7 +435,7 @@ impl EditorState {
     /// per-column property, set once from the header). `None` otherwise. Read from
     /// the current content, since the painted `table_rows` lag a frame right after
     /// a separator rewrite (which would highlight the just-changed-from button).
-    pub fn caret_table_align(&self) -> Option<CellAlign> {
+    pub(crate) fn caret_table_align(&self) -> Option<CellAlign> {
         let (row, col) = self.row_col(self.cursor_offset());
         // Fast-reject via the paint: only a header row gets the toolbar.
         let t = self.table_rows.get(row).and_then(Option::as_ref)?;
@@ -454,7 +454,7 @@ impl EditorState {
 
     /// Set the alignment of the caret's table column by rewriting that table's
     /// `|---|` separator row; the caret stays put. No-op outside a table cell.
-    pub fn set_caret_table_align(&mut self, align: CellAlign, cx: &mut Context<Self>) {
+    pub(crate) fn set_caret_table_align(&mut self, align: CellAlign, cx: &mut Context<Self>) {
         let (row, col) = self.row_col(self.cursor_offset());
         let Some(t) = self.table_rows.get(row).and_then(Option::as_ref) else {
             return;
@@ -524,7 +524,7 @@ impl EditorState {
 
     /// Insert an empty row above/below the caret's row (Word-style); the caret
     /// moves into the new row's first cell. No-op outside a table.
-    pub fn insert_table_row(&mut self, below: bool, cx: &mut Context<Self>) {
+    pub(crate) fn insert_table_row(&mut self, below: bool, cx: &mut Context<Self>) {
         let (row, _) = self.row_col(self.cursor_offset());
         let Some((header, sep, _end, cols)) = self.caret_table_block() else {
             return;
@@ -553,7 +553,7 @@ impl EditorState {
     /// Delete the caret's table row (body rows only — the header + separator stay).
     /// The caret keeps its cell + in-cell offset, landing on the row that takes the
     /// deleted row's place. No-op outside a table.
-    pub fn delete_table_row(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn delete_table_row(&mut self, cx: &mut Context<Self>) {
         let Some((row, cell, in_cell)) = self.caret_table_cell_pos() else {
             return;
         };
@@ -593,7 +593,7 @@ impl EditorState {
     /// Delete the whole table the caret is in — its grid lines plus an optional
     /// `<!-- table:STYLE -->` marker line directly above — joining the surrounding
     /// text. The caret lands where the table was.
-    pub fn delete_table(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn delete_table(&mut self, cx: &mut Context<Self>) {
         let Some((header, _sep, end, _cols)) = self.caret_table_block() else {
             return;
         };
@@ -640,7 +640,7 @@ impl EditorState {
 
     /// Duplicate the caret's row below itself (the header duplicates as the
     /// first body row). The caret lands in the copy, same cell + offset.
-    pub fn duplicate_table_row(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn duplicate_table_row(&mut self, cx: &mut Context<Self>) {
         let Some((row, cell, in_cell)) = self.caret_table_cell_pos() else {
             return;
         };
@@ -669,7 +669,7 @@ impl EditorState {
 
     /// Copy the caret's table — its grid source plus any `<!-- table:STYLE -->`
     /// marker — to the clipboard (markdown, pasteable anywhere).
-    pub fn copy_table(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn copy_table(&mut self, cx: &mut Context<Self>) {
         let Some(region) = self.caret_table_region() else {
             return;
         };
@@ -749,7 +749,7 @@ impl EditorState {
 
     /// Set the caret table's visual style (`None` = Grid, the default),
     /// preserving any drag-resized `cols=` widths in the marker.
-    pub fn set_table_style(&mut self, name: Option<&'static str>, cx: &mut Context<Self>) {
+    pub(crate) fn set_table_style(&mut self, name: Option<&'static str>, cx: &mut Context<Self>) {
         let Some(region) = self.caret_table_region() else {
             return;
         };
@@ -893,7 +893,7 @@ impl EditorState {
     /// Insert an empty column left/right of the caret's column (a cell added to
     /// every row; the separator gets a default-left marker). The caret stays in its
     /// cell. No-op outside a table.
-    pub fn insert_table_column(&mut self, right: bool, cx: &mut Context<Self>) {
+    pub(crate) fn insert_table_column(&mut self, right: bool, cx: &mut Context<Self>) {
         let Some((row, cell, in_cell)) = self.caret_table_cell_pos() else {
             return;
         };
@@ -911,7 +911,7 @@ impl EditorState {
 
     /// Delete the caret's column from every row; the caret stays near where the
     /// column was. No-op outside a table, or on the last remaining column.
-    pub fn delete_table_column(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn delete_table_column(&mut self, cx: &mut Context<Self>) {
         let Some((row, cell, in_cell)) = self.caret_table_cell_pos() else {
             return;
         };

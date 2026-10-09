@@ -148,10 +148,6 @@ impl Element for EditorElement {
                 AvailableSpace::Definite(w) => Some(w),
                 _ => known.width,
             };
-            // Scroll anchoring: set when an async height change lands above
-            // the viewport (see below); called after the borrow of `editor`
-            // ends, before returning.
-            let mut compensate: Option<(ScrollCompensatorFn, Pixels)> = None;
             let height = if editor.content.is_empty() {
                 // Placeholder rows at the base size.
                 let rows = shape_all(
@@ -191,19 +187,7 @@ impl Element for EditorElement {
                     caret_row,
                     editor.block_image.as_ref(),
                     editor.block_chip.as_ref(),
-                    editor.embed_view.as_ref(),
-                    editor.block_mermaid.as_ref(),
-                    editor.block_math.as_ref(),
-                    editor.code_highlight.as_ref(),
                     editor.tab_indent,
-                    editor.block_math_em,
-                    editor.editing_block.as_ref().map(|eb| {
-                        let sr = editor.row_col(eb.range.start).0;
-                        let er = editor
-                            .row_col(eb.range.end.saturating_sub(1).max(eb.range.start))
-                            .0;
-                        (sr, er, eb.height)
-                    }),
                     sf,
                     selection,
                     editor.image_resize,
@@ -245,62 +229,7 @@ impl Element for EditorElement {
                     }
                     y += row_h + bot;
                 }
-                // Scroll anchoring (Cditor's anchor-restore): the SAME content
-                // generation as the last paint means no edit happened — so a
-                // height difference here is an ASYNC change (a math/mermaid/
-                // image raster arriving, collapsing raw lines to a rendered
-                // block). If the first changed row sits above the window's
-                // viewport, everything the user is reading would shift; hand
-                // the delta to the host NOW (this measure runs before the
-                // scroll container places its children) so its scroll offset
-                // absorbs it in the same frame.
                 let total = y.max(base_lh).max(needed);
-                // ONLY at the real, final width: taffy also measures at
-                // intrinsic (None / min-content) widths, whose unwrapped
-                // heights diverge wildly from the wrapped layout at a narrow
-                // window — a compensation from one of those yanks the scroll
-                // offset by thousands of px and fights the user's scrolling.
-                if let (Some(f), Some(last)) = (&editor.scroll_compensator, editor.last_bounds)
-                    && editor.content_gen == editor.last_paint_gen
-                    && !editor.line_tops.is_empty()
-                    && wrap_width.is_some_and(|w| (w - last.size.width).abs() < px(1.))
-                {
-                    let delta = total - last.size.height;
-                    if delta.abs() > px(0.5) {
-                        let n = new_tops.len().min(editor.line_tops.len());
-                        let j = (0..n)
-                            .find(|&k| (new_tops[k] - editor.line_tops[k]).abs() > px(0.5))
-                            .unwrap_or(n);
-                        // Debug tap (MDOC_WINDOW_DEBUG=1): a height change
-                        // with NO edit and NO width change means a cache
-                        // mismatch or an async raster — log which line moved.
-                        if std::env::var_os("MDOC_WINDOW_DEBUG").is_some() {
-                            let line_txt = editor
-                                .content
-                                .split('\n')
-                                .nth(j)
-                                .unwrap_or("")
-                                .chars()
-                                .take(60)
-                                .collect::<String>();
-                            eprintln!(
-                                "[wdbg] gen={} delta={:?} first_changed_row={} old_top={:?} new_top={:?} line={:?}",
-                                editor.content_gen,
-                                delta,
-                                j,
-                                editor.line_tops.get(j),
-                                new_tops.get(j),
-                                line_txt
-                            );
-                        }
-                        let changed_y =
-                            editor.line_tops.get(j).copied().unwrap_or(last.size.height);
-                        if last.origin.y + changed_y < px(0.) && !editor.compensated.get() {
-                            editor.compensated.set(true);
-                            compensate = Some((f.clone(), delta));
-                        }
-                    }
-                }
                 // Hand the shaping to this frame's prepaint (see ShapeMemo).
                 *editor.shape_memo.borrow_mut() = Some(ShapeMemo {
                     wrap_width,
@@ -312,9 +241,6 @@ impl Element for EditorElement {
                 total
             };
             let width = wrap_width.or(known.width).unwrap_or(px(0.));
-            if let Some((f, delta)) = compensate {
-                f(delta, window, cx);
-            }
             size(width, height)
         });
         (id, ())
@@ -428,17 +354,7 @@ impl Element for EditorElement {
                 caret_row,
                 editor.block_image.as_ref(),
                 editor.block_chip.as_ref(),
-                editor.embed_view.as_ref(),
-                editor.block_mermaid.as_ref(),
-                editor.block_math.as_ref(),
-                editor.code_highlight.as_ref(),
                 editor.tab_indent,
-                editor.block_math_em,
-                editor.editing_block.as_ref().map(|eb| {
-                    let sr = row_col(eb.range.start).0;
-                    let er = row_col(eb.range.end.saturating_sub(1).max(eb.range.start)).0;
-                    (sr, er, eb.height)
-                }),
                 sf,
                 selection,
                 editor.image_resize,
@@ -558,9 +474,7 @@ impl Element for EditorElement {
             if !is_visible_row(i) {
                 continue;
             }
-            if let Some(Block::Image(img)) = w
-                && img.resizable
-            {
+            if let Some(Block::Image(img)) = w {
                 let inset = row_inset(
                     backgrounds.get(i).copied().flatten(),
                     marks.get(i).copied().flatten(),
@@ -1815,14 +1729,6 @@ impl Element for EditorElement {
         // (hover change-detection), committed for the next frame's handlers.
         let mut prop_pill_rects: Vec<(Bounds<Pixels>, crate::syntax::LinkHit)> = Vec::new();
         let mut prop_row_rects: Vec<(Bounds<Pixels>, usize)> = Vec::new();
-        // The span being structurally edited (if any): skip painting its raster — the seated
-        // editor overlays its spot.
-        let editing_inline = self
-            .editor
-            .read(cx)
-            .editing_inline
-            .as_ref()
-            .map(|e| e.range.clone());
         // Window-space box bounds of each painted task checkbox + its line, for the
         // next frame's click-to-toggle hit-testing (committed below).
         let mut checkbox_rects: Vec<(usize, Bounds<Pixels>)> = Vec::new();
@@ -2244,16 +2150,7 @@ impl Element for EditorElement {
                 // (aspect-preserved from the saved size) instead of the saved
                 // `{width=N}` — the source isn't rewritten until release.
                 let (img_w, img_h) = image_display_size(w, image_resize, i);
-                // Honor the block's horizontal alignment within the content width. Display math
-                // centers by default; left/right come from its `<!-- math:ALIGN -->` marker. A
-                // real image is always `Left` (it sits at the row's inset).
-                let slack = bounds.size.width - img_w;
-                let img_x = match w.align {
-                    _ if slack <= px(0.) => origin.x + inset,
-                    MathAlign::Left => origin.x + inset,
-                    MathAlign::Center => origin.x + px(f32::from(slack) / 2.0),
-                    MathAlign::Right => origin.x + slack,
-                };
+                let img_x = origin.x + inset;
                 let img_bounds = Bounds::new(
                     point(img_x, origin.y + px(IMG_ROW_PAD / 2.)),
                     size(img_w, img_h),
@@ -2268,18 +2165,15 @@ impl Element for EditorElement {
                 );
                 // A draggable corner grip (accent square) + the resize cursor over it,
                 // via the hitbox inserted in prepaint. Recorded in `image_rects` for the
-                // next frame's grip hit-testing. Skipped for non-resizable blocks (math).
-                // Keyed by logical line, like `checkbox_grips` below.
-                if w.resizable {
-                    let grip = EditorState::image_grip(img_bounds);
-                    window.paint_quad(fill(grip, grip_color).corner_radii(Corners::all(px(3.))));
-                    if let Some((_, hitbox)) =
-                        prepaint.image_grips.iter().find(|(line, _)| *line == i)
-                    {
-                        window.set_cursor_style(CursorStyle::ResizeLeftRight, hitbox);
-                    }
-                    image_rects.push((i, img_bounds));
+                // next frame's grip hit-testing. Keyed by logical line, like
+                // `checkbox_grips` below.
+                let grip = EditorState::image_grip(img_bounds);
+                window.paint_quad(fill(grip, grip_color).corner_radii(Corners::all(px(3.))));
+                if let Some((_, hitbox)) = prepaint.image_grips.iter().find(|(line, _)| *line == i)
+                {
+                    window.set_cursor_style(CursorStyle::ResizeLeftRight, hitbox);
                 }
+                image_rects.push((i, img_bounds));
             } else if let Some(Block::Chip {
                 label,
                 link,
@@ -2385,16 +2279,8 @@ impl Element for EditorElement {
                         let y = origin.y + row_y + (*lh - im.height) / 2.0;
                         let b = Bounds::new(point(x, y), size(im.width, im.height));
                         inline_math_rects.push((im.source.clone(), im.latex.clone(), b));
-                        if editing_inline.as_ref() != Some(&im.source) {
-                            let _ = window.paint_image(
-                                b,
-                                b,
-                                Corners::default(),
-                                im.img.clone(),
-                                0,
-                                false,
-                            );
-                        }
+                        let _ =
+                            window.paint_image(b, b, Corners::default(), im.img.clone(), 0, false);
                     }
                 }
             }
@@ -2786,7 +2672,6 @@ impl Element for EditorElement {
             editor.table_row_del = table_row_del;
             editor.table_col_del = table_col_del;
             editor.last_bounds = Some(bounds);
-            editor.compensated.set(false);
             editor.last_paint_gen = editor.content_gen;
             editor.line_height = base_lh;
             editor.font_size = font_size;
@@ -2846,8 +2731,6 @@ fn block_img(
         img,
         width: px(target_w),
         height: px(target_w * dh / dw),
-        resizable: true,
-        align: MathAlign::Left, // images stay left; math overrides with its marker
     })
 }
 
@@ -2905,87 +2788,6 @@ fn line_pads(bg: Option<CodeBg>, table: Option<&TableRow>) -> (Pixels, Pixels) {
         }
     }
     (top, bot)
-}
-
-/// Splice inline `$…$` spacers into one line's shaped output. For each formula whose raster is
-/// ready (`block_math`) and that the caret isn't inside (left raw for editing), reserve a spacer
-/// of whole spaces ≥ the raster's text-em width and record where to paint it. The raster is
-/// rasterized at `em`; scaling by `fs/em` puts it at this line's text size. Returns the
-/// (possibly unchanged) display/runs/map plus the line's formula placements.
-#[allow(clippy::too_many_arguments)]
-fn shape_inline_math(
-    window: &mut Window,
-    line: &str,
-    line_start: usize,
-    disp: String,
-    runs: Vec<TextRun>,
-    map: Vec<usize>,
-    caret_col: Option<usize>,
-    base_font: &Font,
-    fs: Pixels,
-    block_math: &BlockMathFn,
-    em: f32,
-) -> (String, Vec<TextRun>, Vec<usize>, Vec<InlineMath>) {
-    let spans = markdown_syntax::inline_math_spans(line);
-    if spans.is_empty() || em <= 0. {
-        return (disp, runs, map, Vec::new());
-    }
-    let space_w = f32::from(measure_width(window, " ", base_font, fs)).max(1.);
-    let scale = f32::from(fs) / em;
-    let mut formulas: Vec<(Range<usize>, usize)> = Vec::new();
-    let mut imgs: Vec<(Arc<RenderImage>, Pixels, Pixels, SharedString)> = Vec::new();
-    for span in spans {
-        // A caret STRICTLY inside the span keeps it raw (a fallback — normally arrowing/clicking
-        // into a formula opens its structural editor before the caret lands here). A caret AT a
-        // boundary (just before/after the `$…$`, e.g. after exiting the editor) leaves it
-        // rendered, so sitting beside a formula doesn't flip it to raw.
-        if caret_col.is_some_and(|c| span.start < c && c < span.end) {
-            continue;
-        }
-        let latex = markdown_syntax::inline_math_latex(line, &span);
-        let Some((img, lw, lh)) = block_math(latex) else {
-            continue; // not yet rasterized — leave the raw source until it lands
-        };
-        if lw <= 0. || lh <= 0. {
-            continue;
-        }
-        // The provider's logical size, scaled from the typeset em down to text
-        // size — no window-scale-factor division (see [`BlockMathFn`]).
-        let (w, h) = (lw * scale, lh * scale);
-        let n = ((w / space_w).ceil() as usize).max(1);
-        let latex: SharedString = latex.to_string().into();
-        formulas.push((span, n));
-        imgs.push((img, px(w), px(h), latex));
-    }
-    if formulas.is_empty() {
-        return (disp, runs, map, Vec::new());
-    }
-    let gap = TextRun {
-        len: 0,
-        font: base_font.clone(),
-        color: Hsla::default(),
-        background_color: None,
-        underline: None,
-        strikethrough: None,
-    };
-    let (nd, nr, nm, places) =
-        markdown_syntax::splice_inline_math(&disp, &runs, &map, &formulas, &gap);
-    debug_assert_eq!(places.len(), imgs.len());
-    let inline = places
-        .into_iter()
-        .zip(imgs)
-        .map(|(p, (img, width, height, latex))| InlineMath {
-            display_off: p.display_off,
-            len: p.len,
-            // Absolute byte range in the document, for hit-test / seating / commit.
-            source: line_start + p.source.start..line_start + p.source.end,
-            latex,
-            img,
-            width,
-            height,
-        })
-        .collect();
-    (nd, nr, nm, inline)
 }
 
 /// Inline `![](src)` images: swap each ready image's glyphs for a spacer to
@@ -3089,15 +2891,7 @@ fn shape_document(
     caret_row: Option<usize>,
     block_image: Option<&BlockImageFn>,
     block_chip: Option<&BlockChipFn>,
-    embed_view: Option<&EmbedViewFn>,
-    block_mermaid: Option<&BlockMermaidFn>,
-    block_math: Option<&BlockMathFn>,
-    code_highlight: Option<&CodeHighlightFn>,
     tab_indent: usize,
-    // The em the `block_math` provider rasterizes at, so inline `$…$` formulas can reuse those
-    // rasters scaled to text size. `None` disables inline math.
-    block_math_em: Option<f32>,
-    editing_math: Option<(usize, usize, Pixels)>,
     scale_factor: f32,
     // The selected byte range; a line it touches keeps full source (markers
     // shown), the rest hide their markers (W6, reveal-on-caret).
@@ -3142,75 +2936,6 @@ fn shape_document(
         sel_rows
             .as_ref()
             .is_some_and(|s| s.start < r.end && r.start < s.end)
-    };
-    // ```mermaid blocks ready to render as a diagram: the caret is outside the
-    // block and the host has a rendered bitmap. The diagram paints on the block's
-    // first line; the rest collapse. Caret inside / still rendering → raw code.
-    let mermaid: Vec<(Range<usize>, BlockImg)> = match block_mermaid.filter(|_| md.is_some()) {
-        Some(f) => scan
-            .mermaid
-            .iter()
-            .filter(|(range, _)| {
-                caret_row.is_none_or(|cr| !range.contains(&cr)) && !sel_hits(range)
-            })
-            .cloned()
-            .filter_map(|(range, source)| {
-                // Sized by the provider's logical dimensions, like math below —
-                // never texture pixels ÷ window scale factor.
-                let (img, lw, lh) = f(&source)?;
-                if lw <= 0. || lh <= 0. {
-                    return None;
-                }
-                let w = lw.min(wrap_width.map_or(lw, f32::from)).max(1.);
-                Some((
-                    range,
-                    BlockImg {
-                        img,
-                        width: px(w),
-                        height: px(w * lh / lw),
-                        // No grip: there's no `{width=N}` to persist on a fence
-                        // line (the old grip silently no-oped on release).
-                        resizable: false,
-                        align: MathAlign::Left,
-                    },
-                ))
-            })
-            .collect(),
-        None => Vec::new(),
-    };
-    // $$…$$ math blocks ready to render: caret outside + a typeset bitmap ready. Like
-    // mermaid, the equation paints on the block's first line, the rest collapse.
-    let math: Vec<(Range<usize>, BlockImg)> = match block_math.filter(|_| md.is_some()) {
-        Some(f) => scan
-            .math
-            .iter()
-            .filter(|r| caret_row.is_none_or(|cr| !r.range.contains(&cr)) && !sel_hits(&r.range))
-            .cloned()
-            .filter_map(|r| {
-                // Sized by the provider's logical dimensions — NOT texture pixels
-                // ÷ window scale factor (see [`BlockMathFn`]: the raster's density
-                // is fixed, so that division is only correct on a 2× display).
-                let (img, lw, lh) = f(&r.source)?;
-                if lw <= 0. || lh <= 0. {
-                    return None;
-                }
-                let w = lw.min(wrap_width.map_or(lw, f32::from)).max(1.);
-                // Math renders at its natural typeset size — no resize grip (nothing to
-                // persist a width to, and it goes inline eventually). It carries its
-                // horizontal alignment (centered by default) for the paint to honor.
-                Some((
-                    r.range,
-                    BlockImg {
-                        img,
-                        width: px(w),
-                        height: px(w * lh / lw),
-                        resizable: false,
-                        align: r.align,
-                    },
-                ))
-            })
-            .collect(),
-        None => Vec::new(),
     };
     // `key:: value` property runs → two-column panels (reader parity). Like a
     // math block, the panel paints on the region's first line and the rest of
@@ -3392,53 +3117,6 @@ fn shape_document(
     let mut last_strong_rtl = false;
     let mut code_block: Vec<usize> = Vec::new();
     let mut code_w = px(0.);
-    // Token colors per code line (line index → in-line ranges), from the host
-    // highlighter: each fenced block with a language tag is highlighted whole
-    // (tree-sitter-style engines need full-block context), then split per line.
-    let line_highlights: std::collections::HashMap<usize, Vec<(Range<usize>, HighlightStyle)>> =
-        match (code_highlight, md) {
-            (Some(hl), Some(_)) => {
-                let mut map = std::collections::HashMap::new();
-                let mut i = 0;
-                while i < lines.len() {
-                    let Some(lang) = lines[i].trim_start().strip_prefix("```") else {
-                        i += 1;
-                        continue;
-                    };
-                    let lang = lang.trim();
-                    let mut j = i + 1;
-                    while j < lines.len() && !lines[j].trim_start().starts_with("```") {
-                        j += 1;
-                    }
-                    // Mermaid blocks render as diagrams, not code.
-                    if !lang.is_empty() && lang != "mermaid" && j > i + 1 {
-                        let block = lines[i + 1..j].join("\n");
-                        let ranges = hl(lang, &block);
-                        let mut start = 0;
-                        for (k, l) in lines[i + 1..j].iter().enumerate() {
-                            let end = start + l.len();
-                            let in_line: Vec<(Range<usize>, HighlightStyle)> = ranges
-                                .iter()
-                                .filter_map(|(r, style)| {
-                                    let (a, b) = (r.start.max(start), r.end.min(end));
-                                    // `then` (lazy), not `then_some`: the arg is
-                                    // evaluated eagerly, and `b - start` underflows
-                                    // for a token wholly before this line.
-                                    (a < b).then(|| (a - start..b - start, *style))
-                                })
-                                .collect();
-                            if !in_line.is_empty() {
-                                map.insert(i + 1 + k, in_line);
-                            }
-                            start = end + 1;
-                        }
-                    }
-                    i = j + 1;
-                }
-                map
-            }
-            _ => std::collections::HashMap::new(),
-        };
     let mut line_start = 0;
     let mut in_fence = false;
     // Active GitHub alert run (`> [!NOTE]` …): set by a marker line, carried
@@ -3453,64 +3131,6 @@ fn shape_document(
         if idx > 0 {
             let (tp, bp) = line_pads(out.backgrounds[idx - 1], out.tables[idx - 1].as_ref());
             y_acc += tp + bp + out.heights[idx - 1] * out.wrap_rows[idx - 1] as f32;
-        }
-
-        // A ready mermaid block renders as its diagram (on the first line) with the
-        // rest of the block collapsed — bypassing the normal per-line handling. Its
-        // ``` fences still toggle `in_fence` so later code blocks track correctly.
-        if let Some((range, bi)) = mermaid.iter().find(|(r, _)| r.contains(&idx)) {
-            if line.trim_start().starts_with("```") {
-                in_fence = !in_fence;
-            }
-            let (h, widget) = if idx == range.start {
-                (bi.height, Some(Block::Image(bi.clone())))
-            } else {
-                (px(0.), None)
-            };
-            out.push_placeholder(window, base_font_size, wrap_width, h, widget, None, 1);
-            line_start = line_end + 1;
-            alert_run = None;
-            continue;
-        }
-
-        // An in-line-edited $$ block reserves a fixed gap; the host paints the live editor
-        // there (positioned from this line's top/height). Takes precedence over the image.
-        if let Some((start_row, end_row, gap_h)) = editing_math
-            && (start_row..=end_row).contains(&idx)
-        {
-            let h = if idx == start_row { gap_h } else { px(0.) };
-            out.push_placeholder(window, base_font_size, wrap_width, h, None, None, 1);
-            line_start = line_end + 1;
-            alert_run = None;
-            continue;
-        }
-
-        // A ready $$…$$ math block renders as its equation on the first line, the rest
-        // collapsed. Unlike mermaid it's not a ``` fence, so it never toggles `in_fence`.
-        if let Some((range, bi)) = math.iter().find(|(r, _)| r.contains(&idx)) {
-            let (h, widget) = if idx == range.start {
-                (bi.height, Some(Block::Image(bi.clone())))
-            } else {
-                (px(0.), None)
-            };
-            out.push_placeholder(window, base_font_size, wrap_width, h, widget, None, 1);
-            line_start = line_end + 1;
-            alert_run = None;
-            continue;
-        }
-
-        // A standalone `![[target]]` transclusion the host can render reserves
-        // a gap the height the host asked for — the embed view overlays it
-        // (see `embed_overlays`). Raw on caret; an unresolved target falls
-        // through to the chip below.
-        if md.is_some()
-            && caret_row != Some(idx)
-            && let Some(inner) = crate::syntax::embed_line(line)
-            && let Some(h) = embed_view.and_then(|f| f(inner).map(|(_, h)| h))
-        {
-            out.push_placeholder(window, base_font_size, wrap_width, h, None, None, 1);
-            line_start = line_end + 1;
-            continue;
         }
 
         // A folded callout's body lines collapse (height 0); its marker line
@@ -3942,9 +3562,7 @@ fn shape_document(
                 None,
             )
         } else if let Some(st) = md.filter(|_| is_code) {
-            // Monospace runs; ``` delimiters dimmed. A highlighted line (from
-            // the host's code highlighter) splits into token-colored runs with
-            // the base code color filling the gaps.
+            // Monospace runs; ``` delimiters dimmed.
             let base_run = |len: usize| TextRun {
                 len,
                 font: st.mono.clone(),
@@ -3955,32 +3573,6 @@ fn shape_document(
             };
             let runs = if line.is_empty() {
                 Vec::new()
-            } else if let Some(tokens) = line_highlights.get(&idx).filter(|_| !is_fence) {
-                let mut runs = Vec::new();
-                let mut pos = 0;
-                for (r, h) in tokens {
-                    if r.start > pos {
-                        runs.push(base_run(r.start - pos));
-                    }
-                    let font = Font {
-                        weight: h.font_weight.unwrap_or(st.mono.weight),
-                        style: h.font_style.unwrap_or(st.mono.style),
-                        ..st.mono.clone()
-                    };
-                    runs.push(TextRun {
-                        len: r.end - r.start,
-                        font,
-                        color: h.color.unwrap_or(st.code),
-                        background_color: None,
-                        underline: None,
-                        strikethrough: None,
-                    });
-                    pos = r.end;
-                }
-                if pos < line.len() {
-                    runs.push(base_run(line.len() - pos));
-                }
-                runs
             } else {
                 vec![base_run(line.len())]
             };
@@ -4150,34 +3742,10 @@ fn shape_document(
             } else {
                 (disp, runs, m)
             };
-            // Inline `$…$` math AND `![](src)` images: swap each ready one's
-            // glyphs for a spacer to paint the raster over (shared machinery).
+            // Inline `![](src)` images: swap each ready one's glyphs for a
+            // spacer to paint the raster over.
             // Span checks gate the calls, so span-less lines (the common case)
             // keep their shared payloads untouched.
-            let (disp, runs, m) = match (block_math, block_math_em) {
-                (Some(mathf), Some(em)) if !markdown_syntax::inline_math_spans(line).is_empty() => {
-                    let (disp, runs, m, im) = shape_inline_math(
-                        window,
-                        line,
-                        line_start,
-                        disp.to_string(),
-                        runs.as_ref().clone(),
-                        m.as_ref().clone(),
-                        caret_col,
-                        base_font,
-                        fs,
-                        mathf,
-                        em,
-                    );
-                    line_inline_math = im;
-                    (
-                        SharedString::from(disp),
-                        std::rc::Rc::new(runs),
-                        std::rc::Rc::new(m),
-                    )
-                }
-                _ => (disp, runs, m),
-            };
             match block_image {
                 Some(imgf) if !markdown_syntax::inline_image_spans(line).is_empty() => {
                     let (disp, runs, m, imgs) = shape_inline_images(
@@ -4808,9 +4376,7 @@ mod tests {
         editor.update(cx, |editor, cx| {
             editor.set_text(source, cx);
             editor.set_markdown_style(markdown_syntax::search_style(), cx);
-            let bitmap = image.clone();
-            editor.set_block_image_provider(move |_| Some(bitmap.clone()));
-            editor.set_block_math_provider(move |_| Some((image.clone(), 80., 160.)));
+            editor.set_block_image_provider(move |_| Some(image.clone()));
         });
         (editor, cx)
     }
@@ -4875,8 +4441,8 @@ mod tests {
 
     #[gpui::test]
     fn scrolled_image_grips_match_painted_logical_rows(cx: &mut TestAppContext) {
-        // Two early images, a non-resizable math block, and non-adjacent later
-        // images (one in a list). Wrapped text separates the viewport bands.
+        // Two early images, a raw math block, and non-adjacent later images
+        // (one in a list). Wrapped text separates the viewport bands.
         let paragraph = "wrapped text ".repeat(80);
         let source = format!(
             "![early](image){{width=120}}\n{paragraph}\n![early2](image){{width=80}}\n$$\nx\n$$\n- ![later](image){{width=100}}\ntext\n![last](image){{width=60}}\n{paragraph}\n![below](image){{width=40}}"
@@ -4889,10 +4455,8 @@ mod tests {
             // margin. Later grips must retain logical rows 6/8, not indices 0/1.
             -(editor.line_tops[2] + editor.line_heights[2]) - px(65.)
         });
-        let prepaint = draw_images(&editor, cx, scroll_y, &[6, 8]);
-        assert!(matches!(&prepaint.widgets[3], Some(Block::Image(img)) if !img.resizable));
+        draw_images(&editor, cx, scroll_y, &[6, 8]);
         editor.read_with(cx, |editor, _| {
-            assert!(scroll_y + editor.line_tops[3] + editor.line_heights[3] > px(0.));
             assert!(editor.line_insets[6] > px(0.));
             assert_eq!(editor.image_rects[0].1.size, size(px(100.), px(100.)));
             assert_eq!(editor.image_rects[1].1.size, size(px(60.), px(60.)));

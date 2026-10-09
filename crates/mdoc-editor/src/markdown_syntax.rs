@@ -1807,56 +1807,28 @@ pub(crate) fn math_blocks(content: &str) -> Vec<(Range<usize>, String)> {
         .collect()
 }
 
-/// Horizontal alignment of a display `$$…$$` block, chosen per-block via a
-/// `<!-- math:left -->` / `<!-- math:right -->` marker comment on the line directly above it.
-/// `Center` is the default (no marker), matching LaTeX display math; standard Markdown viewers
+/// Whether `line` is a `<!-- math:left|center|right -->` alignment marker.
+/// The editor hides it like a table style marker; standard Markdown viewers
 /// ignore the comment.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum MathAlign {
-    Left,
-    #[default]
-    Center,
-    Right,
+pub(crate) fn is_math_align_marker(line: &str) -> bool {
+    math_align_name(line).is_some_and(|n| matches!(n, "left" | "center" | "right"))
 }
 
-impl MathAlign {
-    fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "left" => Some(Self::Left),
-            "center" => Some(Self::Center),
-            "right" => Some(Self::Right),
-            _ => None,
-        }
-    }
-
-    /// The marker line for this alignment, or `None` for the default (`Center`) — which is
-    /// stored as no marker, keeping centered math (the common case) clean.
-    pub(crate) fn marker(self) -> Option<&'static str> {
-        match self {
-            Self::Center => None,
-            Self::Left => Some("<!-- math:left -->"),
-            Self::Right => Some("<!-- math:right -->"),
-        }
-    }
-}
-
-/// Parse a `<!-- math:ALIGN -->` marker line. `None` if it isn't one.
-pub(crate) fn math_align_marker(line: &str) -> Option<MathAlign> {
+fn math_align_name(line: &str) -> Option<&str> {
     let inner = line
         .trim()
         .strip_prefix("<!--")?
         .strip_suffix("-->")?
         .trim();
-    MathAlign::from_name(inner.strip_prefix("math:")?.trim())
+    Some(inner.strip_prefix("math:")?.trim())
 }
 
-/// A detected `$$…$$` block: its line range (both fences), the LaTeX between them, its
-/// alignment, and the optional `<!-- math:ALIGN -->` marker line directly above it.
+/// A detected `$$…$$` block: its line range (both fences), the LaTeX between them, and
+/// the optional `<!-- math:ALIGN -->` marker line directly above it.
 #[derive(Clone)]
 pub(crate) struct MathRegion {
     pub range: Range<usize>,
     pub source: String,
-    pub align: MathAlign,
     pub marker_line: Option<usize>,
 }
 
@@ -1885,34 +1857,22 @@ pub(crate) fn math_regions(content: &str) -> Vec<MathRegion> {
             let source = lines[start + 1..j].join("\n");
             let end = (j + 1).min(lines.len()); // include the closing fence
             // An alignment marker on the line directly above the opening fence.
-            let (align, marker_line) = match start
+            let marker_line = start
                 .checked_sub(1)
-                .map(|m| (m, math_align_marker(lines[m])))
-            {
-                Some((m, Some(a))) => (a, Some(m)),
-                _ => (MathAlign::default(), None),
-            };
+                .filter(|&m| is_math_align_marker(lines[m]));
             out.push(MathRegion {
                 range: start..end,
                 source,
-                align,
                 marker_line,
             });
             i = end;
         } else if let Some(inner) = one_line_math(lines[i]) {
             // `$$x^2$$` ALONE on a line is display math (issue #54): block
-            // treatment (size, centering, alignment marker). Lines mixing
-            // words with a pair are normalized apart at edit time (see
-            // `apply_auto_replace`) — never hidden.
-            let (align, marker_line) =
-                match i.checked_sub(1).map(|m| (m, math_align_marker(lines[m]))) {
-                    Some((m, Some(a))) => (a, Some(m)),
-                    _ => (MathAlign::default(), None),
-                };
+            // treatment, including its alignment marker.
+            let marker_line = i.checked_sub(1).filter(|&m| is_math_align_marker(lines[m]));
             out.push(MathRegion {
                 range: i..i + 1,
                 source: inner.to_string(),
-                align,
                 marker_line,
             });
             i += 1;

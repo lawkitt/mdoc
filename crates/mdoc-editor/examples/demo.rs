@@ -1,17 +1,18 @@
-//! Standalone demo for the `mdoc-editor` crate.
+//! Spell-check groundwork for the `mdoc-editor` crate (a deferred experiment;
+//! see ROADMAP). Keeps `os-spellcheck` and the editor's diagnostics hooks
+//! compiled and linted.
 //!
 //! Run with: `cargo run -p mdoc-editor --example demo`.
 //!
-//! Wires the editor to the real OS spell checker (M6): misspelled words get red
+//! Wires the editor to the real OS spell checker: misspelled words get red
 //! squiggles, and right-clicking one offers the system's suggestions. Type to
 //! watch the squiggles update live — the editor emits [`EditorEvent::Changed`]
 //! on each edit, and we re-run the checker in response.
 
 use gpui::{
     App, AppContext, Bounds, Context, Entity, Focusable, InteractiveElement, IntoElement,
-    KeyBinding, ParentElement, Render, ScrollHandle, SharedString, StatefulInteractiveElement,
-    Styled, Subscription, Window, WindowBounds, WindowOptions, actions, div, font, hsla, px, rgb,
-    size,
+    KeyBinding, ParentElement, Render, ScrollHandle, StatefulInteractiveElement, Styled,
+    Subscription, Window, WindowBounds, WindowOptions, actions, div, font, hsla, px, rgb, size,
 };
 use mdoc_editor::{Diagnostic, EditorEvent, EditorState, SyntaxStyle};
 use os_spellcheck::SpellChecker;
@@ -53,8 +54,6 @@ impl Render for Demo {
     }
 }
 
-/// Run the OS spell checker over `text` and turn the misspellings into editor
-/// diagnostics (the byte ranges + suggestions map across one-to-one).
 /// A dark-theme palette for the live-preview markdown styling.
 fn demo_markdown_style() -> SyntaxStyle {
     SyntaxStyle {
@@ -86,6 +85,8 @@ fn demo_markdown_style() -> SyntaxStyle {
     }
 }
 
+/// Run the OS spell checker over `text` and turn the misspellings into editor
+/// diagnostics.
 fn diagnostics_for(text: &str) -> Vec<Diagnostic> {
     SpellChecker::new()
         .check(text)
@@ -107,33 +108,8 @@ fn main() {
                 ..Default::default()
             },
             |window, cx| {
-                let text = "# Heading 1\n## Heading 2\n\nHeadings get bigger as you type (W2). \
-                            **Bold**, *italic*, ~~strike~~, `inline code`, a \
-                            [link](https://example.com), a [[Wiki Page]], a #tag and a \
-                            namespaced #area/sub tag, plus a bare https://example.com/auto \
-                            autolink.\n\n> [!NOTE] GitHub alerts render with a colored bar \
-                            and label\n> across their lines.\n\n> [!WARNING]\n> The classic \
-                            two-line form works too.\n\nA fenced code block (W4b):\n\n\
-                            ```rust\nfn main() {\n    \
-                            println!(\"hello, world\");\n}\n```\n\nA table (W4c):\n\n| Name | \
-                            Role | Score |\n| :-- | :--: | --: |\n| Ada | Engineer | 99 |\n\
-                            | Linus | Kernel | 88 |\n\n> A blockquote, *muted* with a left \
-                            border.\n\n- First bullet\n- Second bullet\n  - Nested bullet\n\n\
-                            1. First step\n2. Second step\n\n- [x] Done task\n- [ ] Pending \
-                            task\n\n![](docs/report.pdf)\n\n---\n\nA footnote reference[^1], a \
-                            [reference link][ref], and <mark>highlighted</mark> text.\n\n\
-                            ==Важное условие== and <mark style='background:#ffd54f80'>\
-                            a colored highlight</mark>, with <span style='color:#90caf9'>\
-                            colored text</span>. Literal comparison: a == b == c.\n\n\
-                            [^1]: The footnote definition, shown muted.\n\
-                            [ref]: https://example.com\n\nSpell-check still flags mispelled \
-                            wrds; right-click one for suggestions.\n\nStriped:\n\
-                            <!-- table:striped -->\n| Name | Role | Score |\n| :-- | :--: | --: |\n\
-                            | Ada | Engineer | 99 |\n| Linus | Kernel | 88 |\n\
-                            | Grace | Compiler | 95 |\n\nHeader:\n<!-- table:header -->\n\
-                            | Name | Role |\n| :-- | :-- |\n| Ada | Engineer |\n| Linus | Kernel |\
-                            \n\nMinimal:\n<!-- table:minimal -->\n| Name | Role |\n| :-- | :-- |\n\
-                            | Ada | Engineer |\n| Linus | Kernel |";
+                let text = "# Spell-check demo\n\nThe OS checker flags mispelled wrds as you \
+                            type; right-click one for suggestions.\n";
                 let editor = cx.new(|cx| {
                     EditorState::new(window, cx)
                         .with_placeholder("Type here…")
@@ -146,45 +122,16 @@ fn main() {
                 editor.update(cx, |editor, cx| {
                     editor.on_suggest(|word| SpellChecker::new().suggestions(word));
                     editor.set_markdown_style(demo_markdown_style(), cx);
-                    // A toy syntax highlighter, to demo the hook: real hosts
-                    // plug in an engine (mdoc passes gpui-component's
-                    // tree-sitter highlighter) — the editor only wants
-                    // `(lang, code) -> sorted styled ranges`.
-                    editor.set_code_highlighter(|_lang, code| {
-                        let mut out = Vec::new();
-                        for kw in ["fn", "let", "println!"] {
-                            let mut from = 0;
-                            while let Some(i) = code[from..].find(kw) {
-                                let at = from + i;
-                                out.push((
-                                    at..at + kw.len(),
-                                    gpui::HighlightStyle {
-                                        color: Some(hsla(0.83, 0.6, 0.7, 1.)),
-                                        ..Default::default()
-                                    },
-                                ));
-                                from = at + kw.len();
-                            }
-                        }
-                        out.sort_by_key(|(r, _)| r.start);
-                        out
-                    });
-                    // Treat a `![](*.pdf)` as a clickable chip (label = file name).
-                    editor.set_block_chip_provider(|src| {
-                        src.ends_with(".pdf")
-                            .then(|| SharedString::from(src.rsplit('/').next().unwrap_or(src)))
-                    });
                     editor.set_diagnostics(diagnostics_for(text), cx);
                 });
 
-                // Re-check on every edit; log chip opens.
+                // Re-check on every edit.
                 let editor_handle = editor.clone();
                 cx.new(|cx| {
                     let _spell_sub = cx.subscribe(
                         &editor_handle,
                         |_demo: &mut Demo, editor, event: &EditorEvent, cx| {
-                            if let EditorEvent::OpenLink(src) = event {
-                                eprintln!("open link: {src}");
+                            if !matches!(event, EditorEvent::Changed) {
                                 return;
                             }
                             let text = editor.read(cx).text().to_string();

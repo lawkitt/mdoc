@@ -51,7 +51,7 @@ impl SearchLinePositions {
             .map_or(self.width, |glyph| glyph.1)
     }
 
-    pub fn position(&self, index: usize, height: Pixels) -> Option<Point<Pixels>> {
+    pub(crate) fn position(&self, index: usize, height: Pixels) -> Option<Point<Pixels>> {
         if index > self.len {
             return None;
         }
@@ -72,7 +72,7 @@ pub(crate) struct CachedLinePositions {
     positions: Option<std::rc::Rc<SearchLinePositions>>,
 }
 impl CachedLinePositions {
-    pub fn get(
+    pub(crate) fn get(
         cache: &mut std::collections::HashMap<usize, Self>,
         row: usize,
         line: &WrappedLine,

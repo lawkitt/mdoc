@@ -33,18 +33,17 @@ use std::sync::Arc;
 use gpui::{
     App, AvailableSpace, BorderStyle, Bounds, Context, Corners, CursorStyle, Edges, Element,
     ElementId, ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle,
-    Focusable, Font, FontWeight, GlobalElementId, HighlightStyle, Hitbox, HitboxBehavior, Hsla,
-    InspectorElementId, InteractiveElement, IntoElement, KeyBinding, LayoutId, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement, PathBuilder, Pixels,
-    Point, Render, RenderImage, ScrollHandle, SharedString, StatefulInteractiveElement, Style,
-    Styled, TextRun, Window, WrappedLine, actions, div, fill, hsla, point, px, relative, rgb, rgba,
-    size,
+    Focusable, Font, FontWeight, GlobalElementId, Hitbox, HitboxBehavior, Hsla, InspectorElementId,
+    InteractiveElement, IntoElement, KeyBinding, LayoutId, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement, PathBuilder, Pixels, Point, Render,
+    RenderImage, ScrollHandle, SharedString, StatefulInteractiveElement, Style, Styled, TextRun,
+    Window, WrappedLine, actions, div, fill, hsla, point, px, relative, rgb, rgba, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
 mod markdown_syntax;
 mod syntax;
-pub use markdown_syntax::{AlertIcons, MathAlign, PropertyIconFn, SyntaxStyle};
+pub use markdown_syntax::{AlertIcons, PropertyIconFn, SyntaxStyle};
 
 mod search;
 mod search_geometry;
@@ -560,83 +559,6 @@ type BlockChipFn = Box<dyn Fn(&str) -> Option<SharedString>>;
 /// [`EditorState::set_clipboard_writer`].
 pub type ClipboardWriter = std::rc::Rc<dyn Fn(&str, &mut App)>;
 
-/// Resolves a standalone `![[target]]` embed line to the host view that renders
-/// the transclusion, plus the row height to reserve for it (the host estimates
-/// and caps it; long content scrolls inside the view). `None` falls back to the
-/// embed chip.
-type EmbedViewFn = Box<dyn Fn(&str) -> Option<(gpui::AnyView, Pixels)>>;
-
-/// Resolves a ` ```mermaid ` block's source to a rendered diagram bitmap plus its
-/// **logical** (display) px size — supplied by the host for the same reason as
-/// [`BlockMathFn`]. Set via [`EditorState::set_block_mermaid_provider`]; the host
-/// renders + caches off-thread (see [`mermaid_sources`] to pre-render).
-type BlockMermaidFn = Box<dyn Fn(&str) -> Option<(Arc<RenderImage>, f32, f32)>>;
-
-/// Resolves a `$$…$$` math block's LaTeX to a typeset bitmap plus its **logical**
-/// (display) px size, so the editor can render the block as the equation (caret
-/// outside) instead of raw source. The host supplies the logical size because it
-/// knows the raster's pixel density (e.g. typeset at a fixed 2× DPR); deriving it
-/// from texture pixels ÷ window scale factor renders 2× too large on a 1× display
-/// (the Linux/X11 bug — the division only cancels on a 2× "Retina" screen). Set
-/// via [`EditorState::set_block_math_provider`]; pre-render with [`math_sources`].
-type BlockMathFn = Box<dyn Fn(&str) -> Option<(Arc<RenderImage>, f32, f32)>>;
-
-/// Colors a fenced code block's tokens in WYSIWYG: `(language tag, block
-/// text) → sorted, non-overlapping styled ranges` (byte offsets into the
-/// block). Host-supplied (e.g. a tree-sitter highlighter) so the crate stays
-/// engine-free; absent it, code renders in `SyntaxStyle::code`. Set via
-/// [`EditorState::set_code_highlighter`].
-type CodeHighlightFn = Box<dyn Fn(&str, &str) -> Vec<(Range<usize>, HighlightStyle)>>;
-
-/// Host auto-replace hook, consulted when a word-boundary character (space,
-/// punctuation, Enter) completes a word: receives the just-finished line's
-/// text up to the boundary and returns the slice range to replace plus its
-/// replacement — e.g. wrapping a completed page title as `[[title]]`. The
-/// edit is one undo step (⌫Z restores the plain word) and the caret keeps its
-/// place after the boundary. Not consulted inside fenced code, and only for
-/// single-character insertions (never pastes or IME commits). Set via
-/// [`EditorState::set_auto_replace`].
-type AutoReplaceFn = Box<dyn Fn(&str) -> Option<(Range<usize>, String)>>;
-
-/// The diagram sources of every ` ```mermaid ` block in `content`, so a host can
-/// pre-render them (the editor's mermaid provider then finds the ready bitmap).
-pub fn mermaid_sources(content: &str) -> Vec<SharedString> {
-    markdown_syntax::mermaid_blocks(content)
-        .into_iter()
-        .map(|(_, source)| source.into())
-        .collect()
-}
-
-/// The LaTeX sources of every `$$…$$` math block in `content`, so a host can
-/// pre-render them (the editor's math provider then finds the ready bitmap).
-pub fn math_sources(content: &str) -> Vec<SharedString> {
-    markdown_syntax::math_blocks(content)
-        .into_iter()
-        .map(|(_, source)| source.into())
-        .collect()
-}
-
-/// The LaTeX sources of every inline `$…$` formula in `content` (the inner LaTeX, no `$`
-/// delimiters), so a host can pre-render them into the same math store the block provider
-/// reads. Skips lines inside fenced code blocks, where `$…$` is literal.
-pub fn inline_math_sources(content: &str) -> Vec<SharedString> {
-    let mut out = Vec::new();
-    let mut in_fence = false;
-    for line in content.split('\n') {
-        if line.trim_start().starts_with("```") {
-            in_fence = !in_fence;
-            continue;
-        }
-        if in_fence {
-            continue;
-        }
-        for span in markdown_syntax::inline_math_spans(line) {
-            out.push(markdown_syntax::inline_math_latex(line, &span).into());
-        }
-    }
-    out
-}
-
 /// The editor: text + cursor/selection state, an undo/redo history, plus a
 /// cached layout (the wrapped lines from the last paint) for hit-testing + IME.
 /// Renders the WYSIWYG view when a markdown [`SyntaxStyle`] is installed, the
@@ -748,7 +670,6 @@ pub struct EditorState {
     marked_range: Option<Range<usize>>,
     /// Host-supplied clipboard writer for Copy/Cut (e.g. adding an HTML
     /// flavor beside the plain text). `None` = gpui's plain-string copy.
-    clipboard_writer: Option<ClipboardWriter>,
     /// Find highlights: logical occurrences + the active index, painted behind
     /// the text like the selection. A logical occurrence can contain several
     /// source ranges when hidden Markdown syntax lies inside it.
@@ -887,26 +808,19 @@ pub struct EditorState {
     /// Classifies an `![](src)` as a file chip (e.g. a PDF) + its label; set by
     /// the host via [`Self::set_block_chip_provider`].
     block_chip: Option<BlockChipFn>,
-    embed_view: Option<EmbedViewFn>,
     /// Resolves a ` ```mermaid ` block's source to a rendered diagram; set by the
     /// host via [`Self::set_block_mermaid_provider`].
-    block_mermaid: Option<BlockMermaidFn>,
     /// Resolves a `$$…$$` block's LaTeX to a typeset equation; set by the host via
     /// [`Self::set_block_math_provider`].
-    block_math: Option<BlockMathFn>,
     /// Fenced-code syntax highlighter, see [`CodeHighlightFn`].
-    code_highlight: Option<CodeHighlightFn>,
     /// Host auto-replace hook, see [`Self::set_auto_replace`].
-    auto_replace: Option<AutoReplaceFn>,
     /// What the most recent keystroke edit replaced (the selected text), for
     /// the host's auto-pair logic — a text diff alone can't distinguish
     /// "typed `[` over a selection starting with `[`" from "backspaced inside
     /// a doubled pair". Consumed via [`Self::take_replaced_selection`].
-    last_replaced: Option<String>,
     /// The em (px/font-size) the `block_math` provider rasterizes at — set via
     /// [`Self::set_block_math_em`]. Inline `$…$` formulas reuse those rasters scaled by
     /// `text_em / this`, so they sit at text size. `None` disables inline math rendering.
-    block_math_em: Option<f32>,
     /// Per-logical-line `src` for rows painted as a file chip (from the last
     /// paint), so a left-click can open it and a right-click can edit it.
     chip_rows: Vec<Option<(SharedString, bool)>>,
@@ -952,7 +866,6 @@ pub struct EditorState {
     /// See [`ScanData`].
     scan_cache: std::cell::RefCell<Option<(u64, std::rc::Rc<ScanData>)>>,
     /// See [`ScrollCompensatorFn`].
-    scroll_compensator: Option<ScrollCompensatorFn>,
     /// Cross-frame shaping caches — line runs, table column widths, and table
     /// wrap rows (see [`ShapeCaches`]). Capacity-capped in `shape_document`.
     shape_caches: ShapeCaches,
@@ -964,7 +877,6 @@ pub struct EditorState {
     /// Latch: the scroll compensator fired since the last paint. Measure can
     /// run several times before a paint commits fresh `line_tops`; without
     /// this, one async height change compensates once per measure call.
-    compensated: std::cell::Cell<bool>,
     /// An active gutter block drag (Notion/Cditor-style reorder): the grabbed
     /// block's first + last rows and the current drop boundary (a row index;
     /// `== rows` drops at the document end).
@@ -1000,14 +912,12 @@ pub struct EditorState {
     utf16_anchor: std::cell::Cell<(u64, usize, usize)>,
     /// A `$$…$$` block being edited in-line: its byte range + the host-supplied view (the
     /// structural editor) painted in a reserved gap at the block's spot. `None` = none.
-    editing_block: Option<EditingBlock>,
     /// Window-space painted bounds of each inline `$…$` formula + its absolute byte range and
     /// inner LaTeX (from the last paint), so a click can open its structural editor and the
     /// seated editor can be positioned at the formula's spot.
     inline_math_rects: Vec<(Range<usize>, SharedString, Bounds<Pixels>)>,
     /// An inline `$…$` formula under structural edit: its byte range + the host's editor view,
     /// overlaid at the formula's spot. `None` = none.
-    editing_inline: Option<EditingInline>,
     /// Painted bounds + target of each property-panel pill (from the last paint),
     /// so a left-click opens it (`OpenWikiLink` / `OpenLink`).
     prop_pill_rects: Vec<(Bounds<Pixels>, crate::syntax::LinkHit)>,
@@ -1042,28 +952,6 @@ pub struct EditorState {
     heading_hover_row: Option<usize>,
 }
 
-/// A math block under in-line structural edit: the byte range to overwrite on commit, and
-/// the host's editor view to render in the reserved gap.
-struct EditingBlock {
-    range: Range<usize>,
-    view: gpui::AnyView,
-    /// The block's displayed height — the gap reserved while editing, so the formula stays
-    /// put instead of jumping to a fixed size.
-    height: Pixels,
-}
-
-/// An inline `$…$` formula under structural edit: the byte range to overwrite on commit, and
-/// the host's editor view, overlaid at the formula's painted spot.
-struct EditingInline {
-    range: Range<usize>,
-    view: gpui::AnyView,
-    /// Where the view's top-left sits relative to the formula raster's top-left. The
-    /// host's editor view pads its raster differently than the display raster (whose
-    /// padding was baked at the block em and scaled down), so a zero offset shifts
-    /// the glyphs visibly on entering edit.
-    offset: Point<Pixels>,
-}
-
 impl EditorState {
     pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
@@ -1073,7 +961,6 @@ impl EditorState {
             selected_range: 0..0,
             selection_reversed: false,
             marked_range: None,
-            clipboard_writer: None,
             search: None,
             search_bounds: Vec::new(),
             annotations: Vec::new(),
@@ -1131,13 +1018,6 @@ impl EditorState {
             suggest: None,
             block_image: None,
             block_chip: None,
-            embed_view: None,
-            block_mermaid: None,
-            block_math: None,
-            block_math_em: None,
-            code_highlight: None,
-            auto_replace: None,
-            last_replaced: None,
             chip_rows: Vec::new(),
             image_rects: Vec::new(),
             checkbox_rects: Vec::new(),
@@ -1154,11 +1034,9 @@ impl EditorState {
             table_resize_hover: None,
             shape_memo: std::cell::RefCell::new(None),
             scan_cache: std::cell::RefCell::new(None),
-            scroll_compensator: None,
             last_paint_gen: 0,
             shape_caches: ShapeCaches::default(),
             shape_band: std::cell::Cell::new(None),
-            compensated: std::cell::Cell::new(false),
             line_drag: None,
             grip_hover_row: None,
             table_scroll_x: std::collections::HashMap::new(),
@@ -1167,9 +1045,7 @@ impl EditorState {
             grip_inset: px(0.),
             content_gen: 0,
             utf16_anchor: std::cell::Cell::new((0, 0, 0)),
-            editing_block: None,
             inline_math_rects: Vec::new(),
-            editing_inline: None,
             prop_pill_rects: Vec::new(),
             link_rects: Vec::new(),
             hovered_link: None,
@@ -1316,44 +1192,12 @@ impl EditorState {
     }
 
     /// Turn on WYSIWYG (live-preview) markdown styling with the given
-    /// color/font palette (call once at setup). Inline bold/italic/code/link/
-    /// tag formatting then renders as you type — markers stay in the text,
-    /// dimmed. Without it the editor is the raw view: plain text, spell-check
-    /// underlines only.
-    /// Languages offered in a code block's language picker (the host's
-    /// highlighter set, e.g. its compiled tree-sitter grammars). Empty — the
-    /// default — leaves the tag click-inert.
-    pub fn set_code_languages(&mut self, langs: Vec<SharedString>) {
-        self.code_langs = langs;
-    }
-
-    /// Install the scroll-anchoring hook (see [`ScrollCompensatorFn`]): when
-    /// an async block render (math/mermaid/image) changes heights above the
-    /// window viewport, the host receives the delta and shifts its scroll
-    /// offset so the visible content stays put (Cditor's anchor-restore).
-    pub fn set_scroll_compensator(&mut self, f: impl Fn(Pixels, &mut Window, &mut App) + 'static) {
-        self.scroll_compensator = Some(std::rc::Rc::new(f));
-    }
-
+    /// color/font palette (call once at setup). Inline formatting then renders
+    /// as you type — markers stay in the text, dimmed. Without it the editor is
+    /// the raw view: plain text, spell-check underlines only.
     pub fn set_markdown_style(&mut self, style: SyntaxStyle, cx: &mut Context<Self>) {
         self.markdown_style = Some(style);
         cx.notify();
-    }
-
-    /// Set the host-localized labels for the context menus / chrome. Replace
-    /// on every language switch so the current editors pick it up.
-    pub fn set_labels(&mut self, labels: Labels, cx: &mut Context<Self>) {
-        self.labels = labels;
-        cx.notify();
-    }
-
-    /// Turn off live-preview styling — the editor falls back to plain text
-    /// (spell-check underlines only). Used when the host's WYSIWYG setting is
-    /// switched off; a no-op if styling was already off.
-    pub fn clear_markdown_style(&mut self, cx: &mut Context<Self>) {
-        if self.markdown_style.take().is_some() {
-            cx.notify();
-        }
     }
 
     /// Install the provider consulted when the user right-clicks a flagged word.
@@ -1384,42 +1228,6 @@ impl EditorState {
         provider: impl Fn(&str) -> Option<SharedString> + 'static,
     ) {
         self.block_chip = Some(Box::new(provider));
-    }
-
-    /// Install the provider that resolves a standalone `![[target]]` line to a
-    /// host view rendering the transclusion + the height to reserve for it.
-    /// With it, such lines show the embedded content in place (raw on caret);
-    /// without (or when it returns `None`) they fall back to a clickable chip.
-    pub fn set_embed_provider(
-        &mut self,
-        provider: impl Fn(&str) -> Option<(gpui::AnyView, Pixels)> + 'static,
-    ) {
-        self.embed_view = Some(Box::new(provider));
-    }
-
-    /// Install the provider that resolves a ` ```mermaid ` block's source to a
-    /// rendered diagram: the bitmap plus its logical (display) px size — see
-    /// [`BlockMathFn`] for why the host supplies the size. With it, such a block
-    /// renders as the diagram when the caret is elsewhere; with the caret inside
-    /// (or while it renders) it shows the raw fenced source. Pre-render with
-    /// [`mermaid_sources`].
-    pub fn set_block_mermaid_provider(
-        &mut self,
-        provider: impl Fn(&str) -> Option<(Arc<RenderImage>, f32, f32)> + 'static,
-    ) {
-        self.block_mermaid = Some(Box::new(provider));
-    }
-
-    /// Install the provider that resolves a `$$…$$` block's LaTeX to a typeset
-    /// equation: the bitmap plus its logical (display) px size — see
-    /// [`BlockMathFn`] for why the host supplies the size. With it, such a block
-    /// renders as the equation when the caret is elsewhere; with the caret inside
-    /// (or while it renders) it shows the raw `$$…$$` source. Pre-render with
-    /// [`math_sources`].
-    /// Route Copy/Cut through `writer` instead of gpui's plain-string copy —
-    /// the host owns the actual clipboard write (and its extra flavors).
-    pub fn set_clipboard_writer(&mut self, writer: ClipboardWriter) {
-        self.clipboard_writer = Some(writer);
     }
 
     /// Highlight semantic search occurrences behind the text. Every source
@@ -1484,201 +1292,6 @@ impl EditorState {
         Some(bounds.top() + self.line_tops.get(row).copied()?)
     }
 
-    pub fn set_block_math_provider(
-        &mut self,
-        provider: impl Fn(&str) -> Option<(Arc<RenderImage>, f32, f32)> + 'static,
-    ) {
-        self.block_math = Some(Box::new(provider));
-    }
-
-    /// Declare the em the `block_math` provider rasterizes at (e.g. the host's display-math
-    /// font size). Turns on inline `$…$` rendering: each inline formula reuses the block
-    /// raster for the same LaTeX, scaled by `text_em / em` so it sits at text size. Pre-render
-    /// inline sources too (see [`inline_math_sources`]).
-    pub fn set_block_math_em(&mut self, em: f32) {
-        self.block_math_em = (em > 0.).then_some(em);
-    }
-
-    /// Set the fenced-code syntax highlighter (see [`CodeHighlightFn`]).
-    pub fn set_code_highlighter(
-        &mut self,
-        f: impl Fn(&str, &str) -> Vec<(Range<usize>, HighlightStyle)> + 'static,
-    ) {
-        self.code_highlight = Some(Box::new(f));
-    }
-
-    /// The text the most recent keystroke edit replaced (its selection), if
-    /// any — consumed (one read per edit). Lets a host's auto-pair logic tell
-    /// "opener typed over a selection" from deletions with identical diffs.
-    pub fn take_replaced_selection(&mut self) -> Option<String> {
-        self.last_replaced.take()
-    }
-
-    /// Set the word-completion auto-replace hook (see [`AutoReplaceFn`]).
-    pub fn set_auto_replace(
-        &mut self,
-        f: impl Fn(&str) -> Option<(Range<usize>, String)> + 'static,
-    ) {
-        self.auto_replace = Some(Box::new(f));
-    }
-
-    /// Begin an in-line structural edit of the `$$…$$` block at `range`: reserve a gap at
-    /// its spot and paint `view` (the host's editor) there. The host focuses `view`.
-    pub fn set_editing_block(
-        &mut self,
-        range: Range<usize>,
-        view: gpui::AnyView,
-        height: Pixels,
-        cx: &mut Context<Self>,
-    ) {
-        self.editing_block = Some(EditingBlock {
-            range,
-            view,
-            height,
-        });
-        cx.notify();
-    }
-
-    /// The byte range of the block currently being structurally edited (the range handed
-    /// to [`Self::set_editing_block`] — the source text is untouched while the edit is
-    /// open, so it stays valid). `None` when no block edit is open.
-    pub fn editing_block_range(&self) -> Option<Range<usize>> {
-        self.editing_block.as_ref().map(|eb| eb.range.clone())
-    }
-
-    /// End an in-line math edit (the host has committed / cancelled). Returns the block's
-    /// byte range, so the host can overwrite it.
-    pub fn end_editing_block(&mut self, cx: &mut Context<Self>) -> Option<Range<usize>> {
-        let range = self.editing_block.take().map(|eb| eb.range);
-        cx.notify();
-        range
-    }
-
-    /// Begin a structural edit of the inline `$…$` span at `range` (absolute bytes): overlay
-    /// `view` (the host's editor) at the formula's painted spot. The host focuses `view`.
-    /// `offset` places the view relative to the raster's top-left, letting the host
-    /// align the view's glyphs with the displayed formula's (their paddings differ).
-    pub fn set_editing_inline(
-        &mut self,
-        range: Range<usize>,
-        view: gpui::AnyView,
-        offset: Point<Pixels>,
-        cx: &mut Context<Self>,
-    ) {
-        self.editing_inline = Some(EditingInline {
-            range,
-            view,
-            offset,
-        });
-        cx.notify();
-    }
-
-    /// End an inline math edit. Returns the span's byte range, so the host can overwrite it.
-    pub fn end_editing_inline(&mut self, cx: &mut Context<Self>) -> Option<Range<usize>> {
-        let range = self.editing_inline.take().map(|e| e.range);
-        cx.notify();
-        range
-    }
-
-    /// Whether `range` still bounds an inline `$…$` span (a `$` at each end, content between, no
-    /// newline, not a `$$` fence) — guards the inline commit against a stale/shifted range that
-    /// would otherwise splice text at the wrong spot.
-    pub fn is_inline_math_range(&self, range: &Range<usize>) -> bool {
-        range.start < range.end
-            && range.end <= self.content.len()
-            && self.content.is_char_boundary(range.start)
-            && self.content.is_char_boundary(range.end)
-            && {
-                let s = &self.content[range.clone()];
-                s.len() >= 3
-                    && s.starts_with('$')
-                    && s.ends_with('$')
-                    && !s.starts_with("$$")
-                    && !s.contains('\n')
-            }
-    }
-
-    /// The horizontal alignment of the `$$…$$` block whose byte range starts at `block_start`
-    /// (its `<!-- math:ALIGN -->` marker, or `Center` by default) — so the host can seed the
-    /// in-line editor at the right justification when opening it.
-    pub fn math_align(&self, block_start: usize) -> MathAlign {
-        let row = self.row_col(block_start).0;
-        markdown_syntax::math_regions(&self.content)
-            .into_iter()
-            .find(|r| r.range.start == row)
-            .map_or(MathAlign::default(), |r| r.align)
-    }
-
-    /// Compute the recorded edit that writes `align`'s marker for the `$$` block at byte
-    /// `block`: the (possibly marker-extended) range to replace, and the marker prefix to
-    /// prepend to the rewritten block. Center (default) → no marker (drops any existing one);
-    /// left/right → add or replace it. The host appends the block text to the prefix. Folding
-    /// the marker into the block's commit edit avoids a separate, range-shifting edit.
-    pub fn math_marker_edit(
-        &self,
-        block: Range<usize>,
-        align: MathAlign,
-    ) -> (Range<usize>, String) {
-        let row = self.row_col(block.start).0;
-        let prefix = align.marker().map_or(String::new(), |m| format!("{m}\n"));
-        let has_marker =
-            row > 0 && markdown_syntax::math_align_marker(self.line_str(row - 1)).is_some();
-        let start = if has_marker {
-            self.line_starts()[row - 1]
-        } else {
-            block.start
-        };
-        (start..block.end, prefix)
-    }
-
-    /// Re-find a `$$…$$` block by its exact LaTeX `source`, returned as a BYTE range (nearest
-    /// to the now-stale byte `approx` if several match) — so opening/committing one after a
-    /// prior formula's commit shifted offsets targets the right block. `math_blocks` yields
-    /// LINE ranges, so convert like `math_block_at` does (else the caret jumps to the top).
-    pub fn find_math_block(&self, source: &str, approx: usize) -> Option<Range<usize>> {
-        let starts = self.line_starts();
-        markdown_syntax::math_blocks(&self.content)
-            .into_iter()
-            .filter(|(_, s)| s == source)
-            .map(|(r, _)| starts[r.start]..self.line_end(r.end - 1))
-            .min_by_key(|r| r.start.abs_diff(approx))
-    }
-
-    /// Re-find an inline `$…$` span by its exact inner LaTeX, as an absolute byte range (nearest
-    /// to the now-stale byte `approx` if several match) — the inline counterpart of
-    /// [`Self::find_math_block`], so opening/committing after a prior edit shifted offsets
-    /// targets the right span.
-    pub fn find_inline_math(&self, latex: &str, approx: usize) -> Option<Range<usize>> {
-        let mut line_start = 0;
-        let mut best: Option<Range<usize>> = None;
-        for line in self.content.split('\n') {
-            for span in markdown_syntax::inline_math_spans(line) {
-                if markdown_syntax::inline_math_latex(line, &span) == latex {
-                    let abs = line_start + span.start..line_start + span.end;
-                    if best
-                        .as_ref()
-                        .is_none_or(|b| abs.start.abs_diff(approx) < b.start.abs_diff(approx))
-                    {
-                        best = Some(abs);
-                    }
-                }
-            }
-            line_start += line.len() + 1;
-        }
-        best
-    }
-
-    /// Whether byte `range` (half-open) still starts a `$$…$$` block — a commit guard so a
-    /// stale/shifted range can't splice the block into the wrong place and corrupt the doc.
-    pub fn is_math_block_range(&self, range: &Range<usize>) -> bool {
-        range.end <= self.content.len()
-            && range.start <= range.end
-            && self.content.is_char_boundary(range.start)
-            && self.content[range.start..range.end]
-                .trim_start()
-                .starts_with("$$")
-    }
-
     /// The text of logical line `row` (without its trailing newline).
     fn line_str(&self, row: usize) -> &str {
         let starts = self.line_starts();
@@ -1688,111 +1301,10 @@ impl EditorState {
         }
     }
 
-    /// The host-supplied embed views, each positioned in the gap its
-    /// `![[target]]` line reserved (from the last paint's line tops) — the
-    /// editing-block overlay generalized to N transclusions. Absolute children
-    /// of the editor's `relative` root, so they scroll with the content; the
-    /// caret's own line shows raw source instead (its gap wasn't reserved).
-    fn embed_overlays(&self, window: &Window) -> Vec<gpui::Div> {
-        let Some(provider) = &self.embed_view else {
-            return Vec::new();
-        };
-        if self.markdown_style.is_none() {
-            return Vec::new();
-        }
-        let caret_row = self
-            .focus_handle
-            .is_focused(window)
-            .then(|| self.row_col(self.cursor_offset()).0);
-        let mut out = Vec::new();
-        for (row, line) in self.content.split('\n').enumerate() {
-            if caret_row == Some(row) {
-                continue;
-            }
-            let Some(inner) = crate::syntax::embed_line(line) else {
-                continue;
-            };
-            let (Some(top), Some((view, height))) = (self.line_tops.get(row), provider(inner))
-            else {
-                continue;
-            };
-            out.push(
-                div()
-                    .absolute()
-                    .top(*top)
-                    .left(px(0.))
-                    .w_full()
-                    .h(height)
-                    // Clicks/wheel belong to the embed (it may scroll its own
-                    // content), not the text layer underneath.
-                    .occlude()
-                    .child(view),
-            );
-        }
-        out
-    }
-
-    /// The host-supplied editor view for an in-line math edit, positioned in the gap its
-    /// block reserves (from the last paint's line tops/heights). An absolute child of the
-    /// editor's `relative` root, so it scrolls with the content.
-    fn editing_block_overlay(&self) -> Option<gpui::Div> {
-        let eb = self.editing_block.as_ref()?;
-        let row = self.row_col(eb.range.start).0;
-        let top = *self.line_tops.get(row)?;
-        let height = *self.line_heights.get(row)?;
-        Some(
-            div()
-                .absolute()
-                .top(top)
-                .left(px(0.))
-                .w_full()
-                .h(height)
-                // Occlude so clicks inside the hosted math editor don't fall through to the
-                // text layer below — which would seat the caret on the next line and steal
-                // focus, blurring (committing + closing) the structural editor.
-                .occlude()
-                .child(eb.view.clone()),
-        )
-    }
-
-    /// The host-supplied editor view for an inline `$…$` edit, overlaid at the formula's last-
-    /// painted spot (its window rect, made editor-relative via `content_origin`). Unlike a
-    /// `$$` block it doesn't reserve a full-width gap — it floats over the formula, leaving the
-    /// surrounding text in place.
-    fn editing_inline_overlay(&self) -> Option<gpui::Div> {
-        let ei = self.editing_inline.as_ref()?;
-        let (_, _, rect) = self
-            .inline_math_rects
-            .iter()
-            .find(|(r, _, _)| *r == ei.range)?;
-        let origin = self.last_bounds.map_or(Point::default(), |b| b.origin);
-        Some(
-            div()
-                .absolute()
-                .top(rect.origin.y - origin.y + ei.offset.y)
-                .left(rect.origin.x - origin.x + ei.offset.x)
-                .occlude()
-                .child(ei.view.clone()),
-        )
-    }
-
-    /// Spaces inserted per Tab / list-nesting level (`Indent`/`Outdent`). The host
-    /// keeps this in sync with its list-indent setting so nesting is configurable.
-    pub fn set_tab_indent(&mut self, spaces: usize) {
-        self.tab_indent = spaces.max(1);
-    }
-
     /// The caret's byte offset into [`Self::text`] (the moving end of any
     /// selection). For hosts that drive a menu/completion off the caret position.
     pub fn cursor(&self) -> usize {
         self.cursor_offset()
-    }
-
-    /// Whether the last content change was a single typed character or single-char
-    /// backspace (vs a programmatic / multi-char edit). Hosts gate auto-pairing on
-    /// this so structural edits (table row/column ops, paste, …) don't trip it.
-    pub fn last_edit_was_keystroke(&self) -> bool {
-        self.last_edit_keystroke
     }
 
     /// Place the caret at `offset` (a byte offset into the document), collapsing
@@ -1825,20 +1337,6 @@ impl EditorState {
     /// The host action currently offered for the selection.
     pub fn selection_action(&self) -> Option<&SelectionAction> {
         self.live_selection_action()
-    }
-
-    /// Per logical line, from the last paint: its top offset within the
-    /// editor and its first wrap-row's height — enough for a host-drawn
-    /// gutter (line numbers) to align with rows without re-deriving layout.
-    /// Empty before the first paint. Rows collapsed by a heading fold show
-    /// no vertical advance (the next row's top equals theirs) — a gutter
-    /// should skip those.
-    pub fn row_layout(&self) -> Vec<(Pixels, Pixels)> {
-        self.line_tops
-            .iter()
-            .enumerate()
-            .map(|(row, &top)| (top, self.line_h(row)))
-            .collect()
     }
 
     /// The cached [`ScanData`] for the current content, rebuilding on a
@@ -2017,7 +1515,7 @@ impl EditorState {
     /// Window-space bounds of the caret at `offset`, from the last paint's
     /// layout — for anchoring a popup (e.g. a slash menu) at a document offset.
     /// `None` before the first paint or if `offset`'s row isn't laid out.
-    pub fn bounds_for_offset(&self, offset: usize) -> Option<Bounds<Pixels>> {
+    pub(crate) fn bounds_for_offset(&self, offset: usize) -> Option<Bounds<Pixels>> {
         let bounds = self.last_bounds?;
         let (row, col) = self.row_col(offset);
         let lh = self.line_h(row);
@@ -2026,12 +1524,6 @@ impl EditorState {
         let top = bounds.top() + self.line_tops.get(row).copied().unwrap_or(px(0.)) + p.y;
         let x = bounds.left() + p.x + self.row_origin_x(row);
         Some(Bounds::from_corners(point(x, top), point(x, top + lh)))
-    }
-
-    /// The document text as an owned [`SharedString`]; use [`Self::text`] for a
-    /// borrowed `&str`.
-    pub fn value(&self) -> SharedString {
-        self.content.clone().into()
     }
 
     /// Focus the editor so it receives keyboard input. (`set_cursor` only moves
@@ -2316,7 +1808,7 @@ impl EditorState {
                 // below it: it's invisible in WYSIWYG, so a caret seated there —
                 // e.g. arrow-up returns offset 0 when the block opens the document
                 // (#77) — would reveal the raw rows instead of opening the editor.
-                markdown_syntax::math_align_marker(self.line_str(row))?;
+                markdown_syntax::is_math_align_marker(self.line_str(row)).then_some(())?;
                 blocks.iter().find(|(r, _)| r.start == row + 1)
             })
             .map(|(r, source)| {
@@ -2336,7 +1828,7 @@ impl EditorState {
         if row > 0 {
             let prev_start = self.line_starts()[row - 1];
             let prev = &self.content[prev_start..self.line_end(row - 1)];
-            if markdown_syntax::math_align_marker(prev).is_some() {
+            if markdown_syntax::is_math_align_marker(prev) {
                 start = prev_start;
             }
         }
@@ -2430,29 +1922,6 @@ impl EditorState {
                     SharedString::from(markdown_syntax::inline_math_latex(line, &s).to_string()),
                 )
             })
-    }
-
-    /// If the caret sits inside a `$$…$$` block, ask the host to open the structural editor
-    /// for it (caret at the formula's start). Lets the host turn a freshly-inserted, empty
-    /// math block (the `/math` snippet) straight into a live editor instead of raw source.
-    pub fn edit_math_at_caret(&mut self, cx: &mut Context<Self>) {
-        let (row, _) = self.row_col(self.cursor_offset());
-        if let Some((range, source)) = self.math_block_at(row) {
-            cx.emit(EditorEvent::EditMath {
-                range,
-                source,
-                at_end: false,
-                inline: false,
-            });
-        }
-    }
-
-    /// The property block covering the caret's line, if any (WYSIWYG-only, like
-    /// [`Self::edit_math_at_caret`]) — so the host can open the property editor
-    /// on a freshly-inserted `/property` line instead of leaving raw source.
-    pub fn property_block_at_caret(&self) -> Option<(Range<usize>, SharedString)> {
-        let (row, _) = self.row_col(self.cursor_offset());
-        self.property_block_at(row)
     }
 
     fn on_mouse_down(
@@ -3427,51 +2896,6 @@ impl EditorState {
         }
     }
 
-    /// Run the shared math-fence normalizer over the paragraph containing
-    /// `row` (blank-line bounded), splicing only when it changes something.
-    /// One recorded (undoable) edit; the caret shifts with the insertion.
-    fn normalize_math_at(&mut self, row: usize) {
-        if self.markdown_style.is_none() {
-            return;
-        }
-        let starts = self.line_starts();
-        let last_row = starts.len().saturating_sub(1);
-        let blank = |r: usize| self.content[starts[r]..self.line_end(r)].trim().is_empty();
-        let mut first = row;
-        while first > 0 && !blank(first - 1) {
-            first -= 1;
-        }
-        let mut last = row;
-        while last < last_row && !blank(last + 1) {
-            last += 1;
-        }
-        let span = starts[first]..self.line_end(last);
-        let para = &self.content[span.clone()];
-        if !para.contains("$$") {
-            return;
-        }
-        let normalized = match crate::syntax::normalize_math_fences(para) {
-            std::borrow::Cow::Borrowed(_) => return,
-            std::borrow::Cow::Owned(s) => s,
-        };
-        let old_caret = self.selected_range.start;
-        let delta = normalized.len() as isize - (span.end - span.start) as isize;
-        self.record_edit(&span, &normalized);
-        self.content =
-            self.content[..span.start].to_owned() + &normalized + &self.content[span.end..];
-        self.remap_diagnostics(&span, normalized.len());
-        // Typing happens at/after the paragraph's tail — shifting by the whole
-        // delta keeps the caret on its text for the common case.
-        let caret = if old_caret >= span.start {
-            (old_caret as isize + delta).max(0) as usize
-        } else {
-            old_caret
-        };
-        let caret = caret.min(self.content.len());
-        self.selected_range = caret..caret;
-        self.last_edit = EditKind::Other;
-    }
-
     /// Replace `range` with a chosen suggestion and close the menu.
     fn apply_suggestion(
         &mut self,
@@ -3660,12 +3084,6 @@ impl EditorState {
         }
     }
 
-    /// Extra left offset for the gutter drag grip (e.g. the host's
-    /// line-number gutter width), so the grip clears other gutter chrome.
-    pub fn set_grip_inset(&mut self, inset: Pixels) {
-        self.grip_inset = inset;
-    }
-
     /// The line span the gutter grip drags as one unit: whole fenced/rendered
     /// regions (code, math, mermaid, tables incl. their style marker,
     /// property panels), a quote/callout run, a list item with its
@@ -3846,64 +3264,6 @@ impl EditorState {
         self.goal_x = None;
         cx.emit(EditorEvent::SelectionChanged);
         cx.notify();
-    }
-
-    /// Seat the caret on the plain-text line just before (`after = false`) or after
-    /// (`after = true`) the math `block`, and focus the editor — the keyboard counterpart to
-    /// clicking away, for when the caret flows out of a `$$…$$` formula's structural editor
-    /// (so it never lands on the hidden `$$` fence lines, which would reveal raw source).
-    pub fn exit_math(
-        &mut self,
-        block: Range<usize>,
-        after: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.focus(window, cx);
-        let target = if after {
-            let (end_row, _) = self.row_col(block.end.saturating_sub(1));
-            match self.line_starts().get(end_row + 1).copied() {
-                Some(start) => start,
-                // The block ends the document: give the caret a fresh line
-                // below. Landing at content-end would park it ON the block's
-                // last row, revealing the raw source it just committed.
-                None => {
-                    let end = self.content.len();
-                    self.replace_range(end..end, "\n", cx);
-                    self.emit_changed(cx);
-                    self.content.len()
-                }
-            }
-        } else {
-            let (start_row, _) = self.row_col(block.start);
-            // An alignment marker directly above belongs to the block — resting
-            // on it reveals the region, so step past it too.
-            let mut row = start_row;
-            if row > 0 && markdown_syntax::math_align_marker(self.line_str(row - 1)).is_some() {
-                row -= 1;
-            }
-            if row > 0 { self.line_end(row - 1) } else { 0 }
-        };
-        self.move_to(target, cx);
-    }
-
-    /// The caret's bounds in window space (its painted Y range), or `None` before
-    /// the first paint. Lets a host scroll the caret into view; computed from the
-    /// layout stored at the last paint, so it's valid for caret moves that don't
-    /// change the text (arrow keys, click).
-    pub fn caret_screen_bounds(&self) -> Option<Bounds<Pixels>> {
-        let bounds = self.last_bounds?;
-        let (row, col) = self.row_col(self.cursor_offset());
-        let lh = self.line_h(row);
-        let p = self
-            .wrapped
-            .get(row)?
-            .position_for_index(self.display_col(row, col), lh)?;
-        let top = bounds.top() + self.line_tops.get(row).copied().unwrap_or(px(0.)) + p.y;
-        Some(Bounds::from_corners(
-            point(bounds.left(), top),
-            point(bounds.left(), top + lh),
-        ))
     }
 
     fn cursor_offset(&self) -> usize {
@@ -4510,17 +3870,7 @@ impl Render for EditorState {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .relative()
-            // While a `$$` block OR an inline `$…$` formula is being edited, the hosted math
-            // editor is focused but lives *inside* this element — so the editor's own
-            // keybindings (arrows, typing, …) would capture keys before they reach it. Drop the
-            // key context for the duration so raw keys flow to the math editor's on_key_down.
-            .key_context(
-                if self.editing_block.is_some() || self.editing_inline.is_some() {
-                    ""
-                } else {
-                    CONTEXT
-                },
-            )
+            .key_context(CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::backspace))
@@ -4564,9 +3914,6 @@ impl Render for EditorState {
             .child(EditorElement {
                 editor: cx.entity(),
             })
-            .children(self.embed_overlays(window))
-            .children(self.editing_block_overlay())
-            .children(self.editing_inline_overlay())
             // Right-click suggestions menu, absolutely positioned over the
             // editor (anchored at the click). `Option`'s `IntoIterator` renders
             // zero or one popup; clicking a row replaces the misspelled span.
@@ -5474,12 +4821,6 @@ struct BlockImg {
     img: Arc<RenderImage>,
     width: Pixels,
     height: Pixels,
-    /// Whether to show a corner resize grip. `false` for math (nothing to persist a
-    /// `{width=N}` to, and it renders at its natural typeset size); `true` for images.
-    resizable: bool,
-    /// Horizontal alignment in the content width. `Left` for images; display math sets its
-    /// own (centered by default).
-    align: MathAlign,
 }
 
 /// One inline `$…$` formula painted within a text line. `display_off` is the byte offset of its
@@ -5969,38 +5310,12 @@ fn checkbox_x(bullet_x: Pixels, size: Pixels, content_width: Pixels, rtl: bool) 
     }
 }
 
-/// Case-insensitive occurrences of `query` in `content`, as source byte
-/// ranges — the match list a find bar feeds to [`EditorState::set_search`].
-/// Unicode-aware (comparison happens on lowercased text through an index map
-/// back to original byte offsets). An empty query matches nothing.
-pub fn find_in_source(content: &str, query: &str) -> Vec<Range<usize>> {
-    let query: String = query.chars().flat_map(char::to_lowercase).collect();
-    if query.is_empty() {
-        return Vec::new();
-    }
-    // Lowercased haystack + per-byte map back to original offsets. Boundaries
-    // survive: each original char lowercases to >= 1 chars, all of whose bytes
-    // map to the original char's start.
-    let mut lower = String::with_capacity(content.len());
-    let mut map = Vec::with_capacity(content.len() + 1);
-    for (off, ch) in content.char_indices() {
-        for lc in ch.to_lowercase() {
-            lower.push(lc);
-            map.resize(lower.len(), off);
-        }
-    }
-    lower
-        .match_indices(&query)
-        .map(|(i, m)| map[i]..map.get(i + m.len()).copied().unwrap_or(content.len()))
-        .collect()
-}
-
 /// Paint a flat, line-art document glyph (a page with a folded top-right corner +
 /// two text lines) in `color`, the chip's file icon. Drawn with strokes — not a
 /// font emoji — so it reads flat and on-theme at the text's size. Public so a
 /// host's read-only view can draw the identical icon on its own file chips
 /// (cross-view parity).
-pub fn paint_doc_icon(
+pub(crate) fn paint_doc_icon(
     x: Pixels,
     y: Pixels,
     w: Pixels,
@@ -6516,23 +5831,6 @@ mod tests {
         // Not block prefixes: mid-word hash runs, `#tag`, a lone dash.
         assert_eq!(strip_block_prefix("#tag"), "#tag");
         assert_eq!(strip_block_prefix("-dash"), "-dash");
-    }
-
-    #[test]
-    fn find_in_source_cases() {
-        use super::find_in_source;
-        assert_eq!(find_in_source("aa bb aa", "aa"), vec![0..2, 6..8]);
-        // Case-insensitive, unicode-aware.
-        assert_eq!(
-            find_in_source("Grüße hier", "grüsse"),
-            Vec::<std::ops::Range<usize>>::new()
-        );
-        assert_eq!(find_in_source("Grüße", "grüße"), vec![0..7]);
-        assert_eq!(find_in_source("İstanbul", "i̇stanbul"), vec![0..9]);
-        assert_eq!(
-            find_in_source("abc", ""),
-            Vec::<std::ops::Range<usize>>::new()
-        );
     }
 
     use super::{display_col_in, set_image_width};
