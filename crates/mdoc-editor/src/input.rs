@@ -179,49 +179,6 @@ impl EditorState {
         cx.notify();
     }
 
-    /// Run the host's auto-replace hook after a boundary character landed at
-    /// `boundary` (the byte offset of the char itself). Applies the returned
-    /// replacement as its own undo step and shifts the caret by the growth.
-    fn apply_auto_replace(&mut self, boundary: usize) {
-        let Some(f) = self.auto_replace.as_ref() else {
-            return;
-        };
-        let line_start = self.content[..boundary].rfind('\n').map_or(0, |p| p + 1);
-        let line = &self.content[line_start..boundary];
-        if line.is_empty() {
-            return;
-        }
-        // Inside a fenced code block, the text is verbatim — never rewrite it.
-        // Fence parity comes from the cached scan (this runs on every boundary
-        // keystroke; the per-line rescan grew with the document).
-        let (row, _) = self.row_col(boundary);
-        if *self.scan_data().fence_odd.get(row).unwrap_or(&false)
-            || line.trim_start().starts_with("```")
-        {
-            return;
-        }
-        let Some((r, replacement)) = f(line) else {
-            // No host rule fired — normalize math around the caret instead:
-            // words-attached `$$` fences and words-mixed `$$…$$` pairs split
-            // onto their own lines (issue #54: the formula renders display,
-            // the words stay VISIBLE — nothing is ever hidden). Paragraph-
-            // bounded, one recorded edit.
-            self.normalize_math_at(row);
-            return;
-        };
-        if r.start >= r.end || r.end > line.len() {
-            return;
-        }
-        let abs = line_start + r.start..line_start + r.end;
-        let delta = replacement.len() as isize - abs.len() as isize;
-        self.record_edit(&abs, &replacement);
-        self.content =
-            self.content[..abs.start].to_owned() + &replacement + &self.content[abs.end..];
-        self.remap_diagnostics(&abs, replacement.len());
-        let caret = (self.selected_range.start as isize + delta) as usize;
-        self.selected_range = caret..caret;
-    }
-
     /// Keep diagnostics valid across an edit at `edited` (the replaced byte
     /// range) that inserted `new_len` bytes: spans before the edit are left
     /// alone, spans after it are shifted by the size delta, and spans that
@@ -683,7 +640,7 @@ impl EditorState {
     /// Copy the selection as the raw markdown ONLY — no host clipboard
     /// flavors — for pasting literal source into rich surfaces (the context
     /// menu's "Copy as Markdown"). Same selection/renumber rules as `copy`.
-    pub fn copy_plain(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn copy_plain(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
             let range = self.copy_range();
             let text = if self.markdown_style.is_some() {
@@ -695,13 +652,9 @@ impl EditorState {
         }
     }
 
-    /// Route a Copy/Cut payload through the host's clipboard writer when one
-    /// is set (see [`Self::set_clipboard_writer`]), else gpui's plain copy.
+    /// Write a Copy/Cut payload as plain text.
     pub(super) fn write_clipboard(&self, text: String, cx: &mut Context<Self>) {
-        match &self.clipboard_writer {
-            Some(writer) => writer(&text, cx),
-            None => cx.write_to_clipboard(ClipboardItem::new_string(text)),
-        }
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
     }
 
     /// What a copy takes: the selection — extended back over the first
@@ -1008,10 +961,6 @@ impl EntityInputHandler for EditorState {
             .map(|r| self.range_from_utf16(r))
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
-        // Report what this edit replaced (see `last_replaced`) — the fact a
-        // diff can't reconstruct when the selection starts with the typed char.
-        self.last_replaced =
-            (range.start < range.end).then(|| self.content[range.clone()].to_string());
         self.record_edit(&range, new_text);
         self.content =
             self.content[0..range.start].to_owned() + new_text + &self.content[range.end..];
@@ -1023,9 +972,6 @@ impl EntityInputHandler for EditorState {
         // Keep unaffected diagnostics valid across the edit (shift those after
         // it, drop those it overlapped); the host recomputes the edited region.
         self.remap_diagnostics(&range, new_text.len());
-        if word_boundary_input(new_text) {
-            self.apply_auto_replace(range.start);
-        }
         self.emit_changed(cx);
         cx.notify();
     }
@@ -1115,20 +1061,6 @@ impl EntityInputHandler for EditorState {
         _: &mut Context<Self>,
     ) -> Option<usize> {
         Some(self.offset_to_utf16(self.index_for_mouse_position(point)))
-    }
-}
-
-/// Whether a just-typed input completes a word: a single boundary character
-/// (space / punctuation / Enter, incl. a list continuation's leading newline)
-/// — the moment the host's auto-replace hook (page-title auto-linking) is
-/// offered the line. `:` is NOT a boundary, so a `key:: value` property can be
-/// typed on a key that happens to name a page — the first `:` must not wrap
-/// the key into `[[key]]`.
-fn word_boundary_input(new_text: &str) -> bool {
-    match new_text.as_bytes() {
-        [c] => !c.is_ascii_alphanumeric() && !matches!(c, b'_' | b'-' | b'/' | b'#' | b'[' | b':'),
-        [b'\n', ..] => true,
-        _ => false,
     }
 }
 
@@ -1253,21 +1185,5 @@ mod tests {
             );
             assert_eq!(actual, Some(0..2));
         });
-    }
-
-    #[test]
-    fn word_boundaries_offer_auto_replace_but_colon_never_does() {
-        // Space / punctuation / Enter (incl. a list continuation) complete a word.
-        assert!(word_boundary_input(" "));
-        assert!(word_boundary_input("."));
-        assert!(word_boundary_input("\n"));
-        assert!(word_boundary_input("\n- "));
-        // Word characters and syntax openers don't.
-        assert!(!word_boundary_input("a"));
-        assert!(!word_boundary_input("["));
-        assert!(!word_boundary_input("#"));
-        // `:` must not — typing `key::` on a page-title key would otherwise
-        // auto-link the key before the property can form.
-        assert!(!word_boundary_input(":"));
     }
 }
