@@ -21,6 +21,89 @@ use std::{
 };
 
 pub const SUPPORTED: bool = crate::ocr::SUPPORTED;
+/// Company legal forms that mark a manual selection as an organization.
+const LEGAL_FORMS: &[&str] = &[
+    "ООО", "ОАО", "ЗАО", "ПАО", "АО", "НКО", "ИП", "LLC", "LLP", "Ltd", "Inc", "Corp", "PLC",
+    "GmbH", "AG", "SA", "BV",
+];
+
+/// Guess a manual selection's category without a model, correctable in the
+/// popup (ADR 0025): a structured rule covering exactly the selection
+/// (evaluated on its line, so labels count), a date, a phone shape, a legal
+/// form, a name shape (Person), else Other.
+pub fn guess_category(source: &str, range: std::ops::Range<usize>) -> Category {
+    let line_start = source[..range.start].rfind('\n').map_or(0, |i| i + 1);
+    let line_end = source[range.end..]
+        .find('\n')
+        .map_or(source.len(), |i| range.end + i);
+    let line = &source[line_start..line_end];
+    let local = range.start - line_start..range.end - line_start;
+    if let Some(detection) = structured::scan(line)
+        .into_iter()
+        .find(|d| d.range == local)
+    {
+        return detection.category;
+    }
+    let text = &source[range];
+    if date_shaped(text) {
+        return Category::Date;
+    }
+    let digits = text.chars().filter(char::is_ascii_digit).count();
+    if digits >= 7
+        && text
+            .chars()
+            .all(|c| c.is_ascii_digit() || " +()-\u{a0}".contains(c))
+    {
+        return Category::Phone;
+    }
+    if text.split(|c: char| !c.is_alphanumeric()).any(|word| {
+        LEGAL_FORMS
+            .iter()
+            .any(|form| form.eq_ignore_ascii_case(word))
+    }) {
+        return Category::Organization;
+    }
+    if name_shaped(text) {
+        Category::Person
+    } else {
+        Category::Other
+    }
+}
+/// Numeric, month-name (RU/EN) and blank-fill (`«__» ____ 2026 г.`) dates.
+/// Year-only and month-only values are not dates here.
+fn date_shaped(text: &str) -> bool {
+    static DATE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let date = DATE.get_or_init(|| {
+        const RU: &str = "января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря";
+        const EN: &str = "january|february|march|april|may|june|july|august|september|october|november|december";
+        let day = r#"[«"]?(?:\d{1,2}|_+)[»"]?"#;
+        let year = r"(?:\d{4}|_+)(?:\s*(?:г\.?|года))?";
+        regex::Regex::new(&format!(
+            r"(?i)^(?:\d{{1,2}}[./]\d{{1,2}}[./]\d{{2,4}}(?:\s*г\.?)?|\d{{4}}-\d{{2}}-\d{{2}}|{day}\s+(?:{RU}|{EN}|_+)\s+{year}|(?:{EN})\s+\d{{1,2}},?\s+\d{{4}})$"
+        ))
+        .expect("static date regex")
+    });
+    let normalized = text.replace("\\_", "_").replace('\u{a0}', " ");
+    date.is_match(normalized.trim())
+}
+/// 1–4 words that each start with a capital letter; hyphenated surnames and
+/// initials ("М.С.", "J.R.") count.
+fn name_shaped(text: &str) -> bool {
+    let words: Vec<_> = text.split_whitespace().collect();
+    (1..=4).contains(&words.len())
+        && words.iter().all(|word| {
+            let initials = word
+                .split_terminator('.')
+                .all(|part| part.chars().count() == 1 && part.chars().all(char::is_uppercase))
+                && word.ends_with('.');
+            initials
+                || word.split('-').all(|part| {
+                    let mut chars = part.chars();
+                    chars.next().is_some_and(char::is_uppercase)
+                        && chars.all(|c| c.is_alphabetic() || c == '\'' || c == '’')
+                })
+        })
+}
 const MAX_SOURCE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_INPUT_TOKENS: usize = 512;
 const MAX_SCAN_TIME: Duration = Duration::from_secs(120);
@@ -320,6 +403,62 @@ fn scan_in(
 mod tests {
     use super::*;
     use sha2::{Digest, Sha256};
+    #[test]
+    fn manual_selections_guess_categories_without_a_model() {
+        let guess = |source: &str, value: &str| {
+            let start = source.find(value).unwrap();
+            guess_category(source, start..start + value.len())
+        };
+        assert_eq!(
+            guess("Write to anna@example.invalid.", "anna@example.invalid"),
+            Category::Email
+        );
+        assert_eq!(guess("ИНН 500100732259", "500100732259"), Category::Tax);
+        assert_eq!(
+            guess("Call +7 (495) 123-45-67", "+7 (495) 123-45-67"),
+            Category::Phone
+        );
+        assert_eq!(guess("Signed 12.03.2026", "12.03.2026"), Category::Date);
+        assert_eq!(guess("On 2026-03-12", "2026-03-12"), Category::Date);
+        assert_eq!(
+            guess("От 12 марта 2026 г. до", "12 марта 2026 г."),
+            Category::Date
+        );
+        assert_eq!(guess("On March 12, 2026", "March 12, 2026"), Category::Date);
+        assert_eq!(
+            guess(
+                "Дата: «\\_\\__» __________ 2026 г.",
+                "«\\_\\__» __________ 2026 г."
+            ),
+            Category::Date
+        );
+        assert_eq!(
+            guess("В «12» марта 2026", "«12» марта 2026"),
+            Category::Date
+        );
+        assert_eq!(guess("В 2026 г.", "2026 г."), Category::Other);
+        assert_eq!(
+            guess("Планируемая дата", "Планируемая дата"),
+            Category::Other
+        );
+        assert_eq!(
+            guess("Мария Петрова-Иванова", "Мария Петрова-Иванова"),
+            Category::Person
+        );
+        assert_eq!(guess("J.R. Smith", "J.R. Smith"), Category::Person);
+        assert_eq!(
+            guess("ООО «Ромашка» agreed", "ООО «Ромашка»"),
+            Category::Organization
+        );
+        assert_eq!(
+            guess("Acme Ltd. agreed", "Acme Ltd."),
+            Category::Organization
+        );
+        assert_eq!(
+            guess("Павлова М.С. agreed", "Павлова М.С."),
+            Category::Person
+        );
+    }
     fn verify(path: &Path, artifact: &Artifact) -> Result<(), String> {
         crate::model_download::verify(path, artifact.bytes, &artifact.sha256)
     }

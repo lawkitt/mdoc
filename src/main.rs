@@ -205,6 +205,10 @@ impl Workspace {
                     this.choose_annotations(ids.clone(), window, cx)
                 }
                 EditorEvent::ActivateAnnotation(id) => this.activate_annotation(*id, window, cx),
+                EditorEvent::SelectionChanged => this.sync_selection_action(cx),
+                EditorEvent::SelectionAction => {
+                    this.add_pii_candidate(&PiiAddCandidate, window, cx)
+                }
                 EditorEvent::OpenLink(src) => {
                     if src.starts_with("https://")
                         || src.starts_with("http://")
@@ -1038,6 +1042,8 @@ fn bind_markdown_search_keys(cx: &mut App) {
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Derived display state; set_outlines only notifies on change.
+        self.sync_scope_outlines(cx);
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let search_focused = self

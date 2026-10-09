@@ -426,6 +426,44 @@ pub struct SourceAnnotation {
     pub active_color: Hsla,
 }
 
+/// A host action offered for one selection: a floating pill beside it and the
+/// first right-click item. Shown only while `range` is exactly the selection.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SelectionAction {
+    pub range: Range<usize>,
+    /// Pill label, e.g. "Replace".
+    pub label: SharedString,
+    /// Right-click item label, e.g. "Replace with placeholder".
+    pub menu_label: SharedString,
+    pub shortcut: SharedString,
+    /// Why the action is unavailable; the pill and item show disabled.
+    pub disabled: Option<SharedString>,
+    /// Hover tint for the pill.
+    pub accent: Hsla,
+}
+
+/// Plain hover tip for the selection pill.
+struct PillTip {
+    text: SharedString,
+    bg: Hsla,
+    fg: Hsla,
+    border: Hsla,
+}
+impl Render for PillTip {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px(px(8.))
+            .py(px(4.))
+            .rounded(px(5.))
+            .bg(self.bg)
+            .border_1()
+            .border_color(self.border)
+            .text_color(self.fg)
+            .text_size(px(12.))
+            .child(self.text.clone())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum EditorEvent {
     /// Exact edits and history travel, emitted before the legacy Changed event.
@@ -441,8 +479,11 @@ pub enum EditorEvent {
     /// with this title (Logseq semantics, matching the reading view).
     OpenWikiLink(SharedString),
     /// The caret / selection moved without a text change — so a host can update a
-    /// caret-anchored affordance (e.g. the table-alignment toolbar).
+    /// caret-anchored affordance (e.g. the table-alignment toolbar). Also sent
+    /// when a mouse selection drag ends.
     SelectionChanged,
+    /// The host's [`SelectionAction`] was chosen from its pill or menu item.
+    SelectionAction,
     /// Explicit activation of a host annotation; no text or selection change.
     ActivateAnnotation(u64),
     /// Several hidden fields share a gutter indicator; the host offers a chooser.
@@ -717,6 +758,10 @@ pub struct EditorState {
     search_bounds: Vec<Option<Bounds<Pixels>>>,
     annotations: Vec<SourceAnnotation>,
     annotation_revision: u64,
+    /// Display-only outlined source ranges (e.g. a review scope), valid for
+    /// `outline_revision`.
+    outlines: Vec<(Range<usize>, Hsla)>,
+    outline_revision: u64,
     annotation_ends: Vec<usize>,
     position_cache:
         std::cell::RefCell<std::collections::HashMap<usize, search_geometry::CachedLinePositions>>,
@@ -788,6 +833,12 @@ pub struct EditorState {
     /// the wrong glyph widths and wrapped cells).
     paint_font: Option<Font>,
     is_selecting: bool,
+    /// Host action for the current selection; see [`SelectionAction`].
+    selection_action: Option<SelectionAction>,
+    /// Escape hid the pill for this exact selection.
+    selection_action_dismissed: Option<Range<usize>>,
+    /// Window-space selection quads from the last paint (pill anchor).
+    selection_bounds: Vec<Bounds<Pixels>>,
     undo_stack: Vec<Snapshot>,
     redo_stack: Vec<Snapshot>,
     history_id: u64,
@@ -1029,6 +1080,8 @@ impl EditorState {
             search_bounds: Vec::new(),
             annotations: Vec::new(),
             annotation_revision: 0,
+            outlines: Vec::new(),
+            outline_revision: 0,
             annotation_ends: Vec::new(),
             position_cache: Default::default(),
             hidden_annotation_ids: std::collections::HashSet::new(),
@@ -1056,6 +1109,9 @@ impl EditorState {
             font_size: px(16.),
             paint_font: None,
             is_selecting: false,
+            selection_action: None,
+            selection_action_dismissed: None,
+            selection_bounds: Vec::new(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             history_id: 0,
@@ -1157,6 +1213,30 @@ impl EditorState {
         self.selected_range.clone()
     }
 
+    /// A mouse selection drag is in progress.
+    pub fn is_selecting(&self) -> bool {
+        self.is_selecting
+    }
+
+    /// Offer (or withdraw) a host action for the current selection.
+    pub fn set_selection_action(
+        &mut self,
+        action: Option<SelectionAction>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selection_action != action {
+            self.selection_action = action;
+            cx.notify();
+        }
+    }
+
+    /// The host action, when it matches the live selection.
+    fn live_selection_action(&self) -> Option<&SelectionAction> {
+        self.selection_action
+            .as_ref()
+            .filter(|a| !a.range.is_empty() && a.range == self.selected_range)
+    }
+
     pub fn set_annotations(
         &mut self,
         revision: u64,
@@ -1179,6 +1259,30 @@ impl EditorState {
         self.annotation_revision = revision;
         self.annotation_hover = None;
         cx.notify();
+    }
+
+    /// Outline source ranges for content `revision`, over any annotation fill.
+    /// Display only: no text, history or annotation state changes.
+    pub fn set_outlines(
+        &mut self,
+        revision: u64,
+        outlines: Vec<(Range<usize>, Hsla)>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.outline_revision != revision || self.outlines != outlines {
+            self.outlines = outlines;
+            self.outline_revision = revision;
+            cx.notify();
+        }
+    }
+
+    /// The outlined source ranges, when current.
+    pub fn outlines(&self) -> &[(Range<usize>, Hsla)] {
+        if self.outline_revision == self.content_gen {
+            &self.outlines
+        } else {
+            &[]
+        }
     }
 
     /// Host-selected occurrence remains distinct while keyboard focus is in its popup.
@@ -1703,6 +1807,26 @@ impl EditorState {
             offset -= 1;
         }
         self.move_to(offset, cx);
+    }
+
+    /// Select `range` (clamped to char boundaries), as a keyboard selection would.
+    pub fn set_selection(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
+        let clamp = |mut offset: usize| {
+            offset = offset.min(self.content.len());
+            while !self.content.is_char_boundary(offset) {
+                offset -= 1;
+            }
+            offset
+        };
+        let (start, end) = (clamp(range.start), clamp(range.end));
+        self.move_to(start, cx);
+        self.selection_reversed = false;
+        self.select_to(end, cx);
+    }
+
+    /// The host action currently offered for the selection.
+    pub fn selection_action(&self) -> Option<&SelectionAction> {
+        self.live_selection_action()
     }
 
     /// Per logical line, from the last paint: its top offset within the
@@ -2682,6 +2806,7 @@ impl EditorState {
                 self.is_selecting = false;
                 self.selected_range = self.word_range_at(offset).unwrap_or(offset..offset);
                 self.selection_reversed = false;
+                cx.emit(EditorEvent::SelectionChanged);
                 cx.notify();
             }
             // Triple-click (or more): select the whole logical line — except on
@@ -2695,6 +2820,7 @@ impl EditorState {
                 let start = self.line_starts()[row];
                 self.selected_range = start..self.line_end(row);
                 self.selection_reversed = false;
+                cx.emit(EditorEvent::SelectionChanged);
                 cx.notify();
             }
             // Single click: place the caret, or extend the selection with Shift.
@@ -2761,7 +2887,10 @@ impl EditorState {
             cx.notify();
             return;
         }
-        self.is_selecting = false;
+        if std::mem::take(&mut self.is_selecting) {
+            cx.emit(EditorEvent::SelectionChanged);
+            cx.notify();
+        }
     }
 
     fn on_mouse_move(
@@ -3124,6 +3253,166 @@ impl EditorState {
             .find(|d| d.range.start <= offset && offset < d.range.end)
     }
 
+    /// The host's selection action as the first right-click item.
+    fn selection_action_item(
+        &self,
+        fg: Hsla,
+        hover: Hsla,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::Stateful<gpui::Div>> {
+        use gpui::prelude::FluentBuilder as _;
+        let action = self.live_selection_action()?.clone();
+        let muted = Hsla {
+            a: fg.a * 0.55,
+            ..fg
+        };
+        Some(
+            div()
+                .id("menu-selection-action")
+                .flex_shrink_0()
+                .px(px(10.))
+                .py(px(3.))
+                .flex()
+                .flex_col()
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .justify_between()
+                        .gap(px(16.))
+                        .child(action.menu_label.clone())
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(muted)
+                                .child(action.shortcut.clone()),
+                        ),
+                )
+                .when_some(action.disabled.clone(), |v, reason| {
+                    v.text_color(muted)
+                        .child(div().text_size(px(11.)).child(reason))
+                })
+                .when(action.disabled.is_none(), |v| {
+                    v.hover(move |s| s.bg(hover)).on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|editor, _: &MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            editor.menu = None;
+                            cx.emit(EditorEvent::SelectionAction);
+                            cx.notify();
+                        }),
+                    )
+                }),
+        )
+    }
+
+    /// A compact pill above the settled selection's end (below near the window
+    /// top) offering the host's selection action.
+    fn selection_pill(&self, window: &Window, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        use gpui::prelude::FluentBuilder as _;
+        let action = self.live_selection_action()?.clone();
+        if self.is_selecting
+            || self.menu.is_some()
+            || self.selection_action_dismissed.as_ref() == Some(&self.selected_range)
+            || !self.focus_handle.is_focused(window)
+        {
+            return None;
+        }
+        // The selection's last visual quad: its end, wherever it was painted
+        // (table cells, wrapped rows); none while it is scrolled out of view.
+        let end = *self.selection_bounds.iter().max_by(|a, b| {
+            a.bottom()
+                .partial_cmp(&b.bottom())
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(
+                    a.right()
+                        .partial_cmp(&b.right())
+                        .unwrap_or(std::cmp::Ordering::Equal),
+                )
+        })?;
+        let st = self.markdown_style.as_ref();
+        let bg = st.map_or(rgb(0x26262b).into(), |s| s.popover_bg);
+        let border = st.map_or(rgb(0x45454c).into(), |s| s.popover_border);
+        let fg = st.map_or(rgb(0xe6e6e6).into(), |s| s.popover_fg);
+        let enabled = action.disabled.is_none();
+        let tip = action
+            .disabled
+            .clone()
+            .unwrap_or_else(|| format!("{}  {}", action.menu_label, action.shortcut).into());
+        let accent = action.accent;
+        let (corner, at) = if end.top() > px(44.) {
+            (
+                gpui::Anchor::BottomRight,
+                point(end.right(), end.top() - px(4.)),
+            )
+        } else {
+            (
+                gpui::Anchor::TopRight,
+                point(end.right(), end.bottom() + px(4.)),
+            )
+        };
+        let pill = div()
+            .id("selection-action-pill")
+            .occlude()
+            .cursor(if enabled {
+                CursorStyle::PointingHand
+            } else {
+                CursorStyle::Arrow
+            })
+            .px(px(10.))
+            .py(px(2.))
+            .rounded(px(999.))
+            .bg(bg)
+            .border_1()
+            .border_color(border)
+            .shadow_md()
+            .text_size(px(12.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(if enabled {
+                fg
+            } else {
+                Hsla {
+                    a: fg.a * 0.45,
+                    ..fg
+                }
+            })
+            .child(action.label.clone())
+            .tooltip(move |_, cx| {
+                gpui::AppContext::new(cx, |_| PillTip {
+                    text: tip.clone(),
+                    bg,
+                    fg,
+                    border,
+                })
+                .into()
+            })
+            // Keep the editor from moving the caret under the pill.
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |_, _: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    if enabled {
+                        cx.emit(EditorEvent::SelectionAction);
+                    }
+                }),
+            )
+            .when(enabled, |v| {
+                v.hover(move |s| s.bg(Hsla { a: 0.22, ..accent }).border_color(accent))
+            });
+        Some(
+            gpui::deferred(
+                gpui::anchored()
+                    .anchor(corner)
+                    .position(at)
+                    .snap_to_window()
+                    .child(pill),
+            )
+            .with_priority(1)
+            .into_any_element(),
+        )
+    }
+
     /// Close the suggestions menu (Escape, or a click elsewhere).
     fn dismiss(&mut self, _: &Dismiss, _: &mut Window, cx: &mut Context<Self>) {
         if self.menu.take().is_some()
@@ -3132,6 +3421,12 @@ impl EditorState {
             || self.prop_menu.take().is_some()
             || self.code_lang_menu.take().is_some()
         {
+            cx.notify();
+        } else if self.live_selection_action().is_some()
+            && self.selection_action_dismissed.as_ref() != Some(&self.selected_range)
+        {
+            // Escape hides the selection pill until the selection changes.
+            self.selection_action_dismissed = Some(self.selected_range.clone());
             cx.notify();
         }
     }
@@ -4419,6 +4714,8 @@ impl Render for EditorState {
                     ),
                 );
 
+                let host_item = self.selection_action_item(menu_fg, hover, cx);
+
                 // Inline-format bar (Cditor-style): with a selection, a strip of
                 // B / I / S / <> buttons across the menu's top — each toggles its
                 // markdown wrap on the selection and closes the menu.
@@ -4626,6 +4923,14 @@ impl Render for EditorState {
                                         cx.notify();
                                     },
                                 ))
+                                .children(
+                                    host_item
+                                        .map(|item| div().flex().flex_col().py(px(4.)).child(item)),
+                                )
+                                .children(
+                                    self.live_selection_action()
+                                        .map(|_| div().h(px(1.)).bg(menu_border)),
+                                )
                                 .children(format_bar)
                                 .children(has_sel.then(|| div().h(px(1.)).bg(menu_border)))
                                 .children((count > 0).then(|| {
@@ -4649,6 +4954,7 @@ impl Render for EditorState {
                     ),
                 )
             }))
+            .children(self.selection_pill(window, cx))
             // The table right-click menu (Word-style row/column editing), anchored
             // at the click; each row runs its action on the caret's table cell.
             .children(self.table_menu.map(|anchor| {

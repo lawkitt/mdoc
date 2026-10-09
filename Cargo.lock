@@ -4492,6 +4492,7 @@ name = "mdoc-pii"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
+ "markdown",
  "mdoc-history",
  "regex",
 ]

@@ -1,6 +1,20 @@
 //! Word-anchored editor for the shared replacement workspace.
 use super::*;
-use gpui::{AnyElement, SharedString, anchored, deferred, div, prelude::*, uniform_list};
+use gpui::{
+    Animation, AnimationExt, AnyElement, SharedString, anchored, deferred, div, prelude::*,
+    uniform_list,
+};
+use std::time::Duration;
+
+/// The alias cue: one soft accent glow, `delay` ms after the popup opens.
+fn cue_glow(delta: f32, delay: f32, accent: Hsla) -> Hsla {
+    const TOTAL: f32 = 850.;
+    let local = ((delta * TOTAL - delay) / 700.).clamp(0., 1.);
+    Hsla {
+        a: 0.24 * (local * std::f32::consts::PI).sin(),
+        ..accent
+    }
+}
 impl Workspace {
     pub(super) fn readable_mention(
         &self,
@@ -68,6 +82,10 @@ impl Workspace {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let enabled = !self.pii.scanning();
+        // Cancel addition while this mention's addition is the latest step.
+        let cancel = mapping
+            .added_at(self.editor.read(cx).history_id())
+            .is_some_and(|(added, _)| added.original == original);
         let applied = annotation & APPLIED_ID != 0;
         self.active_replacement_range()?;
         let mentions = self.identity_occurrences(id);
@@ -180,6 +198,13 @@ impl Workspace {
                     .is_focused(window)
                 {
                     this.open_alias_choice(window, cx);
+                } else if this.pii.enter_applies
+                    && this
+                        .active_annotation()
+                        .is_some_and(|a| a & APPLIED_ID == 0)
+                {
+                    // After a manual addition, Apply is the default action.
+                    this.apply_scope(cx);
                 }
                 cx.stop_propagation();
             }))
@@ -214,7 +239,20 @@ impl Workspace {
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.pii.mapping.toggle_category_picker();
                             cx.notify();
-                        })),
+                        }))
+                        .map(|v| match mapping.cue {
+                            Some((generation, true)) => {
+                                let accent = theme.search_accent();
+                                v.with_animation(
+                                    SharedString::from(format!("category-cue-{generation}")),
+                                    Animation::new(Duration::from_millis(850))
+                                        .with_easing(gpui::ease_in_out),
+                                    move |v, delta| v.bg(cue_glow(delta, 150., accent)),
+                                )
+                                .into_any_element()
+                            }
+                            _ => v.into_any_element(),
+                        }),
                     )
                     .when(applied, |v| {
                         let accent = theme.search_accent();
@@ -231,6 +269,28 @@ impl Workspace {
                         )
                     })
                     .child(div().flex_1())
+                    .when(cancel, |v| {
+                        v.child(
+                            self.pii
+                                .reveal_popup_control(
+                                    "direct-cancel-addition",
+                                    crate::ui::icon_button(
+                                        "direct-cancel-addition",
+                                        "Cancel addition",
+                                        crate::ui::Icon::Undo,
+                                        theme,
+                                        enabled,
+                                    )
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "direct-cancel-addition".into())
+                                    }),
+                                    cx,
+                                )
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.cancel_addition(window, cx)
+                                })),
+                        )
+                    })
                     .child(
                         self.popup_control("direct-prev", "‹", mentions.len() > 1, cx)
                             .aria_label("Previous mention")
@@ -284,10 +344,29 @@ impl Workspace {
                     .id("direct-alias")
                     .when(cfg!(test), |v| v.debug_selector(|| "direct-alias".into()))
                     .w_full()
+                    .relative()
+                    .group("direct-alias")
+                    .cursor(gpui::CursorStyle::IBeam)
+                    .rounded_t_sm()
                     .border_b_1()
                     .border_color(theme.search_accent())
                     .text_color(theme.search_accent())
                     .child(mapping.alias.clone())
+                    // A pencil on hover marks the alias as editable.
+                    .child(
+                        div()
+                            .absolute()
+                            .right(px(2.))
+                            .top_0()
+                            .bottom_0()
+                            .flex()
+                            .items_center()
+                            .text_size(px(11.))
+                            .text_color(palette.header_muted)
+                            .opacity(0.)
+                            .group_hover("direct-alias", |s| s.opacity(1.))
+                            .child("✎"),
+                    )
                     .map(|v| {
                         if mapping.target_index.is_none() {
                             crate::ui::reveal_focus(
@@ -302,10 +381,31 @@ impl Workspace {
                     .on_mouse_down(
                         gpui::MouseButton::Left,
                         cx.listener(|this, _, _, cx| {
+                            // Select the token so typing replaces it.
                             this.pii.mapping.show_alias_choices();
+                            this.pii
+                                .mapping
+                                .alias
+                                .update(cx, |input, cx| input.select_all(cx));
                             cx.notify();
                         }),
-                    ),
+                    )
+                    .map(|v| match mapping.cue {
+                        Some((generation, _)) => {
+                            let accent = theme.search_accent();
+                            v.with_animation(
+                                SharedString::from(format!("alias-cue-{generation}")),
+                                Animation::new(Duration::from_millis(850))
+                                    .with_easing(gpui::ease_in_out),
+                                move |v, delta| {
+                                    let glow = cue_glow(delta, 0., accent);
+                                    v.bg(glow).when(glow.a > 0.02, |v| v.border_b_2())
+                                },
+                            )
+                            .into_any_element()
+                        }
+                        None => v.into_any_element(),
+                    }),
             )
             .child(
                 div().flex().flex_wrap().gap_1().children(
@@ -326,6 +426,16 @@ impl Workspace {
                             )
                             .text_size(px(11.))
                             .when(mapping.scope == scope, |v| v.bg(palette.placeholder_bg))
+                            // Hovering previews the chip's scope outline.
+                            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                let mapping = &mut this.pii.mapping;
+                                if *hovered {
+                                    mapping.scope_hover = Some(scope);
+                                } else if mapping.scope_hover == Some(scope) {
+                                    mapping.scope_hover = None;
+                                }
+                                cx.notify();
+                            }))
                             .on_click(cx.listener(
                                 move |this, _, _, cx| {
                                     this.pii.mapping.set_scope(scope);
@@ -584,6 +694,12 @@ impl Workspace {
                                 enabled && count > 0,
                                 cx,
                             )
+                            // The default (Enter) action, in the applied teal.
+                            .when(self.pii.enter_applies && enabled && count > 0, |v| {
+                                v.border_1()
+                                    .border_color(theme.search_accent())
+                                    .text_color(theme.search_accent())
+                            })
                             .aria_label(format!("Apply {count} replacements in scope"))
                             .on_click(cx.listener(|this, _, _, cx| this.apply_scope(cx))),
                         )

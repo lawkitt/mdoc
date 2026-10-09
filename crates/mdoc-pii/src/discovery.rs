@@ -1,5 +1,8 @@
 //! Immutable, cancellable candidate discovery; reusable cached matcher.
-use super::{Category, exact_boundary, intersects, interval_conflict, syntax::protected_syntax};
+use super::{
+    Category, exact_boundary, intersects, interval_conflict,
+    syntax::{plain_text_span, protected_syntax},
+};
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
 use std::{
     collections::{BTreeMap, HashSet},
@@ -14,6 +17,7 @@ pub struct DiscoveryInput {
     pub(super) version: u64,
     pub(super) originals: Vec<Arc<str>>,
     pub(super) enabled: Vec<bool>,
+    pub(super) priority: Vec<u64>,
     pub(super) excluded: HashSet<(usize, usize)>,
     pub(super) matcher: Option<Arc<AhoCorasick>>,
 }
@@ -68,7 +72,15 @@ impl DiscoveryInput {
             }
             hits.push((hit.pattern().as_usize(), hit.start()..hit.end()));
         }
-        hits.sort_by_key(|(group, range)| (*group, range.start));
+        // Higher-priority (manual) originals claim overlaps first, so a manual
+        // "Ivan Petrov" supersedes a pending "Ivan" inside it.
+        hits.sort_by_key(|(group, range)| {
+            (
+                std::cmp::Reverse(self.priority[*group]),
+                *group,
+                range.start,
+            )
+        });
         let mut occupied = BTreeMap::new();
         let mut last_end = 0;
         let single = self.originals.len() == 1;
@@ -77,6 +89,7 @@ impl DiscoveryInput {
                 || self.excluded.contains(&(range.start, range.end))
                 || !exact_boundary(source, &range, &self.originals[index])
                 || intersects(&protected, &range)
+                || !plain_text_span(source, range.clone())
                 || (if single {
                     range.start < last_end
                 } else {

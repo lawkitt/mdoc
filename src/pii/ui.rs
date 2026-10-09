@@ -40,8 +40,11 @@ pub(crate) struct ReviewUi {
     /// Candidate highlights are shown; Close review hides them.
     pub reviewing: bool,
     pub popup: Option<Popup>,
+    /// The popup was opened by a manual addition, so Enter applies (ADR 0024).
+    pub enter_applies: bool,
+    /// The next activation comes from a manual addition (alias cue choice).
+    manual_activation: bool,
     pub focus: FocusHandle,
-    pub category: Category,
     job: Option<ScanJob>,
     discovery_job: Option<discovery::DiscoveryJob>,
     discovery_pending: bool,
@@ -65,8 +68,9 @@ impl ReviewUi {
             review: Review::default(),
             reviewing: false,
             popup: None,
+            enter_applies: false,
+            manual_activation: false,
             focus: cx.focus_handle(),
-            category: Category::Person,
             job: None,
             discovery_job: None,
             discovery_pending: false,
@@ -95,6 +99,7 @@ impl ReviewUi {
     }
     /// Open a popup, remembering where focus returns when it closes.
     fn show_popup(&mut self, popup: Popup, previous_focus: Option<FocusHandle>) {
+        self.enter_applies = false;
         self.popup = Some(popup);
         self.popup_previous = previous_focus;
     }
@@ -115,10 +120,12 @@ impl ReviewUi {
         Some(*selected)
     }
     pub(crate) fn dismiss_popup(&mut self) {
+        self.enter_applies = false;
         self.popup = None;
     }
     /// Close the popup, returning the focus it should restore.
     fn close_popup(&mut self) -> Option<FocusHandle> {
+        self.enter_applies = false;
         self.popup = None;
         self.popup_previous.take()
     }
@@ -236,6 +243,7 @@ impl Workspace {
         self.editor.update(cx, |editor, cx| {
             editor.set_annotations(editor.revision(), annotations, cx)
         });
+        self.sync_selection_action(cx);
     }
     pub(crate) fn pseudonymize(
         &mut self,
@@ -292,6 +300,9 @@ impl Workspace {
             return;
         }
         self.sync_replacement_annotation(id, cx);
+        if !std::mem::take(&mut self.pii.manual_activation) {
+            self.pii.mapping.request_cue(false, false);
+        }
         self.pii.error = None;
         self.pii.show_popup(Popup::Selection, window.focused(cx));
         self.pii
@@ -360,25 +371,57 @@ impl Workspace {
             });
         }
     }
+    /// Pseudonymize has run in this tab, so manual additions are offered.
+    fn has_pii_review(&self) -> bool {
+        let review = &self.pii.review;
+        !self.pii.scans.is_empty() || !review.variants().is_empty() || !review.applied().is_empty()
+    }
+    /// The span a manual addition would replace for the editor selection.
+    fn manual_target(&self, cx: &App) -> Option<Result<Range<usize>, String>> {
+        let editor = self.editor.read(cx);
+        let selection = editor.selection();
+        (!selection.is_empty()
+            && self.has_pii_review()
+            && !self.pii.scanning()
+            && self.can_copy_markdown())
+        .then(|| self.pii.review.manual_target(editor.text(), selection))
+    }
+    /// Offer Replace beside the settled editor selection (ADR 0024).
+    pub(crate) fn sync_selection_action(&mut self, cx: &mut Context<Self>) {
+        let editor = self.editor.read(cx);
+        // The editor hides the pill while the popup holds focus.
+        let action = (!editor.is_selecting())
+            .then(|| self.manual_target(cx))
+            .flatten()
+            .map(|target| mdoc_editor::SelectionAction {
+                range: editor.selection(),
+                label: "Replace".into(),
+                menu_label: "Replace with placeholder".into(),
+                shortcut: if cfg!(target_os = "macos") {
+                    "⌘⌥P"
+                } else {
+                    "Ctrl+Alt+P"
+                }
+                .into(),
+                disabled: target.err().map(Into::into),
+                accent: style::markdown_style(self.theme.get()).alert_warning,
+            });
+        self.editor
+            .update(cx, |editor, cx| editor.set_selection_action(action, cx));
+    }
+    /// Turn the editor selection into proposed replacements of every exact
+    /// repeat, with a guessed category, and open the popup on it.
     pub(crate) fn add_pii_candidate(
         &mut self,
         _: &PiiAddCandidate,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.can_copy_markdown() {
+        let Some(Ok(range)) = self.manual_target(cx) else {
             return;
-        }
-        let editor = self.editor.read(cx);
-        let source = editor.text().to_owned();
-        let range = editor.selection();
-        self.pii.reviewing = true;
-        if let Err(error) = Review::validate_manual(&source, range.clone()) {
-            self.pii.error = Some(error);
-            cx.notify();
-            return;
-        }
-        let category = self.pii.category;
+        };
+        let source = self.editor.read(cx).text().to_owned();
+        let category = detector::guess_category(&source, range.clone());
         let Some(id) = self.checkpoint_review(cx, |review| {
             review
                 .add_manual(&source, range.clone(), category)
@@ -386,11 +429,29 @@ impl Workspace {
         }) else {
             return;
         };
+        self.pii.reviewing = true;
+        if !self.pii.mapping.open {
+            self.pii.mapping.open_panel(window.focused(cx));
+        }
+        let history = self.editor.read(cx).history_id();
+        self.pii
+            .mapping
+            .record_added(source[range.clone()].into(), history);
         self.pii.error = None;
         self.sync_annotations(cx);
+        self.editor
+            .update(cx, |editor, cx| editor.set_cursor(range.start, cx));
         if let Some(annotation) = self.pii.review.annotation_id(id, &range) {
+            self.pii.manual_activation = true;
             self.activate_annotation(annotation, window, cx);
+            self.pii.manual_activation = false;
+            self.pii.enter_applies = self.pii.popup.is_some();
+            // A fallback guess also cues the category chip.
+            self.pii
+                .mapping
+                .request_cue(true, matches!(category, Category::Person | Category::Other));
         }
+        self.sync_selection_action(cx);
         cx.notify();
     }
     pub(crate) fn apply_all_pii(
