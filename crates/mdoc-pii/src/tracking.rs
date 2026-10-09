@@ -478,11 +478,28 @@ impl Tracking {
         all: bool,
     ) -> Result<Vec<(Range<usize>, String)>, String> {
         let selected = self.get(id).ok_or("Replacement is no longer available.")?;
-        let targets: Vec<_> = self
+        let ids: HashSet<_> = self
             .applied
             .iter()
             .filter(|o| o.id == id || (all && o.step.before == selected.step.before))
+            .map(|o| o.id)
             .collect();
+        self.reversion_plan(source, &ids)
+    }
+    /// Text edits returning exactly these applied occurrences to their prior values.
+    pub fn reversion_plan(
+        &self,
+        source: &str,
+        ids: &HashSet<u64>,
+    ) -> Result<Vec<(Range<usize>, String)>, String> {
+        let targets: Vec<_> = self
+            .applied
+            .iter()
+            .filter(|o| ids.contains(&o.id))
+            .collect();
+        if targets.len() != ids.len() {
+            return Err("Replacement is no longer available.".into());
+        }
         if targets
             .iter()
             .any(|o| source.get(o.range.clone()) != Some(o.step.after.as_ref()))
@@ -509,16 +526,24 @@ impl Tracking {
             })
             .collect()
     }
-    pub fn commit_restore(&mut self, history: u64, restored: Vec<(Applied, Range<usize>)>) {
+    /// Record reverted occurrences; `keep` also excludes them from rediscovery.
+    pub fn commit_restore(
+        &mut self,
+        history: u64,
+        restored: Vec<(Applied, Range<usize>)>,
+        keep: bool,
+    ) {
         let mut added = Vec::new();
         let mut keeps = Vec::new();
         for (old, range) in restored {
-            let id = self.id();
-            keeps.push(Exclusion {
-                id,
-                range: range.clone(),
-                original: old.step.before.clone(),
-            });
+            if keep {
+                let id = self.id();
+                keeps.push(Exclusion {
+                    id,
+                    range: range.clone(),
+                    original: old.step.before.clone(),
+                });
+            }
             if let Some(step) = old.step.predecessor.clone() {
                 added.push(Applied {
                     id: old.id,

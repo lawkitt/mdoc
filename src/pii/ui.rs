@@ -10,8 +10,7 @@ mod tests;
 
 use crate::{
     PiiAddCandidate, PiiApplyAll, PiiClosePopup, PiiConfirm, PiiNextCandidate,
-    PiiPreviousCandidate, PiiRestore, PiiRestoreAll, PiiReviewCandidate, Pseudonymize, Workspace,
-    markdown_search,
+    PiiPreviousCandidate, PiiReviewCandidate, Pseudonymize, Workspace, markdown_search,
     pii::detector,
     pii::{self, Category, IdentitySnapshot, Review, tracking::ReplacementPlan},
     settings, settings_ui, style,
@@ -185,7 +184,9 @@ impl Workspace {
         self.sync_annotations(cx);
     }
     fn sync_annotations(&mut self, cx: &mut Context<Self>) {
+        // Proposals are amber; applied replacements share the alias teal.
         let accent = style::markdown_style(self.theme.get()).alert_warning;
+        let applied_accent = self.theme.get().search_accent();
         let review = &self.pii.review;
         let show_candidates = self.pii.reviewing;
         let mut candidates = review
@@ -221,8 +222,14 @@ impl Workspace {
                 mdoc_editor::SourceAnnotation {
                     id: APPLIED_ID | occurrence.id,
                     range: occurrence.range.clone(),
-                    color: Hsla { a: 0.1, ..accent },
-                    active_color: Hsla { a: 0.24, ..accent },
+                    color: Hsla {
+                        a: 0.16,
+                        ..applied_accent
+                    },
+                    active_color: Hsla {
+                        a: 0.34,
+                        ..applied_accent
+                    },
                 }
             });
         }
@@ -478,55 +485,6 @@ impl Workspace {
             self.sync_identity_selection_after_history(cx);
         }
         self.sync_annotations(cx);
-        cx.notify();
-    }
-    pub(crate) fn restore_pii(
-        &mut self,
-        _: &PiiRestore,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.restore_pii_scope(false, window, cx);
-    }
-    pub(crate) fn restore_all_pii(
-        &mut self,
-        _: &PiiRestoreAll,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.restore_pii_scope(true, window, cx);
-    }
-    fn restore_pii_scope(&mut self, all: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(id) = self.pii.popup.as_ref().and(self.selected_applied()) else {
-            return;
-        };
-        let editor = self.editor.read(cx);
-        let revision = editor.revision();
-        if !self.pii.review.matches_history(editor.history_id()) {
-            self.pii.error = Some("Document changed. Review the replacement again.".into());
-            cx.notify();
-            return;
-        }
-        let plan = self.pii.review.restoration_edits(editor.text(), id, all);
-        match plan {
-            Ok(edits) => {
-                let restored = self.pii.review.prepare_restore(&edits);
-                if self
-                    .editor
-                    .update(cx, |e, cx| e.replace_ranges(revision, &edits, cx))
-                {
-                    let transaction = self.editor.read(cx).last_transaction().cloned().unwrap();
-                    self.pii_transaction(&transaction, cx);
-                    self.pii
-                        .review
-                        .commit_restore(self.editor.read(cx).history_id(), restored);
-                    self.pii_edited(cx);
-                    self.pii.error = None;
-                    window.focus(&self.editor.read(cx).focus_handle(cx), cx);
-                }
-            }
-            Err(error) => self.pii.error = Some(error),
-        }
         cx.notify();
     }
     pub(crate) fn close_pii_popup(

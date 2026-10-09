@@ -36,8 +36,7 @@ fn seed(app: &mut Workspace, source: &str, cx: &mut Context<Workspace>) -> (u64,
         .variants()
         .iter()
         .find(|g| g.original.as_ref() == "Павлова Марина Сергеевна")
-        .unwrap()
-        .id;
+        .map_or(0, |g| g.id);
     let initials = app
         .pii
         .review
@@ -125,7 +124,8 @@ fn staging_merge_category_owner_apply_rename_and_undo_preserve_exact_originals(
         );
         let selected = app.pii.review.applied()[1].id;
         app.activate_annotation(APPLIED_ID | selected, window, cx);
-        app.restore_pii(&PiiRestore, window, cx);
+        app.pii.mapping.set_scope(Scope::Mention);
+        app.keep_originals(window, cx);
         assert_eq!(
             app.editor.read(cx).text(),
             "CLIENT_1 · Павлова М.С. · CLIENT_1 · EMAIL_1"
@@ -289,7 +289,8 @@ fn inline_keep_is_metadata_only_and_undoable(cx: &mut gpui::TestAppContext) {
         let range = app.pii.review.variant(initials).unwrap().mentions[0].clone();
         let annotation = app.pii.review.annotation_id(initials, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
-        app.keep_replacement(true, cx);
+        app.pii.mapping.set_scope(Scope::Mention);
+        app.keep_originals(window, cx);
         window.focus(&app.editor.read(cx).focus_handle(cx), cx);
         assert_eq!(app.editor.read(cx).text(), source);
         assert_eq!(app.pii.review.remaining(), 2);
@@ -443,7 +444,8 @@ fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
         let revision = app.editor.read(cx).revision();
         let dirty = app.dirty(cx);
         app.select_occurrence(Selection::Entity(identity), cx);
-        app.keep_replacement(false, cx);
+        app.pii.mapping.set_scope(Scope::Entity);
+        app.keep_originals(window, cx);
         assert_eq!(app.editor.read(cx).text(), source);
         assert_ne!(
             app.editor.read(cx).revision(),
@@ -552,6 +554,12 @@ fn panel_click_reveals_exact_word_with_popup_and_retains_workspace(cx: &mut gpui
             let panel = cx.debug_bounds("identity-panel").unwrap();
             let popup = cx.debug_bounds("pseudonym-popup").unwrap();
             assert!(panel.size.height > px(height * 0.7));
+            if let Some(divider) = cx.debug_bounds("preview-divider") {
+                assert!(
+                    panel.right() <= divider.left(),
+                    "replacements sit before Original: panel {panel:?} divider {divider:?}"
+                );
+            }
             assert!(
                 popup.right() <= panel.left(),
                 "popup {popup:?} panel {panel:?}"
@@ -704,7 +712,7 @@ fn category_origin_existing_alias_and_draft_lifecycle_are_explicit(cx: &mut gpui
             .mapping
             .alias
             .update(cx, |input, cx| input.set_value("PERSON_1".into(), cx));
-        assert!(!app.confirm_alias(false, false, cx));
+        assert!(!app.confirm_alias(false, Applying::Nothing, cx));
         assert_eq!(app.pii.review.variant_identity(initials), Some(initials));
         assert!(app.pii.mapping.field_error.is_some());
         app.link_to_entity(full, cx);
@@ -714,7 +722,7 @@ fn category_origin_existing_alias_and_draft_lifecycle_are_explicit(cx: &mut gpui
             .mapping
             .alias
             .update(cx, |input, cx| input.set_value("PERSON_99".into(), cx));
-        app.confirm_alias(true, false, cx);
+        app.confirm_alias(true, Applying::Nothing, cx);
         assert!(app.pii.review.identity(full).unwrap().custom_alias);
         app.pii.mapping.scope = Scope::Entity;
         app.correct_category(Category::Organization, cx);
@@ -804,4 +812,152 @@ fn external_source_edit_discards_unconfirmed_mapping_draft(cx: &mut gpui::TestAp
                 == "UNCONFIRMED")
         );
     });
+}
+
+#[gpui::test]
+fn popup_apply_undo_and_keep_follow_scope_and_stay_on_the_mention(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let range = app.pii.review.variant(initials).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(initials, &range).unwrap();
+        app.activate_annotation(annotation, window, cx);
+        // Same wording is the default scope; the email stays proposed.
+        app.apply_scope(cx);
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "ORG_1 · ORG_1 · marina@example.invalid"
+        );
+        assert_eq!(app.pii.review.remaining(), 1);
+        assert!(app.pii.popup.is_some());
+        assert!(app.active_annotation().unwrap() & APPLIED_ID != 0);
+        window.focus(&app.editor.read(cx).focus_handle(cx), cx);
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), source, "Apply is one undo step");
+    });
+    cx.dispatch_action(mdoc_editor::Redo);
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let id = app.pii.review.applied()[0].id;
+        app.activate_annotation(APPLIED_ID | id, window, cx);
+        app.pii.mapping.set_scope(Scope::Mention);
+        let (_, applied) = app.scoped_mentions();
+        app.undo_replacements(applied.into_iter().collect(), cx);
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "Павлова М.С. · ORG_1 · marina@example.invalid"
+        );
+        // Back to proposed with the same alias, and the popup stays on it.
+        assert_eq!(app.pii.review.remaining(), 2);
+        assert!(app.pii.popup.is_some());
+        let annotation = app.active_annotation().unwrap();
+        assert_eq!(annotation & APPLIED_ID, 0);
+        let candidate = app.pii.review.candidate(annotation).unwrap();
+        assert_eq!(candidate.range, 0.."Павлова М.С.".len());
+        assert_eq!(
+            app.pii
+                .review
+                .identity(app.selected_entity().unwrap())
+                .unwrap()
+                .alias,
+            "ORG_1"
+        );
+        // Same wording now spans one proposal and one applied mention.
+        let (candidates, applied) = app.scoped_mentions();
+        assert_eq!((candidates.len(), applied.len()), (1, 1));
+        app.keep_originals(window, cx);
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "Павлова М.С. · Павлова М.С. · marina@example.invalid"
+        );
+        assert_eq!(app.pii.review.remaining(), 1);
+        assert!(app.pii.popup.is_none());
+        let history = app.editor.read(cx).history_id();
+        assert_eq!(app.pii.mapping.kept_at(history), Some(2));
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "Павлова М.С. · ORG_1 · marina@example.invalid",
+            "Keep original across both states is one undo step"
+        );
+        let history = app.editor.read(cx).history_id();
+        assert_eq!(app.pii.mapping.kept_at(history), None);
+        app.pii.review.refresh(app.editor.read(cx).text());
+        assert_eq!(app.pii.review.remaining(), 2);
+    });
+}
+
+#[gpui::test]
+fn undo_replacement_keeps_a_separated_homonym_on_its_identity(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С.";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let second = app.pii.review.variant(initials).unwrap().mentions[1].clone();
+        app.change_mapping(
+            MappingAction::AssignCandidate(initials, second.clone(), None),
+            cx,
+        );
+        let separated = app
+            .pii
+            .review
+            .occurrence_identity(initials, &second)
+            .unwrap();
+        app.apply_aliases(cx);
+        assert_eq!(app.editor.read(cx).text(), "ORG_1 · ORG_2");
+        let id = app.pii.review.applied()[1].id;
+        app.activate_annotation(APPLIED_ID | id, window, cx);
+        app.undo_replacements([id].into(), cx);
+        assert_eq!(app.editor.read(cx).text(), "ORG_1 · Павлова М.С.");
+        let candidate = app.pii.review.candidates()[0].clone();
+        assert_eq!(
+            app.pii
+                .review
+                .occurrence_identity(candidate.variant, &candidate.range),
+            Some(separated)
+        );
+        app.apply_aliases(cx);
+        assert_eq!(app.editor.read(cx).text(), "ORG_1 · ORG_2");
+    });
+}
+
+#[gpui::test]
+fn panel_mention_undo_icon_reverts_only_that_mention(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::ui_tests::boot(cx);
+    for theme in [crate::Theme::Dark, crate::Theme::Light] {
+        let source = "Павлова М.С. · Павлова М.С.";
+        app.update_in(cx, |app, window, cx| {
+            app.theme.set(theme);
+            let (_, initials) = seed(app, source, cx);
+            let range = app.pii.review.variant(initials).unwrap().mentions[0].clone();
+            let annotation = app.pii.review.annotation_id(initials, &range).unwrap();
+            app.activate_annotation(annotation, window, cx);
+            app.apply_scope(cx);
+            assert_eq!(app.editor.read(cx).text(), "ORG_1 · ORG_1");
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let annotation = app.update(cx, |app, _| app.active_annotation().unwrap());
+        let selector = Box::leak(format!("mention-undo-{annotation}").into_boxed_str());
+        let undo = cx
+            .debug_bounds(selector)
+            .expect("the active applied mention row offers undo");
+        let panel = cx.debug_bounds("identity-panel").unwrap();
+        assert!(undo.left() >= panel.left() && undo.right() <= panel.right());
+        cx.simulate_click(undo.center(), Default::default());
+        cx.run_until_parked();
+        app.update(cx, |app, cx| {
+            assert_eq!(app.editor.read(cx).text(), "Павлова М.С. · ORG_1");
+            assert_eq!(app.pii.review.applied().len(), 1);
+        });
+    }
 }

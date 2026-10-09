@@ -72,8 +72,6 @@ actions!(
         PiiPreviousCandidate,
         PiiConfirm,
         PiiApplyAll,
-        PiiRestore,
-        PiiRestoreAll,
         PiiNextChoice,
         PiiPreviousChoice,
         PiiOpenChoice,
@@ -1279,8 +1277,9 @@ impl Render for Workspace {
                 if event.pressed_button != Some(gpui::MouseButton::Left) { this.split_dragging = false; }
                 if this.split_dragging {
                     let bounds = this.workspace_bounds.get();
-                    let width = f32::from(bounds.size.width - this.replacements_panel_width(window)).max(1.);
-                    let ratio = f32::from(event.position.x - bounds.left()) / width;
+                    let panel = this.replacements_panel_width(window);
+                    let width = f32::from(bounds.size.width - panel).max(1.);
+                    let ratio = f32::from(event.position.x - bounds.left() - panel) / width;
                     this.preview.split_ratio = Some(ratio.clamp(0.25, 0.75));
                     cx.notify();
                 }
@@ -1330,6 +1329,8 @@ impl Render for Workspace {
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6()
                             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))
                         .child(markdown_scrollbar).into_any_element() })))
+                // Replacements sit beside the text they describe, before Original.
+                .children(self.replacements_panel(window, cx))
                 .when(self.source_only && show_markdown, |row| row.child(div().flex_1().min_w_0().p_6().flex().flex_col().justify_center().gap_2()
                     .child(div().text_size(px(18.)).child(self.display_name()))
                     .child(if self.job.busy() || matches!(self.ocr_state, OcrState::Installing) {
@@ -1354,7 +1355,7 @@ impl Render for Workspace {
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments))
                     .children(preview_notice)))
-                .children(self.replacements_panel(window, cx)))
+)
             .children(setup_notice).children(error_notice)
             .children(self.pii_popup(window, cx))
     }

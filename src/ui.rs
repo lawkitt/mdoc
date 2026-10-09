@@ -187,6 +187,7 @@ pub enum Icon {
     Moon,
     Settings,
     Anonymous,
+    Undo,
 }
 
 impl Icon {
@@ -199,6 +200,7 @@ impl Icon {
             Self::Moon => include_bytes!("../resources/ui/moon.svg"),
             Self::Settings => include_bytes!("../resources/ui/settings.svg"),
             Self::Anonymous => include_bytes!("../resources/ui/anonymous.svg"),
+            Self::Undo => include_bytes!("../resources/ui/undo.svg"),
         }
     }
 }
@@ -210,7 +212,19 @@ pub fn icon_control(
     theme: Theme,
     enabled: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    control_base(id, label, theme, enabled)
+    icon_button(id, label, icon, theme, enabled)
+        .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+}
+/// A 32 px icon control whose label is its tooltip and accessible name.
+pub fn icon_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    icon: Icon,
+    theme: Theme,
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let label = label.into();
+    control_base(id, label.clone(), theme, enabled)
         .p_0()
         .size(px(32.))
         .flex()
@@ -222,8 +236,7 @@ pub fn icon_control(
                 .size(px(18.))
                 .text_color(theme.pdf_style().header_fg),
         )
-        .tooltip(crate::style::tooltip(label.into(), theme))
-        .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+        .tooltip(crate::style::tooltip(label.to_string(), theme))
 }
 
 /// Reveal a focused control inside a scrolling panel without moving document state.
