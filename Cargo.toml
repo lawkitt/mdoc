@@ -11,7 +11,7 @@ publish = false
 [workspace]
 # Upstream code with one Linux glyph-offset correction; not a workspace crate.
 exclude = ["vendor"]
-members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-history", "crates/mdoc-markdown", "crates/mdoc-pii", "crates/gpui-pdf", "crates/os-spellcheck"]
+members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-history", "crates/mdoc-pii", "crates/gpui-pdf", "crates/os-spellcheck"]
 resolver = "2"
 
 # Remove when an adopted GPUI release includes the combining-mark correction.

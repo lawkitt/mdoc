@@ -12,8 +12,9 @@ It is distributed without warranty, as described in that license.
 
 The reusable crates in `crates/` retain their MIT licenses, including the
 original copyright notices in each crate's `LICENSE` file. Renaming
-`zorite-editor` and `zorite-markdown` to `mdoc-editor` and `mdoc-markdown`
-does not change their licenses or upstream authorship.
+`zorite-editor` and `zorite-markdown` to `mdoc-editor` and `mdoc-markdown`,
+and later merging the retained `mdoc-markdown` recognition code into
+`mdoc-editor`, does not change their licenses or upstream authorship.
 
 mdoc removes the original notebook/database model and focuses on local Markdown
 files, a PDF pane, and document import. Its Git history starts independently;

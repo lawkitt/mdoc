@@ -655,8 +655,7 @@ impl EditorState {
                     // Words-attached `$$` fences / words-mixed pairs in pasted
                     // text split onto their own lines (issue #54) — same
                     // normalization typing gets.
-                    if let std::borrow::Cow::Owned(n) =
-                        mdoc_markdown::syntax::normalize_math_fences(&text)
+                    if let std::borrow::Cow::Owned(n) = crate::syntax::normalize_math_fences(&text)
                     {
                         text = n;
                     }

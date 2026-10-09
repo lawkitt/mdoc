@@ -1036,7 +1036,7 @@ resolution.
 
 A `[[wiki-link]]`, `#tag`, wiki file chip, or property-panel pill was
 left-clicked; the payload is the target page title. It may carry a
-`#Heading` / `#^id` anchor (split with `mdoc_markdown::syntax`'s
+`#Heading` / `#^id` anchor (split with `crate::syntax`'s
 `split_heading_anchor` / `split_block_anchor`).
 
 **Host obligation:** navigate to that page (and scroll to the anchor).
@@ -1100,7 +1100,7 @@ An inline (mid-text) image thumbnail was left-clicked; the payload is its
 ### `HoverLink(Option<(LinkHit, Bounds<Pixels>)>)`
 
 The pointer moved onto an inline link or a property-panel pill (`Some` — the
-`mdoc_markdown::syntax::LinkHit` and the link's window-space box, from the
+`crate::syntax::LinkHit` and the link's window-space box, from the
 last paint's layout) or off every link (`None`). Emitted only when the hovered
 link changes, so it is cheap to subscribe to.
 

@@ -127,7 +127,7 @@ div()
 The editor is a **text editor first**: create it, focus it, and it edits plain
 text. The whole Markdown/WYSIWYG side is dormant until the host installs a
 `SyntaxStyle` — there is deliberately **no cargo feature** for it, because
-its only compile-time cost is the dependency-free `mdoc_markdown::syntax`
+its only compile-time cost is the dependency-free `crate::syntax`
 module, and every markdown code path is dead (and dead-code-eliminated) unless
 these calls are made:
 

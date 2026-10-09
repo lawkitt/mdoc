@@ -1,9 +1,6 @@
 //! mdoc's **WYSIWYG** (live-preview) markdown editor — and, without a
 //! [`SyntaxStyle`] installed, its **raw**-markdown editor. A from-scratch
-//! multi-line text editor for GPUI. (The third view, the read-only
-//! **reader**, is the separate `mdoc-markdown` crate — the two engines share
-//! nothing, so any markdown behavior added here must be checked there and
-//! vice versa. See AGENTS.md "The three views".)
+//! multi-line text editor for GPUI.
 //!
 //! Host-agnostic — depends only on `gpui` (+ `unicode-segmentation`); no
 //! `gpui-component`. Built directly on gpui's text primitives: an
@@ -46,6 +43,7 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 mod markdown_syntax;
+mod syntax;
 pub use markdown_syntax::{AlertIcons, MathAlign, PropertyIconFn, SyntaxStyle};
 
 mod search;
@@ -528,7 +526,7 @@ pub enum EditorEvent {
     /// link's window-space box, from this frame's layout) or off every link
     /// (`None`). Emitted only on change, so a host can show a preview card
     /// anchored to the link.
-    HoverLink(Option<(mdoc_markdown::syntax::LinkHit, Bounds<Pixels>)>),
+    HoverLink(Option<(crate::syntax::LinkHit, Bounds<Pixels>)>),
 }
 
 /// A table column's text alignment, for the host-driven alignment toolbar
@@ -1012,12 +1010,12 @@ pub struct EditorState {
     editing_inline: Option<EditingInline>,
     /// Painted bounds + target of each property-panel pill (from the last paint),
     /// so a left-click opens it (`OpenWikiLink` / `OpenLink`).
-    prop_pill_rects: Vec<(Bounds<Pixels>, mdoc_markdown::syntax::LinkHit)>,
+    prop_pill_rects: Vec<(Bounds<Pixels>, crate::syntax::LinkHit)>,
     /// Inline links' painted boxes + targets from the last paint (the same
     /// geometry as the hand-cursor hitboxes), for hover → `HoverLink`.
-    link_rects: Vec<(Bounds<Pixels>, mdoc_markdown::syntax::LinkHit)>,
+    link_rects: Vec<(Bounds<Pixels>, crate::syntax::LinkHit)>,
     /// The link under the pointer, if any — `HoverLink` fires on change.
-    hovered_link: Option<(mdoc_markdown::syntax::LinkHit, Bounds<Pixels>)>,
+    hovered_link: Option<(crate::syntax::LinkHit, Bounds<Pixels>)>,
     /// Painted bounds of each property-panel row (from the last paint), so
     /// `on_mouse_move` repaints when the hovered row changes (the panel's hover
     /// border reads the live pointer during paint).
@@ -1711,7 +1709,7 @@ impl EditorState {
             if caret_row == Some(row) {
                 continue;
             }
-            let Some(inner) = mdoc_markdown::syntax::embed_line(line) else {
+            let Some(inner) = crate::syntax::embed_line(line) else {
                 continue;
             };
             let (Some(top), Some((view, height))) = (self.line_tops.get(row), provider(inner))
@@ -2531,7 +2529,7 @@ impl EditorState {
         if let Some(row) = self.alert_fold_at(event.position) {
             let start = self.line_starts()[row];
             let line = &self.content[start..self.line_end(row)];
-            if let Some((at, folded)) = mdoc_markdown::syntax::alert_fold_char(line) {
+            if let Some((at, folded)) = crate::syntax::alert_fold_char(line) {
                 let range = start + at..start + at + 1;
                 let repl = if folded { "+" } else { "-" };
                 self.record_edit(&range, repl);
@@ -2601,15 +2599,13 @@ impl EditorState {
                 .find(|(b, _)| b.contains(&event.position))
         {
             match hit {
-                mdoc_markdown::syntax::LinkHit::Page(t) => {
+                crate::syntax::LinkHit::Page(t) => {
                     cx.emit(EditorEvent::OpenWikiLink(t.clone().into()))
                 }
-                mdoc_markdown::syntax::LinkHit::BlockRef(id) => {
+                crate::syntax::LinkHit::BlockRef(id) => {
                     cx.emit(EditorEvent::OpenWikiLink(format!("#^{id}").into()))
                 }
-                mdoc_markdown::syntax::LinkHit::Url(u) => {
-                    cx.emit(EditorEvent::OpenLink(u.clone().into()))
-                }
+                crate::syntax::LinkHit::Url(u) => cx.emit(EditorEvent::OpenLink(u.clone().into())),
             }
             return;
         }
@@ -2677,7 +2673,7 @@ impl EditorState {
             // the anchor is hidden — with the caret on the line the raw text
             // is revealed for editing and clicks place the caret as usual.
             if self.row_col(self.selected_range.start).0 != row
-                && let Some((at, id)) = mdoc_markdown::syntax::block_id(line)
+                && let Some((at, id)) = crate::syntax::block_id(line)
                 && offset - start >= at
                 && self
                     .markdown_style
@@ -3454,7 +3450,7 @@ impl EditorState {
         if !para.contains("$$") {
             return;
         }
-        let normalized = match mdoc_markdown::syntax::normalize_math_fences(para) {
+        let normalized = match crate::syntax::normalize_math_fences(para) {
             std::borrow::Cow::Borrowed(_) => return,
             std::borrow::Cow::Owned(s) => s,
         };
@@ -5540,7 +5536,7 @@ enum PanelSeg {
     Pill {
         text: SharedString,
         color: Hsla,
-        target: mdoc_markdown::syntax::LinkHit,
+        target: crate::syntax::LinkHit,
     },
 }
 
@@ -5871,7 +5867,7 @@ fn line_index_at(line: &WrappedLine, rtl: Option<&RtlRow>, p: Point<Pixels>, lh:
 
 /// A right-to-left row's editor-side geometry, built in prepaint (#66).
 ///
-/// Only rows whose source reads RTL ([`mdoc_markdown::syntax::base_direction`])
+/// Only rows whose source reads RTL ([`crate::syntax::base_direction`])
 /// get one — the flag *is* `Option::is_some`, so an LTR document allocates
 /// nothing and keeps taking gpui's own (cheaper) lookups.
 pub(crate) struct RtlRow {
