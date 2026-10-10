@@ -10,17 +10,23 @@ impl ReviewUi {
         control: gpui::Stateful<gpui::Div>,
         cx: &App,
     ) -> gpui::Stateful<gpui::Div> {
-        let focus = self
-            .popup_controls
-            .borrow_mut()
-            .entry(id.into())
-            .or_insert_with(|| cx.focus_handle().tab_stop(true))
-            .clone();
+        let focus = self.popup_control_focus(id, cx);
         ui::reveal_focus(
             control.track_focus(&focus),
             focus,
             self.popup_scroll.clone(),
         )
+    }
+    pub(super) fn popup_control_focus(
+        &self,
+        id: impl Into<gpui::ElementId>,
+        cx: &App,
+    ) -> gpui::FocusHandle {
+        self.popup_controls
+            .borrow_mut()
+            .entry(id.into())
+            .or_insert_with(|| cx.focus_handle().tab_stop(true))
+            .clone()
     }
 }
 

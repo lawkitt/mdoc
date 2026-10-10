@@ -96,6 +96,8 @@ pub(super) struct MappingUi {
     field_error: Option<String>,
     remembered: std::collections::HashMap<u64, usize>,
     bounds: Rc<Cell<Option<gpui::Bounds<Pixels>>>>,
+    /// The open floating menu, which may hang below the popup card.
+    menu_bounds: Rc<Cell<Option<gpui::Bounds<Pixels>>>>,
     pub(super) popup_revision: Option<u64>,
     /// Mentions kept by the last Keep and the history state it created.
     kept: Option<(usize, u64)>,
@@ -313,6 +315,7 @@ impl MappingUi {
             field_error: None,
             remembered: Default::default(),
             bounds: Rc::new(Cell::new(None)),
+            menu_bounds: Rc::new(Cell::new(None)),
             popup_revision: None,
             kept: None,
             hovered: None,

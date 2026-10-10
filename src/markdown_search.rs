@@ -118,6 +118,11 @@ impl SearchInput {
         cx.notify();
     }
 
+    /// A caret after the last character, nothing selected.
+    pub fn move_to_end(&mut self, cx: &mut Context<Self>) {
+        self.move_to(self.content.len(), cx);
+    }
+
     pub fn reset(&mut self, cx: &mut Context<Self>) {
         self.content.clear();
         self.selected_range = 0..0;

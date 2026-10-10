@@ -38,6 +38,9 @@ impl IdentityStore {
     pub(crate) fn add(&mut self, identity: Identity) {
         self.definitions.insert(identity.id, Arc::new(identity));
     }
+    fn ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.definitions.keys().copied()
+    }
     fn get(&self, id: u64) -> Option<&Identity> {
         self.policy
             .edited
@@ -165,12 +168,14 @@ impl Review {
             }
         }
     }
+    /// Identities that still own a pending or applied mention. One whose
+    /// mentions all moved elsewhere frees its alias.
     pub fn active_identities(&self) -> Vec<u64> {
         let mut ids: HashSet<_> = self
-            .variants()
+            .candidates()
             .iter()
-            .filter(|g| !g.kept)
-            .filter_map(|g| self.variant_identity(g.id))
+            .filter(|c| self.variant(c.variant).is_some_and(|g| !g.kept))
+            .filter_map(|c| self.occurrence_identity(c.variant, &c.range))
             .collect();
         ids.extend(
             self.applied()
@@ -178,7 +183,6 @@ impl Review {
                 .map(|a| a.step.identity)
                 .filter(|id| *id != 0),
         );
-        ids.extend(self.assignments().iter().map(|a| a.identity));
         let mut ids: Vec<_> = ids.into_iter().collect();
         ids.sort_unstable();
         ids
@@ -217,9 +221,6 @@ impl Review {
             .identity(id)
             .ok_or("Identity is no longer available.")?
             .clone();
-        if identity.alias != alias && self.occupied_tokens.contains(alias) {
-            return Err("That alias is already reserved or present in the document.".into());
-        }
         if identity.alias != alias
             && self.source.match_indices(alias).any(|(start, _)| {
                 let token = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
@@ -233,6 +234,21 @@ impl Review {
             return Err(
                 "That alias is already present in the document. Choose a different alias.".into(),
             );
+        }
+        // No mention uses the alias any more (checked above): identities left
+        // idle by earlier moves hand it over and take fresh ones.
+        let idle: Vec<_> = self
+            .identities
+            .ids()
+            .filter(|&other| other != id && self.identity(other).is_some_and(|i| i.alias == alias))
+            .collect();
+        for other in idle {
+            let mut idle = self.identity(other).unwrap().clone();
+            idle.alias = self.allocate_alias(idle.category);
+            idle.custom_alias = false;
+            Arc::make_mut(&mut self.identities.policy)
+                .edited
+                .insert(other, Arc::new(idle));
         }
         identity.alias = alias.into();
         identity.custom_alias = true;

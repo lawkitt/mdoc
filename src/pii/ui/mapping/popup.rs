@@ -302,13 +302,13 @@ impl DocumentView {
             category,
         })
     }
-    pub(super) fn link_to_entity(&mut self, target: u64, cx: &mut Context<Self>) {
+    pub(in crate::pii::ui) fn link_to_entity(&mut self, target: u64, cx: &mut Context<Self>) {
         self.assign_selected_identity(target, cx);
     }
     pub(super) fn separate_with_new_alias(&mut self, cx: &mut Context<Self>) {
         self.separate_selected_identity(cx);
     }
-    pub(super) fn confirm_alias(
+    pub(in crate::pii::ui) fn confirm_alias(
         &mut self,
         whole: bool,
         apply: Applying,

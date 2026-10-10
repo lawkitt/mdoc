@@ -1206,3 +1206,193 @@ fn toolbar_status_cancels_a_running_scan(cx: &mut gpui::TestAppContext) {
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("scan-status").is_none());
 }
+
+#[gpui::test]
+fn alias_click_shows_a_caret_and_new_alias_below_the_card_applies(cx: &mut gpui::TestAppContext) {
+    let source = "Tebriz Tagiev and Daniel Okafor. Agreement. Daniel Okafor at +44 20 7946 0958.";
+    for scope in [
+        mapping::Scope::Mention,
+        mapping::Scope::Wording,
+        mapping::Scope::Entity,
+    ] {
+        let (app, cx) = crate::document_view_tests::boot(cx);
+        app.update(cx, |app, cx| {
+            app.editor.update(cx, |e, cx| e.set_text(source, cx))
+        });
+        cx.run_until_parked();
+        app.update(cx, |app, cx| {
+            let (generation, identity, revision) = install_scan(app, cx);
+            let det = |text: &str, nth: usize, category| {
+                let at = source.match_indices(text).nth(nth).unwrap().0;
+                pii::Detection {
+                    range: at..at + text.len(),
+                    category,
+                    score: 0.9,
+                    recognizer: pii::Recognizer::Model,
+                }
+            };
+            app.complete_pii_scan(
+                generation,
+                identity,
+                revision,
+                Ok(vec![
+                    det("Tebriz Tagiev", 0, Category::Person),
+                    det("Daniel Okafor", 0, Category::Person),
+                    det("Agreement", 0, Category::Person),
+                    det("Daniel Okafor", 1, Category::Person),
+                    det("+44 20 7946 0958", 0, Category::Phone),
+                ]),
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        app.update_in(cx, |app, window, cx| {
+            let daniel = source.find("Daniel").unwrap();
+            let candidate = app
+                .pii
+                .review
+                .candidates()
+                .iter()
+                .find(|c| c.range.start == daniel)
+                .unwrap()
+                .id;
+            app.activate_annotation(candidate, window, cx);
+            app.pii.mapping.set_scope(scope);
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        // Clicking the alias leaves a caret, not a selection: typing appends.
+        let field = cx.debug_bounds("direct-alias").unwrap();
+        cx.simulate_click(
+            gpui::point(field.right() - px(4.), field.center().y),
+            Default::default(),
+        );
+        cx.run_until_parked();
+        cx.simulate_input("x");
+        cx.run_until_parked();
+        app.update(cx, |app, cx| {
+            assert_eq!(app.pii.mapping.alias.read(cx).value(), "PERSON_2x");
+        });
+        cx.simulate_keystrokes("backspace");
+        cx.run_until_parked();
+        // The menu hangs below the card; press and release it like a real
+        // pointer, with a frame between, so focus may not shift the menu.
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let card = cx.debug_bounds("pseudonym-popup").unwrap();
+        let new_alias = cx.debug_bounds("direct-new-alias").unwrap().center();
+        assert!(new_alias.y > card.bottom());
+        cx.simulate_mouse_down(new_alias, gpui::MouseButton::Left, Default::default());
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        cx.simulate_mouse_up(new_alias, gpui::MouseButton::Left, Default::default());
+        cx.run_until_parked();
+        app.update(cx, |app, cx| {
+            assert!(app.pii.popup.is_some());
+            assert_eq!(app.pii.mapping.alias.read(cx).value(), "PERSON_4");
+        });
+    }
+}
+
+#[gpui::test]
+fn renaming_an_alias_back_frees_its_old_name(cx: &mut gpui::TestAppContext) {
+    let source = "Tebriz Tagiev and Daniel Okafor of Acme. Daniel Okafor at +44 20 7946 0958.";
+    for scope in [
+        mapping::Scope::Mention,
+        mapping::Scope::Wording,
+        mapping::Scope::Entity,
+    ] {
+        let (app, cx) = crate::document_view_tests::boot(cx);
+        app.update(cx, |app, cx| {
+            app.editor.update(cx, |e, cx| e.set_text(source, cx))
+        });
+        cx.run_until_parked();
+        app.update(cx, |app, cx| {
+            let (generation, identity, revision) = install_scan(app, cx);
+            let det = |text: &str, nth: usize, category| {
+                let at = source.match_indices(text).nth(nth).unwrap().0;
+                pii::Detection {
+                    range: at..at + text.len(),
+                    category,
+                    score: 0.9,
+                    recognizer: pii::Recognizer::Model,
+                }
+            };
+            app.complete_pii_scan(
+                generation,
+                identity,
+                revision,
+                Ok(vec![
+                    det("Tebriz Tagiev", 0, Category::Person),
+                    det("Daniel Okafor", 0, Category::Person),
+                    det("Daniel Okafor", 1, Category::Person),
+                    det("+44 20 7946 0958", 0, Category::Phone),
+                ]),
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        let rename = |app: &mut DocumentView,
+                      nth: usize,
+                      alias: &str,
+                      window: &mut Window,
+                      cx: &mut Context<DocumentView>| {
+            let at = source.match_indices("Daniel").nth(nth).unwrap().0;
+            let candidate = app
+                .pii
+                .review
+                .candidates()
+                .iter()
+                .find(|c| c.range.start == at)
+                .unwrap()
+                .id;
+            app.activate_annotation(candidate, window, cx);
+            app.pii.mapping.set_scope(scope);
+            app.pii
+                .mapping
+                .alias
+                .update(cx, |input, cx| input.set_value(alias.into(), cx));
+            app.confirm_alias(false, mapping::Applying::Nothing, cx)
+        };
+        app.update_in(cx, |app, window, cx| {
+            assert!(rename(app, 0, "PERSON_3", window, cx));
+            if scope == mapping::Scope::Mention {
+                // The other mention joins the renamed entity.
+                let target = app
+                    .pii
+                    .review
+                    .active_identities()
+                    .into_iter()
+                    .find(|&i| app.pii.review.identity(i).unwrap().alias == "PERSON_3")
+                    .unwrap();
+                let at = source.match_indices("Daniel").nth(1).unwrap().0;
+                let candidate = app
+                    .pii
+                    .review
+                    .candidates()
+                    .iter()
+                    .find(|c| c.range.start == at)
+                    .unwrap()
+                    .id;
+                app.activate_annotation(candidate, window, cx);
+                app.link_to_entity(target, cx);
+            }
+        });
+        cx.run_until_parked();
+        app.update_in(cx, |app, window, cx| {
+            let renamed = rename(app, 0, "PERSON_2", window, cx);
+            let aliases: Vec<_> = app
+                .pii
+                .review
+                .active_identities()
+                .into_iter()
+                .map(|i| app.pii.review.identity(i).unwrap().alias.clone())
+                .collect();
+            assert!(renamed, "scope {}: {aliases:?}", scope as u8);
+            let mut unique = aliases.clone();
+            unique.sort();
+            unique.dedup();
+            assert_eq!(unique.len(), aliases.len(), "{aliases:?}");
+            assert!(aliases.contains(&"PERSON_2".to_string()));
+        });
+    }
+}

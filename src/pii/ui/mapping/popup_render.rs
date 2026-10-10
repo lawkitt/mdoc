@@ -79,6 +79,22 @@ impl DocumentView {
             cx,
         )
     }
+    /// A floating-menu row: focusable, but it sits outside the card's scroll
+    /// area, so focusing it must not scroll the card (and shift the menu
+    /// between press and release, dropping the click).
+    fn menu_control(
+        &self,
+        id: impl Into<gpui::ElementId>,
+        enabled: bool,
+        cx: &App,
+    ) -> gpui::Stateful<gpui::Div> {
+        let id = id.into();
+        let debug = id.to_string();
+        let focus = self.pii.popup_control_focus(id.clone(), cx);
+        crate::ui::control(id, "", self.theme.get(), enabled)
+            .when(cfg!(test), |v| v.debug_selector(move || debug.clone()))
+            .track_focus(&focus)
+    }
     pub(in crate::pii::ui) fn replacement_popup(
         &self,
         window: &Window,
@@ -152,6 +168,8 @@ impl DocumentView {
             ),
             y.max(available.top()),
         );
+        // Re-recorded by whichever menu paints this frame.
+        mapping.menu_bounds.set(None);
         let mut panel = crate::ui::panel("direct-replacement-popup", theme)
             .when(cfg!(test), |v| {
                 v.debug_selector(|| "pseudonym-popup".into())
@@ -221,12 +239,10 @@ impl DocumentView {
             }))
             .on_mouse_down_out(
                 cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| {
-                    if this
-                        .pii
-                        .mapping
-                        .bounds
-                        .get()
-                        .is_some_and(|b| b.contains(&event.position))
+                    let mapping = &this.pii.mapping;
+                    if [&mapping.bounds, &mapping.menu_bounds]
+                        .iter()
+                        .any(|b| b.get().is_some_and(|b| b.contains(&event.position)))
                     {
                         return;
                     }
@@ -543,6 +559,14 @@ impl DocumentView {
             .flex()
             .flex_col()
             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            // Records where the menu floats, so a press on a part hanging
+            // below the card is not an outside click.
+            .child({
+                let menu_bounds = self.pii.mapping.menu_bounds.clone();
+                gpui::canvas(move |b, _, _| menu_bounds.set(Some(b)), |_, _, _, _| {})
+                    .absolute()
+                    .inset_0()
+            })
     }
     /// A menu row: label left, a muted detail right. `checked` reserves a ✓
     /// column in menus that mark the current choice.
@@ -556,7 +580,7 @@ impl DocumentView {
         cx: &App,
     ) -> gpui::Stateful<gpui::Div> {
         let palette = self.theme.get().pdf_style();
-        self.popup_control(id, "", enabled, cx)
+        self.menu_control(id, enabled, cx)
             .w_full()
             .flex()
             .items_center()
@@ -672,13 +696,19 @@ impl DocumentView {
             })
             .on_mouse_down(
                 gpui::MouseButton::Left,
-                cx.listener(|this, _, _, cx| {
-                    // Select the token so typing replaces it.
+                cx.listener(|this, _, window, cx| {
+                    // A visible caret shows the alias is editable. A press on
+                    // the text already placed it; one on the padding puts it
+                    // at the end.
                     this.pii.mapping.show_alias_choices();
-                    this.pii
-                        .mapping
-                        .alias
-                        .update(cx, |input, cx| input.select_all(cx));
+                    let alias = this.pii.mapping.alias.clone();
+                    let focus = alias.read(cx).focus_handle(cx);
+                    if !focus.is_focused(window) {
+                        window.focus(&focus, cx);
+                        alias.update(cx, |input, cx| input.move_to_end(cx));
+                    }
+                    // Keep the card's own focus-on-press from taking it back.
+                    window.prevent_default();
                     cx.notify();
                 }),
             )
@@ -743,9 +773,8 @@ impl DocumentView {
                                         ..
                                     } = targets[index].clone();
                                     let palette = this.theme.get().pdf_style();
-                                    this.popup_control(
+                                    this.menu_control(
                                         SharedString::from(format!("direct-target-{target}")),
-                                        "",
                                         !this.pii.scanning(),
                                         cx,
                                     )
