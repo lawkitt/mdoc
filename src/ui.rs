@@ -33,16 +33,20 @@ pub fn action_control(
         .px_3()
         .py_1()
         .border_1()
-        .border_color(if primary {
-            theme.search_accent()
-        } else {
-            p.border
-        })
-        .when(primary, |v| {
-            v.bg(theme.sidebar_selected())
-                .text_color(theme.search_accent())
-                .font_weight(gpui::FontWeight::MEDIUM)
-        })
+        .border_color(p.border)
+        .when(primary, |v| outlined(v, theme))
+}
+
+/// The prominent-action look shared by primary and floating buttons: an
+/// outlined button on the window background, in medium weight.
+fn outlined(v: gpui::Stateful<gpui::Div>, theme: Theme) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    v.rounded_lg()
+        .bg(p.bg)
+        .border_1()
+        .border_color(p.border)
+        .text_color(p.header_fg)
+        .font_weight(gpui::FontWeight::MEDIUM)
 }
 
 /// Only mounted while busy. The first phase reserves space without flashing;
@@ -141,7 +145,7 @@ fn card_button(
         .when(!enabled, |v| v.opacity(0.45))
 }
 
-/// The one prominent action of a card or dialog: filled with the accent.
+/// The one prominent action of a card or dialog.
 pub fn primary_button(
     id: impl Into<gpui::ElementId>,
     label: impl Into<gpui::SharedString>,
@@ -149,16 +153,9 @@ pub fn primary_button(
     enabled: bool,
 ) -> gpui::Stateful<gpui::Div> {
     let p = theme.pdf_style();
-    let accent = theme.search_accent();
-    card_button(id, label, enabled)
-        .px_3()
-        .bg(accent)
-        .text_color(p.bg)
-        .font_weight(gpui::FontWeight::MEDIUM)
-        .border_1()
-        .border_color(accent)
+    outlined(card_button(id, label, enabled).px_3(), theme)
         .focus_visible(move |s| s.border_color(p.header_fg))
-        .when(enabled, |v| v.hover(|s| s.opacity(0.88)))
+        .when(enabled, |v| v.hover(move |s| s.bg(p.placeholder_bg)))
 }
 
 /// A tertiary text action, such as "Choose model…".
@@ -391,6 +388,8 @@ pub enum Icon {
     Anonymous,
     Undo,
     Sidebar,
+    Copy,
+    Check,
 }
 
 impl Icon {
@@ -405,6 +404,8 @@ impl Icon {
             Self::Anonymous => include_bytes!("../resources/ui/anonymous.svg"),
             Self::Undo => include_bytes!("../resources/ui/undo.svg"),
             Self::Sidebar => include_bytes!("../resources/ui/sidebar.svg"),
+            Self::Copy => include_bytes!("../resources/ui/copy.svg"),
+            Self::Check => include_bytes!("../resources/ui/check.svg"),
         }
     }
 }
@@ -440,6 +441,36 @@ pub fn icon_button(
                 .size(px(18.))
                 .text_color(theme.pdf_style().header_fg),
         )
+        .tooltip(crate::style::tooltip(label.to_string(), theme))
+}
+
+/// An outlined icon-and-text control that floats over content; `label` is its
+/// tooltip and accessible name, `text` what it shows.
+pub fn floating_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    icon: Icon,
+    text: impl Into<gpui::SharedString>,
+    theme: Theme,
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    let label = label.into();
+    outlined(control_base(id, label.clone(), theme, enabled), theme)
+        .h(px(32.))
+        .px_3()
+        .py_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap(px(6.))
+        .child(
+            gpui::svg()
+                .data(icon.data())
+                .size(px(16.))
+                .text_color(p.header_fg),
+        )
+        .child(text.into())
         .tooltip(crate::style::tooltip(label.to_string(), theme))
 }
 

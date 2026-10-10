@@ -460,7 +460,23 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
 }
 
 #[gpui::test]
-fn copy_markdown_toolbar_uses_active_tab_without_editor_focus(cx: &mut TestAppContext) {
+fn copy_markdown_button_is_inert_while_markdown_is_empty(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    let view = active(&tabs, cx);
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("kept".into()));
+    click_toolbar(cx, "Copy Markdown");
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("kept")
+        );
+        assert!(view.read(cx).copy_feedback.is_none());
+    });
+}
+
+#[gpui::test]
+fn copy_markdown_button_uses_active_tab_without_editor_focus(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
     let first = active(&tabs, cx);
@@ -1746,7 +1762,13 @@ fn main_toolbar_wraps_without_hiding_actions_in_both_themes(cx: &mut TestAppCont
                             && toolbar.contains(&bounds.bottom_right())
                     );
                 }
-                for selector in ["Save", "Save As…", "Pseudonymize", "Copy Markdown"] {
+                // Copy Markdown floats over the editor, below the toolbar.
+                let copy = cx.debug_bounds("Copy Markdown");
+                assert_eq!(copy.is_some(), !source_only);
+                if let Some(copy) = copy {
+                    assert!(copy.top() >= toolbar.bottom() && copy.right() <= px(640.));
+                }
+                for selector in ["Save", "Save As…", "Pseudonymize"] {
                     let bounds = cx.debug_bounds(selector);
                     assert_eq!(bounds.is_some(), !source_only);
                     if let Some(bounds) = bounds {

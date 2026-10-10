@@ -139,24 +139,6 @@ impl DocumentView {
                         })),
                 )
                 .child(self.pii_toolbar_control(cx))
-                .child(
-                    ui::control(
-                        "Copy Markdown",
-                        if self.copy_feedback.is_some() {
-                            "Copied"
-                        } else {
-                            "Copy Markdown"
-                        },
-                        theme,
-                        copy,
-                    )
-                    .bg(theme.sidebar_selected())
-                    .text_color(theme.search_accent())
-                    .when(cfg!(test), |v| v.debug_selector(|| "Copy Markdown".into()))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.copy_markdown(&CopyMarkdown, window, cx)
-                    })),
-                )
             })
             .when(
                 self.source_only
@@ -223,6 +205,34 @@ impl DocumentView {
             .text_size(px(13.))
             .child(commands)
             .child(utilities)
+            .into_any_element()
+    }
+
+    /// Copy Markdown floats in the editor's top-right corner, beside the text it
+    /// copies; it fades while there is no Markdown to copy.
+    pub(super) fn copy_button(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let theme = self.theme.get();
+        let enabled = self.can_copy_markdown() && !self.editor.read(cx).text().is_empty();
+        let (icon, text) = if self.copy_feedback.is_some() {
+            (ui::Icon::Check, "Copied")
+        } else {
+            (ui::Icon::Copy, "Copy")
+        };
+        div()
+            .absolute()
+            .top(px(12.))
+            .right(px(20.))
+            .child(
+                ui::floating_button("Copy Markdown", "Copy Markdown", icon, text, theme, enabled)
+                    // Wide enough for "Copied" so feedback does not resize the button.
+                    .min_w(px(92.))
+                    .when(cfg!(test), |v| v.debug_selector(|| "Copy Markdown".into()))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        if enabled {
+                            this.copy_markdown(&CopyMarkdown, window, cx)
+                        }
+                    })),
+            )
             .into_any_element()
     }
 

@@ -53,8 +53,8 @@ PDF form appearances are rendered; this is a viewer, not a PDF form editor.
 
 ## Files and shortcuts
 
-Use the **Open**, **Save**, **Save As**, and anonymous-person icons alongside
-**Copy Markdown** in the compact toolbar. The anonymous-person icon is
+Use the **Open**, **Save**, **Save As**, and anonymous-person icons in the
+compact toolbar. The anonymous-person icon is
 **Pseudonymize**: it scans once, then shows or hides the review. **Settings** and the sun/moon theme
 control are directly accessible icons with tooltips. **New** is the sidebar plus
 button. Toolbar groups wrap when space is limited; commands remain visible.
@@ -68,8 +68,9 @@ The corresponding shortcuts are Cmd+N/O/S/Shift+S on macOS and
 Ctrl+N/O/S/Shift+S on Windows/Linux. Cmd/Ctrl+W closes the active tab;
 Cmd/Ctrl+Q quits. Ctrl+Tab and Ctrl+Shift+Tab switch tabs.
 
-**Copy Markdown** in the toolbar or File menu copies the complete current
-Markdown source, including unsaved edits, regardless of selection. It adds no
+**Copy** floats in the editor's top-right corner (also **Copy Markdown** in the
+File menu) and copies the complete current Markdown source, including unsaved
+edits, regardless of selection. It fades while the Markdown is empty. It adds no
 wrapper or metadata. Brief **Copied** feedback confirms the handoff; conversion
 warnings remain visible below the toolbar for review.
 

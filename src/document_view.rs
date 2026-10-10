@@ -1520,7 +1520,7 @@ impl Render for DocumentView {
                     } else { div().relative().flex_1().min_w_0().min_h_0()
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6()
                             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))
-                        .child(markdown_scrollbar).children(empty_page.then(|| self.empty_page(cx))).into_any_element() })))
+                        .child(markdown_scrollbar).children(empty_page.then(|| self.empty_page(cx))).child(self.copy_button(cx)).into_any_element() })))
                 // Replacements sit beside the text they describe, before Original.
                 .children(self.replacements_panel(window, cx))
                 .when(self.source_only && show_markdown, |row| row.child(div().id("conversion-pane").flex_1().min_w_0().p_6().flex().items_center().justify_center().overflow_y_scroll()
