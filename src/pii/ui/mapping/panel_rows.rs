@@ -79,12 +79,16 @@ impl DocumentView {
         let id = row.id;
         let muted = self.theme.get().pdf_style().header_muted;
         let hover = RowColors::new(self.theme.get()).hover;
+        // The selected mention keeps its fill under the pointer, one surface
+        // with its inline controls.
+        let selected = matches!(mention, PanelItem::Mention(annotation, _)
+            if self.mention_selected(annotation));
         // Flat, full-width rows: the list cursor drives the keyboard.
         let base = div()
             .id(SharedString::from(format!("replacement-entry-{index}")))
             .role(gpui::Role::Button)
             .cursor_pointer()
-            .hover(move |s| s.bg(hover))
+            .when(!selected, |v| v.hover(move |s| s.bg(hover)))
             .w_full()
             .h(px(48.))
             .line_height(px(17.))
@@ -292,6 +296,11 @@ impl DocumentView {
         .into_any_element()
     }
 
+    fn mention_selected(&self, annotation: u64) -> bool {
+        self.active_annotation() == Some(annotation)
+            && (self.pii.popup.is_some() || self.pii.mapping.panel_selected)
+    }
+
     /// One mention under an expanded header: indented, with its snippet.
     fn mention_row(
         &self,
@@ -304,8 +313,7 @@ impl DocumentView {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let applied = annotation & APPLIED_ID != 0;
-        let current = self.active_annotation() == Some(annotation)
-            && (self.pii.popup.is_some() || self.pii.mapping.panel_selected);
+        let current = self.mention_selected(annotation);
         let original = if applied {
             self.pii
                 .review
@@ -339,6 +347,8 @@ impl DocumentView {
         })
         .pl(px(28.))
         .pr_3()
+        // The selected mention keeps its fill under the pointer so it stays
+        // one surface with its inline controls.
         .when(current, |v| v.bg(RowColors::new(theme).selected))
         .child(guide(if current {
             RowColors::new(theme).guide_selected
