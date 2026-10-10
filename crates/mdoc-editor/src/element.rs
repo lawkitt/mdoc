@@ -11,6 +11,8 @@ pub(crate) struct EditorElement {
 }
 
 pub(crate) struct PrepaintState {
+    /// Text rolls to paint over the text (see [`paint_roll`]).
+    rolls: Vec<Roll>,
     wrapped: Vec<WrappedLine>,
     /// Per-line wrap-row count (see [`EditorState::wrap_rows`]).
     wrap_rows: Vec<usize>,
@@ -1258,6 +1260,10 @@ impl Element for EditorElement {
         let mut annotation_bounds = Vec::new();
         let mut hidden_annotation_hits = Vec::new();
         let mut annotation_counts = Vec::new();
+        let now = std::time::Instant::now();
+        let mut animating = false;
+        // Single-row chips by source range, for text rolls.
+        let mut chips: Vec<(Range<usize>, PaintQuad)> = Vec::new();
         let mask = window.content_mask().bounds;
         let low = mask.top() - px(64.);
         let high = mask.bottom() + px(64.);
@@ -1321,6 +1327,14 @@ impl Element for EditorElement {
                     } else {
                         annotation.color
                     };
+                    let (color, border, mark, active) = flashed(
+                        &editor.annotation_flashes,
+                        annotation.id,
+                        color,
+                        annotation.border,
+                        now,
+                    );
+                    animating |= active;
                     let mut quads = range_quads(
                         annotation.range.start.max(visible.start),
                         annotation.range.end.min(visible.end),
@@ -1328,6 +1342,56 @@ impl Element for EditorElement {
                         window,
                     );
                     quads.retain(|q| q.bounds.size.width > px(1.));
+                    if annotation.border.a > 0. && quads.len() > 1 {
+                        // A start on a soft wrap resolves to the end of the
+                        // previous row; a bordered chip would show that empty
+                        // first band. It is spurious when skipping the first
+                        // character removes a row.
+                        let start = annotation.range.start.max(visible.start);
+                        let next = editor.content[start..]
+                            .chars()
+                            .next()
+                            .map_or(start, |c| start + c.len_utf8());
+                        let end = annotation.range.end.min(visible.end);
+                        if next < end
+                            && range_quads(next, end, color, window)
+                                .iter()
+                                .filter(|q| q.bounds.size.width > px(1.))
+                                .count()
+                                < quads.len()
+                        {
+                            quads.remove(0);
+                        }
+                    }
+                    if annotation.border.a > 0. {
+                        // A chip: rounded and bordered, painted around the
+                        // glyphs without moving them.
+                        for quad in &mut quads {
+                            let b = quad.bounds;
+                            let inset = (b.size.height * 0.1).min(px(3.));
+                            quad.bounds = Bounds::from_corners(
+                                point(b.left() - px(2.), b.top() + inset),
+                                point(b.right() + px(2.), b.bottom() - inset),
+                            );
+                            quad.corner_radii = Corners::all(px(3.));
+                            quad.border_widths = Edges::all(px(1.));
+                            quad.border_color = border;
+                        }
+                    }
+                    if let [chip] = quads.as_slice() {
+                        chips.push((annotation.range.clone(), chip.clone()));
+                    }
+                    if let (Some((text, color, rise)), Some(last)) = (mark, quads.last()) {
+                        let b = last.bounds;
+                        annotation_counts.push((
+                            text,
+                            Bounds::new(
+                                point(b.right() + px(3.), b.top() + px(rise)),
+                                size(px(12.), b.size.height),
+                            ),
+                            color,
+                        ));
+                    }
                     if quads.is_empty() {
                         let (row, col) = row_col(annotation.range.start);
                         let lh = if tables.get(row).and_then(Option::as_ref).is_some() {
@@ -1366,6 +1430,126 @@ impl Element for EditorElement {
             }
         }
         let mut outlines = Vec::new();
+        for (start, flash) in &editor.range_flashes {
+            let t = now.saturating_duration_since(*start).as_secs_f32()
+                / flash.duration.as_secs_f32().max(0.001);
+            if t >= 1. || flash.revision != editor.content_gen {
+                continue;
+            }
+            animating = true;
+            let keep = 1. - smooth(t);
+            for (range, fill, border) in &flash.ranges {
+                if range.start >= range.end
+                    || range.end > editor.content.len()
+                    || !editor.content.is_char_boundary(range.start)
+                    || !editor.content.is_char_boundary(range.end)
+                {
+                    continue;
+                }
+                let fill = Hsla {
+                    a: fill.a * keep,
+                    ..*fill
+                };
+                let border = Hsla {
+                    a: border.a * keep,
+                    ..*border
+                };
+                let before = outlines.len();
+                outlines.extend(
+                    range_quads(range.start, range.end, fill, window)
+                        .into_iter()
+                        .filter(|q| {
+                            q.bounds.size.width > px(1.)
+                                && q.bounds.bottom() > low
+                                && q.bounds.top() < high
+                        })
+                        .map(|q| {
+                            let b = q.bounds;
+                            let inset = (b.size.height * 0.1).min(px(3.));
+                            gpui::quad(
+                                Bounds::from_corners(
+                                    point(b.left() - px(2.), b.top() + inset),
+                                    point(b.right() + px(2.), b.bottom() - inset),
+                                ),
+                                px(3.),
+                                fill,
+                                px(1.),
+                                border,
+                                BorderStyle::Solid,
+                            )
+                        }),
+                );
+                // A ghost is the chip that rolling text sits in.
+                if outlines.len() == before + 1 {
+                    chips.push((range.clone(), outlines[before].clone()));
+                }
+            }
+        }
+        let mut rolls = Vec::new();
+        for (start, roll) in &editor.text_rolls {
+            let t = now.saturating_duration_since(*start).as_secs_f32()
+                / roll.duration.as_secs_f32().max(0.001);
+            if t >= 1. || roll.revision != editor.content_gen {
+                continue;
+            }
+            animating = true;
+            // The previous words leave first; the current ones overlap them
+            // slightly on the way in.
+            let out = smooth(t / 0.55);
+            let into = smooth((t - 0.3) / 0.7);
+            for (range, previous) in &roll.items {
+                if range.start >= range.end
+                    || range.end > editor.content.len()
+                    || !editor.content.is_char_boundary(range.start)
+                    || !editor.content.is_char_boundary(range.end)
+                {
+                    continue;
+                }
+                // Only a single-row span rolls; wrapped text just swaps.
+                let text_quads: Vec<_> = range_quads(range.start, range.end, text_color, window)
+                    .into_iter()
+                    .filter(|q| q.bounds.size.width > px(1.))
+                    .collect();
+                let [text_quad] = text_quads.as_slice() else {
+                    continue;
+                };
+                let glyphs = text_quad.bounds;
+                if glyphs.bottom() <= low || glyphs.top() >= high {
+                    continue;
+                }
+                let chip = chips
+                    .iter()
+                    .find(|(r, _)| r == range)
+                    .map(|(_, q)| q.clone());
+                let shape = |text: SharedString, alpha: f32, window: &mut Window| {
+                    let run = TextRun {
+                        len: text.len(),
+                        font: font.clone(),
+                        color: Hsla {
+                            a: text_color.a * alpha,
+                            ..text_color
+                        },
+                        background_color: None,
+                        underline: None,
+                        strikethrough: None,
+                    };
+                    window
+                        .text_system()
+                        .shape_line(text, font_size, &[run], None)
+                };
+                let current: SharedString = editor.content[range.clone()].to_string().into();
+                rolls.push(Roll {
+                    glyphs,
+                    chip,
+                    surface: roll.surface,
+                    previous: (out < 1.).then(|| (shape(previous.clone(), 1. - out, window), out)),
+                    current: (into > 0.).then(|| (shape(current, into, window), into)),
+                });
+            }
+        }
+        if animating {
+            window.request_animation_frame();
+        }
         if editor.outline_revision == editor.content_gen {
             for (range, color) in &editor.outlines {
                 if range.start >= range.end
@@ -1375,20 +1559,42 @@ impl Element for EditorElement {
                 {
                     continue;
                 }
+                let mut quads: Vec<_> = range_quads(range.start, range.end, *color, window)
+                    .into_iter()
+                    .filter(|q| q.bounds.size.width > px(1.))
+                    .collect();
+                // Like chips: a start on a soft wrap yields an empty first band.
+                if quads.len() > 1 {
+                    let next = editor.content[range.start..]
+                        .chars()
+                        .next()
+                        .map_or(range.start, |c| range.start + c.len_utf8());
+                    if next < range.end
+                        && range_quads(next, range.end, *color, window)
+                            .iter()
+                            .filter(|q| q.bounds.size.width > px(1.))
+                            .count()
+                            < quads.len()
+                    {
+                        quads.remove(0);
+                    }
+                }
+                // A ring that follows the chip's shape with an even 2 px gap.
                 outlines.extend(
-                    range_quads(range.start, range.end, *color, window)
+                    quads
                         .into_iter()
-                        .filter(|q| {
-                            q.bounds.size.width > px(1.)
-                                && q.bounds.bottom() > low
-                                && q.bounds.top() < high
-                        })
+                        .filter(|q| q.bounds.bottom() > low && q.bounds.top() < high)
                         .map(|q| {
+                            let b = q.bounds;
+                            let inset = (b.size.height * 0.1).min(px(3.));
                             gpui::quad(
-                                q.bounds,
-                                px(3.),
+                                Bounds::from_corners(
+                                    point(b.left() - px(4.), b.top() + inset - px(2.)),
+                                    point(b.right() + px(4.), b.bottom() - inset + px(2.)),
+                                ),
+                                px(5.),
                                 gpui::transparent_black(),
-                                px(1.),
+                                px(1.5),
                                 *color,
                                 BorderStyle::Solid,
                             )
@@ -1562,6 +1768,7 @@ impl Element for EditorElement {
             annotation_bounds,
             hidden_annotation_hits,
             annotation_counts,
+            rolls,
         }
     }
 
@@ -1618,7 +1825,12 @@ impl Element for EditorElement {
                 underline: None,
                 strikethrough: None,
             };
-            let line = window.text_system().shape_line(text, px(10.), &[run], None);
+            let size = if !text.chars().all(|c| c.is_ascii_digit()) {
+                px(12.)
+            } else {
+                px(10.)
+            };
+            let line = window.text_system().shape_line(text, size, &[run], None);
             let _ = line.paint(
                 marker.origin + point((marker.size.width - line.width()) / 2., px(1.)),
                 marker.size.height,
@@ -2503,6 +2715,11 @@ impl Element for EditorElement {
                     }
                 }
             });
+        }
+
+        // Text rolls sit over the painted text, inside their chips.
+        for roll in prepaint.rolls.drain(..) {
+            paint_roll(roll, window, cx);
         }
 
         // Hovering an inline link shows a hand, like the reading view (the
@@ -3984,4 +4201,178 @@ mod tests {
         draw_images(&editor, cx, below, &[0, 1]);
         draw_images(&editor, cx, below + px(1.), &[0]);
     }
+}
+
+/// Where a flash peaks, as a fraction of its duration.
+const FLASH_PEAK: f32 = 0.35;
+
+/// Ease-in-out (smoothstep): no jolt at either end.
+fn smooth(x: f32) -> f32 {
+    let x = x.clamp(0., 1.);
+    x * x * (3. - 2. * x)
+}
+
+fn mix(a: Hsla, b: Hsla, t: f32) -> Hsla {
+    let (a, b) = (a.to_rgb(), b.to_rgb());
+    let t = t.clamp(0., 1.);
+    gpui::Rgba {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: a.a + (b.a - a.a) * t,
+    }
+    .into()
+}
+
+/// An annotation's (fill, border, mark (text, colour, rise px), still
+/// animating) at `now` under its latest flash.
+fn flashed(
+    flashes: &[(std::time::Instant, AnnotationFlash)],
+    id: u64,
+    fill: Hsla,
+    border: Hsla,
+    now: std::time::Instant,
+) -> (Hsla, Hsla, Option<(SharedString, Hsla, f32)>, bool) {
+    let Some((start, flash)) = flashes.iter().rev().find(|(_, f)| f.ids.contains(&id)) else {
+        return (fill, border, None, false);
+    };
+    let elapsed = now.saturating_duration_since(*start).as_secs_f32();
+    let total = flash.duration.as_secs_f32().max(0.001);
+    // The mark appears as the colour peaks: it rises 3 px while fading in,
+    // holds, then fades out.
+    let mark = flash.mark.as_ref().and_then(|(text, color)| {
+        let t = elapsed - total * FLASH_PEAK;
+        let (fade_in, hold, fade_out) = (0.25, 0.7, 0.35);
+        let (a, rise) = if t < 0. {
+            return None;
+        } else if t < fade_in {
+            let x = smooth(t / fade_in);
+            (x, 3. * (1. - x))
+        } else if t < fade_in + hold {
+            (1., 0.)
+        } else if t < fade_in + hold + fade_out {
+            (1. - smooth((t - fade_in - hold) / fade_out), 0.)
+        } else {
+            return None;
+        };
+        Some((
+            text.clone(),
+            Hsla {
+                a: color.a * a,
+                ..*color
+            },
+            rise,
+        ))
+    });
+    let t = elapsed / total;
+    if t >= 1. {
+        let active = mark.is_some();
+        return (fill, border, mark, active);
+    }
+    let (f, b) = if t < FLASH_PEAK {
+        let x = smooth(t / FLASH_PEAK);
+        (
+            mix(flash.from.0, flash.peak.0, x),
+            mix(flash.from.1, flash.peak.1, x),
+        )
+    } else {
+        let x = smooth((t - FLASH_PEAK) / (1. - FLASH_PEAK));
+        (mix(flash.peak.0, fill, x), mix(flash.peak.1, border, x))
+    };
+    (f, b, mark, true)
+}
+
+#[cfg(test)]
+mod flash_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn flash_eases_through_peak_to_rest_and_check_passes() {
+        let red: Hsla = rgba(0xff0000ff).into();
+        let blue: Hsla = rgba(0x0000ffff).into();
+        let green: Hsla = rgba(0x00ff00ff).into();
+        let start = Instant::now();
+        let flash = AnnotationFlash {
+            ids: [1].into(),
+            from: (red, red),
+            peak: (blue, blue),
+            duration: Duration::from_millis(1000),
+            mark: Some(("✓".into(), green)),
+        };
+        let flashes = [(start, flash)];
+        let at = |ms| flashed(&flashes, 1, green, green, start + Duration::from_millis(ms));
+        assert_eq!(at(0).0, red, "starts from the proposal colour");
+        assert_eq!(at(0).2, None, "✓ waits for the peak");
+        assert_eq!(at(350).0, blue, "peaks at FLASH_PEAK");
+        assert!(at(500).2.is_some_and(|(_, c, _)| c.a > 0.));
+        let rest = at(1000);
+        assert_eq!(rest.0, green, "settles on the resting colour");
+        assert!(rest.3, "the ✓ still animates after the colour settles");
+        assert!(!at(3000).3, "nothing paints once finished");
+        assert!(
+            !flashed(&flashes, 2, green, green, start).3,
+            "other ids are untouched"
+        );
+    }
+}
+
+/// One rolling span, laid out in prepaint.
+pub(crate) struct Roll {
+    /// The current text's glyph box (one row).
+    glyphs: Bounds<Pixels>,
+    /// The chip painted under it this frame, if any.
+    chip: Option<PaintQuad>,
+    surface: Hsla,
+    /// (shaped text at its alpha, progress 0..1) while visible.
+    previous: Option<(gpui::ShapedLine, f32)>,
+    current: Option<(gpui::ShapedLine, f32)>,
+}
+
+/// Mask the real text with the page and its chip, then paint the previous
+/// words rising out and the current words rising in, clipped to the chip. At
+/// the end the current words sit exactly on the real ones: a seamless hand-off.
+fn paint_roll(roll: Roll, window: &mut Window, cx: &mut App) {
+    let Roll {
+        glyphs,
+        chip,
+        surface,
+        previous,
+        current,
+    } = roll;
+    let lh = glyphs.size.height;
+    let clip = chip.as_ref().map_or(glyphs, |c| c.bounds);
+    window.paint_quad(fill(
+        Bounds::from_corners(
+            point(glyphs.left() - px(1.), clip.top() + px(1.)),
+            point(glyphs.right() + px(1.), clip.bottom() - px(1.)),
+        ),
+        surface,
+    ));
+    if let Some(chip) = chip {
+        window.paint_quad(chip);
+    }
+    let rise = px(6.);
+    window.with_content_mask(Some(gpui::ContentMask { bounds: clip }), |window| {
+        if let Some((line, out)) = previous {
+            let _ = line.paint(
+                point(glyphs.left(), glyphs.top() - rise * out),
+                lh,
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+            );
+        }
+        if let Some((line, into)) = current {
+            let _ = line.paint(
+                point(glyphs.left(), glyphs.top() + rise * (1. - into)),
+                lh,
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+            );
+        }
+    });
 }

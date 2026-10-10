@@ -364,8 +364,8 @@ impl DocumentView {
     /// Outline what the popup's scope (or a hovered chip) covers, or the
     /// selected panel group's mentions (ADR 0025). Display only.
     pub(crate) fn sync_scope_outlines(&mut self, cx: &mut Context<Self>) {
-        let proposed = style::markdown_style(self.theme.get()).alert_warning;
-        let applied = self.theme.get().search_accent();
+        let proposed = self.theme.get().proposed();
+        let applied = self.theme.get().applied();
         let visible = self.pii.reviewing && (self.pii.mapping.open || self.pii.popup.is_some());
         let ranges = match self.selected_entity().filter(|_| visible) {
             Some(_) if self.pii.popup.is_some() => self.scoped_ranges(
@@ -396,7 +396,7 @@ impl DocumentView {
                 } else {
                     proposed
                 };
-                (r, Hsla { a: 0.85, ..color })
+                (r, color)
             })
             .collect();
         self.editor.update(cx, |editor, cx| {
@@ -519,6 +519,7 @@ impl DocumentView {
             }
         };
         let restored = self.pii.review.prepare_restore(&edits);
+        let before = editor.text().to_owned();
         if !self
             .editor
             .update(cx, |e, cx| e.replace_ranges(revision, &edits, cx))
@@ -527,6 +528,7 @@ impl DocumentView {
         }
         let transaction = self.editor.read(cx).last_transaction().cloned().unwrap();
         self.pii_transaction(&transaction, cx);
+        self.roll_replaced(&edits, &before, cx);
         let history = self.editor.read(cx).history_id();
         let review = &mut self.pii.review;
         if keep {
@@ -537,6 +539,20 @@ impl DocumentView {
         review.refresh(self.editor.read(cx).text());
         self.pii.error = None;
         Some(edits)
+    }
+    /// Where `edits` (old range → new text) landed in the edited source.
+    fn edited_ranges(edits: &[(Range<usize>, String)]) -> Vec<Range<usize>> {
+        let mut sorted: Vec<_> = edits.iter().collect();
+        sorted.sort_by_key(|(r, _)| r.start);
+        let mut shift = 0isize;
+        sorted
+            .into_iter()
+            .map(|(r, text)| {
+                let start = r.start.saturating_add_signed(shift);
+                shift += text.len() as isize - r.len() as isize;
+                start..start + text.len()
+            })
+            .collect()
     }
     /// Return applied occurrences to proposals with their aliases, keeping the
     /// popup on the active mention when it was among them.
@@ -553,6 +569,19 @@ impl DocumentView {
             return;
         };
         self.sync_annotations(cx);
+        let restored: std::collections::HashSet<_> = Self::edited_ranges(&edits)
+            .into_iter()
+            .map(|r| (r.start, r.end))
+            .collect();
+        let proposals = self
+            .pii
+            .review
+            .candidates()
+            .iter()
+            .filter(|c| restored.contains(&(c.range.start, c.range.end)))
+            .map(|c| c.id)
+            .collect();
+        self.flash_unapplied(proposals, cx);
         if self.pii.popup.is_some() {
             self.restore_active_replacement(active, &edits, cx);
         } else {
@@ -575,7 +604,9 @@ impl DocumentView {
         if count == 0 {
             return;
         }
+        let mut faded: Vec<(Range<usize>, bool)> = Vec::new();
         if applied.is_empty() {
+            faded.extend(candidates.iter().map(|(_, r)| (r.clone(), false)));
             if self
                 .checkpoint_review(cx, |review| review.keep_mentions(candidates))
                 .is_none()
@@ -586,24 +617,30 @@ impl DocumentView {
             let Some(edits) = self.revert_applied(&applied.into_iter().collect(), true, cx) else {
                 return;
             };
-            let shifted = candidates.into_iter().map(|(group, range)| {
-                let shift: isize = edits
-                    .iter()
-                    .filter(|(r, _)| r.end <= range.start)
-                    .map(|(r, text)| text.len() as isize - r.len() as isize)
-                    .sum();
-                (
-                    group,
-                    range.start.saturating_add_signed(shift)
-                        ..range.end.saturating_add_signed(shift),
-                )
-            });
+            faded.extend(Self::edited_ranges(&edits).into_iter().map(|r| (r, true)));
+            let shifted: Vec<_> = candidates
+                .into_iter()
+                .map(|(group, range)| {
+                    let shift: isize = edits
+                        .iter()
+                        .filter(|(r, _)| r.end <= range.start)
+                        .map(|(r, text)| text.len() as isize - r.len() as isize)
+                        .sum();
+                    (
+                        group,
+                        range.start.saturating_add_signed(shift)
+                            ..range.end.saturating_add_signed(shift),
+                    )
+                })
+                .collect();
+            faded.extend(shifted.iter().map(|(_, r)| (r.clone(), false)));
             self.pii.review.keep_mentions(shifted);
         }
         let history = self.editor.read(cx).history_id();
         self.pii.mapping.record_kept(count, history);
         self.pii.dismiss_popup();
         self.sync_annotations(cx);
+        self.fade_out_kept(faded, cx);
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(None, cx));
         window.focus(&self.editor.read(cx).focus_handle(cx), cx);

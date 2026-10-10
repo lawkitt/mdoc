@@ -47,6 +47,24 @@ impl Theme {
         .into()
     }
 
+    /// A proposed replacement: warm gold chips, rings and markers.
+    pub fn proposed(self) -> Hsla {
+        match self {
+            Self::Dark => rgb(0xdfc07c),
+            Self::Light => rgb(0x9a7516),
+        }
+        .into()
+    }
+
+    /// An applied replacement: blue chips, rings, badges and aliases.
+    pub fn applied(self) -> Hsla {
+        match self {
+            Self::Dark => rgb(0x6aa7f5),
+            Self::Light => rgb(0x2f6bd0),
+        }
+        .into()
+    }
+
     pub fn sidebar_bg(self) -> Hsla {
         match self {
             Self::Dark => rgb(0x1b1b1f),

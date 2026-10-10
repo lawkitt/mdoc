@@ -40,7 +40,7 @@ placeholders while retaining useful relationships in the text. It does not
 guarantee that the document's subjects cannot be identified. It is the only PII
 replacement behavior ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)):
 scanning proposes, explicit Apply replaces as one undo step. Applied fields stay
-highlighted (teal; proposals are amber) and clickable. Apply also works per
+highlighted (blue; proposals are gold, `Theme::applied`/`Theme::proposed`) and clickable. Apply also works per
 popup scope. **Undo replacement** returns applied text to a proposal with the
 same alias; **Keep original** reverts and records a Keep decision. Both travel
 with text undo/redo ([ADR 0023](docs/adr/0023-pseudonymization-ui-polish.md)). Originals live only in the open document; Save does not serialize them.
@@ -112,6 +112,18 @@ A thin outline in the editor around the mentions a selected panel group or
 popup scope chip would affect; display only
 ([ADR 0025](docs/adr/0025-review-refinements.md)).
 
+**Replacement chip**:
+The rounded, bordered highlight of a mention in the editor: gold when
+proposed, blue when applied. On Apply it eases from gold to blue while the
+words roll inside the chip ([ADR 0032](docs/adr/0032-replacement-popup-redesign.md)).
+
+**Scan status**:
+The spinner and stage label beside Pseudonymize while a scan runs, crossfading
+through Reading… → Analyzing… → Finding names… → Linking mentions…. The scan
+reports no progress, so stages are timed, not measured
+([ADR 0032](docs/adr/0032-replacement-popup-redesign.md)).
+_Avoid_: progress, percentages, skeletons over existing text
+
 **Other category**:
 The neutral category for manually added text with no recognisable shape;
 placeholder `REDACTED_n`. Manual additions only; the detector never emits it.
@@ -149,7 +161,9 @@ it adds no relationship legend and never implicitly applies replacements.
 Owner assignments remain local. The panel stays vertical directly right of the
 Markdown editor (before Original, ADR 0023) with compact rows and full
 document-area height. One popup **scope** (This mention / Same wording / Entire
-entity) governs alias, category, Apply, Undo and Keep actions. Its width adapts to the window; the
+entity; _UI label_ `Apply to: This one · Same wording · All variants`, shortened
+to `This one · All N` when only two differ, ADR 0032) governs alias, category,
+Apply, Undo and Keep actions. Its width adapts to the window; the
 Original preview switches panes when the remaining document area is narrow,
 keeping the word popup available beside the panel.
 **Same wording** affects matching originals still assigned to the selected entity;
