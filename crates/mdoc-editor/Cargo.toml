@@ -36,9 +36,9 @@ mdoc-history = { path = "../mdoc-history" }
 gpui = { workspace = true, features = ["test-support"] }
 gpui_platform = { workspace = true }
 
-# The demo wires the editor to the real OS spell checker (M6). Dev-only, so the
-# editor crate itself stays host-agnostic and free of any OS-FFI dependency.
-os-spellcheck = { path = "../os-spellcheck" }
+# The demo wires the editor to the app's spell checker (ADR 0036). Dev-only,
+# so the editor crate itself stays host-agnostic.
+mdoc-spell = { path = "../mdoc-spell" }
 
 # A runnable, standalone demo window: `cargo run -p mdoc-editor --example demo`.
 [[example]]

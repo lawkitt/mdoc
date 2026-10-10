@@ -36,8 +36,8 @@ use gpui::{
     Focusable, Font, FontWeight, GlobalElementId, Hitbox, HitboxBehavior, Hsla, InspectorElementId,
     InteractiveElement, IntoElement, KeyBinding, LayoutId, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement, PathBuilder, Pixels, Point, Render,
-    RenderImage, ScrollHandle, SharedString, StatefulInteractiveElement, Style, Styled, TextRun,
-    Window, WrappedLine, actions, div, fill, hsla, point, px, relative, rgb, rgba, size,
+    RenderImage, ScrollHandle, SharedString, StatefulInteractiveElement, Style, Styled, Task,
+    TextRun, Window, WrappedLine, actions, div, fill, hsla, point, px, relative, rgb, rgba, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -48,6 +48,8 @@ pub use markdown_syntax::SyntaxStyle;
 mod search;
 mod search_geometry;
 pub use search::{SearchIndex, SearchMatch};
+mod spell_exclusions;
+pub use spell_exclusions::spell_exclusions;
 
 mod input;
 use input::{EditKind, Snapshot};
@@ -246,6 +248,8 @@ struct DiagMenu {
     /// The diagnostic's byte range, replaced when a suggestion is chosen.
     range: Range<usize>,
     suggestions: Vec<SharedString>,
+    /// Suggestions are still being computed by the host (off the UI thread).
+    suggesting: bool,
     /// Scroll state of the (capped-height) list, so a thumb can track it.
     scroll: ScrollHandle,
     /// Whether the "Turn into" flyout is open (hover-opened; dies with the menu).
@@ -529,6 +533,10 @@ pub enum EditorEvent {
     MiddleClickAnnotation(u64, gpui::Modifiers),
     /// Several hidden fields share a gutter indicator; the host offers a chooser.
     ActivateAnnotations(Vec<u64>),
+    /// One of the host's diagnostic actions (see
+    /// [`EditorState::set_diagnostic_actions`]) was chosen for a flagged word:
+    /// the action's index and the word. The text is untouched.
+    DiagnosticAction(usize, String),
 }
 
 /// A table column's text alignment, for the host-driven alignment toolbar
@@ -541,8 +549,9 @@ pub(crate) enum CellAlign {
 }
 
 /// Provides replacement suggestions for a flagged word (best first); set by the
-/// host via [`EditorState::on_suggest`] and consulted on right-click.
-type SuggestFn = Box<dyn Fn(&str) -> Vec<String>>;
+/// host via [`EditorState::on_suggest`] and consulted on right-click. Returns
+/// a task so the host can compute them off the UI thread.
+type SuggestFn = Box<dyn Fn(&str, &mut App) -> Task<Vec<String>>>;
 
 /// Resolves a standalone image line's `src` to a decoded image so the editor can
 /// render it inline (W4). Set by the host via
@@ -694,6 +703,10 @@ pub struct EditorState {
     /// the user right-clicks it. Set by the host via [`Self::on_suggest`];
     /// without it, the right-click menu has nothing to offer.
     suggest: Option<SuggestFn>,
+    /// Host actions offered under a flagged word's suggestions (e.g. Ignore).
+    diagnostic_actions: Vec<SharedString>,
+    /// The pending suggestion lookup for the open menu; dropping it cancels.
+    suggest_task: Option<Task<()>>,
     /// Resolves a standalone image line's `src` to a decoded image for inline
     /// rendering (W4); set by the host via [`Self::set_block_image_provider`].
     block_image: Option<BlockImageFn>,
@@ -874,6 +887,8 @@ impl EditorState {
             table_menu_scroll: ScrollHandle::new(),
             image_menu: None,
             suggest: None,
+            diagnostic_actions: Vec::new(),
+            suggest_task: None,
             block_image: None,
             block_chip: None,
             chip_rows: Vec::new(),
@@ -1111,6 +1126,11 @@ impl EditorState {
         cx.notify();
     }
 
+    /// The current diagnostics, remapped through edits since they were set.
+    pub fn diagnostics(&self) -> &[Diagnostic] {
+        &self.diagnostics
+    }
+
     /// Turn on WYSIWYG (live-preview) markdown styling with the given
     /// color/font palette (call once at setup). Inline formatting then renders
     /// as you type — markers stay in the text, dimmed. Without it the editor is
@@ -1121,11 +1141,18 @@ impl EditorState {
     }
 
     /// Install the provider consulted when the user right-clicks a flagged word.
-    /// It's handed the offending word and returns replacements (best first).
-    /// Kept lazy by design — the OS suggestion call can be slow, so it runs only
-    /// on right-click, never in the per-edit detection pass.
-    pub fn on_suggest(&mut self, provider: impl Fn(&str) -> Vec<String> + 'static) {
+    /// It's handed the offending word and returns a task resolving to
+    /// replacements (best first). Kept lazy by design — suggestion lookups can
+    /// be slow, so they run only on right-click, never in the per-edit
+    /// detection pass; the menu shows a pending row until the task resolves.
+    pub fn on_suggest(&mut self, provider: impl Fn(&str, &mut App) -> Task<Vec<String>> + 'static) {
         self.suggest = Some(Box::new(provider));
+    }
+
+    /// Actions offered for a flagged word in the right-click menu, below its
+    /// suggestions; choosing one emits [`EditorEvent::DiagnosticAction`].
+    pub fn set_diagnostic_actions(&mut self, actions: Vec<SharedString>) {
+        self.diagnostic_actions = actions;
     }
 
     /// Install the provider that resolves a standalone image line's `src` to a
@@ -2106,6 +2133,7 @@ impl EditorState {
                     anchor: event.position,
                     range: offset..offset,
                     suggestions: Vec::new(),
+                    suggesting: false,
                     scroll: ScrollHandle::new(),
                     turn_into: false,
                 });
@@ -2130,18 +2158,32 @@ impl EditorState {
         self.focus(window, cx);
         // Suggestions when the click lands on a flagged word; the clipboard
         // verbs (Cut / Copy / Paste) ride along either way.
-        let (range, suggestions) = match self.diagnostic_at(offset).map(|d| d.range.clone()) {
-            Some(range) => {
-                let word = self.content[range.clone()].to_string();
-                let suggestions = self.suggest.as_ref().map(|f| f(&word)).unwrap_or_default();
-                (range, suggestions)
-            }
-            None => (offset..offset, Vec::new()),
-        };
+        let diagnostic = self.diagnostic_at(offset).map(|d| d.range.clone());
+        self.suggest_task = None;
+        let mut suggesting = false;
+        if let (Some(range), Some(provider)) = (diagnostic.clone(), self.suggest.as_ref()) {
+            let word = self.content[range.clone()].to_string();
+            let lookup = provider(&word, cx);
+            suggesting = true;
+            self.suggest_task = Some(cx.spawn(async move |editor, cx| {
+                let suggestions = lookup.await;
+                let _ = editor.update(cx, |editor, cx| {
+                    // The menu may have closed or moved to another word meanwhile.
+                    if let Some(menu) = editor.menu.as_mut().filter(|m| m.range == range) {
+                        menu.suggestions =
+                            suggestions.into_iter().map(SharedString::from).collect();
+                        menu.suggesting = false;
+                        cx.notify();
+                    }
+                });
+            }));
+        }
+        let range = diagnostic.unwrap_or(offset..offset);
         self.menu = Some(DiagMenu {
             anchor,
             range,
-            suggestions: suggestions.into_iter().map(SharedString::from).collect(),
+            suggestions: Vec::new(),
+            suggesting,
             scroll: ScrollHandle::new(),
             turn_into: false,
         });
@@ -3322,10 +3364,17 @@ impl Render for EditorState {
                     anchor,
                     range,
                     suggestions,
+                    suggesting,
                     scroll,
                     turn_into: menu_turn_into,
                 } = menu;
                 let count = suggestions.len();
+                // A flagged word without rows yet says why: still looking, or none.
+                let status = (count == 0 && !range.is_empty()).then_some(if suggesting {
+                    "Finding suggestions…"
+                } else {
+                    "No suggestions"
+                });
                 // Menu chrome from the host's theme (fallbacks match the former
                 // hardcoded dark menu when no markdown style is set).
                 let st = self.markdown_style.as_ref();
@@ -3335,6 +3384,34 @@ impl Render for EditorState {
                 let hover = st.map_or(rgba(0x2f6fd628).into(), |s| s.popover_hover);
                 let mut thumb_c = st.map_or(rgba(0xffffff66).into(), |s| s.marker);
                 thumb_c.a = 0.5;
+                // Host actions for the flagged word (Ignore, Add to dictionary).
+                let has_actions = !range.is_empty() && !self.diagnostic_actions.is_empty();
+                let diagnostic_actions = has_actions.then(|| {
+                    let word = self.content[range.clone()].to_string();
+                    self.diagnostic_actions
+                        .iter()
+                        .enumerate()
+                        .map(|(i, label)| {
+                            let word = word.clone();
+                            div()
+                                .id(("diagnostic-action", i))
+                                .flex_shrink_0()
+                                .px(px(10.))
+                                .py(px(3.))
+                                .hover(move |s| s.bg(hover))
+                                .child(label.clone())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener(move |editor, _: &MouseDownEvent, _, cx| {
+                                        cx.stop_propagation();
+                                        editor.menu = None;
+                                        cx.emit(EditorEvent::DiagnosticAction(i, word.clone()));
+                                        cx.notify();
+                                    }),
+                                )
+                        })
+                        .collect::<Vec<_>>()
+                });
                 // Collected eagerly (not a lazy iterator) so `cx` is only
                 // borrowed here and stays free for the menu's own listeners below.
                 let rows: Vec<_> = suggestions
@@ -3687,7 +3764,26 @@ impl Render for EditorState {
                                         .py(px(PAD))
                                         .children(rows)
                                 }))
-                                .children((count > 0).then(|| div().h(px(1.)).bg(menu_border)))
+                                .children(status.map(|label| {
+                                    div()
+                                        .px(px(10.))
+                                        .py(px(7.))
+                                        .text_color(Hsla {
+                                            a: menu_fg.a * 0.55,
+                                            ..menu_fg
+                                        })
+                                        .child(label)
+                                }))
+                                .children(
+                                    (count > 0 || status.is_some())
+                                        .then(|| div().h(px(1.)).bg(menu_border)),
+                                )
+                                .children(
+                                    diagnostic_actions.map(|rows| {
+                                        div().flex().flex_col().py(px(4.)).children(rows)
+                                    }),
+                                )
+                                .children(has_actions.then(|| div().h(px(1.)).bg(menu_border)))
                                 .child(clipboard)
                                 .child(div().h(px(1.)).bg(menu_border))
                                 .child(div().flex().flex_col().py(px(4.)).child(turn_row))

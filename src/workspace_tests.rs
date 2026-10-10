@@ -2297,3 +2297,124 @@ fn file_drag_over_collapsed_rail_reveals_the_list(cx: &mut TestAppContext) {
         assert_eq!(tabs.read(cx).sidebar_choice, Some(false));
     });
 }
+
+#[gpui::test]
+fn spelling_icon_badge_menu_switches_document_and_turns_off(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            editor.set_text("Frist and secnd words.", cx)
+        });
+    });
+    cx.run_until_parked();
+    draw(cx);
+    assert!(
+        cx.debug_bounds("spelling-badge").is_some(),
+        "badge counts flags"
+    );
+
+    click_toolbar(cx, "spelling-indicator");
+    cx.update(|_, cx| assert!(view.read(cx).spelling.menu_open));
+    click_toolbar(cx, "spelling-document");
+    cx.update(|_, cx| {
+        assert!(view.read(cx).spelling.off_here);
+        assert!(!view.read(cx).spelling.menu_open);
+        assert!(view.read(cx).editor.read(cx).diagnostics().is_empty());
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("spelling-badge").is_none());
+
+    // A second click on the icon closes an open menu.
+    click_toolbar(cx, "spelling-indicator");
+    click_toolbar(cx, "spelling-indicator");
+    cx.update(|_, cx| assert!(!view.read(cx).spelling.menu_open));
+
+    // Turn off saves the global switch; the icon stays, faded, without a badge.
+    click_toolbar(cx, "spelling-indicator");
+    click_toolbar(cx, "spelling-document");
+    click_toolbar(cx, "spelling-indicator");
+    click_toolbar(cx, "spelling-off");
+    cx.update(|_, cx| {
+        let prefs = view.read(cx).preferences.borrow().snapshot().unwrap();
+        assert!(!prefs.spelling.enabled);
+        assert!(view.read(cx).editor.read(cx).diagnostics().is_empty());
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("spelling-indicator").is_some());
+    assert!(cx.debug_bounds("spelling-badge").is_none());
+
+    // Turn on restores checking and the badge.
+    click_toolbar(cx, "spelling-indicator");
+    click_toolbar(cx, "spelling-on");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let prefs = view.read(cx).preferences.borrow().snapshot().unwrap();
+        assert!(prefs.spelling.enabled);
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("spelling-badge").is_some());
+}
+
+#[gpui::test]
+fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mut TestAppContext) {
+    cx.update(settings_ui::bind_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
+    let shared = cx.update(|_, cx| panel.read(cx).shared.clone());
+    let words: std::collections::BTreeSet<String> =
+        (0..300).map(|i| format!("word{i:03}")).collect();
+    cx.update(|_, cx| settings::Store::set_words(&shared, words, cx));
+    click_toolbar(cx, "Settings");
+    panel.update_in(cx, |panel, window, cx| panel.open_dictionary(window, cx));
+    draw(cx);
+    // Only the visible rows exist.
+    assert!(cx.debug_bounds("remove-word-0").is_some());
+    assert!(cx.debug_bounds("remove-word-250").is_none());
+
+    let query = cx.update(|_, cx| panel.read(cx).dictionary.as_ref().unwrap().query.clone());
+    let type_query = |cx: &mut VisualTestContext, text: &str| {
+        query.update(cx, |query, cx| {
+            query.set_value(text.into(), cx);
+            cx.emit(markdown_search::SearchInputEvent::Changed);
+        });
+        draw(cx);
+    };
+    type_query(cx, "word29");
+    assert!(
+        cx.debug_bounds("remove-word-9").is_some(),
+        "word290..word299"
+    );
+    assert!(cx.debug_bounds("remove-word-10").is_none());
+    // Not itself a stored word, so it can be added.
+    assert!(cx.debug_bounds("add-dictionary-word").is_some());
+    type_query(cx, "word290");
+    assert!(
+        cx.debug_bounds("add-dictionary-word").is_none(),
+        "exact match"
+    );
+
+    // A new word: Add, then the field clears.
+    type_query(cx, "Tebriz");
+    click_toolbar(cx, "add-dictionary-word");
+    cx.update(|_, cx| {
+        assert!(shared.borrow().words.words.contains("Tebriz"));
+        assert!(query.read(cx).value().is_empty());
+    });
+
+    // Remove the first word, then Undo restores it.
+    type_query(cx, "");
+    click_toolbar(cx, "remove-word-0");
+    cx.update(|_, _| assert!(!shared.borrow().words.words.contains("Tebriz")));
+    click_toolbar(cx, "undo-remove-word");
+    cx.update(|_, _| assert!(shared.borrow().words.words.contains("Tebriz")));
+
+    // Escape leaves the dictionary first, then Settings.
+    cx.dispatch_action(settings_ui::CloseSettings);
+    cx.update(|_, cx| {
+        assert!(panel.read(cx).dictionary.is_none());
+        assert!(panel.read(cx).open);
+    });
+}

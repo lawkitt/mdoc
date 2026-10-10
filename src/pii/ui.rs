@@ -316,6 +316,8 @@ impl DocumentView {
             editor.set_annotations(editor.revision(), annotations, cx)
         });
         self.sync_selection_action(cx);
+        // Entity and alias spans feed spelling exclusions.
+        self.schedule_spellcheck(false, cx);
     }
     pub(crate) fn pseudonymize(
         &mut self,

@@ -396,6 +396,7 @@ pub enum Icon {
     Copy,
     Check,
     Ocr,
+    Spelling,
 }
 
 impl Icon {
@@ -418,6 +419,7 @@ impl Icon {
             Self::Copy => include_bytes!("../resources/ui/copy.svg"),
             Self::Check => include_bytes!("../resources/ui/check.svg"),
             Self::Ocr => include_bytes!("../resources/ui/ocr.svg"),
+            Self::Spelling => include_bytes!("../resources/ui/spelling.svg"),
         }
     }
 }
@@ -441,7 +443,19 @@ pub fn icon_button(
     enabled: bool,
 ) -> gpui::Stateful<gpui::Div> {
     let label = label.into();
-    control_base(id, label.clone(), theme, enabled)
+    untipped_icon_button(id, label.clone(), icon, theme, enabled)
+        .tooltip(crate::style::tooltip(label.to_string(), theme))
+}
+/// [`icon_button`] without its tooltip, for controls that sometimes hide it
+/// (e.g. while their own menu is open). `label` is the accessible name.
+pub fn untipped_icon_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    icon: Icon,
+    theme: Theme,
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    control_base(id, label, theme, enabled)
         .p_0()
         .size(px(32.))
         .flex()
@@ -453,7 +467,6 @@ pub fn icon_button(
                 .size(px(18.))
                 .text_color(theme.pdf_style().header_fg),
         )
-        .tooltip(crate::style::tooltip(label.to_string(), theme))
 }
 
 /// An outlined icon-and-text control that floats over content; `label` is its

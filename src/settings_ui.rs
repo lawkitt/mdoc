@@ -8,6 +8,8 @@ use crate::{
 use gpui::{AnyElement, FocusHandle, MouseButton, actions};
 use std::time::Duration;
 
+mod dictionary;
+
 actions!(
     model_settings,
     [CloseSettings, NextSettingsField, PreviousSettingsField]
@@ -62,6 +64,8 @@ pub struct Panel {
     checking: bool,
     scroll: gpui::ScrollHandle,
     controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
+    /// The user dictionary view, replacing the Settings body while open.
+    pub dictionary: Option<dictionary::DictionaryView>,
 }
 impl gpui::EventEmitter<Event> for Panel {}
 pub fn bind_keys(cx: &mut App) {
@@ -70,6 +74,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("tab", NextSettingsField, Some("ModelSettings")),
         KeyBinding::new("shift-tab", PreviousSettingsField, Some("ModelSettings")),
     ]);
+    dictionary::bind_keys(cx);
 }
 fn field(value: &str, cx: &mut Context<Panel>) -> Entity<SearchInput> {
     cx.new(|cx| {
@@ -191,6 +196,7 @@ impl Panel {
             checking: false,
             scroll: gpui::ScrollHandle::new(),
             controls: Default::default(),
+            dictionary: None,
         }
     }
     pub fn show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -278,6 +284,7 @@ impl Panel {
     pub fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.refresh_watch = None;
         self.open = false;
+        self.dictionary = None;
         // Unsaved numeric text is discarded; saved choices already apply.
         self.draft = self.shared.borrow().current.clone().unwrap_or_default();
         self.update_fields(cx);
@@ -395,6 +402,14 @@ impl Panel {
         self.error = None;
         self.persist(cx);
     }
+    /// Save spelling choices made outside the dialog (the toolbar's Turn off).
+    pub fn set_spelling(&mut self, spelling: SpellingConfig, cx: &mut Context<Self>) {
+        if self.applying || self.draft.spelling == spelling {
+            return;
+        }
+        self.draft.spelling = spelling;
+        self.persist(cx);
+    }
     /// Atomically save `draft`. A failure restores the previous choices.
     fn persist(&mut self, cx: &mut Context<Self>) {
         let prefs = self.draft.clone();
@@ -421,6 +436,7 @@ impl Panel {
                             this.draft.ocr.model = previous.ocr.model;
                             this.draft.ocr.dpi = previous.ocr.dpi;
                             this.draft.pseudonymization.model = previous.pseudonymization.model;
+                            this.draft.spelling = previous.spelling;
                         }
                         this.error = Some(format!(
                             "Could not save settings: {e}. Previous defaults remain active."
@@ -534,6 +550,47 @@ impl Panel {
         cx.notify();
     }
     /// A section's description, plus the shared runtime it still needs.
+    /// Spelling choices save at once, like model choices (ADR 0036).
+    fn spelling_section(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme.pdf_style();
+        let accent = theme.search_accent();
+        let spelling = self.draft.spelling;
+        let toggle = |id: &'static str,
+                      label: &'static str,
+                      on: bool,
+                      enabled: bool,
+                      flip: fn(&mut SpellingConfig),
+                      cx: &mut Context<Self>| {
+            let enabled = enabled && !self.applying;
+            self.scrolled_control(id, label, theme, enabled, cx)
+                .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+                .aria_toggled(if on {
+                    gpui::Toggled::True
+                } else {
+                    gpui::Toggled::False
+                })
+                .when(on, |v| v.border_color(accent).text_color(accent))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if enabled && !this.applying {
+                        flip(&mut this.draft.spelling);
+                        this.persist(cx);
+                    }
+                }))
+        };
+        let on = spelling.enabled;
+        div().flex().flex_col().gap_2().mt_4()
+            .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Spelling"))
+            .child(div().text_size(px(11.)).text_color(p.header_muted).child("Flags likely typos and recognition errors in the Markdown. Code, links and detected names are skipped."))
+            .child(div().flex().flex_wrap().items_center().gap_2()
+                .child(toggle("spelling-enabled", "Check spelling", on, true, |s| s.enabled = !s.enabled, cx))
+                .child(toggle("spelling-english", "English", spelling.english, on, |s| s.english = !s.english, cx))
+                .child(toggle("spelling-russian", "Russian", spelling.russian, on, |s| s.russian = !s.russian, cx)))
+            .child(div().flex().flex_wrap().items_center().gap_2()
+                .child(toggle("spelling-caps", "Check ALL-CAPS words", spelling.check_all_caps, on, |s| s.check_all_caps = !s.check_all_caps, cx))
+                .child(toggle("spelling-digits", "Check words with digits", spelling.check_digits, on, |s| s.check_digits = !s.check_digits, cx)))
+            .child(self.dictionary_summary(theme, cx))
+            .into_any_element()
+    }
     fn section_note(&self, text: &str, model: Model) -> String {
         match self.pending[Self::index(model)].runtime {
             0 => text.to_owned(),
@@ -680,7 +737,7 @@ impl Render for Panel {
                 .max_h((window.viewport_size().height - px(32.)).max(px(160.)))
                 .flex().flex_col().rounded_lg().shadow_lg().bg(p.bg).text_color(p.header_fg).text_size(px(13.))
                 .border_1().border_color(p.border)
-                .on_action(cx.listener(|this, _: &CloseSettings, w, cx| this.close(w, cx)))
+                .on_action(cx.listener(|this, _: &CloseSettings, w, cx| if this.dictionary.is_some() { this.close_dictionary(w, cx) } else { this.close(w, cx) }))
                 .on_action(|_: &New, _, cx| cx.stop_propagation())
                 .on_action(|_: &Open, _, cx| cx.stop_propagation())
                 .on_action(|_: &Close, _, cx| cx.stop_propagation())
@@ -697,10 +754,16 @@ impl Render for Panel {
                 }))
                 .on_action(cx.listener(|this, _: &ui::NextControl, w, cx| { ui::cycle(w, cx, Some(&this.focus), false); cx.stop_propagation(); }))
                 .on_action(cx.listener(|this, _: &ui::PreviousControl, w, cx| { ui::cycle(w, cx, Some(&this.focus), true); cx.stop_propagation(); }))
-                .child(div().px_4().pt_4().pb_3().flex().flex_col().gap_1().flex_shrink_0()
+                .when(self.dictionary.is_some(), |v| v.h(px(560.)).child(div().px_4().pt_4().pb_3().flex().flex_col().gap_1().flex_shrink_0()
+                    .child(div().flex().items_center().gap_2()
+                        .child(quiet_control("close-dictionary", "← Settings", theme, true).when(cfg!(test), |v| v.debug_selector(|| "close-dictionary".into())).on_click(cx.listener(|this, _, w, cx| this.close_dictionary(w, cx))))
+                        .child(div().text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).child("Your dictionary")))
+                    .child(div().text_size(px(12.)).text_color(p.header_muted).child("Spellcheck accepts these words in every document. Exact spellings; a lowercase word also accepts its capitalized form."))))
+                .when(self.dictionary.is_some(), |v| v.child(self.dictionary_body(theme, cx)))
+                .when(self.dictionary.is_none(), |v| v.child(div().px_4().pt_4().pb_3().flex().flex_col().gap_1().flex_shrink_0()
                     .child(div().text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).child("Settings"))
-                    .child(div().text_size(px(12.)).text_color(p.header_muted).child("Models run on this computer. Choices apply to your next run.")))
-                .child(div().id("settings-scroll").when(cfg!(test), |v| v.debug_selector(|| "settings-scroll".into())).track_scroll(&self.scroll).overflow_y_scroll().min_h_0().flex_1().px_4().pb_3()
+                    .child(div().text_size(px(12.)).text_color(p.header_muted).child("Models run on this computer. Choices apply to your next run."))))
+                .when(self.dictionary.is_none(), |v| v.child(div().id("settings-scroll").when(cfg!(test), |v| v.debug_selector(|| "settings-scroll".into())).track_scroll(&self.scroll).overflow_y_scroll().min_h_0().flex_1().px_4().pb_3()
                     .child(div().flex().flex_col().gap_2()
                         .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Text recognition"))
                         .child(div().text_size(px(11.)).text_color(p.header_muted).child(self.section_note("Reads scanned pages. English is supported now; more languages will follow.", Model::Ocr(self.draft.ocr.model))))
@@ -731,12 +794,13 @@ impl Render for Panel {
                             .child(div().flex_1().text_size(px(11.)).text_color(p.header_muted).child("Values range from 0 to 1. Higher thresholds return fewer candidates."))
                             .child(self.scrolled_control("apply-settings", if self.applying { "Saving…" } else { "Save" }, theme, !self.applying && changed, cx)
                                 .when(cfg!(test), |v| v.debug_selector(|| "settings-apply".into()))
-                                .on_click(cx.listener(move |this, _, _, cx| { if changed && !this.applying { this.apply(cx); } })))))))
+                                .on_click(cx.listener(move |this, _, _, cx| { if changed && !this.applying { this.apply(cx); } }))))))
+                    .child(self.spelling_section(theme, cx))))
                 .when_some(self.error.clone(), |v, e| v.child(div().px_4().pb_3().text_size(px(12.)).text_color(style::markdown_style(theme).alert_warning).child(e)))
                 // Another app job (a scan or comparison) holds the model slot.
                 .when_some(model_work::description().filter(|_| self.working.is_none() && !self.checking), |v, work| v.child(ui::activity("model-work-activity", work, theme).px_4().pb_2()))
                 .child(div().flex().flex_wrap().gap_2().items_center().flex_shrink_0().px_4().py_3().border_t_1().border_color(p.border)
-                    .child(quiet_control("reset-settings", "Reset defaults", theme, !self.applying).when(cfg!(test), |v| v.debug_selector(|| "reset-settings".into())).on_click(cx.listener(|this, _, _, cx| this.reset(cx))))
+                    .when(self.dictionary.is_none(), |v| v.child(quiet_control("reset-settings", "Reset defaults", theme, !self.applying).when(cfg!(test), |v| v.debug_selector(|| "reset-settings".into())).on_click(cx.listener(|this, _, _, cx| this.reset(cx)))))
                     .child(div().flex_1())
                     .child(ui::primary_button("close-settings", "Done", theme, true)
                         .when(cfg!(test), |v| v.debug_selector(|| "settings-close".into()))

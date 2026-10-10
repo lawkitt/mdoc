@@ -1,13 +1,12 @@
-//! Spell-check groundwork for the `mdoc-editor` crate (a deferred experiment;
-//! see ROADMAP). Keeps `os-spellcheck` and the editor's diagnostics hooks
-//! compiled and linted.
+//! A standalone window wiring the editor's spell-check hooks to `mdoc-spell`
+//! (ADR 0036), without the app's background scheduling.
 //!
 //! Run with: `cargo run -p mdoc-editor --example demo`.
 //!
-//! Wires the editor to the real OS spell checker: misspelled words get red
-//! squiggles, and right-clicking one offers the system's suggestions. Type to
-//! watch the squiggles update live — the editor emits [`EditorEvent::Changed`]
-//! on each edit, and we re-run the checker in response.
+//! Misspelled words get red squiggles, and right-clicking one offers
+//! suggestions computed on a background thread. Type to watch the squiggles
+//! update — the editor emits [`EditorEvent::Changed`] on each edit, and we
+//! re-run the checker in response.
 
 use gpui::{
     App, AppContext, Bounds, Context, Entity, Focusable, InteractiveElement, IntoElement,
@@ -15,7 +14,7 @@ use gpui::{
     Subscription, Window, WindowBounds, WindowOptions, actions, div, font, hsla, px, rgb, size,
 };
 use mdoc_editor::{Diagnostic, EditorEvent, EditorState, SyntaxStyle};
-use os_spellcheck::SpellChecker;
+use mdoc_spell::{Exclusions, Options, Speller};
 
 actions!(demo, [Quit]);
 
@@ -79,11 +78,19 @@ fn demo_markdown_style() -> SyntaxStyle {
     }
 }
 
-/// Run the OS spell checker over `text` and turn the misspellings into editor
-/// diagnostics.
+/// Run the spell checker over `text`, skipping non-prose Markdown, and turn
+/// the misspellings into editor diagnostics. The app does this off the UI
+/// thread; the demo keeps it simple.
 fn diagnostics_for(text: &str) -> Vec<Diagnostic> {
-    SpellChecker::new()
-        .check(text)
+    let structural = mdoc_editor::spell_exclusions(text);
+    Speller::load(Options::default())
+        .check(
+            text,
+            Exclusions {
+                structural: &structural,
+                entities: &[],
+            },
+        )
         .into_iter()
         .map(|range| Diagnostic { range })
         .collect()
@@ -102,7 +109,7 @@ fn main() {
                 ..Default::default()
             },
             |window, cx| {
-                let text = "# Spell-check demo\n\nThe OS checker flags mispelled wrds as you \
+                let text = "# Spell-check demo\n\nThe checker flags mispelled wrds as you \
                             type; right-click one for suggestions.\n";
                 let editor = cx.new(|cx| {
                     EditorState::new(window, cx)
@@ -114,7 +121,11 @@ fn main() {
                 // Lazy suggestion provider (consulted on right-click) + an
                 // initial detection pass over the seeded text.
                 editor.update(cx, |editor, cx| {
-                    editor.on_suggest(|word| SpellChecker::new().suggestions(word));
+                    editor.on_suggest(|word, cx| {
+                        let word = word.to_owned();
+                        cx.background_executor()
+                            .spawn(async move { Speller::load(Options::default()).suggest(&word) })
+                    });
                     editor.set_markdown_style(demo_markdown_style(), cx);
                     editor.set_diagnostics(diagnostics_for(text), cx);
                 });

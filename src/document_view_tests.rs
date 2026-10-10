@@ -1539,3 +1539,194 @@ fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mu
         assert!(pdf.upgrade().is_none());
     }
 }
+
+/// The flagged words in the active editor, in source order.
+fn misspelled(app: &Entity<DocumentView>, cx: &mut VisualTestContext) -> Vec<String> {
+    cx.update(|_, cx| {
+        let editor = app.read(cx).editor.read(cx);
+        editor
+            .diagnostics()
+            .iter()
+            .map(|d| editor.text()[d.range.clone()].to_owned())
+            .collect()
+    })
+}
+
+fn selected_text(app: &Entity<DocumentView>, cx: &mut VisualTestContext) -> String {
+    cx.update(|_, cx| {
+        let editor = app.read(cx).editor.read(cx);
+        editor.text()[editor.selection()].to_owned()
+    })
+}
+
+#[gpui::test]
+fn spellcheck_flags_prose_and_skips_markdown_and_entities(cx: &mut TestAppContext) {
+    use crate::pii::{Category, Detection};
+    let source =
+        "The partys agre.\n`fooo` [link](https://exampel.com/pathh) Mr Kowalczyk and Mr Ivanоv\n";
+    let (app, cx) = boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text(source, cx));
+    });
+    cx.run_until_parked();
+    // Before PII review, names are ordinary words.
+    assert_eq!(
+        misspelled(&app, cx),
+        ["partys", "agre", "Kowalczyk", "Ivanоv"]
+    );
+    app.update(cx, |app, cx| {
+        let person = |name: &str| {
+            let start = source.find(name).unwrap();
+            Detection {
+                range: start..start + name.len(),
+                category: Category::Person,
+                score: 0.9,
+                recognizer: crate::pii::Recognizer::Model,
+            }
+        };
+        app.pii.reviewing = true;
+        app.pii
+            .review
+            .ingest(source, vec![person("Kowalczyk"), person("Ivanоv")])
+            .unwrap();
+        app.sync_pii_theme(cx);
+    });
+    cx.run_until_parked();
+    // Entities skip the dictionary; the Cyrillic о in "Ivanоv" still shows.
+    assert_eq!(misspelled(&app, cx), ["partys", "agre", "Ivanоv"]);
+}
+
+#[gpui::test]
+fn spellcheck_navigation_document_switch_and_edits(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text("Frist and secnd words.", cx)
+        });
+    });
+    cx.run_until_parked();
+    assert_eq!(misspelled(&app, cx), ["Frist", "secnd"]);
+    for (backwards, expected) in [
+        (false, "Frist"),
+        (false, "secnd"),
+        (false, "Frist"),
+        (true, "secnd"),
+    ] {
+        app.update_in(cx, |app, window, cx| {
+            if backwards {
+                app.previous_misspelling(&PreviousMisspelling, window, cx)
+            } else {
+                app.next_misspelling(&NextMisspelling, window, cx)
+            }
+        });
+        assert_eq!(selected_text(&app, cx), expected);
+    }
+
+    // The per-document switch clears and restores the squiggles.
+    app.update_in(cx, |app, window, cx| {
+        app.toggle_document_spelling(&ToggleDocumentSpelling, window, cx)
+    });
+    cx.run_until_parked();
+    assert!(misspelled(&app, cx).is_empty());
+    app.update_in(cx, |app, window, cx| {
+        app.toggle_document_spelling(&ToggleDocumentSpelling, window, cx)
+    });
+    cx.run_until_parked();
+    assert_eq!(misspelled(&app, cx), ["Frist", "secnd"]);
+
+    // An edit rechecks after a short pause; until then ranges follow the edit.
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.replace_range(0..5, "First", cx));
+    });
+    cx.run_until_parked();
+    assert_eq!(misspelled(&app, cx), ["secnd"]);
+    app.update(cx, |app, cx| {
+        let end = app.editor.read(cx).text().len();
+        app.editor
+            .update(cx, |editor, cx| editor.replace_range(end..end, " Wrng", cx));
+    });
+    cx.run_until_parked();
+    assert_eq!(misspelled(&app, cx), ["secnd"]);
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    cx.run_until_parked();
+    assert_eq!(misspelled(&app, cx), ["secnd", "Wrng"]);
+}
+
+#[gpui::test]
+fn spellcheck_follows_settings(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text("THE AGREMENT, обязуютса.", cx)
+        });
+    });
+    cx.run_until_parked();
+    assert_eq!(misspelled(&app, cx), ["обязуютса"]);
+    let set = |app: &Entity<DocumentView>,
+               cx: &mut VisualTestContext,
+               f: fn(&mut settings::SpellingConfig)| {
+        app.update(cx, |app, cx| {
+            let mut store = app.preferences.borrow_mut();
+            f(&mut store.current.as_mut().unwrap().spelling);
+            drop(store);
+            cx.notify();
+        });
+        cx.run_until_parked();
+    };
+    set(&app, cx, |s| s.check_all_caps = true);
+    assert_eq!(misspelled(&app, cx), ["AGREMENT", "обязуютса"]);
+    set(&app, cx, |s| s.russian = false);
+    assert_eq!(misspelled(&app, cx), ["AGREMENT"]);
+    set(&app, cx, |s| s.enabled = false);
+    assert!(misspelled(&app, cx).is_empty());
+    cx.update(|_, cx| assert!(app.read(cx).spelling_control_off()));
+}
+
+#[gpui::test]
+fn ignore_is_per_document_and_dictionary_words_apply_everywhere(cx: &mut TestAppContext) {
+    let (first, cx) = boot(cx);
+    first.update(cx, |app, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text("Kowalczyk met Nowakowskiego. Kowalczyk left.", cx)
+        });
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        misspelled(&first, cx),
+        ["Kowalczyk", "Nowakowskiego", "Kowalczyk"]
+    );
+
+    // Ignore drops every instance in this document only.
+    first.update(cx, |app, cx| app.spelling_action(0, "Kowalczyk".into(), cx));
+    assert_eq!(misspelled(&first, cx), ["Nowakowskiego"]);
+    cx.run_until_parked();
+    assert_eq!(misspelled(&first, cx), ["Nowakowskiego"]);
+    let second = new_document(&first, cx);
+    second.update(cx, |app, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text("Kowalczyk and Nowakowskiego.", cx)
+        });
+    });
+    cx.run_until_parked();
+    assert_eq!(misspelled(&second, cx), ["Kowalczyk", "Nowakowskiego"]);
+
+    // Add to dictionary applies to every document.
+    second.update(cx, |app, cx| {
+        app.spelling_action(1, "Nowakowskiego".into(), cx)
+    });
+    cx.run_until_parked();
+    assert_eq!(misspelled(&second, cx), ["Kowalczyk"]);
+    cx.update(|_, cx| {
+        let store = second.read(cx).preferences.borrow();
+        assert!(store.words.words.contains("Nowakowskiego"));
+    });
+
+    // Removing it in Settings brings the flags back.
+    let panel = cx.update(|_, cx| second.read(cx).model_panel.clone());
+    panel.update(cx, |panel, cx| panel.remove_word("Nowakowskiego", cx));
+    cx.run_until_parked();
+    assert_eq!(misspelled(&second, cx), ["Kowalczyk", "Nowakowskiego"]);
+}

@@ -138,6 +138,7 @@ impl DocumentView {
                             }
                         })),
                 )
+                .children(self.spelling_control(cx))
                 .child(self.pii_toolbar_control(cx))
             })
             .when(

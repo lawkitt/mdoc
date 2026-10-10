@@ -159,6 +159,9 @@ impl EditorState {
     pub fn set_text(&mut self, text: impl Into<String>, cx: &mut Context<Self>) {
         self.content_gen += 1;
         self.content = text.into();
+        // Diagnostic ranges belong to the old text; the host recomputes them.
+        self.diagnostics.clear();
+        self.menu = None;
         // Never park the loaded caret on a collapsed marker line (`<!-- table/
         // math:… -->`): the first focus would reveal it raw mid-interaction.
         // This is the ONE passive parking path — every other caret write is a

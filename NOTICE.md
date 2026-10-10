@@ -40,6 +40,14 @@ live in the pinned pdf-inspector manifest referenced by Cargo.toml and Cargo.loc
 The synthetic English/Russian OCR qualification fixtures were created for mdoc;
 their text and raster PDFs may be used under CC0-1.0.
 
+Spellcheck bundles unmodified Hunspell dictionaries from LibreOffice: en_US
+(SCOWL by Kevin Atkinson; affix file by Geoff Kuenning, BSD-style), en_GB (LGPL;
+David Bartlett, Brian Kelk, Andrew Brown and Marco A.G. Pinto) and ru_RU (BSD-style,
+© 1997–2008 Alexander I. Lebedev). Their notices, provenance and digests are in
+[crates/mdoc-spell/dictionaries/](crates/mdoc-spell/dictionaries/README.md);
+mdoc's legal word lists there are separate supplements. The engine is spellbook
+(MPL-2.0), listed with the other dependencies.
+
 Experimental inline pseudonymization uses gliner2-rs 0.9.6 by Dario Finardi,
 published by Jugaad s.r.l. (Apache-2.0). Its license and NOTICE are retained in
 [resources/gliner2-license.txt](resources/gliner2-license.txt) and

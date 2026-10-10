@@ -1,11 +1,17 @@
 //! Application preferences only. No document text, QA results or replacement maps.
+//! The user's spelling dictionary is a word list beside the settings file.
 use pdf_inspector::vision::{ModelManifest, PP_OCR_CYRILLIC, PP_OCR_V6_SMALL};
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
+    collections::BTreeSet,
     io::{Read, Write},
     path::{Path, PathBuf},
     rc::Rc,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -206,12 +212,48 @@ impl Default for PiiConfig {
         }
     }
 }
+/// Spellcheck choices (ADR 0036). The per-document switch is session-only
+/// and lives in the document view, not here.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpellingConfig {
+    pub enabled: bool,
+    pub english: bool,
+    pub russian: bool,
+    pub check_all_caps: bool,
+    pub check_digits: bool,
+}
+impl Default for SpellingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            english: true,
+            russian: true,
+            check_all_caps: false,
+            check_digits: false,
+        }
+    }
+}
+impl SpellingConfig {
+    /// What to check, or `None` when nothing would be checked.
+    pub fn options(self) -> Option<mdoc_spell::Options> {
+        (self.enabled && (self.english || self.russian)).then_some(mdoc_spell::Options {
+            english: self.english,
+            russian: self.russian,
+            check_all_caps: self.check_all_caps,
+            check_digits: self.check_digits,
+        })
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
     pub version: u32,
     pub ocr: OcrConfig,
     pub pseudonymization: PiiConfig,
+    /// Absent in settings saved before spellcheck existed.
+    #[serde(default)]
+    pub spelling: SpellingConfig,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -219,6 +261,7 @@ impl Default for Preferences {
             version: 1,
             ocr: OcrConfig::default(),
             pseudonymization: PiiConfig::default(),
+            spelling: SpellingConfig::default(),
         }
     }
 }
@@ -242,6 +285,106 @@ pub struct Store {
     pub current: Option<Preferences>,
     pub error: Option<String>,
     pub path: Option<PathBuf>,
+    pub words: UserWords,
+}
+
+/// Words added with "Add to dictionary": exact spellings, one per line in
+/// `spelling-words.txt` beside the settings file, shared by all documents.
+pub struct UserWords {
+    pub words: Arc<BTreeSet<String>>,
+    /// Bumped on every change, so spellcheck caches know to recheck.
+    pub generation: u64,
+    pub path: Option<PathBuf>,
+    pub error: Option<String>,
+}
+
+pub const MAX_WORDS: usize = 10_000;
+const MAX_WORD_CHARS: usize = 64;
+
+/// A single word worth storing: no whitespace or control characters, at most
+/// 64 characters, and at least one letter.
+pub fn valid_word(word: &str) -> bool {
+    !word.is_empty()
+        && word.chars().count() <= MAX_WORD_CHARS
+        && !word.chars().any(|c| c.is_whitespace() || c.is_control())
+        && word.chars().any(char::is_alphabetic)
+}
+
+pub fn load_words(path: &Path) -> Result<BTreeSet<String>, String> {
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
+        Err(e) => return Err(e.to_string()),
+    };
+    let mut text = String::new();
+    file.take(1 << 20)
+        .read_to_string(&mut text)
+        .map_err(|e| format!("Could not read your spelling dictionary: {e}"))?;
+    Ok(text
+        .lines()
+        .map(str::trim)
+        .filter(|w| valid_word(w))
+        .take(MAX_WORDS)
+        .map(str::to_owned)
+        .collect())
+}
+
+pub fn save_words(path: &Path, words: &BTreeSet<String>) -> Result<(), String> {
+    let parent = path.parent().ok_or("Dictionary path has no parent.")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    for word in words {
+        writeln!(file, "{word}").map_err(|e| e.to_string())?;
+    }
+    file.as_file().sync_all().map_err(|e| e.to_string())?;
+    file.persist(path).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Serializes dictionary writes; a write for an older generation is skipped.
+static WORDS_WRITE: Mutex<()> = Mutex::new(());
+static WORDS_LATEST: AtomicU64 = AtomicU64::new(0);
+
+impl Store {
+    /// Replace the user's words and save them in the background. Returns
+    /// `false` (changing nothing) when the list is full.
+    pub fn set_words(shared: &Shared, words: BTreeSet<String>, cx: &mut gpui::App) -> bool {
+        if words.len() > MAX_WORDS {
+            shared.borrow_mut().words.error =
+                Some(format!("Your dictionary is full ({MAX_WORDS} words)."));
+            return false;
+        }
+        let (path, words, generation) = {
+            let mut store = shared.borrow_mut();
+            store.words.words = Arc::new(words);
+            store.words.generation += 1;
+            (
+                store.words.path.clone(),
+                store.words.words.clone(),
+                store.words.generation,
+            )
+        };
+        let Some(path) = path else {
+            return true;
+        };
+        WORDS_LATEST.store(generation, Ordering::SeqCst);
+        let task = cx.background_executor().spawn(async move {
+            let _guard = WORDS_WRITE.lock().unwrap_or_else(|e| e.into_inner());
+            if WORDS_LATEST.load(Ordering::SeqCst) != generation {
+                return Ok(());
+            }
+            save_words(&path, &words)
+        });
+        let shared = shared.clone();
+        cx.spawn(async move |_| {
+            let result = task.await;
+            shared.borrow_mut().words.error = result
+                .err()
+                .map(|e| format!("Could not save your spelling dictionary: {e}"));
+        })
+        .detach();
+        true
+    }
 }
 impl Store {
     pub fn new() -> Shared {
@@ -259,10 +402,24 @@ impl Store {
             Ok(p) => (Some(p), None),
             Err(e) => (None, Some(e)),
         };
+        let words_path = path
+            .as_ref()
+            .map(|p| p.with_file_name("spelling-words.txt"));
+        let (words, words_error) = match words_path.as_deref().map(load_words) {
+            Some(Ok(words)) => (words, None),
+            Some(Err(e)) => (BTreeSet::new(), Some(e)),
+            None => (BTreeSet::new(), None),
+        };
         Rc::new(RefCell::new(Self {
             current,
             error,
             path,
+            words: UserWords {
+                words: Arc::new(words),
+                generation: 0,
+                path: words_path,
+                error: words_error,
+            },
         }))
     }
     pub fn snapshot(&self) -> Result<Preferences, String> {
@@ -353,6 +510,40 @@ mod tests {
             serde_json::from_str::<PiiModel>("\"Fp32\"").unwrap(),
             PiiModel::Fp32
         );
+    }
+    #[test]
+    fn user_words_roundtrip_and_skip_invalid_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("spelling-words.txt");
+        assert!(load_words(&path).unwrap().is_empty());
+        let words: BTreeSet<String> = ["цессионарий", "Kowalczyk", "co-signer"]
+            .map(String::from)
+            .into();
+        save_words(&path, &words).unwrap();
+        assert_eq!(load_words(&path).unwrap(), words);
+        std::fs::write(&path, "good\n\ntwo words\n123\n  trimmed  \n").unwrap();
+        let loaded: Vec<_> = load_words(&path).unwrap().into_iter().collect();
+        assert_eq!(loaded, ["good", "trimmed"]);
+        assert!(!valid_word(&"a".repeat(65)));
+    }
+    #[test]
+    fn spelling_defaults_apply_to_older_files_and_choices_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut older = serde_json::to_value(Preferences::default()).unwrap();
+        older.as_object_mut().unwrap().remove("spelling");
+        std::fs::write(&path, serde_json::to_vec(&older).unwrap()).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded.spelling, SpellingConfig::default());
+        assert!(loaded.spelling.enabled && !loaded.spelling.check_all_caps);
+
+        let mut prefs = Preferences::default();
+        prefs.spelling.russian = false;
+        prefs.spelling.check_digits = true;
+        save(&path, &prefs).unwrap();
+        assert_eq!(load(&path).unwrap(), prefs);
+        prefs.spelling.english = false;
+        assert_eq!(prefs.spelling.options(), None);
     }
     #[test]
     fn removed_models_require_explicit_reset_without_rewriting_preferences() {

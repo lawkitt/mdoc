@@ -1,0 +1,18 @@
+[package]
+name = "mdoc-spell"
+version = "0.1.0"
+edition = "2024"
+description = "Offline EN/RU spellcheck with built-in Hunspell dictionaries (ADR 0036)."
+license = "GPL-3.0-or-later"
+publish = false
+repository = "https://github.com/lawkitt/mdoc"
+
+# GUI-free and Markdown-free: the host supplies excluded ranges. Dictionaries
+# are compressed into the binary at build time (see build.rs) and parsed lazily.
+[dependencies]
+# Alpha API: keep the exact version (ADR 0036).
+spellbook = "=0.4.2"
+flate2 = "1"
+
+[build-dependencies]
+flate2 = "1"
