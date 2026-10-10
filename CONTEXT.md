@@ -176,3 +176,22 @@ allocate their document view when activated.
 
 **Document view**: one tab's editor, source preview, search, import/OCR and
 pseudonymization state. Code: `document_view::DocumentView`. Avoid calling this workspace.
+
+## Releases
+
+**Release commit**: the commit made by `just release` that sets the version in
+`Cargo.toml`, `Cargo.lock` and `Info.plist` (and, for stable versions, names
+the CHANGELOG section); its tag must match that version ([ADR 0037](docs/adr/0037-ci-and-release-pipeline.md)).
+
+**Pre-release**: a version with a SemVer suffix such as `-beta.1` or `-rc.2`;
+marked pre-release on GitHub, built without an `.msi`, and offered by the
+update check to pre-release builds or when "Include pre-releases" is on.
+
+**Shipped target**: a platform with release artifacts — Apple Silicon macOS
+and Windows x64. Other platforms build from source, unsupported.
+
+**Update check**: detection-only comparison of the running version with the
+newest GitHub Release; shows Settings → Updates and never installs ([ADR 0038](docs/adr/0038-update-check.md)).
+
+**Release gate**: the OCR smoke test that must pass on every shipped target
+before a release is packaged.

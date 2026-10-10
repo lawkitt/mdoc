@@ -75,29 +75,6 @@ long-description = "Edit local Markdown files with live formatting and view PDFs
 before-packaging-command = "cargo build --release"
 icons = ["resources/icons/icon.icns", "resources/icons/icon.png", "resources/icons/icon.ico"]
 
-[package.metadata.packager.deb]
-# Runtime libs for gpui's Wayland + X11 surface + font-kit. Without an explicit
-# `depends`, a fresh install fails to launch with a missing-.so error. Keep in
-# lockstep with the fpm --depends list in release.yml's .rpm step.
-depends = [
-  "libxkbcommon0",
-  "libxkbcommon-x11-0",
-  "libwayland-client0",
-  "libwayland-cursor0",
-  "libx11-6",
-  "libxcb1",
-  "libxcb-cursor0",
-  "libxcb-randr0",
-  "libxcb-render0",
-  "libxcb-shape0",
-  "libxcb-xfixes0",
-  "libxcb-xkb1",
-  "libfontconfig1",
-  "libfreetype6",
-]
-# Desktop entry (launcher discovery) + hicolor icon.
-files = { "packaging/linux/mdoc.desktop" = "/usr/share/applications/mdoc.desktop", "resources/icons/icon.png" = "/usr/share/icons/hicolor/512x512/apps/mdoc.png" }
-
 [package.metadata.packager.macos]
 # Hand-curated Info.plist (single-instance launch, high-DPI, stable bundle id).
 info-plist-path = "resources/Info.plist"
@@ -107,8 +84,8 @@ minimum-system-version = "11.0"
 # Apple Developer account lands.
 signing-identity = "-"
 
-# cargo-wix config for the per-arch .msi (built by `cargo wix` in release.yml, on
-# stable tags only — MSI ProductVersion rejects alphanumeric prereleases).
+# cargo-wix config for the x64 .msi (built by `cargo wix` in scripts/package.sh,
+# for stable versions only — MSI ProductVersion rejects alphanumeric prereleases).
 [package.metadata.wix]
 # Stable per-app GUID. MUST match the UpgradeCode in packaging/windows/wix/main.wxs.
 # Distinct from every other lawkitt app. Never change once an installer ships.

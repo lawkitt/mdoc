@@ -1,0 +1,51 @@
+name: Setup
+description: >-
+  Pinned Rust toolchain (rust-toolchain.toml), cargo cache and the tools named
+  in `tools`, at the versions in scripts/tools.env — the same pins `just setup`
+  installs locally (ADR 0037).
+
+inputs:
+  tools:
+    description: Space-separated tools from scripts/tools.env (just, cargo-deny, cargo-packager, cargo-wix).
+    default: just
+  cache-key:
+    description: Swatinem/rust-cache shared key; release builds share one.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Load pinned tool versions
+      shell: bash
+      run: grep -E '^[A-Z_]+=' scripts/tools.env >> "$GITHUB_ENV"
+
+    # rustup reads rust-toolchain.toml; the runner images ship rustup.
+    - name: Install the pinned Rust toolchain
+      shell: bash
+      run: rustup toolchain install && rustc --version
+
+    - name: Cache cargo registry + target
+      uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      with:
+        shared-key: ${{ inputs.cache-key }}
+        # Keep the cache when a later step fails so a rerun isn't a cold build.
+        cache-on-failure: true
+
+    - name: Resolve tool versions
+      id: tools
+      shell: bash
+      env:
+        TOOLS: ${{ inputs.tools }}
+      run: |
+        spec=()
+        for tool in $TOOLS; do
+          var=$(echo "${tool}_VERSION" | tr 'a-z-' 'A-Z_')
+          [ -n "${!var:-}" ] || { echo "::error::no $var in scripts/tools.env"; exit 1; }
+          spec+=("$tool@${!var}")
+        done
+        echo "spec=$(IFS=,; echo "${spec[*]}")" >> "$GITHUB_OUTPUT"
+
+    - name: Install tools
+      uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+      with:
+        tool: ${{ steps.tools.outputs.spec }}

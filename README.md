@@ -16,13 +16,28 @@ has known English/Russian and hidden-source misses, so review the result before
 sharing. It does not guarantee anonymization; see the [qualification results](tests/fixtures/pseudonymization/README.md).
 
 OCR and automatic pseudonymization are available on Apple Silicon macOS and
-Windows x64; Intel macOS, Windows ARM64 and Linux support native-text import.
+Windows x64, the two platforms with releases. Intel macOS, Windows ARM64 and
+Linux build from source, unsupported, with native-text import only.
 Model downloads require an explicit choice; subsequent processing runs offline.
 Windows runtime and native acceptance checks remain outstanding. Image-only DOCX
 has no app OCR path. See [OCR limitations](tests/fixtures/ocr-qualification/README.md)
 and [model verification](tests/fixtures/model-settings/README.md).
 
-## Run
+## Install
+
+Download the latest build from [Releases](https://github.com/lawkitt/mdoc/releases):
+`mdoc_<version>_arm64.dmg` for Apple Silicon Macs, or
+`mdoc_<version>_x64-setup.exe` for Windows x64 (stable versions also have an
+`.msi` for managed deployment). Builds are not signed yet: on macOS, right-click
+mdoc → **Open** on first launch; on Windows, choose **More info → Run anyway**.
+Check a download against `SHA256SUMS`, or verify where it was built with
+`gh attestation verify <file> -R lawkitt/mdoc`.
+
+The Windows installer also installs the Microsoft Visual C++ Redistributable
+(x64) when it is missing; OCR and pseudonymization need it. The `.msi` requires
+it to be installed first.
+
+## Run from source
 
 All dependencies, including the pinned AnyDoc converter, are public.
 
@@ -40,14 +55,17 @@ Save writes Markdown and preserves the original source.
 
 ## Development
 
+Development commands are [just](https://just.systems) recipes; CI runs the
+same ones. `just setup` installs the pinned tools, `just doctor` checks them.
+
 ```sh
-cargo fmt --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+just check      # fmt, cargo-deny, clippy and tests, as CI runs them
+just check-all  # plus the OCR and installed-model smoke tests (downloads)
 ```
 
-See [development notes](docs/development.md) for ownership, dependency updates,
-fixtures, performance probes, build-cache cleanup and packaging.
+See [development notes](docs/development.md) for the full recipe list,
+ownership, dependency updates, fixtures, performance probes, build-cache
+cleanup, packaging and releases.
 Headless checks do not establish native appearance, IME, accessibility or
 cross-platform runtime acceptance.
 

@@ -1,27 +1,23 @@
 name: Actionlint
 
-# Lints the workflow files themselves — catches `${{ }}` expression
-# typos, invalid `runs-on` labels, shell-quoting bugs in `run:`
-# blocks (via the bundled shellcheck pass), and unpinned actions
-# before they cost a real CI run. Scoped to `.github/workflows/**`
-# so it runs exactly when a workflow changes and never otherwise.
+# Lints the workflows and the setup action (expression typos, runner labels,
+# shellcheck on `run:` blocks) with the same pinned actionlint as `just
+# actionlint`.
 on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/**'
+      - ".github/**"
+      - "scripts/tools.env"
   pull_request:
     paths:
-      - '.github/workflows/**'
+      - ".github/**"
+      - "scripts/tools.env"
   workflow_dispatch:
 
-# Read-only: actionlint just reads the workflow files and reports
-# findings as inline `::error::` annotations through the run's own
-# token — no extra scopes needed.
 permissions:
   contents: read
 
-# Cancel superseded PR runs; never cancel a push to main.
 concurrency:
   group: actionlint-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -30,11 +26,19 @@ jobs:
   actionlint:
     runs-on: ubuntu-latest
     steps:
-      # Pinned to a full commit SHA like every other action in this
-      # repo; the `# vX.Y.Z` comment is what Dependabot bumps.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: actionlint
-        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+      - name: Install actionlint and just
+        run: |
+          scripts/install-actionlint.sh "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          grep -E '^[A-Z_]+=' scripts/tools.env >> "$GITHUB_ENV"
+
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        with:
+          tool: just@${{ env.JUST_VERSION }}
+
+      # ubuntu-latest ships shellcheck, which actionlint runs on `run:` blocks.
+      - run: just actionlint

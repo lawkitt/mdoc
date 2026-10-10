@@ -1,10 +1,10 @@
 <?xml version='1.0' encoding='utf-8'?>
 
 <!--
-    mdoc WiX source. Built into per-arch .msi installers via
-    cargo-wix in CI on a Windows native-arch runner (the cargo-wix
+    mdoc WiX source. Built into the x64 .msi installer via
+    cargo-wix by scripts/package.sh on Windows x64 (the cargo-wix
     invocation passes the target triple and nocapture flag; see the
-    release.yml workflow for the full command). Replaces cargo-
+    script for the full command). Replaces cargo-
     packager's `-f wix` path, which bundled WiX 3.11 and therefore
     couldn't pass `-arch arm64` to candle.exe — see commit history
     on the workflow rename for the full backstory.

@@ -51,13 +51,9 @@ and qualification limits. Native appearance, shortcuts, IME, GPU presentation,
 and execution on other platforms require native checks; headless tests do not
 establish them. Do not distribute local user-provided fixtures.
 
-Measure runtime hotspots separately from the routine gate:
-
-```sh
-cargo test -p mdoc host_performance_matrix -- --ignored --nocapture --test-threads=1
-cargo test -p mdoc tabs_host_performance -- --ignored --nocapture --test-threads=1
-cargo test -p mdoc-editor search_performance_matrix -- --ignored --nocapture --test-threads=1
-```
+Measure runtime hotspots separately from the routine gate with `just perf`,
+which runs every ignored performance test serially (set `MDOC_PERF_PREVIEW` to
+a local PDF or DOCX to include preview timing). Run it on an idle machine.
 
 Use a fixed viewport, representative legal/OCR Markdown, and actual scroll/search
 positions; report profile, machine, latency, peak memory, and lifecycle results.
@@ -65,12 +61,45 @@ Historical tab measurements found roughly 292 ms long-document redraws in
 debug/headless mode despite a 0.007 ms tab activation handler. Reproduce before
 optimizing; those timings are not current results or native presentation latency.
 
-Release packaging uses the `mdoc` identity on all platforms. Automatic winget
-submission is disabled until `ENABLE_WINGET_PUBLISHING=true` and a `WINGET_TOKEN`
-secret are configured in this repository.
+## Recipes
+
+Every development command is a `just` recipe, run by Git Bash on Windows
+(install [Git for Windows](https://gitforwindows.org) and `just`). CI calls the
+same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
+`just setup` ([ADR 0037](adr/0037-ci-and-release-pipeline.md)).
+
+| Recipe | What it does |
+| --- | --- |
+| `just setup` / `just doctor` | Install / check the pinned toolchain and tools |
+| `just check` | `fmt-check`, `deny`, `lint`, `test` — the CI gate |
+| `just smoke-ocr` | Downloads the pinned OCR runtime and recognizes the EN/RU fixtures (release gate) |
+| `just smoke-models [--download]` | Default OCR and pseudonymization models through setup and offline paths |
+| `just check-all` | `check` + both smoke recipes |
+| `just perf` | Ignored performance tests, serially |
+| `just package` | This machine's installers into `dist/` |
+| `just release <version>` | Release commit and tag (below) |
+| `just icon`, `just actionlint` | Icon assets; workflow lint |
+
+Heavy, download and machine-dependent tests run only through these recipes, on
+the Apple Silicon Mac and the Windows x64 PC.
+
+## Releasing
+
+Releases ship only for Apple Silicon macOS (`.dmg`) and Windows x64 (NSIS
+`.exe`; `.msi` for stable versions). The repository version is the source of
+truth: `just release 0.1.0-beta.1` checks that `main` is clean and current, runs
+the checks (optionally `check-all`), sets the version in `Cargo.toml`,
+`Cargo.lock` and `Info.plist`, names the CHANGELOG section for stable versions,
+commits `release: v…`, tags, and pushes after confirmation. The tag runs
+`.github/workflows/release.yml`: version check, CI, OCR smoke on both targets,
+packaging, then a draft GitHub Release with `SHA256SUMS` and build provenance.
+Review the draft and publish it by hand. "Run workflow" on the Release workflow
+builds an unpublished test build from any branch.
+
+## App icon
 
 To update the app icon, replace `build/appicon.png` with a square PNG (ideally
-at least 1024 × 1024), then run `./build/make-icon.sh` on macOS. It requires
+at least 1024 × 1024), then run `just icon` on macOS. It requires
 the built-in `sips` and `iconutil` tools and Python 3, with no Python packages.
 The script preserves the source PNG and regenerates the packaged PNG, Windows
 ICO, and macOS ICNS assets.

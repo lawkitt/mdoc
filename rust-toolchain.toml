@@ -1,0 +1,6 @@
+# Exact toolchain for development, CI and releases (ADR 0037). Bump by hand,
+# then fix any new clippy lints in the same commit.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
