@@ -27,8 +27,11 @@ if [ "$stable" = 1 ]; then
   [ -n "$body" ] || die "CHANGELOG.md has no Unreleased entries for $new"
 fi
 
-read -r -p "Also run the model and OCR smoke tests (just check-all, downloads models)? [y/N] " answer
-if [[ $answer =~ ^[Yy]$ ]]; then just check-all; else just check; fi
+if confirm "Also run the model and OCR smoke tests (just check-all, downloads models)?"; then
+  just check-all
+else
+  just check
+fi
 
 scripts/set-version.sh "$new"
 if [ "$stable" = 1 ]; then
@@ -45,8 +48,7 @@ git tag -a "$tag" -m "mdoc $tag"
 echo "created release commit and tag $tag"
 
 if [ "$push" = 1 ]; then
-  read -r -p "Push main and $tag to origin (starts the release build)? [y/N] " answer
-  if [[ $answer =~ ^[Yy]$ ]]; then
+  if confirm "Push main and $tag to origin (starts the release build)?"; then
     git push --atomic origin main "$tag"
     echo "pushed; the draft release appears at https://github.com/lawkitt/mdoc/releases once the build finishes"
     exit 0

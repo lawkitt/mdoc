@@ -29,11 +29,10 @@ scripts/install-actionlint.sh
 
 if [ "$(platform)" = windows-x64 ]; then
   crate cargo-wix "$CARGO_WIX_VERSION" cargo wix --version
-  if ! command -v candle >/dev/null; then
-    read -r -p "Install the WiX Toolset $WIX_VERSION with winget (needed for .msi)? [y/N] " answer
-    if [[ $answer =~ ^[Yy]$ ]]; then
+  if ! candle -? >/dev/null 2>&1; then
+    if confirm "Install the WiX Toolset $WIX_VERSION with winget (needed for .msi)?"; then
       winget.exe install --exact --id WiXToolset.WiXToolset --version "$WIX_VERSION"
-      echo "open a new terminal so WiX's PATH change takes effect"
+      echo "open a new terminal, then run \`just doctor\`: WiX sets WIX (not PATH) for new sessions"
     fi
   fi
 fi

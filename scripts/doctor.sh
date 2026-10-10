@@ -18,7 +18,7 @@ check() { # name, expected version, actual version line
     printf '  %-16s ok %s\n' "$name" "$want"
   fi
 }
-out() { "$@" 2>/dev/null | head -1 || true; }
+out() { "$@" 2>/dev/null | grep -m1 . || true; }
 
 toolchain=$(awk -F'"' '/^channel/ { print $2 }' rust-toolchain.toml)
 echo "platform: $(platform)"
