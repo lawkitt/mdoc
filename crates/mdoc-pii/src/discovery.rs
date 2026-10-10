@@ -1,6 +1,6 @@
 //! Immutable, cancellable candidate discovery; reusable cached matcher.
 use super::{
-    Category, exact_boundary, intersects, interval_conflict,
+    exact_boundary, generated_alias, intersects, interval_conflict,
     syntax::{plain_text_span, protected_syntax},
 };
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind};
@@ -35,13 +35,7 @@ impl DiscoveryInput {
         let source: &str = &self.source;
         let tokens = source
             .split(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
-            .filter(|v| {
-                v.split_once('_').is_some_and(|(prefix, suffix)| {
-                    !suffix.is_empty()
-                        && suffix.bytes().all(|b| b.is_ascii_digit())
-                        && Category::ALL.iter().any(|c| c.token() == prefix)
-                })
-            })
+            .filter(|v| generated_alias(v))
             .map(str::to_owned)
             .collect();
         let mut mentions = vec![Vec::new(); self.originals.len()];

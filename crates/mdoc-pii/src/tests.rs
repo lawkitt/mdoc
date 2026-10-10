@@ -101,6 +101,35 @@ fn keep_all_survives_rescan_and_single_keep_rebases() {
     assert_eq!(review.remaining(), 0);
 }
 #[test]
+fn rescan_does_not_alias_existing_aliases() {
+    let mut review = Review::default();
+    let source = "Ann met Bob";
+    review
+        .ingest(
+            source,
+            vec![
+                detection(0..3, Category::Person),
+                detection(8..11, Category::Person),
+            ],
+        )
+        .unwrap();
+    let bob = review.variants()[1].identity;
+    review.rename_identity(bob, "Witness").unwrap();
+    // The detector reads both aliases as people on the rescan.
+    let aliased = "PERSON_1 met Witness";
+    review.refresh(aliased);
+    review
+        .ingest(
+            aliased,
+            vec![
+                detection(0..8, Category::Person),
+                detection(13..20, Category::Person),
+            ],
+        )
+        .unwrap();
+    assert_eq!(review.variants().len(), 2);
+}
+#[test]
 fn batch_refresh_preserves_a_kept_mention_between_replacements() {
     let source = "Ann Acme Ann Bob";
     let mut review = Review::default();

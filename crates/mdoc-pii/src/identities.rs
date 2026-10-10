@@ -41,6 +41,11 @@ impl IdentityStore {
     fn ids(&self) -> impl Iterator<Item = u64> + '_ {
         self.definitions.keys().copied()
     }
+    pub(crate) fn aliases(&self) -> impl Iterator<Item = &str> {
+        self.ids()
+            .filter_map(|id| self.get(id))
+            .map(|i| i.alias.as_str())
+    }
     fn get(&self, id: u64) -> Option<&Identity> {
         self.policy
             .edited

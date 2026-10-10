@@ -117,6 +117,14 @@ pub struct Review {
     manual_priority: u64,
 }
 
+/// `PERSON_3`-shaped text: a category token, `_`, then digits.
+pub(crate) fn generated_alias(value: &str) -> bool {
+    value.split_once('_').is_some_and(|(prefix, suffix)| {
+        !suffix.is_empty()
+            && suffix.bytes().all(|b| b.is_ascii_digit())
+            && Category::ALL.iter().any(|c| c.token() == prefix)
+    })
+}
 /// Tokens work unchanged in prose, table cells, destinations, code and HTML.
 /// Custom replacements must not introduce Markdown/URL/HTML delimiters.
 pub(crate) fn valid_replacement(value: &str) -> bool {
@@ -413,14 +421,30 @@ impl Review {
                 .then(a.range.start.cmp(&b.range.start))
         });
         let protected = protected_syntax(source);
+        // Applied replacements and alias text (generated or custom) are this
+        // review's own output; a rescan must not alias them again.
+        let mut applied: Vec<_> = self
+            .tracking
+            .applied
+            .iter()
+            .map(|a| a.range.clone())
+            .collect();
+        applied.sort_by_key(|r| r.start);
+        let aliases: HashSet<&str> = self
+            .identities
+            .aliases()
+            .chain(self.tracking.applied.iter().map(|a| a.step.after.as_ref()))
+            .collect();
         let mut accepted = BTreeMap::new();
         let mut selected = Vec::new();
         for detection in detections {
             // A bare category marker is not identifying, whatever category the
             // detector guesses. Do not turn it into an identity.
-            if Category::ALL
-                .iter()
-                .any(|c| c.token() == &source[detection.range.clone()])
+            let text = &source[detection.range.clone()];
+            if Category::ALL.iter().any(|c| c.token() == text)
+                || generated_alias(text)
+                || aliases.contains(text)
+                || intersects(&applied, &detection.range)
             {
                 continue;
             }
