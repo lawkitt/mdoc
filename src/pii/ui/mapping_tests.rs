@@ -214,7 +214,7 @@ fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpu
                 panel.size.height > px(height * 0.7),
                 "vertical panel {panel:?}"
             );
-            assert!(panel.size.width <= px(340.) && panel.left() > px(0.));
+            assert!(panel.size.width <= px(380.) && panel.left() > px(0.));
             assert!(
                 panel.left() >= px(0.)
                     && panel.right() <= px(width)

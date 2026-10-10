@@ -447,7 +447,7 @@ impl DocumentView {
     }
     pub(crate) fn replacements_panel_width(&self, window: &Window) -> gpui::Pixels {
         if self.pii.mapping.open && self.can_copy_markdown() {
-            px((self.chrome_width(window) * 0.4).clamp(280., 380.))
+            px((self.chrome_width(window) * 0.4).clamp(260., 380.))
         } else {
             px(0.)
         }
