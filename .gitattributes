@@ -3,3 +3,7 @@
 
 # Generated license quotations retain upstream whitespace.
 THIRD-PARTY-LICENSES.html -whitespace
+
+# Bundled Hunspell dictionaries are kept byte-for-byte (digests in their README).
+crates/mdoc-spell/dictionaries/*.aff -text
+crates/mdoc-spell/dictionaries/*.dic -text

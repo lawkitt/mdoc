@@ -72,6 +72,7 @@ impl Style {
         self.strike |= base.strike;
         self.underline |= base.underline;
         self.mono |= base.mono;
+        self.code |= base.code;
         if self.color.is_none() {
             self.color = base.color;
         }
@@ -90,6 +91,9 @@ struct Style {
     strike: bool,
     underline: bool,
     mono: bool,
+    /// Inline code body; no visual effect, read by semantic consumers
+    /// (spell exclusions).
+    code: bool,
     color: Option<Hsla>,
     bg: Option<Hsla>,
     /// A syntax marker (`**`, `#`, `[`, …) — dimmed when shown, and removed
@@ -398,6 +402,8 @@ pub(crate) struct SemanticSpan {
     pub hidden: bool,
     pub replacement: bool,
     pub decoded: Option<String>,
+    /// Inline code (monospace) text.
+    pub code: bool,
 }
 
 /// Scan one source slice using the editor's own Markdown scanner and expose
@@ -422,6 +428,7 @@ pub(crate) fn semantic_spans_with(
                 .decoded
                 .then(|| span.style.replace.as_ref().unwrap().to_string()),
             replacement: span.style.replace.is_some(),
+            code: span.style.code,
         })
         .collect()
 }
@@ -752,6 +759,7 @@ fn scan_inline(
                     Style {
                         color: Some(st.code),
                         bg: Some(st.code_bg),
+                        code: true,
                         ..Default::default()
                     }
                     .over(base),

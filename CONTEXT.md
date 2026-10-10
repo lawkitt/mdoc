@@ -135,6 +135,34 @@ text undo/redo ([ADR 0023](docs/adr/0023-pseudonymization-ui-polish.md)).
 **Close review**: hide candidate highlights while retaining edits, clickable
 applied highlights and live restoration provenance. It does not establish safe sharing.
 
+## Spelling
+
+**Spellcheck**: offline EN/RU misspelling flags in Converted Markdown, mainly
+to surface conversion/OCR errors ([ADR 0036](docs/adr/0036-bundled-spellcheck.md)).
+Results are identical on every platform; it never uses the OS checker.
+
+**Misspelling**: a flagged word span, shown as a squiggle with lazy suggestions.
+Code: `mdoc_editor::Diagnostic`.
+
+**Spell exclusion**: a byte range never dictionary-checked: code, link targets,
+raw HTML, aliases and PII entity spans. Supplied by the host, not `mdoc-spell`.
+
+**Skip rule**: word-level filter inside `mdoc-spell`. ALL-CAPS and digit-containing
+words are skipped by default with Settings toggles; e-mail and bare URLs always.
+
+**Mixed-script word**: a letters-only word combining Latin and Cyrillic letters;
+always flagged, even inside entity spans, as a likely OCR homoglyph error.
+
+**User dictionary**: words the user added with "Add to dictionary"; exact
+spellings in `spelling-words.txt` beside the settings, shared by all documents
+and managed in Settings → Spelling → Manage…. Code: `settings::UserWords`.
+
+**Ignored word**: a word skipped in one document for the session with "Ignore
+in this document"; never saved.
+
+**Legal word list**: curated, non-user-editable supplement to the base EN/RU
+dictionaries holding real legal vocabulary, never names.
+
 ## Application structure
 
 **Empty page**: immediately writable empty Markdown view with Open files,

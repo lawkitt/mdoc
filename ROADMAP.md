@@ -17,6 +17,9 @@ This roadmap tracks work remaining as of 2026-10-10; accepted behavior lives in
   ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)). It is a supported,
   assistive feature ([ADR 0034](docs/adr/0034-pseudonymization-supported-feature.md));
   no model passed the [initial qualification](tests/fixtures/pseudonymization/README.md).
+- Offline EN/RU spellcheck with bundled dictionaries is implemented
+  ([ADR 0036](docs/adr/0036-bundled-spellcheck.md), [baseline](docs/evidence/spellcheck/README.md));
+  its layout cost belongs in step 1's measurements.
 - Sidebar, first-use setup, empty-page/file-drop and replacement-popup revisions
   are implemented under ADRs 0026–0028 and 0032. Native/platform acceptance remains
   partial; implementation does not establish qualification.
@@ -51,7 +54,5 @@ source/output comparisons. Numerical budgets require measured baselines.
 - Online formatting/OCR repair; provider, credentials, trust and review need decisions.
 - Named/collapsible tab groups and opening a dropped folder as a group; folders
   are currently skipped ([ADR 0028](docs/adr/0028-empty-page-and-file-drop.md)).
-- OS spell-check using the retained `os-spellcheck` crate and editor diagnostics;
-  behavior, language coverage and legal vocabulary need a separate design session.
 - Extra recognizers/full PII engines and optional source/page references; qualify
   a concrete workflow before expanding scope.

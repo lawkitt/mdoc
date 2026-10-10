@@ -1,0 +1,46 @@
+# Legal vocabulary missing from en_US/en_GB, in Hunspell .dic line format
+# with en_US affix flags (e.g. /S plural, /M possessive). Real words only,
+# never names (ADR 0036).
+# Parties and roles
+indemnitor/SM
+indemnitee/SM
+pledgor/SM
+sublessee/SM
+sublessor/SM
+appellee/SM
+movant/SM
+# Terms
+violative
+usufruct/SM
+unenforceability/M
+sublicensable
+hereinabove
+hereinbelow
+# Latin phrases (each word separately)
+alia
+amici
+amicus
+cestui
+contendere
+decidendi
+decisis
+judicata
+lis
+meruit
+minimis
+nolo
+nunc
+pari
+parte
+pendens
+sui
+tunc
+vires
+vivos
+voir
+warranto
+# Citation abbreviations (capitalized as cited: "Ill. Const.")
+Cas
+Civ
+Const
+Sess

@@ -16,8 +16,8 @@ The host supplies images, file chips, search matches and source annotations
 (pseudonymization), and receives `EditorEvent`s. Right-to-left lines are laid
 out through `gpui-bidi`. Edit transactions come from `mdoc-history`.
 
-Spell-check hooks (`Diagnostic`, `set_diagnostics`, `on_suggest`) are kept as
-groundwork for a deferred experiment; `cargo run -p mdoc-editor --example demo`
-wires them to `os-spellcheck`.
+Spell-check hooks (`Diagnostic`, `set_diagnostics`, `on_suggest`,
+`spell_exclusions`) serve the app's spellcheck; `cargo run -p mdoc-editor
+--example demo` wires them to `mdoc-spell`.
 
 MIT-licensed (see [LICENSE](LICENSE)), derived from Zorite's editor.

@@ -28,6 +28,7 @@ mod preview;
 mod session_store;
 mod settings;
 mod settings_ui;
+mod spelling;
 mod style;
 mod ui;
 mod workspace;
@@ -106,6 +107,9 @@ actions!(
         FindPreviousMarkdown,
         CloseMarkdownSearch,
         ToggleMarkdownMatchCase,
+        NextMisspelling,
+        PreviousMisspelling,
+        ToggleDocumentSpelling,
     ]
 );
 
@@ -190,6 +194,8 @@ fn main() {
             KeyBinding::new(&format!("{modifier}-shift-s"), SaveAs, None),
             KeyBinding::new(&format!("{modifier}-w"), Close, None),
             KeyBinding::new(&format!("{modifier}-q"), Quit, None),
+            KeyBinding::new(&format!("{modifier}-;"), NextMisspelling, None),
+            KeyBinding::new(&format!("{modifier}-shift-;"), PreviousMisspelling, None),
             KeyBinding::new("ctrl-tab", NextTab, None),
             KeyBinding::new("ctrl-shift-tab", PreviousTab, None),
         ]);

@@ -28,7 +28,7 @@ problem; conversion and OCR algorithm changes belong in the dependency forks.
 | `crates/mdoc-editor` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |
 | `crates/mdoc-pii`, `crates/mdoc-history` | GUI-free pseudonymization review model and the plain edit transactions it follows |
 | `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |
-| `crates/os-spellcheck` | OS spell-check groundwork, wired only into the editor demo ([roadmap](../ROADMAP.md#deferred): deferred experiment) |
+| `src/spelling.rs`, `crates/mdoc-spell` | Spellcheck: background checks, toolbar indicator and navigation; GUI-free EN/RU engine with bundled dictionaries ([ADR 0036](adr/0036-bundled-spellcheck.md)) |
 
 Cargo.toml and Cargo.lock define dependency revisions; `src/ocr.rs` defines
 runtime URLs/digests, and the pinned pdf-inspector manifest defines OCR model

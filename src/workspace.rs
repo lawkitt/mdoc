@@ -277,7 +277,11 @@ impl Workspace {
             Some(
                 cx.subscribe_in(&panel, window, |this, _, event, window, cx| match event {
                     settings_ui::Event::Applied | settings_ui::Event::Checked => {
-                        this.refresh_model_settings(cx)
+                        this.refresh_model_settings(cx);
+                        // Spelling choices apply at once; views re-read them on render.
+                        for view in this.tabs.iter().filter_map(|tab| tab.view.as_ref()) {
+                            view.update(cx, |_, cx| cx.notify());
+                        }
                     }
                     settings_ui::Event::Finished(settings::Model::Ocr(model), result) => {
                         let selected = this.preferences.borrow().snapshot().map(|p| p.ocr);

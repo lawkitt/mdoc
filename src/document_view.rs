@@ -55,6 +55,7 @@ pub(crate) struct DocumentView {
     pub(crate) images: images::ImageCache,
     pub(crate) session: document_session::DocumentSession,
     pub(crate) pii: pii::ui::ReviewUi,
+    pub(crate) spelling: spelling::SpellState,
     pub(crate) preview: preview::PreviewState,
     pub(crate) scroll: ScrollHandle,
     pub(crate) error: Option<String>,
@@ -100,6 +101,7 @@ impl DocumentView {
             editor.set_block_chip_provider(|src| {
                 gpui_pdf::is_pdf(src).then(|| src.to_owned().into())
             });
+            spelling::install_editor_hooks(&mut editor, dependencies.preferences.clone());
             editor
         });
         let images = images::install(&editor, Document::default().directory(), cx);
@@ -110,6 +112,7 @@ impl DocumentView {
                 EditorEvent::Changed => {
                     this.copy_feedback = None;
                     this.pii_edited(cx);
+                    this.schedule_spellcheck(true, cx);
                     this.generated_unedited = false;
                     this.blank_disposable = false;
                     this.dirty_cached = this.dirty(cx);
@@ -125,6 +128,9 @@ impl DocumentView {
                     this.middle_click_mention(*id, *modifiers, false, window, cx)
                 }
                 EditorEvent::SelectionChanged => this.sync_selection_action(cx),
+                EditorEvent::DiagnosticAction(action, word) => {
+                    this.spelling_action(*action, word.clone(), cx)
+                }
                 EditorEvent::SelectionAction => {
                     this.add_pii_candidate(&PiiAddCandidate, window, cx)
                 }
@@ -176,6 +182,7 @@ impl DocumentView {
             images,
             session: document_session::DocumentSession::default(),
             pii: pii::ui::ReviewUi::new(cx),
+            spelling: spelling::SpellState::default(),
             preview: preview::PreviewState::default(),
             scroll: ScrollHandle::new(),
             error: None,
@@ -1233,6 +1240,8 @@ impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Derived display state; set_outlines only notifies on change.
         self.sync_scope_outlines(cx);
+        // Loads and Settings changes reach spellcheck here (no-op otherwise).
+        self.ensure_spellcheck(cx);
         // A finished or abandoned OS drag leaves no feedback behind.
         if !cx.has_active_drag() {
             self.file_drag = None;
@@ -1512,6 +1521,9 @@ impl Render for DocumentView {
             .on_action(cx.listener(|_, _: &Close, _, cx| cx.emit(workspace::TabEvent::CloseRequested)))
             .on_action(cx.listener(|this, _: &ClosePdf, window, cx| { this.toggle_preview(window, cx); if this.source_only { window.focus(&this.focus, cx); } else { window.focus(&this.editor.read(cx).focus_handle(cx), cx); } cx.notify(); }))
             .on_action(cx.listener(Self::find_markdown))
+            .on_action(cx.listener(Self::next_misspelling))
+            .on_action(cx.listener(Self::previous_misspelling))
+            .on_action(cx.listener(Self::toggle_document_spelling))
             .on_action(cx.listener(Self::find_next_markdown))
             .on_action(cx.listener(Self::find_previous_markdown))
             .on_action(cx.listener(Self::close_markdown_search))
