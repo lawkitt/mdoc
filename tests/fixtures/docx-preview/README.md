@@ -9,7 +9,7 @@ Both synthetic archives are included in the changes. To regenerate them before
 running Cargo:
 
 ```sh
-rtk proxy python3 tests/fixtures/docx-preview/generate.py
+python3 tests/fixtures/docx-preview/generate.py
 ```
 
 Run from the repository root. The generator rewrites both archives

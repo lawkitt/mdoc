@@ -46,7 +46,7 @@ or actual AppImage launch checks remain explicitly pending, without inferring
 platform acceptance from headless tests. No release or main merge is authorized
 by this decision.
 
-See [the upstream inventory and decision tree](../design/zorite-upstream-triage.md).
+See [the historical upstream inventory and decision tree](https://github.com/lawkitt/mdoc/blob/dd22e6e98b6635f1e51ced6baf6c47428dd50806/docs/design/zorite-upstream-triage.md).
 
 ## Implementation evidence
 

@@ -1,7 +1,7 @@
 # Pseudonymization UI polish
 
 Status: Accepted and implemented, 2026-10-09. See the
-[design interview](../design/pseudonymization-ui-polish.md).
+[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-ui-polish.md).
 
 ## Problem
 

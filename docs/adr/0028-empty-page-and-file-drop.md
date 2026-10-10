@@ -1,6 +1,6 @@
 # Empty page and external file drop
 
-Status: Accepted and implemented, 2026-10-09; native file-drag and Windows/Linux checks outstanding. See the [design interview](../design/empty-page.md).
+Status: Accepted and implemented, 2026-10-09; native file-drag and Windows/Linux checks outstanding. See the [historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/empty-page.md).
 
 ## Problem
 

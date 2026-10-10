@@ -28,17 +28,17 @@ tests do not fetch models or require a native runtime. The adapter dependencies
 are fixed by their committed lockfiles.
 
 ```sh
-rtk cargo build --release --locked --manifest-path tools/pseudonymization/Cargo.toml
-rtk cargo build --release --locked --manifest-path tools/pseudonymization/gline/Cargo.toml
-rtk cargo build --release --locked --manifest-path tools/pseudonymization/gliner2/Cargo.toml
+cargo build --release --locked --manifest-path tools/pseudonymization/Cargo.toml
+cargo build --release --locked --manifest-path tools/pseudonymization/gline/Cargo.toml
+cargo build --release --locked --manifest-path tools/pseudonymization/gliner2/Cargo.toml
 
-rtk cargo fmt --check --manifest-path tools/pseudonymization/Cargo.toml
-rtk cargo fmt --check --manifest-path tools/pseudonymization/gline/Cargo.toml
-rtk cargo fmt --check --manifest-path tools/pseudonymization/gliner2/Cargo.toml
-rtk cargo clippy --locked --all-targets --manifest-path tools/pseudonymization/Cargo.toml -- -D warnings
-rtk cargo clippy --locked --all-targets --manifest-path tools/pseudonymization/gline/Cargo.toml -- -D warnings
-rtk cargo clippy --locked --all-targets --features ocr-compat --manifest-path tools/pseudonymization/gliner2/Cargo.toml -- -D warnings
-rtk cargo test --locked --manifest-path tools/pseudonymization/Cargo.toml
+cargo fmt --check --manifest-path tools/pseudonymization/Cargo.toml
+cargo fmt --check --manifest-path tools/pseudonymization/gline/Cargo.toml
+cargo fmt --check --manifest-path tools/pseudonymization/gliner2/Cargo.toml
+cargo clippy --locked --all-targets --manifest-path tools/pseudonymization/Cargo.toml -- -D warnings
+cargo clippy --locked --all-targets --manifest-path tools/pseudonymization/gline/Cargo.toml -- -D warnings
+cargo clippy --locked --all-targets --features ocr-compat --manifest-path tools/pseudonymization/gliner2/Cargo.toml -- -D warnings
+cargo test --locked --manifest-path tools/pseudonymization/Cargo.toml
 ```
 
 ## Explicit setup
@@ -51,9 +51,9 @@ An incomplete or modified installation cannot pass inference validation.
 Verified files are reused; setup never downloads document contents.
 
 ```sh
-rtk proxy tools/pseudonymization/target/release/mdoc-pseudonymization-qualification setup multi-v2.1-q8 .qualification/models
-rtk proxy tools/pseudonymization/target/release/mdoc-pseudonymization-qualification setup pii-base-q8 .qualification/models
-rtk proxy tools/pseudonymization/target/release/mdoc-pseudonymization-qualification setup gliner2-pii-fp16 .qualification/models
+tools/pseudonymization/target/release/mdoc-pseudonymization-qualification setup multi-v2.1-q8 .qualification/models
+tools/pseudonymization/target/release/mdoc-pseudonymization-qualification setup pii-base-q8 .qualification/models
+tools/pseudonymization/target/release/mdoc-pseudonymization-qualification setup gliner2-pii-fp16 .qualification/models
 ```
 
 Models are retained in the ignored `.qualification/` directory. Cleanup is manual.
@@ -73,7 +73,7 @@ never runs setup or recovers missing artifacts through the network.
 On Apple Silicon macOS with mdoc's OCR already set up:
 
 ```sh
-rtk proxy tools/pseudonymization/target/release/mdoc-pseudonymization-qualification run \
+tools/pseudonymization/target/release/mdoc-pseudonymization-qualification run \
   tools/pseudonymization/gline/target/release/mdoc-qualify-gline \
   multi-v2.1-q8 .qualification/models tests/fixtures/pseudonymization/corpus.json \
   .qualification/results/multi-t05.json \
@@ -109,7 +109,7 @@ that distinction; production needs a tokenizer-aware bound before adoption.
 Generate the category/language and fixture tables from raw evidence:
 
 ```sh
-rtk proxy tools/pseudonymization/target/release/mdoc-pseudonymization-qualification summarize \
+tools/pseudonymization/target/release/mdoc-pseudonymization-qualification summarize \
   docs/evidence/pseudonymization/2026-10-01/*-t0.[35].json
 ```
 
@@ -127,9 +127,9 @@ both engines coexist, and after PII is dropped. It compares source PDF hashes
 and validates PII byte offsets. No OCR download is attempted.
 
 ```sh
-rtk cargo build --release --locked --manifest-path tools/pseudonymization/gliner2/Cargo.toml \
+cargo build --release --locked --manifest-path tools/pseudonymization/gliner2/Cargo.toml \
   --features ocr-compat --bin mdoc-qualify-ocr-compat
-rtk proxy env GLINER2_DEVICE=cpu tools/pseudonymization/gliner2/target/release/mdoc-qualify-ocr-compat \
+env GLINER2_DEVICE=cpu tools/pseudonymization/gliner2/target/release/mdoc-qualify-ocr-compat \
   .qualification/models "$HOME/Library/Application Support/mdoc/ocr/v1" \
   tests/fixtures/ocr-qualification .qualification/results/ocr-coexistence.json
 ```

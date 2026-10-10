@@ -2,9 +2,10 @@
 
 The user confirmed Q14: evaluate a small structured-rule prototype alongside
 GLiNER2 before choosing any production additions. This tooling is outside the
-app dependency graph. Q15 remains open; the restoration/refactor feature has not
-been implemented. Read the [measurements](../../../../docs/evidence/pseudonymization/2026-10-07-hybrid/measurements.md)
-and [OSS source review](../../../../docs/design/pii-oss-research.md).
+app dependency graph. Q15 subsequently selected email plus contextual
+checksum-valid INN/SNILS for experimental app use under
+[ADR 0014](../../../../docs/adr/0014-highlighted-pii-replacements.md). Read the [measurements](../../../../docs/evidence/pseudonymization/2026-10-07-hybrid/measurements.md)
+and [historical OSS source review](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pii-oss-research.md).
 
 ## Corpus
 

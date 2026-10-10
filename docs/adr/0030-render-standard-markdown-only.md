@@ -1,7 +1,7 @@
 # Render standard Markdown only
 
 Status: accepted and implemented, 2026-10-09. See the
-[codebase cleanup interview](../design/codebase-cleanup.md), round 2.
+[historical codebase cleanup interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/codebase-cleanup.md), round 2.
 
 ## Problem
 

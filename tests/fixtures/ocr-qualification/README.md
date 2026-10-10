@@ -62,7 +62,7 @@ downloads the pinned runtime/model artifacts into throwaway storage, validates
 loading, checks EN/RU text, and verifies unchanged source bytes:
 
 ```sh
-rtk cargo test -p mdoc --bin mdoc setup_and_offline_english_russian_smoke -- --ignored --nocapture
+cargo test -p mdoc --bin mdoc setup_and_offline_english_russian_smoke -- --ignored --nocapture
 ```
 
 Ordinary workspace tests do not download models. Do not copy raw outputs from

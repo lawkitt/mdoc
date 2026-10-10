@@ -1,193 +1,129 @@
-# Document preparation
+# Document preparation glossary
 
-mdoc prepares local documents as editable Markdown for lawyers to use with AI
-agents in other tools.
+mdoc prepares local documents as editable Markdown for external AI tools.
+Behavior and rationale live in [ADRs](docs/adr/); this file defines shared terms.
 
-## Language
+## Documents and handoff
 
-**Source document**:
-The original document from which Markdown is extracted, such as a PDF or DOCX.
+**Source document**: the original PDF, DOCX or other file from which Markdown is extracted.
 
-**Converted Markdown**:
-The Markdown produced from a source document, which the lawyer can review and edit.
+**Converted Markdown**: editable Markdown extracted from a source document.
 
-**Source preview**:
-A visual reference to the retained source document, before Markdown edits.
-DOCX preview is an approximate rendering and may have fidelity limitations.
-_UI label_: Original
+**Source preview**: visual reference to the retained original, before Markdown
+edits. DOCX rendering is approximate. UI label: **Original**.
 
-**OCR**:
-Recognition of text from document images, used when usable text cannot be
-extracted directly.
+**Markdown handoff**: saving or copying prepared Markdown to another tool.
+**Copy Markdown** copies the full current source exactly, including unsaved edits
+and pending proposals; it does not apply replacements or add a relationship legend.
 
-**Markdown handoff**:
-The transfer of prepared Markdown to another tool, by saving a file or copying
-the full text.
+**AI analysis handoff**: prepare Markdown for external AI analysis without
+bringing the response back. This is the first qualification journey ([ADR 0016](docs/adr/0016-pii-production-qualification-scope.md)).
 
-**AI analysis handoff**:
-Prepare Markdown in mdoc for analysis in an external AI tool, without bringing
-the response back into mdoc. This is the initial pseudonymization production
-journey selected on 2026-10-08.
+**AI analysis return journey**: bring an external AI response back into mdoc.
+Response import and identity restoration remain deferred.
 
-**AI analysis return journey**:
-Prepare Markdown for analysis in an external AI tool and bring its response
-back into mdoc. This is a later product journey; response import and identity
-restoration behavior have not yet been designed or implemented.
+**Multi-file opening**: open several files for individual reading and lazy conversion.
 
-**Pseudonymization**:
-Reviewable replacement of selected identifying information with consistent
-placeholders while retaining useful relationships in the text. It does not
-guarantee that the document's subjects cannot be identified. It is the only PII
-replacement behavior ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)):
-scanning proposes, explicit Apply replaces as one undo step. Applied fields stay
-highlighted (blue; proposals are gold, `Theme::applied`/`Theme::proposed`) and clickable. Apply also works per
-popup scope. **Undo replacement** returns applied text to a proposal with the
-same alias; **Keep original** reverts and records a Keep decision. Both travel
-with text undo/redo ([ADR 0023](docs/adr/0023-pseudonymization-ui-polish.md)). Originals live only in the open document; Save does not serialize them.
-_Avoid_: Guaranteed anonymization, Anonymize, shared category markers
+**Batch conversion**: process an explicitly selected group without opening each
+file individually. This workflow remains deferred; avoid calling multi-file opening batch conversion.
 
-**Model bundle**:
-A pinned set of mutually compatible model artifacts, including the required
-dictionary or tokenizer, offered as one selectable configuration. Availability
-and installation do not establish recognition or detection quality.
+## Models and processing
 
-**Setup consent card**:
-The inline prompt shown where OCR or Pseudonymize is first needed while its
-selected model bundle is missing. It names the bundle and total download size;
-**Download & continue** installs it and resumes the task
-([ADR 0026](docs/adr/0026-first-use-model-setup.md)).
-_Avoid_: automatic setup, setup wizard
+**OCR**: recognize text from document images when direct extraction is insufficient.
 
-**State card**:
-The centred card in the Markdown pane for a document not yet converted
-(ready, waiting, converting, needs recognition, failed). It changes in place
-and hosts the setup consent card for OCR ([ADR 0026](docs/adr/0026-first-use-model-setup.md)).
+**Model bundle**: pinned, compatible model artifacts and required tokenizer or
+dictionary. Installation/runtime compatibility does not establish detection quality.
 
-**Configuration snapshot**:
-The model identity and settings captured for one processing run. Later changes
-to application defaults do not change the configuration attributed to that run.
+**Setup consent card**: inline first-use prompt naming the missing model and
+its download size. Explicit download installs it and resumes the requested task
+([ADR 0026](docs/adr/0026-first-use-model-setup.md)). Avoid automatic setup or setup wizard.
 
-**Model comparison**:
-Isolated, sequential QA runs against the same captured input with separate
-read-only results. Comparison overrides do not edit the document or change
-application defaults.
+**State card**: centered Markdown-pane state for an unconverted document:
+ready, waiting, converting, needs recognition or failed. Hosts OCR setup consent.
 
-**Recognition output**:
-Text and recognition evidence produced by the OCR model before native-text fusion
-and final Markdown preparation. Model confidence is not measured accuracy.
+**Configuration snapshot**: model identity and settings captured for one run;
+later default changes do not change its attribution.
 
-**Prepared Markdown**:
-The converter's final Markdown output, which may combine native extraction and
-OCR recognition. In model comparisons it is shown separately from recognition
-output and does not replace the working document.
+**Model comparison**: isolated sequential QA runs on one captured input with
+read-only results; overrides change neither defaults nor the document.
 
-**Replacement mapping**:
-The local association between original identifying information and its
-placeholders, separate from the Markdown being handed off.
+**Recognition output**: OCR text/evidence before native-text fusion and final
+Markdown preparation. Confidence is not measured accuracy.
 
-**Batch conversion**:
-Conversion of an explicitly selected group of source documents without requiring
-the lawyer to open each one individually for processing.
-_Avoid_: Bulk Open, multi-file opening
+**Prepared Markdown**: final converter output, potentially combining native
+text and OCR. Comparisons show it separately without replacing the working document.
 
-**Review candidate**:
-A detected span of identifying information proposed for replacement, which the
-lawyer can accept or decline.
+**Scan status**: spinner and timed stage label beside Pseudonymize. Stages are
+not measured progress ([ADR 0032](docs/adr/0032-replacement-popup-redesign.md)).
 
-**Close review**:
-Leave pseudonymization review and hide candidate highlights while retaining
-accepted Markdown edits, clickable applied highlights and the live document's
-restoration provenance. It does
-not establish that the document is safe to share.
+## Pseudonymization and review
 
-**Manual addition**:
-Text the lawyer selects and turns into a proposed replacement after
-Pseudonymize, when detection missed it. All exact repeats are proposed together
-with a guessed, correctable category
-([ADR 0024](docs/adr/0024-replace-custom-selection.md)). Code: `Review::add_manual`.
-_UI label_: Replace
+**Pseudonymization**: reviewable replacement of identifying information with
+consistent aliases while retaining useful relationships. Scanning proposes;
+explicit Apply edits Markdown. Avoid guaranteed anonymization, Anonymize or
+shared category markers ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)).
 
-**Scope outline**:
-A thin outline in the editor around the mentions a selected panel group or
-popup scope chip would affect; display only
-([ADR 0025](docs/adr/0025-review-refinements.md)).
+**Replacement mapping**: local association between originals and aliases,
+separate from the Markdown handed off. Mappings and originals live only in the
+open document; Save/Copy/restart do not serialize them.
 
-**Replacement chip**:
-The rounded, bordered highlight of a mention in the editor: gold when
-proposed, blue when applied. On Apply it eases from gold to blue while the
-words roll inside the chip ([ADR 0032](docs/adr/0032-replacement-popup-redesign.md)).
+**Placeholder / alias**: stable replacement token such as `PERSON_1`.
+Generated aliases come from mdoc; custom aliases retain deliberate user names
+through category corrections.
 
-**Scan status**:
-The spinner and stage label beside Pseudonymize while a scan runs, crossfading
-through Reading… → Analyzing… → Finding names… → Linking mentions…. The scan
-reports no progress, so stages are timed, not measured
-([ADR 0032](docs/adr/0032-replacement-popup-redesign.md)).
-_Avoid_: progress, percentages, skeletons over existing text
+**Identity**: document-local entity owning a stable neutral alias and original variants.
 
-**Other category**:
-The neutral category for manually added text with no recognisable shape;
-placeholder `REDACTED_n`. Manual additions only; the detector never emits it.
+**Variant**: one exact original wording whose mentions belong to an identity.
+Linking variants shares an alias. Code: `mdoc_pii::Variant`.
 
-**Mention**:
-One occurrence of identifying information in the Markdown source. Exact repeated
-mentions can be reviewed together; variants are linked by the lawyer.
+**Mention**: one occurrence of identifying information in the Markdown source.
 
-**Variant**:
-One exact original wording, such as "Павлова М.С.", whose pending mentions are
-found together. Each variant belongs to an identity; linking variants makes
-them share one alias. Code: `mdoc_pii::Variant`.
+**Occurrence assignment**: identity override for a particular mention, allowing homonyms to be separated.
 
-**Placeholder**:
-A stable replacement token, such as PERSON_1, associated with selected identifying
-information while preserving useful references within a document.
+**Sameness**: mentions refer to one identity. **Ownership**: a contact, address
+or identifier belongs to a person/organization. **Affiliation**: a person
+represents an organization. These are separate relationships, not proximity rules.
 
-**Multi-file opening**:
-Opening several selected files together for individual reading and conversion.
-It does not imply processing and saving the entire group automatically.
-_Avoid_: Batch conversion
+**Proposed mapping**: staged identity/alias changes against originals until
+Apply; tracked replacements remain correctable afterward ([ADR 0018](docs/adr/0018-document-local-identity-review.md)).
 
-Document-local identity review (ADR 0018): an **identity** owns a stable neutral
-alias and original variants; an **occurrence assignment** can override a variant's
-identity to separate homonyms. **Sameness** joins mentions into one identity;
-**ownership** links a contact/address/identifier to a person or organization.
-**Proposed mapping** changes are staged against originals until Apply replacements;
-tracked replacements remain correctable afterward. The **Replacements panel**
-(ADRs 0019 and [0020](docs/adr/0020-direct-replacement-workspace.md)) is the searchable
-overview; selecting a row reveals the exact highlighted occurrence and its shared
-word popup. The popup provides direct alias choices and scoped sameness/category
-corrections, with separate ownership and Keep/Restore actions. One **Copy Markdown**
-action copies current full source exactly, including with pending proposals;
-it adds no relationship legend and never implicitly applies replacements.
-Owner assignments remain local. The panel stays vertical directly right of the
-Markdown editor (before Original, ADR 0023) with compact rows and full
-document-area height. One popup **scope** (This mention / Same wording / Entire
-entity; _UI label_ `Apply to: This one · Same wording · All variants`, shortened
-to `This one · All N` when only two differ, ADR 0032) governs alias, category,
-Apply, Undo and Keep actions. Its width adapts to the window; the
-Original preview switches panes when the remaining document area is narrow,
-keeping the word popup available beside the panel.
-**Same wording** affects matching originals still assigned to the selected entity;
-**Entire entity** also includes its other variants. **Generated aliases** are
-allocated by mdoc; **custom aliases** preserve deliberate user names on category
-correction, regardless of their spelling.
-These mappings and originals are live-tab memory, not saved restoration metadata.
+**Review candidate**: detected span proposed for replacement.
 
-**Empty page**:
-The centered start view of a Markdown tab with empty content: Open files…,
-supported formats, the multi-file hint and ⌘O. Non-blocking — typing starts
-writing. Also the whole-window file drop zone while shown (ADR 0028).
+**Replacements panel**: searchable overview beside the editor. Selecting a row
+reveals its highlighted mention and word popup ([ADR 0020](docs/adr/0020-direct-replacement-workspace.md)).
 
-**Workspace**:
-The window shell: the document sidebar, toolbar, settings and the tabs it owns,
-including unopened restored records. One per window. In code
-`workspace::Workspace`.
+**Scope**: This mention, Same wording or Entire entity. Same wording includes
+matching originals assigned to the selected entity; Entire entity includes its
+other variants. One scope governs alias, category, Apply, Undo and Keep actions.
 
-**Tab**:
-One sidebar entry. An initialized tab owns one document view; an unopened
-restored tab allocates nothing until activated.
+**Manual addition**: selected missed text becomes a proposal with a correctable
+category; exact repeats are proposed together. UI label: **Replace** ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
 
-**Document view**:
-Everything shown for one tab's document: Markdown editor, source preview,
-search, import/OCR state and pseudonymization review. In code
-`document_view::DocumentView`.
-_Avoid_: calling the per-document view a workspace
+**Other category**: manual-only neutral category with a `REDACTED_n` alias;
+the detector never emits it.
+
+**Replacement chip**: rounded mention highlight: gold proposed, blue applied.
+Motion and scoped popup presentation follow [ADR 0032](docs/adr/0032-replacement-popup-redesign.md).
+
+**Scope outline**: display-only ring around mentions affected by the selected scope.
+
+**Undo replacement**: restore applied text as a proposal retaining its alias.
+**Keep original**: restore original text and record a Keep decision. Both follow
+text undo/redo ([ADR 0023](docs/adr/0023-pseudonymization-ui-polish.md)).
+
+**Close review**: hide candidate highlights while retaining edits, clickable
+applied highlights and live restoration provenance. It does not establish safe sharing.
+
+## Application structure
+
+**Empty page**: immediately writable empty Markdown view with Open files,
+supported formats, multi-file hint and shortcut; also a file-drop zone ([ADR 0028](docs/adr/0028-empty-page-and-file-drop.md)).
+
+**Workspace**: one window's shell, sidebar, toolbar, Settings and tabs,
+including unopened restored records. Code: `workspace::Workspace`.
+
+**Tab**: sidebar entry owning a document view once initialized; restored tabs
+allocate their document view when activated.
+
+**Document view**: one tab's editor, source preview, search, import/OCR and
+pseudonymization state. Code: `document_view::DocumentView`. Avoid calling this workspace.

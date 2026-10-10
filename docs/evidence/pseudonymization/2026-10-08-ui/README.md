@@ -1,7 +1,6 @@
 # Replacements UI verification — 2026-10-08
 
-Scope: implement the confirmed [design](../../../design/pseudonymization-ui-simplification.md)
-and [ADR 0019](../../../adr/0019-simpler-pseudonymization-ui.md).
+Scope: implement [ADR 0019](../../../adr/0019-simpler-pseudonymization-ui.md).
 This record covers the UI simplification on top of the existing identity work;
 it does not qualify detector recall or anonymity.
 

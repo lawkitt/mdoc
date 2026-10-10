@@ -1,9 +1,9 @@
 # Chrome-style vertical document sidebar
 
 Status: Accepted and implemented, 2026-10-09; Windows/Linux native check outstanding. See the
-[design interview](../design/sidebar-vertical-tabs.md). Supersedes the sidebar
+[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/sidebar-vertical-tabs.md). Supersedes the sidebar
 default and document list popup of the
-[sidebar and toolbar revision](../design/ui-chrome-revision.md) /
+[historical sidebar and toolbar revision](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/ui-chrome-revision.md) /
 [ADR 0012](0012-document-preparation-ui.md).
 
 ## Problem

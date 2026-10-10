@@ -35,5 +35,5 @@ gate this change. Production detector accuracy, semantic identity associations,
 the identity correction UI and platform qualification remain separate open work.
 This decision does not remove experimental status.
 
-See [source research, implementation boundary and verification](../design/rust-presidio-reuse.md)
+See [historical source research, implementation boundary and verification](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/rust-presidio-reuse.md)
 and [production-scope ADR](0016-pii-production-qualification-scope.md).

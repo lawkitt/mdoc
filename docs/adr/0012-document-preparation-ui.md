@@ -4,8 +4,8 @@ Status: accepted and implementation authorized, 2026-10-05. Implemented
 locally, 2026-10-06. Automated checks pass; native acceptance remains partial.
 The design frontier is empty.
 
-The sidebar and toolbar portions are being reconsidered in a new
-[revision interview](../design/ui-chrome-revision.md), started 2026-10-06.
+The sidebar and toolbar portions were revised in the later
+[historical revision interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/ui-chrome-revision.md), implemented 2026-10-06.
 The user confirmed the revision and authorized implementation with "Implement."
 The revision supersedes the sidebar default/collapsed-count control, main toolbar
 menu and icon placement, and PDF overflow-menu portions of the original decision
@@ -33,7 +33,7 @@ The user confirmed four recommendations together:
   behind explicit disclosure.
 
 The user subsequently confirmed the Round 2 controls and behavior recorded in
-the [UI interview](../design/ui-review.md): a reduced toolbar with secondary
+the [historical UI interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/ui-review.md): a reduced toolbar with secondary
 commands, remembered sidebar choice, adjustable original-source preview,
 view-only table fitting that respects saved widths, compact review controls,
 candidate disclosures with explicit occurrence scope, task-facing Settings,
@@ -53,7 +53,7 @@ explicit saved table widths, and per-tab preview visibility/divider preferences.
 Exact breakpoints and sizing internals follow measured fit within this contract.
 
 These choices retain conversion, replacement, handoff, and model-management
-semantics. The linked specification contains all 19 confirmed decisions and
+semantics. The historical interview records all 19 confirmed decisions and
 their acceptance criteria. No substantive design question remains open.
 
 ## Invariants
@@ -86,7 +86,7 @@ Tab/Space activation, narrow source switching, Settings checking feedback,
 footer visibility, Tab without expanding Advanced, and Escape. The Mac locked
 before final native light-theme, review-popup, divider/thumb drag, and repaired
 focus-scrolling checks. The temporary app was stopped and the original session
-restored byte-for-byte. See the [implementation evidence](../design/ui-review.md#implementation-and-verification--2026-10-06).
+restored byte-for-byte. See the [historical implementation evidence](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/ui-review.md#implementation-and-verification--2026-10-06).
 
 Automated checks do not establish native IME/clipboard, comprehensive
 accessibility, Windows/Linux acceptance, or detector/converter qualification.

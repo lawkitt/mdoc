@@ -37,7 +37,7 @@ must be explained; preserve ordinary tables, unknown-symbol behavior, revision
 semantics and the existing partial-PDF API. Automated converter tests establish
 conversion behavior, not native or cross-platform UI acceptance.
 
-See [the decision record and full inventory](../design/anydoc-upstream-triage.md).
+See [the historical decision record and full inventory](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/anydoc-upstream-triage.md).
 
 ## Implementation evidence
 

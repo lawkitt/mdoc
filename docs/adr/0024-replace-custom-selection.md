@@ -2,7 +2,7 @@
 
 Status: Accepted and implemented, 2026-10-09. The Person fallback of the
 category guess is superseded by [ADR 0025](0025-review-refinements.md). See the
-[design interview](../design/pseudonymization-manual-selection.md).
+[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-manual-selection.md).
 
 ## Problem
 

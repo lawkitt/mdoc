@@ -1,7 +1,7 @@
 # Behavior-preserving pseudonymization refactoring
 
 Status: accepted and implemented, 2026-10-08. The user confirmed the interview and requested full implementation; see the
-[design interview](../design/pseudonymization-refactoring.md).
+[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-refactoring.md).
 
 ## Problem
 

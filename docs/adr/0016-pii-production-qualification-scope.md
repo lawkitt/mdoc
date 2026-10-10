@@ -1,10 +1,8 @@
 # Qualify PII preparation within a bounded product scope
 
-Status: direction accepted, 2026-10-08. Detailed production gates remain open;
-the first-journey product workflow is implemented under ADR 0018. The selected Rust Presidio structured-adapter
-reuse was separately authorized on 2026-10-08. First-journey identity review was
-subsequently authorized and implemented under [ADR 0018](0018-document-local-identity-review.md);
-production qualification gates remain open.
+Status: direction accepted, 2026-10-08. The outgoing journey is implemented
+experimentally under [ADR 0018](0018-document-local-identity-review.md), with
+subsequent review changes in ADRs 0019–0025 and 0032. Production gates remain open.
 
 ## Decision
 
@@ -41,12 +39,9 @@ evidence; success in one does not establish the others.
 
 ## Open decisions
 
-The user agreed to Q1–Q4 and requested more product brainstorming, describing
-Anonymize as identifier removal without restoration for external AI use.
-Clarify whether that means an ordinary one-way journey or deliberate forgetting
-of originals. The first Pseudonymize journey is now settled; identity grouping,
-automatic association policy and mapping correction UX precede technical gates.
-No restoration behavior has been removed or newly approved by this ADR.
-
-See the [ongoing design tree](../design/pseudonymization-production-readiness.md).
-ADRs 0002, 0013 and 0014 continue to govern implemented behavior until amended.
+Numerical release targets, representative holdout quality, correction time,
+whole-editor responsiveness and native/platform qualification remain open. Track
+them in [production readiness](../design/pseudonymization-production-readiness.md).
+The outgoing journey and document-local correction model are settled; AI-response
+import and deliberate forgetting of originals remain deferred. No restoration
+behavior is removed or newly approved by this ADR.

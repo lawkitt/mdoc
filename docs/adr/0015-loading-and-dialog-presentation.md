@@ -27,7 +27,7 @@ quiet actions, obscuring the transformation and immediate choice.
 - Remove the permanent restoration footer and redundant labels; retain actionable
   errors, essential context and existing Settings Advanced/model tools.
 
-The [interview](../design/loading-and-dialogs.md) records all confirmed decisions
+The [historical interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/loading-and-dialogs.md) records all confirmed decisions
 and acceptance criteria. These presentation decisions preserve
 processing behavior, explicit activation, cancellation/stale-result guards,
 replacement/Keep/undo semantics, source state and live-memory provenance.

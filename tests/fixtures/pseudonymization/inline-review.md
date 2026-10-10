@@ -41,9 +41,9 @@ leave some spans for narrowed manual review.
 
 ## Automated checks
 
-The full gate passed: `rtk cargo fmt --check`,
-`rtk cargo clippy --workspace --all-targets -- -D warnings`, and
-`rtk cargo test --workspace` (341 passed, 9 opt-in tests ignored).
+The full gate passed: `cargo fmt --check`,
+`cargo clippy --workspace --all-targets -- -D warnings`, and
+`cargo test --workspace` (341 passed, 9 opt-in tests ignored).
 The model-dependent opt-in check below was additionally run explicitly.
 
 Focused tests cover:
@@ -90,10 +90,10 @@ To rerun with the preverified cache at `.qualification/models/gliner2-pii-fp16`
 and an installed shared runtime:
 
 ```sh
-rtk proxy env GLINER2_DEVICE=cpu cargo test --workspace experimental_model_offline_scan -- --ignored --nocapture --test-threads=1
+env GLINER2_DEVICE=cpu cargo test --workspace experimental_model_offline_scan -- --ignored --nocapture --test-threads=1
 ```
 
-For enforced network denial, first use `rtk cargo test --workspace --no-run`,
+For enforced network denial, first use `cargo test --workspace --no-run`,
 then run the reported mdoc test executable with `sandbox-exec -p
 '(version 1)(allow default)(deny network*)'` and the same test/ignore flags.
 

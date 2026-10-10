@@ -1,7 +1,6 @@
 # PII restoration implementation verification — 2026-10-07
 
-Implements the confirmed [restoration design](../../../design/anonymizer-restoration.md)
-and [ADR 0014](../../../adr/0014-highlighted-pii-replacements.md).
+Implements [ADR 0014](../../../adr/0014-highlighted-pii-replacements.md).
 The measured email/contextual INN/SNILS subset is included experimentally; phone/bank
 rule expansion and full anonymizer engines remain deferred.
 

@@ -1,7 +1,7 @@
 # First-use model setup and English-first defaults
 
 Status: Accepted and implemented, 2026-10-09; Windows native check outstanding. See the
-[design interview](../design/model-setup-ux.md). Amends
+[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/model-setup-ux.md). Amends
 [ADR 0006](0006-local-model-settings.md) defaults and Settings controls.
 
 ## Problem

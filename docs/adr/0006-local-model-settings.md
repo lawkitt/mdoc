@@ -141,5 +141,5 @@ machine/build details. Separately check native macOS layout, focus, shortcuts an
 numeric input. Explicitly record outstanding Windows/native checks; headless
 results do not establish native acceptance or platform runtime qualification.
 
-The [complete design record](../design/local-model-settings.md) contains the
+The [historical complete design record](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/local-model-settings.md) contains the
 confirmed decision tree, defaults, implementation guidance and explicit deferrals.

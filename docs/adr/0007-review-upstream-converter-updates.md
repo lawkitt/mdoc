@@ -28,4 +28,14 @@ Build success alone cannot validate extraction changes; upstream modifies scan
 classification, decoding, reading order and the OCR renderer's input. Public
 fixtures make useful regression evidence reproducible without user documents.
 
-See [the decision tree and corpus proposal](../design/pdf-inspector-upstream-sync.md).
+See [the historical decision tree and corpus proposal](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pdf-inspector-upstream-sync.md).
+
+## Implementation evidence
+
+The merge preserved the fork's local OCR extensions; mdoc adopted tested fork
+`1baba87892a929e64d08069cb223b4a312f755cf`. The [public corpus](../../tests/fixtures/ocr-upstream/README.md)
+contains 12 public pages, plus native originals and synthetic EN/RU fixtures.
+All 54 prepared/raw/provenance artifacts were byte-identical to baseline.
+See [verification](../../tests/fixtures/ocr-upstream/verification.md) for checks
+and pending Windows, remote-CI and external-suite acceptance. This is a regression
+gate, not general OCR qualification.

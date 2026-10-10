@@ -58,4 +58,5 @@ email/INN/SNILS pattern configuration and the SNILS checksum validator are used;
 mdoc retains its Unicode patterns, strict context and boundary policy, INN
 checksum, review decisions and replacement/provenance implementation. Optional
 gazetteer and ONNX features are disabled. See the
-[reuse decision and verification](docs/design/rust-presidio-reuse.md).
+[reuse decision](docs/adr/0017-selected-rust-presidio-reuse.md), including its
+historical research and verification reference.

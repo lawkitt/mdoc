@@ -2,7 +2,7 @@
 
 Status: accepted and implemented, 2026-10-08. The user decided "keep only Pseudonymization and make
 it default behavior" during the
-[refactoring interview](../design/pseudonymization-refactoring.md). The user confirmed the interview and requested full implementation.
+[historical refactoring interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-refactoring.md). The user confirmed the interview and requested full implementation.
 
 ## Problem
 

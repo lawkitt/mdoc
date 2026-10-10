@@ -47,7 +47,7 @@ anonymous-document claim is made. Default new documents to Anonymize without
 persisting this mode as an application preference. Restore it to Anonymize on
 replacement of document identity, and retain mode across tab switches.
 
-[Design and verification](../design/anonymization.md) records all eight confirmed
+[Historical design and verification](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/anonymization.md) records all eight confirmed
 decisions, lifecycle/source invariants and validation limits. The frontier is
 empty. ADR 0002 continues to govern Pseudonymization; shared detection remains
 experimental and its qualification gaps are unchanged.

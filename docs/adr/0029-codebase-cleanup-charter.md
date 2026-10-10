@@ -1,7 +1,7 @@
 # Codebase cleanup charter
 
 Status: accepted and implemented, 2026-10-09. See the
-[design interview](../design/codebase-cleanup.md). Supersedes the "preserve
+[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/codebase-cleanup.md). Supersedes the "preserve
 reusable crates/features" scope of [ADR 0010](0010-workspace-construction-and-test-parity.md)
 and the deferral of API/feature removal in [ADR 0011](0011-editor-input-module.md).
 

@@ -83,14 +83,14 @@ Inspect Rust PII detection/anonymization projects for reusable ideas and narrow
 components before implementing. Detector policy changes or additional product
 dependencies require an explicit scope decision informed by source inspection
 and mdoc's EN/RU, Markdown, runtime and lifecycle constraints. See the
-[design tree](../design/anonymizer-restoration.md).
+[historical design tree](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/anonymizer-restoration.md).
 
 Q14 authorized an isolated hybrid-rule evaluation, now completed. Email plus
 contextual checksum-valid INN/SNILS match the complete hybrid's measured gains
 on the small synthetic corpus; broader phone/bank additions show no incremental
 exact hits. Q15 selected this narrow subset for experimental production use;
 phone/bank expansion and full engines remain deferred. The
-[source review and proposal](../design/pii-oss-research.md) and
+[historical source review and proposal](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pii-oss-research.md) and
 [measurements](../evidence/pseudonymization/2026-10-07-hybrid/measurements.md)
 preserve this distinction; detector quality remains experimental.
 

@@ -2,7 +2,7 @@
 
 Status: Accepted and implemented, 2026-10-08. The user confirmed the settled
 contract and explicitly authorized implementation. See the
-[design interview](../design/pseudonymization-direct-interaction.md).
+[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-direct-interaction.md).
 
 ## Problem
 

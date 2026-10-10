@@ -50,11 +50,11 @@ To reproduce, first compile the ignored probes, find the executable shown by
 Cargo, and explicitly choose one of `ocr-cyrillic`, `ocr-v6`, `pii-fp16`, `pii-fp32`:
 
 ```sh
-rtk cargo test -p mdoc --bin mdoc --no-run
+cargo test -p mdoc --bin mdoc --no-run
 # Explicit verified setup; may download the selected bundle:
-rtk proxy env MDOC_MODEL=pii-fp32 <test-executable> comparison::tests::settings_model_setup_probe --exact --ignored --nocapture
+env MDOC_MODEL=pii-fp32 <test-executable> comparison::tests::settings_model_setup_probe --exact --ignored --nocapture
 # Offline inference; uses installed artifacts and writes only this explicit report:
-rtk proxy env MDOC_MODEL=pii-fp32 MDOC_REPORT=/absolute/path/report.json /usr/bin/time -l sandbox-exec -p '(version 1)(allow default)(deny network*)' <test-executable> comparison::tests::settings_model_offline_probe --exact --ignored --nocapture
+env MDOC_MODEL=pii-fp32 MDOC_REPORT=/absolute/path/report.json /usr/bin/time -l sandbox-exec -p '(version 1)(allow default)(deny network*)' <test-executable> comparison::tests::settings_model_offline_probe --exact --ignored --nocapture
 ```
 
 Setup logs accompany each report. Completed verified artifacts were reused by

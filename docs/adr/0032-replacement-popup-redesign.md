@@ -1,7 +1,7 @@
 # Replacement popup redesign and replacement motion
 
 Status: Accepted and implemented, 2026-10-10. See the
-[design interview](../design/replacement-popup-polish.md).
+[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/replacement-popup-polish.md).
 
 ## Problem
 
