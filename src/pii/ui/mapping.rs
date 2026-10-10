@@ -116,7 +116,7 @@ pub(super) enum PanelMenu {
     Filter,
     Category(u64),
 }
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub(super) enum DropTarget {
     Entity(u64),
     NewEntity,
@@ -166,6 +166,8 @@ pub(super) struct MappingUi {
     pub(super) expanded: std::collections::HashSet<u64>,
     pub(super) filter: PanelFilter,
     pub(super) cursor: Option<PanelCursor>,
+    /// A ⌥↑/↓ move is held: `dragging`/`drop_target` describe it.
+    pub(super) key_moving: bool,
     /// The selection came from the panel: inline controls, no popup.
     pub(super) panel_selected: bool,
     /// Groups opened by triage focus, closed again once fully decided.
@@ -393,6 +395,7 @@ impl MappingUi {
             expanded: Default::default(),
             filter: PanelFilter::All,
             cursor: None,
+            key_moving: false,
             panel_selected: false,
             triage_expanded: Default::default(),
             panel_menu: None,

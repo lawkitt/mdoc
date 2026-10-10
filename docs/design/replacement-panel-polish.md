@@ -1,6 +1,6 @@
 # Replacements panel polish — design interview
 
-Status: interview complete, 2026-10-10; not yet implemented. Accepted in
+Status: interview complete and implemented, 2026-10-10. Accepted in
 [ADR 0033](../adr/0033-replacements-panel-redesign.md) and
 [ADR 0034](../adr/0034-pseudonymization-supported-feature.md). Follows the popup redesign in [ADR 0032](../adr/0032-replacement-popup-redesign.md).
 

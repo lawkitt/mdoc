@@ -83,6 +83,8 @@ actions!(
         PanelLast,
         PanelEnterList,
         PanelEscape,
+        PanelMoveUp,
+        PanelMoveDown,
         ApplyThis,
         ApplySame,
         ApplyAll,

@@ -251,7 +251,23 @@ impl DocumentView {
                 }
                 cx.notify();
             }))
+            .on_action(
+                cx.listener(|this, _: &crate::PanelMoveUp, _, cx| this.step_key_move(false, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::PanelMoveDown, _, cx| this.step_key_move(true, cx)),
+            )
             .on_action(cx.listener(|this, _: &crate::PanelEscape, window, cx| {
+                cx.stop_propagation();
+                // Esc while ⌥ is held cancels a keyboard move.
+                if this.pii.mapping.key_moving {
+                    let mapping = &mut this.pii.mapping;
+                    mapping.key_moving = false;
+                    mapping.dragging = None;
+                    mapping.drop_target = None;
+                    cx.notify();
+                    return;
+                }
                 // Esc in the list returns to search; from search it closes.
                 let search = this.pii.mapping.search.read(cx).focus_handle(cx);
                 if search.is_focused(window) {
@@ -318,5 +334,171 @@ impl DocumentView {
                 this.decide(Scope::Entity, true, window, cx);
                 cx.stop_propagation();
             }))
+    }
+
+    /// What a keyboard move of the current row carries: a mention, or the
+    /// whole entity for a header.
+    fn cursor_drag(&self, cx: &App) -> Option<PanelDrag> {
+        match self.pii.mapping.cursor? {
+            PanelCursor::Header(id) => {
+                let original = self
+                    .replacement_entries(cx)
+                    .iter()
+                    .find(|(row, _)| row.id == id)?
+                    .0
+                    .original
+                    .clone();
+                Some(PanelDrag::Entity {
+                    identity: id,
+                    original,
+                })
+            }
+            PanelCursor::Mention(annotation) => {
+                let review = &self.pii.review;
+                let (identity, range, original) = if annotation & APPLIED_ID != 0 {
+                    let a = review.applied_occurrence(annotation & !APPLIED_ID)?;
+                    (
+                        a.step.identity,
+                        a.range.clone(),
+                        a.step.original_shared().clone(),
+                    )
+                } else {
+                    let c = review.candidate(annotation)?;
+                    (
+                        review.occurrence_identity(c.variant, &c.range)?,
+                        c.range.clone(),
+                        review.variant(c.variant)?.original.clone(),
+                    )
+                };
+                Some(PanelDrag::Mention {
+                    identity,
+                    range,
+                    original,
+                })
+            }
+        }
+    }
+
+    /// ⌥↑/↓: start a keyboard move on the current row, or step its target
+    /// through the groups, then "New alias" for a mention of a multi-mention
+    /// entity. The ends stop rather than wrap (ADR 0033).
+    fn step_key_move(&mut self, down: bool, cx: &mut Context<Self>) {
+        if !self.pii.mapping.key_moving {
+            let Some(drag) = self.cursor_drag(cx) else {
+                return;
+            };
+            let mapping = &mut self.pii.mapping;
+            mapping.drop_target = Some(DropTarget::Entity(drag.identity()));
+            mapping.dragging = Some(drag);
+            mapping.key_moving = true;
+        }
+        let Some(drag) = self.pii.mapping.dragging.clone() else {
+            return;
+        };
+        let entries = self.replacement_entries(cx);
+        let mut targets: Vec<(DropTarget, Option<usize>)> = entries
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, item))| matches!(item, PanelItem::Header))
+            .map(|(index, (row, _))| (DropTarget::Entity(row.id), Some(index)))
+            .collect();
+        if matches!(drag, PanelDrag::Mention { .. })
+            && self.pii.review.identity_count(drag.identity()) > 1
+        {
+            targets.push((DropTarget::NewEntity, None));
+        }
+        let current = targets
+            .iter()
+            .position(|(t, _)| Some(*t) == self.pii.mapping.drop_target)
+            .unwrap_or(0);
+        let next = if down {
+            (current + 1).min(targets.len() - 1)
+        } else {
+            current.saturating_sub(1)
+        };
+        let (target, index) = targets[next];
+        self.pii.mapping.drop_target = Some(target);
+        if let Some(index) = index {
+            self.pii
+                .mapping
+                .list_scroll
+                .scroll_to_item(index, gpui::ScrollStrategy::Nearest);
+        }
+        cx.notify();
+    }
+
+    /// Releasing ⌥ drops the keyboard move like a mouse drop, as one step.
+    pub(super) fn finish_key_move(&mut self, cx: &mut Context<Self>) {
+        let mapping = &mut self.pii.mapping;
+        mapping.key_moving = false;
+        let (Some(drag), Some(target)) = (mapping.dragging.take(), mapping.drop_target.take())
+        else {
+            cx.notify();
+            return;
+        };
+        match target {
+            DropTarget::Entity(id) => self.drop_on_entity(&drag, id, cx),
+            DropTarget::NewEntity => self.drop_as_new_entity(&drag, cx),
+        }
+    }
+
+    /// Middle click: keep the original of `annotation` (⌘ same text, ⇧⌘ all;
+    /// Undo when applied). From the panel it is a triage decision.
+    pub(crate) fn middle_click_mention(
+        &mut self,
+        annotation: u64,
+        modifiers: gpui::Modifiers,
+        panel: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let scope = match (modifiers.secondary(), modifiers.shift) {
+            (true, true) => Scope::Entity,
+            (true, false) => Scope::Wording,
+            _ => Scope::Mention,
+        };
+        if panel {
+            self.panel_select_mention(annotation, cx);
+            self.panel_decide(scope, true, window, cx);
+        } else {
+            self.pii.dismiss_popup();
+            self.sync_replacement_annotation(annotation, cx);
+            self.decide(scope, true, window, cx);
+        }
+    }
+
+    /// Over the list, a mouse wheel (line deltas) steps the keyboard row one
+    /// notch at a time; trackpads (pixel deltas) scroll as usual (ADR 0033).
+    pub(super) fn wheel_steps(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let weak = cx.entity().downgrade();
+        gpui::canvas(
+            |_, _, _| {},
+            move |bounds, _, window, _| {
+                let weak = weak.clone();
+                window.on_mouse_event(move |e: &gpui::ScrollWheelEvent, phase, window, cx| {
+                    let gpui::ScrollDelta::Lines(delta) = e.delta else {
+                        return;
+                    };
+                    if phase != gpui::DispatchPhase::Capture
+                        || delta.y == 0.
+                        || !bounds.contains(&e.position)
+                    {
+                        return;
+                    }
+                    cx.stop_propagation();
+                    let _ = weak.update(cx, |this, cx| {
+                        window.focus(&this.pii.mapping.focus, cx);
+                        // Positive deltas scroll toward the top.
+                        if delta.y > 0. {
+                            this.move_cursor(|i, _| Some(i.saturating_sub(1)), window, cx);
+                        } else {
+                            this.move_cursor(|i, n| Some((i + 1).min(n - 1)), window, cx);
+                        }
+                    });
+                });
+            },
+        )
+        .absolute()
+        .inset_0()
     }
 }

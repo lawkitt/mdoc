@@ -9,6 +9,16 @@ All notable changes to **mdoc** are documented here.
   in the main toolbar; the ⋯ menu is gone (Model settings are in Settings).
   After Apply, Keep or Replace a short "… · Undo" notice appears. Pseudonymization
   is no longer labelled experimental (ADRs 0033, 0034).
+- Replacements panel groups open independently (a header click only toggles),
+  with grey rows, Expand/Collapse all, an All/Proposed/Applied filter, and the
+  alias and category editable on the group header.
+- Selecting a mention in the panel shows inline Apply/Keep controls instead of
+  the popup. Keys in the panel and the popup: Enter / ⌘Enter / ⇧⌘Enter apply
+  this one / same text / all; Delete with the same modifiers keeps originals.
+  ↑/↓ move through the list and focus follows to the next undecided mention.
+- ⌥↑/↓ moves a mention or group to another entity (release ⌥ to drop, Esc to
+  cancel). A mouse wheel steps through the list; a middle click keeps an
+  original, in the panel and on editor chips.
 
 - Removed interactions that did nothing in mdoc (ADR 0031): the PDF
   toolbar's Highlight (⌘⇧H) and Area highlight tools; the caret now enters

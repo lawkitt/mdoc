@@ -1,6 +1,6 @@
 # Pseudonymization is a supported, assistive feature
 
-Status: Accepted, 2026-10-10; not yet implemented. Supersedes the "keep
+Status: Accepted and implemented, 2026-10-10. Supersedes the "keep
 experimental status until agreed evidence" rule of
 [ADR 0016](0016-pii-production-qualification-scope.md); its scope and boundary
 otherwise stand.

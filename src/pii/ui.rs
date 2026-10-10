@@ -191,6 +191,9 @@ fn decision_bindings(modifier: &str) -> Vec<KeyBinding> {
         KeyBinding::new("down", crate::PanelDown, Some(LIST)),
         KeyBinding::new(&format!("{modifier}-up"), crate::PanelFirst, Some(LIST)),
         KeyBinding::new(&format!("{modifier}-down"), crate::PanelLast, Some(LIST)),
+        KeyBinding::new("alt-up", crate::PanelMoveUp, Some(LIST)),
+        KeyBinding::new("alt-down", crate::PanelMoveDown, Some(LIST)),
+        KeyBinding::new("alt-escape", crate::PanelEscape, Some("IdentityPanel")),
     ];
     for context in [LIST, POPUP] {
         bindings.extend([

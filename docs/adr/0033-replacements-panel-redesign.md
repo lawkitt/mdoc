@@ -1,6 +1,6 @@
 # Replacements panel redesign
 
-Status: Accepted, 2026-10-10; not yet implemented. Interview record:
+Status: Accepted and implemented, 2026-10-10. Interview record:
 [replacements panel polish](../design/replacement-panel-polish.md). Builds on
 [ADR 0032](0032-replacement-popup-redesign.md).
 

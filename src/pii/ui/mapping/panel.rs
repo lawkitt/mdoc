@@ -493,7 +493,7 @@ impl DocumentView {
             .flatten();
         // A mention of a multi-mention entity dragged over the panel can get a
         // new alias: the next free token of its entity's category.
-        let new_alias = (cx.has_active_drag() && mapping.drag_in_panel)
+        let new_alias = ((cx.has_active_drag() && mapping.drag_in_panel) || mapping.key_moving)
             .then_some(mapping.dragging.as_ref())
             .flatten()
             .filter(|d| {
@@ -563,6 +563,12 @@ impl DocumentView {
                 this.redo_last_step(window, cx);
                 cx.stop_propagation();
             }))
+            // Releasing ⌥ drops a keyboard move (ADR 0033).
+            .on_modifiers_changed(cx.listener(|this, e: &gpui::ModifiersChangedEvent, _, cx| {
+                if this.pii.mapping.key_moving && !e.modifiers.alt {
+                    this.finish_key_move(cx);
+                }
+            }))
             .child(
                 div()
                     .flex_shrink_0()
@@ -626,26 +632,35 @@ impl DocumentView {
                     .child(self.filter_control(cx)),
             )
             .child(
-                uniform_list(
-                    "replacement-list",
-                    count,
-                    cx.processor(move |this, indices: Range<usize>, _, cx| {
-                        indices
-                            .map(|index| this.panel_row(index, entries[index].clone(), cx))
-                            .collect()
-                    }),
-                )
-                .map(|v| {
-                    // While the new-alias area shows, the list keeps its rows'
-                    // height (shrinking if needed) and the area takes the rest.
-                    if new_alias.is_some() {
-                        v.flex_basis(rows_height).flex_shrink(1.)
-                    } else {
-                        v.flex_1()
-                    }
-                })
-                .min_h_0()
-                .track_scroll(&mapping.list_scroll),
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .map(|v| {
+                        // While the new-alias area shows, the list keeps its rows'
+                        // height (shrinking if needed) and the area takes the rest.
+                        if new_alias.is_some() {
+                            v.flex_basis(rows_height).flex_shrink(1.)
+                        } else {
+                            v.flex_1()
+                        }
+                    })
+                    .min_h_0()
+                    .child(
+                        uniform_list(
+                            "replacement-list",
+                            count,
+                            cx.processor(move |this, indices: Range<usize>, _, cx| {
+                                indices
+                                    .map(|index| this.panel_row(index, entries[index].clone(), cx))
+                                    .collect()
+                            }),
+                        )
+                        .flex_1()
+                        .min_h_0()
+                        .track_scroll(&mapping.list_scroll),
+                    )
+                    .child(self.wheel_steps(cx)),
             )
             .when_some(new_alias, |v, alias| {
                 // The free space under the rows becomes a contoured drop area

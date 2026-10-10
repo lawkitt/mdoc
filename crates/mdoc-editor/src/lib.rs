@@ -525,6 +525,8 @@ pub enum EditorEvent {
     SelectionAction,
     /// Explicit activation of a host annotation; no text or selection change.
     ActivateAnnotation(u64),
+    /// A middle click on a host annotation, with the modifiers held.
+    MiddleClickAnnotation(u64, gpui::Modifiers),
     /// Several hidden fields share a gutter indicator; the host offers a chooser.
     ActivateAnnotations(Vec<u64>),
 }
@@ -1551,6 +1553,18 @@ impl EditorState {
     }
 
     // --- Mouse ---------------------------------------------------------------
+
+    fn on_middle_down(&mut self, event: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.annotation_revision == self.content_gen
+            && let Some((id, _)) = self
+                .annotation_bounds
+                .iter()
+                .find(|(_, bounds)| bounds.contains(&event.position))
+        {
+            cx.emit(EditorEvent::MiddleClickAnnotation(*id, event.modifiers));
+            cx.stop_propagation();
+        }
+    }
 
     fn on_mouse_down(
         &mut self,
@@ -3291,6 +3305,7 @@ impl Render for EditorState {
             .on_action(cx.listener(Self::redo))
             .on_action(cx.listener(Self::dismiss))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+            .on_mouse_down(MouseButton::Middle, cx.listener(Self::on_middle_down))
             .on_mouse_down(MouseButton::Right, cx.listener(Self::on_right_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))

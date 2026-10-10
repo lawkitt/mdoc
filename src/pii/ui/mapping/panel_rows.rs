@@ -91,7 +91,7 @@ impl DocumentView {
         let mapping = &self.pii.mapping;
         let expanded = mapping.expanded.contains(&id);
         // "Link to ALIAS" while another group's row is dragged here.
-        let link_hint = cx.has_active_drag()
+        let link_hint = (cx.has_active_drag() || mapping.key_moving)
             && mapping.drop_target == Some(DropTarget::Entity(id))
             && mapping
                 .dragging
@@ -187,6 +187,10 @@ impl DocumentView {
         })
         .when(mapping.cursor == Some(PanelCursor::Header(id)), |v| {
             v.bg(palette.placeholder_bg)
+        })
+        // The keyboard move's target group (ADR 0033).
+        .when(mapping.key_moving && link_hint, |v| {
+            v.border_1().border_color(palette.header_muted)
         })
         .child(
             div()
@@ -356,6 +360,14 @@ impl DocumentView {
             window.focus(&this.pii.mapping.focus, cx);
             this.panel_select_mention(annotation, cx);
         }))
+        // Middle click keeps this original; ⌘ same text, ⇧⌘ all (ADR 0033).
+        .on_mouse_down(
+            gpui::MouseButton::Middle,
+            cx.listener(move |this, e: &gpui::MouseDownEvent, window, cx| {
+                cx.stop_propagation();
+                this.middle_click_mention(annotation, e.modifiers, true, window, cx);
+            }),
+        )
         .on_drag(
             PanelDrag::Mention {
                 identity: row.id,

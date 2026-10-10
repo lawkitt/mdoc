@@ -121,6 +121,9 @@ impl DocumentView {
                     this.choose_annotations(ids.clone(), window, cx)
                 }
                 EditorEvent::ActivateAnnotation(id) => this.activate_annotation(*id, window, cx),
+                EditorEvent::MiddleClickAnnotation(id, modifiers) => {
+                    this.middle_click_mention(*id, *modifiers, false, window, cx)
+                }
                 EditorEvent::SelectionChanged => this.sync_selection_action(cx),
                 EditorEvent::SelectionAction => {
                     this.add_pii_candidate(&PiiAddCandidate, window, cx)

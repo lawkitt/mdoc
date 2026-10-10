@@ -1334,3 +1334,100 @@ fn panel_keyboard_moves_decides_and_triages(cx: &mut gpui::TestAppContext) {
 fn text_of(source: &str) -> String {
     source.replacen("Павлова Марина Сергеевна", "PERSON_1", 1)
 }
+
+#[gpui::test]
+fn keyboard_move_wheel_and_middle_click(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (full, initials) = app.update(cx, |app, cx| {
+        let (full, initials) = seed(app, source, cx);
+        let review = &app.pii.review;
+        (
+            review.variant_identity(full).unwrap(),
+            review.variant_identity(initials).unwrap(),
+        )
+    });
+    cx.run_until_parked();
+    let draw = |cx: &mut gpui::VisualTestContext| {
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    };
+    // ⌥↓ from the initials header targets the next group; releasing ⌥
+    // merges, Esc while held cancels.
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.focus, cx);
+        app.pii.mapping.cursor = Some(PanelCursor::Header(initials));
+        cx.notify();
+    });
+    draw(cx);
+    cx.simulate_keystrokes("alt-up");
+    draw(cx);
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.key_moving);
+        assert_eq!(app.pii.mapping.drop_target, Some(DropTarget::Entity(full)));
+    });
+    cx.simulate_keystrokes("alt-escape");
+    draw(cx);
+    app.read_with(cx, |app, _| {
+        assert!(!app.pii.mapping.key_moving);
+        assert_eq!(app.pii.review.identity_count(initials), 2);
+    });
+    cx.simulate_keystrokes("alt-up");
+    cx.simulate_modifiers_change(gpui::Modifiers::none());
+    draw(cx);
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.review.identity_count(full), 3);
+        assert_eq!(app.pii.review.identity_count(initials), 0);
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    draw(cx);
+    app.read_with(cx, |app, _| assert_eq!(app.pii.review.identity_count(initials), 2));
+    // A mouse wheel steps the keyboard row; a trackpad does not.
+    let list = cx.debug_bounds("identity-panel").unwrap().center();
+    app.update(cx, |app, cx| {
+        app.pii.mapping.cursor = None;
+        cx.notify();
+    });
+    draw(cx);
+    let wheel = |cx: &mut gpui::VisualTestContext, delta| {
+        cx.simulate_event(gpui::ScrollWheelEvent {
+            position: list,
+            delta,
+            modifiers: Default::default(),
+            touch_phase: gpui::TouchPhase::Moved,
+        });
+        cx.run_until_parked();
+    };
+    wheel(cx, gpui::ScrollDelta::Lines(gpui::point(0., -1.)));
+    let first = app.read_with(cx, |app, _| app.pii.mapping.cursor);
+    assert!(first.is_some());
+    wheel(cx, gpui::ScrollDelta::Lines(gpui::point(0., -1.)));
+    let second = app.read_with(cx, |app, _| app.pii.mapping.cursor);
+    assert_ne!(first, second);
+    wheel(cx, gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-30.))));
+    assert_eq!(app.read_with(cx, |app, _| app.pii.mapping.cursor), second);
+    // Middle click on a panel mention keeps its original; ⌘ widens it.
+    app.update(cx, |app, cx| {
+        app.pii.mapping.expanded.insert(initials);
+        cx.notify();
+    });
+    draw(cx);
+    let mention = app.read_with(cx, |app, _| app.identity_occurrences(initials)[0].0);
+    let at = cx
+        .debug_bounds(Box::leak(format!("mention-{mention}").into_boxed_str()))
+        .unwrap()
+        .center();
+    cx.simulate_mouse_down(at, gpui::MouseButton::Middle, gpui::Modifiers::command());
+    cx.simulate_mouse_up(at, gpui::MouseButton::Middle, gpui::Modifiers::command());
+    draw(cx);
+    app.read_with(cx, |app, _| assert_eq!(app.pii.review.identity_count(initials), 0));
+    // The same gesture on an editor chip keeps that mention.
+    let chip = app.read_with(cx, |app, cx| {
+        let annotation = app.identity_occurrences(full)[0].0;
+        app.editor.read(cx).annotation_bounds(annotation).unwrap().center()
+    });
+    cx.simulate_mouse_down(chip, gpui::MouseButton::Middle, Default::default());
+    cx.simulate_mouse_up(chip, gpui::MouseButton::Middle, Default::default());
+    draw(cx);
+    app.read_with(cx, |app, _| assert_eq!(app.pii.review.identity_count(full), 0));
+}
