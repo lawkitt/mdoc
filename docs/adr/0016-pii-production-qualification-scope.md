@@ -3,6 +3,8 @@
 Status: direction accepted, 2026-10-08. The outgoing journey is implemented
 experimentally under [ADR 0018](0018-document-local-identity-review.md), with
 subsequent review changes in ADRs 0019–0025 and 0032. Production gates remain open.
+[ADR 0034](0034-pseudonymization-supported-feature.md) supersedes the rule that
+experimental status waits for those gates.
 
 ## Decision
 

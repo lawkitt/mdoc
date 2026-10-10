@@ -56,5 +56,6 @@ These are historical observations, not fresh measurements from this cleanup:
 
 Structured rules require supported same-line context; checksums can reject
 damaged but sensitive identifiers. No scan count establishes complete coverage,
-and remaining context can still identify subjects. Keep experimental status
-until agreed evidence supports a change.
+and remaining context can still identify subjects. The gates above are ongoing
+quality work; [ADR 0034](../adr/0034-pseudonymization-supported-feature.md)
+removed the experimental label without claiming they are closed.

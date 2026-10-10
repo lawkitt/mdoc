@@ -89,8 +89,24 @@ Apply; tracked replacements remain correctable afterward ([ADR 0018](docs/adr/00
 
 **Review candidate**: detected span proposed for replacement.
 
-**Replacements panel**: searchable overview beside the editor. Selecting a row
-reveals its highlighted mention and word popup ([ADR 0020](docs/adr/0020-direct-replacement-workspace.md)).
+**Replacements panel**: searchable overview beside the editor, grouped by entity.
+Selecting a mention row reveals and outlines it in the editor and shows inline
+controls; editor selections use the word popup ([ADR 0020](docs/adr/0020-direct-replacement-workspace.md),
+[ADR 0033](docs/adr/0033-replacements-panel-redesign.md)).
+
+**Group header**: an entity's panel row (original, alias, count). Expands
+independently of selection; its alias and category edit the whole entity.
+
+**Mention row**: one mention under an expanded group header, with a snippet.
+
+**Inline controls**: one-line Apply to · Apply · Keep original under a mention
+row selected in the panel; the panel's counterpart to the word popup.
+
+**Keyboard move**: ⌥↑/↓ steps a mention or group through drop targets; releasing
+⌥ moves the mention (or merges the entity), Esc cancels.
+
+**Triage focus**: after a keyboard or middle-click decision, focus moves to the
+next undecided mention.
 
 **Scope**: This mention, Same wording or Entire entity. Same wording includes
 matching originals assigned to the selected entity; Entire entity includes its
