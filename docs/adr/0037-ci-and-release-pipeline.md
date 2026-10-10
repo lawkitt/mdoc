@@ -1,7 +1,7 @@
 # CI and release pipeline
 
-Status: Accepted, 2026-10-10; not yet implemented. Interview record:
-[CI and release pipeline design](../design/ci-release-pipeline.md).
+Status: Accepted and implemented, 2026-10-10; first release run outstanding. See the
+[historical design interview](https://github.com/lawkitt/mdoc/blob/01ab890db29febc5d9920de64aa494480a5d5407/docs/design/ci-release-pipeline.md).
 
 ## Problem
 

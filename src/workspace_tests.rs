@@ -565,6 +565,34 @@ fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn available_update_marks_the_settings_button(cx: &mut TestAppContext) {
+    let (_tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    draw(cx);
+    assert!(cx.debug_bounds("Settings").is_some());
+    assert!(cx.debug_bounds("update-dot").is_none());
+    cx.update(|_, cx| {
+        cx.set_global(crate::updater::UpdateState {
+            available: Some(crate::updater::UpdateAvailable {
+                version: "9.0.0".into(),
+                html_url: String::new(),
+                notes: String::new(),
+            }),
+            ..Default::default()
+        })
+    });
+    draw(cx);
+    let dot = cx
+        .debug_bounds("update-dot")
+        .expect("an update shows the dot");
+    let button = cx.debug_bounds("Settings").unwrap();
+    assert!(
+        button.contains(&dot.center()),
+        "dot={dot:?}, button={button:?}"
+    );
+}
+
+#[gpui::test]
 fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));

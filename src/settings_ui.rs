@@ -437,6 +437,7 @@ impl Panel {
                             this.draft.ocr.dpi = previous.ocr.dpi;
                             this.draft.pseudonymization.model = previous.pseudonymization.model;
                             this.draft.spelling = previous.spelling;
+                            this.draft.updates = previous.updates;
                         }
                         this.error = Some(format!(
                             "Could not save settings: {e}. Previous defaults remain active."
@@ -589,6 +590,76 @@ impl Panel {
                 .child(toggle("spelling-caps", "Check ALL-CAPS words", spelling.check_all_caps, on, |s| s.check_all_caps = !s.check_all_caps, cx))
                 .child(toggle("spelling-digits", "Check words with digits", spelling.check_digits, on, |s| s.check_digits = !s.check_digits, cx)))
             .child(self.dictionary_summary(theme, cx))
+            .into_any_element()
+    }
+    /// Settings → Updates (ADR 0038): detection only, never installs.
+    fn updates_section(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme.pdf_style();
+        let accent = theme.search_accent();
+        let updates = self.draft.updates;
+        let state = updater::state(cx);
+        let prerelease_build = updater::is_prerelease_build();
+        let toggle = |id: &'static str,
+                      label: &'static str,
+                      on: bool,
+                      enabled: bool,
+                      flip: fn(&mut UpdatesConfig),
+                      cx: &mut Context<Self>| {
+            let enabled = enabled && !self.applying;
+            self.scrolled_control(id, label, theme, enabled, cx)
+                .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+                .aria_toggled(if on {
+                    gpui::Toggled::True
+                } else {
+                    gpui::Toggled::False
+                })
+                .when(on, |v| v.border_color(accent).text_color(accent))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    if enabled && !this.applying {
+                        flip(&mut this.draft.updates);
+                        this.persist(cx);
+                        if this.draft.updates.check_automatically {
+                            updater::spawn_check(this.draft.updates.include_prereleases, cx);
+                        }
+                    }
+                }))
+        };
+        let status = if state.checking {
+            "Checking for updates…".to_string()
+        } else if let Some(update) = &state.available {
+            format!(
+                "mdoc {} is available. You have {}.",
+                update.version,
+                env!("CARGO_PKG_VERSION")
+            )
+        } else if state.checked {
+            format!("mdoc {} is the latest version.", env!("CARGO_PKG_VERSION"))
+        } else {
+            format!("You have mdoc {}.", env!("CARGO_PKG_VERSION"))
+        };
+        let notes = state.available.as_ref().map(|u| {
+            let text = u.notes.trim();
+            match text.char_indices().nth(400) {
+                Some((end, _)) => format!("{}…", &text[..end]),
+                None => text.to_owned(),
+            }
+        });
+        div().flex().flex_col().gap_2().mt_4()
+            .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Updates"))
+            .child(div().text_size(px(11.)).text_color(p.header_muted).child("mdoc asks GitHub whether a newer version exists. It sends no document data and never downloads or installs anything."))
+            .child(div().flex().flex_wrap().items_center().gap_2()
+                .child(toggle("updates-automatic", "Check when mdoc starts", updates.check_automatically, true, |u| u.check_automatically = !u.check_automatically, cx))
+                .child(toggle("updates-prereleases", "Include pre-releases", updates.include_prereleases || prerelease_build, !prerelease_build, |u| u.include_prereleases = !u.include_prereleases, cx)))
+            .when(prerelease_build, |v| v.child(div().text_size(px(11.)).text_color(p.header_muted).child("This is a pre-release build, so pre-releases are always included.")))
+            .child(div().flex().flex_wrap().items_center().gap_2()
+                .child(div().when(cfg!(test), |v| v.debug_selector(|| "updates-status".into())).flex_1().child(status))
+                .child(self.scrolled_quiet("updates-check", "Check now", theme, !state.checking, cx)
+                    .when(cfg!(test), |v| v.debug_selector(|| "updates-check".into()))
+                    .on_click(cx.listener(|this, _, _, cx| updater::spawn_check(this.draft.updates.include_prereleases, cx))))
+                .when_some(state.available.clone(), |v, update| v.child(self.scrolled_control("updates-view", "View release ↗", theme, true, cx)
+                    .when(cfg!(test), |v| v.debug_selector(|| "updates-view".into()))
+                    .on_click(move |_, _, cx| cx.open_url(&update.html_url)))))
+            .when_some(notes.filter(|n| !n.is_empty()), |v, notes| v.child(div().text_size(px(11.)).text_color(p.header_muted).child(notes)))
             .into_any_element()
     }
     fn section_note(&self, text: &str, model: Model) -> String {
@@ -795,7 +866,8 @@ impl Render for Panel {
                             .child(self.scrolled_control("apply-settings", if self.applying { "Saving…" } else { "Save" }, theme, !self.applying && changed, cx)
                                 .when(cfg!(test), |v| v.debug_selector(|| "settings-apply".into()))
                                 .on_click(cx.listener(move |this, _, _, cx| { if changed && !this.applying { this.apply(cx); } }))))))
-                    .child(self.spelling_section(theme, cx))))
+                    .child(self.spelling_section(theme, cx))
+                    .child(self.updates_section(theme, cx))))
                 .when_some(self.error.clone(), |v, e| v.child(div().px_4().pb_3().text_size(px(12.)).text_color(style::markdown_style(theme).alert_warning).child(e)))
                 // Another app job (a scan or comparison) holds the model slot.
                 .when_some(model_work::description().filter(|_| self.working.is_none() && !self.checking), |v, work| v.child(ui::activity("model-work-activity", work, theme).px_4().pb_2()))
@@ -857,6 +929,61 @@ mod tests {
         );
     }
 
+    #[gpui::test]
+    fn update_choices_save_immediately_and_an_update_offers_its_release(cx: &mut TestAppContext) {
+        let shared = Store::new();
+        let (panel, cx) = cx.add_window_view(|_, cx| {
+            Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
+        });
+        // Tall enough that the Updates section needs no scrolling.
+        cx.simulate_resize(size(px(800.), px(2400.)));
+        // Not shown: opening would check models through the global job slot.
+        panel.update(cx, |panel, cx| {
+            panel.open = true;
+            cx.notify();
+        });
+        cx.run_until_parked();
+        let click = |cx: &mut gpui::VisualTestContext, id: &'static str| {
+            let bounds = cx.debug_bounds(id).unwrap();
+            cx.simulate_click(bounds.center(), gpui::Modifiers::none());
+            cx.run_until_parked();
+        };
+        assert!(cx.debug_bounds("updates-view").is_none());
+
+        click(cx, "updates-automatic");
+        let saved = shared.borrow().snapshot().unwrap().updates;
+        assert!(!saved.check_automatically);
+        click(cx, "updates-prereleases");
+        let saved = shared.borrow().snapshot().unwrap().updates;
+        // A pre-release build always includes pre-releases; the switch is inert.
+        assert_eq!(saved.include_prereleases, !updater::is_prerelease_build());
+        // Turning the check back on starts one; tests never reach the network.
+        click(cx, "updates-automatic");
+        assert!(
+            shared
+                .borrow()
+                .snapshot()
+                .unwrap()
+                .updates
+                .check_automatically
+        );
+        cx.update(|_, cx| assert!(!updater::state(cx).checking));
+
+        cx.update(|_, cx| {
+            cx.set_global(updater::UpdateState {
+                checking: false,
+                checked: true,
+                available: Some(updater::UpdateAvailable {
+                    version: "9.0.0".into(),
+                    html_url: "https://github.com/lawkitt/mdoc/releases/tag/v9.0.0".into(),
+                    notes: "Notes".into(),
+                }),
+            });
+            cx.refresh_windows();
+        });
+        cx.run_until_parked();
+        assert!(cx.debug_bounds("updates-view").is_some());
+    }
     #[gpui::test]
     fn apply_is_explicit_and_close_discards_draft(cx: &mut TestAppContext) {
         let shared = Store::new();

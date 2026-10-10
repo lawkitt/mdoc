@@ -39,6 +39,8 @@ thiserror = "2"
 roxmltree = "0.21"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Update check (src/updater.rs, ADR 0038): release tags compared by SemVer.
+semver = "1"
 gpui = { workspace = true }
 gpui_platform = { workspace = true }
 mdoc-editor = { path = "crates/mdoc-editor" }

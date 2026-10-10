@@ -183,11 +183,36 @@ impl DocumentView {
                 )
                 .on_click(|_, window, cx| window.dispatch_action(Box::new(ToggleTheme), cx)),
             )
-            .child(
-                ui::icon_control("Settings", "Settings", ui::Icon::Settings, theme, true)
-                    .track_focus(&self.settings_focus)
-                    .on_click(|_, window, cx| window.dispatch_action(Box::new(Settings), cx)),
-            );
+            .child({
+                // An amber dot marks an available update (ADR 0038).
+                let update = crate::updater::state(cx).available.is_some();
+                let label = if update {
+                    "Settings — update available"
+                } else {
+                    "Settings"
+                };
+                div()
+                    .relative()
+                    .child(
+                        ui::icon_control("Settings", label, ui::Icon::Settings, theme, true)
+                            .track_focus(&self.settings_focus)
+                            .on_click(|_, window, cx| {
+                                window.dispatch_action(Box::new(Settings), cx)
+                            }),
+                    )
+                    .when(update, |v| {
+                        v.child(
+                            div()
+                                .when(cfg!(test), |v| v.debug_selector(|| "update-dot".into()))
+                                .absolute()
+                                .top(px(5.))
+                                .right(px(5.))
+                                .size(px(7.))
+                                .rounded_full()
+                                .bg(style::markdown_style(theme).alert_warning),
+                        )
+                    })
+            });
         div()
             .id("document-toolbar")
             .when(cfg!(test), |v| {

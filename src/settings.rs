@@ -245,6 +245,22 @@ impl SpellingConfig {
         })
     }
 }
+/// Update check choices (ADR 0038). Pre-release builds include pre-releases
+/// regardless of `include_prereleases`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdatesConfig {
+    pub check_automatically: bool,
+    pub include_prereleases: bool,
+}
+impl Default for UpdatesConfig {
+    fn default() -> Self {
+        Self {
+            check_automatically: true,
+            include_prereleases: false,
+        }
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
@@ -254,6 +270,9 @@ pub struct Preferences {
     /// Absent in settings saved before spellcheck existed.
     #[serde(default)]
     pub spelling: SpellingConfig,
+    /// Absent in settings saved before the update check existed.
+    #[serde(default)]
+    pub updates: UpdatesConfig,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -262,6 +281,7 @@ impl Default for Preferences {
             ocr: OcrConfig::default(),
             pseudonymization: PiiConfig::default(),
             spelling: SpellingConfig::default(),
+            updates: UpdatesConfig::default(),
         }
     }
 }

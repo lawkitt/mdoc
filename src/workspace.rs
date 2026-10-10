@@ -393,6 +393,18 @@ impl Workspace {
         })
         .detach();
     }
+    /// The launch-time update check, unless the user turned it off (ADR 0038).
+    pub(super) fn check_for_updates_at_launch(&self, cx: &mut Context<Self>) {
+        let updates = self
+            .preferences
+            .borrow()
+            .snapshot()
+            .unwrap_or_default()
+            .updates;
+        if updates.check_automatically {
+            crate::updater::spawn_check(updates.include_prereleases, cx);
+        }
+    }
     pub(super) fn show_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         window.activate_window();
         self.settings.update(cx, |panel, cx| panel.show(window, cx));

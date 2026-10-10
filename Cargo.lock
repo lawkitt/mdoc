@@ -4448,6 +4448,7 @@ dependencies = [
  "presidio-analyzer",
  "regex",
  "roxmltree 0.21.1",
+ "semver",
  "serde",
  "serde_json",
  "sha2 0.11.0",

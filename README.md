@@ -37,6 +37,11 @@ The Windows installer also installs the Microsoft Visual C++ Redistributable
 (x64) when it is missing; OCR and pseudonymization need it. The `.msi` requires
 it to be installed first.
 
+mdoc checks GitHub for a newer release when it starts: one anonymous request to
+the GitHub Releases API that sends no document data. It only tells you an update
+exists (a dot on the Settings button); it never downloads or installs anything.
+Turn it off in Settings → Updates.
+
 ## Run from source
 
 All dependencies, including the pinned AnyDoc converter, are public.

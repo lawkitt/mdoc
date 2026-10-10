@@ -31,6 +31,7 @@ mod settings_ui;
 mod spelling;
 mod style;
 mod ui;
+mod updater;
 mod workspace;
 
 use document::Document;
@@ -237,6 +238,9 @@ fn main() {
                 workspace.open_paths(pending, window, cx)
             });
         }
+        let _ = handle.update(cx, |workspace, _, cx| {
+            workspace.check_for_updates_at_launch(cx)
+        });
         *open_context.borrow_mut() = Some((handle, cx.to_async()));
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {

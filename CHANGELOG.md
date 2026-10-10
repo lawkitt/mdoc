@@ -4,6 +4,16 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- Update check: at launch mdoc asks GitHub whether a newer release exists and
+  marks the Settings button with a dot when one does. Settings → Updates shows
+  the version and notes with **View release**, **Check now**, and switches for
+  the launch check and pre-releases (always on in pre-release builds). It only
+  sends the app version and never downloads or installs (ADR 0038).
+- Releases: Apple Silicon `.dmg` and Windows x64 installer (`.msi` for stable
+  versions), with `SHA256SUMS` and build provenance. The Windows installer
+  installs the Visual C++ Redistributable that OCR needs when it is missing
+  (ADR 0037).
+
 - Dark Original pages: in the dark theme PDF and DOCX pages render on dark
   paper with light ink, keeping the colour of coloured text. The ◐ button in
   the Original header switches a document back to the original paper (ADR 0035).
