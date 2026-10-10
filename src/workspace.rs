@@ -1658,7 +1658,11 @@ impl Workspace {
                     .unwrap_or_default();
                 let tooltip = format!(
                     "{name}\n{parent}{}{}{}{}{}",
-                    if recognized { "\nRecognized with OCR" } else { "" },
+                    if recognized {
+                        "\nRecognized with OCR"
+                    } else {
+                        ""
+                    },
                     if pseudonymized { "\nPseudonymized" } else { "" },
                     if dirty { "\nUnsaved changes" } else { "" },
                     if busy { "\nProcessing…" } else { "" },
