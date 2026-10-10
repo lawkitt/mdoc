@@ -1,21 +1,22 @@
 //! Searchable replacement overview with inline occurrence context.
 use super::*;
 use crate::ui;
-use gpui::{AnyElement, HighlightStyle, SharedString, StyledText, div, prelude::*, uniform_list};
+use gpui::{AnyElement, SharedString, div, prelude::*, uniform_list};
 
 #[derive(Clone)]
-struct ReplacementRow {
-    id: u64,
-    original: Arc<str>,
-    alias: String,
-    mentions: usize,
-    applied: usize,
+pub(super) struct ReplacementRow {
+    pub id: u64,
+    pub original: Arc<str>,
+    pub alias: String,
+    pub category: Category,
+    pub mentions: usize,
+    pub applied: usize,
 }
 /// One panel line: an entity row, or one of the expanded entity's mentions.
-type PanelEntry = (Arc<ReplacementRow>, Option<(u64, Range<usize>)>);
+pub(super) type PanelEntry = (Arc<ReplacementRow>, Option<(u64, Range<usize>)>);
 
 impl DocumentView {
-    fn replacement_control(
+    pub(super) fn replacement_control(
         &self,
         id: impl Into<gpui::ElementId>,
         label: impl Into<SharedString>,
@@ -53,10 +54,14 @@ impl DocumentView {
             .to_lowercase();
         let mut rows = std::collections::BTreeMap::<u64, ReplacementRow>::new();
         let mut matches = std::collections::HashSet::new();
+        let filter = self.pii.mapping.filter;
         let mut add = |id, original: Arc<str>, applied: bool| {
             let Some(identity) = review.identity(id) else {
                 return;
             };
+            if !filter.shows(applied) {
+                return;
+            }
             if query.is_empty()
                 || original.to_lowercase().contains(&query)
                 || identity.alias.to_lowercase().contains(&query)
@@ -67,6 +72,7 @@ impl DocumentView {
                 id,
                 original,
                 alias: identity.alias.clone(),
+                category: identity.category,
                 mentions: 0,
                 applied: 0,
             });
@@ -90,16 +96,19 @@ impl DocumentView {
             .into()
     }
 
-    /// Entity rows in order, each followed by its mentions while it is expanded.
-    fn replacement_entries(&self, cx: &App) -> Vec<PanelEntry> {
-        let selected = self.selected_entity();
+    /// Entity rows in order, each followed by its filtered mentions while it
+    /// is expanded (ADR 0033).
+    pub(super) fn replacement_entries(&self, cx: &App) -> Vec<PanelEntry> {
+        let mapping = &self.pii.mapping;
         let mut entries = Vec::new();
         for row in self.replacement_rows(cx).iter() {
             let row = Arc::new(row.clone());
             entries.push((row.clone(), None));
-            if selected == Some(row.id) {
+            if mapping.expanded.contains(&row.id) {
                 for mention in self.identity_occurrences(row.id) {
-                    entries.push((row.clone(), Some(mention)));
+                    if mapping.filter.shows(mention.0 & APPLIED_ID != 0) {
+                        entries.push((row.clone(), Some(mention)));
+                    }
                 }
             }
         }
@@ -257,14 +266,6 @@ impl DocumentView {
             .into_any_element()
     }
 
-    /// Collapse the open group: deselect it and close its popup.
-    fn collapse_replacement(&mut self, cx: &mut Context<Self>) {
-        self.pii.mapping.deselect();
-        self.pii.dismiss_popup();
-        self.editor
-            .update(cx, |e, cx| e.set_active_annotation(None, cx));
-        cx.notify();
-    }
     /// A panel drop leaves the popup as it was: a mapping change otherwise
     /// reopens it on the previously active mention.
     fn after_drop(&mut self, had_popup: bool, cx: &mut Context<Self>) {
@@ -327,7 +328,7 @@ impl DocumentView {
         cx.notify();
     }
     /// Track the row under a drag so it can show "Link to ALIAS".
-    fn drag_over_target(&mut self, target: DropTarget, cx: &mut Context<Self>) {
+    pub(super) fn drag_over_target(&mut self, target: DropTarget, cx: &mut Context<Self>) {
         if self.pii.mapping.drop_target != Some(target) {
             self.pii.mapping.drop_target = Some(target);
             cx.notify();
@@ -342,6 +343,90 @@ impl DocumentView {
         self.editor.update(cx, |e, cx| e.redo_step(window, cx));
     }
 
+    /// One button: expand every visible group, or collapse them all once
+    /// none is collapsed (ADR 0033).
+    fn expand_all_control(&self, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
+        let ids: Vec<u64> = self.replacement_rows(cx).iter().map(|r| r.id).collect();
+        let expand = ids.iter().any(|id| !self.pii.mapping.expanded.contains(id));
+        let (label, icon) = if expand {
+            ("Expand all", ui::Icon::Expand)
+        } else {
+            ("Collapse all", ui::Icon::Collapse)
+        };
+        ui::icon_control(
+            "replacement-expand-all",
+            label,
+            icon,
+            self.theme.get(),
+            !ids.is_empty(),
+        )
+        .on_click(cx.listener(move |this, _, _, cx| {
+            let expanded = &mut this.pii.mapping.expanded;
+            for id in &ids {
+                if expand {
+                    expanded.insert(*id);
+                } else {
+                    expanded.remove(id);
+                }
+            }
+            cx.notify();
+        }))
+    }
+    /// The panel-only filter; a dot marks anything but All (ADR 0033).
+    fn filter_control(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let theme = self.theme.get();
+        let filter = self.pii.mapping.filter;
+        let button = ui::icon_control(
+            "replacement-filter",
+            "Filter",
+            ui::Icon::Filter,
+            theme,
+            true,
+        )
+        .relative()
+        .when(filter != PanelFilter::All, |v| {
+            v.child(
+                div()
+                    .absolute()
+                    .top(px(5.))
+                    .right(px(5.))
+                    .size(px(6.))
+                    .rounded_full()
+                    .bg(theme.applied()),
+            )
+        })
+        .on_click(cx.listener(|this, _, _, cx| {
+            let menu = &mut this.pii.mapping.panel_menu;
+            *menu = (*menu != Some(PanelMenu::Filter)).then_some(PanelMenu::Filter);
+            cx.notify();
+        }));
+        let menu = (self.pii.mapping.panel_menu == Some(PanelMenu::Filter)).then(|| {
+            self.menu_surface("replacement-filter-menu")
+                .w(px(160.))
+                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                    this.pii.mapping.panel_menu = None;
+                    cx.notify();
+                }))
+                .children(PanelFilter::ALL.into_iter().map(|option| {
+                    self.menu_row(
+                        SharedString::from(format!("replacement-filter-{}", option.label())),
+                        option.label(),
+                        "",
+                        Some(option == filter),
+                        true,
+                        cx,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.pii.mapping.filter = option;
+                        this.pii.mapping.panel_menu = None;
+                        cx.notify();
+                    }))
+                }))
+                .into_any_element()
+        });
+        // Anchored at the button's left; the menu snaps inside the window.
+        self.with_dropdown(button, menu)
+    }
     pub(crate) fn replacements_panel_width(&self, window: &Window) -> gpui::Pixels {
         if self.pii.mapping.open && self.can_copy_markdown() {
             px((self.chrome_width(window) * 0.4).clamp(260., 340.))
@@ -513,9 +598,14 @@ impl DocumentView {
             .child(
                 div()
                     .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .gap_1()
                     .px_3()
                     .pb_2()
-                    .child(mapping.search.clone()),
+                    .child(div().flex_1().min_w_0().child(mapping.search.clone()))
+                    .child(self.expand_all_control(cx))
+                    .child(self.filter_control(cx)),
             )
             .child(
                 uniform_list(
@@ -523,311 +613,7 @@ impl DocumentView {
                     count,
                     cx.processor(move |this, indices: Range<usize>, _, cx| {
                         indices
-                            .map(|index| {
-                                let (row, mention) = entries[index].clone();
-                                let id = row.id;
-                                let theme = this.theme.get();
-                                let palette = theme.pdf_style();
-                                let expanded = this.selected_entity() == Some(id);
-                                let current = mention.as_ref().is_some_and(|(annotation, _)| {
-                                    this.pii.popup.is_some()
-                                        && this.active_annotation() == Some(*annotation)
-                                });
-                                let weak = cx.entity().downgrade();
-                                let accent = theme.applied();
-                                // "Link to ALIAS" while another group's row is dragged here.
-                                let link_hint = cx.has_active_drag()
-                                    && this.pii.mapping.drop_target == Some(DropTarget::Entity(id))
-                                    && this
-                                        .pii
-                                        .mapping
-                                        .dragging
-                                        .as_ref()
-                                        .is_some_and(|d| d.identity() != id);
-                                let start_drag = move |drag: &PanelDrag, cx: &mut App| {
-                                    let _ = weak.update(cx, |this, _| {
-                                        this.pii.mapping.dragging = Some(drag.clone());
-                                        this.pii.mapping.drop_target = None;
-                                        this.pii.mapping.drag_in_panel = false;
-                                    });
-                                    let label = match drag {
-                                        PanelDrag::Mention { original, .. }
-                                        | PanelDrag::Entity { original, .. } => original.clone(),
-                                    };
-                                    cx.new(|_| DragGhost { label, theme })
-                                };
-                                let control = this
-                                    .replacement_control(
-                                        SharedString::from(format!("replacement-entry-{index}")),
-                                        "",
-                                        true,
-                                        cx,
-                                    )
-                                    .w_full()
-                                    .h(px(48.))
-                                    .line_height(px(17.))
-                                    .overflow_hidden()
-                                    .relative()
-                                    .flex_col()
-                                    .items_start()
-                                    .justify_center()
-                                    .gap_1()
-                                    .px_3()
-                                    .when(expanded && !current, |v| {
-                                        v.bg(Hsla {
-                                            a: 0.5,
-                                            ..palette.placeholder_bg
-                                        })
-                                    })
-                                    // Every row of a group accepts drops for that group.
-                                    .drag_over::<PanelDrag>(move |s, drag, _, _| {
-                                        if drag.identity() == id {
-                                            s
-                                        } else {
-                                            s.border_1().border_color(accent)
-                                        }
-                                    })
-                                    .on_drag_move::<PanelDrag>(cx.listener(
-                                        move |this, e: &gpui::DragMoveEvent<PanelDrag>, _, cx| {
-                                            if e.bounds.contains(&e.event.position) {
-                                                this.drag_over_target(DropTarget::Entity(id), cx);
-                                            }
-                                        },
-                                    ))
-                                    .on_drop(cx.listener(move |this, drag: &PanelDrag, _, cx| {
-                                        this.drop_on_entity(drag, id, cx)
-                                    }))
-                                    .when(current, |v| {
-                                        // The accent bar keeps it identifiable under hover.
-                                        v.bg(theme.sidebar_selected()).child(
-                                            div()
-                                                .absolute()
-                                                .left_0()
-                                                .top_0()
-                                                .bottom_0()
-                                                .w(px(3.))
-                                                .bg(theme.applied()),
-                                        )
-                                    });
-                                if let Some((annotation, range)) = mention {
-                                    let original = if annotation & APPLIED_ID != 0 {
-                                        this.pii
-                                            .review
-                                            .applied_occurrence(annotation & !APPLIED_ID)
-                                            .unwrap()
-                                            .step
-                                            .original_shared()
-                                            .clone()
-                                    } else {
-                                        let candidate =
-                                            this.pii.review.candidate(annotation).unwrap();
-                                        this.pii
-                                            .review
-                                            .variant(candidate.variant)
-                                            .unwrap()
-                                            .original
-                                            .clone()
-                                    };
-                                    let (before, word, after) = this.readable_mention(&range, cx);
-                                    let drag = PanelDrag::Mention {
-                                        identity: id,
-                                        range: range.clone(),
-                                        original: original.clone(),
-                                    };
-                                    let applied = annotation & APPLIED_ID != 0;
-                                    let accent = theme.applied();
-                                    let undo = applied
-                                        && (current
-                                            || this.pii.mapping.hovered == Some(annotation));
-                                    control
-                                        .aria_label(format!(
-                                            "{original}: {before}{word}{after}{}",
-                                            if applied { ", applied" } else { "" }
-                                        ))
-                                        .when(cfg!(test), |v| {
-                                            v.debug_selector(move || {
-                                                format!("mention-{annotation}")
-                                            })
-                                        })
-                                        .on_hover(cx.listener(
-                                            move |this, hovered: &bool, _, cx| {
-                                                if this
-                                                    .pii
-                                                    .mapping
-                                                    .hover_mention(annotation, *hovered)
-                                                {
-                                                    cx.notify();
-                                                }
-                                            },
-                                        ))
-                                        .when(undo, |v| v.pr(px(36.)))
-                                        .child(
-                                            div()
-                                                .w_full()
-                                                .flex()
-                                                .items_center()
-                                                .gap_1()
-                                                .text_size(px(11.))
-                                                .child(
-                                                    div()
-                                                        .min_w_0()
-                                                        .flex_1()
-                                                        .text_ellipsis()
-                                                        .text_color(palette.header_muted)
-                                                        .child(original.to_string()),
-                                                )
-                                                .when(applied, |v| {
-                                                    v.child(
-                                                        div()
-                                                            .flex_shrink_0()
-                                                            .text_color(accent)
-                                                            .child("✓ applied"),
-                                                    )
-                                                }),
-                                        )
-                                        .when(undo, |v| {
-                                            let id = annotation & !APPLIED_ID;
-                                            v.child(
-                                                ui::icon_button(
-                                                    SharedString::from(format!(
-                                                        "mention-undo-{annotation}"
-                                                    )),
-                                                    "Undo this replacement (back to proposed)",
-                                                    ui::Icon::Undo,
-                                                    theme,
-                                                    !this.pii.scanning(),
-                                                )
-                                                .when(cfg!(test), |v| {
-                                                    v.debug_selector(move || {
-                                                        format!("mention-undo-{annotation}")
-                                                    })
-                                                })
-                                                .absolute()
-                                                .right(px(4.))
-                                                .top(px(8.))
-                                                .on_click(cx.listener(move |this, _, _, cx| {
-                                                    cx.stop_propagation();
-                                                    this.undo_replacements([id].into(), cx);
-                                                })),
-                                            )
-                                        })
-                                        .child(
-                                            div().w_full().text_ellipsis().child(
-                                                StyledText::new(format!("{before}{word}{after}"))
-                                                    .with_highlights([(
-                                                        before.len()..before.len() + word.len(),
-                                                        HighlightStyle {
-                                                            color: Some(this.theme.get().applied()),
-                                                            ..Default::default()
-                                                        },
-                                                    )]),
-                                            ),
-                                        )
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.navigate_identity_mention(
-                                                annotation,
-                                                range.start,
-                                                window,
-                                                cx,
-                                            )
-                                        }))
-                                        .on_drag(drag, move |drag, _, _, cx| start_drag(drag, cx))
-                                        .into_any_element()
-                                } else {
-                                    control
-                                        .aria_label(format!(
-                                            "{} to {}, {} mentions",
-                                            row.original, row.alias, row.mentions
-                                        ))
-                                        .when(cfg!(test), |v| {
-                                            v.debug_selector(move || format!("identity-{id}"))
-                                        })
-                                        .child(
-                                            div()
-                                                .w_full()
-                                                .flex()
-                                                .items_center()
-                                                .gap_1()
-                                                .child(
-                                                    div()
-                                                        .flex_shrink_0()
-                                                        .w(px(10.))
-                                                        .text_size(px(10.))
-                                                        .text_color(palette.header_muted)
-                                                        .child(if expanded {
-                                                            "▾"
-                                                        } else {
-                                                            "▸"
-                                                        }),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .min_w_0()
-                                                        .flex_1()
-                                                        .text_ellipsis()
-                                                        .child(row.original.to_string()),
-                                                ),
-                                        )
-                                        .child(
-                                            div()
-                                                .w_full()
-                                                .flex()
-                                                .items_center()
-                                                .gap_2()
-                                                .child(
-                                                    div()
-                                                        .min_w_0()
-                                                        .flex_1()
-                                                        .text_ellipsis()
-                                                        .text_color(this.theme.get().applied())
-                                                        .child(format!("→ {}", row.alias)),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_size(px(11.))
-                                                        .text_color(
-                                                            this.theme
-                                                                .get()
-                                                                .pdf_style()
-                                                                .header_muted,
-                                                        )
-                                                        .when(link_hint, |v| v.text_color(accent))
-                                                        .child(match row.applied {
-                                                            _ if link_hint => {
-                                                                format!("Link to {}", row.alias)
-                                                            }
-                                                            0 => format!(
-                                                                "{} · proposed",
-                                                                row.mentions
-                                                            ),
-                                                            n if n == row.mentions => {
-                                                                format!("{n} · applied")
-                                                            }
-                                                            n => format!(
-                                                                "{n} of {} applied",
-                                                                row.mentions
-                                                            ),
-                                                        }),
-                                                ),
-                                        )
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            // A click toggles the open group.
-                                            if this.selected_entity() == Some(id) {
-                                                this.collapse_replacement(cx)
-                                            } else {
-                                                this.reveal_replacement(id, window, cx)
-                                            }
-                                        }))
-                                        .on_drag(
-                                            PanelDrag::Entity {
-                                                identity: id,
-                                                original: row.original.clone(),
-                                            },
-                                            move |drag, _, _, cx| start_drag(drag, cx),
-                                        )
-                                        .into_any_element()
-                                }
-                            })
+                            .map(|index| this.panel_row(index, entries[index].clone(), cx))
                             .collect()
                     }),
                 )

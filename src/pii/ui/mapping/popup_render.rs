@@ -82,7 +82,7 @@ impl DocumentView {
     /// A floating-menu row: focusable, but it sits outside the card's scroll
     /// area, so focusing it must not scroll the card (and shift the menu
     /// between press and release, dropping the click).
-    fn menu_control(
+    pub(super) fn menu_control(
         &self,
         id: impl Into<gpui::ElementId>,
         enabled: bool,
@@ -536,7 +536,11 @@ impl DocumentView {
     }
 
     /// `anchor` with `menu` floating just below it, above the popup card.
-    fn with_dropdown(&self, anchor: impl IntoElement, menu: Option<AnyElement>) -> gpui::Div {
+    pub(super) fn with_dropdown(
+        &self,
+        anchor: impl IntoElement,
+        menu: Option<AnyElement>,
+    ) -> gpui::Div {
         div()
             .flex_shrink_0()
             .relative()
@@ -551,7 +555,7 @@ impl DocumentView {
     }
     /// The surface shared by the popup's floating menus. A press inside it
     /// must not reach the popup's outside-click handler.
-    fn menu_surface(&self, id: &'static str) -> gpui::Stateful<gpui::Div> {
+    pub(super) fn menu_surface(&self, id: &'static str) -> gpui::Stateful<gpui::Div> {
         crate::ui::panel(id, self.theme.get())
             .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
             .w(px(300.))
@@ -570,7 +574,7 @@ impl DocumentView {
     }
     /// A menu row: label left, a muted detail right. `checked` reserves a ✓
     /// column in menus that mark the current choice.
-    fn menu_row(
+    pub(super) fn menu_row(
         &self,
         id: impl Into<gpui::ElementId>,
         label: impl Into<SharedString>,

@@ -1401,7 +1401,8 @@ fn renaming_an_alias_back_frees_its_old_name(cx: &mut gpui::TestAppContext) {
 fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     app.update(cx, |app, cx| {
-        app.editor.update(cx, |e, cx| e.set_text("Anna Bob Anna", cx))
+        app.editor
+            .update(cx, |e, cx| e.set_text("Anna Bob Anna", cx))
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
@@ -1451,7 +1452,8 @@ fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), "Anna Bob Anna")
     });
-    cx.executor().advance_clock(std::time::Duration::from_secs(7));
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(7));
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("replacement-notice-undo").is_none());

@@ -1,6 +1,7 @@
 //! Identity review and direct correction. All mutation uses editor history.
 use super::*;
 mod panel;
+mod panel_rows;
 mod popup;
 pub(super) use popup::Scope;
 mod popup_render;
@@ -77,6 +78,37 @@ impl gpui::Render for DragGhost {
     }
 }
 /// Where a panel drag would drop.
+/// Which panel rows the filter shows (ADR 0033); the editor always shows all.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub(super) enum PanelFilter {
+    #[default]
+    All,
+    Proposed,
+    Applied,
+}
+impl PanelFilter {
+    pub(super) const ALL: [Self; 3] = [Self::All, Self::Proposed, Self::Applied];
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Proposed => "Proposed",
+            Self::Applied => "Applied",
+        }
+    }
+    pub(super) fn shows(self, applied: bool) -> bool {
+        match self {
+            Self::All => true,
+            Self::Proposed => !applied,
+            Self::Applied => applied,
+        }
+    }
+}
+/// A dropdown floating from the panel's toolbar or a group header.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum PanelMenu {
+    Filter,
+    Category(u64),
+}
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum DropTarget {
     Entity(u64),
@@ -123,6 +155,13 @@ pub(super) struct MappingUi {
     target: Entity<markdown_search::SearchInput>,
     /// Mentions applied by the last Apply replacements and the state it created.
     applied: Option<(usize, u64)>,
+    /// Groups expanded in the panel, independent of selection (ADR 0033).
+    pub(super) expanded: std::collections::HashSet<u64>,
+    pub(super) filter: PanelFilter,
+    pub(super) panel_menu: Option<PanelMenu>,
+    /// The group whose alias is being renamed in place, and its draft.
+    pub(super) header_edit: Option<u64>,
+    pub(super) header_alias: Entity<markdown_search::SearchInput>,
     /// Hides the footer's after-action notice once it times out (ADR 0033).
     notice: Option<gpui::Task<()>>,
     previous_focus: Option<FocusHandle>,
@@ -339,6 +378,11 @@ impl MappingUi {
             alias: input("Alias"),
             target: input("Find an identity"),
             applied: None,
+            expanded: Default::default(),
+            filter: PanelFilter::All,
+            panel_menu: None,
+            header_edit: None,
+            header_alias: input("New alias"),
             notice: None,
             previous_focus: None,
             controls: Default::default(),
@@ -436,6 +480,7 @@ impl DocumentView {
                 .map(|a| a.step.identity),
         }
     }
+    #[cfg(test)]
     fn reveal_replacement(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         let mentions = self.identity_occurrences(id);
         let preferred = self.pii.mapping.remembered.get(&id).copied();
@@ -457,7 +502,12 @@ impl DocumentView {
         }
     }
     pub(super) fn select_occurrence(&mut self, selected: Selection, cx: &mut Context<Self>) {
+        let previous = self.selected_entity();
         self.pii.mapping.select(selected);
+        // A newly selected entity's group opens; other groups stay as they are.
+        if let Some(id) = self.selected_entity().filter(|id| previous != Some(*id)) {
+            self.pii.mapping.expanded.insert(id);
+        }
         if let Some(identity) = self
             .selected_entity()
             .and_then(|id| self.pii.review.identity(id))

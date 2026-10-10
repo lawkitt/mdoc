@@ -13,6 +13,7 @@ fn plan_all(review: &Review, source: &str) -> Result<Vec<(Range<usize>, String)>
 fn seed(app: &mut DocumentView, source: &str, cx: &mut Context<DocumentView>) -> (u64, u64) {
     app.editor.update(cx, |e, cx| e.set_text(source, cx));
     app.pii.review = Default::default();
+    app.pii.mapping.expanded.clear();
     app.pii.reviewing = true;
     let mut detections = Vec::new();
     for (value, category) in [
@@ -540,10 +541,18 @@ fn panel_click_reveals_exact_word_with_popup_and_retains_workspace(cx: &mut gpui
             });
             cx.run_until_parked();
             cx.update(|window, cx| window.draw(cx).clear(cx));
+            // The header expands its group; the mention row selects (ADR 0033).
             let row = cx
                 .debug_bounds(Box::leak(format!("identity-{identity}").into_boxed_str()))
                 .unwrap();
             cx.simulate_click(row.center(), Default::default());
+            cx.run_until_parked();
+            cx.update(|window, cx| window.draw(cx).clear(cx));
+            let first = app.read_with(cx, |app, _| app.identity_occurrences(identity)[0].0);
+            let mention = cx
+                .debug_bounds(Box::leak(format!("mention-{first}").into_boxed_str()))
+                .unwrap();
+            cx.simulate_click(mention.center(), Default::default());
             cx.run_until_parked();
             for _ in 0..3 {
                 cx.update(|window, cx| {
@@ -982,7 +991,20 @@ fn group_rows_toggle_and_scope_outlines_follow_group_chip_and_hover(cx: &mut gpu
     let outlines = |cx: &mut gpui::VisualTestContext| {
         app.read_with(cx, |app, cx| app.editor.read(cx).outlines().len())
     };
+    // A header click only expands: nothing is selected (ADR 0033).
     click_row(cx);
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.expanded.contains(&identity));
+        assert_eq!(app.selected_entity(), None);
+        assert!(app.pii.popup.is_none());
+    });
+    let first = app.read_with(cx, |app, _| app.identity_occurrences(identity)[0].0);
+    let mention = cx
+        .debug_bounds(Box::leak(format!("mention-{first}").into_boxed_str()))
+        .unwrap();
+    cx.simulate_click(mention.center(), Default::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
     app.read_with(cx, |app, _| {
         assert_eq!(app.selected_entity(), Some(identity));
         assert!(app.pii.popup.is_some());
@@ -1003,12 +1025,12 @@ fn group_rows_toggle_and_scope_outlines_follow_group_chip_and_hover(cx: &mut gpu
     cx.update(|window, cx| window.draw(cx).clear(cx));
     // The selected group alone outlines all of its mentions.
     assert_eq!(outlines(cx), 2);
+    // Collapsing leaves the selection alone.
     click_row(cx);
     app.read_with(cx, |app, _| {
-        assert_eq!(app.selected_entity(), None);
-        assert!(app.pii.popup.is_none());
+        assert!(!app.pii.mapping.expanded.contains(&identity));
+        assert_eq!(app.selected_entity(), Some(identity));
     });
-    assert_eq!(outlines(cx), 0);
 }
 
 #[gpui::test]
@@ -1138,4 +1160,84 @@ fn dragging_a_mention_over_free_panel_space_offers_the_next_alias(cx: &mut gpui:
     });
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("replacement-new-entity").is_none());
+}
+
+#[gpui::test]
+fn panel_groups_expand_independently_filter_and_edit_from_headers(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (full, initials) = app.update(cx, |app, cx| {
+        let (full, initials) = seed(app, source, cx);
+        let review = &app.pii.review;
+        (
+            review.variant_identity(full).unwrap(),
+            review.variant_identity(initials).unwrap(),
+        )
+    });
+    cx.run_until_parked();
+    let click = |cx: &mut gpui::VisualTestContext, selector: String| {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let at = cx
+            .debug_bounds(Box::leak(selector.into_boxed_str()))
+            .unwrap()
+            .center();
+        cx.simulate_click(at, Default::default());
+        cx.run_until_parked();
+    };
+    // Two groups stay open together.
+    click(cx, format!("identity-{full}"));
+    click(cx, format!("identity-{initials}"));
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.expanded.contains(&full));
+        assert!(app.pii.mapping.expanded.contains(&initials));
+        assert_eq!(app.selected_entity(), None);
+    });
+    // The e-mail group is still collapsed, so the button expands all; then
+    // nothing is collapsed and it collapses every group.
+    click(cx, "replacement-expand-all".into());
+    app.read_with(cx, |app, _| assert_eq!(app.pii.mapping.expanded.len(), 3));
+    click(cx, "replacement-expand-all".into());
+    app.read_with(cx, |app, _| assert!(app.pii.mapping.expanded.is_empty()));
+    click(cx, "replacement-expand-all".into());
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.pii.mapping.expanded.len(), 3);
+        assert_eq!(app.replacement_entries(cx).len(), 3 + 4);
+    });
+    // Apply one mention; the Applied filter shows only it and its group.
+    app.update(cx, |app, cx| {
+        let range = app.pii.review.variant(full).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(full, &range).unwrap();
+        app.sync_replacement_annotation(annotation, cx);
+        app.pii.mapping.set_scope(Scope::Mention);
+        app.apply_scope(cx);
+    });
+    cx.run_until_parked();
+    click(cx, "replacement-filter".into());
+    click(cx, "replacement-filter-Applied".into());
+    app.read_with(cx, |app, cx| {
+        let entries = app.replacement_entries(cx);
+        assert_eq!(entries.len(), 2);
+        assert!(entries[1].1.as_ref().unwrap().0 & APPLIED_ID != 0);
+    });
+    click(cx, "replacement-filter".into());
+    click(cx, "replacement-filter-All".into());
+    // Header alias: click, type, Enter renames the whole entity.
+    click(cx, format!("header-alias-{initials}"));
+    cx.simulate_keystrokes("cmd-a");
+    cx.simulate_input("CLIENT");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.review.identity(initials).unwrap().alias, "CLIENT");
+        assert_eq!(app.pii.mapping.header_edit, None);
+    });
+    // Header category: the dropdown recategorizes the entity.
+    click(cx, format!("header-category-{initials}"));
+    click(cx, "panel-category-PERSON".into());
+    app.read_with(cx, |app, _| {
+        assert_eq!(
+            app.pii.review.identity(initials).unwrap().category,
+            Category::Person
+        );
+    });
 }
