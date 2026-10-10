@@ -267,7 +267,14 @@ pub(crate) fn onnx_runtime_with_progress(
     Ok(path)
 }
 
-#[cfg(test)]
+/// Only the qualification smoke test installs, on the supported targets.
+#[cfg(all(
+    test,
+    any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64")
+    )
+))]
 fn install_in(root: &Path) -> Result<Installed, String> {
     install_config_in(
         root,
