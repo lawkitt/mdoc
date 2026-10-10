@@ -1745,7 +1745,7 @@ fn file_icons_route_save_save_as_and_open_to_the_active_document(cx: &mut TestAp
     cx.update(|_, cx| {
         assert_eq!(
             view.read(cx).session.document.path.as_ref(),
-            Some(&copy_path.canonicalize().unwrap())
+            Some(&dunce::canonicalize(&copy_path).unwrap())
         )
     });
     click_toolbar(cx, "Open…");

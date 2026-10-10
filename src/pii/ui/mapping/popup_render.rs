@@ -144,6 +144,9 @@ impl DocumentView {
         }
         let hidden = self.editor.read(cx).annotation_is_hidden(annotation);
         let width = px(360.).min((available.size.width - px(16.)).max(px(160.)));
+        // Shortcut hints only where they fit: in a narrow popup, Windows'
+        // "⇧Ctrl+⌫" pushes Keep original past the edge. The keys still work.
+        let hints = width >= px(240.);
         let maximum = (available.size.height - px(44.)).max(px(110.));
         // Pickers float over the card, so its height no longer depends on them.
         let desired = px(280.).min(maximum);
@@ -474,7 +477,7 @@ impl DocumentView {
                                 .gap_2()
                                 .child("Apply")
                                 // The key that applies the selected scope (ADR 0033).
-                                .when(ready, |v| {
+                                .when(ready && hints, |v| {
                                     v.child(
                                         div()
                                             .text_size(px(11.))
@@ -511,12 +514,14 @@ impl DocumentView {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .opacity(0.7)
-                            .child(scope_keys(mapping.scope, "⌫")),
-                    )
+                    .when(hints, |v| {
+                        v.child(
+                            div()
+                                .text_size(px(11.))
+                                .opacity(0.7)
+                                .child(scope_keys(mapping.scope, "⌫")),
+                        )
+                    })
                     .aria_label(format!("Keep {in_scope} originals in scope"))
                     .on_click(cx.listener(|this, _, window, cx| this.keep_originals(window, cx)))
                 }),
