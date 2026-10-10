@@ -47,6 +47,16 @@ impl Drop for DocxPreview {
 // A replacement waits for the obsolete worker to be killed and reaped.
 static WORKER: Mutex<()> = Mutex::new(());
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+/// Whether a closed preview's file is gone, allowing for the cleanup thread
+/// (slow on Windows CI runners).
+#[cfg(test)]
+pub fn removed(path: &Path) -> bool {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while path.exists() && std::time::Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(20));
+    }
+    !path.exists()
+}
 static CLEANUPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Called off-thread by GPUI's graceful-quit hook after windows are dropped.

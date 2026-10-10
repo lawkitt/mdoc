@@ -1525,7 +1525,7 @@ fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mu
         });
         assert!(pdf.upgrade().is_none());
         assert!(comments.upgrade().is_none());
-        assert!(!backing.exists());
+        assert!(crate::docx_preview::removed(&backing));
         let pdf = cx.update(|_, cx| app.read(cx).preview.pdf.as_ref().unwrap().downgrade());
         app.update_in(cx, |app, window, cx| {
             app.close_preview(window, cx);

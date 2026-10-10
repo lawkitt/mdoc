@@ -886,7 +886,7 @@ fn queued_docx_jobs_are_serial_and_closed_tabs_cannot_receive_results(cx: &mut T
     drop(first);
     tabs.update_in(cx, |tabs, window, cx| tabs.remove(first_id, window, cx));
     cx.run_until_parked();
-    assert!(!backing.exists());
+    assert!(crate::docx_preview::removed(&backing));
     cx.update(|_, _| {
         assert!(
             weak.upgrade().is_none(),
@@ -1194,7 +1194,7 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
         tabs.update_in(cx, |tabs, window, cx| tabs.remove(id, window, cx));
         cx.run_until_parked();
         assert!(weak.upgrade().is_none());
-        assert!(!backing.exists());
+        assert!(crate::docx_preview::removed(&backing));
         eprintln!(
             "TABS_PERF close_cycle={cycle} rss_kib={:?}",
             crate::perf_tests::rss_kib()
