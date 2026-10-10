@@ -116,7 +116,7 @@ impl PiiModel {
         }
     }
     pub fn evidence(self) -> &'static str {
-        "Experimental · Known EN/RU misses; neither precision is qualified. Review the complete document."
+        "Known EN/RU misses; neither precision is qualified. Review the complete document."
     }
     pub fn license(self) -> &'static str {
         "Apache-2.0; encoder MIT"

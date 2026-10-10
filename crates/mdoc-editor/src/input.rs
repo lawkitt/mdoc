@@ -747,6 +747,19 @@ impl EditorState {
     pub fn history_id(&self) -> u64 {
         self.history_id
     }
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+    /// Undo for hosts acting from outside the editor (e.g. a side panel).
+    pub fn undo_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.undo(&Undo, window, cx);
+    }
+    pub fn redo_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.redo(&Redo, window, cx);
+    }
     pub fn last_transaction(&self) -> Option<&std::sync::Arc<super::EditorTransaction>> {
         self.last_transaction.as_ref()
     }

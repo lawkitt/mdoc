@@ -638,6 +638,7 @@ impl DocumentView {
         }
         let history = self.editor.read(cx).history_id();
         self.pii.mapping.record_kept(count, history);
+        self.flash_notice(cx);
         self.pii.dismiss_popup();
         self.sync_annotations(cx);
         self.fade_out_kept(faded, cx);
@@ -669,7 +670,13 @@ impl DocumentView {
             (a.step.after.as_ref() != alias).then(|| (a.range.clone(), alias.clone()))
         }));
         edits.sort_by_key(|(r, _)| r.start);
+        let before = self.editor.read(cx).history_id();
         self.apply_aliases(cx);
+        let after = self.editor.read(cx).history_id();
+        if after != before {
+            self.pii.mapping.record_applied(edits.len(), after);
+            self.flash_notice(cx);
+        }
         self.restore_active_replacement(active, &edits, cx);
     }
     pub(super) fn escape_popup(&mut self, window: &mut Window, cx: &mut Context<Self>) {

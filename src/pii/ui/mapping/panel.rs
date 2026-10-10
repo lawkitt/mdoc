@@ -1,10 +1,7 @@
 //! Searchable replacement overview with inline occurrence context.
 use super::*;
 use crate::ui;
-use gpui::{
-    AnyElement, HighlightStyle, SharedString, StyledText, anchored, deferred, div, prelude::*,
-    uniform_list,
-};
+use gpui::{AnyElement, HighlightStyle, SharedString, StyledText, div, prelude::*, uniform_list};
 
 #[derive(Clone)]
 struct ReplacementRow {
@@ -126,39 +123,6 @@ impl DocumentView {
         }
     }
 
-    fn replacement_commands(&self, cx: &mut Context<Self>) -> AnyElement {
-        let busy = self.pii.scanning();
-        div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(
-                self.replacement_control(
-                    "review-rescan",
-                    if busy { "Cancel scan" } else { "Rescan" },
-                    true,
-                    cx,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    if this.pii.scanning() {
-                        this.pii.cancel();
-                        this.pii.error = Some("Scan cancelled.".into());
-                        cx.notify();
-                    } else {
-                        this.start_pii_scan(cx);
-                    }
-                })),
-            )
-            .child(
-                self.replacement_control("review-settings", "Model settings…", true, cx)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.pii.mapping.close_actions();
-                        this.show_pii_settings(window, cx);
-                    })),
-            )
-            .text_size(px(12.))
-            .into_any_element()
-    }
     fn show_pii_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let model = self
             .preferences
@@ -199,7 +163,7 @@ impl DocumentView {
             .max_w_full()
             .child(ui::card_title("Set up pseudonymization"))
             .child(ui::card_text(
-                "Detects names, organizations and identifiers on this computer. Experimental — review the whole document before sharing.",
+                "Detects names, organizations and identifiers on this computer. Review the whole document before sharing.",
                 theme,
             ));
         let card = if let Some(state) = progress {
@@ -370,9 +334,12 @@ impl DocumentView {
         }
     }
 
+    /// Document undo/redo without leaving the panel (ADR 0033).
     fn undo_last_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        window.focus(&self.editor.read(cx).focus_handle(cx), cx);
-        window.dispatch_action(Box::new(mdoc_editor::Undo), cx);
+        self.editor.update(cx, |e, cx| e.undo_step(window, cx));
+    }
+    fn redo_last_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.editor.update(cx, |e, cx| e.redo_step(window, cx));
     }
 
     pub(crate) fn replacements_panel_width(&self, window: &Window) -> gpui::Pixels {
@@ -401,10 +368,26 @@ impl DocumentView {
         let bounds = mapping.bounds.clone();
         let busy = self.pii.scanning();
         let pending = self.pii.review.remaining();
-        let kept = mapping.kept_at(self.editor.read(cx).history_id());
-        let added = mapping
-            .added_at(self.editor.read(cx).history_id())
-            .map(|(added, _)| added.original.clone());
+        let history = self.editor.read(cx).history_id();
+        let (can_undo, can_redo) = {
+            let editor = self.editor.read(cx);
+            (editor.can_undo(), editor.can_redo())
+        };
+        // The latest step's after-action notice, newest kind first (ADR 0033).
+        let notice = mapping
+            .notice_visible()
+            .then(|| {
+                if let Some((added, _)) = mapping.added_at(history) {
+                    Some((format!("Added “{}”", added.original), "Cancel", true))
+                } else if let Some(kept) = mapping.kept_at(history) {
+                    Some((format!("Kept {kept}"), "Undo", false))
+                } else {
+                    mapping
+                        .applied_at(history)
+                        .map(|n| (format!("Applied {n}"), "Undo", false))
+                }
+            })
+            .flatten();
         // A mention of a multi-mention entity dragged over the panel can get a
         // new alias: the next free token of its entity's category.
         let new_alias = (cx.has_active_drag() && mapping.drag_in_panel)
@@ -466,11 +449,15 @@ impl DocumentView {
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                if this.pii.mapping.close_actions() {
-                    cx.notify();
-                } else {
-                    this.close_replacements(window, cx);
-                }
+                this.close_replacements(window, cx);
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this, _: &mdoc_editor::Undo, window, cx| {
+                this.undo_last_step(window, cx);
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this, _: &mdoc_editor::Redo, window, cx| {
+                this.redo_last_step(window, cx);
                 cx.stop_propagation();
             }))
             .child(
@@ -481,13 +468,38 @@ impl DocumentView {
                     .gap_2()
                     .px_3()
                     .py_1()
+                    .gap_1()
                     .child(div().flex_1().min_w_0().child("Replacements"))
                     .child(
-                        self.replacement_control("replacement-commands", "⋯", true, cx)
-                            .aria_label("Scan and model actions")
+                        ui::icon_control(
+                            "replacement-undo",
+                            "Undo",
+                            ui::Icon::Undo,
+                            theme,
+                            can_undo,
+                        )
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.undo_last_step(window, cx)),
+                        ),
+                    )
+                    .child(
+                        ui::icon_control(
+                            "replacement-redo",
+                            "Redo",
+                            ui::Icon::Redo,
+                            theme,
+                            can_redo,
+                        )
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.redo_last_step(window, cx)),
+                        ),
+                    )
+                    .child(
+                        ui::icon_control("review-rescan", "Rescan", ui::Icon::Rescan, theme, !busy)
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.pii.mapping.toggle_actions();
-                                cx.notify();
+                                if !this.pii.scanning() {
+                                    this.start_pii_scan(cx);
+                                }
                             })),
                     )
                     .child(
@@ -505,26 +517,6 @@ impl DocumentView {
                     .pb_2()
                     .child(mapping.search.clone()),
             )
-            .when(mapping.actions_open, |v| {
-                let bounds = mapping.bounds.get().unwrap_or_default();
-                let height = px(230.).min(window.viewport_size().height - px(32.));
-                let y = bounds.top() + px(38.);
-                v.child(
-                    deferred(
-                        anchored()
-                            .position(gpui::point(bounds.right() - px(280.), y))
-                            .snap_to_window()
-                            .child(
-                                ui::panel("replacement-secondary-actions", theme)
-                                    .w(px(280.))
-                                    .max_h(height)
-                                    .overflow_y_scroll()
-                                    .child(self.replacement_commands(cx)),
-                            ),
-                    )
-                    .with_priority(2),
-                )
-            })
             .child(
                 uniform_list(
                     "replacement-list",
@@ -908,11 +900,20 @@ impl DocumentView {
                 )
             })
             .when(count == 0, |v| {
-                v.child(div().px_3().text_size(px(12.)).child(if busy {
-                    "Scanning…"
-                } else {
-                    "No matching replacements. Review the document for missed identifiers."
-                }))
+                let searching = !mapping.search.read(cx).value().trim().is_empty();
+                v.child(
+                    div()
+                        .px_3()
+                        .text_size(px(12.))
+                        .text_color(palette.header_muted)
+                        .child(if searching {
+                            "No matching replacements."
+                        } else if busy {
+                            "Looking for names and identifiers…"
+                        } else {
+                            "Nothing found. Select text and choose Replace to add one."
+                        }),
+                )
             })
             .child(
                 div()
@@ -935,9 +936,7 @@ impl DocumentView {
                                     .flex_1()
                                     .text_size(px(12.))
                                     .text_color(palette.header_muted)
-                                    .child(if busy {
-                                        "Scanning…".into()
-                                    } else if pending > 0 {
+                                    .child(if pending > 0 {
                                         format!("{pending} mentions to apply")
                                     } else {
                                         format!(
@@ -963,74 +962,9 @@ impl DocumentView {
                                         cx.listener(|this, _, _, cx| this.apply_replacements(cx)),
                                     ),
                                 )
-                            })
-                            .when(
-                                pending == 0 && !upgrade && !self.pii.review.applied().is_empty(),
-                                |v| {
-                                    v.child(
-                                        ui::icon_button(
-                                            "replacement-undo",
-                                            "Undo applying replacements",
-                                            ui::Icon::Undo,
-                                            theme,
-                                            true,
-                                        )
-                                        .when(cfg!(test), |v| {
-                                            v.debug_selector(|| "replacement-undo".into())
-                                        })
-                                        .on_click(
-                                            cx.listener(|this, _, window, cx| {
-                                                this.undo_last_step(window, cx)
-                                            }),
-                                        ),
-                                    )
-                                },
-                            )
-                            .when(busy, |v| {
-                                v.child(
-                                    self.replacement_control(
-                                        "cancel-replacement-scan",
-                                        "Cancel",
-                                        true,
-                                        cx,
-                                    )
-                                    .on_click(cx.listener(
-                                        |this, _, window, cx| this.stop_pii_scan(window, cx),
-                                    )),
-                                )
                             }),
                     )
-                    .when_some(kept, |v, kept| {
-                        v.child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .child(
-                                    div()
-                                        .flex_1()
-                                        .text_size(px(12.))
-                                        .text_color(palette.header_muted)
-                                        .child(format!("Kept {kept}")),
-                                )
-                                .child(
-                                    ui::icon_button(
-                                        "replacement-undo-keep",
-                                        format!("Undo keeping {kept} originals"),
-                                        ui::Icon::Undo,
-                                        theme,
-                                        true,
-                                    )
-                                    .when(cfg!(test), |v| {
-                                        v.debug_selector(|| "replacement-undo-keep".into())
-                                    })
-                                    .on_click(cx.listener(
-                                        |this, _, window, cx| this.undo_last_step(window, cx),
-                                    )),
-                                ),
-                        )
-                    })
-                    .when_some(added, |v, original| {
+                    .when_some(notice, |v, (text, action, addition)| {
                         v.child(
                             div()
                                 .flex()
@@ -1043,22 +977,20 @@ impl DocumentView {
                                         .text_ellipsis()
                                         .text_size(px(12.))
                                         .text_color(palette.header_muted)
-                                        .child(format!("Added “{original}”")),
+                                        .child(text),
                                 )
                                 .child(
-                                    ui::icon_button(
-                                        "replacement-cancel-addition",
-                                        "Cancel addition",
-                                        ui::Icon::Undo,
-                                        theme,
-                                        true,
-                                    )
-                                    .when(cfg!(test), |v| {
-                                        v.debug_selector(|| "replacement-cancel-addition".into())
-                                    })
-                                    .on_click(cx.listener(
-                                        |this, _, window, cx| this.cancel_addition(window, cx),
-                                    )),
+                                    ui::link_button("replacement-notice-undo", action, theme, true)
+                                        .when(cfg!(test), |v| {
+                                            v.debug_selector(|| "replacement-notice-undo".into())
+                                        })
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            if addition {
+                                                this.cancel_addition(window, cx)
+                                            } else {
+                                                this.undo_last_step(window, cx)
+                                            }
+                                        })),
                                 ),
                         )
                     })
@@ -1074,7 +1006,7 @@ impl DocumentView {
                         div()
                             .text_size(px(11.))
                             .text_color(palette.header_muted)
-                            .child("Experimental · Review for missed identifiers before sharing."),
+                            .child("Review for missed identifiers before sharing."),
                     ),
             );
         Some(panel.into_any_element())

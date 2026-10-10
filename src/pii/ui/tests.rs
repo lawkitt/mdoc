@@ -1396,3 +1396,63 @@ fn renaming_an_alias_back_frees_its_old_name(cx: &mut gpui::TestAppContext) {
         });
     }
 }
+
+#[gpui::test]
+fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |e, cx| e.set_text("Anna Bob Anna", cx))
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        let (generation, identity, revision) = install_scan(app, cx);
+        let det = |range| pii::Detection {
+            range,
+            category: Category::Person,
+            score: 0.9,
+            recognizer: pii::Recognizer::Model,
+        };
+        app.complete_pii_scan(
+            generation,
+            identity,
+            revision,
+            Ok(vec![det(0..4), det(5..8), det(9..13)]),
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("review-rescan").is_some());
+    let apply = cx.debug_bounds("apply-identity-map").unwrap().center();
+    cx.simulate_click(apply, Default::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1")
+    });
+    // The notice offers Undo, then times out.
+    let notice = cx.debug_bounds("replacement-notice-undo").unwrap().center();
+    cx.simulate_click(notice, Default::default());
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), "Anna Bob Anna")
+    });
+    // Redo and undo by keyboard while the panel, not the editor, has focus.
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.focus, cx);
+    });
+    cx.simulate_keystrokes("cmd-shift-z");
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1")
+    });
+    cx.simulate_keystrokes("cmd-z");
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), "Anna Bob Anna")
+    });
+    cx.executor().advance_clock(std::time::Duration::from_secs(7));
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("replacement-notice-undo").is_none());
+}

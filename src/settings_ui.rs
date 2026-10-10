@@ -707,7 +707,7 @@ impl Render for Panel {
                         .children(OcrModel::ALL.into_iter().map(|m| self.row(Model::Ocr(m), cx))))
                     .child(div().flex().flex_col().gap_2().mt_4()
                         .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Pseudonymization"))
-                        .child(div().text_size(px(11.)).text_color(p.header_muted).child(self.section_note("Experimental. Detection can miss names and identifiers — review the whole document before sharing.", Model::Pii(self.draft.pseudonymization.model))))
+                        .child(div().text_size(px(11.)).text_color(p.header_muted).child(self.section_note("Detection can miss names and identifiers — review the whole document before sharing.", Model::Pii(self.draft.pseudonymization.model))))
                         .children(PiiModel::ALL.into_iter().map(|m| self.row(Model::Pii(m), cx))))
                     .child(self.scrolled_quiet("advanced-settings", if self.advanced { "Advanced ↑" } else { "Advanced ↓" }, theme, true, cx)
                         .when(cfg!(test), |v| v.debug_selector(|| "settings-advanced".into()))

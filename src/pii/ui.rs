@@ -170,6 +170,12 @@ pub(crate) fn bind_keys(cx: &mut App) {
             Some("PseudonymReview && !UiControl && !UiMenu"),
         ),
         KeyBinding::new("escape", PiiClosePopup, Some("PseudonymReview")),
+        // Document undo from anywhere in the replacements panel (ADR 0033).
+        KeyBinding::new("cmd-z", mdoc_editor::Undo, Some("IdentityPanel")),
+        KeyBinding::new("ctrl-z", mdoc_editor::Undo, Some("IdentityPanel")),
+        KeyBinding::new("cmd-shift-z", mdoc_editor::Redo, Some("IdentityPanel")),
+        KeyBinding::new("ctrl-shift-z", mdoc_editor::Redo, Some("IdentityPanel")),
+        KeyBinding::new("ctrl-y", mdoc_editor::Redo, Some("IdentityPanel")),
     ]);
 }
 
@@ -500,6 +506,7 @@ impl DocumentView {
         self.pii
             .mapping
             .record_added(source[range.clone()].into(), history);
+        self.flash_notice(cx);
         self.pii.error = None;
         self.sync_annotations(cx);
         self.editor

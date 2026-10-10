@@ -4,6 +4,12 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- Replacements panel: Undo, Redo and Rescan icon buttons in its toolbar, and
+  ⌘Z / ⇧⌘Z work while the panel has focus. Scan progress and Cancel live only
+  in the main toolbar; the ⋯ menu is gone (Model settings are in Settings).
+  After Apply, Keep or Replace a short "… · Undo" notice appears. Pseudonymization
+  is no longer labelled experimental (ADRs 0033, 0034).
+
 - Removed interactions that did nothing in mdoc (ADR 0031): the PDF
   toolbar's Highlight (⌘⇧H) and Area highlight tools; the caret now enters
   `$…$` and `$$…$$` math like other Markdown, Backspace/Delete edit it

@@ -11,9 +11,9 @@ source, including unsaved edits. Documents remain ordinary local files.
 **Pseudonymize** scans locally and proposes consistent aliases for identifying
 information. Review and correct the proposals, then explicitly apply replacements.
 Applied aliases remain inspectable and undoable while the document is open;
-originals and mappings are not saved or copied. The GLiNER2 FP16/FP32 detector is
-experimental, with known English/Russian and hidden-source misses. It does not
-guarantee anonymization; see the [qualification results](tests/fixtures/pseudonymization/README.md).
+originals and mappings are not saved or copied. The GLiNER2 FP16/FP32 detector
+has known English/Russian and hidden-source misses, so review the result before
+sharing. It does not guarantee anonymization; see the [qualification results](tests/fixtures/pseudonymization/README.md).
 
 OCR and automatic pseudonymization are available on Apple Silicon macOS and
 Windows x64; Intel macOS, Windows ARM64 and Linux support native-text import.

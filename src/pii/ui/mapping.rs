@@ -121,12 +121,15 @@ pub(super) struct MappingUi {
     search: Entity<markdown_search::SearchInput>,
     pub(super) alias: Entity<markdown_search::SearchInput>,
     target: Entity<markdown_search::SearchInput>,
-    actions_open: bool,
+    /// Mentions applied by the last Apply replacements and the state it created.
+    applied: Option<(usize, u64)>,
+    /// Hides the footer's after-action notice once it times out (ADR 0033).
+    notice: Option<gpui::Task<()>>,
     previous_focus: Option<FocusHandle>,
     controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
     scroll: gpui::ScrollHandle,
     list_scroll: gpui::UniformListScrollHandle,
-    focus: FocusHandle,
+    pub(super) focus: FocusHandle,
 }
 impl MappingUi {
     pub(super) fn invalidate_source_edit(&mut self, cx: &mut Context<DocumentView>) {
@@ -156,7 +159,6 @@ impl MappingUi {
     }
     pub(super) fn clear_selection(&mut self) {
         self.selected = None;
-        self.actions_open = false;
         self.pickers.owner = false;
         self.pickers.category = false;
     }
@@ -170,18 +172,10 @@ impl MappingUi {
         self.scope = Scope::Wording;
         self.target_index = None;
         self.field_error = None;
-        self.actions_open = false;
         self.scroll.set_offset(gpui::point(px(0.), px(0.)));
     }
     pub(super) fn set_scope(&mut self, scope: Scope) {
         self.scope = scope;
-    }
-    pub(super) fn toggle_actions(&mut self) {
-        self.actions_open = !self.actions_open;
-    }
-    /// Close the secondary actions menu; false when it was already closed.
-    pub(super) fn close_actions(&mut self) -> bool {
-        std::mem::take(&mut self.actions_open)
     }
     // Pickers float over the popup, so only one is open at a time (ADR 0032).
     pub(super) fn toggle_category_picker(&mut self) {
@@ -229,6 +223,19 @@ impl MappingUi {
     }
     pub(super) fn record_kept(&mut self, count: usize, history: u64) {
         self.kept = Some((count, history));
+    }
+    pub(super) fn record_applied(&mut self, count: usize, history: u64) {
+        self.applied = Some((count, history));
+    }
+    /// Mentions applied by the most recent history step, while it is current.
+    pub(super) fn applied_at(&self, history: u64) -> Option<usize> {
+        self.applied
+            .filter(|(_, at)| *at == history)
+            .map(|(count, _)| count)
+    }
+    /// The after-action notice is showing (its timer has not fired).
+    pub(super) fn notice_visible(&self) -> bool {
+        self.notice.is_some()
     }
     /// Mentions kept by the most recent history step, while it is current.
     pub(super) fn kept_at(&self, history: u64) -> Option<usize> {
@@ -331,7 +338,8 @@ impl MappingUi {
             search: input("Find an alias or original"),
             alias: input("Alias"),
             target: input("Find an identity"),
-            actions_open: false,
+            applied: None,
+            notice: None,
             previous_focus: None,
             controls: Default::default(),
             scroll: gpui::ScrollHandle::new(),
@@ -842,5 +850,21 @@ impl DocumentView {
                 cx.notify();
             });
         });
+    }
+}
+
+impl DocumentView {
+    /// Show the footer's "… · Undo" notice for a few seconds (ADR 0033).
+    pub(super) fn flash_notice(&mut self, cx: &mut Context<Self>) {
+        self.pii.mapping.notice = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(6))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.pii.mapping.notice = None;
+                cx.notify();
+            });
+        }));
+        cx.notify();
     }
 }

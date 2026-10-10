@@ -14,9 +14,9 @@ This roadmap tracks work remaining as of 2026-10-10; accepted behavior lives in
 - Document-local pseudonymization includes stable aliases, variant/occurrence
   correction, reviewed ownership, explicit batch Apply, inspectable replacements
   and metadata-aware undo/redo. Pseudonymization is the only PII replacement mode
-  ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)). GLiNER2 FP16/FP32 and
-  selected structured rules remain experimental; no model passed the
-  [initial qualification](tests/fixtures/pseudonymization/README.md).
+  ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)). It is a supported,
+  assistive feature ([ADR 0034](docs/adr/0034-pseudonymization-supported-feature.md));
+  no model passed the [initial qualification](tests/fixtures/pseudonymization/README.md).
 - Sidebar, first-use setup, empty-page/file-drop and replacement-popup revisions
   are implemented under ADRs 0026–0028 and 0032. Native/platform acceptance remains
   partial; implementation does not establish qualification.
@@ -31,7 +31,7 @@ This roadmap tracks work remaining as of 2026-10-10; accepted behavior lives in
 2. **Qualify the outgoing AI-analysis journey.** Agree release targets and test
    EN/RU legal/native/OCR text, hidden source, identity joins/splits, ownership and
    correction time on a larger holdout. See [open gates](docs/design/pseudonymization-production-readiness.md).
-   Keep experimental status until the evidence supports changing it.
+   These are ongoing quality gates, not a precondition for the supported label.
 3. **Complete native and platform acceptance.** Check both themes, keyboard/IME,
    clipboard, accessibility and affected popup, setup and file-drop flows.
    Apple Silicon macOS and Windows x64 are the first qualification targets;
