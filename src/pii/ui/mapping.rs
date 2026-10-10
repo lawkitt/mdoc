@@ -1,6 +1,7 @@
 //! Identity review and direct correction. All mutation uses editor history.
 use super::*;
 mod panel;
+mod panel_keys;
 mod panel_rows;
 mod popup;
 pub(super) use popup::Scope;
@@ -103,6 +104,12 @@ impl PanelFilter {
         }
     }
 }
+/// The keyboard row in the panel list: a group header or a mention.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum PanelCursor {
+    Header(u64),
+    Mention(u64),
+}
 /// A dropdown floating from the panel's toolbar or a group header.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum PanelMenu {
@@ -158,6 +165,11 @@ pub(super) struct MappingUi {
     /// Groups expanded in the panel, independent of selection (ADR 0033).
     pub(super) expanded: std::collections::HashSet<u64>,
     pub(super) filter: PanelFilter,
+    pub(super) cursor: Option<PanelCursor>,
+    /// The selection came from the panel: inline controls, no popup.
+    pub(super) panel_selected: bool,
+    /// Groups opened by triage focus, closed again once fully decided.
+    pub(super) triage_expanded: std::collections::HashSet<u64>,
     pub(super) panel_menu: Option<PanelMenu>,
     /// The group whose alias is being renamed in place, and its draft.
     pub(super) header_edit: Option<u64>,
@@ -329,10 +341,10 @@ impl MappingUi {
         let mut input = |placeholder| {
             let input = cx.new(|cx| {
                 markdown_search::SearchInput::new(cx)
-                    .with_key_context(if placeholder == "Alias" {
-                        "PseudonymReplacement"
-                    } else {
-                        "SettingsInput"
+                    .with_key_context(match placeholder {
+                        "Alias" => "PseudonymReplacement",
+                        "Find an alias or original" => "ReplacementSearch",
+                        _ => "SettingsInput",
                     })
                     .with_placeholder(placeholder)
             });
@@ -380,6 +392,9 @@ impl MappingUi {
             applied: None,
             expanded: Default::default(),
             filter: PanelFilter::All,
+            cursor: None,
+            panel_selected: false,
+            triage_expanded: Default::default(),
             panel_menu: None,
             header_edit: None,
             header_alias: input("New alias"),

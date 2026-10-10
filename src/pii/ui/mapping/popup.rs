@@ -368,12 +368,13 @@ impl DocumentView {
         let applied = self.theme.get().applied();
         let visible = self.pii.reviewing && (self.pii.mapping.open || self.pii.popup.is_some());
         let ranges = match self.selected_entity().filter(|_| visible) {
-            Some(_) if self.pii.popup.is_some() => self.scoped_ranges(
-                self.pii
-                    .mapping
-                    .scope_hover
-                    .unwrap_or(self.pii.mapping.scope),
-            ),
+            Some(_) if self.pii.popup.is_some() || self.pii.mapping.panel_selected => self
+                .scoped_ranges(
+                    self.pii
+                        .mapping
+                        .scope_hover
+                        .unwrap_or(self.pii.mapping.scope),
+                ),
             Some(id) => self
                 .identity_occurrences(id)
                 .into_iter()

@@ -735,7 +735,7 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
 }
 
 #[gpui::test]
-fn long_original_and_neutral_enter_preserve_source_until_explicit_apply(
+fn long_original_enter_applies_this_one_and_alias_enter_only_confirms(
     cx: &mut gpui::TestAppContext,
 ) {
     let (app, cx) = crate::document_view_tests::boot(cx);
@@ -755,13 +755,24 @@ fn long_original_and_neutral_enter_preserve_source_until_explicit_apply(
             app.activate_annotation(app.pii.review.candidates()[0].id, window, cx);
         });
         cx.run_until_parked();
+        // Enter applies this mention (ADR 0033), as one undo step.
         cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(
+            app.read_with(cx, |app, cx| app.editor.read(cx).text().to_owned()),
+            "PERSON_1"
+        );
+        app.update_in(cx, |app, window, cx| {
+            app.editor.update(cx, |e, cx| e.undo_step(window, cx))
+        });
         cx.run_until_parked();
         assert_eq!(
             app.read_with(cx, |app, cx| app.editor.read(cx).text().to_owned()),
             original
         );
         app.update_in(cx, |app, window, cx| {
+            let candidate = app.pii.review.candidates()[0].id;
+            app.activate_annotation(candidate, window, cx);
             app.pii
                 .mapping
                 .alias
@@ -1457,4 +1468,49 @@ fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("replacement-notice-undo").is_none());
+}
+
+#[gpui::test]
+fn popup_delete_keeps_but_alias_field_backspace_edits(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.editor.update(cx, |e, cx| e.set_text("Anna Bob", cx));
+        app.pii.review = Review::default();
+        app.pii.reviewing = true;
+        app.pii
+            .review
+            .ingest(
+                "Anna Bob",
+                vec![pii::Detection {
+                    range: 0..4,
+                    category: Category::Person,
+                    score: 0.9,
+                    recognizer: pii::Recognizer::Model,
+                }],
+            )
+            .unwrap();
+        app.sync_annotations(cx);
+        app.activate_annotation(app.pii.review.candidates()[0].id, window, cx);
+        window.focus(&app.pii.mapping.alias.read(cx).focus_handle(cx), cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_keystrokes("backspace");
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        // The selected alias text was deleted; nothing was kept.
+        assert_eq!(app.pii.mapping.alias.read(cx).value(), "");
+        assert_eq!(app.pii.review.remaining(), 1);
+        let alias = "PERSON_1".to_string();
+        app.pii
+            .mapping
+            .alias
+            .update(cx, |input, cx| input.set_value(alias, cx));
+        window.focus(&app.pii.focus, cx);
+    });
+    cx.simulate_keystrokes("backspace");
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.pii.review.remaining(), 0);
+        assert_eq!(app.editor.read(cx).text(), "Anna Bob");
+    });
 }

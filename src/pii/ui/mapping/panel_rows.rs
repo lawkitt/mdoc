@@ -1,5 +1,5 @@
 //! Replacements panel rows: group headers and mention rows (ADR 0033).
-use super::panel::{PanelEntry, ReplacementRow};
+use super::panel::{PanelEntry, PanelItem, ReplacementRow};
 use super::*;
 use crate::ui;
 use gpui::{AnyElement, HighlightStyle, SharedString, StyledText, div, prelude::*};
@@ -69,8 +69,11 @@ impl DocumentView {
                 cx.listener(move |this, drag: &PanelDrag, _, cx| this.drop_on_entity(drag, id, cx)),
             );
         match mention {
-            Some((annotation, range)) => self.mention_row(base, &row, annotation, range, cx),
-            None => self.header_row(base, &row, cx),
+            PanelItem::Mention(annotation, range) => {
+                self.mention_row(base, &row, annotation, range, cx)
+            }
+            PanelItem::Header => self.header_row(base, &row, cx),
+            PanelItem::Controls(annotation) => self.inline_controls(index, annotation, cx),
         }
     }
 
@@ -182,6 +185,9 @@ impl DocumentView {
                 ..palette.placeholder_bg
             })
         })
+        .when(mapping.cursor == Some(PanelCursor::Header(id)), |v| {
+            v.bg(palette.placeholder_bg)
+        })
         .child(
             div()
                 .w_full()
@@ -223,7 +229,12 @@ impl DocumentView {
                         .child(count),
                 ),
         )
-        .on_click(cx.listener(move |this, _, _, cx| this.toggle_group(id, cx)))
+        .on_click(cx.listener(move |this, _, window, cx| {
+            window.focus(&this.pii.mapping.focus, cx);
+            this.pii.mapping.cursor = Some(PanelCursor::Header(id));
+            this.pii.mapping.triage_expanded.remove(&id);
+            this.toggle_group(id, cx);
+        }))
         .on_drag(
             PanelDrag::Entity {
                 identity: id,
@@ -246,7 +257,8 @@ impl DocumentView {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let applied = annotation & APPLIED_ID != 0;
-        let current = self.pii.popup.is_some() && self.active_annotation() == Some(annotation);
+        let current = self.active_annotation() == Some(annotation)
+            && (self.pii.popup.is_some() || self.pii.mapping.panel_selected);
         let original = if applied {
             self.pii
                 .review
@@ -341,7 +353,8 @@ impl DocumentView {
             )]),
         ))
         .on_click(cx.listener(move |this, _, window, cx| {
-            this.navigate_identity_mention(annotation, range.start, window, cx)
+            window.focus(&this.pii.mapping.focus, cx);
+            this.panel_select_mention(annotation, cx);
         }))
         .on_drag(
             PanelDrag::Mention {
@@ -352,6 +365,123 @@ impl DocumentView {
             start_drag(cx.entity().downgrade(), theme),
         )
         .into_any_element()
+    }
+
+    /// One line under the panel-selected mention: Apply to · Apply · Keep
+    /// (Undo for an applied mention). Buttons follow the scope selector; the
+    /// keys use fixed scopes (ADR 0033).
+    fn inline_controls(&self, index: usize, annotation: u64, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let applied = annotation & APPLIED_ID != 0;
+        let enabled = !self.pii.scanning();
+        let scope = self.pii.mapping.scope;
+        let mentions = self
+            .selected_entity()
+            .map_or(0, |id| self.identity_occurrences(id).len());
+        let segment = |id: &'static str, label: String, value: Scope, cx: &mut Context<Self>| {
+            div()
+                .id(id)
+                .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
+                .px_2()
+                .py(px(2.))
+                .rounded_sm()
+                .cursor_pointer()
+                .text_color(if scope == value {
+                    palette.header_fg
+                } else {
+                    palette.header_muted
+                })
+                .when(scope == value, |v| v.bg(palette.placeholder_bg))
+                .child(label)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.pii.mapping.set_scope(value);
+                    this.sync_scope_outlines(cx);
+                    cx.notify();
+                }))
+        };
+        let action = |id: &'static str,
+                      label: &'static str,
+                      key: &'static str,
+                      keep: bool,
+                      cx: &mut Context<Self>| {
+            let hint = super::popup_render::scope_keys(scope, key);
+            div()
+                .id(id)
+                .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
+                .flex()
+                .items_center()
+                .gap_1()
+                .px_2()
+                .py(px(2.))
+                .rounded_sm()
+                .border_1()
+                .border_color(palette.border)
+                .cursor_pointer()
+                .hover(move |s| s.bg(palette.placeholder_bg))
+                .when(!enabled, |v| v.opacity(0.5))
+                .child(label)
+                .child(div().text_color(palette.header_muted).child(hint))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    cx.stop_propagation();
+                    if enabled {
+                        let scope = this.pii.mapping.scope;
+                        this.panel_decide(scope, keep, window, cx);
+                    }
+                }))
+        };
+        div()
+            .id(SharedString::from(format!("replacement-entry-{index}")))
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "inline-controls".into())
+            })
+            .w_full()
+            .h(px(48.))
+            .pl(px(28.))
+            .pr_3()
+            .flex()
+            .items_center()
+            .gap_1()
+            .text_size(px(12.))
+            .bg(palette.placeholder_bg)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .flex_shrink_0()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(palette.border)
+                    .child(segment(
+                        "inline-scope-this",
+                        "This".into(),
+                        Scope::Mention,
+                        cx,
+                    ))
+                    .child(segment(
+                        "inline-scope-same",
+                        "Same".into(),
+                        Scope::Wording,
+                        cx,
+                    ))
+                    .child(segment(
+                        "inline-scope-all",
+                        format!("All {mentions}"),
+                        Scope::Entity,
+                        cx,
+                    )),
+            )
+            .child(div().flex_1())
+            .map(|v| {
+                if applied {
+                    v.child(action("inline-undo", "Undo", "⌫", true, cx))
+                } else {
+                    v.child(action("inline-apply", "Apply", "↵", false, cx))
+                        .child(action("inline-keep", "Keep", "⌫", true, cx))
+                }
+            })
+            .into_any_element()
     }
 
     fn entity_category_menu(

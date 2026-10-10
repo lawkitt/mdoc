@@ -515,7 +515,9 @@ fn single_copy_with_pending_replacements_preserves_exact_source_and_history(
 }
 
 #[gpui::test]
-fn panel_click_reveals_exact_word_with_popup_and_retains_workspace(cx: &mut gpui::TestAppContext) {
+fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
+    cx: &mut gpui::TestAppContext,
+) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     for theme in [crate::Theme::Dark, crate::Theme::Light] {
         for (width, height, preview) in [
@@ -553,6 +555,15 @@ fn panel_click_reveals_exact_word_with_popup_and_retains_workspace(cx: &mut gpui
                 .debug_bounds(Box::leak(format!("mention-{first}").into_boxed_str()))
                 .unwrap();
             cx.simulate_click(mention.center(), Default::default());
+            cx.run_until_parked();
+            // A panel selection reveals the word without a popup; the editor
+            // path then opens the popup beside the panel.
+            app.update_in(cx, |app, window, cx| {
+                assert!(app.pii.popup.is_none());
+                assert_eq!(app.active_annotation(), Some(first));
+                let start = app.active_replacement_range().unwrap().start;
+                app.navigate_identity_mention(first, start, window, cx);
+            });
             cx.run_until_parked();
             for _ in 0..3 {
                 cx.update(|window, cx| {
@@ -1005,25 +1016,20 @@ fn group_rows_toggle_and_scope_outlines_follow_group_chip_and_hover(cx: &mut gpu
     cx.simulate_click(mention.center(), Default::default());
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
+    // A panel selection shows inline controls instead of the popup; its
+    // scope starts at this mention and the selector widens the outline.
     app.read_with(cx, |app, _| {
         assert_eq!(app.selected_entity(), Some(identity));
-        assert!(app.pii.popup.is_some());
+        assert!(app.pii.popup.is_none());
+        assert!(app.pii.mapping.panel_selected);
     });
-    // Same wording: both initials.
-    assert_eq!(outlines(cx), 2);
-    app.update(cx, |app, cx| {
-        app.pii.mapping.scope_hover = Some(Scope::Mention);
-        cx.notify();
-    });
-    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("inline-controls").is_some());
     assert_eq!(outlines(cx), 1);
-    app.update(cx, |app, cx| {
-        app.pii.mapping.scope_hover = None;
-        app.pii.dismiss_popup();
-        cx.notify();
-    });
+    let same = cx.debug_bounds("inline-scope-same").unwrap().center();
+    cx.simulate_click(same, Default::default());
+    cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
-    // The selected group alone outlines all of its mentions.
+    // Same wording: both initials.
     assert_eq!(outlines(cx), 2);
     // Collapsing leaves the selection alone.
     click_row(cx);
@@ -1217,7 +1223,7 @@ fn panel_groups_expand_independently_filter_and_edit_from_headers(cx: &mut gpui:
     app.read_with(cx, |app, cx| {
         let entries = app.replacement_entries(cx);
         assert_eq!(entries.len(), 2);
-        assert!(entries[1].1.as_ref().unwrap().0 & APPLIED_ID != 0);
+        assert!(entries[1].1.mention().unwrap() & APPLIED_ID != 0);
     });
     click(cx, "replacement-filter".into());
     click(cx, "replacement-filter-All".into());
@@ -1240,4 +1246,91 @@ fn panel_groups_expand_independently_filter_and_edit_from_headers(cx: &mut gpui:
             Category::Person
         );
     });
+}
+
+#[gpui::test]
+fn panel_keyboard_moves_decides_and_triages(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (full, initials) = app.update(cx, |app, cx| {
+        let (full, initials) = seed(app, source, cx);
+        let review = &app.pii.review;
+        (
+            review.variant_identity(full).unwrap(),
+            review.variant_identity(initials).unwrap(),
+        )
+    });
+    cx.run_until_parked();
+    let text = |cx: &mut gpui::VisualTestContext| {
+        app.read_with(cx, |app, cx| app.editor.read(cx).text().to_owned())
+    };
+    let key = |cx: &mut gpui::VisualTestContext, keys: &str| {
+        cx.simulate_keystrokes(keys);
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    };
+    // ↓ from search enters the list on the first header; Enter opens it.
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.search.read(cx).focus_handle(cx), cx);
+    });
+    key(cx, "down");
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.mapping.cursor, Some(PanelCursor::Header(full)));
+    });
+    key(cx, "enter");
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.expanded.contains(&full))
+    });
+    // ↓ selects the mention: inline controls, no popup.
+    key(cx, "down");
+    app.read_with(cx, |app, _| {
+        assert!(matches!(
+            app.pii.mapping.cursor,
+            Some(PanelCursor::Mention(_))
+        ));
+        assert!(app.pii.popup.is_none());
+    });
+    assert!(cx.debug_bounds("inline-controls").is_some());
+    // Enter applies this mention; triage moves to the next undecided one,
+    // opening the initials group.
+    key(cx, "enter");
+    assert!(text(cx).starts_with("PERSON_1 ·"));
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.expanded.contains(&initials));
+        assert_eq!(app.selected_entity(), Some(initials));
+    });
+    // ⌘⌫ keeps both initials (same text) in one step; triage reaches e-mail.
+    key(cx, "cmd-backspace");
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.pii.review.identity_count(initials), 0);
+        // The triage-opened initials group closed once decided.
+        assert!(!app.pii.mapping.expanded.contains(&initials));
+        assert!(app.selected_entity().is_some());
+        assert_eq!(app.editor.read(cx).text(), text_of(source));
+    });
+    // ⌘Z in the panel undoes the keep.
+    key(cx, "cmd-z");
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.review.identity_count(initials), 2)
+    });
+    // ↑ to the top, then ↑ again returns to search; Esc there closes.
+    key(cx, "cmd-up");
+    key(cx, "up");
+    app.update_in(cx, |app, window, cx| {
+        assert!(
+            app.pii
+                .mapping
+                .search
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+    });
+    key(cx, "escape");
+    app.read_with(cx, |app, _| assert!(!app.pii.mapping.open));
+}
+
+/// The source after the first full-name mention became `PERSON_1`.
+fn text_of(source: &str) -> String {
+    source.replacen("Павлова Марина Сергеевна", "PERSON_1", 1)
 }

@@ -13,7 +13,22 @@ pub(super) struct ReplacementRow {
     pub applied: usize,
 }
 /// One panel line: an entity row, or one of the expanded entity's mentions.
-pub(super) type PanelEntry = (Arc<ReplacementRow>, Option<(u64, Range<usize>)>);
+pub(super) type PanelEntry = (Arc<ReplacementRow>, PanelItem);
+#[derive(Clone)]
+pub(super) enum PanelItem {
+    Header,
+    Mention(u64, Range<usize>),
+    /// Inline controls under the mention selected in the panel (ADR 0033).
+    Controls(u64),
+}
+impl PanelItem {
+    pub(super) fn mention(&self) -> Option<u64> {
+        match self {
+            Self::Mention(annotation, _) => Some(*annotation),
+            _ => None,
+        }
+    }
+}
 
 impl DocumentView {
     pub(super) fn replacement_control(
@@ -103,11 +118,14 @@ impl DocumentView {
         let mut entries = Vec::new();
         for row in self.replacement_rows(cx).iter() {
             let row = Arc::new(row.clone());
-            entries.push((row.clone(), None));
+            entries.push((row.clone(), PanelItem::Header));
             if mapping.expanded.contains(&row.id) {
-                for mention in self.identity_occurrences(row.id) {
-                    if mapping.filter.shows(mention.0 & APPLIED_ID != 0) {
-                        entries.push((row.clone(), Some(mention)));
+                for (annotation, range) in self.identity_occurrences(row.id) {
+                    if mapping.filter.shows(annotation & APPLIED_ID != 0) {
+                        entries.push((row.clone(), PanelItem::Mention(annotation, range)));
+                        if self.inline_controls_for() == Some(annotation) {
+                            entries.push((row.clone(), PanelItem::Controls(annotation)));
+                        }
                     }
                 }
             }
@@ -123,7 +141,7 @@ impl DocumentView {
         if let Some(index) = self
             .replacement_entries(cx)
             .iter()
-            .position(|(_, mention)| mention.as_ref().is_some_and(|(a, _)| *a == annotation))
+            .position(|(_, item)| item.mention() == Some(annotation))
         {
             self.pii
                 .mapping
@@ -795,6 +813,6 @@ impl DocumentView {
                             .child("Review for missed identifiers before sharing."),
                     ),
             );
-        Some(panel.into_any_element())
+        Some(self.panel_actions(panel, cx).into_any_element())
     }
 }

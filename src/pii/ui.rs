@@ -151,6 +151,7 @@ pub(crate) fn bind_keys(cx: &mut App) {
     } else {
         "ctrl"
     };
+    cx.bind_keys(decision_bindings(modifier));
     cx.bind_keys([
         KeyBinding::new("down", crate::PiiNextChoice, Some("PiiChooser")),
         KeyBinding::new("up", crate::PiiPreviousChoice, Some("PiiChooser")),
@@ -164,12 +165,12 @@ pub(crate) fn bind_keys(cx: &mut App) {
             PiiAddCandidate,
             Some("Editor"),
         ),
-        KeyBinding::new(
-            "enter",
-            PiiConfirm,
-            Some("PseudonymReview && !UiControl && !UiMenu"),
-        ),
+        // In the alias field Enter confirms the draft; elsewhere in the popup
+        // the shared decision keys apply (ADR 0033).
+        KeyBinding::new("enter", PiiConfirm, Some("PseudonymReplacement")),
         KeyBinding::new("escape", PiiClosePopup, Some("PseudonymReview")),
+        KeyBinding::new("escape", crate::PanelEscape, Some("IdentityPanel")),
+        KeyBinding::new("down", crate::PanelEnterList, Some("ReplacementSearch")),
         // Document undo from anywhere in the replacements panel (ADR 0033).
         KeyBinding::new("cmd-z", mdoc_editor::Undo, Some("IdentityPanel")),
         KeyBinding::new("ctrl-z", mdoc_editor::Undo, Some("IdentityPanel")),
@@ -177,6 +178,47 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-shift-z", mdoc_editor::Redo, Some("IdentityPanel")),
         KeyBinding::new("ctrl-y", mdoc_editor::Redo, Some("IdentityPanel")),
     ]);
+}
+
+/// The panel list's movement keys and the decision keys shared by the panel
+/// list and the popup (ADR 0033): Enter applies, Delete keeps the original;
+/// ⌘ widens to the same text, ⇧⌘ to the whole entity.
+fn decision_bindings(modifier: &str) -> Vec<KeyBinding> {
+    const LIST: &str = "IdentityPanel && !ReplacementSearch && !SettingsInput && !UiControl";
+    const POPUP: &str = "PseudonymReview && !PseudonymReplacement && !UiControl && !UiMenu";
+    let mut bindings = vec![
+        KeyBinding::new("up", crate::PanelUp, Some(LIST)),
+        KeyBinding::new("down", crate::PanelDown, Some(LIST)),
+        KeyBinding::new(&format!("{modifier}-up"), crate::PanelFirst, Some(LIST)),
+        KeyBinding::new(&format!("{modifier}-down"), crate::PanelLast, Some(LIST)),
+    ];
+    for context in [LIST, POPUP] {
+        bindings.extend([
+            KeyBinding::new("enter", crate::ApplyThis, Some(context)),
+            KeyBinding::new(
+                &format!("{modifier}-enter"),
+                crate::ApplySame,
+                Some(context),
+            ),
+            KeyBinding::new(
+                &format!("{modifier}-shift-enter"),
+                crate::ApplyAll,
+                Some(context),
+            ),
+        ]);
+        for key in ["backspace", "delete"] {
+            bindings.extend([
+                KeyBinding::new(key, crate::KeepThis, Some(context)),
+                KeyBinding::new(&format!("{modifier}-{key}"), crate::KeepSame, Some(context)),
+                KeyBinding::new(
+                    &format!("{modifier}-shift-{key}"),
+                    crate::KeepAll,
+                    Some(context),
+                ),
+            ]);
+        }
+    }
+    bindings
 }
 
 impl DocumentView {
@@ -369,6 +411,9 @@ impl DocumentView {
             return;
         }
         self.sync_replacement_annotation(id, cx);
+        // Editor selections use the popup; the panel row follows (ADR 0033).
+        self.pii.mapping.panel_selected = false;
+        self.pii.mapping.cursor = Some(mapping::PanelCursor::Mention(id));
         if !std::mem::take(&mut self.pii.manual_activation) {
             self.pii.mapping.request_cue(false, false);
         }

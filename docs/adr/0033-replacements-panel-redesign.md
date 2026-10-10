@@ -42,6 +42,9 @@ blue fills, a ⋯ menu hid Rescan, and decisions needed the popup or the mouse.
 ## Consequences
 
 Expansion becomes per-group panel state. The popup's Enter/Delete shortcuts
-change to fixed scopes (the Apply to selector drives buttons only). New keyboard
+change to fixed scopes (the Apply to selector drives buttons only, which show
+the matching key). This supersedes the "neutral Enter never applies" rule of
+ADRs 0020 and 0024: Enter outside the alias field applies this mention, as one
+undo step; in the alias field Enter still only confirms the draft. New keyboard
 move and middle-click paths reuse the existing mapping actions and add no new
 undo semantics.

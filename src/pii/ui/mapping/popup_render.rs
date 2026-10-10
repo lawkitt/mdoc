@@ -182,6 +182,7 @@ impl DocumentView {
             .tab_group()
             .tab_stop(false)
             .track_focus(&self.pii.focus)
+            .map(|v| self.popup_decision_actions(v, cx))
             .w(width)
             .max_h(height)
             .overflow_y_scroll()
@@ -472,9 +473,14 @@ impl DocumentView {
                                 .items_center()
                                 .gap_2()
                                 .child("Apply")
-                                // Enter applies only after a manual addition (ADR 0024).
-                                .when(self.pii.enter_applies && ready, |v| {
-                                    v.child(div().text_size(px(11.)).opacity(0.7).child("↵"))
+                                // The key that applies the selected scope (ADR 0033).
+                                .when(ready, |v| {
+                                    v.child(
+                                        div()
+                                            .text_size(px(11.))
+                                            .opacity(0.7)
+                                            .child(scope_keys(mapping.scope, "↵")),
+                                    )
                                 })
                                 .aria_label(format!("Apply {count} replacements in scope"))
                                 .on_click(cx.listener(|this, _, _, cx| this.apply_scope(cx))),
@@ -501,6 +507,15 @@ impl DocumentView {
                             cx,
                         ),
                         theme,
+                    )
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .opacity(0.7)
+                            .child(scope_keys(mapping.scope, "⌫")),
                     )
                     .aria_label(format!("Keep {in_scope} originals in scope"))
                     .on_click(cx.listener(|this, _, window, cx| this.keep_originals(window, cx)))
@@ -1065,5 +1080,20 @@ impl DocumentView {
                         }))
                     })),
             )
+    }
+}
+
+/// The shortcut for `key` in `scope`: ⌘ widens to the same text, ⇧⌘ to the
+/// whole entity (ADR 0033).
+pub(super) fn scope_keys(scope: Scope, key: &str) -> String {
+    let modifier = if cfg!(target_os = "macos") {
+        "⌘"
+    } else {
+        "Ctrl+"
+    };
+    match scope {
+        Scope::Mention => key.to_string(),
+        Scope::Wording => format!("{modifier}{key}"),
+        Scope::Entity => format!("⇧{modifier}{key}"),
     }
 }
