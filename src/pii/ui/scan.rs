@@ -44,6 +44,7 @@ impl DocumentView {
         let generation = self.pii.generation;
         let identity = self.session.generation;
         let cancel = Arc::new(AtomicBool::new(false));
+        self.pii.scan_started = std::time::Instant::now();
         self.pii.job = Some(ScanJob {
             cancel: cancel.clone(),
             revision,
@@ -95,6 +96,7 @@ impl DocumentView {
                 });
                 self.pii.scans.push(config);
                 self.sync_annotations(cx);
+                self.fade_in_candidates(cx);
             }
             Err(error) => {
                 self.pii.error = Some(error);

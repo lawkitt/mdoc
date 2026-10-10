@@ -69,7 +69,7 @@ impl gpui::Render for DragGhost {
             .rounded_md()
             .bg(palette.bg)
             .border_1()
-            .border_color(self.theme.search_accent())
+            .border_color(self.theme.applied())
             .text_size(px(12.))
             .text_color(palette.header_fg)
             .shadow_md()
@@ -181,13 +181,19 @@ impl MappingUi {
     pub(super) fn close_actions(&mut self) -> bool {
         std::mem::take(&mut self.actions_open)
     }
+    // Pickers float over the popup, so only one is open at a time (ADR 0032).
     pub(super) fn toggle_category_picker(&mut self) {
-        self.pickers.category = !self.pickers.category;
+        let open = !self.pickers.category;
+        self.pickers = Pickers::default();
+        self.pickers.category = open;
     }
     pub(super) fn toggle_owner_picker(&mut self) {
-        self.pickers.owner = !self.pickers.owner;
+        let open = !self.pickers.owner;
+        self.pickers = Pickers::default();
+        self.pickers.owner = open;
     }
     pub(super) fn show_alias_choices(&mut self) {
+        self.pickers = Pickers::default();
         self.pickers.alias = true;
     }
     /// Close every inline picker; false when none was open.
@@ -374,6 +380,17 @@ impl DocumentView {
             self.sync_annotations(cx);
             let search = &self.pii.mapping.search;
             window.focus(&search.read(cx).focus_handle(cx), cx);
+        }
+        cx.notify();
+    }
+    /// Stop the running scan. With nothing found or applied yet, also leave
+    /// review, so Pseudonymize starts afresh next time.
+    pub(super) fn stop_pii_scan(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.pii.cancel();
+        let review = &self.pii.review;
+        if review.variants().is_empty() && review.applied().is_empty() {
+            self.pii.reviewing = false;
+            self.close_replacements(window, cx);
         }
         cx.notify();
     }

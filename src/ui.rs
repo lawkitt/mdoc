@@ -393,7 +393,7 @@ pub enum Icon {
 }
 
 impl Icon {
-    fn data(self) -> &'static [u8] {
+    pub fn data(self) -> &'static [u8] {
         match self {
             Self::Open => include_bytes!("../resources/ui/open.svg"),
             Self::Save => include_bytes!("../resources/ui/save.svg"),

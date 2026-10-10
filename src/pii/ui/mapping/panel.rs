@@ -542,7 +542,7 @@ impl DocumentView {
                                         && this.active_annotation() == Some(*annotation)
                                 });
                                 let weak = cx.entity().downgrade();
-                                let accent = theme.search_accent();
+                                let accent = theme.applied();
                                 // "Link to ALIAS" while another group's row is dragged here.
                                 let link_hint = cx.has_active_drag()
                                     && this.pii.mapping.drop_target == Some(DropTarget::Entity(id))
@@ -614,7 +614,7 @@ impl DocumentView {
                                                 .top_0()
                                                 .bottom_0()
                                                 .w(px(3.))
-                                                .bg(theme.search_accent()),
+                                                .bg(theme.applied()),
                                         )
                                     });
                                 if let Some((annotation, range)) = mention {
@@ -643,7 +643,7 @@ impl DocumentView {
                                         original: original.clone(),
                                     };
                                     let applied = annotation & APPLIED_ID != 0;
-                                    let accent = theme.search_accent();
+                                    let accent = theme.applied();
                                     let undo = applied
                                         && (current
                                             || this.pii.mapping.hovered == Some(annotation));
@@ -725,9 +725,7 @@ impl DocumentView {
                                                     .with_highlights([(
                                                         before.len()..before.len() + word.len(),
                                                         HighlightStyle {
-                                                            color: Some(
-                                                                this.theme.get().search_accent(),
-                                                            ),
+                                                            color: Some(this.theme.get().applied()),
                                                             ..Default::default()
                                                         },
                                                     )]),
@@ -789,9 +787,7 @@ impl DocumentView {
                                                         .min_w_0()
                                                         .flex_1()
                                                         .text_ellipsis()
-                                                        .text_color(
-                                                            this.theme.get().search_accent(),
-                                                        )
+                                                        .text_color(this.theme.get().applied())
                                                         .child(format!("→ {}", row.alias)),
                                                 )
                                                 .child(
@@ -858,7 +854,7 @@ impl DocumentView {
             .when_some(new_alias, |v, alias| {
                 // The free space under the rows becomes a contoured drop area
                 // that names the alias a separated mention would get.
-                let accent = theme.search_accent();
+                let accent = theme.applied();
                 let over = mapping.drop_target == Some(DropTarget::NewEntity);
                 v.child(
                     div()
@@ -999,10 +995,7 @@ impl DocumentView {
                                         cx,
                                     )
                                     .on_click(cx.listener(
-                                        |this, _, _, cx| {
-                                            this.pii.cancel();
-                                            cx.notify();
-                                        },
+                                        |this, _, window, cx| this.stop_pii_scan(window, cx),
                                     )),
                                 )
                             }),

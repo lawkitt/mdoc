@@ -408,10 +408,11 @@ fn keyboard_search_and_navigation_reach_virtualized_alias_targets(cx: &mut gpui:
     let last = cx
         .debug_bounds("target-30")
         .expect("keyboard-selected target must be painted");
-    let popup = cx.debug_bounds("pseudonym-popup").unwrap();
+    // Alias targets float in their own menu over the popup (ADR 0032).
+    let menu = cx.debug_bounds("direct-alias-menu").unwrap();
     assert!(
-        last.top() >= popup.top() && last.bottom() <= popup.bottom(),
-        "target {last:?} popup {popup:?}"
+        last.top() >= menu.top() && last.bottom() <= menu.bottom(),
+        "target {last:?} menu {menu:?}"
     );
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
@@ -881,6 +882,7 @@ fn hidden_annotations_follow_visible_wrapped_rows(cx: &mut gpui::TestAppContext)
             range: at..at + 4,
             color: gpui::rgba(0xffaa0022).into(),
             active_color: gpui::rgba(0xffaa0055).into(),
+            border: gpui::transparent_black(),
         })
         .collect();
     app.update(cx, |app, cx| {
@@ -1083,4 +1085,123 @@ fn unknown_wording_is_other_cued_and_cancel_reverts_addition_and_apply(
         let history = app.editor.read(cx).history_id();
         assert!(app.pii.mapping.added_at(history).is_none());
     });
+}
+
+#[gpui::test]
+fn decision_card_fits_the_mention_and_apply_settles_in(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Планируемая дата поступления. Анна agreed.";
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text(source, cx));
+    });
+    cx.run_until_parked();
+    let anna = source.find("Анна").unwrap();
+    app.update(cx, |app, cx| {
+        install_scan(app, cx);
+    });
+    // The toolbar stage label shows only while the scan runs (ADR 0032).
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("scan-status").is_some());
+    app.update(cx, |app, cx| {
+        let job = app.pii.job.as_ref().unwrap();
+        let (generation, revision) = (job.generation, job.revision);
+        let identity = app.session.generation;
+        app.complete_pii_scan(
+            generation,
+            identity,
+            revision,
+            Ok(vec![pii::Detection {
+                range: anna..anna + "Анна".len(),
+                category: Category::Person,
+                score: 0.9,
+                recognizer: crate::pii::Recognizer::Model,
+            }]),
+            cx,
+        );
+        // Proposals fade in as the sweep stops.
+        let id = app.pii.review.candidates()[0].id;
+        assert!(app.editor.read(cx).is_flashing(id));
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("scan-status").is_none());
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |e, cx| e.set_selection(0.."Планируемая дата".len(), cx))
+    });
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        app.add_pii_candidate(&PiiAddCandidate, window, cx)
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    // A fresh addition is backed out with Cancel, not kept; one mention needs
+    // neither navigation nor a scope, and Other has no owner.
+    assert!(cx.debug_bounds("direct-cancel-addition").is_some());
+    assert!(cx.debug_bounds("direct-keep").is_none());
+    assert!(cx.debug_bounds("direct-prev").is_none());
+    assert!(cx.debug_bounds("scope-0").is_none());
+    assert!(cx.debug_bounds("direct-owner").is_none());
+    cx.dispatch_action(PiiConfirm);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        let applied = app.pii.review.applied()[0].id;
+        assert!(app.editor.read(cx).is_flashing(APPLIED_ID | applied));
+        // The words roll from the original into the alias.
+        assert!(app.editor.read(cx).is_rolling_text());
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("direct-undo").is_some());
+    assert!(cx.debug_bounds("direct-cancel-addition").is_some());
+    // Undo eases the restored proposal back to amber.
+    app.update(cx, |app, cx| {
+        let applied = app.pii.review.applied()[0].id;
+        app.undo_replacements([applied].into(), cx);
+        let proposal = app
+            .pii
+            .review
+            .candidates()
+            .iter()
+            .find(|c| c.range.start == 0)
+            .unwrap()
+            .id;
+        assert!(app.editor.read(cx).is_flashing(proposal));
+    });
+    // Keep original leaves a fading ghost where the chip was.
+    app.update_in(cx, |app, window, cx| {
+        let proposal = app
+            .pii
+            .review
+            .candidates()
+            .iter()
+            .find(|c| c.range.start == 0)
+            .unwrap()
+            .id;
+        app.activate_annotation(proposal, window, cx);
+        app.keep_originals(window, cx);
+        assert!(app.editor.read(cx).is_fading_ranges());
+    });
+}
+#[gpui::test]
+fn toolbar_status_cancels_a_running_scan(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("Alice", cx));
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        install_scan(app, cx);
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let stop = cx.debug_bounds("cancel-pii-scan").unwrap().center();
+    cx.simulate_click(stop, gpui::Modifiers::none());
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert!(!app.pii.scanning());
+        assert_eq!(app.editor.read(cx).text(), "Alice");
+        // Nothing was found, so the next Pseudonymize scans afresh.
+        assert!(!app.pii.reviewing && !app.pii.mapping.open);
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("scan-status").is_none());
 }

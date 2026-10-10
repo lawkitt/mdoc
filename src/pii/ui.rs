@@ -46,6 +46,8 @@ pub(crate) struct ReviewUi {
     manual_activation: bool,
     pub focus: FocusHandle,
     job: Option<ScanJob>,
+    /// When the running scan started, for the toolbar stage label.
+    scan_started: std::time::Instant,
     discovery_job: Option<discovery::DiscoveryJob>,
     discovery_pending: bool,
     pub scans: Vec<settings::PiiConfig>,
@@ -58,6 +60,9 @@ pub(crate) struct ReviewUi {
     generation: u64,
     popup_previous: Option<FocusHandle>,
     popup_scroll: gpui::ScrollHandle,
+    /// The popup's last measured anchor. Right after an edit the editor has
+    /// not measured the new chip yet; holding this keeps the popup in place.
+    popup_anchor: Cell<Option<gpui::Bounds<Pixels>>>,
     chooser_scroll: gpui::UniformListScrollHandle,
     popup_controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
 }
@@ -76,6 +81,7 @@ impl ReviewUi {
             manual_activation: false,
             focus: cx.focus_handle(),
             job: None,
+            scan_started: std::time::Instant::now(),
             discovery_job: None,
             discovery_pending: false,
             scans: Vec::new(),
@@ -86,6 +92,7 @@ impl ReviewUi {
             generation: 0,
             popup_previous: None,
             popup_scroll: gpui::ScrollHandle::new(),
+            popup_anchor: Cell::new(None),
             chooser_scroll: gpui::UniformListScrollHandle::new(),
             popup_controls: Default::default(),
         }
@@ -106,6 +113,7 @@ impl ReviewUi {
     /// Open a popup, remembering where focus returns when it closes.
     fn show_popup(&mut self, popup: Popup, previous_focus: Option<FocusHandle>) {
         self.enter_applies = false;
+        self.popup_anchor.set(None);
         self.popup = Some(popup);
         self.popup_previous = previous_focus;
     }
@@ -197,9 +205,9 @@ impl DocumentView {
         self.sync_annotations(cx);
     }
     fn sync_annotations(&mut self, cx: &mut Context<Self>) {
-        // Proposals are amber; applied replacements share the alias teal.
-        let accent = style::markdown_style(self.theme.get()).alert_warning;
-        let applied_accent = self.theme.get().search_accent();
+        // Proposals are gold; applied replacements share the alias blue (ADR 0032).
+        let accent = self.theme.get().proposed();
+        let applied_accent = self.theme.get().applied();
         let review = &self.pii.review;
         let show_candidates = self.pii.reviewing;
         let mut candidates = review
@@ -229,6 +237,7 @@ impl DocumentView {
                     range: occurrence.range.clone(),
                     color: Hsla { a: 0.14, ..accent },
                     active_color: Hsla { a: 0.3, ..accent },
+                    border: Hsla { a: 0.5, ..accent },
                 }
             } else {
                 let occurrence = applied.next().unwrap();
@@ -241,6 +250,10 @@ impl DocumentView {
                     },
                     active_color: Hsla {
                         a: 0.34,
+                        ..applied_accent
+                    },
+                    border: Hsla {
+                        a: 0.5,
                         ..applied_accent
                     },
                 }
@@ -452,7 +465,7 @@ impl DocumentView {
                 }
                 .into(),
                 disabled: target.err().map(Into::into),
-                accent: style::markdown_style(self.theme.get()).alert_warning,
+                accent: self.theme.get().proposed(),
             });
         self.editor
             .update(cx, |editor, cx| editor.set_selection_action(action, cx));
@@ -553,10 +566,12 @@ impl DocumentView {
             next
         });
         let added = review.prepare_replacements(plans);
+        let flash: std::collections::HashSet<_> = added.iter().map(|a| APPLIED_ID | a.id).collect();
         let edits: Vec<_> = plans
             .iter()
             .map(|p| (p.range.clone(), p.after.to_string()))
             .collect();
+        let source = self.editor.read(cx).text().to_owned();
         let committed = self.editor.update(cx, |e, cx| {
             if edits.is_empty() {
                 e.checkpoint_metadata(revision, cx)
@@ -576,7 +591,135 @@ impl DocumentView {
             review.commit_identity_snapshot(before, after, old);
         }
         review.commit_replacements(after, added);
+        self.flash_applied(flash, cx);
+        self.roll_replaced(&edits, &source, cx);
         Some(after)
+    }
+    /// Replacement motion (ADR 0032): a just-applied chip eases from the
+    /// proposal gold through a soft blue glow to rest.
+    fn flash_applied(&mut self, ids: std::collections::HashSet<u64>, cx: &mut Context<Self>) {
+        if cx.reduce_motion() {
+            return;
+        }
+        let gold = self.theme.get().proposed();
+        let blue = self.theme.get().applied();
+        self.editor.update(cx, |editor, cx| {
+            editor.flash_annotations(
+                mdoc_editor::AnnotationFlash {
+                    ids,
+                    from: (Hsla { a: 0.22, ..gold }, Hsla { a: 0.6, ..gold }),
+                    peak: (Hsla { a: 0.3, ..blue }, Hsla { a: 0.85, ..blue }),
+                    duration: std::time::Duration::from_millis(700),
+                    mark: None,
+                },
+                cx,
+            )
+        });
+    }
+    /// Roll each replaced span's words inside its chip (ADR 0032). `edits`
+    /// are (range in `before`, new text), applied to `before` just now.
+    pub(super) fn roll_replaced(
+        &mut self,
+        edits: &[(Range<usize>, String)],
+        before: &str,
+        cx: &mut Context<Self>,
+    ) {
+        if cx.reduce_motion() || edits.is_empty() {
+            return;
+        }
+        let mut sorted: Vec<_> = edits.iter().collect();
+        sorted.sort_by_key(|(r, _)| r.start);
+        let mut shift = 0isize;
+        let items = sorted
+            .into_iter()
+            .filter_map(|(r, text)| {
+                let start = r.start.saturating_add_signed(shift);
+                shift += text.len() as isize - r.len() as isize;
+                let previous = before.get(r.clone())?;
+                (previous != text).then(|| (start..start + text.len(), previous.to_string().into()))
+            })
+            .collect();
+        let surface = self.theme.get().pdf_style().bg;
+        self.editor.update(cx, |editor, cx| {
+            let revision = editor.revision();
+            editor.roll_text(
+                mdoc_editor::TextRoll {
+                    revision,
+                    items,
+                    surface,
+                    duration: std::time::Duration::from_millis(600),
+                },
+                cx,
+            )
+        });
+    }
+    /// Undo replacement: the restored proposal eases from blue back to gold.
+    fn flash_unapplied(&mut self, ids: std::collections::HashSet<u64>, cx: &mut Context<Self>) {
+        if cx.reduce_motion() {
+            return;
+        }
+        let gold = self.theme.get().proposed();
+        let blue = self.theme.get().applied();
+        self.editor.update(cx, |editor, cx| {
+            editor.flash_annotations(
+                mdoc_editor::AnnotationFlash {
+                    ids,
+                    from: (Hsla { a: 0.22, ..blue }, Hsla { a: 0.6, ..blue }),
+                    peak: (Hsla { a: 0.28, ..gold }, Hsla { a: 0.85, ..gold }),
+                    duration: std::time::Duration::from_millis(650),
+                    mark: None,
+                },
+                cx,
+            )
+        });
+    }
+    /// Keep original: the text loses its chip, so a ghost of the chip (blue
+    /// for a reverted replacement, gold for a declined proposal) fades out.
+    fn fade_out_kept(&mut self, ranges: Vec<(Range<usize>, bool)>, cx: &mut Context<Self>) {
+        if cx.reduce_motion() {
+            return;
+        }
+        let gold = self.theme.get().proposed();
+        let blue = self.theme.get().applied();
+        let ranges = ranges
+            .into_iter()
+            .map(|(range, applied)| {
+                let c = if applied { blue } else { gold };
+                (range, Hsla { a: 0.22, ..c }, Hsla { a: 0.7, ..c })
+            })
+            .collect();
+        self.editor.update(cx, |editor, cx| {
+            let revision = editor.revision();
+            editor.flash_ranges(
+                mdoc_editor::RangeFlash {
+                    revision,
+                    ranges,
+                    duration: std::time::Duration::from_millis(700),
+                },
+                cx,
+            )
+        });
+    }
+    /// Scan results fade in together as the sweep stops (ADR 0032).
+    fn fade_in_candidates(&mut self, cx: &mut Context<Self>) {
+        if cx.reduce_motion() {
+            return;
+        }
+        let gold = self.theme.get().proposed();
+        let ids = self.pii.review.candidates().iter().map(|c| c.id).collect();
+        let clear = Hsla { a: 0., ..gold };
+        self.editor.update(cx, |editor, cx| {
+            editor.flash_annotations(
+                mdoc_editor::AnnotationFlash {
+                    ids,
+                    from: (clear, clear),
+                    peak: (Hsla { a: 0.1, ..gold }, Hsla { a: 0.35, ..gold }),
+                    duration: std::time::Duration::from_millis(250),
+                    mark: None,
+                },
+                cx,
+            )
+        });
     }
     pub(crate) fn pii_transaction(
         &mut self,

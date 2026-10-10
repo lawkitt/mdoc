@@ -319,6 +319,7 @@ fn pii_annotation_geometry_matrix(cx: &mut TestAppContext) {
                 range: at..at + 6,
                 color: gpui::rgba(0xffaa0022).into(),
                 active_color: gpui::rgba(0xffaa0055).into(),
+                border: gpui::transparent_black(),
             })
             .collect();
         app.update(cx, |app, cx| {

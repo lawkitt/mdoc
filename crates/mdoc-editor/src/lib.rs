@@ -422,6 +422,48 @@ pub struct SourceAnnotation {
     pub range: Range<usize>,
     pub color: Hsla,
     pub active_color: Hsla,
+    /// Chip border; transparent paints a plain fill.
+    pub border: Hsla,
+}
+
+/// A transient colour change on annotations, e.g. a replacement settling in.
+/// The fill and border ease from `from` through `peak` to the annotation's own
+/// colours over `duration`; `mark` (e.g. ✓ or ↶) rises and fades in beside
+/// each annotation, then fades out.
+#[derive(Clone, Debug)]
+pub struct AnnotationFlash {
+    pub ids: std::collections::HashSet<u64>,
+    /// (fill, border) at the start.
+    pub from: (Hsla, Hsla),
+    /// (fill, border) reached at `PEAK` of the duration.
+    pub peak: (Hsla, Hsla),
+    pub duration: std::time::Duration,
+    pub mark: Option<(SharedString, Hsla)>,
+}
+
+/// Text that just changed rolls inside its chip: the previous words drift up
+/// and fade out while the current words rise into place. Display only; the
+/// document already holds the new text.
+#[derive(Clone, Debug)]
+pub struct TextRoll {
+    /// Content revision the ranges belong to; stale ranges never paint.
+    pub revision: u64,
+    /// (range of the new text, the text it replaced).
+    pub items: Vec<(Range<usize>, SharedString)>,
+    /// The page colour behind the text, used to mask it mid-roll.
+    pub surface: Hsla,
+    pub duration: std::time::Duration,
+}
+
+/// A chip-shaped ghost over source ranges that fades away, for text that just
+/// lost its annotation (e.g. a replacement reverted to its original).
+#[derive(Clone, Debug)]
+pub struct RangeFlash {
+    /// Content revision the ranges belong to; stale ranges never paint.
+    pub revision: u64,
+    /// (range, fill, border) at the start; all fade to transparent.
+    pub ranges: Vec<(Range<usize>, Hsla, Hsla)>,
+    pub duration: std::time::Duration,
 }
 
 /// A host action offered for one selection: a floating pill beside it and the
@@ -540,6 +582,9 @@ pub struct EditorState {
     annotation_bounds: Vec<(u64, Bounds<Pixels>)>,
     annotation_hover: Option<u64>,
     annotation_active: Option<u64>,
+    annotation_flashes: Vec<(std::time::Instant, AnnotationFlash)>,
+    range_flashes: Vec<(std::time::Instant, RangeFlash)>,
+    text_rolls: Vec<(std::time::Instant, TextRoll)>,
     /// Last paint's wrapped lines (one per logical line) and each line's top
     /// offset relative to the editor's top — both used for hit-testing and
     /// cursor/IME positioning.
@@ -782,6 +827,9 @@ impl EditorState {
             annotation_bounds: Vec::new(),
             annotation_hover: None,
             annotation_active: None,
+            annotation_flashes: Vec::new(),
+            range_flashes: Vec::new(),
+            text_rolls: Vec::new(),
             wrapped: Vec::new(),
             line_tops: Vec::new(),
             line_heights: Vec::new(),
@@ -953,6 +1001,67 @@ impl EditorState {
         } else {
             &[]
         }
+    }
+
+    /// Play a transient colour change on annotations by id. Display only.
+    pub fn flash_annotations(&mut self, flash: AnnotationFlash, cx: &mut Context<Self>) {
+        if flash.ids.is_empty() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        // Finished flashes (✓ included) no longer paint anything.
+        self.annotation_flashes
+            .retain(|(start, f)| now < *start + f.duration * 2 + std::time::Duration::from_secs(2));
+        self.annotation_flashes.push((now, flash));
+        cx.notify();
+    }
+
+    /// Fade a chip-shaped ghost out of source ranges. Display only.
+    pub fn flash_ranges(&mut self, flash: RangeFlash, cx: &mut Context<Self>) {
+        if flash.ranges.is_empty() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        self.range_flashes
+            .retain(|(start, f)| now < *start + f.duration && f.revision == self.content_gen);
+        self.range_flashes.push((now, flash));
+        cx.notify();
+    }
+
+    /// Roll changed text inside its chip. Display only.
+    pub fn roll_text(&mut self, roll: TextRoll, cx: &mut Context<Self>) {
+        if roll.items.is_empty() {
+            return;
+        }
+        let now = std::time::Instant::now();
+        self.text_rolls
+            .retain(|(start, r)| now < *start + r.duration && r.revision == self.content_gen);
+        self.text_rolls.push((now, roll));
+        cx.notify();
+    }
+
+    /// Whether changed text is still rolling.
+    pub fn is_rolling_text(&self) -> bool {
+        let now = std::time::Instant::now();
+        self.text_rolls
+            .iter()
+            .any(|(start, r)| now < *start + r.duration && r.revision == self.content_gen)
+    }
+
+    /// Whether a range ghost is still fading.
+    pub fn is_fading_ranges(&self) -> bool {
+        let now = std::time::Instant::now();
+        self.range_flashes
+            .iter()
+            .any(|(start, f)| now < *start + f.duration && f.revision == self.content_gen)
+    }
+
+    /// Whether annotation `id` has a colour change still playing.
+    pub fn is_flashing(&self, id: u64) -> bool {
+        let now = std::time::Instant::now();
+        self.annotation_flashes
+            .iter()
+            .any(|(start, f)| f.ids.contains(&id) && now < *start + f.duration)
     }
 
     /// Host-selected occurrence remains distinct while keyboard focus is in its popup.
@@ -2105,7 +2214,7 @@ impl EditorState {
         let tip = action
             .disabled
             .clone()
-            .unwrap_or_else(|| format!("{}  {}", action.menu_label, action.shortcut).into());
+            .unwrap_or_else(|| action.menu_label.clone());
         let accent = action.accent;
         let (corner, at) = if end.top() > px(44.) {
             (
@@ -2118,6 +2227,12 @@ impl EditorState {
                 point(end.right(), end.bottom() + px(4.)),
             )
         };
+        let muted = Hsla {
+            a: fg.a * 0.55,
+            ..fg
+        };
+        // A compact action chip: a tiny proposal-coloured token (what the
+        // selection becomes), the label, and its shortcut.
         let pill = div()
             .id("selection-action-pill")
             .occlude()
@@ -2126,24 +2241,41 @@ impl EditorState {
             } else {
                 CursorStyle::Arrow
             })
-            .px(px(10.))
-            .py(px(2.))
-            .rounded(px(999.))
+            .h(px(24.))
+            .pl(px(7.))
+            .pr(px(8.))
+            .flex()
+            .items_center()
+            .gap(px(6.))
+            .rounded(px(6.))
             .bg(bg)
             .border_1()
             .border_color(border)
             .shadow_md()
             .text_size(px(12.))
             .font_weight(FontWeight::MEDIUM)
-            .text_color(if enabled {
-                fg
-            } else {
-                Hsla {
-                    a: fg.a * 0.45,
-                    ..fg
-                }
-            })
+            .text_color(if enabled { fg } else { muted })
+            .child(
+                div()
+                    .size(px(10.))
+                    .rounded(px(3.))
+                    .border_1()
+                    .border_color(if enabled { accent } else { muted })
+                    .bg(Hsla {
+                        a: if enabled { 0.25 } else { 0. },
+                        ..accent
+                    }),
+            )
             .child(action.label.clone())
+            .when(enabled && !action.shortcut.is_empty(), |v| {
+                v.child(
+                    div()
+                        .text_size(px(11.))
+                        .font_weight(FontWeight::NORMAL)
+                        .text_color(muted)
+                        .child(action.shortcut.clone()),
+                )
+            })
             .tooltip(move |_, cx| {
                 gpui::AppContext::new(cx, |_| PillTip {
                     text: tip.clone(),
@@ -2164,7 +2296,7 @@ impl EditorState {
                 }),
             )
             .when(enabled, |v| {
-                v.hover(move |s| s.bg(Hsla { a: 0.22, ..accent }).border_color(accent))
+                v.hover(move |s| s.border_color(Hsla { a: 0.7, ..accent }))
             });
         Some(
             gpui::deferred(
@@ -5102,6 +5234,7 @@ mod annotation_tests {
                         range: range.clone(),
                         color: rgba(0xffaa0022).into(),
                         active_color: rgba(0xffaa0055).into(),
+                        border: gpui::transparent_black(),
                     })
                     .collect(),
                 cx,
@@ -5192,12 +5325,14 @@ mod annotation_tests {
                         range: 0..5,
                         color: rgba(0xffaa0022).into(),
                         active_color: rgba(0xffaa0055).into(),
+                        border: gpui::transparent_black(),
                     },
                     SourceAnnotation {
                         id: 8,
                         range: 30..35,
                         color: rgba(0xffaa0022).into(),
                         active_color: rgba(0xffaa0055).into(),
+                        border: gpui::transparent_black(),
                     },
                 ],
                 cx,
