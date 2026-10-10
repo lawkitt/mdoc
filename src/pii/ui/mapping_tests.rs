@@ -1381,7 +1381,9 @@ fn keyboard_move_wheel_and_middle_click(cx: &mut gpui::TestAppContext) {
     });
     cx.dispatch_action(mdoc_editor::Undo);
     draw(cx);
-    app.read_with(cx, |app, _| assert_eq!(app.pii.review.identity_count(initials), 2));
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.review.identity_count(initials), 2)
+    });
     // A mouse wheel steps the keyboard row; a trackpad does not.
     let list = cx.debug_bounds("identity-panel").unwrap().center();
     app.update(cx, |app, cx| {
@@ -1420,14 +1422,22 @@ fn keyboard_move_wheel_and_middle_click(cx: &mut gpui::TestAppContext) {
     cx.simulate_mouse_down(at, gpui::MouseButton::Middle, gpui::Modifiers::command());
     cx.simulate_mouse_up(at, gpui::MouseButton::Middle, gpui::Modifiers::command());
     draw(cx);
-    app.read_with(cx, |app, _| assert_eq!(app.pii.review.identity_count(initials), 0));
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.review.identity_count(initials), 0)
+    });
     // The same gesture on an editor chip keeps that mention.
     let chip = app.read_with(cx, |app, cx| {
         let annotation = app.identity_occurrences(full)[0].0;
-        app.editor.read(cx).annotation_bounds(annotation).unwrap().center()
+        app.editor
+            .read(cx)
+            .annotation_bounds(annotation)
+            .unwrap()
+            .center()
     });
     cx.simulate_mouse_down(chip, gpui::MouseButton::Middle, Default::default());
     cx.simulate_mouse_up(chip, gpui::MouseButton::Middle, Default::default());
     draw(cx);
-    app.read_with(cx, |app, _| assert_eq!(app.pii.review.identity_count(full), 0));
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.review.identity_count(full), 0)
+    });
 }

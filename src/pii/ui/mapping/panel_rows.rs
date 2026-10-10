@@ -25,6 +25,50 @@ fn start_drag(
     }
 }
 
+/// Panel row surfaces: a band for open groups, a stronger fill for the
+/// selected mention, and a guide line tying mentions to their header.
+struct RowColors {
+    hover: Hsla,
+    band: Hsla,
+    selected: Hsla,
+    guide: Hsla,
+    guide_selected: Hsla,
+    separator: Hsla,
+}
+impl RowColors {
+    fn new(theme: crate::style::Theme) -> Self {
+        let p = theme.pdf_style();
+        Self {
+            hover: Hsla {
+                a: 0.35,
+                ..p.placeholder_bg
+            },
+            band: Hsla {
+                a: 0.55,
+                ..p.placeholder_bg
+            },
+            selected: p.placeholder_bg,
+            guide: Hsla {
+                a: 0.45,
+                ..p.header_muted
+            },
+            guide_selected: p.header_fg,
+            separator: p.border,
+        }
+    }
+}
+
+/// The vertical line left of a group's mention rows.
+fn guide(color: Hsla) -> gpui::Div {
+    div()
+        .absolute()
+        .left(px(17.))
+        .top_0()
+        .bottom_0()
+        .w(px(2.))
+        .bg(color)
+}
+
 impl DocumentView {
     pub(super) fn panel_row(
         &self,
@@ -34,13 +78,13 @@ impl DocumentView {
     ) -> AnyElement {
         let id = row.id;
         let muted = self.theme.get().pdf_style().header_muted;
-        let base = self
-            .replacement_control(
-                SharedString::from(format!("replacement-entry-{index}")),
-                "",
-                true,
-                cx,
-            )
+        let hover = RowColors::new(self.theme.get()).hover;
+        // Flat, full-width rows: the list cursor drives the keyboard.
+        let base = div()
+            .id(SharedString::from(format!("replacement-entry-{index}")))
+            .role(gpui::Role::Button)
+            .cursor_pointer()
+            .hover(move |s| s.bg(hover))
             .w_full()
             .h(px(48.))
             .line_height(px(17.))
@@ -175,18 +219,11 @@ impl DocumentView {
         })
         .px_3()
         .border_t_1()
-        .border_color(Hsla {
-            a: 0.6,
-            ..palette.border
-        })
-        .when(expanded, |v| {
-            v.bg(Hsla {
-                a: 0.6,
-                ..palette.placeholder_bg
-            })
-        })
+        .border_color(RowColors::new(theme).separator)
+        .when(expanded, |v| v.bg(RowColors::new(theme).band))
+        // The keyboard row is outlined, so it never reads as selected.
         .when(mapping.cursor == Some(PanelCursor::Header(id)), |v| {
-            v.bg(palette.placeholder_bg)
+            v.border_1().border_color(palette.header_muted)
         })
         // The keyboard move's target group (ADR 0033).
         .when(mapping.key_moving && link_hint, |v| {
@@ -296,12 +333,12 @@ impl DocumentView {
         })
         .pl(px(28.))
         .pr_3()
-        .border_t_1()
-        .border_color(Hsla {
-            a: 0.35,
-            ..palette.border
-        })
-        .when(current, |v| v.bg(palette.placeholder_bg))
+        .when(current, |v| v.bg(RowColors::new(theme).selected))
+        .child(guide(if current {
+            RowColors::new(theme).guide_selected
+        } else {
+            RowColors::new(theme).guide
+        }))
         .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
             if this.pii.mapping.hover_mention(annotation, *hovered) {
                 cx.notify();
@@ -391,10 +428,23 @@ impl DocumentView {
         let mentions = self
             .selected_entity()
             .map_or(0, |id| self.identity_occurrences(id).len());
-        let segment = |id: &'static str, label: String, value: Scope, cx: &mut Context<Self>| {
+        let colors = RowColors::new(theme);
+        let accent = theme.applied();
+        let raised = Hsla {
+            a: 0.12,
+            ..palette.header_fg
+        };
+        let segment = |id: &'static str,
+                       label: &'static str,
+                       count: Option<usize>,
+                       value: Scope,
+                       cx: &mut Context<Self>| {
             div()
                 .id(id)
                 .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
+                .flex()
+                .items_center()
+                .gap_1()
                 .px_2()
                 .py(px(2.))
                 .rounded_sm()
@@ -404,8 +454,11 @@ impl DocumentView {
                 } else {
                     palette.header_muted
                 })
-                .when(scope == value, |v| v.bg(palette.placeholder_bg))
+                .when(scope == value, |v| v.bg(raised))
                 .child(label)
+                .when_some(count, |v, n| {
+                    v.child(div().text_size(px(11.)).opacity(0.7).child(n.to_string()))
+                })
                 .on_click(cx.listener(move |this, _, _, cx| {
                     cx.stop_propagation();
                     this.pii.mapping.set_scope(value);
@@ -427,14 +480,27 @@ impl DocumentView {
                 .gap_1()
                 .px_2()
                 .py(px(2.))
-                .rounded_sm()
+                .rounded_md()
                 .border_1()
-                .border_color(palette.border)
                 .cursor_pointer()
-                .hover(move |s| s.bg(palette.placeholder_bg))
+                .map(|v| {
+                    if keep {
+                        // Secondary: outlined, neutral.
+                        v.border_color(palette.header_muted)
+                            .text_color(palette.header_fg)
+                            .hover(move |s| s.bg(raised))
+                    } else {
+                        // Primary, like the popup's Apply.
+                        v.border_color(Hsla { a: 0.6, ..accent })
+                            .bg(Hsla { a: 0.18, ..accent })
+                            .text_color(accent)
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .hover(move |s| s.bg(Hsla { a: 0.28, ..accent }))
+                    }
+                })
                 .when(!enabled, |v| v.opacity(0.5))
                 .child(label)
-                .child(div().text_color(palette.header_muted).child(hint))
+                .child(div().text_size(px(11.)).opacity(0.7).child(hint))
                 .on_click(cx.listener(move |this, _, window, cx| {
                     cx.stop_propagation();
                     if enabled {
@@ -455,31 +521,41 @@ impl DocumentView {
             .flex()
             .items_center()
             .gap_1()
+            .relative()
             .text_size(px(12.))
-            .bg(palette.placeholder_bg)
+            // Continues the selected mention's surface and guide.
+            .bg(colors.selected)
+            .child(guide(colors.guide_selected))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .flex_shrink_0()
+                    .p(px(2.))
                     .rounded_md()
                     .border_1()
-                    .border_color(palette.border)
+                    .border_color(Hsla {
+                        a: 0.5,
+                        ..palette.header_muted
+                    })
                     .child(segment(
                         "inline-scope-this",
-                        "This".into(),
+                        "This",
+                        None,
                         Scope::Mention,
                         cx,
                     ))
                     .child(segment(
                         "inline-scope-same",
-                        "Same".into(),
+                        "Same",
+                        None,
                         Scope::Wording,
                         cx,
                     ))
                     .child(segment(
                         "inline-scope-all",
-                        format!("All {mentions}"),
+                        "All",
+                        Some(mentions),
                         Scope::Entity,
                         cx,
                     )),
