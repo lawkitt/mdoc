@@ -883,6 +883,7 @@ fn hidden_annotations_follow_visible_wrapped_rows(cx: &mut gpui::TestAppContext)
             color: gpui::rgba(0xffaa0022).into(),
             active_color: gpui::rgba(0xffaa0055).into(),
             border: gpui::transparent_black(),
+            text_color: None,
         })
         .collect();
     app.update(cx, |app, cx| {

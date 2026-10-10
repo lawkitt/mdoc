@@ -173,6 +173,7 @@ impl Element for EditorElement {
                     text_style.color,
                     font_size,
                     &editor.diagnostics,
+                    &editor.annotation_text_colors(),
                     editor.markdown_style.as_ref(),
                     wrap_width,
                     caret_row,
@@ -339,6 +340,7 @@ impl Element for EditorElement {
                 text_color,
                 font_size,
                 &editor.diagnostics,
+                &editor.annotation_text_colors(),
                 editor.markdown_style.as_ref(),
                 wrap_width,
                 caret_row,
@@ -1521,13 +1523,19 @@ impl Element for EditorElement {
                     .iter()
                     .find(|(r, _)| r == range)
                     .map(|(_, q)| q.clone());
+                let roll_color = editor
+                    .annotations
+                    .iter()
+                    .find(|a| a.range == *range)
+                    .and_then(|a| a.text_color)
+                    .unwrap_or(text_color);
                 let shape = |text: SharedString, alpha: f32, window: &mut Window| {
                     let run = TextRun {
                         len: text.len(),
                         font: font.clone(),
                         color: Hsla {
-                            a: text_color.a * alpha,
-                            ..text_color
+                            a: roll_color.a * alpha,
+                            ..roll_color
                         },
                         background_color: None,
                         underline: None,
@@ -2878,6 +2886,50 @@ fn line_pads(bg: Option<CodeBg>, table: Option<&TableRow>) -> (Pixels, Pixels) {
     (top, bot)
 }
 
+/// Recolour `runs` over `tints` (line-local source ranges). `map` takes a
+/// display byte to its source byte; `None` means display is source.
+fn tint_runs(
+    text: &str,
+    runs: &[TextRun],
+    map: Option<&[usize]>,
+    tints: &[(Range<usize>, Hsla)],
+) -> Vec<TextRun> {
+    let tint_at = |d: usize| {
+        let src = map.map_or(d, |m| m.get(d).copied().unwrap_or(d));
+        tints
+            .iter()
+            .find(|(r, _)| r.contains(&src))
+            .map(|(_, c)| *c)
+    };
+    let mut out = Vec::with_capacity(runs.len() + 2 * tints.len());
+    let mut d = 0;
+    for run in runs {
+        let end = (d + run.len).min(text.len());
+        let mut start = d;
+        let mut tint = tint_at(d);
+        let mut push = |from: usize, to: usize, tint: Option<Hsla>| {
+            if to > from {
+                out.push(TextRun {
+                    len: to - from,
+                    color: tint.unwrap_or(run.color),
+                    ..run.clone()
+                });
+            }
+        };
+        for (i, _) in text.get(d..end).unwrap_or_default().char_indices().skip(1) {
+            let next = tint_at(d + i);
+            if next != tint {
+                push(start, d + i, tint);
+                start = d + i;
+                tint = next;
+            }
+        }
+        push(start, d + run.len, tint);
+        d += run.len;
+    }
+    out
+}
+
 /// Inline `![](src)` images: swap each ready image's glyphs for a spacer to
 /// paint the raster over. A caret strictly inside an image's
 /// `![…](…)` leaves it raw for editing. Sizing matches the reader: ~40px tall,
@@ -2969,6 +3021,9 @@ fn shape_document(
     base_color: Hsla,
     base_font_size: Pixels,
     diagnostics: &[Diagnostic],
+    // Host glyph colours by source range (annotations), applied over the
+    // finished runs so the run caches stay colour-free.
+    text_colors: &[(Range<usize>, Hsla)],
     md: Option<&SyntaxStyle>,
     wrap_width: Option<Pixels>,
     caret_row: Option<usize>,
@@ -3812,6 +3867,24 @@ fn shape_document(
         } else {
             wrap_width
         };
+        let line_tints: Vec<(Range<usize>, Hsla)> = text_colors
+            .iter()
+            .filter_map(|(r, c)| {
+                let s = r.start.max(line_start);
+                let e = r.end.min(line_end);
+                (s < e).then(|| ((s - line_start)..(e - line_start), *c))
+            })
+            .collect();
+        let runs = if line_tints.is_empty() || table.is_some() {
+            runs
+        } else {
+            std::rc::Rc::new(tint_runs(
+                &shaped_text,
+                &runs,
+                map.as_deref().map(Vec::as_slice),
+                &line_tints,
+            ))
+        };
         let shaped = shape_runs(window, &shaped_text, fs, &runs, line_wrap);
         if let Some(wl) = shaped.into_iter().next() {
             let h = if collapse_fence || collapse_marker {
@@ -4057,6 +4130,34 @@ fn paint_chip(
 mod tests {
     use super::*;
     use gpui::{AppContext as _, TestAppContext, VisualTestContext};
+
+    #[test]
+    fn tint_runs_recolours_mapped_source_ranges() {
+        let run = |len, color| TextRun {
+            len,
+            font: gpui::font("Helvetica"),
+            color,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let (base, bold, tint) = (
+            hsla(0., 0., 0., 1.),
+            hsla(0., 0., 0.5, 1.),
+            hsla(0.6, 1., 0.5, 1.),
+        );
+        // Source `a **Bé** c` displays as `a Bé c`; tint the source `Bé`.
+        let text = "a Bé c";
+        let map = [0, 1, 4, 5, 6, 9, 10, 11];
+        let runs = [run(2, base), run(3, bold), run(2, base)];
+        let out = tint_runs(text, &runs, Some(&map), &[(4..7, tint)]);
+        let got: Vec<_> = out.iter().map(|r| (r.len, r.color)).collect();
+        assert_eq!(got, vec![(2, base), (3, tint), (2, base)]);
+        // Without a map, a tint splits a run at char boundaries.
+        let out = tint_runs("xyz", &[run(3, base)], None, &[(1..2, tint)]);
+        let got: Vec<_> = out.iter().map(|r| (r.len, r.color)).collect();
+        assert_eq!(got, vec![(1, base), (1, tint), (1, base)]);
+    }
 
     fn image_editor<'a>(
         cx: &'a mut TestAppContext,

@@ -238,6 +238,7 @@ impl DocumentView {
                     color: Hsla { a: 0.14, ..accent },
                     active_color: Hsla { a: 0.3, ..accent },
                     border: Hsla { a: 0.5, ..accent },
+                    text_color: Some(accent),
                 }
             } else {
                 let occurrence = applied.next().unwrap();
@@ -256,6 +257,7 @@ impl DocumentView {
                         a: 0.5,
                         ..applied_accent
                     },
+                    text_color: Some(applied_accent),
                 }
             });
         }

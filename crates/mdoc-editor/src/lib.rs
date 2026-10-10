@@ -424,6 +424,8 @@ pub struct SourceAnnotation {
     pub active_color: Hsla,
     /// Chip border; transparent paints a plain fill.
     pub border: Hsla,
+    /// Glyph colour over the range; `None` keeps the syntax colour.
+    pub text_color: Option<Hsla>,
 }
 
 /// A transient colour change on annotations, e.g. a replacement settling in.
@@ -977,6 +979,17 @@ impl EditorState {
         self.annotation_revision = revision;
         self.annotation_hover = None;
         cx.notify();
+    }
+
+    /// Current annotations' glyph colours, in source order.
+    fn annotation_text_colors(&self) -> Vec<(Range<usize>, Hsla)> {
+        if self.annotation_revision != self.content_gen {
+            return Vec::new();
+        }
+        self.annotations
+            .iter()
+            .filter_map(|a| Some((a.range.clone(), a.text_color?)))
+            .collect()
     }
 
     /// Outline source ranges for content `revision`, over any annotation fill.
@@ -5235,6 +5248,7 @@ mod annotation_tests {
                         color: rgba(0xffaa0022).into(),
                         active_color: rgba(0xffaa0055).into(),
                         border: gpui::transparent_black(),
+                        text_color: None,
                     })
                     .collect(),
                 cx,
@@ -5326,6 +5340,7 @@ mod annotation_tests {
                         color: rgba(0xffaa0022).into(),
                         active_color: rgba(0xffaa0055).into(),
                         border: gpui::transparent_black(),
+                        text_color: None,
                     },
                     SourceAnnotation {
                         id: 8,
@@ -5333,6 +5348,7 @@ mod annotation_tests {
                         color: rgba(0xffaa0022).into(),
                         active_color: rgba(0xffaa0055).into(),
                         border: gpui::transparent_black(),
+                        text_color: None,
                     },
                 ],
                 cx,

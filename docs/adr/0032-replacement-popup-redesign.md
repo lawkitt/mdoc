@@ -22,7 +22,7 @@ feedback in the document itself.
 - **Floating dropdowns** for category (name + resulting alias, ✓ current),
   alias ("Same as…" entities, `New alias`, `Rename to "X"` in the selected
   scope) and owner. The rename-all row and the header cancel icon are removed.
-- **Replacement chips** in the editor: rounded, bordered, padding-free; gold
+- **Replacement chips** in the editor: rounded, bordered, padding-free, text tinted to match; gold
   proposals, blue applied.
 - **Motion.** Apply: chip eases gold → soft blue glow → resting blue (700 ms,
   smoothstep) while the words roll inside the chip, for every apply path. Undo
