@@ -35,6 +35,8 @@ struct SidebarStatus {
     queued: bool,
     importing: bool,
     error: bool,
+    pseudonymized: bool,
+    recognized: bool,
 }
 impl SidebarStatus {
     fn of(view: &DocumentView) -> Self {
@@ -46,6 +48,8 @@ impl SidebarStatus {
             queued: view.preview.queued || view.auto_convert_pending,
             importing: view.job.busy(),
             error: view.error.is_some() || view.preview.retryable || view.ocr_required.is_some(),
+            pseudonymized: view.pseudonymized(),
+            recognized: view.recognized(),
         }
     }
 }
@@ -1641,13 +1645,17 @@ impl Workspace {
                 let error = view.is_some_and(|v| {
                     v.error.is_some() || v.preview.retryable || v.ocr_required.is_some()
                 });
+                let pseudonymized = view.is_some_and(|v| v.pseudonymized());
+                let recognized = view.is_some_and(|v| v.recognized());
                 let identity = source.unwrap_or(path);
                 let parent = identity
                     .parent()
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 let tooltip = format!(
-                    "{name}\n{parent}{}{}{}",
+                    "{name}\n{parent}{}{}{}{}{}",
+                    if recognized { "\nRecognized with OCR" } else { "" },
+                    if pseudonymized { "\nPseudonymized" } else { "" },
                     if dirty { "\nUnsaved changes" } else { "" },
                     if busy { "\nProcessing…" } else { "" },
                     if error { "\nNeeds attention" } else { "" }
@@ -1826,6 +1834,12 @@ impl Workspace {
                                 )
                             }),
                     )
+                    .when(recognized, |v| {
+                        v.child(tab_badge(ui::Icon::Ocr, palette.header_muted))
+                    })
+                    .when(pseudonymized, |v| {
+                        v.child(tab_badge(ui::Icon::Anonymous, palette.header_muted))
+                    })
                     .when(dirty || busy || error, |v| {
                         v.child(
                             div()
@@ -2131,6 +2145,15 @@ enum Reveal {
     Shown,
     /// Sliding back; unmounted when the animation ends.
     Hiding,
+}
+
+/// A small mark on a sidebar tab for work done in it (OCR, pseudonymization).
+fn tab_badge(icon: ui::Icon, color: gpui::Hsla) -> gpui::Svg {
+    gpui::svg()
+        .data(icon.data())
+        .size(px(12.))
+        .flex_shrink_0()
+        .text_color(color)
 }
 
 fn sidebar_toggle(

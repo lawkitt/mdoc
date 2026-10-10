@@ -263,6 +263,15 @@ impl DocumentView {
         cx.notify();
     }
 
+    /// Replacements are applied or the review is open in this tab.
+    pub(crate) fn pseudonymized(&self) -> bool {
+        self.pii.reviewing || !self.pii.review.applied().is_empty()
+    }
+    /// The Markdown came from OCR.
+    pub(crate) fn recognized(&self) -> bool {
+        self.session.ocr_configuration.is_some()
+    }
+
     pub(crate) fn display_name(&self) -> String {
         if self.source_only {
             self.preview

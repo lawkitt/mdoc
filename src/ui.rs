@@ -395,6 +395,7 @@ pub enum Icon {
     Sidebar,
     Copy,
     Check,
+    Ocr,
 }
 
 impl Icon {
@@ -416,6 +417,7 @@ impl Icon {
             Self::Sidebar => include_bytes!("../resources/ui/sidebar.svg"),
             Self::Copy => include_bytes!("../resources/ui/copy.svg"),
             Self::Check => include_bytes!("../resources/ui/check.svg"),
+            Self::Ocr => include_bytes!("../resources/ui/ocr.svg"),
         }
     }
 }
