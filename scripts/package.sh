@@ -24,8 +24,9 @@ case "$(platform)" in
     ;;
   windows-x64)
     redist=$(scripts/vc-redist.sh)
-    # Bundled by the NSIS preinstall section in Cargo.toml (MDOC_VC_REDIST).
-    MDOC_VC_REDIST=$(cygpath -w "$redist") cargo packager --release -f nsis
+    # Bundled by the NSIS preinstall section in Cargo.toml (MDOC_VC_REDIST);
+    # absolute, because makensis resolves paths from its own directory.
+    MDOC_VC_REDIST=$(cygpath -wa "$redist") cargo packager --release -f nsis
     exe=$(find target/release -maxdepth 1 -name 'mdoc_*-setup.exe' | head -1)
     [ -n "$exe" ] || die "cargo-packager produced no installer in target/release"
     mv "$exe" "dist/mdoc_${v}_x64-setup.exe"

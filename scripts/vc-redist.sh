@@ -16,7 +16,7 @@ curl --fail --silent --show-error --location --retry 3 --output "$out" "$url"
 # Unset PSModulePath: one inherited from PowerShell 7 stops Windows
 # PowerShell 5.1 from loading its own Microsoft.PowerShell.Security module.
 # shellcheck disable=SC2016
-MDOC_VC_REDIST=$(cygpath -w "$out") env -u PSModulePath powershell.exe -NoProfile -NonInteractive -Command '
+MDOC_VC_REDIST=$(cygpath -wa "$out") env -u PSModulePath powershell.exe -NoProfile -NonInteractive -Command '
   $s = Get-AuthenticodeSignature -LiteralPath $env:MDOC_VC_REDIST
   if ($s.Status -ne "Valid" -or $s.SignerCertificate.Subject -notmatch "O=Microsoft Corporation") {
     [Console]::Error.WriteLine("vc_redist.x64.exe signature check failed: $($s.Status) $($s.SignerCertificate.Subject)")
