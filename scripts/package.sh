@@ -23,7 +23,9 @@ case "$(platform)" in
     mv "$dmg" "dist/mdoc_${v}_arm64.dmg"
     ;;
   windows-x64)
-    cargo packager --release -f nsis
+    redist=$(scripts/vc-redist.sh)
+    # Bundled by the NSIS preinstall section in Cargo.toml (MDOC_VC_REDIST).
+    MDOC_VC_REDIST=$(cygpath -w "$redist") cargo packager --release -f nsis
     exe=$(find target/release -maxdepth 1 -name 'mdoc_*-setup.exe' | head -1)
     [ -n "$exe" ] || die "cargo-packager produced no installer in target/release"
     mv "$exe" "dist/mdoc_${v}_x64-setup.exe"

@@ -75,6 +75,30 @@ long-description = "Edit local Markdown files with live formatting and view PDFs
 before-packaging-command = "cargo build --release"
 icons = ["resources/icons/icon.icns", "resources/icons/icon.png", "resources/icons/icon.ico"]
 
+[package.metadata.packager.nsis]
+# ONNX Runtime (OCR, pseudonymization) needs the x64 VC++ Redistributable
+# despite mdoc.exe's static CRT. Install it, with its own UAC prompt, only when
+# missing; scripts/package.sh supplies the signature-checked installer through
+# MDOC_VC_REDIST at compile time (ADR 0037). Failure doesn't stop the install:
+# the app explains how to get the runtime when OCR is first used.
+preinstall-section = """
+Section VCRedist
+  SetRegView 64
+  ReadRegDWORD $0 HKLM "SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64" "Installed"
+  ${If} $0 != 1
+    InitPluginsDir
+    File "/oname=$PLUGINSDIR\\vc_redist.x64.exe" "$%MDOC_VC_REDIST%"
+    ExecWait '"$PLUGINSDIR\\vc_redist.x64.exe" /install /passive /norestart' $1
+    ${If} $1 != 0
+    ${AndIf} $1 != 1638
+    ${AndIf} $1 != 3010
+    ${AndIfNot} ${Silent}
+      MessageBox MB_ICONEXCLAMATION|MB_OK "The Microsoft Visual C++ Redistributable could not be installed (code $1). mdoc will run, but text recognition and pseudonymization need it; mdoc explains how to install it when they are first used."
+    ${EndIf}
+  ${EndIf}
+SectionEnd
+"""
+
 [package.metadata.packager.macos]
 # Hand-curated Info.plist (single-instance launch, high-DPI, stable bundle id).
 info-plist-path = "resources/Info.plist"

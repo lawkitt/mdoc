@@ -89,6 +89,24 @@
 
         <Media Id='1' Cabinet='mdoc.cab' EmbedCab='yes'/>
 
+        <!--
+            ONNX Runtime (OCR, pseudonymization) needs the x64 VC++
+            Redistributable. An .msi can't chain another installer without
+            a Burn bundle, so block the install with instructions instead;
+            firm IT deploys the runtime as a prerequisite (ADR 0037).
+        -->
+        <Property Id='VCRUNTIMEX64'>
+            <RegistrySearch Id='VCRuntimeX64'
+                Root='HKLM'
+                Key='SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64'
+                Name='Installed'
+                Type='raw'
+                Win64='yes'/>
+        </Property>
+        <Condition Message='mdoc requires the Microsoft Visual C++ Redistributable (x64). Install it from https://aka.ms/vs/17/release/vc_redist.x64.exe, then run this installer again.'>
+            <![CDATA[Installed OR VCRUNTIMEX64 = "#1"]]>
+        </Condition>
+
         <Directory Id='TARGETDIR' Name='SourceDir'>
             <Directory Id='$(var.PlatformProgramFilesFolder)'>
                 <Directory Id='APPLICATIONFOLDER' Name='mdoc'>
