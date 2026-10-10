@@ -201,17 +201,19 @@ impl DocumentView {
                 }))
                 .into_any_element()
         };
-        let count = match row.applied {
-            _ if link_hint => format!("Link to {}", row.alias),
-            0 => format!("{} · proposed", row.mentions),
-            n if n == row.mentions => format!("{n} · applied"),
-            n => format!("{n} of {} applied", row.mentions),
+        // A check marks applied mentions; the bare count is still proposed.
+        let (count, checked) = match row.applied {
+            _ if link_hint => (format!("Link to {}", row.alias), false),
+            0 => (row.mentions.to_string(), false),
+            n if n == row.mentions => (n.to_string(), true),
+            n => (format!("{n}/{}", row.mentions), true),
         };
         base.aria_label(format!(
-            "{} to {}, {} mentions, {}",
+            "{} to {}, {} mentions, {} applied, {}",
             row.original,
             row.alias,
             row.mentions,
+            row.applied,
             if expanded { "expanded" } else { "collapsed" }
         ))
         .when(cfg!(test), |v| {
@@ -265,9 +267,13 @@ impl DocumentView {
                 .child(
                     div()
                         .flex_shrink_0()
+                        .flex()
+                        .items_center()
+                        .gap(px(2.))
                         .text_size(px(11.))
                         .text_color(palette.header_muted)
-                        .child(count),
+                        .child(count)
+                        .when(checked, |v| v.child(applied_check(theme))),
                 ),
         )
         .on_click(cx.listener(move |this, _, window, cx| {
@@ -360,7 +366,7 @@ impl DocumentView {
                         .text_ellipsis()
                         .child(original.to_string()),
                 )
-                .when(applied, |v| v.child(div().flex_shrink_0().child("applied"))),
+                .when(applied, |v| v.child(applied_check(theme))),
         )
         .when(undo, |v| {
             let id = annotation & !APPLIED_ID;
@@ -658,4 +664,13 @@ impl DocumentView {
         window.focus(&self.pii.mapping.focus, cx);
         cx.notify();
     }
+}
+
+/// The compact applied marker in panel rows, in the applied-alias blue.
+fn applied_check(theme: crate::style::Theme) -> gpui::Svg {
+    gpui::svg()
+        .data(ui::Icon::Check.data())
+        .size(px(12.))
+        .flex_shrink_0()
+        .text_color(theme.applied())
 }
