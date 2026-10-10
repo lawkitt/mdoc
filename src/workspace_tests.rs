@@ -2078,8 +2078,15 @@ fn duplicate_names_show_distinguishing_parent_suffixes() {
         PathBuf::from("/contracts/first/client/sample.md"),
         PathBuf::from("/contracts/second/client/sample.md"),
     ];
-    assert_eq!(disambiguating_parent(&peers[0], &peers), "first/client");
-    assert_eq!(disambiguating_parent(&peers[1], &peers), "second/client");
+    // Shown with the platform's separator.
+    let suffix = |a: &str| {
+        PathBuf::from(a)
+            .join("client")
+            .to_string_lossy()
+            .into_owned()
+    };
+    assert_eq!(disambiguating_parent(&peers[0], &peers), suffix("first"));
+    assert_eq!(disambiguating_parent(&peers[1], &peers), suffix("second"));
 }
 
 #[gpui::test]

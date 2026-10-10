@@ -111,12 +111,14 @@ pub fn save(path: &Path, session: &Session) -> io::Result<()> {
 }
 
 /// Used at file-open/save boundaries, never during rendering or tab switching.
+/// `dunce` keeps Windows paths in their ordinary `C:\…` form; std's canonical
+/// `\\?\C:\…` form would show in tooltips and saved sessions.
 pub fn identity(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| {
+    dunce::canonicalize(path).unwrap_or_else(|_| {
         let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
         absolute
             .parent()
-            .and_then(|parent| parent.canonicalize().ok())
+            .and_then(|parent| dunce::canonicalize(parent).ok())
             .zip(absolute.file_name())
             .map(|(parent, name)| parent.join(name))
             .unwrap_or(absolute)

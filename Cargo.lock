@@ -4433,6 +4433,7 @@ dependencies = [
  "anydoc",
  "dirs 6.0.0",
  "docxide-pdf",
+ "dunce",
  "embed-resource",
  "flate2",
  "gliner2-rs",

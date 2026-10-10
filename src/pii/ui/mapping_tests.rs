@@ -1229,7 +1229,7 @@ fn panel_groups_expand_independently_filter_and_edit_from_headers(cx: &mut gpui:
     click(cx, "replacement-filter-All".into());
     // Header alias: click, type, Enter renames the whole entity.
     click(cx, format!("header-alias-{initials}"));
-    cx.simulate_keystrokes("cmd-a");
+    cx.simulate_keystrokes("secondary-a");
     cx.simulate_input("CLIENT");
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
@@ -1300,7 +1300,7 @@ fn panel_keyboard_moves_decides_and_triages(cx: &mut gpui::TestAppContext) {
         assert_eq!(app.selected_entity(), Some(initials));
     });
     // ⌘⌫ keeps both initials (same text) in one step; triage reaches e-mail.
-    key(cx, "cmd-backspace");
+    key(cx, "secondary-backspace");
     app.read_with(cx, |app, cx| {
         assert_eq!(app.pii.review.identity_count(initials), 0);
         // The triage-opened initials group closed once decided.
@@ -1309,12 +1309,12 @@ fn panel_keyboard_moves_decides_and_triages(cx: &mut gpui::TestAppContext) {
         assert_eq!(app.editor.read(cx).text(), text_of(source));
     });
     // ⌘Z in the panel undoes the keep.
-    key(cx, "cmd-z");
+    key(cx, "secondary-z");
     app.read_with(cx, |app, _| {
         assert_eq!(app.pii.review.identity_count(initials), 2)
     });
     // ↑ to the top, then ↑ again returns to search; Esc there closes.
-    key(cx, "cmd-up");
+    key(cx, "secondary-up");
     key(cx, "up");
     app.update_in(cx, |app, window, cx| {
         assert!(
@@ -1419,8 +1419,16 @@ fn keyboard_move_wheel_and_middle_click(cx: &mut gpui::TestAppContext) {
         .debug_bounds(Box::leak(format!("mention-{mention}").into_boxed_str()))
         .unwrap()
         .center();
-    cx.simulate_mouse_down(at, gpui::MouseButton::Middle, gpui::Modifiers::command());
-    cx.simulate_mouse_up(at, gpui::MouseButton::Middle, gpui::Modifiers::command());
+    cx.simulate_mouse_down(
+        at,
+        gpui::MouseButton::Middle,
+        gpui::Modifiers::secondary_key(),
+    );
+    cx.simulate_mouse_up(
+        at,
+        gpui::MouseButton::Middle,
+        gpui::Modifiers::secondary_key(),
+    );
     draw(cx);
     app.read_with(cx, |app, _| {
         assert_eq!(app.pii.review.identity_count(initials), 0)

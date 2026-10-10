@@ -697,8 +697,13 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
                 let control = cx
                     .debug_bounds(id)
                     .unwrap_or_else(|| panic!("missing {id}"));
-                assert!(control.left() >= panel.left() && control.right() <= panel.right());
-                assert!(control.top() >= panel.top() && control.bottom() <= panel.bottom());
+                assert!(
+                    control.left() >= panel.left()
+                        && control.right() <= panel.right()
+                        && control.top() >= panel.top()
+                        && control.bottom() <= panel.bottom(),
+                    "{id} at {width}x{height} {theme:?}: control={control:?}, panel={panel:?}"
+                );
             }
             assert!(panel.bottom() <= px(height) && panel.right() <= px(width));
             // Neutral popup focus must never turn Enter into restoration.
@@ -1453,12 +1458,12 @@ fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
     app.update_in(cx, |app, window, cx| {
         window.focus(&app.pii.mapping.focus, cx);
     });
-    cx.simulate_keystrokes("cmd-shift-z");
+    cx.simulate_keystrokes("secondary-shift-z");
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1")
     });
-    cx.simulate_keystrokes("cmd-z");
+    cx.simulate_keystrokes("secondary-z");
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), "Anna Bob Anna")
