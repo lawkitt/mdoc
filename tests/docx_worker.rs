@@ -150,7 +150,7 @@ fn coverage_corpus_preserves_text_links_and_landscape() {
     .unwrap();
     let conversion = started.elapsed();
     let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
-    let first_page = gpui_pdf::render_page(&pdf, 0, 1.0).unwrap();
+    let first_page = gpui_pdf::render_page(&pdf, 0, 1.0, gpui_pdf::PageTone::Original).unwrap();
     assert!(
         first_page
             .as_bytes(0)
@@ -239,7 +239,7 @@ fn worker_preserves_comments_and_source() {
             .any(|w| w.contains("Comments are omitted"))
     );
     let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
-    assert!(gpui_pdf::render_page(&pdf, 0, 1.0).is_ok());
+    assert!(gpui_pdf::render_page(&pdf, 0, 1.0, gpui_pdf::PageTone::Original).is_ok());
     let text = gpui_pdf::extract_page_text(&pdf, 0).unwrap().text();
     assert!(text.contains("First"));
     assert!(text.contains("Second"));
@@ -296,6 +296,6 @@ fn uploaded_comments_preserved() {
             );
         }
         let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
-        assert!(gpui_pdf::render_page(&pdf, 0, 1.0).is_ok());
+        assert!(gpui_pdf::render_page(&pdf, 0, 1.0, gpui_pdf::PageTone::Original).is_ok());
     }
 }

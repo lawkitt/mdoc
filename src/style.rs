@@ -1,5 +1,5 @@
 use gpui::{Hsla, font, hsla, rgb};
-use gpui_pdf::PdfStyle;
+use gpui_pdf::{PageOverlays, PdfStyle, ThemedPages};
 use mdoc_editor::SyntaxStyle;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
@@ -27,6 +27,20 @@ impl Theme {
                 placeholder_fg: rgb(0xa0a0aa).into(),
                 header_fg: rgb(0xe6e6e6).into(),
                 header_muted: rgb(0xa0a0aa).into(),
+                overlays: PageOverlays::default(),
+                // Dark Original pages (ADR 0035): paper a step above the viewer
+                // background so page edges stay visible; ink short of pure white.
+                themed_pages: Some(ThemedPages {
+                    paper: rgb(0x26262b).into(),
+                    ink: rgb(0xd8d8dc).into(),
+                    overlays: PageOverlays {
+                        search: hsla(0.09, 0.95, 0.5, 0.4),
+                        search_current: hsla(0.09, 0.95, 0.5, 0.65),
+                        search_border: hsla(0.09, 0.95, 0.62, 0.95),
+                        link_hover: hsla(0.58, 0.9, 0.62, 0.25),
+                        field_hover: hsla(0.25, 0.8, 0.58, 0.25),
+                    },
+                }),
             },
             Self::Light => PdfStyle {
                 bg: rgb(0xfafaf9).into(),
@@ -35,6 +49,8 @@ impl Theme {
                 placeholder_fg: rgb(0x666670).into(),
                 header_fg: rgb(0x24242b).into(),
                 header_muted: rgb(0x666670).into(),
+                overlays: PageOverlays::default(),
+                themed_pages: None,
             },
         }
     }

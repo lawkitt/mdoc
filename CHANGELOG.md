@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- Dark Original pages: in the dark theme PDF and DOCX pages render on dark
+  paper with light ink, keeping the colour of coloured text. The ◐ button in
+  the Original header switches a document back to the original paper (ADR 0035).
+
 - Replacements panel: Undo, Redo and Rescan icon buttons in its toolbar, and
   ⌘Z / ⇧⌘Z work while the panel has focus. Scan progress and Cancel live only
   in the main toolbar; the ⋯ menu is gone (Model settings are in Settings).

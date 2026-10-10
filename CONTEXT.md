@@ -12,6 +12,11 @@ Behavior and rationale live in [ADRs](docs/adr/); this file defines shared terms
 **Source preview**: visual reference to the retained original, before Markdown
 edits. DOCX rendering is approximate. UI label: **Original**.
 
+**Page tone**: how Original pages are painted: *original* paper or *themed*
+(paper and ink remapped to the dark theme). Follows the app theme unless
+overridden in the Original header ([ADR 0035](docs/adr/0035-dark-original-pages.md)).
+Avoid "invert", which suggests a plain colour flip.
+
 **Markdown handoff**: saving or copying prepared Markdown to another tool.
 **Copy Markdown** copies the full current source exactly, including unsaved edits
 and pending proposals; it does not apply replacements or add a relationship legend.

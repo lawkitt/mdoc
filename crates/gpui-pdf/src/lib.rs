@@ -144,11 +144,95 @@ pub fn page_dims(doc: &Document) -> Vec<(f32, f32)> {
     doc.pages().iter().map(|p| p.render_dimensions()).collect()
 }
 
+/// How rasterized pages are painted: the original paper, or *themed* — paper and
+/// ink remapped to a dark palette (ADR 0035).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PageTone {
+    #[default]
+    Original,
+    /// White maps to `paper`, black to `ink`; greys interpolate by luma and
+    /// coloured pixels keep their hue (Zathura `recolor` + `keephue` model).
+    Themed { paper: [u8; 3], ink: [u8; 3] },
+}
+
+impl PageTone {
+    pub fn themed(paper: Hsla, ink: Hsla) -> Self {
+        let rgb = |c: Hsla| {
+            let c = gpui::Rgba::from(c);
+            [c.r, c.g, c.b].map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
+        };
+        Self::Themed {
+            paper: rgb(paper),
+            ink: rgb(ink),
+        }
+    }
+}
+
+/// Themed remap: luma `y` blends ink (y = 0) to paper (y = 255) and each pixel keeps
+/// its chroma offset from its own luma, so greys land exactly on the blend and
+/// coloured ink keeps its hue. Pure integer arithmetic with no table lookups, so the
+/// composite loop stays vectorizable.
+struct ToneMap {
+    ink: [i32; 3],
+    /// `paper - ink` per channel.
+    span: [i32; 3],
+}
+
+impl ToneMap {
+    fn new(paper: [u8; 3], ink: [u8; 3]) -> Self {
+        let ink = ink.map(i32::from);
+        Self {
+            ink,
+            span: [0, 1, 2].map(|c| i32::from(paper[c]) - ink[c]),
+        }
+    }
+
+    #[inline(always)]
+    fn apply(&self, [r, g, b]: [u8; 3]) -> [u8; 3] {
+        // BT.601 luma in 8.8 fixed point; weights sum to 256 so a grey maps to itself.
+        let y = (77 * i32::from(r) + 150 * i32::from(g) + 29 * i32::from(b)) >> 8;
+        // `span * y / 255`, rounded: × 257 / 65536 is exact at y = 0 and y = 255.
+        let tone = |c: usize, v: u8| {
+            let base = self.ink[c] + ((self.span[c] * y * 257 + 32768) >> 16);
+            (base + i32::from(v) - y).clamp(0, 255) as u8
+        };
+        [tone(0, r), tone(1, g), tone(2, b)]
+    }
+}
+
+/// Composite premultiplied RGBA `src` over white into BGRA `out` (gpui's
+/// RenderImage is BGRA), passing each opaque colour through `tone`. Generic so the
+/// original-paper path compiles to the plain composite loop.
+#[inline(always)]
+fn composite(src: &[u8], out: &mut [u8], tone: impl Fn([u8; 3]) -> [u8; 3]) {
+    for (out, p) in out
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(src.as_chunks::<4>().0)
+    {
+        // out = src + 255-a; src ≤ a so no overflow.
+        let add = 255 - p[3];
+        let [r, g, b] = tone([
+            p[0].saturating_add(add),
+            p[1].saturating_add(add),
+            p[2].saturating_add(add),
+        ]);
+        *out = [b, g, r, 255];
+    }
+}
+
 /// Rasterize a single page (0-based) of an already-parsed [`Document`] at `scale`
-/// (PDF point-size × this) to a BGRA `RenderImage` composited onto white. Higher
-/// scale = sharper but more memory; [`PdfView`] picks `scale` from the display's
-/// pixel ratio, zoom, and quality so pages are crisp without wasting memory.
-pub fn render_page(doc: &Document, idx: usize, scale: f32) -> Result<Arc<RenderImage>, String> {
+/// (PDF point-size × this) to a BGRA `RenderImage` composited onto white, then
+/// painted in `tone`. Higher scale = sharper but more memory; [`PdfView`] picks
+/// `scale` from the display's pixel ratio, zoom, and quality so pages are crisp
+/// without wasting memory.
+pub fn render_page(
+    doc: &Document,
+    idx: usize,
+    scale: f32,
+    tone: PageTone,
+) -> Result<Arc<RenderImage>, String> {
     let pixmaps = hayro::render_pdf(doc, scale, InterpreterSettings::default(), Some(idx..=idx))
         .ok_or_else(|| format!("render page {idx}"))?;
     let pixmap = pixmaps
@@ -159,19 +243,12 @@ pub fn render_page(doc: &Document, idx: usize, scale: f32) -> Result<Arc<RenderI
     let (w, h) = (u32::from(pixmap.width()), u32::from(pixmap.height()));
     let src = pixmap.data_as_u8_slice(); // premultiplied RGBA8, row-major
     let mut bgra = vec![0u8; src.len()];
-    for (out, p) in bgra
-        .as_chunks_mut::<4>()
-        .0
-        .iter_mut()
-        .zip(src.as_chunks::<4>().0)
-    {
-        // Composite premultiplied src over white (out = src + 255-a; src ≤ a so no
-        // overflow), then RGBA→BGRA (gpui's RenderImage is BGRA).
-        let add = 255 - p[3];
-        out[0] = p[2].saturating_add(add); // B
-        out[1] = p[1].saturating_add(add); // G
-        out[2] = p[0].saturating_add(add); // R
-        out[3] = 255;
+    match tone {
+        PageTone::Original => composite(src, &mut bgra, |c| c),
+        PageTone::Themed { paper, ink } => {
+            let map = ToneMap::new(paper, ink);
+            composite(src, &mut bgra, |c| map.apply(c));
+        }
     }
     let buf = RgbaImage::from_raw(w, h, bgra).ok_or_else(|| "bad pixel buffer".to_string())?;
     Ok(Arc::new(RenderImage::new(vec![Frame::new(buf)])))
@@ -290,6 +367,11 @@ fn render_scale(page_width: f32, scale_factor: f32, quality: f32, page_pt_width:
 
 // ─────────────────────────────── Component: PdfView ───────────────────────────────
 
+/// The render tone for the effective themed colors (`None` = original paper).
+fn page_tone(themed: Option<&ThemedPages>) -> PageTone {
+    themed.map_or(PageTone::Original, |t| PageTone::themed(t.paper, t.ink))
+}
+
 /// Automatic zoom-to-fit modes — see [`PdfView::fit_width`] / [`PdfView::fit_page`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FitMode {
@@ -342,6 +424,11 @@ pub struct PdfStyle {
     pub header_fg: Hsla,
     /// Header "· N pages" / page counter text.
     pub header_muted: Hsla,
+    /// Overlays drawn over original (white) paper.
+    pub overlays: PageOverlays,
+    /// Dark page colors. `Some` paints pages themed by default and shows a header
+    /// toggle back to the original paper; `None` always shows the original paper.
+    pub themed_pages: Option<ThemedPages>,
 }
 
 impl Default for PdfStyle {
@@ -353,8 +440,43 @@ impl Default for PdfStyle {
             placeholder_fg: hsla(0.0, 0.0, 1.0, 0.40),
             header_fg: hsla(0.0, 0.0, 1.0, 0.70),
             header_muted: hsla(0.0, 0.0, 1.0, 0.40),
+            overlays: PageOverlays::default(),
+            themed_pages: None,
         }
     }
+}
+
+/// Colors of the interactive layers over a page: find matches and link / form
+/// hover. Tuned per paper tone, since faint fills vanish on dark pages.
+#[derive(Clone, Copy, PartialEq)]
+pub struct PageOverlays {
+    pub search: Hsla,
+    pub search_current: Hsla,
+    pub search_border: Hsla,
+    pub link_hover: Hsla,
+    pub field_hover: Hsla,
+}
+
+/// Defaults tuned for white paper.
+impl Default for PageOverlays {
+    fn default() -> Self {
+        Self {
+            search: hsla(0.09, 0.95, 0.5, 0.3),
+            search_current: hsla(0.09, 0.95, 0.5, 0.55),
+            search_border: hsla(0.09, 0.95, 0.4, 0.95),
+            link_hover: hsla(0.58, 0.9, 0.55, 0.12),
+            field_hover: hsla(0.25, 0.8, 0.5, 0.12),
+        }
+    }
+}
+
+/// Themed page colors: what white `paper` and black `ink` become (see
+/// [`PageTone::Themed`]), and the overlays tuned for that paper.
+#[derive(Clone, Copy, PartialEq)]
+pub struct ThemedPages {
+    pub paper: Hsla,
+    pub ink: Hsla,
+    pub overlays: PageOverlays,
 }
 
 /// Supplies the current [`PdfStyle`] at paint time. Because [`PdfView`] is a
@@ -463,7 +585,12 @@ pub struct PdfView {
     /// The quality multiplier the pages were last rendered at; compared against the
     /// `quality` source each frame to detect a host setting change.
     last_quality: f32,
-    /// Bumped whenever the render scale changes (zoom or quality). Visible pages with
+    /// The user chose the original paper over the style's themed pages. Kept per
+    /// view across style changes, so it survives a host theme round trip.
+    original_paper: bool,
+    /// The tone pages were last rendered in; a change re-renders like a zoom.
+    last_tone: PageTone,
+    /// Bumped whenever the render scale or tone changes. Visible pages with
     /// an older `image_gen` re-render; in-flight renders from an older generation are
     /// discarded so a stale-scale bitmap never lands.
     generation: u64,
@@ -549,6 +676,7 @@ impl PdfView {
         .detach();
 
         let last_quality = quality().clamp(MIN_QUALITY, MAX_QUALITY);
+        let last_tone = page_tone(style().themed_pages.as_ref());
         Self {
             #[cfg(test)]
             render_requests: 0,
@@ -572,6 +700,8 @@ impl PdfView {
             awaiting_fit_layout: false,
             zoom: 1.0,
             last_quality,
+            original_paper: false,
+            last_tone,
             generation: 0,
             pending_drops: Vec::new(),
             page_input: None,
@@ -904,6 +1034,25 @@ impl PdfView {
     }
 
     /// Current automatic sizing policy, or `None` for manual zoom.
+    /// Whether the user switched themed pages back to the original paper.
+    pub fn shows_original_paper(&self) -> bool {
+        self.original_paper
+    }
+
+    /// Show the original paper instead of the style's themed pages (or go back).
+    /// Re-renders visible pages on the next frame; old bitmaps stay until replaced.
+    pub fn set_original_paper(&mut self, original: bool, cx: &mut Context<Self>) {
+        if self.original_paper != original {
+            self.original_paper = original;
+            cx.notify();
+        }
+    }
+
+    /// The themed colors in effect: the style's, unless overridden to original paper.
+    fn themed_pages(&self, style: &PdfStyle) -> Option<ThemedPages> {
+        style.themed_pages.filter(|_| !self.original_paper)
+    }
+
     pub fn fit_mode(&self) -> Option<FitMode> {
         self.fit
     }
@@ -1086,6 +1235,12 @@ impl PdfView {
             self.last_quality = quality;
             self.generation = self.generation.wrapping_add(1);
         }
+        // So does a tone change (host theme or the original-paper toggle).
+        let tone = page_tone(self.themed_pages(&(self.style)()).as_ref());
+        if tone != self.last_tone {
+            self.last_tone = tone;
+            self.generation = self.generation.wrapping_add(1);
+        }
 
         let page_width = self.page_width();
         let scale_factor = window.scale_factor();
@@ -1158,7 +1313,7 @@ impl PdfView {
                     .unwrap_or(false);
                 let page = if wanted {
                     cx.background_executor()
-                        .spawn(async move { render_page(&pdf, i, scale).ok() })
+                        .spawn(async move { render_page(&pdf, i, scale, tone).ok() })
                         .await
                 } else {
                     None
@@ -1311,6 +1466,10 @@ impl Render for PdfView {
         let total = self.dims.len();
         let page_width = self.page_width();
         let current = current_page(&self.dims, page_width, f32::from(-self.scroll.offset().y));
+        let themed = self.themed_pages(&style);
+        // Unrendered themed slots paint in the paper color, never a light box.
+        let slot_bg = themed.map_or(style.placeholder_bg, |t| t.paper);
+        let overlays = themed.map_or(style.overlays, |t| t.overlays);
 
         // Page slots are *direct* children of the scroll container (assembled below), so
         // `ScrollHandle::bounds_for_item(i)` yields page `i`'s real laid-out bounds —
@@ -1339,7 +1498,7 @@ impl Render for PdfView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .bg(style.placeholder_bg)
+                    .bg(slot_bg)
                     .child(
                         if self.pages.get(i).is_some_and(|slot| slot.loading.is_some()) {
                             self.loading_indicator.as_ref().map_or_else(
@@ -1367,7 +1526,11 @@ impl Render for PdfView {
                         continue;
                     }
                     let current = self.current_match == Some(mi);
-                    let fill = hsla(0.09, 0.95, 0.5, if current { 0.55 } else { 0.3 });
+                    let fill = if current {
+                        overlays.search_current
+                    } else {
+                        overlays.search
+                    };
                     for r in &m.rects {
                         let mut b = div()
                             .absolute()
@@ -1378,7 +1541,7 @@ impl Render for PdfView {
                             .rounded(px(1.0))
                             .bg(fill);
                         if current {
-                            b = b.border_1().border_color(hsla(0.09, 0.95, 0.4, 0.95));
+                            b = b.border_1().border_color(overlays.search_border);
                         }
                         slot = slot.child(b);
                     }
@@ -1402,7 +1565,7 @@ impl Render for PdfView {
                             .h(px(link.h * disp_h))
                             .rounded(px(2.0))
                             .cursor_pointer()
-                            .hover(|h| h.bg(hsla(0.58, 0.9, 0.55, 0.12)))
+                            .hover(move |h| h.bg(overlays.link_hover))
                             .on_click(cx.listener(move |this, _, _window, cx| match &target {
                                 LinkTarget::Page(p) => this.go_to_page(*p, cx),
                                 LinkTarget::Uri(u) if allowed_uri(u) => cx.open_url(u),
@@ -1435,7 +1598,7 @@ impl Render for PdfView {
                             .h(px(nh * disp_h))
                             .rounded(px(2.0))
                             .cursor_pointer()
-                            .hover(|h| h.bg(hsla(0.25, 0.8, 0.5, 0.12)))
+                            .hover(move |h| h.bg(overlays.field_hover))
                             .on_click(cx.listener(move |this, _, _window, cx| {
                                 if let Some(bounds) =
                                     this.field_screen_bounds(f.page, (nx, ny, nw, nh))
@@ -1600,6 +1763,29 @@ impl Render for PdfView {
             .child(navigation)
             .child(zoom)
             .child(fit);
+
+        // Page tone toggle (ADR 0035): only when the style offers themed pages.
+        let header = header.when(style.themed_pages.is_some(), |header| {
+            let label = if self.original_paper {
+                "Show dark pages"
+            } else {
+                "Show original paper"
+            };
+            let bg = if self.original_paper {
+                style.placeholder_bg
+            } else {
+                Hsla { a: 0.0, ..style.bg }
+            };
+            header.child(
+                self.control("pdf-page-tone", "◐")
+                    .aria_label(label)
+                    .bg(bg)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.set_original_paper(!this.original_paper, cx)
+                    }))
+                    .tooltip(self.tip(label)),
+            )
+        });
 
         // Find toggle (search): a magnifier that opens the find bar.
         let header = {
@@ -2122,6 +2308,55 @@ mod tests {
 
     use super::*;
 
+    const PAPER: [u8; 3] = [0x26, 0x26, 0x2b];
+    const INK: [u8; 3] = [0xd8, 0xd8, 0xdc];
+
+    #[test]
+    fn themed_tone_maps_paper_and_ink_and_keeps_hue() {
+        let map = ToneMap::new(PAPER, INK);
+        assert_eq!(map.apply([255, 255, 255]), PAPER);
+        assert_eq!(map.apply([0, 0, 0]), INK);
+        // Greys interpolate monotonically from ink to paper.
+        let greys: Vec<u8> = (0..=255).map(|v| map.apply([v, v, v])[0]).collect();
+        assert!(greys.windows(2).all(|w| w[1] <= w[0]));
+        // Coloured ink stays its colour, lighter: red text and a blue link.
+        let [r, g, b] = map.apply([200, 0, 0]);
+        assert!(r > g + 80 && r > b + 80, "{r} {g} {b}");
+        let [r, g, b] = map.apply([0, 0, 238]);
+        assert!(b > r + 80 && b > g + 80 && r > 100, "{r} {g} {b}");
+    }
+
+    #[test]
+    fn composite_flattens_alpha_onto_paper() {
+        let map = ToneMap::new(PAPER, INK);
+        // Transparent, opaque black, then half-covered black (premultiplied).
+        let src = [0, 0, 0, 0, 0, 0, 0, 255, 0, 0, 0, 128];
+        let mut out = [0u8; 12];
+        composite(&src, &mut out, |c| c);
+        assert_eq!(out, [255, 255, 255, 255, 0, 0, 0, 255, 127, 127, 127, 255]);
+        composite(&src, &mut out, |c| map.apply(c));
+        let bgr = |c: [u8; 3]| [c[2], c[1], c[0], 255];
+        assert_eq!(out[..4], bgr(PAPER));
+        assert_eq!(out[4..8], bgr(INK));
+    }
+
+    #[test]
+    fn page_tone_converts_style_colors() {
+        assert_eq!(page_tone(None), PageTone::Original);
+        let themed = ThemedPages {
+            paper: gpui::rgb(0x26262b).into(),
+            ink: gpui::rgb(0xd8d8dc).into(),
+            overlays: PageOverlays::default(),
+        };
+        assert_eq!(
+            page_tone(Some(&themed)),
+            PageTone::Themed {
+                paper: PAPER,
+                ink: INK
+            }
+        );
+    }
+
     #[test]
     fn detects_pdf_extension() {
         assert!(is_pdf("a.pdf"));
@@ -2276,6 +2511,48 @@ mod scrolling_tests {
             cx.run_until_parked();
             cx.update(|_, cx| assert!(view.read(cx).search_open));
         }
+    }
+
+    #[gpui::test]
+    fn page_tone_toggle_follows_style_and_rerenders(cx: &mut gpui::TestAppContext) {
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/reference.pdf");
+        let dark = Rc::new(std::cell::Cell::new(true));
+        let style_dark = dark.clone();
+        let (view, cx) = cx.add_window_view(move |_, cx| {
+            let dark = style_dark.clone();
+            let style = move || PdfStyle {
+                themed_pages: dark.get().then(|| ThemedPages {
+                    paper: gpui::rgb(0x26262b).into(),
+                    ink: gpui::rgb(0xd8d8dc).into(),
+                    overlays: PageOverlays::default(),
+                }),
+                ..PdfStyle::default()
+            };
+            PdfView::new(path, Rc::new(style), Rc::new(|| 1.), cx)
+        });
+        cx.simulate_resize(gpui::size(px(700.), px(600.)));
+        draw(cx);
+        let tone = |cx: &mut gpui::VisualTestContext| cx.update(|_, cx| view.read(cx).last_tone);
+        assert!(matches!(tone(cx), PageTone::Themed { .. }));
+        let rendered = cx.update(|_, cx| view.read(cx).render_requests);
+        assert!(rendered > 0);
+
+        let toggle = cx.debug_bounds("pdf-page-tone").unwrap();
+        cx.simulate_click(toggle.center(), Default::default());
+        draw(cx);
+        assert!(cx.update(|_, cx| view.read(cx).shows_original_paper()));
+        assert_eq!(tone(cx), PageTone::Original);
+        assert!(cx.update(|_, cx| view.read(cx).render_requests) > rendered);
+
+        // Light theme: no toggle, original paper; the override survives the trip.
+        dark.set(false);
+        draw(cx);
+        assert!(cx.debug_bounds("pdf-page-tone").is_none());
+        dark.set(true);
+        draw(cx);
+        assert!(cx.update(|_, cx| view.read(cx).shows_original_paper()));
+        assert_eq!(tone(cx), PageTone::Original);
     }
 
     #[gpui::test]

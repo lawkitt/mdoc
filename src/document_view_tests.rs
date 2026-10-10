@@ -853,7 +853,7 @@ fn reference_pdf_parses_and_renders() {
     let bytes = std::sync::Arc::new(std::fs::read(path).unwrap());
     let pdf = gpui_pdf::parse(bytes).unwrap();
     assert_eq!(gpui_pdf::page_dims(&pdf), vec![(420.0, 595.0)]);
-    assert!(gpui_pdf::render_page(&pdf, 0, 1.0).is_ok());
+    assert!(gpui_pdf::render_page(&pdf, 0, 1.0, gpui_pdf::PageTone::Original).is_ok());
 }
 
 #[gpui::test]
