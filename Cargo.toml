@@ -111,6 +111,9 @@ minimum-system-version = "11.0"
 # Not notarized — first launch is still the right-click -> Open path until an
 # Apple Developer account lands.
 signing-identity = "-"
+# Lets the hardened runtime load the downloaded PDFium and ONNX Runtime
+# libraries (see the plist); scripts/package.sh checks it is applied.
+entitlements = "resources/entitlements.plist"
 
 # cargo-wix config for the x64 .msi (built by `cargo wix` in scripts/package.sh,
 # for stable versions only — MSI ProductVersion rejects alphanumeric prereleases).
