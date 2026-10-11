@@ -111,24 +111,41 @@ fn swap_with(
         .to_string_lossy();
     let incoming = parent.join(format!(".{name}.update"));
     let backup = parent.join(format!(".{name}.old"));
+    // A swap that couldn't roll back left only the backup: restore it rather
+    // than delete the last intact copy.
+    if backup.exists() && !installed.exists() {
+        fs::rename(&backup, installed).map_err(|e| {
+            format!(
+                "Couldn't restore the previous app from {}: {e}",
+                backup.display()
+            )
+        })?;
+    }
     remove(&incoming);
     remove(&backup);
-    let result = ditto(staged, &incoming)
-        .and_then(|()| verify(&incoming, version, gatekeeper))
-        .and_then(|()| {
-            fs::rename(installed, &backup)
-                .map_err(|e| format!("Couldn't move the current app aside: {e}"))
-        })
-        .and_then(|()| {
-            fs::rename(&incoming, installed).map_err(|e| {
-                // Never leave the app missing.
-                let _ = fs::rename(&backup, installed);
-                format!("Couldn't move the new app into place: {e}")
-            })
-        });
-    remove(&incoming);
+    if let Err(e) = ditto(staged, &incoming).and_then(|()| verify(&incoming, version, gatekeeper)) {
+        remove(&incoming);
+        return Err(e);
+    }
+    if let Err(e) = fs::rename(installed, &backup) {
+        remove(&incoming);
+        return Err(format!("Couldn't move the current app aside: {e}"));
+    }
+    if let Err(e) = fs::rename(&incoming, installed) {
+        // Never leave the app missing: the backup goes only once it is back.
+        return match fs::rename(&backup, installed) {
+            Ok(()) => {
+                remove(&incoming);
+                Err(format!("Couldn't move the new app into place: {e}"))
+            }
+            Err(restore) => Err(format!(
+                "Couldn't move the new app into place ({e}) or restore the previous one ({restore}). The previous app is at {}.",
+                backup.display()
+            )),
+        };
+    }
     remove(&backup);
-    result
+    Ok(())
 }
 
 fn codesign_requirement(app: &Path, deep: bool) -> Result<(), String> {
@@ -244,6 +261,21 @@ mod tests {
             eligibility(Path::new("/System/mdoc.app/Contents/MacOS/mdoc")),
             Err(Ineligible::NotWritable)
         );
+    }
+
+    #[test]
+    fn a_backup_left_by_a_failed_rollback_is_restored_not_deleted() {
+        let root = tempfile::tempdir().unwrap();
+        let installed = root.path().join("mdoc.app");
+        let backup = root.path().join(".mdoc.app.old");
+        fs::create_dir_all(backup.join("Contents")).unwrap();
+        fs::write(backup.join("Contents/marker"), "old").unwrap();
+        assert!(swap(&root.path().join("missing.app"), &installed, "9.0.0").is_err());
+        assert_eq!(
+            fs::read_to_string(installed.join("Contents/marker")).unwrap(),
+            "old"
+        );
+        assert!(!backup.exists());
     }
 
     #[test]
