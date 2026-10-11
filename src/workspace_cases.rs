@@ -23,7 +23,12 @@ pub(super) struct CaseState {
     loading: bool,
     /// Latest unsaved state per case; one write runs at a time.
     pending: HashMap<String, Case>,
-    writing: bool,
+    /// The case being written now.
+    writing: Option<Case>,
+    /// Cases whose last write failed; kept pending for the next attempt.
+    failed: HashSet<String>,
+    /// Tabs to close once their new case is safely written.
+    close_after: HashMap<String, u64>,
     pub(super) renaming: Option<(String, Entity<markdown_search::SearchInput>)>,
     pub(super) list_open: bool,
     /// Tabs whose close already asked about their unsaved mapping.
@@ -169,10 +174,13 @@ impl Workspace {
         })
     }
     /// Save this tab's mapping as a new case named after the document.
-    pub(super) fn create_case(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(view) = self.tab_view(id) else {
-            return;
-        };
+    pub(super) fn create_case(
+        &mut self,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<String> {
+        let view = self.tab_view(id)?;
         let (name, identities, path) = {
             let v = view.read(cx);
             let name = v.display_name();
@@ -189,12 +197,12 @@ impl Workspace {
                     .into(),
             );
             cx.notify();
-            return;
+            return None;
         }
         if let Err(error) = self.case_store() {
             self.notice = Some(error);
             cx.notify();
-            return;
+            return None;
         }
         let case = Case::new(
             name,
@@ -202,6 +210,7 @@ impl Workspace {
             path.as_deref().map(session_store::identity),
         );
         let link = CaseLink::of(&case);
+        let case_id = case.id.clone();
         self.cases.cases.insert(0, case.clone());
         self.enqueue_case(case, cx);
         view.update(cx, |view, cx| {
@@ -213,6 +222,7 @@ impl Workspace {
         }
         self.checkpoint(window, cx);
         cx.notify();
+        Some(case_id)
     }
     /// A member tab's mapping changed: fold it into the case and save.
     pub(super) fn case_changed(&mut self, id: u64, cx: &mut Context<Self>) {
@@ -245,12 +255,16 @@ impl Workspace {
             self.enqueue_case(case, cx);
         }
     }
-    fn enqueue_case(&mut self, case: Case, cx: &mut Context<Self>) {
+    fn enqueue_case(&mut self, mut case: Case, cx: &mut Context<Self>) {
+        if let Some(stored) = self.cases.cases.iter_mut().find(|c| c.id == case.id) {
+            stored.revision += 1;
+            case.revision = stored.revision;
+        }
         self.cases.pending.insert(case.id.clone(), case);
         self.pump_cases(cx);
     }
     fn pump_cases(&mut self, cx: &mut Context<Self>) {
-        if self.cases.writing {
+        if self.cases.writing.is_some() {
             return;
         }
         let Some(id) = self.cases.pending.keys().next().cloned() else {
@@ -264,22 +278,50 @@ impl Workspace {
                 return;
             }
         };
-        self.cases.writing = true;
+        self.cases.writing = Some(case.clone());
         let task = cx
             .background_executor()
             .spawn(async move { store.save(&case) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {
-                this.cases.writing = false;
-                if let Err(error) = result {
-                    this.notice = Some(format!("Could not save the case: {error}"));
+                let Some(case) = this.cases.writing.take() else {
+                    return;
+                };
+                match result {
+                    Ok(()) => {
+                        this.cases.failed.remove(&case.id);
+                        if let Some(tab) = this.cases.close_after.remove(&case.id) {
+                            this.close_after_save(tab, cx);
+                        }
+                        this.pump_cases(cx);
+                    }
+                    Err(error) => {
+                        // Keep it for the next change, close or quit; no busy retry.
+                        this.notice = Some(format!("Could not save the case: {error}"));
+                        this.cases.failed.insert(case.id.clone());
+                        if let Some(tab) = this.cases.close_after.remove(&case.id) {
+                            this.cases.asked.remove(&tab);
+                        }
+                        this.cases.pending.entry(case.id.clone()).or_insert(case);
+                    }
                 }
-                this.pump_cases(cx);
                 cx.notify();
             });
         })
         .detach();
+    }
+    fn close_after_save(&mut self, tab: u64, cx: &mut Context<Self>) {
+        let Some(window) = cx.windows().into_iter().next() else {
+            return;
+        };
+        let entity = cx.entity().downgrade();
+        // Runs after this update, once the workspace is free again.
+        cx.defer(move |cx| {
+            let _ = window.update(cx, |_, window, cx| {
+                let _ = entity.update(cx, |this, cx| this.close_tab(tab, window, cx));
+            });
+        });
     }
     /// At quit: fold every member tab's mapping in and write it now.
     pub(super) fn flush_cases(&mut self, cx: &mut Context<Self>) {
@@ -287,11 +329,18 @@ impl Workspace {
         for id in ids {
             self.case_changed(id, cx);
         }
-        if self.cases.pending.is_empty() {
+        // The store serializes writes, so this waits for one in flight and
+        // never lets it overwrite the newer state.
+        let mut cases: Vec<_> = self.cases.writing.clone().into_iter().collect();
+        for (_, case) in self.cases.pending.drain() {
+            cases.retain(|c| c.id != case.id);
+            cases.push(case);
+        }
+        if cases.is_empty() {
             return;
         }
         if let Ok(store) = self.case_store() {
-            for (_, case) in self.cases.pending.drain() {
+            for case in cases {
                 let _ = store.save(&case);
             }
         }
@@ -823,7 +872,10 @@ impl Workspace {
         };
         let at_risk = {
             let v = view.read(cx);
-            v.case.is_none() && !v.pii.review.applied().is_empty()
+            !v.pii.review.applied().is_empty()
+                && v.case
+                    .as_ref()
+                    .is_none_or(|l| self.cases.failed.contains(&l.id))
         };
         if !ask
             || !at_risk
@@ -849,8 +901,12 @@ impl Workspace {
             let answer = answer.await.ok();
             let _ = this.update_in(cx, |this, window, cx| match answer {
                 Some(0) => {
-                    this.create_case(id, window, cx);
-                    this.close_tab(id, window, cx);
+                    // Close only once the case is safely written.
+                    if let Some(case) = this.create_case(id, window, cx) {
+                        this.cases.close_after.insert(case, id);
+                    } else {
+                        this.cases.asked.remove(&id);
+                    }
                 }
                 Some(1) => this.close_tab(id, window, cx),
                 _ => {

@@ -91,6 +91,9 @@ pub struct Case {
     /// Member Markdown files, as session identities.
     #[serde(default)]
     pub members: Vec<PathBuf>,
+    /// Bumped on every change; a store never writes an older revision.
+    #[serde(default)]
+    pub revision: u64,
 }
 impl Case {
     pub fn new(name: String, identities: &[ExportedIdentity], member: Option<PathBuf>) -> Self {
@@ -104,6 +107,7 @@ impl Case {
                 .map_or(0, |d| d.as_secs()),
             identities: Vec::new(),
             members: member.into_iter().collect(),
+            revision: 0,
         };
         case.merge(identities);
         case
@@ -161,10 +165,13 @@ impl Case {
     }
 }
 
-/// Encrypted case files in one directory.
+/// Encrypted case files in one directory. Writes and deletes are serialized:
+/// a write older than the last one, or after a delete, is skipped.
 pub struct Store {
     dir: PathBuf,
     cipher: Aes256Gcm,
+    /// Last written revision per case; `u64::MAX` once deleted.
+    written: std::sync::Mutex<std::collections::HashMap<String, u64>>,
 }
 impl Store {
     pub fn default_dir() -> Option<PathBuf> {
@@ -179,6 +186,7 @@ impl Store {
         Self {
             dir,
             cipher: Aes256Gcm::new(key.into()),
+            written: Default::default(),
         }
     }
     fn valid_id(id: &str) -> bool {
@@ -193,6 +201,13 @@ impl Store {
     pub fn save(&self, case: &Case) -> io::Result<()> {
         if !Self::valid_id(&case.id) {
             return Err(io::Error::other("Invalid case id"));
+        }
+        let mut written = self.written.lock().unwrap_or_else(|e| e.into_inner());
+        if written
+            .get(&case.id)
+            .is_some_and(|&last| last > case.revision || last == u64::MAX)
+        {
+            return Ok(());
         }
         std::fs::create_dir_all(&self.dir)?;
         let plain = serde_json::to_vec(case)?;
@@ -215,6 +230,7 @@ impl Store {
         file.as_file().sync_all()?;
         file.persist(self.path(&case.id))
             .map_err(|error| error.error)?;
+        written.insert(case.id.clone(), case.revision);
         Ok(())
     }
     pub fn load(&self, id: &str) -> Result<Case, String> {
@@ -273,6 +289,9 @@ impl Store {
         if !Self::valid_id(id) {
             return Err(io::Error::other("Invalid case id"));
         }
+        // Later writes of this case, even ones already queued, are skipped.
+        let mut written = self.written.lock().unwrap_or_else(|e| e.into_inner());
+        written.insert(id.to_string(), u64::MAX);
         let path = self.path(id);
         let len = match std::fs::metadata(&path) {
             Ok(meta) => meta.len(),
@@ -492,6 +511,27 @@ mod tests {
         assert!(store.load(&renamed).is_err());
         assert_eq!(store.list().1, [renamed]);
         assert!(store.load("../escape").is_err());
+    }
+
+    #[test]
+    fn stale_writes_and_writes_after_delete_are_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store(dir.path());
+        let mut case = Case::new("A".into(), &[], None);
+        case.revision = 2;
+        store.save(&case).unwrap();
+        let mut older = case.clone();
+        older.revision = 1;
+        older.name = "old".into();
+        store.save(&older).unwrap();
+        assert_eq!(store.load(&case.id).unwrap().name, "A");
+        store.delete(&case.id).unwrap();
+        case.revision = 3;
+        store.save(&case).unwrap();
+        assert!(
+            store.load(&case.id).is_err(),
+            "a queued save cannot resurrect it"
+        );
     }
 
     #[test]
