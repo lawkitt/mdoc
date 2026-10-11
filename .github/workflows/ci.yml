@@ -2,8 +2,8 @@ name: CI
 
 # Same commands as local development: every step runs a `just` recipe
 # (ADR 0037). Heavy and machine-dependent tests (performance, installed
-# models, the OCR download) stay out of everyday CI; the OCR smoke test gates
-# releases in release.yml.
+# models, the OCR download) stay out of everyday CI; release.yml adds the OCR
+# smoke test to the test jobs through the `smoke-ocr` input.
 on:
   push:
     branches: [main]
@@ -22,6 +22,11 @@ on:
     paths-ignore: *ignored
   # release.yml runs this same job set before building release artifacts.
   workflow_call:
+    inputs:
+      smoke-ocr:
+        description: Also run the OCR smoke test, reusing the test job's build.
+        type: boolean
+        default: false
 
 # CI only reads the repo; release.yml's call inherits this ceiling.
 permissions:
@@ -37,6 +42,12 @@ jobs:
   # cargo-deny are platform-independent, so they live here too.
   lint-linux:
     name: lint (ubuntu)
+    # The release commit that `just release` pushes with its tag is tested by
+    # the tag's Release run; don't test the same commit twice. (In a call
+    # from release.yml the event is the tag push, so ref_type is "tag".)
+    if: &not-release-commit >-
+      ${{ !(github.event_name == 'push' && github.ref_type == 'branch' &&
+      startsWith(github.event.head_commit.message, 'release: v')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -65,6 +76,7 @@ jobs:
   # The shipped targets: clippy and the full test suite.
   test:
     name: test (${{ matrix.runner }})
+    if: *not-release-commit
     strategy:
       fail-fast: false
       matrix:
@@ -79,3 +91,7 @@ jobs:
 
       - run: just lint
       - run: just test
+      # Release gate: real OCR runtime/model download and EN/RU recognition,
+      # on the test build just compiled.
+      - if: inputs.smoke-ocr
+        run: just smoke-ocr

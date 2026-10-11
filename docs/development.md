@@ -93,10 +93,12 @@ truth: `just release 0.1.0-beta.1` checks that `main` is clean and current, runs
 the checks (optionally `check-all`), sets the version in `Cargo.toml`,
 `Cargo.lock` and `Info.plist`, names the CHANGELOG section for stable versions,
 commits `release: v…`, tags, and pushes after confirmation. The tag runs
-`.github/workflows/release.yml`: version check, CI, OCR smoke on both targets,
-packaging and the packaged-app gate, then a draft GitHub Release with `SHA256SUMS` and build provenance.
-Review the draft and publish it by hand. "Run workflow" on the Release workflow
-builds an unpublished test build from any branch.
+`.github/workflows/release.yml`: version check, CI with the OCR smoke test on
+both targets, packaging and the packaged-app gate, then a draft GitHub Release
+with `SHA256SUMS` and build provenance. Review the draft and publish it by
+hand. "Run workflow" on the Release workflow builds an unpublished test build
+from any pushed branch; it goes straight to packaging (the branch already ran
+CI) unless **checks** is ticked, and signs the macOS app only with **sign**.
 
 ### macOS signing
 

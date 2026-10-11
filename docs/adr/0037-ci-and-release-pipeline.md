@@ -22,9 +22,12 @@ than the repository. Nothing lets local development run the same checks as CI.
 - **No Nix**: the flake and its workflow are removed.
 - **CI** runs on pushes to `main` and on PRs: fmt, deny, clippy `-D warnings`
   and `cargo test --workspace` on macos-26 and windows-latest, plus the Ubuntu
-  lint job. Direct pushes to `main` remain; no branch protection yet.
-- **Release** runs on `v*` tags (manual dispatch builds without publishing): CI,
-  then the OCR smoke test on macos-26 and Windows x64, then packaging and the
+  lint job. Direct pushes to `main` remain; no branch protection yet. The
+  `release: v…` commit pushed with a tag is skipped on `main`: the tag's
+  Release run tests that commit.
+- **Release** runs on `v*` tags (manual dispatch builds without publishing): CI
+  with the OCR smoke test as a step of the macos-26 and Windows x64 test jobs
+  (reusing their build), then packaging and the
   **packaged-app gate** (`just smoke-package`: the shipped binary, on macOS from
   the `.dmg` under its hardened-runtime signature, downloads the OCR runtime and
   model and recognizes the English fixture via `mdoc --mdoc-self-test`), then a

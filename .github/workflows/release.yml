@@ -2,7 +2,7 @@ name: Release
 
 # Shipped targets only: Apple Silicon macOS and Windows x64 (ADR 0037).
 # A `v*` tag made by `just release` checks the tag against the repository
-# version, runs CI and the OCR smoke test on both targets, packages with
+# version, runs CI with the OCR smoke test on both targets, packages with
 # `just package` (Developer ID signed and notarized on macOS, ADR 0039), and
 # creates a DRAFT GitHub Release with SHA256SUMS and build
 # provenance. Publish the draft by hand after checking it.
@@ -26,6 +26,13 @@ on:
         description: >-
           Developer ID sign and notarize the macOS build, as a tag build does
           (uses the `release` environment's secrets).
+        type: boolean
+        default: false
+      checks:
+        description: >-
+          Run CI and the OCR smoke test first, as a tag build does. Off by
+          default: the pushed branch already ran CI, and packaging still
+          runs the OCR self-test on the built app.
         type: boolean
         default: false
 
@@ -57,33 +64,23 @@ jobs:
         if: github.event_name == 'push'
         run: scripts/verify-version.sh "$GITHUB_REF_NAME"
 
+  # CI plus the release gate's OCR smoke test (real runtime/model download,
+  # EN/RU recognition) on each shipped target. Always for tags.
   ci:
     needs: [version]
+    if: github.event_name == 'push' || inputs.checks
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yml
-
-  # Release gate: real OCR runtime/model download and EN/RU recognition on
-  # each shipped target.
-  smoke-ocr:
-    needs: [version]
-    name: smoke-ocr (${{ matrix.runner }})
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [macos-26, windows-latest]
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - run: just smoke-ocr
+    with:
+      smoke-ocr: true
 
   package:
-    needs: [ci, smoke-ocr]
+    needs: [version, ci]
+    # Runs after a passing CI, or straight away when a test build skips it.
+    if: >-
+      ${{ !cancelled() && needs.version.result == 'success' &&
+      (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
     name: package (${{ matrix.runner }})
     permissions:
       contents: read
