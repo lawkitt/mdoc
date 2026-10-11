@@ -4,6 +4,16 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- In-app updates on macOS: Settings → Updates offers **Download and install**
+  for a newer release, then **Restart now**. The download is checked against
+  the release's `SHA256SUMS` and must carry the mdoc developer's Apple
+  signature, pass Gatekeeper and contain the promised version; the installed
+  app is replaced only while mdoc quits, and kept if anything fails. A banner
+  at the top of the window shows an available update, download progress, a
+  ready update and failures, and opens Settings → Updates. Nothing downloads
+  without a click; copies that can't replace themselves (not in Applications,
+  running from the disk image, unsigned builds) keep **View release**
+  (ADR 0040).
 - macOS releases are signed with a Developer ID and notarized by Apple, so mdoc
   opens normally on first launch; the release gate checks Gatekeeper accepts the
   `.dmg` and the app (ADR 0039).

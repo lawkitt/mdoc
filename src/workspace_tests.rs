@@ -573,11 +573,7 @@ fn available_update_marks_the_settings_button(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("update-dot").is_none());
     cx.update(|_, cx| {
         cx.set_global(crate::updater::UpdateState {
-            available: Some(crate::updater::UpdateAvailable {
-                version: "9.0.0".into(),
-                html_url: String::new(),
-                notes: String::new(),
-            }),
+            available: Some(crate::updater::test_update("9.0.0")),
             ..Default::default()
         })
     });
@@ -590,6 +586,47 @@ fn available_update_marks_the_settings_button(cx: &mut TestAppContext) {
         button.contains(&dot.center()),
         "dot={dot:?}, button={button:?}"
     );
+}
+
+#[gpui::test]
+fn update_banner_opens_settings_and_dismisses_per_version(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    draw(cx);
+    assert!(cx.debug_bounds("update-banner").is_none());
+    // A manual check's result raises no banner; an automatic one does.
+    let found = crate::updater::UpdateState {
+        available: Some(crate::updater::test_update("9.0.0")),
+        ..Default::default()
+    };
+    cx.update(|_, cx| cx.set_global(found.clone()));
+    draw(cx);
+    assert!(cx.debug_bounds("update-banner").is_none());
+    cx.update(|_, cx| {
+        cx.set_global(crate::updater::UpdateState {
+            automatic: true,
+            ..found
+        })
+    });
+    click_toolbar(cx, "update-banner");
+    cx.update(|_, cx| assert!(tabs.read(cx).settings.read(cx).open));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.settings
+            .update(cx, |panel, cx| panel.close(window, cx))
+    });
+    click_toolbar(cx, "dismiss-update-banner");
+    draw(cx);
+    assert!(cx.debug_bounds("update-banner").is_none());
+    cx.update(|_, cx| {
+        assert!(
+            !tabs.read(cx).settings.read(cx).open,
+            "× doesn't open Settings"
+        );
+        assert_eq!(
+            crate::updater::state(cx).dismissed.as_deref(),
+            Some("9.0.0")
+        );
+    });
 }
 
 #[gpui::test]

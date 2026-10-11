@@ -7,9 +7,14 @@ pseudonymizing all run locally. mdoc goes online only for:
   models from GitHub, and the pseudonymization model from Hugging Face. Each file
   is checked against a pinned SHA-256 digest. After that mdoc works offline.
 - **The update check** at startup: one anonymous request to the GitHub Releases
-  API, carrying no document data. A dot on the Settings button tells you when a
-  newer release exists; mdoc never downloads or installs it. Turn the check off
-  in **Settings → Updates**.
+  API, carrying no document data. A dot on the Settings button and a banner
+  tell you when a newer release exists. Turn the check off in
+  **Settings → Updates**.
+- **Updates**, only after you click **Download and install** (macOS): the new
+  version's disk image from GitHub, checked against the release's `SHA256SUMS`
+  and required to carry the mdoc developer's Apple signature. It replaces the
+  installed app when you restart or quit mdoc. On Windows mdoc never downloads
+  updates; **View release** opens the release page.
 
 Text reaches an AI tool only when you paste it there yourself, and that tool's
 own data terms then apply.

@@ -55,6 +55,10 @@ package:
 smoke-package:
     scripts/smoke-package.sh
 
+# In-app update from an older signed .dmg to the latest release (ADR 0040)
+smoke-update *args:
+    scripts/smoke-update.sh {{args}}
+
 # Release commit + tag for <version>, push after confirmation (--no-push to skip)
 release version *flags:
     scripts/release.sh {{version}} {{flags}}

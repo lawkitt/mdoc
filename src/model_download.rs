@@ -156,7 +156,7 @@ pub fn fetch(
 /// dropped-transfer errors all mean "no usable network"; the raw resolver text
 /// ("failed to lookup address information …") helps nobody. TLS failures are
 /// kept apart: on managed networks they usually mean a proxy or firewall.
-fn download_error(url: &str, error: ureq::Error) -> String {
+pub(crate) fn download_error(url: &str, error: ureq::Error) -> String {
     use ureq::Error;
     match error {
         Error::Io(_)
@@ -175,7 +175,7 @@ fn download_error(url: &str, error: ureq::Error) -> String {
         other => format!("Couldn't download from {}: {other}", host(url)),
     }
 }
-fn unreachable(url: &str) -> String {
+pub(crate) fn unreachable(url: &str) -> String {
     format!(
         "Couldn't reach {}. Check your internet connection, then Retry.",
         host(url)
