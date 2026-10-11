@@ -28,7 +28,7 @@ case "$(platform)" in
     # exists to test that signature.
     # Captured first: `grep -q` stops reading early, and under pipefail the
     # cut-off codesign would fail the check.
-    signature=$(codesign -dv "$app" 2>&1)
+    signature=$(codesign -dvv "$app" 2>&1)
     [[ $signature == *"flags="*runtime* ]] ||
       die "the packaged app is not signed with the hardened runtime"
     # Release builds must pass Gatekeeper as a user's Mac would see them:
