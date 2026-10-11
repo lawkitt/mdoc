@@ -544,9 +544,29 @@ fn prepare(update: &UpdateAvailable, progress: &Progress) -> Result<PathBuf, dow
             .to_owned()
             .into());
     };
-    let dir = updates_dir().ok_or("No cache folder for the update.".to_owned())?;
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // Each attempt gets its own folder: a cancelled worker may still be
+    // verifying while the user retries, and must not share paths with it.
+    let root = updates_dir().ok_or("No cache folder for the update.".to_owned())?;
+    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let dir = tempfile::Builder::new()
+        .prefix("attempt-")
+        .tempdir_in(&root)
+        .map_err(|e| e.to_string())?
+        .keep();
+    let result = stage_into(update, dmg, checksums, &dir, progress);
+    if result.is_err() {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    result
+}
+
+fn stage_into(
+    update: &UpdateAvailable,
+    dmg: &Asset,
+    checksums: &str,
+    dir: &std::path::Path,
+    progress: &Progress,
+) -> Result<PathBuf, download::Stop> {
     let name = download::dmg_name(&update.version);
     let sha = download::checksum_for(&download::text(checksums)?, &name)
         .ok_or_else(|| format!("The release's SHA256SUMS doesn't list {name}."))?;
@@ -569,10 +589,13 @@ fn prepare(update: &UpdateAvailable, progress: &Progress) -> Result<PathBuf, dow
     }
 }
 
+/// Delete a staged update together with its attempt folder.
 fn discard(staged: PathBuf, cx: &gpui::App) {
     cx.background_executor()
         .spawn(async move {
-            let _ = std::fs::remove_dir_all(staged);
+            if let Some(attempt) = staged.parent() {
+                let _ = std::fs::remove_dir_all(attempt);
+            }
         })
         .detach();
 }
