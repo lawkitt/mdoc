@@ -218,17 +218,57 @@ fn validate_config(root: &Path, config: &crate::settings::OcrConfig) -> Result<I
     };
     // Check actual loading before claiming ready. All of this runs off the UI thread.
     PdfiumRenderer::load_from_path(&installed.pdfium).map_err(|e| e.to_string())?;
-    OarOcrEngine::from_models_with_runtime(&models, Some(&installed.onnx)).map_err(|e| {
-        if cfg!(target_os = "windows")
-            && let pdf_inspector::vision::OarOcrError::OnnxRuntimeLoad { source, .. } = &e
-        {
-            return format!(
-                "Could not load the OCR runtime: {source}. Install or repair Microsoft Visual C++ Redistributable (x64) from https://aka.ms/vc14/vc_redist.x64.exe, restart mdoc, then retry OCR setup."
-            );
-        }
-        e.to_string()
-    })?;
+    load_onnx_runtime(&installed.onnx)?;
+    OarOcrEngine::from_models_with_runtime(&models, Some(&installed.onnx))
+        .map_err(|e| e.to_string())?;
     Ok(installed)
+}
+
+/// The outcome of the one `ort::init_from` this process makes.
+static ORT_LOADED: std::sync::Mutex<Option<Result<(), String>>> = std::sync::Mutex::new(None);
+
+/// Load the shared ONNX Runtime into ort. Call before any ort, gliner2 or OCR
+/// engine use, and stop on `Err`.
+///
+/// ort rc.13 marks its library slot loaded even when `init_from` fails, so a
+/// second `init_from` returns `Ok` and the next session panics on a null
+/// handle, which aborts the release build. A library that cannot be opened
+/// (missing, damaged, refused by library validation) therefore never reaches
+/// ort and stays retryable; a failure inside ort lasts until restart.
+pub(crate) fn load_onnx_runtime(path: &Path) -> Result<(), String> {
+    let mut loaded = ORT_LOADED.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(result) = loaded.as_ref() {
+        return result.clone();
+    }
+    probe_onnx_runtime(path)?;
+    let result = ort::init_from(path)
+        .map(|builder| {
+            builder.with_name("mdoc").commit();
+        })
+        .map_err(|e| format!("Could not load the ONNX Runtime: {e}. Restart mdoc, then retry."));
+    *loaded = Some(result.clone());
+    result
+}
+
+fn probe_onnx_runtime(path: &Path) -> Result<(), String> {
+    // SAFETY: the pinned, digest-verified runtime; loading it runs its initializers.
+    let library = unsafe { libloading::Library::new(path) }.map_err(|e| {
+        if cfg!(target_os = "windows") {
+            format!(
+                "Could not load the ONNX Runtime: {e}. Install or repair Microsoft Visual C++ Redistributable (x64) from https://aka.ms/vc14/vc_redist.x64.exe, restart mdoc, then retry setup."
+            )
+        } else {
+            format!("Could not load the ONNX Runtime: {e}")
+        }
+    })?;
+    // SAFETY: only the symbol's presence is checked; it is never called here.
+    unsafe { library.get::<unsafe extern "C" fn()>(b"OrtGetApiBase") }.map_err(|e| {
+        format!(
+            "{} is not an ONNX Runtime library: {e}. Retry setup.",
+            path.display()
+        )
+    })?;
+    Ok(())
 }
 
 /// Called by a worker that already owns model admission.
@@ -492,6 +532,33 @@ mod tests {
         assert!(check_in(dir.path()).unwrap().is_none());
         fs::write(dir.path().join(RUNTIMES[0].library), b"corrupt-pdfium").unwrap();
         assert!(check_in(dir.path()).is_err());
+    }
+
+    /// ort rc.13 reported a second `init_from` of an unloadable runtime as
+    /// loaded, so the next session panicked and the release build aborted.
+    #[test]
+    fn unloadable_onnx_runtime_stays_an_error_without_reaching_ort() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(RUNTIMES[1].library);
+        fs::write(&path, b"refused by library validation").unwrap();
+        for _ in 0..2 {
+            let error = load_onnx_runtime(&path).unwrap_err();
+            assert!(
+                error.starts_with("Could not load the ONNX Runtime"),
+                "{error}"
+            );
+        }
+        // A library without the ONNX Runtime entry point is refused the same way.
+        #[cfg(target_os = "macos")]
+        let other = Path::new("/usr/lib/libz.1.dylib");
+        #[cfg(target_os = "windows")]
+        let other = Path::new("kernel32.dll");
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        for _ in 0..2 {
+            let error = load_onnx_runtime(other).unwrap_err();
+            assert!(error.contains("not an ONNX Runtime library"), "{error}");
+        }
+        assert!(ORT_LOADED.lock().unwrap().is_none());
     }
 
     #[test]

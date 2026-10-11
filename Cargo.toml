@@ -55,6 +55,8 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 unicode-segmentation = "1"
 gliner2-rs = { version = "=0.9.6", default-features = false }
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
+# Probe the ONNX Runtime before ort sees it (ocr::load_onnx_runtime); ort's own version.
+libloading = "0.9"
 
 [build-dependencies]
 embed-resource = "3"

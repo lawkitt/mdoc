@@ -246,11 +246,7 @@ pub fn setup_config(
 }
 fn check_engine(root: &Path, model: crate::settings::PiiModel) -> Result<(), String> {
     verify_model(root, model)?;
-    let runtime = crate::ocr::onnx_runtime(false)?;
-    ort::init_from(runtime)
-        .map_err(|e| e.to_string())?
-        .with_name("mdoc")
-        .commit();
+    crate::ocr::load_onnx_runtime(&crate::ocr::onnx_runtime(false)?)?;
     let _engine = SpanEngine::new(
         SpanConfig::new(root)
             .with_precision(model.precision())
@@ -345,10 +341,7 @@ fn scan_in(
     verify_model(root, config.model)
         .map_err(|_| "Set up the experimental model before scanning.".to_string())?;
     checkpoint(cancel, started)?;
-    ort::init_from(runtime)
-        .map_err(|e| e.to_string())?
-        .with_name("mdoc")
-        .commit();
+    crate::ocr::load_onnx_runtime(&runtime)?;
     let tasks: Vec<_> = FAMILIES
         .iter()
         .map(|family| {
