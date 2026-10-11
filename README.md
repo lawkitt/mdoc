@@ -1,3 +1,5 @@
+<img src="resources/icons/icon.png" alt="" width="96">
+
 # mdoc
 
 [![CI](https://github.com/lawkitt/mdoc/actions/workflows/ci.yml/badge.svg)](https://github.com/lawkitt/mdoc/actions/workflows/ci.yml)
