@@ -392,6 +392,42 @@ impl Review {
         self.refresh(source);
         ids
     }
+    /// Treat alias tokens already in `source` as applied replacements of the
+    /// seeded identities `ids`, so a reopened document can restore them. Only
+    /// exact current or earlier aliases count; reshaped tokens are left alone.
+    /// Recorded against editor history state `history`. Returns the count.
+    pub fn relink(
+        &mut self,
+        source: &str,
+        identities: &[ExportedIdentity],
+        ids: &[u64],
+        history: u64,
+    ) -> usize {
+        let map = RestoreMap::new(identities.to_vec());
+        let plans: Vec<_> = map
+            .tokens(source)
+            .into_iter()
+            .filter_map(|token| {
+                let index = token.identity?;
+                let exported = &identities[index];
+                let text = &source[token.range.clone()];
+                (text == exported.alias || exported.previous.iter().any(|p| p == text)).then(|| {
+                    super::tracking::ReplacementPlan {
+                        range: token.range,
+                        before: Arc::from(exported.wording()),
+                        after: Arc::from(text),
+                        category: exported.category,
+                        identity: ids[index],
+                    }
+                })
+            })
+            .filter(|plan| self.tracking.at(&plan.range).is_none())
+            .collect();
+        let added = self.tracking.prepare(&plans);
+        let count = added.len();
+        self.tracking.commit(history, added);
+        count
+    }
 }
 
 #[cfg(test)]

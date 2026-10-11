@@ -313,3 +313,45 @@ fn restored_ranges_follow_the_applied_edits() {
     assert_eq!(ranges, [(0..10, 0), (15..25, 1)]);
     assert!(ranges.iter().all(|(r, _)| &text[r.clone()] == "John Smith"));
 }
+
+#[test]
+fn relinked_alias_tokens_become_restorable_applied_replacements() {
+    let mut renamed = identity("BUYER", Category::Person, &["Anna Petrova"]);
+    renamed.previous = vec!["PERSON_1".into()];
+    let identities = vec![
+        renamed,
+        identity("ORG_1", Category::Organization, &["Northwind Ltd"]),
+    ];
+    let source = "BUYER and PERSON_1 met ORG_1; person 1 and ORG_9 did not.";
+    let mut review = Review::default();
+    let ids = review.seed(&identities, source);
+    assert_eq!(review.relink(source, &identities, &ids, 7), 3);
+    let applied: Vec<_> = review
+        .applied()
+        .iter()
+        .map(|a| {
+            (
+                &source[a.range.clone()],
+                a.step.before.as_ref(),
+                a.step.identity,
+            )
+        })
+        .collect();
+    assert_eq!(
+        applied,
+        [
+            ("BUYER", "Anna Petrova", ids[0]),
+            ("PERSON_1", "Anna Petrova", ids[0]),
+            ("ORG_1", "Northwind Ltd", ids[1]),
+        ]
+    );
+    // Undo replacement returns the wording; Apply renames the retired alias.
+    let all: HashSet<_> = review.applied().iter().map(|a| a.id).collect();
+    let edits = review.reversion_edits(source, &all).unwrap();
+    assert_eq!(edits[1], (10..18, "Anna Petrova".to_string()));
+    let corrections = review.alias_corrections(source).unwrap();
+    assert_eq!(corrections.len(), 1);
+    assert_eq!(corrections[0].after.as_ref(), "BUYER");
+    // Linking twice adds nothing.
+    assert_eq!(review.relink(source, &identities, &ids, 7), 0);
+}

@@ -3,6 +3,7 @@
 //! [`crate::workspace::Workspace`] owns these views.
 use super::*;
 
+mod case;
 mod chrome;
 
 #[derive(Clone)]
@@ -62,6 +63,9 @@ pub(crate) struct DocumentView {
     pub(crate) copy_feedback: Option<gpui::Task<()>>,
     /// The running copy feedback belongs to Copy for AI, not Copy Markdown.
     pub(crate) copied_for_ai: bool,
+    /// The saved case this tab's mapping belongs to (ADR 0041).
+    pub(crate) case: Option<cases::CaseLink>,
+    pub(crate) case_save: Option<gpui::Task<()>>,
     pub(crate) view_bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
     pub(crate) split_dragging: bool,
     pub(crate) original_selected: bool,
@@ -190,6 +194,8 @@ impl DocumentView {
             error: None,
             copy_feedback: None,
             copied_for_ai: false,
+            case: None,
+            case_save: None,
             view_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
             split_dragging: false,
             original_selected: false,

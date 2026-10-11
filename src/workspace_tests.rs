@@ -2603,3 +2603,187 @@ fn paste_ai_response_needs_applied_aliases_and_clipboard_text(cx: &mut TestAppCo
     cx.run_until_parked();
     cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 1));
 }
+
+/// A workspace with one saved document whose names are replaced, and an
+/// isolated case store.
+fn applied_document<'a>(
+    cx: &'a mut TestAppContext,
+    dir: &std::path::Path,
+    session: Session,
+) -> (
+    Entity<Workspace>,
+    &'a mut VisualTestContext,
+    std::path::PathBuf,
+) {
+    use crate::pii::Category;
+    let path = dir.join("contract.md");
+    let source = "Anna Petrova met Northwind Traders Ltd.";
+    std::fs::write(&path, source).unwrap();
+    let (tabs, cx) = boot(cx, session);
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.use_case_store(crate::cases::Store::with_key(dir.join("cases"), &[3; 32]));
+        tabs.open_paths(vec![path.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        if view.case.is_some() {
+            return;
+        }
+        view.pii.reviewing = true;
+        view.pii
+            .review
+            .add_manual(source, 0..12, Category::Person)
+            .unwrap();
+        view.pii
+            .review
+            .add_manual(source, 17..38, Category::Organization)
+            .unwrap();
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    (tabs, cx, path)
+}
+
+#[gpui::test]
+fn a_saved_case_is_encrypted_named_and_listed_in_the_sidebar(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    cx.update(|_, cx| assert!(tabs.read(cx).can_create_case(tab, cx)));
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
+    cx.run_until_parked();
+    let store = crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let (cases, _) = store.list();
+    assert_eq!(cases.len(), 1);
+    let case = &cases[0];
+    assert_eq!(case.name, "contract");
+    assert_eq!(case.members, [session_store::identity(&path)]);
+    assert_eq!(case.identities[0].alias, "PERSON_1");
+    assert_eq!(case.identities[0].originals, ["Anna Petrova"]);
+    draw(cx);
+    assert!(cx.debug_bounds("case-header").is_some());
+    cx.update(|_, cx| {
+        let session = tabs.read(cx).snapshot(cx);
+        assert_eq!(session.tabs[0].case.as_deref(), Some(case.id.as_str()));
+        assert!(!tabs.read(cx).can_create_case(tab, cx));
+    });
+
+    // Renaming an alias in the tab reaches the case, keeping the old alias.
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        let anna = view.pii.review.applied()[0].step.identity;
+        view.pii.review.rename_identity(anna, "BUYER").unwrap();
+        view.sync_pii_theme(cx);
+    });
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    cx.run_until_parked();
+    let saved = store.load(&case.id).unwrap();
+    assert_eq!(saved.identities[0].alias, "BUYER");
+    assert_eq!(saved.identities[0].previous, ["PERSON_1"]);
+}
+
+#[gpui::test]
+fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let path = dir.path().join("contract.md");
+    std::fs::write(&path, "PERSON_1 met ORG_1; PERSON_9 did not.").unwrap();
+    let case = crate::cases::Case::new(
+        "Petrova".into(),
+        &[
+            crate::pii::restore::ExportedIdentity {
+                alias: "PERSON_1".into(),
+                previous: vec![],
+                category: crate::pii::Category::Person,
+                custom: false,
+                originals: vec!["Anna Petrova".into()],
+            },
+            crate::pii::restore::ExportedIdentity {
+                alias: "ORG_1".into(),
+                previous: vec![],
+                category: crate::pii::Category::Organization,
+                custom: false,
+                originals: vec!["Northwind Traders Ltd".into()],
+            },
+        ],
+        Some(session_store::identity(&path)),
+    );
+    store.save(&case).unwrap();
+    let session = Session {
+        tabs: vec![TabRecord {
+            markdown: session_store::identity(&path),
+            case: Some(case.id.clone()),
+            ..TabRecord::default()
+        }],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.use_case_store(crate::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ));
+        tabs.restore(session, window, cx);
+        let restored = tabs.tabs.last().unwrap().id;
+        tabs.activate(restored, window, cx);
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.case.as_ref().map(|l| l.name.as_str()), Some("Petrova"));
+        let applied: Vec<_> = view
+            .pii
+            .review
+            .applied()
+            .iter()
+            .map(|a| a.step.before.to_string())
+            .collect();
+        assert_eq!(applied, ["Anna Petrova", "Northwind Traders Ltd"]);
+        assert!(
+            view.has_applied_aliases(),
+            "Copy for AI and Paste AI Response apply"
+        );
+    });
+
+    // Deleting the case wipes it; the tab keeps its live mapping.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.forget_case(&case.id, window, cx)
+    });
+    cx.run_until_parked();
+    assert!(store.load(&case.id).is_err());
+    cx.update(|_, cx| {
+        assert!(view.read(cx).case.is_none());
+        assert_eq!(view.read(cx).pii.review.applied().len(), 2);
+        assert!(
+            tabs.read(cx)
+                .snapshot(cx)
+                .tabs
+                .iter()
+                .all(|t| t.case.is_none())
+        );
+    });
+}
+
+#[gpui::test]
+fn closing_an_unsaved_mapping_offers_to_save_it_once(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Save as Case");
+    cx.run_until_parked();
+    // The tab was edited, so the ordinary unsaved-changes question follows.
+    if cx.has_pending_prompt() {
+        cx.simulate_prompt_answer("Discard");
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| assert!(tabs.read(cx).tabs.iter().all(|t| t.id != tab)));
+    let store = crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    assert_eq!(store.list().0.len(), 1);
+}

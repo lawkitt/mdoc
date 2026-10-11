@@ -57,6 +57,14 @@ gliner2-rs = { version = "=0.9.6", default-features = false }
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
 # Probe the ONNX Runtime before ort sees it (ocr::load_onnx_runtime); ort's own version.
 libloading = "0.9"
+# Saved cases (ADR 0041): AES-256-GCM files, the key held by the OS.
+aes-gcm = "0.10"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
 
 [build-dependencies]
 embed-resource = "3"

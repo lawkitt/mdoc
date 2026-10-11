@@ -3,6 +3,7 @@
     all(target_os = "windows", not(debug_assertions)),
     windows_subsystem = "windows"
 )]
+mod cases;
 mod comment_panel;
 mod document;
 mod document_session;
@@ -71,6 +72,7 @@ actions!(
         CopyMarkdown,
         CopyForAi,
         PasteAiResponse,
+        OpenCase,
         Pseudonymize,
         PiiAddCandidate,
         PiiReviewCandidate,
@@ -205,6 +207,7 @@ fn main() {
         mdoc_editor::bind_keys(cx);
         markdown_search::bind_keys(cx);
         pii::ui::bind_keys(cx);
+        workspace::bind_case_keys(cx);
         settings_ui::bind_keys(cx);
         ui::bind_keys(cx);
         cx.bind_keys([KeyBinding::new(
@@ -238,6 +241,7 @@ fn main() {
             items: vec![
                 MenuItem::action("New", New),
                 MenuItem::action("Open…", Open),
+                MenuItem::action("Open Case…", OpenCase),
                 MenuItem::action("Convert to Markdown", Import),
                 MenuItem::action("Save", Save),
                 MenuItem::action("Save As…", SaveAs),

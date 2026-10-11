@@ -600,6 +600,31 @@ impl Panel {
             .child(self.dictionary_summary(theme, cx))
             .into_any_element()
     }
+    /// Settings → Saved cases (ADR 0041).
+    fn cases_section(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme.pdf_style();
+        let accent = theme.search_accent();
+        let on = self.draft.cases.ask_before_closing;
+        let enabled = !self.applying;
+        div().flex().flex_col().gap_2().mt_4()
+            .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Saved cases"))
+            .child(div().text_size(px(11.)).text_color(p.header_muted).child(
+                "A case keeps which original each alias stands for, encrypted on this computer, so AI replies can be restored later. Open cases from File → Open Case…",
+            ))
+            .child(div().flex().flex_wrap().items_center().gap_2().child(
+                self.scrolled_control("cases-ask", "Ask before closing an unsaved mapping", theme, enabled, cx)
+                    .when(cfg!(test), |v| v.debug_selector(|| "cases-ask".into()))
+                    .aria_toggled(if on { gpui::Toggled::True } else { gpui::Toggled::False })
+                    .when(on, |v| v.border_color(accent).text_color(accent))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if enabled && !this.applying {
+                            this.draft.cases.ask_before_closing = !this.draft.cases.ask_before_closing;
+                            this.persist(cx);
+                        }
+                    })),
+            ))
+            .into_any_element()
+    }
     /// Settings → Updates: detection (ADR 0038) and, on macOS, installation
     /// after an explicit click (ADR 0040).
     fn updates_section(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
@@ -930,6 +955,7 @@ impl Render for Panel {
                                 .when(cfg!(test), |v| v.debug_selector(|| "settings-apply".into()))
                                 .on_click(cx.listener(move |this, _, _, cx| { if changed && !this.applying { this.apply(cx); } }))))))
                     .child(self.spelling_section(theme, cx))
+                    .child(self.cases_section(theme, cx))
                     .child(self.updates_section(theme, cx))))
                 .when_some(self.error.clone(), |v, e| v.child(div().px_4().pb_3().text_size(px(12.)).text_color(style::markdown_style(theme).alert_warning).child(e)))
                 // Another app job (a scan or comparison) holds the model slot.

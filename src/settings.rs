@@ -261,6 +261,20 @@ impl Default for UpdatesConfig {
         }
     }
 }
+/// Saved-case choices (ADR 0041).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CasesConfig {
+    /// Closing a tab with an unsaved replacement mapping asks to save a case.
+    pub ask_before_closing: bool,
+}
+impl Default for CasesConfig {
+    fn default() -> Self {
+        Self {
+            ask_before_closing: true,
+        }
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
@@ -273,6 +287,9 @@ pub struct Preferences {
     /// Absent in settings saved before the update check existed.
     #[serde(default)]
     pub updates: UpdatesConfig,
+    /// Absent in settings saved before saved cases existed.
+    #[serde(default)]
+    pub cases: CasesConfig,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -282,6 +299,7 @@ impl Default for Preferences {
             pseudonymization: PiiConfig::default(),
             spelling: SpellingConfig::default(),
             updates: UpdatesConfig::default(),
+            cases: CasesConfig::default(),
         }
     }
 }

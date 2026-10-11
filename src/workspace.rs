@@ -5,6 +5,10 @@ use crate::session_store::{Session, TabRecord};
 use gpui::{Animation, AnimationExt, AnyElement, EventEmitter};
 use std::{collections::VecDeque, time::Duration};
 
+#[path = "workspace_cases.rs"]
+mod cases_ui;
+pub(crate) use cases_ui::bind_keys as bind_case_keys;
+
 pub(super) enum TabEvent {
     New,
     Open(Vec<PathBuf>),
@@ -23,6 +27,8 @@ pub(super) enum TabEvent {
     },
     /// Open a copied AI reply in a new tab and restore its aliases (ADR 0041).
     Restored(Arc<pii::ui::RestoredReply>),
+    /// The tab's mapping changed; save it into the tab's case.
+    CaseChanged,
 }
 impl EventEmitter<TabEvent> for DocumentView {}
 
@@ -140,6 +146,7 @@ pub(super) struct Workspace {
     persisted: Option<Session>,
     writing: bool,
     pending_write: Option<Session>,
+    cases: cases_ui::CaseState,
     _checkpoint: Option<gpui::Task<()>>,
 }
 
@@ -273,6 +280,7 @@ impl Workspace {
             persisted: None,
             writing: false,
             pending_write: None,
+            cases: Default::default(),
             _checkpoint: None,
         };
         this.settings_subscription =
@@ -842,6 +850,7 @@ impl Workspace {
                     }
                     cx.notify();
                 });
+                this.attach_case(id, window, cx);
                 cx.notify();
             });
         })
@@ -1101,7 +1110,9 @@ impl Workspace {
                         .as_ref()
                         .and_then(|view| view.read(cx).session.document.path.clone());
                 }
+                self.case_changed(id, cx);
             }
+            TabEvent::CaseChanged => self.case_changed(id, cx),
             TabEvent::ToggleTheme => {
                 let theme = self.theme.get().toggle();
                 self.theme.set(theme);
@@ -1236,6 +1247,12 @@ impl Workspace {
         if self.quitting.is_some() || self.closing_tab.is_some() || self.finishing {
             return;
         }
+        if !self.tabs.iter().any(|tab| tab.id == id) || !self.confirm_mapping_close(id, window, cx)
+        {
+            return;
+        }
+        // A member's latest mapping reaches its case before the tab goes.
+        self.case_changed(id, cx);
         let Some(tab) = self.tabs.iter().find(|tab| tab.id == id) else {
             return;
         };
@@ -1348,6 +1365,7 @@ impl Workspace {
     }
 
     fn finish_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.flush_cases(cx);
         for tab in &self.tabs {
             if let Some(view) = &tab.view {
                 Self::release(view, window, cx);
@@ -1379,6 +1397,7 @@ impl Workspace {
                     && view.preview.source.is_none()
                     && view.editor.read(cx).text().is_empty();
                 record.blank_disposable = record.blank && view.blank_disposable;
+                record.case = view.case.as_ref().map(|link| link.id.clone());
                 if let Some(path) = &view.session.document.path {
                     record.markdown = path.clone();
                 }
@@ -2063,6 +2082,31 @@ impl Workspace {
                     )
             })
             .collect::<Vec<_>>();
+        // A case's header sits above its first member in each run of tabs.
+        let mut rows_with_cases = Vec::with_capacity(rows.len());
+        let mut previous: Option<String> = None;
+        for (index, row) in rows.into_iter().enumerate() {
+            let link = self.tabs[index]
+                .view
+                .as_ref()
+                .and_then(|v| v.read(cx).case.clone());
+            let id = link.as_ref().map(|l| l.id.clone());
+            if let Some(link) = link.filter(|_| id != previous) {
+                let count = self.tabs[index..]
+                    .iter()
+                    .take_while(|t| {
+                        t.view
+                            .as_ref()
+                            .and_then(|v| v.read(cx).case.as_ref().map(|l| l.id.clone()))
+                            == id
+                    })
+                    .count();
+                rows_with_cases.push(self.case_header(&link, self.tabs[index].id, count, cx));
+            }
+            previous = id;
+            rows_with_cases.push(row.into_any_element());
+        }
+        let rows = rows_with_cases;
         let new_row = ui::control("sidebar-new", "+", theme, true)
             .track_focus(&self.panel_new_focus)
             .aria_label("New Markdown tab")
@@ -2361,6 +2405,9 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|this, _: &Quit, window, cx| this.quit(window, cx)))
             .on_action(
+                cx.listener(|this, _: &OpenCase, window, cx| this.show_case_list(window, cx)),
+            )
+            .on_action(
                 cx.listener(|this, _: &Close, window, cx| this.close_tab(this.active, window, cx)),
             )
             .on_action(cx.listener(|this, _: &Open, window, cx| {
@@ -2439,6 +2486,7 @@ impl Render for Workspace {
                                         cx.notify();
                                     },
                                 ))
+                                .children(self.case_menu_items(id, cx))
                                 .child(
                                     div()
                                         .id("context-close-tab")
@@ -2471,6 +2519,7 @@ impl Render for Workspace {
                     .with_priority(1),
                 )
             })
+            .children(self.case_list(cx))
             .when_some(self.update_banner(cx), |view, banner| view.child(banner))
             .when_some(self.notice.clone(), |view, notice| {
                 let palette = self.theme.get().pdf_style();

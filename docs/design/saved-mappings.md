@@ -227,6 +227,13 @@ their aliases** rather than applied replacements (#4, #16): Apply then Copy for
 AI sends the next round. Phase 1 places Paste AI Response in the toolbar and the
 File menu (mdoc has no Edit menu).
 
+### Phase 2 notes (2026-10-11)
+
+Implemented as recorded in ADR 0041 "Phase 2 as implemented". Narrowings to
+revisit: Linux cases disabled until Secret Service support; case names default
+to the document name (rename inline); the close question is per tab close, not
+quit; closed cases are listed only under File → Open Case….
+
 ## Frontier
 
 Empty as of round 5. Accepted record: [ADR 0041](../adr/0041-cases-and-ai-response-restoration.md).

@@ -1,7 +1,7 @@
 # Cases and AI-response restoration
 
-Status: Accepted design, 2026-10-11; phase 1 implemented the same day, phases
-2–4 not yet. See the [design interview](../design/saved-mappings.md) for all 27 decisions and the
+Status: Accepted design, 2026-10-11; phases 1 and 2 implemented the same day,
+phases 3–4 not yet. See the [design interview](../design/saved-mappings.md) for all 27 decisions and the
 prior-art review. From phase 2, supersedes the "mappings and originals are never
 serialized" rule of [ADR 0002](0002-reviewable-local-pseudonymization.md),
 [ADR 0014](0014-highlighted-pii-replacements.md) and
@@ -61,6 +61,24 @@ modelled on typical assistant output; replies captured from ChatGPT and Claude
 still need adding before release.
 Phase 2 requires encryption, tamper and leak checks (no originals in the
 manifest or plaintext app data).
+
+## Phase 2 as implemented
+
+- `src/cases.rs` stores one `<id>.case` file per case in `mdoc/cases/`:
+  `MDOCCASE1`, a 12-byte nonce, then AES-256-GCM over JSON, authenticated with
+  the case id. The key is a Keychain generic password on macOS
+  (`io.github.lawkitt.mdoc` / `case-key`) and a DPAPI-protected `key.dpapi` on
+  Windows. Linux has no Secret Service integration yet, so cases are disabled
+  there with an explanation (no plaintext fallback).
+- A case is created from the tab context menu (**Save mapping as case**), named
+  after the document; it is renamed inline from the context menu or by
+  double-clicking its sidebar header. No naming dialog.
+- Reopening a member seeds its review with the case's identities and re-links
+  exact current or earlier alias tokens as applied replacements.
+- The unsaved-mapping question is asked on tab close, not on quit, and can be
+  turned off in Settings → Saved cases. Closed cases are reached from
+  **File → Open Case…**; the empty page does not list them yet.
+- Tests use an injected store and never touch the real key or app data.
 
 ## Consequences
 

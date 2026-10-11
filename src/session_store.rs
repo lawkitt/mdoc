@@ -30,6 +30,8 @@ pub struct TabRecord {
     pub preview_zoom: Option<f32>,
     pub preview_fit: PreviewFit,
     pub preview_split: Option<f32>,
+    /// The saved case this document belongs to (ADR 0041); never its contents.
+    pub case: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -84,6 +86,10 @@ pub fn load(path: &Path) -> io::Result<Session> {
             .attachment
             .as_ref()
             .is_some_and(|path| !path.is_absolute())
+            || tab
+                .case
+                .as_ref()
+                .is_some_and(|id| id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()))
             || !tab.scroll_y.is_finite()
             || tab.preview_zoom.is_some_and(|z| !z.is_finite())
             || tab
@@ -147,9 +153,15 @@ mod tests {
             preview_zoom: Some(1.25),
             preview_fit: PreviewFit::Manual,
             preview_split: Some(0.6),
+            case: Some("ab".repeat(16)),
         });
         save(&path, &session).unwrap();
         assert_eq!(load(&path).unwrap(), session);
+        // A case is referenced by id only; anything else is rejected.
+        session.tabs[0].case = Some("../secret".into());
+        save(&path, &session).unwrap();
+        assert!(load(&path).is_err());
+        session.tabs[0].case = Some("ab".repeat(16));
         session.tabs.clear();
         save(&path, &session).unwrap();
         assert_eq!(load(&path).unwrap(), session);

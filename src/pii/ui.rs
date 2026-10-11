@@ -326,6 +326,7 @@ impl DocumentView {
         self.sync_selection_action(cx);
         // Entity and alias spans feed spelling exclusions.
         self.schedule_spellcheck(false, cx);
+        self.schedule_case_save(cx);
     }
     pub(crate) fn pseudonymize(
         &mut self,
