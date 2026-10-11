@@ -78,7 +78,9 @@ than the repository. Nothing lets local development run the same checks as CI.
 ## Consequences
 
 - Linux, Intel and Windows arm64 users must build from source.
-- Unsigned betas need right-click → Open on macOS and "Run anyway" on Windows.
+- Unsigned betas need System Settings → Privacy & Security → Open Anyway on
+  macOS (right-click → Open no longer works from macOS 15) and "Run anyway" on
+  Windows.
 - The Windows installer grows by about 25 MB.
 - v0.1.0-beta.1 was withdrawn unpublished: its hardened-runtime signature
   refused the downloaded runtimes, which only a packaged build shows; that

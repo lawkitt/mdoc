@@ -68,3 +68,10 @@ checksum, review decisions and replacement/provenance implementation. Optional
 gazetteer and ONNX features are disabled. See the
 [reuse decision](docs/adr/0017-selected-rust-presidio-reuse.md), including its
 historical research and verification reference.
+
+README images in [docs/images/](docs/images/): the Word screenshot shows the UK
+Model Services Contract, Crown copyright, used under the
+[Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/);
+the scanned page is from *Brown v. Board of Education*, 347 U.S. 483 (1954), a
+public-domain U.S. court opinion. The services agreement in the animation is
+fictitious, written for the demo.

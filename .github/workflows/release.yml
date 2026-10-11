@@ -189,7 +189,7 @@ jobs:
               echo "> ⚠️ **Pre-release.** Published for testing. Behaviour and artifacts are not final."
               echo
             fi
-            echo "> Builds are not yet signed. macOS: right-click mdoc → **Open** on first launch."
+            echo "> Builds are not yet signed. macOS: open mdoc once, then **System Settings → Privacy & Security → Open Anyway**."
             echo "> Windows: SmartScreen → **More info** → **Run anyway**. Verify downloads with \`SHA256SUMS\`"
             echo "> or \`gh attestation verify <file> -R ${GITHUB_REPOSITORY}\`."
             echo
