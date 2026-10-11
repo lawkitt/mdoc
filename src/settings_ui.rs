@@ -19,6 +19,8 @@ pub enum Event {
     Checked,
     Compare(Model),
     Finished(Model, Result<Option<ocr::Installed>, String>),
+    /// Restart now: quit through the workspace, then relaunch (ADR 0040).
+    RestartToUpdate,
 }
 #[derive(Clone, Debug)]
 pub enum Status {
@@ -241,6 +243,12 @@ impl Panel {
         self.show(window, cx);
         self.scroll
             .scroll_to_item(if matches!(model, Model::Ocr(_)) { 0 } else { 1 });
+        cx.notify();
+    }
+    /// Open Settings at Updates, the last section (the update banner).
+    pub fn show_updates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show(window, cx);
+        self.scroll.scroll_to_bottom();
         cx.notify();
     }
     pub fn index(model: Model) -> usize {
@@ -592,7 +600,8 @@ impl Panel {
             .child(self.dictionary_summary(theme, cx))
             .into_any_element()
     }
-    /// Settings → Updates (ADR 0038): detection only, never installs.
+    /// Settings → Updates: detection (ADR 0038) and, on macOS, installation
+    /// after an explicit click (ADR 0040).
     fn updates_section(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
         let p = theme.pdf_style();
         let accent = theme.search_accent();
@@ -619,24 +628,52 @@ impl Panel {
                         flip(&mut this.draft.updates);
                         this.persist(cx);
                         if this.draft.updates.check_automatically {
-                            updater::spawn_check(this.draft.updates.include_prereleases, cx);
+                            updater::spawn_check(this.draft.updates.include_prereleases, true, cx);
                         }
                     }
                 }))
         };
-        let status = if state.checking {
-            "Checking for updates…".to_string()
-        } else if let Some(update) = &state.available {
-            format!(
-                "mdoc {} is available. You have {}.",
-                update.version,
-                env!("CARGO_PKG_VERSION")
-            )
-        } else if state.checked {
-            format!("mdoc {} is the latest version.", env!("CARGO_PKG_VERSION"))
-        } else {
-            format!("You have mdoc {}.", env!("CARGO_PKG_VERSION"))
+        let installs = !matches!(
+            state.eligibility,
+            Some(Err(updater::Ineligible::Unsupported))
+        );
+        let status = match &state.install {
+            updater::Install::Downloading { version, .. } => format!(
+                "Downloading mdoc {version}… {}%",
+                state.percent().unwrap_or(0)
+            ),
+            updater::Install::Ready { version, .. } => {
+                format!(
+                    "mdoc {version} is ready. It replaces this version when mdoc restarts or quits."
+                )
+            }
+            updater::Install::Failed { version, message } => {
+                format!("Couldn't update to mdoc {version}. {message}")
+            }
+            updater::Install::Idle if state.checking => "Checking for updates…".to_string(),
+            updater::Install::Idle => match &state.available {
+                Some(update) => format!(
+                    "mdoc {} is available. You have {}.",
+                    update.version,
+                    env!("CARGO_PKG_VERSION")
+                ),
+                None if state.checked => {
+                    format!("mdoc {} is the latest version.", env!("CARGO_PKG_VERSION"))
+                }
+                None => format!("You have mdoc {}.", env!("CARGO_PKG_VERSION")),
+            },
         };
+        // Why this copy can't install the available update, if it can't.
+        let blocked = state
+            .available
+            .as_ref()
+            .and_then(|_| state.installable().err())
+            .filter(|why| !why.is_empty() && installs);
+        let can_install = state.installable().is_ok()
+            && matches!(
+                state.install,
+                updater::Install::Idle | updater::Install::Failed { .. }
+            );
         let notes = state.available.as_ref().map(|u| {
             let text = u.notes.trim();
             match text.char_indices().nth(400) {
@@ -644,21 +681,47 @@ impl Panel {
                 None => text.to_owned(),
             }
         });
+        let release = state
+            .available
+            .as_ref()
+            .map(|u| u.html_url.clone())
+            .or_else(|| match &state.install {
+                updater::Install::Failed { version, .. } => Some(updater::release_url(version)),
+                _ => None,
+            });
+        let busy = matches!(state.install, updater::Install::Downloading { .. });
         div().flex().flex_col().gap_2().mt_4()
             .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Updates"))
-            .child(div().text_size(px(11.)).text_color(p.header_muted).child("mdoc asks GitHub whether a newer version exists. It sends no document data and never downloads or installs anything."))
+            .child(div().text_size(px(11.)).text_color(p.header_muted).child(if installs {
+                "mdoc asks GitHub whether a newer version exists. It sends no document data, and downloads an update only when you click Download and install."
+            } else {
+                "mdoc asks GitHub whether a newer version exists. It sends no document data and never downloads or installs anything."
+            }))
             .child(div().flex().flex_wrap().items_center().gap_2()
                 .child(toggle("updates-automatic", "Check when mdoc starts", updates.check_automatically, true, |u| u.check_automatically = !u.check_automatically, cx))
                 .child(toggle("updates-prereleases", "Include pre-releases", updates.include_prereleases || prerelease_build, !prerelease_build, |u| u.include_prereleases = !u.include_prereleases, cx)))
             .when(prerelease_build, |v| v.child(div().text_size(px(11.)).text_color(p.header_muted).child("This is a pre-release build, so pre-releases are always included.")))
             .child(div().flex().flex_wrap().items_center().gap_2()
                 .child(div().when(cfg!(test), |v| v.debug_selector(|| "updates-status".into())).flex_1().child(status))
-                .child(self.scrolled_quiet("updates-check", "Check now", theme, !state.checking, cx)
+                .when(!busy, |v| v.child(self.scrolled_quiet("updates-check", "Check now", theme, !state.checking, cx)
                     .when(cfg!(test), |v| v.debug_selector(|| "updates-check".into()))
-                    .on_click(cx.listener(|this, _, _, cx| updater::spawn_check(this.draft.updates.include_prereleases, cx))))
-                .when_some(state.available.clone(), |v, update| v.child(self.scrolled_control("updates-view", "View release ↗", theme, true, cx)
+                    .on_click(cx.listener(|this, _, _, cx| updater::spawn_check(this.draft.updates.include_prereleases, false, cx)))))
+                .when(can_install, |v| v.child(self.scrolled_control("updates-install", if matches!(state.install, updater::Install::Failed { .. }) { "Try again" } else { "Download and install" }, theme, true, cx)
+                    .when(cfg!(test), |v| v.debug_selector(|| "updates-install".into()))
+                    .border_color(accent).text_color(accent)
+                    .on_click(|_, _, cx| updater::start_install(cx))))
+                .when(busy, |v| v.child(self.scrolled_quiet("updates-cancel", "Cancel", theme, true, cx)
+                    .when(cfg!(test), |v| v.debug_selector(|| "updates-cancel".into()))
+                    .on_click(|_, _, cx| updater::cancel_install(cx))))
+                .when(matches!(state.install, updater::Install::Ready { .. }), |v| v.child(self.scrolled_control("updates-restart", "Restart now", theme, true, cx)
+                    .when(cfg!(test), |v| v.debug_selector(|| "updates-restart".into()))
+                    .border_color(accent).text_color(accent)
+                    .on_click(cx.listener(|_, _, _, cx| cx.emit(Event::RestartToUpdate)))))
+                .when_some(release, |v, url| v.child(self.scrolled_control("updates-view", "View release ↗", theme, true, cx)
                     .when(cfg!(test), |v| v.debug_selector(|| "updates-view".into()))
-                    .on_click(move |_, _, cx| cx.open_url(&update.html_url)))))
+                    .on_click(move |_, _, cx| cx.open_url(&url)))))
+            .when_some(match &state.install { updater::Install::Downloading { received, total, .. } => Some((*received, *total)), _ => None }, |v, (received, total)| v.child(ui::progress_bar(received, total, theme)))
+            .when_some(blocked, |v, why| v.child(div().text_size(px(11.)).text_color(p.header_muted).child(why)))
             .when_some(notes.filter(|n| !n.is_empty()), |v, notes| v.child(div().text_size(px(11.)).text_color(p.header_muted).child(notes)))
             .into_any_element()
     }
@@ -969,20 +1032,70 @@ mod tests {
         );
         cx.update(|_, cx| assert!(!updater::state(cx).checking));
 
-        cx.update(|_, cx| {
-            cx.set_global(updater::UpdateState {
-                checking: false,
-                checked: true,
-                available: Some(updater::UpdateAvailable {
-                    version: "9.0.0".into(),
-                    html_url: "https://github.com/lawkitt/mdoc/releases/tag/v9.0.0".into(),
-                    notes: "Notes".into(),
-                }),
+        let set = |cx: &mut gpui::VisualTestContext, state: updater::UpdateState| {
+            cx.update(|_, cx| {
+                cx.set_global(state);
+                cx.refresh_windows();
             });
-            cx.refresh_windows();
-        });
-        cx.run_until_parked();
+            cx.run_until_parked();
+        };
+        let found = updater::UpdateState {
+            checked: true,
+            available: Some(updater::test_update("9.0.0")),
+            ..Default::default()
+        };
+        // Until this copy is known to be eligible, only the release page.
+        set(cx, found.clone());
         assert!(cx.debug_bounds("updates-view").is_some());
+        assert!(cx.debug_bounds("updates-install").is_none());
+        // An eligible copy offers the install; a download can be cancelled.
+        set(
+            cx,
+            updater::UpdateState {
+                eligibility: Some(Ok(())),
+                ..found.clone()
+            },
+        );
+        assert!(cx.debug_bounds("updates-install").is_some());
+        set(
+            cx,
+            updater::UpdateState {
+                eligibility: Some(Ok(())),
+                install: updater::Install::Downloading {
+                    version: "9.0.0".into(),
+                    received: 10,
+                    total: 100,
+                    progress: updater::Progress::default(),
+                },
+                ..found.clone()
+            },
+        );
+        assert!(cx.debug_bounds("updates-install").is_none());
+        click(cx, "updates-cancel");
+        cx.update(|_, cx| assert!(matches!(updater::state(cx).install, updater::Install::Idle)));
+        // A staged update offers Restart now, which the workspace carries out.
+        set(
+            cx,
+            updater::UpdateState {
+                eligibility: Some(Ok(())),
+                install: updater::Install::Ready {
+                    version: "9.0.0".into(),
+                    staged: Default::default(),
+                },
+                ..found
+            },
+        );
+        let restarted = Rc::new(Cell::new(false));
+        let seen = restarted.clone();
+        let _subscription = cx.update(|_, cx| {
+            cx.subscribe(&panel, move |_, event, _| {
+                if matches!(event, Event::RestartToUpdate) {
+                    seen.set(true);
+                }
+            })
+        });
+        click(cx, "updates-restart");
+        assert!(restarted.get());
     }
     #[gpui::test]
     fn apply_is_explicit_and_close_discards_draft(cx: &mut TestAppContext) {

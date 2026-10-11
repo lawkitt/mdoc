@@ -304,6 +304,7 @@ impl Workspace {
                     settings_ui::Event::Compare(model) => {
                         this.open_comparison(*model, window, cx);
                     }
+                    settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
                 }),
             );
         this
@@ -402,7 +403,111 @@ impl Workspace {
             .unwrap_or_default()
             .updates;
         if updates.check_automatically {
-            crate::updater::spawn_check(updates.include_prereleases, cx);
+            crate::updater::spawn_check(updates.include_prereleases, true, cx);
+        }
+    }
+    /// The update banner (ADR 0040): a slim accent strip above the content.
+    /// Clicking it opens Settings → Updates (the *updated* notice opens the
+    /// release instead); × dismisses it.
+    fn update_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use crate::updater::BannerKind;
+        let state = crate::updater::state(cx);
+        let banner = state.banner()?;
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let accent = theme.search_accent();
+        let version = banner.version.clone();
+        let (text, action) = match banner.kind {
+            BannerKind::Available => (format!("mdoc {version} is available."), "Update…"),
+            BannerKind::Downloading => (
+                format!(
+                    "Downloading mdoc {version}… {}%",
+                    state.percent().unwrap_or(0)
+                ),
+                "Details…",
+            ),
+            BannerKind::Ready => (format!("mdoc {version} is ready."), "Restart to update"),
+            BannerKind::Failed => (format!("Couldn't update to mdoc {version}."), "Details…"),
+            BannerKind::Updated => (format!("mdoc was updated to {version}."), "What's new ↗"),
+        };
+        let label = format!("{text} {action}");
+        let open =
+            move |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| match banner.kind {
+                BannerKind::Updated => cx.open_url(&crate::updater::release_url(&version)),
+                BannerKind::Ready => this.restart_to_update(window, cx),
+                _ => {
+                    window.activate_window();
+                    this.settings
+                        .update(cx, |panel, cx| panel.show_updates(window, cx));
+                }
+            };
+        Some(
+            div()
+                .id("update-banner")
+                .when(cfg!(test), |v| v.debug_selector(|| "update-banner".into()))
+                .role(gpui::Role::Button)
+                .aria_label(label)
+                .key_context("UiControl")
+                .tab_index(0)
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_3()
+                .py_1()
+                .text_size(px(12.))
+                .bg(gpui::Hsla { a: 0.08, ..accent })
+                .border_b_1()
+                .border_color(palette.border)
+                .cursor_pointer()
+                .hover(move |s| s.bg(gpui::Hsla { a: 0.14, ..accent }))
+                .focus_visible(move |s| s.bg(gpui::Hsla { a: 0.14, ..accent }))
+                .on_click(cx.listener(move |this, _, window, cx| open(this, window, cx)))
+                .child(div().size(px(7.)).rounded_full().bg(accent).flex_shrink_0())
+                .child(div().min_w_0().text_color(palette.header_fg).child(text))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_color(accent)
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .child(action),
+                )
+                .child(
+                    div()
+                        .id("dismiss-update-banner")
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "dismiss-update-banner".into())
+                        })
+                        .flex_shrink_0()
+                        .role(gpui::Role::Button)
+                        .aria_label("Dismiss update notice")
+                        .key_context("UiControl")
+                        .tab_index(0)
+                        .px_2()
+                        .rounded_md()
+                        .cursor_pointer()
+                        .hover(|v| v.bg(palette.placeholder_bg))
+                        .focus_visible(|s| s.bg(palette.placeholder_bg))
+                        .child("×")
+                        .on_click(cx.listener(|_, _, _, cx| {
+                            cx.stop_propagation();
+                            crate::updater::dismiss_banner(cx);
+                        })),
+                )
+                .into_any_element(),
+        )
+    }
+
+    /// Restart now (ADR 0040): the ordinary quit — unsaved-change prompts,
+    /// session save — swaps the staged update in, then mdoc relaunches.
+    pub(super) fn restart_to_update(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        crate::updater::request_restart(cx);
+        self.settings
+            .update(cx, |panel, cx| panel.close(window, cx));
+        self.quit(window, cx);
+        // Quitting can't start now (a prompt is open): don't relaunch later.
+        if self.quitting.is_none() && !self.finishing {
+            crate::updater::cancel_restart(cx);
         }
     }
     pub(super) fn show_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1007,6 +1112,7 @@ impl Workspace {
                 }
             }
             TabEvent::CloseCancelled => {
+                crate::updater::cancel_restart(cx);
                 self.quitting = None;
                 self.quit_active = None;
                 self.closing_tab = None;
@@ -1344,6 +1450,8 @@ impl Workspace {
                             cx.spawn_in(window, async move |this, cx| {
                                 if answer.await.ok() == Some(1) {
                                     let _ = this.update_in(cx, |this, window, cx| this.finish_quit(window, cx));
+                                } else {
+                                    let _ = this.update(cx, |_, cx| crate::updater::cancel_restart(cx));
                                 }
                             }).detach();
                         }
@@ -2349,6 +2457,7 @@ impl Render for Workspace {
                     .with_priority(1),
                 )
             })
+            .when_some(self.update_banner(cx), |view, banner| view.child(banner))
             .when_some(self.notice.clone(), |view, notice| {
                 let palette = self.theme.get().pdf_style();
                 let accent = style::markdown_style(self.theme.get()).alert_warning;

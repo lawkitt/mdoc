@@ -149,6 +149,17 @@ fn main() {
         }
         return;
     }
+    // `just smoke-update` (ADR 0040): update this copy in place, headless.
+    if args.get(1).is_some_and(|arg| arg == "--mdoc-self-update") {
+        match updater::self_update() {
+            Ok(message) => println!("{message}"),
+            Err(error) => {
+                eprintln!("mdoc self-update failed: {error}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     let initial: Vec<_> = args.into_iter().skip(1).map(PathBuf::from).collect();
     let application = gpui_platform::application();
     let open_context = Rc::new(RefCell::new(
@@ -175,6 +186,9 @@ fn main() {
     application.run(move |cx: &mut App| {
         cx.on_app_quit(|cx| {
             model_work::shutdown();
+            // Blocking on purpose: GPUI waits only briefly for async quit
+            // work, and a staged update must be swapped in before exit.
+            updater::apply_at_quit(cx);
             let executor = cx.background_executor().clone();
             async move {
                 executor
@@ -185,6 +199,7 @@ fn main() {
             }
         })
         .detach();
+        updater::init(cx);
         mdoc_editor::bind_keys(cx);
         markdown_search::bind_keys(cx);
         pii::ui::bind_keys(cx);
@@ -259,7 +274,12 @@ fn main() {
         *open_context.borrow_mut() = Some((handle, cx.to_async()));
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
-                cx.quit();
+                // Restart now (ADR 0040): relaunch after the swap at quit.
+                if updater::restart_requested(cx) {
+                    cx.restart();
+                } else {
+                    cx.quit();
+                }
             }
         })
         .detach();

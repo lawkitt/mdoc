@@ -113,6 +113,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just perf` | Ignored performance tests, serially |
 | `just package` | This machine's installers into `dist/` |
 | `just smoke-package` | OCR from the packaged artifact: the `.dmg`'s signed app, or the release `mdoc.exe` (release gate) |
+| `just smoke-update [dmg]` | An older Developer ID signed `.dmg` updates itself to the latest release through `--mdoc-self-update` (manual, before releases that change the updater) |
 | `just release <version>` | Release commit and tag (below) |
 | `just icon`, `just actionlint` | Icon assets; workflow lint |
 
