@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Usage: scripts/package.sh
 # Builds this machine's release artifacts into dist/ (ADR 0037):
-#   macOS arm64  mdoc_<version>_arm64.dmg
+#   macOS arm64  mdoc_<version>_arm64.dmg, Developer ID signed and notarized
+#                when APPLE_SIGNING_IDENTITY is set (scripts/macos-sign.sh);
+#                MDOC_REQUIRE_SIGNING=1 refuses an unsigned build
 #   Windows x64  mdoc_<version>_x64-setup.exe, plus mdoc_<version>_x64.msi for
 #                stable versions (MSI ProductVersion rejects pre-release tags)
 source "$(dirname "$0")/lib.sh"
@@ -17,16 +19,32 @@ cargo fetch --locked
 
 case "$(platform)" in
   macos-arm64)
-    cargo packager --release -f app -f dmg
+    # The .app only: cargo-packager would sign a .dmg ad hoc, and a .dmg it
+    # builds would repack the ad-hoc .app; both are done below instead.
+    cargo packager --release -f app
+    app=target/release/mdoc.app
+    if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+      scripts/macos-sign.sh app "$app"
+    elif [ -n "${MDOC_REQUIRE_SIGNING:-}" ]; then
+      die "MDOC_REQUIRE_SIGNING is set but APPLE_SIGNING_IDENTITY is not"
+    else
+      echo "APPLE_SIGNING_IDENTITY not set: ad-hoc signed, not notarized"
+    fi
     # Without this entitlement the hardened runtime refuses the downloaded
     # PDFium and ONNX Runtime libraries, and OCR/pseudonymization break only
     # in packaged builds.
-    entitlements=$(codesign -d --entitlements - --xml target/release/mdoc.app 2>/dev/null)
+    entitlements=$(codesign -d --entitlements - --xml "$app" 2>/dev/null)
     [[ $entitlements == *com.apple.security.cs.disable-library-validation* ]] ||
       die "mdoc.app is missing the disable-library-validation entitlement"
-    dmg=$(find target/release -maxdepth 1 -name 'mdoc_*.dmg' | head -1)
-    [ -n "$dmg" ] || die "cargo-packager produced no .dmg in target/release"
-    mv "$dmg" "dist/mdoc_${v}_arm64.dmg"
+    dmg="dist/mdoc_${v}_arm64.dmg"
+    stage=$(mktemp -d)
+    ditto "$app" "$stage/mdoc.app"
+    ln -s /Applications "$stage/Applications"
+    hdiutil create -quiet -volname mdoc -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$dmg"
+    rm -rf "$stage"
+    if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+      scripts/macos-sign.sh dmg "$dmg"
+    fi
     ;;
   windows-x64)
     redist=$(scripts/vc-redist.sh)

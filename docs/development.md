@@ -98,6 +98,31 @@ packaging and the packaged-app gate, then a draft GitHub Release with `SHA256SUM
 Review the draft and publish it by hand. "Run workflow" on the Release workflow
 builds an unpublished test build from any branch.
 
+### macOS signing
+
+Signed builds are Developer ID signed and notarized
+([ADR 0039](adr/0039-macos-signing-and-notarization.md)) from the `release`
+environment. To set it up, or to replace an expiring certificate, the account
+holder runs these commands from a shell where the `CERTIFICATE_OSX_*` Keychain
+variables are loaded (values are piped, so they never appear on a command line):
+
+```sh
+gh api -X PUT repos/lawkitt/mdoc/environments/release
+printf %s "$CERTIFICATE_OSX_P12_DATA" | gh secret set APPLE_CERTIFICATE --env release -R lawkitt/mdoc
+printf %s "$CERTIFICATE_OSX_P12_PASSWORD" | gh secret set APPLE_CERTIFICATE_PASSWORD --env release -R lawkitt/mdoc
+printf %s "$CERTIFICATE_OSX_ID" | gh secret set APPLE_ID --env release -R lawkitt/mdoc
+printf %s "$CERTIFICATE_OSX_APP_PASSWORD" | gh secret set APPLE_PASSWORD --env release -R lawkitt/mdoc
+gh variable set APPLE_TEAM_ID --env release -R lawkitt/mdoc --body F33DLM8K53
+gh variable set APPLE_SIGNING_IDENTITY --env release -R lawkitt/mdoc --body "Developer ID Application: Tebriz Tagiev (F33DLM8K53)"
+```
+
+Then run the Release workflow with **sign** ticked to try the signed path
+without a tag. To sign locally, import the certificate into the login
+keychain, store notarization credentials once with
+`xcrun notarytool store-credentials mdoc-notary`, then run
+`APPLE_SIGNING_IDENTITY="Developer ID Application: Tebriz Tagiev (F33DLM8K53)"
+APPLE_KEYCHAIN_PROFILE=mdoc-notary just package`.
+
 ## App icon
 
 To update the app icon, replace `build/appicon.png` with a square PNG (ideally

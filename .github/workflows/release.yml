@@ -3,7 +3,8 @@ name: Release
 # Shipped targets only: Apple Silicon macOS and Windows x64 (ADR 0037).
 # A `v*` tag made by `just release` checks the tag against the repository
 # version, runs CI and the OCR smoke test on both targets, packages with
-# `just package`, and creates a DRAFT GitHub Release with SHA256SUMS and build
+# `just package` (Developer ID signed and notarized on macOS, ADR 0039), and
+# creates a DRAFT GitHub Release with SHA256SUMS and build
 # provenance. Publish the draft by hand after checking it.
 on:
   push:
@@ -21,12 +22,20 @@ on:
           hyphen marks a pre-release, which skips the .msi.
         required: true
         default: "0.0.0-dev"
+      sign:
+        description: >-
+          Developer ID sign and notarize the macOS build, as a tag build does
+          (uses the `release` environment's secrets).
+        type: boolean
+        default: false
 
 # Each job declares its own permissions; only `release` can write.
 permissions: {}
 
 env:
   EFFECTIVE_VERSION: ${{ inputs.version || github.ref_name }}
+  # Tag builds always sign; test builds only when asked.
+  SIGN: ${{ github.event_name == 'push' || inputs.sign }}
   # System git fetches the large gpui git dependency more reliably than libgit2.
   CARGO_NET_GIT_FETCH_WITH_CLI: "true"
 
@@ -87,6 +96,12 @@ jobs:
           - runner: windows-latest
             tools: just cargo-packager cargo-wix
     runs-on: ${{ matrix.runner }}
+    # Signed builds read the Apple secrets from the protected `release`
+    # environment (ADR 0039); other test builds get none and stay ad-hoc signed.
+    environment: ${{ (github.event_name == 'push' || inputs.sign) && 'release' || '' }}
+    env:
+      # A signed build must produce a Developer ID signed, notarized macOS app.
+      MDOC_REQUIRE_SIGNING: ${{ (github.event_name == 'push' || inputs.sign) && '1' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -116,12 +131,28 @@ jobs:
         shell: bash
         run: scripts/set-version.sh "$EFFECTIVE_VERSION"
 
+      - name: Load Apple signing credentials
+        if: runner.os == 'macOS' && env.SIGN == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: scripts/ci-apple-credentials.sh setup
+
       - run: just package
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
 
       # Gate on the artifact itself: the signed app (macOS) or release binary
       # (Windows) must load the downloaded runtimes and recognize the fixture.
       # Test builds are unsigned, which is how v0.1.0-beta.1 shipped broken.
       - run: just smoke-package
+
+      - name: Remove Apple signing credentials
+        if: always() && runner.os == 'macOS' && env.SIGN == 'true'
+        run: scripts/ci-apple-credentials.sh cleanup
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -189,8 +220,8 @@ jobs:
               echo "> ⚠️ **Pre-release.** Published for testing. Behaviour and artifacts are not final."
               echo
             fi
-            echo "> Builds are not yet signed. macOS: open mdoc once, then **System Settings → Privacy & Security → Open Anyway**."
-            echo "> Windows: SmartScreen → **More info** → **Run anyway**. Verify downloads with \`SHA256SUMS\`"
+            echo "> The macOS app is signed and notarized by Apple. The Windows installer is not yet signed:"
+            echo "> SmartScreen → **More info** → **Run anyway**. Verify downloads with \`SHA256SUMS\`"
             echo "> or \`gh attestation verify <file> -R ${GITHUB_REPOSITORY}\`."
             echo
             if [ -n "$HIGHLIGHTS" ]; then

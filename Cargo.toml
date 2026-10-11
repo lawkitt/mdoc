@@ -2,7 +2,7 @@
 name = "mdoc"
 version = "0.1.0-beta.2"
 edition = "2024"
-description = "A lightweight Markdown WYSIWYG editor with PDF and DOCX preview."
+description = "Prepare legal documents for AI on your own computer."
 license = "GPL-3.0-or-later"
 authors = ["lawkitt", "packetThrower"]
 repository = "https://github.com/lawkitt/mdoc"
@@ -76,8 +76,8 @@ copyright = "© 2026 packetThrower / Zorite contributors; © 2026 lawkitt / mdoc
 homepage = "https://github.com/lawkitt/mdoc"
 authors = ["lawkitt", "packetThrower"]
 publisher = "lawkitt"
-description = "A lightweight Markdown WYSIWYG editor with PDF and DOCX preview."
-long-description = "Edit local Markdown files with live formatting and view PDFs or DOCX files alongside your writing."
+description = "Prepare legal documents for AI on your own computer."
+long-description = "Convert PDF, scans and Word documents to Markdown and pseudonymize client details before you paste them into an AI tool."
 before-packaging-command = "cargo build --release"
 icons = ["resources/icons/icon.icns", "resources/icons/icon.png", "resources/icons/icon.ico"]
 
@@ -109,9 +109,8 @@ SectionEnd
 # Hand-curated Info.plist (single-instance launch, high-DPI, stable bundle id).
 info-plist-path = "resources/Info.plist"
 minimum-system-version = "11.0"
-# Ad-hoc codesign (`-`) so Gatekeeper doesn't flag the bundle as "damaged".
-# Not notarized — first launch is still the right-click -> Open path until an
-# Apple Developer account lands.
+# Ad-hoc signature (`-`) with the hardened runtime. Release builds are re-signed
+# with the Developer ID and notarized by scripts/macos-sign.sh (ADR 0039).
 signing-identity = "-"
 # Lets the hardened runtime load the downloaded PDFium and ONNX Runtime
 # libraries (see the plist); scripts/package.sh checks it is applied.

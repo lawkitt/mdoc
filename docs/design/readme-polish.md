@@ -52,9 +52,9 @@ Status: complete (2026-10-11).
 13. **Demo animation:** rendered with fframes from `videos/mdoc` in the web repository
     (`--cut readme`): a scanned page recognized into Markdown, then a
     fictitious services agreement whose names, email and phone number are
-    proposed, applied with **Apply replacements**, and listed as aliases; 22.5 s,
+    proposed, applied with **Apply replacements**, and listed as aliases; 20 s,
     looping, in the website's dark style. A screen recording from the app was
     tried and dropped in favour of the designed video.
-14. **Animation format:** animated WebP, 1200 px wide at 15 fps (1.8 MB), in
+14. **Animation format:** animated WebP, 1200 px wide at 15 fps (1.9 MB), in
     `docs/images/demo.webp`. The other fframes cuts (recognition,
     pseudonymization, AI handoff and a combined hero) are MP4s for the website.

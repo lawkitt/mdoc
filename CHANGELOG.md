@@ -4,6 +4,11 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- macOS releases are signed with a Developer ID and notarized by Apple, so mdoc
+  opens normally on first launch; the release gate checks Gatekeeper accepts the
+  `.dmg` and the app (ADR 0039).
+- Failed model downloads say plainly that GitHub couldn't be reached, or name
+  the proxy or HTTP problem, instead of showing the raw network error.
 - Update check: at launch mdoc asks GitHub whether a newer release exists and
   marks the Settings button with a dot when one does. Settings → Updates shows
   the version and notes with **View release**, **Check now**, and switches for
