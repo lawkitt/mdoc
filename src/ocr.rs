@@ -333,7 +333,7 @@ pub fn install_config(
     let _permit = crate::model_work::Permit::acquire_for("installing text recognition")?;
     install_config_in(&root()?, config, progress)
 }
-fn install_config_in(
+pub(crate) fn install_config_in(
     root: &Path,
     config: &crate::settings::OcrConfig,
     progress: &crate::model_download::Progress,

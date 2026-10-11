@@ -21,8 +21,8 @@ case "$(platform)" in
     # Without this entitlement the hardened runtime refuses the downloaded
     # PDFium and ONNX Runtime libraries, and OCR/pseudonymization break only
     # in packaged builds.
-    codesign -d --entitlements - --xml target/release/mdoc.app 2>/dev/null |
-      grep -q com.apple.security.cs.disable-library-validation ||
+    entitlements=$(codesign -d --entitlements - --xml target/release/mdoc.app 2>/dev/null)
+    [[ $entitlements == *com.apple.security.cs.disable-library-validation* ]] ||
       die "mdoc.app is missing the disable-library-validation entitlement"
     dmg=$(find target/release -maxdepth 1 -name 'mdoc_*.dmg' | head -1)
     [ -n "$dmg" ] || die "cargo-packager produced no .dmg in target/release"

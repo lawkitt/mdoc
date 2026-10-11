@@ -193,5 +193,6 @@ and Windows x64. Other platforms build from source, unsupported.
 **Update check**: detection-only comparison of the running version with the
 newest GitHub Release; shows Settings → Updates and never installs ([ADR 0038](docs/adr/0038-update-check.md)).
 
-**Release gate**: the OCR smoke test that must pass on every shipped target
-before a release is packaged.
+**Release gate**: checks a release must pass on every shipped target: the OCR
+smoke test before packaging, and the packaged-app self-test (`just
+smoke-package`) on the built artifact itself.

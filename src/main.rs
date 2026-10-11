@@ -13,6 +13,7 @@ mod import;
 mod import_session;
 mod markdown_search;
 mod search_session;
+mod self_test;
 use search_session::SearchRefresh;
 mod comparison;
 mod comparison_ui;
@@ -131,6 +132,20 @@ fn main() {
         if let Err(error) = docx_preview::run_worker(&PathBuf::from(input), &output) {
             let _ = std::fs::write(output.with_extension("error"), error.to_string());
             std::process::exit(1);
+        }
+        return;
+    }
+    if args.get(1).is_some_and(|arg| arg == "--mdoc-self-test") {
+        let (Some(pdf), Some(expected)) = (args.get(2), args.get(3)) else {
+            eprintln!("usage: mdoc --mdoc-self-test <pdf> <expected.txt>");
+            std::process::exit(2);
+        };
+        match self_test::run(std::path::Path::new(pdf), std::path::Path::new(expected)) {
+            Ok(()) => println!("mdoc self-test passed"),
+            Err(error) => {
+                eprintln!("mdoc self-test failed: {error}");
+                std::process::exit(1);
+            }
         }
         return;
     }

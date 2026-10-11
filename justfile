@@ -51,6 +51,10 @@ check-all: check smoke-ocr smoke-models
 package:
     scripts/package.sh
 
+# Release gate: OCR from the packaged app (signed .dmg / release mdoc.exe)
+smoke-package:
+    scripts/smoke-package.sh
+
 # Release commit + tag for <version>, push after confirmation (--no-push to skip)
 release version *flags:
     scripts/release.sh {{version}} {{flags}}

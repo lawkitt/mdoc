@@ -24,7 +24,10 @@ than the repository. Nothing lets local development run the same checks as CI.
   and `cargo test --workspace` on macos-26 and windows-latest, plus the Ubuntu
   lint job. Direct pushes to `main` remain; no branch protection yet.
 - **Release** runs on `v*` tags (manual dispatch builds without publishing): CI,
-  then the OCR smoke test on macos-26 and Windows x64, then packaging, then a
+  then the OCR smoke test on macos-26 and Windows x64, then packaging and the
+  **packaged-app gate** (`just smoke-package`: the shipped binary, on macOS from
+  the `.dmg` under its hardened-runtime signature, downloads the OCR runtime and
+  model and recognizes the English fixture via `mdoc --mdoc-self-test`), then a
   **draft** GitHub Release with CHANGELOG highlights, a commit list,
   `SHA256SUMS` and build-provenance attestations. The release fails when the
   tag differs from the version in `Cargo.toml`.
@@ -45,7 +48,8 @@ than the repository. Nothing lets local development run the same checks as CI.
   `scripts/*.sh`, run by Git Bash at its fixed path on Windows. CI calls the
   same recipes. Recipes: `setup`, `doctor`, `check`, `fmt`, `lint`, `test`,
   `perf`, `smoke-ocr`, `smoke-models` (`--download` to allow downloads),
-  `check-all`, `package`, `release <version>`, `icon`, `actionlint`. Tool
+  `check-all`, `package`, `smoke-package`, `release <version>`, `icon`,
+  `actionlint`. Tool
   versions live in `scripts/tools.env`, read by both CI and `just setup`.
 - **`just release <version>`** requires a clean, up-to-date `main`, runs `just
   check` (offering `check-all`), makes the release commit, renames
@@ -63,6 +67,10 @@ than the repository. Nothing lets local development run the same checks as CI.
   has `contents: write`.
 - Local recipes and CI run the same commands; everything must also run natively
   on the owner's Apple Silicon Mac and Windows x64 PC.
+- Release gates test the shipped artifact, not only test builds: the macOS
+  bundle keeps the hardened runtime with `disable-library-validation`
+  (`resources/entitlements.plist`), checked by `just package`, and must load
+  the downloaded PDFium and ONNX Runtime in `just smoke-package`.
 - Heavy and machine-dependent tests (performance, installed models, local
   files) stay `#[ignore]` and run only through local recipes; ordinary CI never
   needs network access beyond fetching dependencies.
@@ -72,3 +80,6 @@ than the repository. Nothing lets local development run the same checks as CI.
 - Linux, Intel and Windows arm64 users must build from source.
 - Unsigned betas need right-click → Open on macOS and "Run anyway" on Windows.
 - The Windows installer grows by about 25 MB.
+- v0.1.0-beta.1 was withdrawn unpublished: its hardened-runtime signature
+  refused the downloaded runtimes, which only a packaged build shows; that
+  gap is why `smoke-package` exists.
