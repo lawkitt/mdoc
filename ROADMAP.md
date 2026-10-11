@@ -40,6 +40,16 @@ This roadmap tracks work remaining as of 2026-10-10; accepted behavior lives in
    Apple Silicon macOS and Windows x64 are the first qualification targets;
    keep macOS, Windows and Linux buildable. Record unavailable checks explicitly.
 
+4. **Cases and the AI return journey** (accepted design:
+   [saved mappings](docs/design/saved-mappings.md), [ADR 0041](docs/adr/0041-cases-and-ai-response-restoration.md)). Save a document's mapping
+   as an encrypted local case, group tabs that share one case, and restore AI
+   responses into a new tab with reviewable restored values. Phase 1 (memory-only
+   Copy for AI and Paste AI Response) is implemented; captured ChatGPT/Claude
+   reply fixtures are still needed, then phases 2–4.
+5. **Preparation conveniences** from the [Anoni review](docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11):
+   a global shortcut that pseudonymizes the clipboard with the active case; a
+   before/after/side-by-side view of pseudonymized text; per-case category toggles.
+
 Keep the app and internal crates maintainable through concrete ownership/test
 improvements ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)). Conversion
 and OCR algorithm changes belong in the AnyDoc/pdf-inspector forks, backed by
@@ -47,12 +57,19 @@ source/output comparisons. Numerical budgets require measured baselines.
 
 ## Deferred
 
-- AI-analysis response import and restoration; the initial journey ends at handoff.
-- Cross-document identities, persistent/exported replacement maps, deliberate
-  forgetting of originals, and stronger anonymization claims.
+- Exporting or sharing a case key (encrypted file plus passphrase), a
+  cross-case dictionary, deliberate forgetting of originals, and stronger
+  anonymization claims. Saved cases and restoration moved to step 4.
+- Format-preserving pseudonymized DOCX/PDF export; an audit journal and
+  compliance report of replacements; a re-identification risk hint.
 - Bulk conversion beyond current lazy multi-file opening; design separately.
 - Online formatting/OCR repair; provider, credentials, trust and review need decisions.
-- Named/collapsible tab groups and opening a dropped folder as a group; folders
-  are currently skipped ([ADR 0028](docs/adr/0028-empty-page-and-file-drop.md)).
+- Opening a dropped folder as a case; folders are currently skipped
+  ([ADR 0028](docs/adr/0028-empty-page-and-file-drop.md)). Tab groups are cases (step 4).
+
+Not planned: realistic fake-name pseudonyms (harder to restore, may collide with
+real names; [ADR 0018](docs/adr/0018-document-local-identity-review.md)),
+an irreversible redaction mode ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)),
+watermarking and watched folders (outside AI preparation).
 - Extra recognizers/full PII engines and optional source/page references; qualify
   a concrete workflow before expanding scope.

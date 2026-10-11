@@ -2490,3 +2490,116 @@ fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mu
         assert!(panel.read(cx).open);
     });
 }
+
+#[gpui::test]
+fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut TestAppContext) {
+    use crate::pii::Category;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("contract.md");
+    let source = "Anna Petrova met Northwind Traders Ltd.";
+    std::fs::write(&path, source).unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![path], window, cx)
+    });
+    cx.run_until_parked();
+    let first = active(&tabs, cx);
+    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    first.update_in(cx, |view, window, cx| {
+        view.pii.reviewing = true;
+        view.pii
+            .review
+            .add_manual(source, 0..12, Category::Person)
+            .unwrap();
+        view.pii
+            .review
+            .add_manual(source, 17..38, Category::Organization)
+            .unwrap();
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+        assert_eq!(view.editor.read(cx).text(), "PERSON_1 met ORG_1.");
+    });
+    cx.run_until_parked();
+
+    click_toolbar(cx, "Copy for AI");
+    cx.update(|_, cx| {
+        let copied = cx.read_from_clipboard().unwrap().text().unwrap();
+        assert!(copied.starts_with("Note: names and other identifying details"));
+        assert!(copied.contains("such as PERSON_1 or ORG_1."));
+        assert!(copied.ends_with("---\n\nPERSON_1 met ORG_1."));
+        assert!(!copied.contains("Anna"), "the notice never names originals");
+    });
+
+    let reply = "**PERSON_1** owes ORG_1; person 1 and PERSON_7 disagree.";
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(reply.into()));
+    click_toolbar(cx, "Paste AI Response");
+    let restored = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert_ne!(tabs.read(cx).active, first_id);
+        let view = restored.read(cx);
+        assert_eq!(
+            view.editor.read(cx).text(),
+            "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 disagree."
+        );
+        assert_eq!(view.display_name(), "Restored – contract.md");
+        assert!(view.dirty(cx), "a restored reply is unsaved work");
+        assert_eq!(view.pii.review.remaining(), 3);
+        assert_eq!(view.unresolved_tokens(cx).len(), 1);
+        assert_eq!(
+            first.read(cx).editor.read(cx).text(),
+            "PERSON_1 met ORG_1.",
+            "the source tab is untouched"
+        );
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("restore-summary").is_some());
+
+    // Applying the proposals re-pseudonymizes with the source's aliases.
+    restored.update_in(cx, |view, window, cx| {
+        view.apply_all_pii(&PiiApplyAll, window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            restored.read(cx).editor.read(cx).text(),
+            "**PERSON_1** owes ORG_1; PERSON_1 and PERSON_7 disagree."
+        );
+    });
+    // Undo returns to the restored text, then to the reply as pasted.
+    for expected in [
+        "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 disagree.",
+        reply,
+    ] {
+        cx.update(|window, cx| {
+            window.focus(&restored.read(cx).editor.read(cx).focus_handle(cx), cx)
+        });
+        cx.dispatch_action(mdoc_editor::Undo);
+        cx.run_until_parked();
+        cx.update(|_, cx| assert_eq!(restored.read(cx).editor.read(cx).text(), expected));
+    }
+
+    // Unsaved restored replies are not written to the session manifest.
+    cx.update(|_, cx| {
+        let session = tabs.read(cx).snapshot(cx);
+        assert_eq!(session.tabs.len(), 1);
+    });
+}
+
+#[gpui::test]
+fn paste_ai_response_needs_applied_aliases_and_clipboard_text(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let view = active(&tabs, cx);
+    cx.simulate_input("PERSON_1 met ORG_1.");
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1".into()));
+    view.update_in(cx, |view, window, cx| {
+        view.paste_ai_response(&PasteAiResponse, window, cx);
+        assert!(
+            view.error
+                .as_deref()
+                .unwrap()
+                .contains("Apply replacements")
+        );
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 1));
+}

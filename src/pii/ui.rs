@@ -3,7 +3,9 @@ mod chooser;
 mod discovery;
 mod mapping;
 mod render;
+pub(crate) mod restore;
 mod scan;
+pub(crate) use restore::RestoredReply;
 use scan::ScanJob;
 #[cfg(test)]
 mod tests;
@@ -65,6 +67,8 @@ pub(crate) struct ReviewUi {
     popup_anchor: Cell<Option<gpui::Bounds<Pixels>>>,
     chooser_scroll: gpui::UniformListScrollHandle,
     popup_controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
+    /// Set in a tab opened by Paste AI Response (ADR 0041).
+    pub(crate) restore: Option<restore::RestoreState>,
 }
 impl Drop for ReviewUi {
     fn drop(&mut self) {
@@ -95,6 +99,7 @@ impl ReviewUi {
             popup_anchor: Cell::new(None),
             chooser_scroll: gpui::UniformListScrollHandle::new(),
             popup_controls: Default::default(),
+            restore: None,
         }
     }
     fn cancel(&mut self) {
@@ -232,6 +237,7 @@ impl DocumentView {
         self.pii.dismiss_popup();
         self.pii.error = None;
         self.pii.mapping = mapping::MappingUi::new(cx);
+        self.pii.restore = None;
         self.sync_annotations(cx);
     }
     pub(crate) fn pii_edited(&mut self, cx: &mut Context<Self>) {
@@ -312,6 +318,8 @@ impl DocumentView {
                 }
             });
         }
+        // A restored AI reply also marks placeholders it could not restore.
+        annotations.extend(self.unresolved_annotations(cx));
         self.editor.update(cx, |editor, cx| {
             editor.set_annotations(editor.revision(), annotations, cx)
         });
@@ -406,6 +414,10 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if id & APPLIED_ID == 0 && id & restore::UNRESOLVED_ID != 0 {
+            self.activate_unresolved((id & !restore::UNRESOLVED_ID) as usize, window, cx);
+            return;
+        }
         let review = &self.pii.review;
         let available = if id & APPLIED_ID != 0 {
             review.applied_occurrence(id & !APPLIED_ID).is_some()

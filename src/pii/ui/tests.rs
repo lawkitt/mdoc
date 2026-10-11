@@ -1519,3 +1519,59 @@ fn popup_delete_keeps_but_alias_field_backspace_edits(cx: &mut gpui::TestAppCont
         assert_eq!(app.editor.read(cx).text(), "Anna Bob");
     });
 }
+
+#[gpui::test]
+fn unrecognized_placeholders_are_assigned_or_left_never_guessed(cx: &mut gpui::TestAppContext) {
+    use crate::pii::restore::ExportedIdentity;
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let reply = restore::RestoredReply {
+        text: "PERSON_1 and PERSON_2 met PERSON_2 and ORG_5.".into(),
+        identities: vec![ExportedIdentity {
+            alias: "PERSON_1".into(),
+            previous: Vec::new(),
+            category: Category::Person,
+            custom: false,
+            originals: vec!["Anna Petrova".into()],
+        }],
+        source_name: "contract".into(),
+    };
+    app.update_in(cx, |app, window, cx| app.start_restored(&reply, window, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "Anna Petrova and PERSON_2 met PERSON_2 and ORG_5."
+        );
+        let tokens = app.unresolved_tokens(cx);
+        assert_eq!(tokens.len(), 3);
+        app.activate_annotation(restore::UNRESOLVED_ID | tokens[0].start as u64, window, cx);
+        app.assign_unresolved(0, window, cx);
+    });
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "Anna Petrova and Anna Petrova met PERSON_2 and ORG_5.",
+            "only the chosen token changes; nothing is guessed for its repeat"
+        );
+        assert_eq!(
+            app.pii.review.remaining(),
+            2,
+            "both now proposed as PERSON_1"
+        );
+        let tokens = app.unresolved_tokens(cx);
+        assert_eq!(tokens.len(), 2);
+        app.activate_annotation(restore::UNRESOLVED_ID | tokens[1].start as u64, window, cx);
+        app.leave_unresolved(window, cx);
+        assert_eq!(app.unresolved_tokens(cx).len(), 1, "ORG_5 is left as is");
+        assert!(app.pii.restore.as_ref().unwrap().map.identities().len() == 1);
+    });
+}
+
+#[test]
+fn ai_notice_names_aliases_only() {
+    let notice = restore::ai_notice(&["PERSON_1", "ORG_2"]);
+    assert!(notice.contains("such as PERSON_1 or ORG_2."));
+    assert!(notice.ends_with("---\n\n"));
+    assert!(restore::ai_notice(&[]).contains("PERSON_1"));
+}

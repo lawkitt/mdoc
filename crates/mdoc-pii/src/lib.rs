@@ -5,6 +5,7 @@ mod discovery;
 mod identities;
 mod manual;
 pub use identities::{Identity, IdentitySnapshot};
+pub mod restore;
 mod syntax;
 pub mod tracking;
 use candidates::Candidates;

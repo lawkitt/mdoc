@@ -239,15 +239,45 @@ impl DocumentView {
     pub(super) fn copy_button(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
         let enabled = self.can_copy_markdown() && !self.editor.read(cx).text().is_empty();
-        let (icon, text) = if self.copy_feedback.is_some() {
+        let copied = self.copy_feedback.is_some();
+        let (icon, text) = if copied && !self.copied_for_ai {
             (ui::Icon::Check, "Copied")
         } else {
             (ui::Icon::Copy, "Copy")
         };
+        // With aliases in the text, Copy for AI adds the placeholder notice (ADR 0041).
+        let for_ai = enabled && self.has_applied_aliases();
         div()
             .absolute()
             .top(px(12.))
             .right(px(20.))
+            .flex()
+            .gap_2()
+            .when(for_ai, |v| {
+                v.child(
+                    ui::floating_button(
+                        "Copy for AI",
+                        "Copy with a note asking the AI to keep placeholders",
+                        if copied && self.copied_for_ai {
+                            ui::Icon::Check
+                        } else {
+                            ui::Icon::Copy
+                        },
+                        if copied && self.copied_for_ai {
+                            "Copied"
+                        } else {
+                            "Copy for AI"
+                        },
+                        theme,
+                        true,
+                    )
+                    .min_w(px(122.))
+                    .when(cfg!(test), |v| v.debug_selector(|| "Copy for AI".into()))
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.copy_for_ai(&CopyForAi, window, cx)),
+                    ),
+                )
+            })
             .child(
                 ui::floating_button("Copy Markdown", "Copy Markdown", icon, text, theme, enabled)
                     // Wide enough for "Copied" so feedback does not resize the button.

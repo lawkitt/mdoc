@@ -21,6 +21,8 @@ pub(super) enum TabEvent {
         generation: u64,
         cancel: Arc<AtomicBool>,
     },
+    /// Open a copied AI reply in a new tab and restore its aliases (ADR 0041).
+    Restored(Arc<pii::ui::RestoredReply>),
 }
 impl EventEmitter<TabEvent> for DocumentView {}
 
@@ -1077,6 +1079,18 @@ impl Workspace {
                 self.new_tab(window, cx);
             }
             TabEvent::Open(paths) => self.open_paths(paths.clone(), window, cx),
+            TabEvent::Restored(reply) if self.quitting.is_none() => {
+                let reply = reply.clone();
+                let tab = self.new_tab(window, cx);
+                if let Some(view) = self
+                    .tabs
+                    .iter()
+                    .find(|t| t.id == tab)
+                    .and_then(|t| t.view.clone())
+                {
+                    view.update(cx, |view, cx| view.start_restored(&reply, window, cx));
+                }
+            }
             TabEvent::ImportState => self.refresh_import(window, cx),
             TabEvent::CloseRequested => self.close_tab(id, window, cx),
             TabEvent::OcrState(state) => self.set_ocr(state.clone(), cx),

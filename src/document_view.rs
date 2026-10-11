@@ -60,6 +60,8 @@ pub(crate) struct DocumentView {
     pub(crate) scroll: ScrollHandle,
     pub(crate) error: Option<String>,
     pub(crate) copy_feedback: Option<gpui::Task<()>>,
+    /// The running copy feedback belongs to Copy for AI, not Copy Markdown.
+    pub(crate) copied_for_ai: bool,
     pub(crate) view_bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
     pub(crate) split_dragging: bool,
     pub(crate) original_selected: bool,
@@ -187,6 +189,7 @@ impl DocumentView {
             scroll: ScrollHandle::new(),
             error: None,
             copy_feedback: None,
+            copied_for_ai: false,
             view_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
             split_dragging: false,
             original_selected: false,
@@ -254,6 +257,7 @@ impl DocumentView {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(
             self.editor.read(cx).text().to_owned(),
         ));
+        self.copied_for_ai = false;
         self.show_copy_feedback(cx);
     }
     pub(crate) fn show_copy_feedback(&mut self, cx: &mut Context<Self>) {
@@ -1505,6 +1509,8 @@ impl Render for DocumentView {
             .on_action(cx.listener(Self::open))
             .on_action(cx.listener(Self::import))
             .on_action(cx.listener(Self::copy_markdown))
+            .on_action(cx.listener(Self::copy_for_ai))
+            .on_action(cx.listener(Self::paste_ai_response))
             .on_action(cx.listener(Self::pseudonymize))
             .on_action(cx.listener(Self::add_pii_candidate))
             .on_action(cx.listener(Self::apply_all_pii))
@@ -1533,7 +1539,7 @@ impl Render for DocumentView {
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
-            .children(import_notice).children(ocr_notice.filter(|_| !show_markdown))
+            .children(import_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx)))
             .child(div().flex().flex_1().min_h_0()
                 .when(!self.source_only && show_markdown, |row| row.child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()

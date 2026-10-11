@@ -53,6 +53,20 @@ impl DocumentView {
                 })),
             )
             .children(self.scan_status(cx))
+            .when(enabled && self.has_applied_aliases(), |v| {
+                v.child(
+                    ui::icon_control(
+                        "Paste AI Response",
+                        "Paste AI response — restore the original names",
+                        ui::Icon::PasteReply,
+                        theme,
+                        true,
+                    )
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(crate::PasteAiResponse), cx)
+                    }),
+                )
+            })
             .into_any_element()
     }
     /// While a scan runs: a spinner and a stage label beside Pseudonymize that
@@ -146,6 +160,9 @@ impl DocumentView {
         )
     }
     pub(crate) fn pii_popup(&self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if let Some(popup) = self.unresolved_popup(cx) {
+            return Some(popup);
+        }
         if let Popup::Choose { ids, selected } = self.pii.popup.as_ref()? {
             return Some(self.annotation_chooser(ids.clone(), *selected, cx));
         }

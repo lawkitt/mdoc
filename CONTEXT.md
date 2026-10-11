@@ -20,12 +20,23 @@ Avoid "invert", which suggests a plain colour flip.
 **Markdown handoff**: saving or copying prepared Markdown to another tool.
 **Copy Markdown** copies the full current source exactly, including unsaved edits
 and pending proposals; it does not apply replacements or add a relationship legend.
+**Copy for AI** adds the placeholder note.
 
 **AI analysis handoff**: prepare Markdown for external AI analysis without
 bringing the response back. This is the first qualification journey ([ADR 0016](docs/adr/0016-pii-production-qualification-scope.md)).
 
-**AI analysis return journey**: bring an external AI response back into mdoc.
-Response import and identity restoration remain deferred.
+**AI analysis return journey**: bring an external AI response back into mdoc
+and restore its aliases from a case ([design](docs/design/saved-mappings.md)).
+
+**Copy for AI**: copy the full current Markdown with an alias-only note asking
+the AI to keep placeholders exactly; shown when aliases are applied.
+
+**Restore**: replace aliases in a pasted AI reply with the source's primary
+wordings, in a new tab where restored values are proposals keeping their aliases.
+UI label: **Paste AI Response**.
+
+**Unresolved token**: an alias-shaped token in AI output that matches no case
+identity (e.g. an invented `PERSON_9`); highlighted, never guessed.
 
 **Multi-file opening**: open several files for individual reading and lazy conversion.
 
@@ -69,8 +80,14 @@ explicit Apply edits Markdown. Avoid guaranteed anonymization, Anonymize or
 shared category markers ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)).
 
 **Replacement mapping**: local association between originals and aliases,
-separate from the Markdown handed off. Mappings and originals live only in the
-open document; Save/Copy/restart do not serialize them.
+separate from the Markdown handed off. Unsaved mappings live only in the open
+document; a case stores its mapping encrypted on disk.
+
+**Case**: a named, saved mapping shared by a group of tabs; shown as a tab group
+in the sidebar. One case per document. Avoid "matter" and "project".
+
+**Primary wording**: the variant an identity restores to; defaults to the
+longest full form and can be changed.
 
 **Placeholder / alias**: stable replacement token such as `PERSON_1`.
 Generated aliases come from mdoc; custom aliases retain deliberate user names

@@ -397,6 +397,7 @@ pub enum Icon {
     Check,
     Ocr,
     Spelling,
+    PasteReply,
 }
 
 impl Icon {
@@ -420,6 +421,7 @@ impl Icon {
             Self::Check => include_bytes!("../resources/ui/check.svg"),
             Self::Ocr => include_bytes!("../resources/ui/ocr.svg"),
             Self::Spelling => include_bytes!("../resources/ui/spelling.svg"),
+            Self::PasteReply => include_bytes!("../resources/ui/paste-reply.svg"),
         }
     }
 }

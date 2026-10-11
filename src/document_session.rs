@@ -10,6 +10,8 @@ pub(super) struct DocumentSession {
     pub source: Option<PathBuf>,
     pub warning: Option<String>,
     pub ocr_configuration: Option<crate::settings::OcrConfig>,
+    /// Name for an unsaved document without a source, e.g. a restored AI reply.
+    pub name: Option<String>,
 }
 
 impl DocumentSession {
@@ -19,6 +21,7 @@ impl DocumentSession {
         self.source = None;
         self.warning = None;
         self.ocr_configuration = None;
+        self.name = None;
     }
 
     pub fn import(&mut self, source: PathBuf, warning: Option<String>) {
@@ -37,6 +40,7 @@ impl DocumentSession {
             .as_ref()
             .map(|path| path.with_extension("md"))
             .and_then(|path| path.file_name()?.to_str().map(str::to_owned))
+            .or_else(|| self.name.clone())
             .unwrap_or_else(|| "Untitled.md".into())
     }
 
@@ -48,6 +52,7 @@ impl DocumentSession {
             .or(suggested.as_deref())
             .and_then(|path| path.file_name())
             .map(|name| name.to_string_lossy().into_owned())
+            .or_else(|| self.name.clone())
             .unwrap_or_else(|| "Untitled.md".into())
     }
 

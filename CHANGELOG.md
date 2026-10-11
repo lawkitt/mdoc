@@ -4,6 +4,15 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- AI return journey: after applying replacements, **Copy for AI** copies the
+  Markdown with a short note asking the assistant to keep placeholders such as
+  `PERSON_1` exactly. **Paste AI Response** (⌥⇧⌘V, the toolbar or the File
+  menu) opens the assistant's reply in a new tab with the original names
+  restored as proposals that keep their aliases, so Apply turns them back into
+  aliases before the next round. Reshaped aliases (`person 1`, `PERSON-1`,
+  `**PERSON_1**'s`, `PERSON_1-у`) restore; placeholders the original document
+  never had are highlighted in red and can be assigned to a name or left as
+  they are. Nothing is saved to disk (ADR 0041, phase 1).
 - In-app updates on macOS: Settings → Updates offers **Download and install**
   for a newer release, then **Restart now**. The download is checked against
   the release's `SHA256SUMS` and must carry the mdoc developer's Apple

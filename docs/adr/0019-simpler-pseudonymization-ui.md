@@ -1,6 +1,8 @@
 # Simplify pseudonymization around review, application and one copy action
 
 Status: accepted and implemented, 2026-10-08, following the user's "implement".
+The single copy action is superseded by [ADR 0041](0041-cases-and-ai-response-restoration.md),
+which adds Copy for AI with a placeholder notice; Copy Markdown stays exact.
 See the
 [historical design tree](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-ui-simplification.md).
 
