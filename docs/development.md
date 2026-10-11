@@ -129,8 +129,9 @@ APPLE_KEYCHAIN_PROFILE=mdoc-notary just package`.
 
 ## App icon
 
-To update the app icon, replace `build/appicon.png` with a square PNG (ideally
-at least 1024 × 1024), then run `just icon` on macOS. It requires
-the built-in `sips` and `iconutil` tools and Python 3, with no Python packages.
-The script preserves the source PNG and regenerates the packaged PNG, Windows
-ICO, and macOS ICNS assets.
+The app icon's source is `build/appicon.svg`: a square SVG whose rounded square
+fills the canvas. After changing it, run `just icon` on macOS (built-in `sips`
+and `iconutil`, Python 3 without packages). It renders every size from the
+vector: the macOS ICNS with the shape at 824 of 1024 px on a transparent
+canvas, as Apple's icon grid expects, and the Windows ICO and
+`resources/icons/icon.png` full-bleed.

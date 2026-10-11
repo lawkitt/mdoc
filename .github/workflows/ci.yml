@@ -12,7 +12,7 @@ on:
       - "LICENSE"
       - ".gitignore"
       - ".editorconfig"
-      - "build/appicon.png"
+      - "build/appicon.svg"
       - "scripts/make-icon.sh"
       - "docs/**"
       - ".github/workflows/actionlint.yml"

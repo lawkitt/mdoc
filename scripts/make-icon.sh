@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Regenerate the icon asset set from build/appicon.png. Keep this source
-# untouched; replace it with a square PNG (ideally at least 1024 x 1024).
+# Regenerate the icon asset set from build/appicon.svg, a square SVG whose
+# rounded square fills the canvas. Every size is rendered from the vector:
+#   - macOS .icns: the shape at 824 of 1024 px, centred on a transparent
+#     canvas, as Apple's icon grid expects (a full-bleed icon looks oversized
+#     in the Dock and Finder);
+#   - Windows .ico and resources/icons/icon.png: full-bleed.
 # Requires macOS's sips and iconutil, plus Python 3 (standard library only).
 set -euo pipefail
 cd "$(dirname "$0")/.."          # repo root
-SOURCE="build/appicon.png"
+SOURCE="build/appicon.svg"
 
 for tool in sips iconutil python3; do
   if ! command -v "$tool" >/dev/null 2>&1; then
@@ -13,34 +17,43 @@ for tool in sips iconutil python3; do
   fi
 done
 
-# Check the source before generating or replacing any assets.
-python3 - "$SOURCE" <<'PY'
-import struct
-import sys
-from pathlib import Path
-
-header = Path(sys.argv[1]).read_bytes()[:24]
-if len(header) != 24 or header[:8] != b'\x89PNG\r\n\x1a\n' or header[12:16] != b'IHDR':
-    sys.exit('build/appicon.png must be a PNG image.')
-width, height = struct.unpack('>II', header[16:24])
-if width != height or width == 0:
-    sys.exit('build/appicon.png must be square.')
-PY
-
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 ICONSET="$TMP/icon.iconset"
-mkdir -p "$ICONSET"
+mkdir -p "$ICONSET" "$TMP/mac"
 
-# Resize each size directly from the source, preserving transparency.
+# Check the source and write the padded macOS variant: the same drawing with
+# a viewBox grown so the original fills 824/1024 of it.
+python3 - "$SOURCE" "$TMP/mac.svg" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1]).read_text(encoding='utf-8')
+root = re.search(r'<svg\b[^>]*>', source)
+box = root and re.search(r'viewBox="([^"]+)"', root.group(0))
+if not box:
+    sys.exit('build/appicon.svg needs a viewBox on its <svg> element.')
+x, y, w, h = (float(v) for v in box.group(1).replace(',', ' ').split())
+if w != h or w <= 0:
+    sys.exit('build/appicon.svg must be square.')
+pad = w * (1024 / 824 - 1) / 2
+tag = root.group(0).replace(box.group(0), f'viewBox="{x - pad:g} {y - pad:g} {w + 2 * pad:g} {h + 2 * pad:g}"')
+Path(sys.argv[2]).write_text(source.replace(root.group(0), tag, 1), encoding='utf-8')
+PY
+
+render() { # svg, size, out
+  sips -s format png -z "$2" "$2" "$1" --out "$3" >/dev/null
+}
 for s in 16 32 48 64 128 256 512 1024; do
-  sips -z "$s" "$s" "$SOURCE" --out "$TMP/$s.png" >/dev/null
+  render "$SOURCE" "$s" "$TMP/$s.png"
+  render "$TMP/mac.svg" "$s" "$TMP/mac/$s.png"
 done
 
 # macOS .icns — listed in cargo-packager's icons.
 for s in 16 32 128 256 512; do
-  cp "$TMP/$s.png" "$ICONSET/icon_${s}x${s}.png"
-  cp "$TMP/$((s*2)).png" "$ICONSET/icon_${s}x${s}@2x.png"
+  cp "$TMP/mac/$s.png" "$ICONSET/icon_${s}x${s}.png"
+  cp "$TMP/mac/$((s*2)).png" "$ICONSET/icon_${s}x${s}@2x.png"
 done
 iconutil -c icns "$ICONSET" -o "$TMP/icon.icns"
 

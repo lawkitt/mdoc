@@ -59,7 +59,7 @@ smoke-package:
 release version *flags:
     scripts/release.sh {{version}} {{flags}}
 
-# Regenerate the icon set from build/appicon.png (macOS)
+# Regenerate the icon set from build/appicon.svg (macOS)
 icon:
     scripts/make-icon.sh
 
