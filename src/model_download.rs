@@ -121,14 +121,15 @@ pub fn fetch(
             .timeout_global(Some(std::time::Duration::from_secs(600)))
             .build(),
     );
-    let mut response = agent.get(url).call().map_err(|e| e.to_string())?;
+    let mut response = agent.get(url).call().map_err(|e| download_error(url, e))?;
     let mut input = response.body_mut().as_reader();
     let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
     let mut buf = [0; 65536];
     let mut total = 0;
     loop {
         progress.check()?;
-        let n = input.read(&mut buf).map_err(|e| e.to_string())?;
+        // A transfer that drops midway is a network failure like any other.
+        let n = input.read(&mut buf).map_err(|_| unreachable(url))?;
         if n == 0 {
             break;
         }
@@ -151,9 +152,82 @@ pub fn fetch(
     Ok(())
 }
 
+/// What a failed download means to the user. Lookup, connection, timeout and
+/// dropped-transfer errors all mean "no usable network"; the raw resolver text
+/// ("failed to lookup address information …") helps nobody. TLS failures are
+/// kept apart: on managed networks they usually mean a proxy or firewall.
+fn download_error(url: &str, error: ureq::Error) -> String {
+    use ureq::Error;
+    match error {
+        Error::Io(_)
+        | Error::Timeout(_)
+        | Error::HostNotFound
+        | Error::ConnectionFailed
+        | Error::BodyStalled => unreachable(url),
+        Error::Tls(_) | Error::Rustls(_) => format!(
+            "Couldn't make a secure connection to {}. A proxy or firewall on this network may be blocking it.",
+            host(url)
+        ),
+        Error::StatusCode(code) => format!(
+            "{} answered the download with HTTP {code}. Retry later.",
+            host(url)
+        ),
+        other => format!("Couldn't download from {}: {other}", host(url)),
+    }
+}
+fn unreachable(url: &str) -> String {
+    format!(
+        "Couldn't reach {}. Check your internet connection, then Retry.",
+        host(url)
+    )
+}
+fn host(url: &str) -> String {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_owned))
+        .unwrap_or_else(|| "the download server".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn download_failures_read_as_actions_not_resolver_text() {
+        let url = "https://github.com/owner/repo/releases/download/v1/model.onnx";
+        let lookup = std::io::Error::other(
+            "failed to lookup address information: nodename nor servname provided, or not known",
+        );
+        let offline = "Couldn't reach github.com. Check your internet connection, then Retry.";
+        for error in [
+            ureq::Error::Io(lookup),
+            ureq::Error::HostNotFound,
+            ureq::Error::ConnectionFailed,
+            ureq::Error::BodyStalled,
+        ] {
+            assert_eq!(download_error(url, error), offline);
+        }
+        assert!(
+            download_error(url, ureq::Error::Tls("bad certificate")).contains("proxy or firewall")
+        );
+        assert_eq!(
+            download_error(url, ureq::Error::StatusCode(503)),
+            "github.com answered the download with HTTP 503. Retry later."
+        );
+        // A refused connection goes through the real fetch path.
+        let dir = tempfile::tempdir().unwrap();
+        let error = fetch(
+            "https://127.0.0.1:1/model.onnx",
+            1,
+            "00",
+            &dir.path().join("model.onnx"),
+            &Progress::default(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error,
+            "Couldn't reach 127.0.0.1. Check your internet connection, then Retry."
+        );
+    }
     #[test]
     fn verified_files_are_reused_offline_and_cancel_keeps_them() {
         let dir = tempfile::tempdir().unwrap();
