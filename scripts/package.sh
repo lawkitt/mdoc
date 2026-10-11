@@ -21,7 +21,12 @@ case "$(platform)" in
   macos-arm64)
     # The .app only: cargo-packager would sign a .dmg ad hoc, and a .dmg it
     # builds would repack the ad-hoc .app; both are done below instead.
-    cargo packager --release -f app
+    # cargo-packager notarizes on its own when it sees Apple credentials, and
+    # would submit its ad-hoc .app (rejected); signing is scripts/macos-sign.sh's.
+    env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID -u APPLE_API_KEY \
+      -u APPLE_API_ISSUER -u APPLE_API_KEY_PATH -u APPLE_KEYCHAIN_PROFILE \
+      -u APPLE_CERTIFICATE -u APPLE_CERTIFICATE_PASSWORD \
+      cargo packager --release -f app
     app=target/release/mdoc.app
     if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
       scripts/macos-sign.sh app "$app"
