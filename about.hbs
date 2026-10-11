@@ -45,6 +45,39 @@
                 retained in resources/presidio-license.txt.</p>
         </div>
 
+        <h2>Attribution</h2>
+        <p>mdoc is a modified version of <a href="https://github.com/packetThrower/zorite">Zorite</a>,
+            originally developed by packetThrower (Will Lehnertz) and contributors.
+            Copyright &copy; 2026 packetThrower / Zorite contributors; copyright &copy; 2026
+            lawkitt / mdoc contributors for modifications. The application is licensed under
+            the GNU General Public License, version 3 or later, without warranty. The crates in
+            crates/ retain their MIT licenses and original copyright notices in each crate's
+            LICENSE file.</p>
+        <ul>
+            <li>Vendored GPUI Linux renderer: Zed, Apache-2.0, with Zorite's combining-mark
+                correction; see vendor/gpui-pre-wgpu/ZORITE-PATCH.md.</li>
+            <li>Text recognition: the MIT-licensed pdf-inspector fork, OAR/PaddleOCR models
+                (Apache-2.0), and separately downloaded PDFium and ONNX Runtime. Setup installs
+                their licenses and notices under mdoc/ocr/v1/licenses.</li>
+            <li>Pseudonymization: gliner2-rs 0.9.6 by Dario Finardi, published by Jugaad s.r.l.
+                (Apache-2.0); license and NOTICE in resources/gliner2-license.txt and
+                resources/gliner2-notice.txt. The optional GLiNER2 privacy PII model
+                (Apache-2.0) is installed with its model card, attribution and Microsoft MIT
+                terms. No model weights are distributed with mdoc.</li>
+            <li>Spellcheck: unmodified Hunspell dictionaries from LibreOffice: en_US (SCOWL by
+                Kevin Atkinson; affix file by Geoff Kuenning, BSD-style), en_GB (LGPL; David
+                Bartlett, Brian Kelk, Andrew Brown and Marco A.G. Pinto) and ru_RU
+                (BSD-style, &copy; 1997&ndash;2008 Alexander I. Lebedev). Notices are in
+                crates/mdoc-spell/dictionaries/.</li>
+            <li>Test fixtures retain their notices in tests/fixtures/import/README.md and
+                tests/fixtures/import/LICENSE.anydoc. The synthetic OCR qualification fixtures
+                are CC0-1.0.</li>
+            <li>README images: the Word screenshot shows the UK Model Services Contract, Crown
+                copyright, under the Open Government Licence v3.0; the scanned page is from the
+                public-domain opinion Brown v. Board of Education, 347 U.S. 483 (1954); the
+                Apple icon is from Simple Icons (CC0 1.0).</li>
+        </ul>
+
         <h2>Overview of licenses:</h2>
         <ul class="licenses-overview">
             {{#each overview}}

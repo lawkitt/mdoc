@@ -123,5 +123,5 @@ MPL-2.0, Helix), `zspell` (less mature), `hunspell-rs` (C++ FFI), `symspell`
   be used for endorsement. Implementation found it already UTF-8, so it ships
   unmodified.
 - en_GB turned out to be LGPL (compatible with the GPL app).
-- Notices: beside the dictionaries and in NOTICE.md (THIRD-PARTY-LICENSES is
-  generated from Rust crates only).
+- Notices: beside the dictionaries and in the attribution section of
+  THIRD-PARTY-LICENSES.html (its license list covers Rust crates only).

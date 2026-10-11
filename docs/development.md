@@ -1,6 +1,40 @@
 # Development notes
 
-Run the [repository gate](../README.md#development) before delivering code changes.
+## Build from source
+
+All dependencies, including the pinned AnyDoc converter, are public.
+
+```sh
+git clone https://github.com/lawkitt/mdoc.git
+cd mdoc
+cargo run
+# Or open a document:
+cargo run -- path/to/document.pdf
+```
+
+Development commands are [just](https://just.systems) recipes; CI runs the
+same ones. `just setup` installs the pinned tools, `just doctor` checks them.
+
+```sh
+just check      # fmt, cargo-deny, clippy and tests, as CI runs them
+just check-all  # plus the OCR and installed-model smoke tests (downloads)
+```
+
+The full list is under [Recipes](#recipes).
+
+## Project documentation
+
+- [Roadmap](../ROADMAP.md): status, next steps and deferred work.
+- [Glossary](../CONTEXT.md): product and code terminology.
+- [Architecture decisions](adr/): accepted behavior and its rationale.
+- [Evidence](evidence/): measurements and verification records.
+- [Production readiness](design/pseudonymization-production-readiness.md):
+  open qualification gates.
+- [Privacy and limitations](privacy.md).
+
+## Code layout
+
+Run the [repository gate](#build-from-source) before delivering code changes.
 
 Keep build caches for fast warm rebuilds. For occasional cleanup from the
 repository root, use `cargo clean --workspace` to remove workspace artifacts
@@ -37,7 +71,7 @@ artifacts. Avoid copying these into another configuration. AnyDoc supplies
 non-PDF conversion; pdf-inspector handles PDFs directly.
 
 For fork updates, test the fork first, review lockfile/transitive changes, then
-run the [repository gate](../README.md#development) and compare outputs against
+run the [repository gate](#build-from-source) and compare outputs against
 the source before changing fixture expectations. AnyDoc's PR 153 port is attributed in its fork; the fork
 began as a snapshot with unrelated upstream history, so port reviewed upstream
 changes rather than assuming a normal merge. Its transitive pdf-inspector 1.14.2
