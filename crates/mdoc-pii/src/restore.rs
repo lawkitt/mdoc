@@ -47,8 +47,12 @@ impl RestoreMap {
         let mut generated = HashMap::new();
         let mut custom = Vec::new();
         for (index, identity) in identities.iter().enumerate() {
-            for alias in std::iter::once(&identity.alias).chain(&identity.previous) {
-                match parse_alias(alias) {
+            for (current, alias) in std::iter::once((true, &identity.alias))
+                .chain(identity.previous.iter().map(|p| (false, p)))
+            {
+                // A custom alias matches exactly, even one that looks generated.
+                let custom_alias = current && identity.custom;
+                match parse_alias(alias).filter(|_| !custom_alias) {
                     Some(key) => {
                         generated.entry(key).or_insert(index);
                     }
@@ -92,7 +96,14 @@ impl RestoreMap {
                 }
             }
         }
-        tokens.sort_by_key(|t| (t.range.start, std::cmp::Reverse(t.range.end)));
+        // Where two readings cover the same span, the one naming an identity wins.
+        tokens.sort_by_key(|t| {
+            (
+                t.range.start,
+                std::cmp::Reverse(t.range.end),
+                t.identity.is_none(),
+            )
+        });
         let mut end = 0;
         tokens.retain(|t| {
             let keep = t.range.start >= end;
@@ -106,6 +117,7 @@ impl RestoreMap {
     /// Replace every known alias in `text` with its identity's primary wording.
     pub fn restore(&self, text: &str) -> Restoration {
         let mut edits = Vec::new();
+        let mut sources = Vec::new();
         let mut values = HashSet::new();
         let mut unresolved = 0;
         for token in self.tokens(text) {
@@ -119,6 +131,7 @@ impl RestoreMap {
                         wording = &wording[..wording.len() - 1];
                     }
                     edits.push((token.range, wording.to_string()));
+                    sources.push(index);
                 }
                 None => unresolved += 1,
             }
@@ -128,6 +141,7 @@ impl RestoreMap {
             values: values.len(),
             unresolved,
             edits,
+            sources,
         }
     }
     /// Identity indices to offer for an unresolved `token`: those of the
@@ -161,11 +175,30 @@ pub struct Token {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Restoration {
     pub edits: Vec<(Range<usize>, String)>,
+    /// The identity index each edit restores, in edit order.
+    pub sources: Vec<usize>,
     /// Restored mentions.
     pub restored: usize,
     /// Distinct identities among them.
     pub values: usize,
     pub unresolved: usize,
+}
+
+impl Restoration {
+    /// Where each restored wording lands once the edits are applied, with the
+    /// identity index it restores.
+    pub fn restored_ranges(&self) -> Vec<(Range<usize>, usize)> {
+        let mut delta = 0isize;
+        self.edits
+            .iter()
+            .zip(&self.sources)
+            .map(|((range, value), &source)| {
+                let start = range.start.saturating_add_signed(delta);
+                delta += value.len() as isize - range.len() as isize;
+                (start..start + value.len(), source)
+            })
+            .collect()
+    }
 }
 
 fn word_char(c: char) -> bool {
@@ -315,10 +348,13 @@ impl Review {
     }
     /// Start this (empty) review with another document's identities: each
     /// original becomes a known wording proposed with its existing alias.
-    pub fn seed(&mut self, identities: &[ExportedIdentity], source: &str) {
+    /// Returns the new identity ids, in the order of `identities`.
+    pub fn seed(&mut self, identities: &[ExportedIdentity], source: &str) -> Vec<u64> {
+        let mut ids = Vec::with_capacity(identities.len());
         for exported in identities {
             self.next_id += 1;
             let id = self.next_id;
+            ids.push(id);
             self.identities.add(super::Identity {
                 id,
                 alias: exported.alias.clone(),
@@ -354,6 +390,7 @@ impl Review {
             }
         }
         self.refresh(source);
+        ids
     }
 }
 

@@ -278,3 +278,38 @@ fn choices_offer_the_token_category_first() {
     assert_eq!(map.choices("ORG-4")[0], 2);
     assert_eq!(map.choices("PERSON_9").len(), map.identities().len());
 }
+
+#[test]
+fn a_generated_looking_custom_alias_matches_exactly() {
+    let mut chosen = identity("PERSON_9", Category::Person, &["Anna Petrova"]);
+    chosen.custom = true;
+    chosen.previous = vec!["PERSON_1".into()];
+    let map = RestoreMap::new(vec![chosen]);
+    assert_eq!(
+        apply(&map, "PERSON_9 and PERSON_1"),
+        "Anna Petrova and Anna Petrova"
+    );
+    for reply in ["person 9", "PERSON-9", "PERSON_09"] {
+        assert_eq!(map.restore(reply).restored, 0, "{reply}");
+    }
+    assert_eq!(
+        map.restore("person 1").restored,
+        1,
+        "earlier generated aliases stay lenient"
+    );
+}
+
+#[test]
+fn restored_ranges_follow_the_applied_edits() {
+    let map = RestoreMap::new(vec![
+        identity("PERSON_1", Category::Person, &["John Smith"]),
+        identity("PERSON_2", Category::Person, &["John Smith"]),
+    ]);
+    let reply = "PERSON_1 met PERSON_2.";
+    let restoration = map.restore(reply);
+    let text = apply(&map, reply);
+    assert_eq!(text, "John Smith met John Smith.");
+    let ranges = restoration.restored_ranges();
+    assert_eq!(ranges, [(0..10, 0), (15..25, 1)]);
+    assert!(ranges.iter().all(|(r, _)| &text[r.clone()] == "John Smith"));
+}

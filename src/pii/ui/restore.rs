@@ -126,7 +126,7 @@ impl DocumentView {
             .update(cx, |editor, cx| editor.set_text(reply.text.clone(), cx));
         let map = RestoreMap::new(reply.identities.clone());
         let restoration = map.restore(&reply.text);
-        self.pii.review.seed(&reply.identities, &reply.text);
+        let ids = self.pii.review.seed(&reply.identities, &reply.text);
         self.pii.reviewing = true;
         self.pii.restore = Some(RestoreState {
             map,
@@ -139,10 +139,23 @@ impl DocumentView {
         });
         if !restoration.edits.is_empty() {
             let revision = self.editor.read(cx).revision();
-            self.editor.update(cx, |editor, cx| {
-                editor.replace_ranges(revision, &restoration.edits, cx);
+            let committed = self.editor.update(cx, |editor, cx| {
+                let committed = editor.replace_ranges(revision, &restoration.edits, cx);
                 editor.set_cursor(0, cx);
+                committed
             });
+            if committed {
+                let transaction = self.editor.read(cx).last_transaction().cloned().unwrap();
+                self.pii_transaction(&transaction, cx);
+                // Pin each restored wording to the identity whose alias it
+                // replaced: homonyms share a wording but not an identity.
+                let history = self.editor.read(cx).history_id();
+                for (range, source) in restoration.restored_ranges() {
+                    self.pii
+                        .review
+                        .commit_assignment(history, range, ids[source]);
+                }
+            }
         }
         self.sync_annotations(cx);
         self.update_title(window, cx);

@@ -1575,3 +1575,34 @@ fn ai_notice_names_aliases_only() {
     assert!(notice.ends_with("---\n\n"));
     assert!(restore::ai_notice(&[]).contains("PERSON_1"));
 }
+
+#[gpui::test]
+fn homonyms_keep_their_own_aliases_through_restore_and_apply(cx: &mut gpui::TestAppContext) {
+    use crate::pii::restore::ExportedIdentity;
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let person = |alias: &str| ExportedIdentity {
+        alias: alias.into(),
+        previous: Vec::new(),
+        category: Category::Person,
+        custom: false,
+        originals: vec!["John Smith".into()],
+    };
+    let reply = restore::RestoredReply {
+        text: "PERSON_1 met PERSON_2, then PERSON_1 left.".into(),
+        identities: vec![person("PERSON_1"), person("PERSON_2")],
+        source_name: "contract".into(),
+    };
+    app.update_in(cx, |app, window, cx| app.start_restored(&reply, window, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "John Smith met John Smith, then John Smith left."
+        );
+        app.apply_all_pii(&PiiApplyAll, window, cx);
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "PERSON_1 met PERSON_2, then PERSON_1 left."
+        );
+    });
+}
