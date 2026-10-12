@@ -56,7 +56,7 @@ impl StoredIdentity {
                 .collect(),
         })
     }
-    fn names(&self, alias: &str) -> bool {
+    pub fn names(&self, alias: &str) -> bool {
         self.alias == alias || self.previous.iter().any(|p| p == alias)
     }
 }
@@ -112,6 +112,17 @@ impl Case {
         case.merge(identities);
         case
     }
+    /// The next generated alias of `category` that no identity has ever used.
+    pub fn next_alias(&self, category: Category) -> String {
+        let used = |alias: &str| self.identities.iter().any(|i| i.names(alias));
+        (1..)
+            .map(|n| format!("{}_{n}", category.token()))
+            .find(|alias| !used(alias))
+            .unwrap()
+    }
+    pub fn exported_one(&self, index: usize) -> Option<ExportedIdentity> {
+        self.identities.get(index)?.exported()
+    }
     pub fn exported(&self) -> Vec<ExportedIdentity> {
         self.identities
             .iter()
@@ -124,12 +135,19 @@ impl Case {
     pub fn merge(&mut self, exported: &[ExportedIdentity]) {
         for e in exported {
             let incoming = StoredIdentity::from_exported(e);
-            let found = self.identities.iter().position(|s| {
-                s.category == incoming.category
-                    && (s.names(&incoming.alias)
-                        || incoming.previous.iter().any(|p| s.names(p))
-                        || incoming.originals.iter().any(|o| s.originals.contains(o)))
-            });
+            // Same alias first, so homonyms stay apart; then a shared original,
+            // whatever the category (a category change renames the alias).
+            let found = self
+                .identities
+                .iter()
+                .position(|s| {
+                    s.names(&incoming.alias) || incoming.previous.iter().any(|p| s.names(p))
+                })
+                .or_else(|| {
+                    self.identities
+                        .iter()
+                        .position(|s| incoming.originals.iter().any(|o| s.originals.contains(o)))
+                });
             // An alias moves to one identity only.
             for (i, other) in self.identities.iter_mut().enumerate() {
                 if Some(i) != found && other.alias != incoming.alias {
@@ -144,6 +162,7 @@ impl Case {
                         stored.previous.push(old);
                     }
                     stored.alias = incoming.alias.clone();
+                    stored.category = incoming.category.clone();
                     for p in incoming.previous {
                         if !stored.previous.contains(&p) {
                             stored.previous.push(p);

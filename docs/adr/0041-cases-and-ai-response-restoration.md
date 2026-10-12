@@ -1,7 +1,7 @@
 # Cases and AI-response restoration
 
-Status: Accepted design, 2026-10-11; phases 1 and 2 implemented the same day,
-phases 3–4 not yet. See the [design interview](../design/saved-mappings.md) for all 27 decisions and the
+Status: Accepted design, 2026-10-11; phases 1–2 implemented the same day and
+phase 3 on 2026-10-12; phase 4 not yet. See the [design interview](../design/saved-mappings.md) for all 27 decisions and the
 prior-art review. From phase 2, supersedes the "mappings and originals are never
 serialized" rule of [ADR 0002](0002-reviewable-local-pseudonymization.md),
 [ADR 0014](0014-highlighted-pii-replacements.md) and
@@ -79,6 +79,27 @@ manifest or plaintext app data).
   turned off in Settings → Saved cases. Closed cases are reached from
   **File → Open Case…**; the empty page does not list them yet.
 - Tests use an injected store and never touch the real key or app data.
+
+## Phase 3 as implemented
+
+- A tab joins a case from **Move to case “…”** in its context menu (the five
+  most recent cases) or by dropping it on a case header; joining another case
+  leaves the current one first. `mdoc_pii::restore::plan_join` lines it up:
+  a shared original takes the case alias, a clashing alias the next number no
+  identity ever used, and unmatched case identities are seeded as proposals.
+  The retagging is one undo step in the joining tab.
+- After a member's mapping changes, identities whose alias or category changed
+  are pushed to the other open members as an edit in each one's own history;
+  case identities a member lacks are seeded there. Undo in the originating tab
+  is an ordinary change that propagates again; there is no linked, blockable
+  case-wide undo. Merges and splits are not propagated yet; members pick up the
+  resulting aliases on their next sync.
+- Case matching prefers the same alias, then a shared original in any category,
+  so homonyms stay apart and a category change renames rather than duplicates.
+- The replacements panel footer folds **In “case”, not in this document (n)**:
+  those names with their aliases, and a field adding a name to the case
+  (category guessed; reclassify it in a member). Case headers fold their
+  member rows (the active tab stays visible); folding is kept in the session.
 
 ## Consequences
 

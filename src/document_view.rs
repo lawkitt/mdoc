@@ -66,6 +66,10 @@ pub(crate) struct DocumentView {
     /// The saved case this tab's mapping belongs to (ADR 0041).
     pub(crate) case: Option<cases::CaseLink>,
     pub(crate) case_save: Option<gpui::Task<()>>,
+    /// The case's identities, for the panel's "in case" section.
+    pub(crate) case_names: Vec<pii::restore::ExportedIdentity>,
+    pub(crate) case_names_open: bool,
+    pub(crate) case_term: Option<Entity<markdown_search::SearchInput>>,
     pub(crate) view_bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
     pub(crate) split_dragging: bool,
     pub(crate) original_selected: bool,
@@ -196,6 +200,9 @@ impl DocumentView {
             copied_for_ai: false,
             case: None,
             case_save: None,
+            case_names: Vec::new(),
+            case_names_open: false,
+            case_term: None,
             view_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
             split_dragging: false,
             original_selected: false,

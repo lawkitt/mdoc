@@ -7,7 +7,7 @@ use std::{collections::VecDeque, time::Duration};
 
 #[path = "workspace_cases.rs"]
 mod cases_ui;
-pub(crate) use cases_ui::bind_keys as bind_case_keys;
+pub(crate) use cases_ui::{CancelCaseName, ConfirmCaseName, bind_keys as bind_case_keys};
 
 pub(super) enum TabEvent {
     New,
@@ -29,6 +29,8 @@ pub(super) enum TabEvent {
     Restored(Arc<pii::ui::RestoredReply>),
     /// The tab's mapping changed; save it into the tab's case.
     CaseChanged,
+    /// Add a name to the tab's case before it appears (ADR 0041 #11).
+    AddCaseTerm(String),
 }
 impl EventEmitter<TabEvent> for DocumentView {}
 
@@ -649,6 +651,7 @@ impl Workspace {
     ) {
         self.sidebar_visible = session.sidebar_visible;
         self.sidebar_choice = session.sidebar_choice;
+        self.cases.collapsed = session.collapsed_cases.iter().cloned().collect();
         let selected = session.active;
         // Session paths were normalized when opened/saved. Do not stat every file
         // during startup; missing files are diagnosed when activated.
@@ -1124,6 +1127,7 @@ impl Workspace {
                 self.case_changed(id, cx);
             }
             TabEvent::CaseChanged => self.case_changed(id, cx),
+            TabEvent::AddCaseTerm(term) => self.add_case_term(id, term, cx),
             TabEvent::ToggleTheme => {
                 let theme = self.theme.get().toggle();
                 self.theme.set(theme);
@@ -1396,6 +1400,11 @@ impl Workspace {
         let mut session = Session {
             sidebar_visible: self.sidebar_visible,
             sidebar_choice: self.sidebar_choice,
+            collapsed_cases: {
+                let mut ids: Vec<_> = self.cases.collapsed.iter().cloned().collect();
+                ids.sort();
+                ids
+            },
             ..Session::default()
         };
         for tab in &self.tabs {
@@ -2114,8 +2123,14 @@ impl Workspace {
                     .count();
                 rows_with_cases.push(self.case_header(&link, self.tabs[index].id, count, cx));
             }
+            let folded = id
+                .as_ref()
+                .is_some_and(|id| self.cases.collapsed.contains(id))
+                && self.tabs[index].id != self.active;
             previous = id;
-            rows_with_cases.push(row.into_any_element());
+            if !folded {
+                rows_with_cases.push(row.into_any_element());
+            }
         }
         let rows = rows_with_cases;
         let new_row = ui::control("sidebar-new", "+", theme, true)

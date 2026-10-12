@@ -42,6 +42,9 @@ pub struct Session {
     pub sidebar_visible: bool,
     #[serde(default)]
     pub sidebar_choice: Option<bool>,
+    /// Saved cases folded in the sidebar, by id.
+    #[serde(default)]
+    pub collapsed_cases: Vec<String>,
 }
 impl Default for Session {
     fn default() -> Self {
@@ -51,6 +54,7 @@ impl Default for Session {
             active: 0,
             sidebar_visible: true,
             sidebar_choice: None,
+            collapsed_cases: Vec::new(),
         }
     }
 }
@@ -70,6 +74,13 @@ pub fn load(path: &Path) -> io::Result<Session> {
     let session: Session = serde_json::from_slice(&bytes)?;
     if session.version != 1 {
         return Err(io::Error::other("Unsupported session version"));
+    }
+    if session
+        .collapsed_cases
+        .iter()
+        .any(|id| id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()))
+    {
+        return Err(io::Error::other("Invalid case id in session"));
     }
     if session.tabs.iter().any(|tab| {
         !(if tab.source_only {

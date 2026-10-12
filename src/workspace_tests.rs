@@ -2835,3 +2835,199 @@ fn replies_join_the_source_case_and_save_as_moves_the_member(cx: &mut TestAppCon
         );
     });
 }
+
+/// Open `text` at `name` in `dir`, mark `names` and apply them.
+fn open_applied(
+    tabs: &Entity<Workspace>,
+    cx: &mut VisualTestContext,
+    dir: &std::path::Path,
+    name: &str,
+    text: &str,
+    names: &[(&str, crate::pii::Category)],
+) -> u64 {
+    let path = dir.join(name);
+    std::fs::write(&path, text).unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![path], window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.pii.reviewing = true;
+        for (original, category) in names {
+            let start = text.find(original).unwrap();
+            view.pii
+                .review
+                .add_manual(text, start..start + original.len(), *category)
+                .unwrap();
+        }
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| tabs.read(cx).active)
+}
+
+#[gpui::test]
+fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext) {
+    use crate::pii::Category::{Organization, Person};
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(crate::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met Northwind Ltd.",
+        &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
+    );
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
+    cx.run_until_parked();
+    let case = cx.update(|_, cx| tabs.read(cx).cases.cases[0].id.clone());
+    let second = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Boris Ivanov wrote to Anna Petrova.",
+        &[("Boris Ivanov", Person)],
+    );
+    let second_view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            second_view.read(cx).editor.read(cx).text(),
+            "PERSON_1 wrote to Anna Petrova."
+        )
+    });
+
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(second, &case, window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = second_view.read(cx);
+        assert_eq!(view.case.as_ref().unwrap().id, case);
+        assert_eq!(
+            view.editor.read(cx).text(),
+            "PERSON_2 wrote to Anna Petrova.",
+            "Boris takes the next free number"
+        );
+        assert_eq!(view.pii.review.remaining(), 1, "Anna is proposed");
+        let tabs = tabs.read(cx);
+        assert!(
+            tabs.notice
+                .as_deref()
+                .unwrap()
+                .contains("1 alias renumbered")
+        );
+        let case = &tabs.cases.cases[0];
+        assert!(case.identities.iter().any(|i| i.alias == "PERSON_2"));
+    });
+    second_view.update_in(cx, |view, window, cx| {
+        view.apply_all_pii(&PiiApplyAll, window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            second_view.read(cx).editor.read(cx).text(),
+            "PERSON_2 wrote to PERSON_1."
+        )
+    });
+
+    // A rename in the first document reaches the second as its own edit.
+    let first_view = cx.update(|_, cx| {
+        tabs.read(cx)
+            .tabs
+            .iter()
+            .find(|t| t.id == first)
+            .and_then(|t| t.view.clone())
+            .unwrap()
+    });
+    first_view.update(cx, |view, cx| {
+        let anna = view.pii.review.identity_by_alias("PERSON_1").unwrap();
+        view.retag_identities(&[(anna, "BUYER".into(), Person, true)], cx)
+            .unwrap();
+    });
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            first_view.read(cx).editor.read(cx).text(),
+            "BUYER met ORG_1."
+        );
+        assert_eq!(
+            second_view.read(cx).editor.read(cx).text(),
+            "PERSON_2 wrote to BUYER."
+        );
+    });
+    // Undo in the second document is its own step.
+    cx.update(|window, cx| {
+        window.focus(&second_view.read(cx).editor.read(cx).focus_handle(cx), cx)
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            second_view.read(cx).editor.read(cx).text(),
+            "PERSON_2 wrote to PERSON_1."
+        )
+    });
+
+    // Folding the case is remembered in the session.
+    tabs.update(cx, |tabs, _| {
+        tabs.cases.collapsed.insert(case.clone());
+    });
+    cx.update(|_, cx| {
+        assert_eq!(
+            tabs.read(cx).snapshot(cx).collapsed_cases,
+            std::slice::from_ref(&case)
+        )
+    });
+}
+
+#[gpui::test]
+fn a_term_added_to_the_case_is_proposed_in_every_member(cx: &mut TestAppContext) {
+    use crate::pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(crate::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova hired Project Bluebird.",
+        &[("Anna Petrova", Person)],
+    );
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
+    cx.run_until_parked();
+    tabs.update(cx, |tabs, cx| {
+        tabs.add_case_term(first, "Project Bluebird", cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        let case = &tabs.cases.cases[0];
+        assert!(
+            case.identities
+                .iter()
+                .any(|i| i.originals == ["Project Bluebird"])
+        );
+        let view = view.read(cx);
+        assert_eq!(view.pii.review.remaining(), 1, "the new term is proposed");
+        assert_eq!(view.case_names.len(), 2);
+    });
+}

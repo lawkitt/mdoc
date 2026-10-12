@@ -4,6 +4,14 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- Cases with several documents: right-click a tab and choose **Move to case**,
+  or drag it onto a case's header. Names the case already knows take its
+  aliases, other names that clash get the next free number (one undo step), and
+  the case's other names are proposed wherever they appear. Renaming an alias or
+  changing its category in one document updates the other open documents of the
+  case, each as its own undoable edit. The replacements panel lists the case's
+  names this document doesn't mention and adds new names to the case before they
+  appear. Case headers fold their documents away (ADR 0041, phase 3).
 - Saved cases: right-click a tab with applied replacements and choose **Save
   mapping as case** to keep which original each alias stands for, encrypted on
   this computer (AES-256-GCM; the key is held by the macOS Keychain or Windows

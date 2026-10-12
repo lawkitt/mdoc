@@ -33,6 +33,8 @@ pub(super) struct CaseState {
     pub(super) list_open: bool,
     /// Tabs whose close already asked about their unsaved mapping.
     pub(super) asked: HashSet<u64>,
+    /// Cases whose member rows are folded under their header.
+    pub(super) collapsed: HashSet<String>,
 }
 
 impl Workspace {
@@ -250,10 +252,180 @@ impl Workspace {
         {
             case.members.push(path);
         }
-        if *case != before {
-            let case = case.clone();
-            self.enqueue_case(case, cx);
+        if *case == before {
+            return;
         }
+        // Renamed or recategorized identities, by the alias they had.
+        let renames: Vec<_> = before
+            .identities
+            .iter()
+            .zip(&case.identities)
+            .filter(|(old, new)| old.alias != new.alias || old.category != new.category)
+            .filter_map(|(old, _)| {
+                let index = case.identities.iter().position(|n| n.names(&old.alias))?;
+                Some((old.alias.clone(), case.exported_one(index)?))
+            })
+            .collect();
+        let added = case.identities.len() > before.identities.len();
+        let exported = case.exported();
+        view.update(cx, |view, _| view.case_names = exported.clone());
+        let case = case.clone();
+        self.enqueue_case(case, cx);
+        if renames.is_empty() && !added {
+            return;
+        }
+        // Other open members follow, each as an edit in its own history.
+        for tab in &self.tabs {
+            if tab.id == id {
+                continue;
+            }
+            if let Some(view) = &tab.view
+                && view.read(cx).case.as_ref().is_some_and(|l| l.id == link.id)
+            {
+                view.update(cx, |view, cx| {
+                    view.sync_case_identities(&renames, &exported, cx)
+                });
+            }
+        }
+    }
+    /// A name the case should replace before any document mentions it.
+    pub(super) fn add_case_term(&mut self, id: u64, term: &str, cx: &mut Context<Self>) {
+        let term = term.trim();
+        let Some(view) = self.tab_view(id) else {
+            return;
+        };
+        let Some(link) = view.read(cx).case.clone() else {
+            return;
+        };
+        let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == link.id) else {
+            return;
+        };
+        if term.is_empty()
+            || case
+                .identities
+                .iter()
+                .any(|i| i.originals.iter().any(|o| o == term))
+        {
+            return;
+        }
+        let category = pii::detector::guess_category(term, 0..term.len());
+        let alias = case.next_alias(category);
+        case.identities.push(crate::cases::StoredIdentity {
+            alias,
+            previous: Vec::new(),
+            category: category.token().into(),
+            custom: false,
+            originals: vec![term.to_string()],
+        });
+        let exported = case.exported();
+        let case = case.clone();
+        self.enqueue_case(case, cx);
+        for tab in &self.tabs {
+            if let Some(view) = &tab.view
+                && view.read(cx).case.as_ref().is_some_and(|l| l.id == link.id)
+            {
+                view.update(cx, |view, cx| view.sync_case_identities(&[], &exported, cx));
+            }
+        }
+        cx.notify();
+    }
+    /// Add a tab to a case (ADR 0041 #10): its names take the case's aliases or
+    /// fresh numbers in one undo step, and the case's other names are proposed.
+    pub(super) fn join_case(
+        &mut self,
+        id: u64,
+        case_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(view) = self.tab_view(id) else {
+            return;
+        };
+        if view.read(cx).case.as_ref().is_some_and(|l| l.id == case_id) {
+            return;
+        }
+        if !view.read(cx).can_copy_markdown() {
+            return;
+        }
+        if view.read(cx).case.is_some() {
+            self.remove_from_case(id, window, cx);
+        }
+        let Some(case) = self.cases.cases.iter().find(|c| c.id == case_id) else {
+            return;
+        };
+        let link = CaseLink::of(case);
+        let identities = case.exported();
+        let result = view.update(cx, |view, cx| {
+            let result = view.join_case_identities(&identities, cx);
+            if result.is_ok() {
+                view.case = Some(link.clone());
+            }
+            result
+        });
+        let summary = match result {
+            Ok(summary) => summary,
+            Err(error) => {
+                self.notice = Some(format!("Could not add the document to the case: {error}"));
+                cx.notify();
+                return;
+            }
+        };
+        if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) {
+            tab.record.case = Some(link.id.clone());
+        }
+        // Keep members together in the sidebar.
+        let last = self.tabs.iter().rposition(|t| {
+            t.id != id
+                && t.view
+                    .as_ref()
+                    .and_then(|v| v.read(cx).case.as_ref().map(|l| l.id == link.id))
+                    .unwrap_or(false)
+        });
+        if let Some(last) = last
+            && let Some(next) = self.tabs.get(last + 1).map(|t| t.id)
+            && next != id
+        {
+            self.reorder(id, next, cx);
+        } else if let Some(last) = last
+            && last + 1 == self.tabs.len()
+        {
+            let from = self.tabs.iter().position(|t| t.id == id).unwrap();
+            let tab = self.tabs.remove(from);
+            self.tabs.push(tab);
+        }
+        self.case_changed(id, cx);
+        let mut parts = Vec::new();
+        if summary.renumbered > 0 {
+            parts.push(format!(
+                "{} {} renumbered to fit the case",
+                summary.renumbered,
+                if summary.renumbered == 1 {
+                    "alias"
+                } else {
+                    "aliases"
+                }
+            ));
+        }
+        if summary.proposed > 0 {
+            parts.push(format!(
+                "{} {} from the case proposed",
+                summary.proposed,
+                if summary.proposed == 1 {
+                    "mention"
+                } else {
+                    "mentions"
+                }
+            ));
+        }
+        if !parts.is_empty() {
+            self.notice = Some(format!(
+                "Added to “{}”: {}. Undo in the document reverts the renumbering.",
+                link.name,
+                parts.join("; ")
+            ));
+        }
+        self.checkpoint(window, cx);
+        cx.notify();
     }
     /// A member saved under a new path no longer lives at `previous`.
     pub(super) fn case_member_moved(
@@ -617,6 +789,42 @@ impl Workspace {
             .pb_1()
             .text_size(px(11.))
             .text_color(palette.header_muted)
+            .drag_over::<TabDrag>(move |v, _, _, _| v.bg(theme.sidebar_selected()))
+            .on_drop(cx.listener({
+                let id = link.id.clone();
+                move |this, drag: &TabDrag, window, cx| this.join_case(drag.id, &id, window, cx)
+            }))
+            .child(
+                ui::control(
+                    gpui::SharedString::from(format!("collapse-case-{}", link.id)),
+                    if self.cases.collapsed.contains(&link.id) {
+                        "▸"
+                    } else {
+                        "▾"
+                    },
+                    theme,
+                    true,
+                )
+                .when(cfg!(test), |v| v.debug_selector(|| "collapse-case".into()))
+                .aria_label(if self.cases.collapsed.contains(&link.id) {
+                    "Expand case"
+                } else {
+                    "Collapse case"
+                })
+                .px_1()
+                .py_0()
+                .on_click(cx.listener({
+                    let id = link.id.clone();
+                    move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        if !this.cases.collapsed.remove(&id) {
+                            this.cases.collapsed.insert(id.clone());
+                        }
+                        this.checkpoint(window, cx);
+                        cx.notify();
+                    }
+                })),
+            )
             .child(
                 div()
                     .size(px(8.))
@@ -694,7 +902,45 @@ impl Workspace {
                 .child(label)
         };
         let link = self.tab_view(tab).and_then(|v| v.read(cx).case.clone());
-        match link {
+        let movable = self
+            .tab_view(tab)
+            .is_some_and(|v| v.read(cx).can_copy_markdown());
+        let moves: Vec<AnyElement> = if movable {
+            self.cases
+                .cases
+                .iter()
+                .filter(|c| link.as_ref().is_none_or(|l| l.id != c.id))
+                .take(5)
+                .map(|c| {
+                    let case_id = c.id.clone();
+                    let label = format!("Move to case “{}”", c.name);
+                    div()
+                        .id(gpui::SharedString::from(format!("context-move-{}", c.id)))
+                        .role(gpui::Role::Button)
+                        .aria_label(label.clone())
+                        .key_context("UiControl")
+                        .tab_index(0)
+                        .focus_visible(move |s| s.bg(palette.placeholder_bg))
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "context-move-case".into())
+                        })
+                        .px_3()
+                        .py_1()
+                        .rounded_sm()
+                        .cursor_pointer()
+                        .hover(move |v| v.bg(palette.placeholder_bg))
+                        .child(label)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.tab_menu = None;
+                            this.join_case(tab, &case_id, window, cx);
+                        }))
+                        .into_any_element()
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let mut items = match link {
             Some(link) => {
                 let rename = link.id.clone();
                 let delete = link.id.clone();
@@ -728,7 +974,9 @@ impl Workspace {
                     .into_any_element(),
             ],
             None => Vec::new(),
-        }
+        };
+        items.extend(moves);
+        items
     }
 
     /// File → Open Case…: every saved case, newest first.

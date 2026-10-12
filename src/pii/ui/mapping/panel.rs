@@ -821,6 +821,7 @@ impl DocumentView {
                                 .child(error),
                         )
                     })
+                    .children(self.case_names_section(cx))
                     .child(
                         div()
                             .text_size(px(11.))

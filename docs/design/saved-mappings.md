@@ -234,6 +234,13 @@ revisit: Linux cases disabled until Secret Service support; case names default
 to the document name (rename inline); the close question is per tab close, not
 quit; closed cases are listed only under File → Open Case….
 
+### Phase 3 notes (2026-10-12)
+
+Implemented as recorded in ADR 0041 "Phase 3 as implemented". Narrowings to
+revisit: case-wide undo is propagation rather than a linked, blockable undo
+(#22); merges and splits are not pushed to other members; Move to case lists
+five recent cases; an added term's category is guessed, not chosen.
+
 ## Frontier
 
 Empty as of round 5. Accepted record: [ADR 0041](../adr/0041-cases-and-ai-response-restoration.md).

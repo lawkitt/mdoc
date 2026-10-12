@@ -34,6 +34,7 @@ impl DocumentView {
         let ids = review.seed(identities, &text);
         let linked = review.relink(&text, identities, &ids, history);
         self.case = Some(link);
+        self.case_names = identities.to_vec();
         self.sync_pii_theme(cx);
         cx.notify();
         linked

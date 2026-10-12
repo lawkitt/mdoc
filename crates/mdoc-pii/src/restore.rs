@@ -279,6 +279,13 @@ impl Review {
     /// This document's identities with the aliases its text contains, for
     /// restoring AI output and seeding another document's review.
     pub fn export_identities(&self) -> Vec<ExportedIdentity> {
+        self.export_identities_with_ids()
+            .into_iter()
+            .map(|(_, e)| e)
+            .collect()
+    }
+    /// [`Self::export_identities`] with each identity's id in this review.
+    pub fn export_identities_with_ids(&self) -> Vec<(u64, ExportedIdentity)> {
         #[derive(Default)]
         struct Entry {
             aliases: Vec<String>,
@@ -336,13 +343,16 @@ impl Review {
                     .sort_by_key(|o| std::cmp::Reverse(o.chars().count()));
                 entry.originals.insert(0, wording);
                 entry.aliases.retain(|a| *a != identity.alias);
-                Some(ExportedIdentity {
-                    alias: identity.alias.clone(),
-                    previous: entry.aliases,
-                    category: identity.category,
-                    custom: identity.custom_alias,
-                    originals: entry.originals,
-                })
+                Some((
+                    id,
+                    ExportedIdentity {
+                        alias: identity.alias.clone(),
+                        previous: entry.aliases,
+                        category: identity.category,
+                        custom: identity.custom_alias,
+                        originals: entry.originals,
+                    },
+                ))
             })
             .collect()
     }
@@ -428,6 +438,78 @@ impl Review {
         self.tracking.commit(history, added);
         count
     }
+}
+
+/// How a document joining a case lines up with it (ADR 0041 #10).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct JoinPlan {
+    /// Identity id → alias, category and custom flag it takes.
+    pub changes: Vec<(u64, String, Category, bool)>,
+    /// Case identities the document lacks; seed them so their originals are
+    /// proposed with the case aliases.
+    pub unmatched: Vec<ExportedIdentity>,
+}
+
+/// Align a document's identities with a case: an identity sharing an original
+/// with a case identity takes its alias; any other whose alias the case already
+/// uses takes the next free number. Aliases are never reused.
+pub fn plan_join(case: &[ExportedIdentity], document: &[(u64, ExportedIdentity)]) -> JoinPlan {
+    let mut taken: HashSet<String> = case
+        .iter()
+        .flat_map(|c| std::iter::once(c.alias.clone()).chain(c.previous.iter().cloned()))
+        .collect();
+    let mut counters: HashMap<Category, u64> = HashMap::new();
+    for alias in &taken {
+        if let Some((category, number)) = parse_alias(alias) {
+            let counter = counters.entry(category).or_default();
+            *counter = (*counter).max(number);
+        }
+    }
+    let mut matched = HashSet::new();
+    let mut plan = JoinPlan::default();
+    let mut assigned: Vec<(u64, String, Category, bool)> = Vec::new();
+    for (id, doc) in document {
+        let found = case.iter().position(|c| {
+            !matched.contains(&std::ptr::from_ref(c))
+                && c.originals.iter().any(|o| doc.originals.contains(o))
+        });
+        let target = match found {
+            Some(index) => {
+                let c = &case[index];
+                matched.insert(std::ptr::from_ref(c));
+                (c.alias.clone(), c.category, c.custom)
+            }
+            None if taken.contains(&doc.alias) || assigned.iter().any(|a| a.1 == doc.alias) => {
+                let counter = counters.entry(doc.category).or_default();
+                let alias = loop {
+                    *counter += 1;
+                    let alias = format!("{}_{counter}", doc.category.token());
+                    if !taken.contains(&alias) && !assigned.iter().any(|a| a.1 == alias) {
+                        break alias;
+                    }
+                };
+                (alias, doc.category, false)
+            }
+            None => (doc.alias.clone(), doc.category, doc.custom),
+        };
+        taken.insert(target.0.clone());
+        assigned.push((*id, target.0, target.1, target.2));
+    }
+    plan.changes = assigned
+        .into_iter()
+        .filter(|(id, alias, category, _)| {
+            document
+                .iter()
+                .find(|(d, _)| d == id)
+                .is_some_and(|(_, d)| d.alias != *alias || d.category != *category)
+        })
+        .collect();
+    plan.unmatched = case
+        .iter()
+        .filter(|c| !matched.contains(&std::ptr::from_ref(*c)))
+        .cloned()
+        .collect();
+    plan
 }
 
 #[cfg(test)]

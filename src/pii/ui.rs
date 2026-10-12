@@ -1,4 +1,5 @@
 //! Live-document PII state, scan lifecycle and replacement actions.
+mod case_sync;
 mod chooser;
 mod discovery;
 mod mapping;

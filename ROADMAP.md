@@ -44,9 +44,9 @@ This roadmap tracks work remaining as of 2026-10-10; accepted behavior lives in
    [saved mappings](docs/design/saved-mappings.md), [ADR 0041](docs/adr/0041-cases-and-ai-response-restoration.md)). Save a document's mapping
    as an encrypted local case, group tabs that share one case, and restore AI
    responses into a new tab with reviewable restored values. Phases 1 (Copy for
-   AI, Paste AI Response) and 2 (saved single-document cases) are implemented;
+   AI, Paste AI Response), 2 (saved cases) and 3 (multi-document cases) are implemented;
    captured ChatGPT/Claude reply fixtures, Windows/native checks and Linux
-   Secret Service support are still needed, then phases 3–4.
+   Secret Service support are still needed, then phase 4.
 5. **Preparation conveniences** from the [Anoni review](docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11):
    a global shortcut that pseudonymizes the clipboard with the active case; a
    before/after/side-by-side view of pseudonymized text; per-case category toggles.

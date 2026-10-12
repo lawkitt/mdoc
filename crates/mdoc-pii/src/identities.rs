@@ -38,7 +38,7 @@ impl IdentityStore {
     pub(crate) fn add(&mut self, identity: Identity) {
         self.definitions.insert(identity.id, Arc::new(identity));
     }
-    fn ids(&self) -> impl Iterator<Item = u64> + '_ {
+    pub(crate) fn ids(&self) -> impl Iterator<Item = u64> + '_ {
         self.definitions.keys().copied()
     }
     pub(crate) fn aliases(&self) -> impl Iterator<Item = &str> {
@@ -290,6 +290,77 @@ impl Review {
                 }
             }
         }
+        Ok(())
+    }
+    /// The identity currently called `alias`, preferring one with mentions.
+    pub fn identity_by_alias(&self, alias: &str) -> Option<u64> {
+        let active = self.active_identities();
+        active
+            .iter()
+            .copied()
+            .chain(self.identities.ids())
+            .find(|id| self.identity(*id).is_some_and(|i| i.alias == alias))
+    }
+    /// Give several identities new aliases (and categories) at once, as a case
+    /// does when a document joins it. The result must leave active aliases
+    /// unique; nothing changes otherwise.
+    pub fn reassign_aliases(
+        &mut self,
+        changes: &[(u64, String, Category, bool)],
+    ) -> Result<(), String> {
+        let mut aliases: HashMap<u64, String> = self
+            .active_identities()
+            .into_iter()
+            .filter_map(|id| Some((id, self.identity(id)?.alias.clone())))
+            .collect();
+        for (id, alias, _, _) in changes {
+            if !valid_replacement(alias) || self.identity(*id).is_none() {
+                return Err("Identity or alias is no longer valid.".into());
+            }
+            aliases.insert(*id, alias.clone());
+        }
+        let mut seen = HashSet::new();
+        if aliases.values().any(|a| !seen.insert(a)) {
+            return Err("Two identities would share an alias.".into());
+        }
+        for (id, alias, category, custom) in changes {
+            let mut identity = self.identity(*id).unwrap().clone();
+            if identity.category != *category {
+                identity.owner = None;
+            }
+            identity.alias = alias.clone();
+            identity.category = *category;
+            identity.custom_alias = *custom;
+            self.occupied_tokens.insert(alias.clone());
+            if let Some((c, n)) = crate::restore::parse_alias(alias) {
+                let counter = self.counters.entry(c).or_default();
+                *counter = (*counter).max(n as usize);
+            }
+            Arc::make_mut(&mut self.identities.policy)
+                .edited
+                .insert(*id, Arc::new(identity));
+        }
+        // An idle identity that held one of these aliases takes a fresh one.
+        let moved: HashSet<_> = changes.iter().map(|c| c.0).collect();
+        let claimed: HashSet<_> = changes.iter().map(|c| c.1.clone()).collect();
+        let idle: Vec<_> = self
+            .identities
+            .ids()
+            .filter(|id| !moved.contains(id))
+            .filter(|id| {
+                self.identity(*id)
+                    .is_some_and(|i| claimed.contains(&i.alias))
+            })
+            .collect();
+        for id in idle {
+            let mut identity = self.identity(id).unwrap().clone();
+            identity.alias = self.allocate_alias(identity.category);
+            identity.custom_alias = false;
+            Arc::make_mut(&mut self.identities.policy)
+                .edited
+                .insert(id, Arc::new(identity));
+        }
+        self.sync_identity_variants();
         Ok(())
     }
     /// Preview without reserving a token or mutating policy on every render.

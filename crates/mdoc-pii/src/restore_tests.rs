@@ -355,3 +355,86 @@ fn relinked_alias_tokens_become_restorable_applied_replacements() {
     // Linking twice adds nothing.
     assert_eq!(review.relink(source, &identities, &ids, 7), 0);
 }
+
+#[test]
+fn joining_takes_case_aliases_and_renumbers_collisions() {
+    let mut anna = identity("PERSON_1", Category::Person, &["Anna Petrova"]);
+    anna.previous = vec!["PERSON_3".into()];
+    let case = vec![
+        anna,
+        identity("ORG_1", Category::Organization, &["Northwind Ltd"]),
+    ];
+    let document = vec![
+        // Boris collides with the case's PERSON_1.
+        (
+            10,
+            identity("PERSON_1", Category::Person, &["Boris Ivanov"]),
+        ),
+        // Anna is already in the case under PERSON_1.
+        (
+            11,
+            identity(
+                "PERSON_2",
+                Category::Person,
+                &["A. Petrova", "Anna Petrova"],
+            ),
+        ),
+        // EMAIL_1 is free in the case and keeps its alias.
+        (12, identity("EMAIL_1", Category::Email, &["b@x.example"])),
+    ];
+    let plan = plan_join(&case, &document);
+    assert_eq!(
+        plan.changes,
+        [
+            (10, "PERSON_4".into(), Category::Person, false),
+            (11, "PERSON_1".into(), Category::Person, false),
+        ],
+        "PERSON_3 is retired, so Boris skips it"
+    );
+    assert_eq!(plan.unmatched.len(), 1);
+    assert_eq!(plan.unmatched[0].alias, "ORG_1");
+}
+
+#[test]
+fn reassigning_aliases_swaps_without_collisions_and_corrects_applied_text() {
+    let source = "Anna Petrova met Boris Ivanov.";
+    let mut review = Review::default();
+    review
+        .ingest(
+            source,
+            vec![
+                Detection {
+                    range: 0..12,
+                    category: Category::Person,
+                    score: 0.9,
+                    recognizer: Recognizer::Model,
+                },
+                Detection {
+                    range: 17..29,
+                    category: Category::Person,
+                    score: 0.9,
+                    recognizer: Recognizer::Model,
+                },
+            ],
+        )
+        .unwrap();
+    let text = apply_pending(&mut review, source, 1);
+    assert_eq!(text, "PERSON_1 met PERSON_2.");
+    let anna = review.identity_by_alias("PERSON_1").unwrap();
+    let boris = review.identity_by_alias("PERSON_2").unwrap();
+    review
+        .reassign_aliases(&[
+            (anna, "PERSON_2".into(), Category::Person, false),
+            (boris, "PERSON_1".into(), Category::Person, false),
+        ])
+        .unwrap();
+    let plans = review.alias_corrections(&text).unwrap();
+    let afters: Vec<_> = plans.iter().map(|p| p.after.as_ref()).collect();
+    assert_eq!(afters, ["PERSON_2", "PERSON_1"]);
+    assert!(
+        review
+            .reassign_aliases(&[(anna, "PERSON_1".into(), Category::Person, false)])
+            .is_err(),
+        "two active identities may not share an alias"
+    );
+}
