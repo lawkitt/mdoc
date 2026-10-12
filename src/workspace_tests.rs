@@ -2787,3 +2787,51 @@ fn closing_an_unsaved_mapping_offers_to_save_it_once(cx: &mut TestAppContext) {
     let store = crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     assert_eq!(store.list().0.len(), 1);
 }
+
+#[gpui::test]
+fn replies_join_the_source_case_and_save_as_moves_the_member(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    let source = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(source, window, cx));
+    cx.run_until_parked();
+    let case = cx.update(|_, cx| tabs.read(cx).cases.cases[0].id.clone());
+
+    // Save As: the case now names only the new path.
+    let moved = dir.path().join("moved.md");
+    std::fs::copy(&path, &moved).unwrap();
+    let view = active(&tabs, cx);
+    view.update(cx, |view, _| {
+        view.session.document.path = Some(session_store::identity(&moved))
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.event(source, &TabEvent::Saved, window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            tabs.read(cx).cases.cases[0].members,
+            [session_store::identity(&moved)]
+        );
+    });
+
+    // A reply pasted from a case tab joins the case, right after its source.
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(source, window, cx));
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 agrees.".into()));
+    view.update_in(cx, |view, window, cx| {
+        view.paste_ai_response(&PasteAiResponse, window, cx)
+    });
+    cx.run_until_parked();
+    let reply = active(&tabs, cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.tabs[1].id, tabs.active, "the reply follows its source");
+        let link = reply.read(cx).case.clone().unwrap();
+        assert_eq!(link.id, case);
+        assert_eq!(
+            reply.read(cx).editor.read(cx).text(),
+            "Anna Petrova agrees."
+        );
+    });
+}

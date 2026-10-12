@@ -1091,6 +1091,13 @@ impl Workspace {
             TabEvent::Restored(reply) if self.quitting.is_none() => {
                 let reply = reply.clone();
                 let tab = self.new_tab(window, cx);
+                // The reply sits right after the tab it answers.
+                let after = self.tabs.iter().position(|t| t.id == id).map(|i| i + 1);
+                if let Some(next) = after.and_then(|i| self.tabs.get(i)).map(|t| t.id)
+                    && next != tab
+                {
+                    self.reorder(tab, next, cx);
+                }
                 if let Some(view) = self
                     .tabs
                     .iter()
@@ -1104,12 +1111,16 @@ impl Workspace {
             TabEvent::CloseRequested => self.close_tab(id, window, cx),
             TabEvent::OcrState(state) => self.set_ocr(state.clone(), cx),
             TabEvent::Saved => {
+                let mut previous = None;
                 if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) {
+                    previous = tab.identity.take();
                     tab.identity = tab
                         .view
                         .as_ref()
                         .and_then(|view| view.read(cx).session.document.path.clone());
                 }
+                // Save As moves the member: the case forgets the old path.
+                self.case_member_moved(id, previous, cx);
                 self.case_changed(id, cx);
             }
             TabEvent::CaseChanged => self.case_changed(id, cx),

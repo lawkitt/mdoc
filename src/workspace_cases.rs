@@ -255,6 +255,44 @@ impl Workspace {
             self.enqueue_case(case, cx);
         }
     }
+    /// A member saved under a new path no longer lives at `previous`.
+    pub(super) fn case_member_moved(
+        &mut self,
+        id: u64,
+        previous: Option<PathBuf>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(previous) = previous.as_deref().map(session_store::identity) else {
+            return;
+        };
+        let Some(view) = self.tab_view(id) else {
+            return;
+        };
+        let (link, current) = {
+            let v = view.read(cx);
+            (
+                v.case.clone(),
+                v.session
+                    .document
+                    .path
+                    .as_deref()
+                    .map(session_store::identity),
+            )
+        };
+        let Some(link) = link else {
+            return;
+        };
+        if current.as_ref() == Some(&previous) {
+            return;
+        }
+        if let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == link.id)
+            && case.members.contains(&previous)
+        {
+            case.members.retain(|m| *m != previous);
+            let case = case.clone();
+            self.enqueue_case(case, cx);
+        }
+    }
     fn enqueue_case(&mut self, mut case: Case, cx: &mut Context<Self>) {
         if let Some(stored) = self.cases.cases.iter_mut().find(|c| c.id == case.id) {
             stored.revision += 1;

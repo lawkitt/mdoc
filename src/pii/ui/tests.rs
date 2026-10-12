@@ -1534,6 +1534,7 @@ fn unrecognized_placeholders_are_assigned_or_left_never_guessed(cx: &mut gpui::T
             originals: vec!["Anna Petrova".into()],
         }],
         source_name: "contract".into(),
+        case: None,
     };
     app.update_in(cx, |app, window, cx| app.start_restored(&reply, window, cx));
     cx.run_until_parked();
@@ -1591,6 +1592,7 @@ fn homonyms_keep_their_own_aliases_through_restore_and_apply(cx: &mut gpui::Test
         text: "PERSON_1 met PERSON_2, then PERSON_1 left.".into(),
         identities: vec![person("PERSON_1"), person("PERSON_2")],
         source_name: "contract".into(),
+        case: None,
     };
     app.update_in(cx, |app, window, cx| app.start_restored(&reply, window, cx));
     cx.run_until_parked();

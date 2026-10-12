@@ -16,6 +16,8 @@ pub(crate) struct RestoredReply {
     pub text: String,
     pub identities: Vec<ExportedIdentity>,
     pub source_name: String,
+    /// The source tab's case: the reply joins it (ADR 0041 #16).
+    pub case: Option<crate::cases::CaseLink>,
 }
 
 pub(crate) struct RestoreState {
@@ -110,6 +112,7 @@ impl DocumentView {
                 text,
                 identities,
                 source_name: stem,
+                case: self.case.clone(),
             },
         )));
     }
@@ -121,6 +124,7 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         self.session.name = Some(format!("Restored – {}.md", reply.source_name));
+        self.case = reply.case.clone();
         self.blank_disposable = false;
         self.editor
             .update(cx, |editor, cx| editor.set_text(reply.text.clone(), cx));
