@@ -6,7 +6,7 @@ All notable changes to **mdoc** are documented here.
 
 - **Keychain access is explained before macOS asks.** mdoc no longer reads the
   saved-case key at launch while doing so could show the macOS password dialog.
-  Documents restored from a case wait behind an **Unlock…** bar. Saving a case,
+  Until it can, saved cases stay locked behind an **Unlock…** bar. Saving a case,
   opening one, or unlocking first shows a short explainer with an animated
   preview of the macOS dialog, recommending **Always Allow**. Declining keeps
   the documents linked to their case and offers **Try again…** (ADR 0043).

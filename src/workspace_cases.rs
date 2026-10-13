@@ -278,8 +278,10 @@ impl Workspace {
                 "Try again…",
             ));
         }
-        (self.cases.locked && self.tabs.iter().any(|t| t.record.case.is_some())).then_some((
-            "Some documents belong to saved cases. Unlock them to restore their replacements.",
+        // Any opened document may be a member: a manually opened one is only
+        // matched to its case by path, which needs the cases loaded.
+        self.cases.locked.then_some((
+            "Saved cases are locked. Unlock them to restore replacements in their documents.",
             "Unlock…",
         ))
     }
