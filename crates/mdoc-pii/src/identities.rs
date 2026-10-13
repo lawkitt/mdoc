@@ -340,6 +340,31 @@ impl Review {
                 .edited
                 .insert(*id, Arc::new(identity));
         }
+        // Contacts owned by an identity that is no longer a person or
+        // organization lose that owner, as in `recategorize_identity`.
+        let demoted: HashSet<u64> = changes
+            .iter()
+            .filter(|(_, _, c, _)| !matches!(c, Category::Person | Category::Organization))
+            .map(|c| c.0)
+            .collect();
+        if !demoted.is_empty() {
+            let dependents: Vec<_> = self
+                .identities
+                .ids()
+                .filter(|id| {
+                    self.identity(*id)
+                        .and_then(|i| i.owner)
+                        .is_some_and(|owner| demoted.contains(&owner))
+                })
+                .collect();
+            for id in dependents {
+                let mut identity = self.identity(id).unwrap().clone();
+                identity.owner = None;
+                Arc::make_mut(&mut self.identities.policy)
+                    .edited
+                    .insert(id, Arc::new(identity));
+            }
+        }
         // An idle identity that held one of these aliases takes a fresh one.
         let moved: HashSet<_> = changes.iter().map(|c| c.0).collect();
         let claimed: HashSet<_> = changes.iter().map(|c| c.1.clone()).collect();

@@ -454,9 +454,19 @@ pub struct JoinPlan {
 /// with a case identity takes its alias; any other whose alias the case already
 /// uses takes the next free number. Aliases are never reused.
 pub fn plan_join(case: &[ExportedIdentity], document: &[(u64, ExportedIdentity)]) -> JoinPlan {
-    let mut taken: HashSet<String> = case
+    let names = |e: &ExportedIdentity| {
+        std::iter::once(e.alias.clone())
+            .chain(e.previous.iter().cloned())
+            .collect::<Vec<_>>()
+    };
+    // Aliases a document identity may not keep: the case's, and other
+    // identities' earlier ones in this document.
+    let case_names: HashSet<String> = case.iter().flat_map(names).collect();
+    // Aliases a fresh number may not take: every alias either side ever used.
+    let mut taken: HashSet<String> = case_names
         .iter()
-        .flat_map(|c| std::iter::once(c.alias.clone()).chain(c.previous.iter().cloned()))
+        .cloned()
+        .chain(document.iter().flat_map(|(_, d)| names(d)))
         .collect();
     let mut counters: HashMap<Category, u64> = HashMap::new();
     for alias in &taken {
@@ -479,7 +489,12 @@ pub fn plan_join(case: &[ExportedIdentity], document: &[(u64, ExportedIdentity)]
                 matched.insert(std::ptr::from_ref(c));
                 (c.alias.clone(), c.category, c.custom)
             }
-            None if taken.contains(&doc.alias) || assigned.iter().any(|a| a.1 == doc.alias) => {
+            None if case_names.contains(&doc.alias)
+                || assigned.iter().any(|a| a.1 == doc.alias)
+                || document
+                    .iter()
+                    .any(|(other, d)| other != id && d.previous.contains(&doc.alias)) =>
+            {
                 let counter = counters.entry(doc.category).or_default();
                 let alias = loop {
                     *counter += 1;

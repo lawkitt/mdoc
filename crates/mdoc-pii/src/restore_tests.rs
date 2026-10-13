@@ -438,3 +438,38 @@ fn reassigning_aliases_swaps_without_collisions_and_corrects_applied_text() {
         "two active identities may not share an alias"
     );
 }
+
+#[test]
+fn joining_never_hands_out_an_alias_the_document_used_before() {
+    let case = vec![identity("PERSON_1", Category::Person, &["Anna Petrova"])];
+    let mut boris = identity("PERSON_3", Category::Person, &["Boris Ivanov"]);
+    boris.previous = vec!["PERSON_2".into()];
+    let document = vec![
+        (10, boris),
+        // Collides with the case; PERSON_2 and PERSON_3 are this document's.
+        (
+            11,
+            identity("PERSON_1", Category::Person, &["Ivan Sidorov"]),
+        ),
+    ];
+    let plan = plan_join(&case, &document);
+    assert_eq!(
+        plan.changes,
+        [(11, "PERSON_4".into(), Category::Person, false)]
+    );
+}
+
+#[test]
+fn bulk_recategorizing_an_owner_releases_its_contacts() {
+    let source = "Anna Petrova, anna@x.example";
+    let mut review = Review::default();
+    let anna = review.add_manual(source, 0..12, Category::Person).unwrap();
+    let mail = review.add_manual(source, 14..28, Category::Email).unwrap();
+    let anna = review.variant_identity(anna).unwrap();
+    let mail = review.variant_identity(mail).unwrap();
+    review.set_owner(mail, Some(anna)).unwrap();
+    review
+        .reassign_aliases(&[(anna, "OTHER_1".into(), Category::Other, false)])
+        .unwrap();
+    assert_eq!(review.identity(mail).unwrap().owner, None);
+}
