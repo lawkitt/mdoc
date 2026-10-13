@@ -81,6 +81,9 @@ is not only the signature and the "Later" step moves forward.
   **Try again…**, which finishes it once the key opens. Before this change,
   a failed key read at launch marked cases as loaded and dropped members'
   case links ("could not be found"); now they stay linked.
+- **Waiting actions queue:** another gated action while one waits (explainer
+  open or declined) runs after it, not instead of it; a repeated Save as case
+  for an already-saved tab does nothing.
 - **Explainer:** `src/workspace_keychain.rs`. Esc means Not now; Continue has
   focus, so Enter continues. The preview loops every 4.2 s at up to 30 fps and,
   under Reduce Motion, shows a single frame: password typed, Always Allow

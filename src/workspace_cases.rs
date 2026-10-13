@@ -171,7 +171,15 @@ impl Workspace {
         }
         self.cases.explainer = true;
         self.explainer_focus_pending = true;
-        self.cases.then = Some(Box::new(then));
+        // An action already waiting (open explainer, or declined and awaiting
+        // Try again) still runs, before this one.
+        let earlier = self.cases.then.take();
+        self.cases.then = Some(Box::new(move |this, window, cx| {
+            if let Some(earlier) = earlier {
+                earlier(this, window, cx);
+            }
+            then(this, window, cx);
+        }));
         cx.notify();
         false
     }
@@ -400,6 +408,10 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) -> Option<String> {
         let view = self.tab_view(id)?;
+        // Already saved, e.g. by an earlier request waiting on the Keychain.
+        if view.read(cx).case.is_some() {
+            return None;
+        }
         let (name, identities, path) = {
             let v = view.read(cx);
             let name = v.display_name();
