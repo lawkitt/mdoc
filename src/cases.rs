@@ -207,7 +207,7 @@ pub struct Store {
 }
 impl Store {
     pub fn default_dir() -> Option<PathBuf> {
-        dirs::data_local_dir().map(|p| p.join("mdoc/cases"))
+        dirs::data_local_dir().map(|p| p.join("mdoc").join(key::folder()))
     }
     /// Open the store without any OS dialog: `None` when the key can only be
     /// read after the macOS password dialog (ADR 0043).
@@ -360,10 +360,67 @@ fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
 mod key {
     use super::*;
 
+    /// Which Keychain holds the key, decided once from this build's
+    /// signature (ADR 0045).
+    #[cfg(target_os = "macos")]
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub enum Keychain {
+        /// Developer ID with a provisioning profile: the data protection
+        /// keychain, which never shows the password dialog.
+        Protected,
+        /// Developer ID without a profile (beta.8 and earlier): the login
+        /// keychain under the release service.
+        Release,
+        /// Unsigned, ad-hoc or someone else's signature: the login keychain
+        /// under its own service and cases folder, so a dev build never
+        /// creates a key that later prompts the release.
+        Dev,
+    }
     #[cfg(target_os = "macos")]
     const SERVICE: &str = "io.github.lawkitt.mdoc";
     #[cfg(target_os = "macos")]
+    const DEV_SERVICE: &str = "io.github.lawkitt.mdoc.dev";
+    #[cfg(target_os = "macos")]
     const ACCOUNT: &str = "case-key";
+    #[cfg(target_os = "macos")]
+    const TEAM: &str = "F33DLM8K53";
+
+    #[cfg(target_os = "macos")]
+    pub fn keychain() -> Keychain {
+        static KEYCHAIN: std::sync::LazyLock<Keychain> = std::sync::LazyLock::new(|| {
+            use security_framework::os::macos::code_signing::{Flags, SecCode, SecRequirement};
+            let requirement: Result<SecRequirement, _> =
+                format!("anchor apple generic and certificate leaf[subject.OU] = \"{TEAM}\"")
+                    .parse();
+            let ours = requirement.is_ok_and(|r| {
+                SecCode::for_self(Flags::NONE)
+                    .and_then(|code| code.check_validity(Flags::NONE, &r))
+                    .is_ok()
+            });
+            // Contents/MacOS/mdoc → Contents/embedded.provisionprofile
+            let profile = std::env::current_exe().ok().is_some_and(|exe| {
+                exe.parent()
+                    .and_then(Path::parent)
+                    .is_some_and(|contents| contents.join("embedded.provisionprofile").is_file())
+            });
+            match (ours, profile) {
+                (true, true) => Keychain::Protected,
+                (true, false) => Keychain::Release,
+                (false, _) => Keychain::Dev,
+            }
+        });
+        *KEYCHAIN
+    }
+
+    /// The cases folder name in app data: dev builds keep their own.
+    pub fn folder() -> &'static str {
+        #[cfg(target_os = "macos")]
+        if keychain() == Keychain::Dev {
+            return "cases-dev";
+        }
+        "cases"
+    }
+
     /// Read (or create) the key with Keychain dialogs turned off, so this
     /// never asks: `None` when reading it would show the macOS password
     /// dialog, e.g. for a new build or after "Allow Once" (ADR 0043).
@@ -383,6 +440,44 @@ mod key {
 
     #[cfg(target_os = "macos")]
     fn load(quiet: bool) -> Result<Option<[u8; 32]>, String> {
+        match keychain() {
+            Keychain::Release => login(SERVICE, quiet, true),
+            Keychain::Dev => login(DEV_SERVICE, quiet, true),
+            Keychain::Protected => match protected::read() {
+                // Missing entitlement (errSecMissingEntitlement): a profile
+                // without keychain access; behave like a build without one.
+                Err(-34018) => login(SERVICE, quiet, true),
+                Err(e) => Err(format!(
+                    "Could not read the case key from the Keychain: {e}"
+                )),
+                Ok(Some(key)) => Ok(Some(key)),
+                // Not there yet: move the login-keychain key over (the one
+                // dialog, behind the explainer), or create a new one.
+                Ok(None) => {
+                    let key = match login(SERVICE, quiet, false)? {
+                        Some(key) => key,
+                        None if quiet && legacy_exists() => return Ok(None),
+                        None => fresh(),
+                    };
+                    protected::write(&key).map_err(|e| {
+                        format!("Could not store the case key in the Keychain: {e}")
+                    })?;
+                    forget_legacy();
+                    Ok(Some(key))
+                }
+            },
+        }
+    }
+
+    /// The key in the login keychain. A quiet read runs with Keychain dialogs
+    /// off; macOS then refuses a read that would ask with
+    /// errSecInteractionNotAllowed or, for an item whose access list does not
+    /// trust this app, errSecAuthFailed. Both mean "may ask" (`None`), never a
+    /// denial: treating errSecAuthFailed as denied is how beta.7 fell through
+    /// to a loud read at launch (ADR 0045). `None` also means "not there"
+    /// when `create` is false.
+    #[cfg(target_os = "macos")]
+    fn login(service: &str, quiet: bool, create: bool) -> Result<Option<[u8; 32]>, String> {
         use security_framework::{
             os::macos::keychain::SecKeychain,
             passwords::{get_generic_password, set_generic_password},
@@ -391,19 +486,21 @@ mod key {
             .then(SecKeychain::disable_user_interaction)
             .transpose()
             .map_err(|e| format!("Could not read the case key from the Keychain: {e}"))?;
-        match get_generic_password(SERVICE, ACCOUNT) {
+        match get_generic_password(service, ACCOUNT) {
             Ok(bytes) => bytes
                 .try_into()
                 .map(Some)
                 .map_err(|_| "The case key in the Keychain is damaged.".to_string()),
-            // errSecInteractionNotAllowed: reading would show the dialog.
-            Err(e) if quiet && e.code() == -25308 => Ok(None),
+            // errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled
+            // with dialogs off: reading would show the dialog.
+            Err(e) if quiet && matches!(e.code(), -25308 | -25293 | -128) => Ok(None),
             // errSecUserCanceled, errSecAuthFailed: the dialog was declined.
             Err(e) if matches!(e.code(), -128 | -25293) => Err(super::KEY_DENIED.into()),
+            // errSecItemNotFound: first use.
+            Err(e) if e.code() == -25300 && !create => Ok(None),
             Err(e) if e.code() == -25300 => {
-                // errSecItemNotFound: first use.
                 let key = fresh();
-                match set_generic_password(SERVICE, ACCOUNT, &key) {
+                match set_generic_password(service, ACCOUNT, &key) {
                     Ok(()) => Ok(Some(key)),
                     // A locked keychain: creating it needs the dialog too.
                     Err(e) if quiet && e.code() == -25308 => Ok(None),
@@ -413,6 +510,59 @@ mod key {
             Err(e) => Err(format!(
                 "Could not read the case key from the Keychain: {e}"
             )),
+        }
+    }
+
+    /// Whether the release login keychain holds a key, without reading it
+    /// (attributes need no dialog).
+    #[cfg(target_os = "macos")]
+    fn legacy_exists() -> bool {
+        use security_framework::item::{ItemClass, ItemSearchOptions};
+        ItemSearchOptions::new()
+            .class(ItemClass::generic_password())
+            .service(SERVICE)
+            .account(ACCOUNT)
+            .load_attributes(true)
+            .search()
+            .is_ok_and(|found| !found.is_empty())
+    }
+
+    /// Delete the moved login-keychain key, with dialogs off: if macOS would
+    /// ask, it stays (the same key, still protected) and is never read again.
+    #[cfg(target_os = "macos")]
+    fn forget_legacy() {
+        use security_framework::{
+            os::macos::keychain::SecKeychain, passwords::delete_generic_password,
+        };
+        let Ok(_quiet) = SecKeychain::disable_user_interaction() else {
+            return;
+        };
+        let _ = delete_generic_password(SERVICE, ACCOUNT);
+    }
+
+    /// The data protection keychain: access is by the app's Keychain access
+    /// group, not a per-item access list, so it never asks.
+    #[cfg(target_os = "macos")]
+    mod protected {
+        use super::{ACCOUNT, SERVICE};
+        use security_framework::passwords::{
+            PasswordOptions, generic_password, set_generic_password_options,
+        };
+        fn options() -> PasswordOptions {
+            let mut options = PasswordOptions::new_generic_password(SERVICE, ACCOUNT);
+            options.use_protected_keychain();
+            options
+        }
+        /// `Ok(None)` when there is no key yet; `Err` is the OSStatus.
+        pub fn read() -> Result<Option<[u8; 32]>, i32> {
+            match generic_password(options()) {
+                Ok(bytes) => bytes.try_into().map(Some).map_err(|_| -26275), // errSecDecode
+                Err(e) if e.code() == -25300 => Ok(None),
+                Err(e) => Err(e.code()),
+            }
+        }
+        pub fn write(key: &[u8; 32]) -> Result<(), security_framework::base::Error> {
+            set_generic_password_options(key, options())
         }
     }
 

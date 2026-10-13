@@ -164,6 +164,29 @@ keychain, store notarization credentials once with
 `APPLE_SIGNING_IDENTITY="Developer ID Application: Tebriz Tagiev (F33DLM8K53)"
 APPLE_KEYCHAIN_PROFILE=mdoc-notary just package`.
 
+### Case key and Keychain access
+
+With a Developer ID provisioning profile, the case key lives in the data
+protection keychain, and macOS never asks for the login password
+([ADR 0045](adr/0045-prompt-free-case-key.md)). Until the profile exists,
+signed builds use the login keychain. To turn it on, the account holder
+registers the App ID `io.github.lawkitt.mdoc` with **Keychain Sharing**,
+creates a **Developer ID** provisioning profile for it, and stores it:
+
+```sh
+base64 -i mdoc.provisionprofile | gh secret set APPLE_PROVISIONING_PROFILE_BASE64 --env release -R lawkitt/mdoc
+```
+
+Locally, set `APPLE_PROVISIONING_PROFILE=<path>` next to the signing variables.
+Unsigned, ad-hoc and debug builds always use their own login-keychain key
+(`io.github.lawkitt.mdoc.dev`) and `mdoc/cases-dev/`, so they never touch
+release cases.
+
+Before publishing a release that changes case-key handling, install it on a
+clean macOS user account and run `scripts/keychain-launch-check.sh`. It seeds
+a key this build cannot read silently and checks that launch shows no
+Keychain dialog and leaves cases locked.
+
 ## App icon
 
 The app icon's source is `build/appicon.svg`: a square SVG whose rounded square

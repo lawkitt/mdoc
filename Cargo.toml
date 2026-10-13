@@ -61,7 +61,7 @@ libloading = "0.9"
 aes-gcm = "0.10"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-security-framework = "3"
+security-framework = { version = "3", features = ["OSX_10_15"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Pure-Rust D-Bus (zbus): no system libdbus needed.

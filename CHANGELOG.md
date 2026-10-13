@@ -4,6 +4,14 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **No Keychain dialogs at launch.** When a saved-case key was made by another
+  build, launching mdoc could still show two macOS password dialogs: the quiet
+  check reported "denied" where macOS meant "would ask", and launch then read the
+  key with dialogs allowed. Launch now leaves such cases locked behind
+  **Unlock…**. Builds signed with a provisioning profile keep the key in the data
+  protection keychain, which never asks for the login password. An existing key
+  moves there on the next Unlock, after one last dialog. Development builds keep
+  their own key and cases folder (ADR 0045).
 - **Keychain access is explained before macOS asks.** mdoc no longer reads the
   saved-case key at launch while doing so could show the macOS password dialog.
   Until it can, saved cases stay locked behind an **Unlock…** bar. Saving a case,

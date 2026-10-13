@@ -41,6 +41,12 @@ case "$(platform)" in
     entitlements=$(codesign -d --entitlements - --xml "$app" 2>/dev/null)
     [[ $entitlements == *com.apple.security.cs.disable-library-validation* ]] ||
       die "mdoc.app is missing the disable-library-validation entitlement"
+    # A profile without the access group would quietly fall back to the
+    # login keychain (ADR 0045).
+    if [ -f "$app/Contents/embedded.provisionprofile" ]; then
+      [[ $entitlements == *keychain-access-groups* ]] ||
+        die "mdoc.app embeds a provisioning profile but has no keychain-access-groups"
+    fi
     dmg="dist/mdoc_${v}_arm64.dmg"
     stage=$(mktemp -d)
     ditto "$app" "$stage/mdoc.app"
