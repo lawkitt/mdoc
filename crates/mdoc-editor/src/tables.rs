@@ -455,6 +455,9 @@ impl EditorState {
     /// Set the alignment of the caret's table column by rewriting that table's
     /// `|---|` separator row; the caret stays put. No-op outside a table cell.
     pub(crate) fn set_caret_table_align(&mut self, align: CellAlign, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         let (row, col) = self.row_col(self.cursor_offset());
         let Some(t) = self.table_rows.get(row).and_then(Option::as_ref) else {
             return;
@@ -525,6 +528,9 @@ impl EditorState {
     /// Insert an empty row above/below the caret's row (Word-style); the caret
     /// moves into the new row's first cell. No-op outside a table.
     pub(crate) fn insert_table_row(&mut self, below: bool, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         let (row, _) = self.row_col(self.cursor_offset());
         let Some((header, sep, _end, cols)) = self.caret_table_block() else {
             return;
@@ -554,6 +560,9 @@ impl EditorState {
     /// The caret keeps its cell + in-cell offset, landing on the row that takes the
     /// deleted row's place. No-op outside a table.
     pub(crate) fn delete_table_row(&mut self, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         let Some((row, cell, in_cell)) = self.caret_table_cell_pos() else {
             return;
         };
@@ -594,6 +603,9 @@ impl EditorState {
     /// `<!-- table:STYLE -->` marker line directly above — joining the surrounding
     /// text. The caret lands where the table was.
     pub(crate) fn delete_table(&mut self, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         let Some((header, _sep, end, _cols)) = self.caret_table_block() else {
             return;
         };
@@ -641,6 +653,9 @@ impl EditorState {
     /// Duplicate the caret's row below itself (the header duplicates as the
     /// first body row). The caret lands in the copy, same cell + offset.
     pub(crate) fn duplicate_table_row(&mut self, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         let Some((row, cell, in_cell)) = self.caret_table_cell_pos() else {
             return;
         };
@@ -697,6 +712,9 @@ impl EditorState {
         marker: Option<String>,
         cx: &mut Context<Self>,
     ) {
+        if self.read_only {
+            return;
+        }
         let starts = self.line_starts();
         let (range, new) = match (region.marker_line, marker) {
             // Marker present → replace its line, or remove it (with the newline).

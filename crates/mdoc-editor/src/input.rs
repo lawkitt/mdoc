@@ -130,6 +130,9 @@ impl EditorState {
     /// undo history, so a host writing back a structural edit (e.g. a committed `$$…$$`
     /// formula) lands as a normal undo step rather than clobbering the history.
     pub fn replace_range(&mut self, range: Range<usize>, text: &str, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         // Snap to char boundaries (start down, end up) so a stale/shifted range — e.g. one
         // captured before a prior formula commit moved the bytes — can't panic mid-UTF-8.
         let len = self.content.len();
@@ -359,6 +362,9 @@ impl EditorState {
     /// selection is already wrapped (markers just inside or just outside it),
     /// otherwise wraps — keeping the same text selected so presses toggle.
     fn toggle_wrap_pair(&mut self, open: &str, close: &str, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         let sel = self.selected_range.clone();
         if sel.start >= sel.end {
             return;
@@ -423,6 +429,9 @@ impl EditorState {
     /// spaces at the line start, caret shifts with it); elsewhere insert that many
     /// spaces at the caret (replacing any selection).
     pub(super) fn indent(&mut self, _: &Indent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         // In a table, Tab moves to the next cell rather than indenting.
         if self.caret_in_table() {
             if let Some(offset) = self.table_cell_nav(true) {
@@ -471,6 +480,9 @@ impl EditorState {
     /// Shift+Tab: outdent the caret's line — remove up to `tab_indent` leading
     /// spaces (or one leading tab) from the line start. No-op if there's none.
     pub(super) fn outdent(&mut self, _: &Outdent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         // In a table, Shift+Tab moves to the previous cell rather than outdenting.
         if self.caret_in_table() {
             if let Some(offset) = self.table_cell_nav(false) {
@@ -635,6 +647,9 @@ impl EditorState {
     // --- Undo / redo ---------------------------------------------------------
 
     pub(super) fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         if let Some(prev) = self.undo_stack.pop() {
             self.pending_changes.push(super::HistoryChange {
                 before: self.history_id,
@@ -655,6 +670,9 @@ impl EditorState {
     }
 
     pub(super) fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         if let Some(next) = self.redo_stack.pop() {
             self.pending_changes.push(super::HistoryChange {
                 before: self.history_id,
@@ -899,6 +917,9 @@ impl EntityInputHandler for EditorState {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.read_only {
+            return;
+        }
         let range = range_utf16
             .as_ref()
             .map(|r| self.range_from_utf16(r))
@@ -927,6 +948,9 @@ impl EntityInputHandler for EditorState {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.read_only {
+            return;
+        }
         let range = range_utf16
             .as_ref()
             .map(|r| self.range_from_utf16(r))
@@ -1073,6 +1097,32 @@ mod tests {
         assert_eq!(changed.get(), before);
     }
 
+    #[gpui::test]
+    fn read_only_blocks_typing_paste_cut_and_undo_but_copies(cx: &mut gpui::TestAppContext) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update_in(cx, |editor, window, cx| {
+            editor.set_text("Anna\n- [ ] task", cx);
+            editor.set_read_only(true, cx);
+            editor.replace_text_in_range(None, "x", window, cx);
+            cx.write_to_clipboard(ClipboardItem::new_string("pasted".into()));
+            editor.paste(&Paste, window, cx);
+            editor.select_all(&SelectAll, window, cx);
+            editor.indent(&Indent, window, cx);
+            editor.undo(&Undo, window, cx);
+            assert_eq!(editor.text(), "Anna\n- [ ] task");
+            editor.copy_plain(window, cx);
+            assert!(
+                cx.read_from_clipboard()
+                    .unwrap()
+                    .text()
+                    .unwrap()
+                    .contains("Anna")
+            );
+            // The host still sets the text it shows.
+            editor.set_text("Boris", cx);
+            assert_eq!(editor.text(), "Boris");
+        });
+    }
     #[gpui::test]
     fn unicode_typing_selection_and_clipboard_keep_undo_groups(cx: &mut gpui::TestAppContext) {
         let (editor, cx) = cx.add_window_view(EditorState::new);

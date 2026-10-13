@@ -2,6 +2,7 @@
 mod case_sync;
 mod chooser;
 mod compare;
+pub(crate) use compare::CompareState;
 mod discovery;
 mod mapping;
 mod render;

@@ -72,8 +72,8 @@ pub(crate) struct DocumentView {
     pub(crate) case_term: Option<Entity<markdown_search::SearchInput>>,
     /// The result of Pseudonymize Clipboard, until dismissed.
     pub(crate) clipboard_notice: Option<String>,
-    /// The before/after view replaces the editor.
-    pub(crate) compare_open: bool,
+    /// The before/after view replaces the editor while open.
+    pub(crate) compare: Option<pii::ui::CompareState>,
     /// Categories this tab's case does not detect.
     pub(crate) case_skip: std::collections::HashSet<pii::Category>,
     pub(crate) view_bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
@@ -210,7 +210,7 @@ impl DocumentView {
             case_names_open: false,
             case_term: None,
             clipboard_notice: None,
-            compare_open: false,
+            compare: None,
             case_skip: Default::default(),
             view_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
             split_dragging: false,
@@ -1575,8 +1575,8 @@ impl Render for DocumentView {
                     .child(if self.loading || self.unavailable {
                         div().p_6().child(if self.loading { ui::activity("markdown-loading", "Loading Markdown…", theme).into_any_element() } else { div().child("Markdown unavailable").into_any_element() })
                             .when(self.unavailable, |view| view.child(button("Retry", RetryDocument, theme))).into_any_element()
-                    } else if self.compare_open && self.has_applied_aliases() {
-                        self.compare_view(cx)
+                    } else if let Some(compare) = self.compare_view(cx) {
+                        compare
                     } else { div().relative().flex_1().min_w_0().min_h_0()
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6()
                             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))

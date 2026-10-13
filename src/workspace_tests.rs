@@ -3129,7 +3129,7 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
     });
     cx.update(|_, cx| assert!(view.read(cx).case_skip.is_empty()));
     // Before/after shows originals beside aliases.
-    view.update(cx, |view, cx| view.toggle_compare(cx));
+    view.update_in(cx, |view, window, cx| view.toggle_compare(window, cx));
     draw(cx);
     assert!(cx.debug_bounds("compare-view").is_some());
 }

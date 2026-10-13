@@ -566,6 +566,9 @@ type BlockImageFn = Box<dyn Fn(&str) -> Option<Arc<RenderImage>>>;
 type BlockChipFn = Box<dyn Fn(&str) -> Option<SharedString>>;
 
 pub struct EditorState {
+    /// Shown for reading only: no user edit changes the text. The host can
+    /// still replace it (`set_text`, `replace_ranges`).
+    read_only: bool,
     focus_handle: FocusHandle,
     /// The whole document, newline-separated. Byte offsets index into this.
     content: String,
@@ -826,6 +829,7 @@ pub struct EditorState {
 impl EditorState {
     pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
+            read_only: false,
             focus_handle: cx.focus_handle(),
             content: String::new(),
             placeholder: SharedString::default(),
@@ -922,6 +926,14 @@ impl EditorState {
     }
 
     /// Builder: start with the given text (caret at the start).
+    /// Make this editor read-only (see the field).
+    pub fn set_read_only(&mut self, read_only: bool, cx: &mut Context<Self>) {
+        self.read_only = read_only;
+        cx.notify();
+    }
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
+    }
     pub fn with_text(mut self, text: impl Into<String>) -> Self {
         self.content = text.into();
         let caret = caret_off_marker_line(&self.content, 0);
@@ -1615,7 +1627,9 @@ impl EditorState {
         // precedence over placing the caret on the image row (which the press
         // would otherwise do). The image keeps its bounds; the drag previews a new
         // width and release writes `{width=N}` (see on_mouse_move / on_mouse_up).
-        if let Some((line, width)) = self.grip_at(event.position) {
+        if !self.read_only
+            && let Some((line, width)) = self.grip_at(event.position)
+        {
             self.image_resize = Some(ImageResize {
                 line,
                 start_width: width,
@@ -1632,7 +1646,9 @@ impl EditorState {
         // A press on a task checkbox toggles it (☐↔☑) instead of placing the
         // caret — the box sits in the gutter, so this never competes with editing
         // the body text. Same length swap, so the caret/selection stay valid.
-        if let Some(row) = self.checkbox_at(event.position) {
+        if !self.read_only
+            && let Some(row) = self.checkbox_at(event.position)
+        {
             let range = self.line_starts()[row]..self.line_end(row);
             if let Some(new_line) =
                 markdown_syntax::toggle_task_checkbox(&self.content[range.clone()])
@@ -1658,7 +1674,9 @@ impl EditorState {
         // A press on a foldable callout's chevron flips its `-`/`+` fold char
         // (folding/unfolding the body) instead of placing the caret — the same
         // toggle-in-source model as the task checkbox.
-        if let Some(row) = self.alert_fold_at(event.position) {
+        if !self.read_only
+            && let Some(row) = self.alert_fold_at(event.position)
+        {
             let start = self.line_starts()[row];
             let line = &self.content[start..self.line_end(row)];
             if let Some((at, folded)) = crate::syntax::alert_fold_char(line) {
@@ -2025,6 +2043,9 @@ impl EditorState {
     /// isn't an image any more (it shaped to an image last paint, but guard
     /// anyway), or if the width didn't actually change.
     fn commit_image_resize(&mut self, resize: ImageResize, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         let starts = self.line_starts();
         let Some(&start) = starts.get(resize.line) else {
             return;

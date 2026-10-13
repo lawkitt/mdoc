@@ -69,7 +69,7 @@ impl DocumentView {
                 .child(
                     ui::control(
                         "Compare",
-                        if self.compare_open {
+                        if self.compare.is_some() {
                             "Edit"
                         } else {
                             "Before / after"
@@ -78,7 +78,7 @@ impl DocumentView {
                         true,
                     )
                     .when(cfg!(test), |v| v.debug_selector(|| "Compare".into()))
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_compare(cx))),
+                    .on_click(cx.listener(|this, _, window, cx| this.toggle_compare(window, cx))),
                 )
             })
             .into_any_element()
