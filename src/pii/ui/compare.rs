@@ -1,8 +1,15 @@
-//! Before/after view (ADR 0041 #31): the original wording beside the
+//! Before/after view (ADR 0041 #31, ADR 0042): the original wording beside the
 //! pseudonymized text, both formatted like the editor and read-only, scrolling
-//! together. A snapshot: reopen it after editing.
+//! together. Live: it follows every change to the applied replacements, with
+//! the editor's replacement motion.
 use super::*;
-use gpui::{AnyElement, Entity, Pixels, div, prelude::*};
+use crate::ui;
+use gpui::{AnyElement, Entity, Pixels, SharedString, Subscription, div, prelude::*};
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+
+/// Below this width the view shows one column at a time.
+const NARROW: f32 = 720.;
 
 /// The two read-only editors of an open before/after view.
 pub(crate) struct CompareState {
@@ -12,91 +19,358 @@ pub(crate) struct CompareState {
     right: gpui::ScrollHandle,
     /// Scroll offsets at the last render, to tell which pane moved.
     last: std::cell::Cell<(Pixels, Pixels)>,
+    focus: FocusHandle,
+    /// Fingerprint of the editor revision and applied replacements shown.
+    key: u64,
+    /// Per shown annotation id: its alias and its span in the original text.
+    shown: HashMap<u64, (String, Range<usize>)>,
+    /// The original text shown, and each mark's (original, pseudonymized) span.
+    before: String,
+    marks: Vec<(Range<usize>, Range<usize>)>,
+    /// Opening hid the PDF preview; closing shows it again.
+    hid_preview: bool,
+    /// In a narrow window, the one column shown is the original.
+    original_only: bool,
+    _subscriptions: [Subscription; 2],
 }
 
-/// The whole original text and, for both sides, the replaced spans.
-pub(crate) fn compare_texts(
-    after: &str,
-    applied: &[(Range<usize>, &str)],
-) -> (String, Vec<Range<usize>>, Vec<Range<usize>>) {
+/// A kept replacement: its input index and its span in the original and in
+/// the pseudonymized text.
+type Mark = (usize, Range<usize>, Range<usize>);
+
+/// The whole original text and its marks.
+pub(crate) fn compare_texts(after: &str, applied: &[(Range<usize>, &str)]) -> (String, Vec<Mark>) {
     let mut before = String::with_capacity(after.len());
-    let mut before_marks = Vec::new();
-    let mut after_marks = Vec::new();
+    let mut marks = Vec::new();
     let mut at = 0;
-    for (range, original) in applied {
+    for (i, (range, original)) in applied.iter().enumerate() {
         if range.start < at || range.end > after.len() {
             continue;
         }
         before.push_str(&after[at..range.start]);
         let mark = before.len();
         before.push_str(original);
-        before_marks.push(mark..before.len());
-        after_marks.push(range.clone());
+        marks.push((i, mark..before.len(), range.clone()));
         at = range.end;
     }
     before.push_str(&after[at..]);
-    (before, before_marks, after_marks)
+    (before, marks)
+}
+
+/// Map an offset in the original text to the pseudonymized text, given each
+/// mark's (original, pseudonymized) span; inside a mark it lands on its start.
+fn to_after(offset: usize, marks: &[(Range<usize>, Range<usize>)]) -> usize {
+    let mut shift = 0isize;
+    for (before, after) in marks {
+        if before.end <= offset {
+            shift += after.len() as isize - before.len() as isize;
+        } else if before.start < offset {
+            return after.start;
+        }
+    }
+    offset.saturating_add_signed(shift)
+}
+
+/// [`to_after`] the other way round.
+fn to_before(offset: usize, marks: &[(Range<usize>, Range<usize>)]) -> usize {
+    let swapped: Vec<_> = marks.iter().map(|(b, a)| (a.clone(), b.clone())).collect();
+    to_after(offset, &swapped)
+}
+
+#[cfg(test)]
+impl CompareState {
+    pub(super) fn current_focus(&self, cx: &gpui::App) -> FocusHandle {
+        self.current.read(cx).focus_handle(cx)
+    }
+    /// Both columns' text and whether the pseudonymized one is animating.
+    pub(super) fn texts(&self, cx: &gpui::App) -> (String, String, bool) {
+        let current = self.current.read(cx);
+        (
+            self.original.read(cx).text().to_owned(),
+            current.text().to_owned(),
+            current.is_rolling_text() || current.is_fading_ranges(),
+        )
+    }
 }
 
 impl DocumentView {
     pub(crate) fn toggle_compare(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.compare.take().is_some() || !self.has_applied_aliases() {
-            window.focus(&self.editor.read(cx).focus_handle(cx), cx);
-            cx.notify();
+        if self.compare.is_some() || !self.has_applied_aliases() {
+            self.close_compare(window, cx);
             return;
         }
-        let text = self.editor.read(cx).text().to_owned();
-        let applied: Vec<_> = self
-            .pii
-            .review
-            .applied()
-            .iter()
-            .filter(|a| text.get(a.range.clone()) == Some(a.step.after.as_ref()))
-            .map(|a| (a.range.clone(), a.step.original()))
-            .collect();
-        let (before, before_marks, after_marks) = compare_texts(&text, &applied);
         let theme = self.theme.get();
-        let pane = |text: String,
-                    marks: Vec<Range<usize>>,
-                    accent: Hsla,
-                    window: &mut Window,
-                    cx: &mut Context<Self>| {
-            cx.new(|cx| {
+        let pane = |window: &mut Window, cx: &mut Context<Self>| {
+            let editor = cx.new(|cx| {
                 let mut editor = mdoc_editor::EditorState::new(window, cx);
                 editor.set_markdown_style(crate::style::markdown_style(theme), cx);
-                editor.set_text(text, cx);
                 editor.set_read_only(true, cx);
-                let annotations = marks
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, range)| mdoc_editor::SourceAnnotation {
-                        id: i as u64,
-                        range,
-                        color: Hsla { a: 0.14, ..accent },
-                        active_color: Hsla { a: 0.14, ..accent },
-                        border: Hsla { a: 0.5, ..accent },
-                        text_color: Some(accent),
-                    })
-                    .collect();
-                editor.set_annotations(editor.revision(), annotations, cx);
                 editor
-            })
+            });
+            // A name clicked in either column selects its Replacements row.
+            let subscription = cx.subscribe_in(&editor, window, |this, _, event, window, cx| {
+                let id = match event {
+                    mdoc_editor::EditorEvent::ActivateAnnotation(id) => *id,
+                    mdoc_editor::EditorEvent::ActivateAnnotations(ids) => match ids.first() {
+                        Some(id) => *id,
+                        None => return,
+                    },
+                    _ => return,
+                };
+                if !this.pii.mapping.open {
+                    this.pii.mapping.open_panel(window.focused(cx));
+                }
+                this.panel_select_mention(id, cx);
+            });
+            (editor, subscription)
         };
-        let original = pane(before, before_marks, theme.proposed(), window, cx);
-        let current = pane(text, after_marks, theme.applied(), window, cx);
+        let (original, left) = pane(window, cx);
+        let (current, right) = pane(window, cx);
+        self.pii.dismiss_popup();
+        let hid_preview = std::mem::take(&mut self.preview.visible);
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
         self.compare = Some(CompareState {
             original,
             current,
             left: gpui::ScrollHandle::new(),
             right: gpui::ScrollHandle::new(),
             last: Default::default(),
+            focus,
+            key: 0,
+            shown: HashMap::new(),
+            before: String::new(),
+            marks: Vec::new(),
+            hid_preview,
+            original_only: false,
+            _subscriptions: [left, right],
         });
+        self.refresh_compare(window, cx);
         cx.notify();
     }
-    pub(crate) fn compare_view(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn close_compare(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(state) = self.compare.take()
+            && state.hid_preview
+        {
+            self.preview.visible = true;
+        }
+        // A popup opened by panel decisions meanwhile belongs to no visible text.
+        self.pii.dismiss_popup();
+        window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+        cx.notify();
+    }
+    /// Bring an open view up to date with the editor and its applied
+    /// replacements; cheap when nothing changed. New replacements settle in and
+    /// roll as in the editor, reverted ones fade out.
+    pub(crate) fn refresh_compare(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(state) = self.compare.as_ref() else {
+            return;
+        };
+        let editor = self.editor.read(cx);
+        let text = editor.text();
+        let applied: Vec<_> = self
+            .pii
+            .review
+            .applied()
+            .iter()
+            .filter(|a| text.get(a.range.clone()) == Some(a.step.after.as_ref()))
+            .collect();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        editor.revision().hash(&mut hasher);
+        for a in &applied {
+            (
+                a.id,
+                a.range.start,
+                a.step.after.as_ref(),
+                a.step.original(),
+            )
+                .hash(&mut hasher);
+        }
+        let key = hasher.finish() | 1;
+        if key == state.key {
+            return;
+        }
+        if applied.is_empty() {
+            self.close_compare(window, cx);
+            return;
+        }
+        let text = text.to_owned();
+        let pairs: Vec<_> = applied
+            .iter()
+            .map(|a| (a.range.clone(), a.step.original()))
+            .collect();
+        let (before, marks) = compare_texts(&text, &pairs);
+        let theme = self.theme.get();
+        let blue = theme.applied();
+        let gold = theme.proposed();
+        // Original wording is gold, aliases blue, as in the editor's review.
+        let annotation = |id, range, accent: Hsla| mdoc_editor::SourceAnnotation {
+            id,
+            range,
+            color: Hsla { a: 0.16, ..accent },
+            active_color: Hsla { a: 0.34, ..accent },
+            border: Hsla { a: 0.5, ..accent },
+            text_color: Some(accent),
+        };
+        let mut shown = HashMap::with_capacity(marks.len());
+        let (mut left_marks, mut right_marks) = (Vec::new(), Vec::new());
+        let mut added = HashSet::new();
+        let mut rolls: Vec<(Range<usize>, SharedString)> = Vec::new();
+        for (i, before_range, after_range) in &marks {
+            let a = applied[*i];
+            let id = APPLIED_ID | a.id;
+            match state.shown.get(&id) {
+                None => {
+                    added.insert(id);
+                    rolls.push((after_range.clone(), a.step.original().to_owned().into()));
+                }
+                Some((alias, _)) if alias.as_str() != a.step.after.as_ref() => {
+                    rolls.push((after_range.clone(), alias.clone().into()));
+                }
+                Some(_) => {}
+            }
+            shown.insert(id, (a.step.after.to_string(), before_range.clone()));
+            left_marks.push(annotation(id, before_range.clone(), gold));
+            right_marks.push(annotation(id, after_range.clone(), blue));
+        }
+        let spans: Vec<_> = marks.into_iter().map(|(_, b, a)| (b, a)).collect();
+        // Reverted names go back to their original wording: a ghost of the
+        // chip fades from both columns and the alias rolls away. The original
+        // text stays put, so its old spans still hold.
+        let mut ghosts = Vec::new();
+        if state.before == before {
+            for (id, (alias, range)) in &state.shown {
+                if shown.contains_key(id) {
+                    continue;
+                }
+                let start = to_after(range.start, &spans);
+                let right = start..start + range.len();
+                ghosts.push((range.clone(), right.clone()));
+                rolls.push((right, alias.clone().into()));
+            }
+        }
+        let animate = state.key != 0 && !cx.reduce_motion();
+        let surface = theme.pdf_style().bg;
+        let fill =
+            |range: Range<usize>, c: Hsla| (range, Hsla { a: 0.22, ..c }, Hsla { a: 0.7, ..c });
+        // The alias settles from gold into blue; its original glows in gold.
+        let settle = |ids: HashSet<u64>, from: Hsla, to: Hsla| mdoc_editor::AnnotationFlash {
+            ids,
+            from: (Hsla { a: 0.22, ..from }, Hsla { a: 0.6, ..from }),
+            peak: (Hsla { a: 0.3, ..to }, Hsla { a: 0.85, ..to }),
+            duration: std::time::Duration::from_millis(700),
+            mark: None,
+        };
+        let left_ghosts: Vec<_> = ghosts.iter().map(|(l, _)| fill(l.clone(), gold)).collect();
+        let right_ghosts: Vec<_> = ghosts.into_iter().map(|(_, r)| fill(r, blue)).collect();
+        let (original, current) = (state.original.clone(), state.current.clone());
+        original.update(cx, |editor, cx| {
+            if editor.text() != before {
+                editor.set_text(before.clone(), cx);
+            }
+            let revision = editor.revision();
+            editor.set_annotations(revision, left_marks, cx);
+            if animate {
+                editor.flash_annotations(settle(added.clone(), gold, gold), cx);
+                editor.flash_ranges(
+                    mdoc_editor::RangeFlash {
+                        revision,
+                        ranges: left_ghosts,
+                        duration: std::time::Duration::from_millis(700),
+                    },
+                    cx,
+                );
+            }
+        });
+        current.update(cx, |editor, cx| {
+            if editor.text() != text {
+                editor.set_text(text, cx);
+            }
+            let revision = editor.revision();
+            editor.set_annotations(revision, right_marks, cx);
+            if animate {
+                editor.flash_annotations(settle(added, gold, blue), cx);
+                editor.flash_ranges(
+                    mdoc_editor::RangeFlash {
+                        revision,
+                        ranges: right_ghosts,
+                        duration: std::time::Duration::from_millis(700),
+                    },
+                    cx,
+                );
+                editor.roll_text(
+                    mdoc_editor::TextRoll {
+                        revision,
+                        items: rolls,
+                        surface,
+                        duration: std::time::Duration::from_millis(600),
+                    },
+                    cx,
+                );
+            }
+        });
+        let state = self.compare.as_mut().expect("checked above");
+        state.key = key;
+        state.shown = shown;
+        state.before = before;
+        state.marks = spans;
+    }
+    /// Show the replacement at `offset` (in the editor text) in both columns:
+    /// scroll it into view when it is outside, then mark and flash it.
+    pub(super) fn reveal_in_compare(&mut self, offset: usize, cx: &mut Context<Self>) {
+        let Some(state) = self.compare.as_ref() else {
+            return;
+        };
+        let id = self
+            .pii
+            .review
+            .applied()
+            .iter()
+            .find(|a| a.range.start == offset)
+            .map(|a| APPLIED_ID | a.id);
+        let left_offset = to_before(offset, &state.marks);
+        let theme = self.theme.get();
+        for (editor, scroll, at, accent) in [
+            (&state.original, &state.left, left_offset, theme.proposed()),
+            (&state.current, &state.right, offset, theme.applied()),
+        ] {
+            let viewport = scroll.bounds();
+            if let Some(top) = editor.read(cx).offset_screen_top(at)
+                && (top < viewport.top() || top + px(24.) > viewport.bottom())
+            {
+                let delta = top - viewport.top() - px(48.);
+                let mut position = scroll.offset();
+                position.y = (position.y - delta).clamp(-scroll.max_offset().y, px(0.));
+                scroll.set_offset(position);
+            }
+            editor.update(cx, |editor, cx| {
+                editor.set_active_annotation(id, cx);
+                if let Some(id) = id.filter(|_| !cx.reduce_motion()) {
+                    let strong = (Hsla { a: 0.45, ..accent }, Hsla { a: 0.95, ..accent });
+                    editor.flash_annotations(
+                        mdoc_editor::AnnotationFlash {
+                            ids: HashSet::from([id]),
+                            from: strong,
+                            peak: strong,
+                            duration: std::time::Duration::from_millis(900),
+                            mark: None,
+                        },
+                        cx,
+                    );
+                }
+            });
+        }
+        // Both columns moved on purpose; neither leads the next frame.
+        state
+            .last
+            .set((state.left.offset().y, state.right.offset().y));
+        cx.notify();
+    }
+    pub(crate) fn compare_view(&self, width: f32, cx: &mut Context<Self>) -> Option<AnyElement> {
         let state = self.compare.as_ref()?;
         let theme = self.theme.get();
         let palette = theme.pdf_style();
+        let narrow = width < NARROW;
         // Scroll together: whichever pane moved since the last frame leads,
         // by the same fraction of its height (lines pair up, wrapping differs).
         let (left, right) = (state.left.offset().y, state.right.offset().y);
@@ -120,57 +394,109 @@ impl DocumentView {
         state
             .last
             .set((state.left.offset().y, state.right.offset().y));
-        let column = |id: &'static str,
-                      scroll: &gpui::ScrollHandle,
-                      editor: &Entity<mdoc_editor::EditorState>| {
+        // A quiet floating label names each column; it dims once the column
+        // scrolls under it. In a narrow window it switches columns.
+        let label = |id: &'static str, text: &'static str, scroll: &gpui::ScrollHandle| {
+            let scrolled = scroll.offset().y < px(-8.);
             div()
                 .id(id)
+                .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+                .absolute()
+                .top(px(12.))
+                .left(px(16.))
+                .px_2()
+                .py(px(2.))
+                .rounded_md()
+                .bg(palette.bg)
+                .border_1()
+                .border_color(palette.border)
+                .text_size(px(11.))
+                .text_color(palette.header_muted)
+                .when(scrolled, |v| v.opacity(0.35))
+                .hover(|s| s.opacity(1.))
+                .child(if narrow {
+                    format!("{text}  ⇄")
+                } else {
+                    text.into()
+                })
+                .when(narrow, |v| {
+                    v.cursor_pointer()
+                        .tooltip(crate::style::tooltip("Switch column".into(), theme))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            if let Some(state) = this.compare.as_mut() {
+                                state.original_only = !state.original_only;
+                            }
+                            cx.notify();
+                        }))
+                })
+        };
+        let column = |id: &'static str,
+                      scroll: &gpui::ScrollHandle,
+                      editor: &Entity<mdoc_editor::EditorState>,
+                      label: gpui::Stateful<gpui::Div>| {
+            div()
+                .relative()
                 .flex_1()
                 .min_w_0()
                 .h_full()
-                .overflow_y_scroll()
-                .track_scroll(scroll)
-                .p_6()
-                .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
-                .child(editor.clone())
+                .child(
+                    div()
+                        .id(id)
+                        .size_full()
+                        .overflow_y_scroll()
+                        .track_scroll(scroll)
+                        .px_6()
+                        .pt(px(44.))
+                        .pb_6()
+                        .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
+                        .child(editor.clone()),
+                )
+                .child(label)
         };
+        let show_left = !narrow || state.original_only;
+        let show_right = !narrow || !state.original_only;
+        let close = ui::floating_button(
+            "close-compare",
+            "Close before / after (Esc)",
+            ui::Icon::Close,
+            "Close",
+            theme,
+            true,
+        )
+        .when(cfg!(test), |v| v.debug_selector(|| "close-compare".into()))
+        .on_click(cx.listener(|this, _, window, cx| this.close_compare(window, cx)));
         Some(
             div()
                 .id("compare-view")
                 .when(cfg!(test), |v| v.debug_selector(|| "compare-view".into()))
+                .key_context("CompareView")
+                .track_focus(&state.focus)
+                .on_action(cx.listener(|this, _: &crate::CloseCompare, window, cx| {
+                    this.close_compare(window, cx)
+                }))
+                .relative()
                 .size_full()
                 .flex()
-                .flex_col()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_6()
-                        .py_2()
-                        .border_b_1()
-                        .border_color(palette.border)
-                        .text_size(px(12.))
-                        .text_color(palette.header_muted)
-                        .child(div().flex_1().child("Original"))
-                        .child(div().flex_1().child("Pseudonymized"))
-                        .child(
-                            crate::ui::control("close-compare", "Close", theme, true)
-                                .when(cfg!(test), |v| v.debug_selector(|| "close-compare".into()))
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.toggle_compare(window, cx)
-                                })),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .flex_1()
-                        .min_h_0()
-                        .child(column("compare-original", &state.left, &state.original))
-                        .child(div().w(px(1.)).h_full().bg(palette.border))
-                        .child(column("compare-current", &state.right, &state.current)),
-                )
+                .when(show_left, |v| {
+                    v.child(column(
+                        "compare-original",
+                        &state.left,
+                        &state.original,
+                        label("compare-label-original", "Original", &state.left),
+                    ))
+                })
+                .when(!narrow, |v| {
+                    v.child(div().w(px(1.)).h_full().bg(palette.border))
+                })
+                .when(show_right, |v| {
+                    v.child(column(
+                        "compare-current",
+                        &state.right,
+                        &state.current,
+                        label("compare-label-current", "Pseudonymized", &state.right),
+                    ))
+                })
+                .child(div().absolute().top(px(12.)).right(px(20.)).child(close))
                 .into_any_element(),
         )
     }
@@ -183,7 +509,7 @@ mod tests {
     #[test]
     fn the_original_is_rebuilt_with_marks_on_both_sides() {
         let after = "| PERSON_1 | ORG_1 |\n\nPERSON_1 left.";
-        let (before, before_marks, after_marks) = compare_texts(
+        let (before, marks) = compare_texts(
             after,
             &[
                 (2..10, "Anna Petrova"),
@@ -192,7 +518,19 @@ mod tests {
             ],
         );
         assert_eq!(before, "| Anna Petrova | Northwind Ltd |\n\nAnna left.");
-        assert_eq!(&before[before_marks[1].clone()], "Northwind Ltd");
-        assert_eq!(&after[after_marks[2].clone()], "PERSON_1");
+        assert_eq!(&before[marks[1].1.clone()], "Northwind Ltd");
+        assert_eq!(&after[marks[2].2.clone()], "PERSON_1");
+    }
+
+    #[test]
+    fn offsets_map_between_the_columns() {
+        // "Anna met Bo." → "PERSON_1 met PERSON_2."
+        let marks = [(0..4, 0..8), (9..11, 13..21)];
+        assert_eq!(to_after(5, &marks), 9);
+        assert_eq!(to_after(9, &marks), 13);
+        assert_eq!(to_after(11, &marks), 21);
+        assert_eq!(to_after(2, &marks), 0);
+        assert_eq!(to_before(13, &marks), 9);
+        assert_eq!(to_before(21, &marks), 11);
     }
 }

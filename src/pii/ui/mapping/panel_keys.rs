@@ -24,7 +24,11 @@ impl DocumentView {
 
     /// Select a mention from the panel: the editor scrolls to and outlines it,
     /// inline controls replace the popup.
-    pub(super) fn panel_select_mention(&mut self, annotation: u64, cx: &mut Context<Self>) {
+    pub(in crate::pii::ui) fn panel_select_mention(
+        &mut self,
+        annotation: u64,
+        cx: &mut Context<Self>,
+    ) {
         let review = &self.pii.review;
         let start = if annotation & APPLIED_ID != 0 {
             review

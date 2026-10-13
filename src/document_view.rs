@@ -1286,6 +1286,8 @@ pub(crate) fn bind_markdown_search_keys(cx: &mut App) {
 
 impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The before/after view follows the applied replacements (ADR 0042).
+        self.refresh_compare(window, cx);
         // Derived display state; set_outlines only notifies on change.
         self.sync_scope_outlines(cx);
         // Loads and Settings changes reach spellcheck here (no-op otherwise).
@@ -1559,6 +1561,7 @@ impl Render for DocumentView {
             .on_action(cx.listener(Self::copy_markdown))
             .on_action(cx.listener(Self::copy_for_ai))
             .on_action(cx.listener(Self::paste_ai_response))
+            .on_action(cx.listener(|this, _: &crate::ToggleCompare, window, cx| this.toggle_compare(window, cx)))
             .on_action(cx.listener(Self::pseudonymize_clipboard))
             .on_action(cx.listener(Self::pseudonymize))
             .on_action(cx.listener(Self::add_pii_candidate))
@@ -1596,7 +1599,7 @@ impl Render for DocumentView {
                     .child(if self.loading || self.unavailable {
                         div().p_6().child(if self.loading { ui::activity("markdown-loading", "Loading Markdown…", theme).into_any_element() } else { div().child("Markdown unavailable").into_any_element() })
                             .when(self.unavailable, |view| view.child(button("Retry", RetryDocument, theme))).into_any_element()
-                    } else if let Some(compare) = self.compare_view(cx) {
+                    } else if let Some(compare) = self.compare_view(content_width, cx) {
                         compare
                     } else { div().relative().flex_1().min_w_0().min_h_0()
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6()
@@ -1617,6 +1620,7 @@ impl Render for DocumentView {
                     .children(preview_notice)))
 )
             .children(setup_notice.filter(|_| !(show_markdown && self.source_only && self.ocr_required.is_some()))).children(error_notice)
-            .children(self.pii_popup(window, cx))
+            // The word popup anchors to the editor, hidden under before/after.
+            .children(self.pii_popup(window, cx).filter(|_| self.compare.is_none()))
     }
 }

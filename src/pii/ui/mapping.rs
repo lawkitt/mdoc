@@ -512,6 +512,10 @@ impl DocumentView {
     }
     fn reveal_replacement_offset(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.editor.update(cx, |e, cx| e.set_cursor(offset, cx));
+        if self.compare.is_some() {
+            self.reveal_in_compare(offset, cx);
+            return;
+        }
         if let Some(top) = self.editor.read(cx).offset_screen_top(offset) {
             let delta = top - self.scroll.bounds().top() - px(24.);
             let mut scroll = self.scroll.offset();

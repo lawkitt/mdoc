@@ -1680,3 +1680,61 @@ fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
         assert_eq!(categories, [Category::Person]);
     });
 }
+
+#[gpui::test]
+fn before_after_follows_replacements_live_and_escape_closes(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    app.update(cx, |app, cx| prepare_applied(app, "Anna Bob Anna", cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| app.toggle_compare(window, cx));
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("compare-view").is_some());
+    assert!(cx.debug_bounds("compare-label-original").is_some());
+    assert!(cx.debug_bounds("close-compare").is_some());
+    let texts = |app: &DocumentView, cx: &App| app.compare.as_ref().unwrap().texts(cx);
+    app.update(cx, |app, cx| {
+        assert_eq!(
+            texts(app, cx),
+            (
+                "Anna Bob Anna".into(),
+                "PERSON_1 PERSON_2 PERSON_1".into(),
+                false
+            )
+        );
+        // Reverting from the panel reaches the open view, with motion.
+        let id = app.pii.review.applied()[0].id;
+        app.undo_replacements([id].into(), cx);
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    app.update(cx, |app, cx| {
+        assert_eq!(
+            texts(app, cx),
+            (
+                "Anna Bob Anna".into(),
+                "Anna PERSON_2 PERSON_1".into(),
+                true
+            )
+        );
+        app.apply_replacements(cx);
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    app.update(cx, |app, cx| {
+        assert_eq!(texts(app, cx).1, "PERSON_1 PERSON_2 PERSON_1");
+    });
+    // Esc closes the view, also from inside a column.
+    app.update_in(cx, |app, window, cx| {
+        let focus = app.compare.as_ref().unwrap().current_focus(cx);
+        window.focus(&focus, cx);
+    });
+    cx.simulate_keystrokes("escape");
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    app.update(cx, |app, _| assert!(app.compare.is_none()));
+    // With no replacements left, an open view returns to the editor.
+    app.update_in(cx, |app, window, cx| app.toggle_compare(window, cx));
+    app.update(cx, |app, cx| {
+        let ids = app.pii.review.applied().iter().map(|a| a.id).collect();
+        app.undo_replacements(ids, cx);
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    app.update(cx, |app, _| assert!(app.compare.is_none()));
+}

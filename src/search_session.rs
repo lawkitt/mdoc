@@ -73,6 +73,10 @@ impl DocumentView {
         if self.source_only {
             return;
         }
+        // Search works in the editor (ADR 0042).
+        if self.compare.is_some() {
+            self.close_compare(window, cx);
+        }
         self.search.open = true;
         self.refresh_markdown_search(SearchRefresh::Open, true, window, cx);
         self.markdown_search
