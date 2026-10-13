@@ -4,6 +4,8 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- Saved cases on Linux keep their key in the Secret Service keyring (GNOME
+  Keyring or KWallet); without one, cases stay unavailable (ADR 0041).
 - Dropping a folder opens its files (not subfolders) as one new case named after
   it; each document joins once it has Markdown. **File → Pseudonymize
   Clipboard** (⌥⇧⌘C) replaces names the active tab's case knows in the

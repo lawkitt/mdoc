@@ -1436,7 +1436,7 @@ impl Workspace {
         if !ask
             || !at_risk
             || self.cases.asked.contains(&id)
-            || cfg!(not(any(target_os = "macos", windows)))
+            || cfg!(not(any(target_os = "macos", windows, target_os = "linux")))
         {
             return true;
         }

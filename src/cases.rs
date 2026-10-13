@@ -399,16 +399,59 @@ mod key {
         }
     }
 
-    #[cfg(not(any(target_os = "macos", windows)))]
+    /// Linux: the freedesktop Secret Service (GNOME Keyring, KWallet) over a
+    /// pure-Rust D-Bus connection. Without one, cases stay off; there is no
+    /// plaintext fallback.
+    #[cfg(target_os = "linux")]
+    pub fn load_or_create(_: &Path) -> Result<[u8; 32], String> {
+        use secret_service::{EncryptionType, blocking::SecretService};
+        use std::collections::HashMap;
+        let unavailable = |e: secret_service::Error| {
+            format!(
+                "Saved cases need a Secret Service keyring (GNOME Keyring or KWallet), \
+                 which is not available: {e}"
+            )
+        };
+        let service = SecretService::connect(EncryptionType::Dh).map_err(unavailable)?;
+        let collection = service.get_default_collection().map_err(unavailable)?;
+        collection.ensure_unlocked().map_err(unavailable)?;
+        let attributes = || {
+            HashMap::from([
+                ("application", "io.github.lawkitt.mdoc"),
+                ("kind", "case-key"),
+            ])
+        };
+        let found = collection.search_items(attributes()).map_err(unavailable)?;
+        if let Some(item) = found.first() {
+            return item
+                .get_secret()
+                .map_err(unavailable)?
+                .try_into()
+                .map_err(|_| "The case key in the keyring is damaged.".to_string());
+        }
+        let key = fresh();
+        collection
+            .create_item(
+                "mdoc case key",
+                attributes(),
+                &key,
+                false,
+                "application/octet-stream",
+            )
+            .map_err(|e| format!("Could not store the case key in the keyring: {e}"))?;
+        Ok(key)
+    }
+
+    #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
     pub fn load_or_create(_: &Path) -> Result<[u8; 32], String> {
         Err(
-            "Saved cases need the macOS Keychain or Windows data protection, \
-             so they are not available on this system."
+            "Saved cases need the macOS Keychain, Windows data protection or a \
+             Secret Service keyring, so they are not available on this system."
                 .into(),
         )
     }
 
-    #[cfg(any(target_os = "macos", windows))]
+    #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     fn fresh() -> [u8; 32] {
         let mut key = [0u8; 32];
         OsRng.fill_bytes(&mut key);

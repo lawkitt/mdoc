@@ -68,8 +68,10 @@ manifest or plaintext app data).
   `MDOCCASE1`, a 12-byte nonce, then AES-256-GCM over JSON, authenticated with
   the case id. The key is a Keychain generic password on macOS
   (`io.github.lawkitt.mdoc` / `case-key`) and a DPAPI-protected `key.dpapi` on
-  Windows. Linux has no Secret Service integration yet, so cases are disabled
-  there with an explanation (no plaintext fallback).
+  Windows. On Linux the key is a Secret Service item (`application` =
+  `io.github.lawkitt.mdoc`, `kind` = `case-key`) in the default collection,
+  reached over pure-Rust D-Bus (`secret-service`/zbus); without a running
+  keyring, cases stay off with an explanation (no plaintext fallback).
 - A case is created from the tab context menu (**Save mapping as case**), named
   after the document; it is renamed inline from the context menu or by
   double-clicking its sidebar header. No naming dialog.
