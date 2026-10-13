@@ -128,6 +128,9 @@ pub(super) struct Workspace {
     /// The Keychain explainer's Continue, focused when it opens (ADR 0043).
     explainer_focus: gpui::FocusHandle,
     explainer_focus_pending: bool,
+    /// The explainer's focus group, and where focus returns when it closes.
+    explainer_group: gpui::FocusHandle,
+    explainer_return: Option<gpui::FocusHandle>,
     menu_return: Option<gpui::FocusHandle>,
     sidebar_scroll: gpui::ScrollHandle,
     compact_scroll: gpui::ScrollHandle,
@@ -260,6 +263,8 @@ impl Workspace {
             menu_focus: cx.focus_handle(),
             explainer_focus: cx.focus_handle(),
             explainer_focus_pending: false,
+            explainer_group: cx.focus_handle(),
+            explainer_return: None,
             menu_return: None,
             sidebar_scroll: gpui::ScrollHandle::new(),
             compact_scroll: gpui::ScrollHandle::new(),

@@ -3314,3 +3314,39 @@ fn a_second_case_action_waits_with_the_first_for_the_keychain(cx: &mut TestAppCo
     assert_eq!(store().list().0.len(), 1);
     cx.update(|_, cx| assert!(tabs.read(cx).cases.list_open));
 }
+
+#[gpui::test]
+fn the_keychain_explainer_keeps_and_returns_keyboard_focus(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let view = active(&tabs, cx);
+    let before = view.update_in(cx, |view, window, cx| {
+        let focus = view.editor.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        focus
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(crate::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        )));
+        tabs.create_case(tab, window, cx);
+    });
+    draw(cx);
+    // Tab and Shift-Tab stay on the dialog's buttons.
+    for keys in ["tab", "tab", "tab", "shift-tab", "shift-tab", "shift-tab"] {
+        cx.simulate_keystrokes(keys);
+        draw(cx);
+        tabs.update_in(cx, |tabs, window, cx| {
+            assert!(tabs.explainer_group.contains_focused(window, cx), "{keys}");
+        });
+    }
+    // Esc closes it and hands focus back to the editor.
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    tabs.update_in(cx, |tabs, window, _| {
+        assert!(!tabs.cases.explainer);
+        assert!(before.is_focused(window));
+    });
+}

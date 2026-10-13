@@ -63,11 +63,14 @@ is not only the signature and the "Later" step moves forward.
 
 ## As implemented
 
-- **"May ask"** (`cases::Store::may_ask`, macOS only): the Keychain item
-  exists and this installation has not read it yet (no `.keychain-allowed`
-  marker in the cases folder). The lookup reads attributes only, which never
-  shows a dialog. A brand-new key is created without a dialog, so first-time
-  users never see the explainer; Windows and Linux never do.
+- **"May ask"** is decided by asking the Keychain itself: the key is read
+  with user interaction disabled (`SecKeychainSetUserInteractionAllowed`).
+  If that read succeeds, or the key is new (created without a dialog), the
+  store opens and nothing is shown. If it returns `errSecInteractionNotAllowed`,
+  the real read would show the dialog, so the explainer comes first. This
+  covers a new build, **Allow Once** (which asks again next time) and a
+  changed signature; a remembered "allowed once" flag would not (Codex
+  review). Windows and Linux never see the explainer.
 - **Launch** reads the key only when it may not ask. While it may, members
   restored at launch stay locked. Their case link is kept, and a bar says
   "Some documents belong to saved cases. Unlock them to restore their
@@ -76,8 +79,7 @@ is not only the signature and the "Later" step moves forward.
 - **Gated actions:** Save mapping as case (including the save-on-close
   question), folder drop as a case, and File → Open Case…. Moving a tab into a
   case needs a loaded case, so the key is already open.
-- **Denial** (`errSecUserCanceled`, `errSecAuthFailed`) removes the marker,
-  keeps members locked and keeps the action the user asked for; the bar offers
+- **Denial** (`errSecUserCanceled`, `errSecAuthFailed`) keeps members locked and keeps the action the user asked for; the bar offers
   **Try again…**, which finishes it once the key opens. Before this change,
   a failed key read at launch marked cases as loaded and dropped members'
   case links ("could not be found"); now they stay linked.
@@ -85,6 +87,7 @@ is not only the signature and the "Later" step moves forward.
   open or declined) runs after it, not instead of it; a repeated Save as case
   for an already-saved tab does nothing.
 - **Explainer:** `src/workspace_keychain.rs`. Esc means Not now; Continue has
-  focus, so Enter continues. The preview loops every 4.2 s at up to 30 fps and,
+  focus, so Enter continues. Tab stays within the dialog, and closing it
+  returns focus to where it was. The preview loops every 4.2 s at up to 30 fps and,
   under Reduce Motion, shows a single frame: password typed, Always Allow
   pressed.

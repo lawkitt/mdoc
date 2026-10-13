@@ -145,8 +145,10 @@ impl Workspace {
         self.cases.store = Some(Arc::new(store));
         self.cases.loaded = false;
     }
-    /// Whether opening the key now may show the macOS password dialog.
-    fn key_may_ask(&self) -> bool {
+    /// Whether reading the key now would show the macOS password dialog.
+    /// The key is read with dialogs off first, so a read that needs no
+    /// dialog just opens the store (ADR 0043).
+    fn key_may_ask(&mut self) -> bool {
         if self.cases.store.is_some() {
             return false;
         }
@@ -157,7 +159,18 @@ impl Workspace {
         if cfg!(test) {
             return staged;
         }
-        Store::default_dir().is_some_and(|dir| Store::may_ask(&dir))
+        let Some(dir) = Store::default_dir() else {
+            return false;
+        };
+        match Store::open_quietly(dir) {
+            Ok(Some(store)) => {
+                self.cases.store = Some(Arc::new(store));
+                false
+            }
+            Ok(None) => true,
+            // Reported by the action's own attempt to open the store.
+            Err(_) => false,
+        }
     }
     /// True when a case action can use the key now. Otherwise the Keychain
     /// explainer opens and `then` runs after its Continue (ADR 0043).
@@ -198,7 +211,7 @@ impl Workspace {
     /// The explainer's Continue: open the key (macOS may ask now), then load
     /// locked members and run the waiting action.
     pub(super) fn continue_unlock(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.cases.explainer = false;
+        self.close_explainer(window, cx);
         let then = self.cases.then.take();
         match self.case_store() {
             Ok(_) => {
@@ -223,10 +236,22 @@ impl Workspace {
         cx.notify();
     }
     /// The explainer's Not now: the waiting action is cancelled.
-    pub(super) fn cancel_unlock(&mut self, cx: &mut Context<Self>) {
-        self.cases.explainer = false;
+    pub(super) fn cancel_unlock(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.close_explainer(window, cx);
         self.cases.then = None;
         cx.notify();
+    }
+    /// Hide the explainer and give focus back to where it was.
+    fn close_explainer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.cases.explainer {
+            return;
+        }
+        self.cases.explainer = false;
+        let focus = self
+            .explainer_return
+            .take()
+            .unwrap_or_else(|| self.focus.clone());
+        window.focus(&focus, cx);
     }
     /// A declined dialog keeps members locked behind Try again; other errors
     /// are reported as before.
@@ -254,8 +279,9 @@ impl Workspace {
         ))
     }
     /// Read every case in the background, then attach loaded member tabs.
-    /// Nothing touches the key until a cases folder exists, and nothing at
-    /// launch when reading it may ask for the Mac password (ADR 0043).
+    /// Nothing touches the key until a cases folder exists, and launch never
+    /// shows the Mac password dialog: it reads the key with dialogs off and
+    /// otherwise leaves members locked (ADR 0043).
     pub(super) fn load_cases(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.cases.loaded || self.cases.loading || self.cases.locked {
             return;
@@ -264,6 +290,8 @@ impl Workspace {
             Some(store) => store.clone(),
             None => {
                 let exists = Store::default_dir().is_some_and(|d| d.exists());
+                // A cases folder: the key exists, but launch only reads it
+                // when that needs no dialog.
                 if (exists || cfg!(test)) && self.key_may_ask() {
                     self.cases.locked = true;
                     cx.notify();
