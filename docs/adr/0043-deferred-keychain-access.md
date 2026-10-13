@@ -70,7 +70,8 @@ is not only the signature and the "Later" step moves forward.
   the real read would show the dialog, so the explainer comes first. This
   covers a new build, **Allow Once** (which asks again next time) and a
   changed signature; a remembered "allowed once" flag would not (Codex
-  review). Windows and Linux never see the explainer.
+  review). Creating a first key in a locked keychain also needs the dialog,
+  so a refused quiet creation counts as "may ask" too. Windows and Linux never see the explainer.
 - **Launch** reads the key only when it may not ask. While it may, members
   restored at launch stay locked. Their case link is kept, and a bar says
   "Some documents belong to saved cases. Unlock them to restore their
@@ -88,7 +89,8 @@ is not only the signature and the "Later" step moves forward.
   for an already-saved tab does nothing.
 - **Explainer:** `src/workspace_keychain.rs`. Esc means Not now; Continue has
   focus, so Enter continues. Tab stays within the dialog, window shortcuts
-  (close tab, new tab, open, Settings…) are stopped while it shows, and closing
+  (close tab, new tab, open, Settings…) and clicks behind it are stopped while
+  it shows, and closing
   it returns focus to where it was. The preview loops every 4.2 s at up to 30 fps and,
   under Reduce Motion, shows a single frame: password typed, Always Allow
   pressed.
