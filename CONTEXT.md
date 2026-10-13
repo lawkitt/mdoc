@@ -86,6 +86,13 @@ document; a case stores its mapping encrypted on disk.
 **Case**: a named, saved mapping shared by a group of tabs; shown as a tab group
 in the sidebar. One case per document. Avoid "matter" and "project".
 
+**Case key**: the 256-bit key encrypting saved cases, held by the OS (macOS
+Keychain, Windows DPAPI, Linux Secret Service). Read only for an action that
+needs it ([ADR 0043](docs/adr/0043-deferred-keychain-access.md)).
+
+**Keychain explainer**: the dialog shown before the first case-key access (and
+after a denial), with an animated preview of the macOS password dialog.
+
 **Pseudonymize Clipboard**: replace the clipboard text's known case names with
 their aliases, without detection. Unknown names stay; it is not a scan.
 

@@ -26,13 +26,16 @@ fn start_drag(
 }
 
 /// Panel row surfaces: a band for open groups, a stronger fill for the
-/// selected mention, and a guide line tying mentions to their header.
+/// selected mention, and a guide line tying mentions to their header. The
+/// guide is blue only for applied mentions, dimmed unless selected (ADR 0044).
 struct RowColors {
     hover: Hsla,
     band: Hsla,
     selected: Hsla,
     guide: Hsla,
     guide_selected: Hsla,
+    guide_applied: Hsla,
+    guide_applied_selected: Hsla,
     separator: Hsla,
 }
 impl RowColors {
@@ -53,16 +56,34 @@ impl RowColors {
                 ..p.header_muted
             },
             guide_selected: p.header_fg,
+            guide_applied: Hsla {
+                a: 0.45,
+                ..theme.applied()
+            },
+            guide_applied_selected: theme.applied(),
             separator: p.border,
         }
     }
+    fn guide_for(&self, applied: bool, selected: bool) -> Hsla {
+        match (applied, selected) {
+            (true, true) => self.guide_applied_selected,
+            (true, false) => self.guide_applied,
+            (false, true) => self.guide_selected,
+            (false, false) => self.guide,
+        }
+    }
 }
+
+/// The header text's left edge; the guide sits on it and mention content
+/// starts [`MENTION_INSET`] after (one indent level, ADR 0044).
+const ROW_INSET: f32 = 12.;
+const MENTION_INSET: f32 = ROW_INSET + 2. + 10.;
 
 /// The vertical line left of a group's mention rows.
 fn guide(color: Hsla) -> gpui::Div {
     div()
         .absolute()
-        .left(px(17.))
+        .left(px(ROW_INSET))
         .top_0()
         .bottom_0()
         .w(px(2.))
@@ -223,7 +244,7 @@ impl DocumentView {
         .when(cfg!(test), |v| {
             v.debug_selector(move || format!("identity-{id}"))
         })
-        .px_3()
+        .px(px(ROW_INSET))
         .border_t_1()
         .border_color(RowColors::new(theme).separator)
         .when(expanded, |v| v.bg(RowColors::new(theme).band))
@@ -243,14 +264,6 @@ impl DocumentView {
                 .gap_1()
                 .child(
                     div()
-                        .flex_shrink_0()
-                        .w(px(10.))
-                        .text_size(px(10.))
-                        .text_color(palette.header_muted)
-                        .child(if expanded { "▾" } else { "▸" }),
-                )
-                .child(
-                    div()
                         .min_w_0()
                         .flex_1()
                         .text_ellipsis()
@@ -265,7 +278,6 @@ impl DocumentView {
                 .flex()
                 .items_center()
                 .gap_2()
-                .pl(px(14.))
                 .child(alias)
                 .child(div().flex_1())
                 .child(
@@ -283,7 +295,6 @@ impl DocumentView {
         .on_click(cx.listener(move |this, _, window, cx| {
             window.focus(&this.pii.mapping.focus, cx);
             this.pii.mapping.cursor = Some(PanelCursor::Header(id));
-            this.pii.mapping.triage_expanded.remove(&id);
             this.toggle_group(id, cx);
         }))
         .on_drag(
@@ -332,7 +343,11 @@ impl DocumentView {
                 .clone()
         };
         let (before, word, after) = self.readable_mention(&range, cx);
-        let undo = applied && (current || self.pii.mapping.hovered == Some(annotation));
+        // The header names the wording; only a variant repeats it (ADR 0044).
+        let variant = *original != *row.original;
+        // Selected rows undo from their inline controls instead.
+        let undo = applied && !current && self.pii.mapping.hovered == Some(annotation);
+        let colors = RowColors::new(theme);
         let state = if applied {
             theme.applied()
         } else {
@@ -345,39 +360,37 @@ impl DocumentView {
         .when(cfg!(test), |v| {
             v.debug_selector(move || format!("mention-{annotation}"))
         })
-        .pl(px(28.))
+        .pl(px(MENTION_INSET))
         .pr_3()
         // The selected mention keeps its fill under the pointer so it stays
         // one surface with its inline controls.
-        .when(current, |v| v.bg(RowColors::new(theme).selected))
-        .child(guide(if current {
-            RowColors::new(theme).guide_selected
-        } else {
-            RowColors::new(theme).guide
-        }))
+        .when(current, |v| v.bg(colors.selected))
+        .child(guide(colors.guide_for(applied, current)))
         .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
             if this.pii.mapping.hover_mention(annotation, *hovered) {
                 cx.notify();
             }
         }))
         .when(undo, |v| v.pr(px(36.)))
-        .child(
-            div()
-                .w_full()
-                .flex()
-                .items_center()
-                .gap_1()
-                .text_size(px(11.))
-                .text_color(palette.header_muted)
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex_1()
-                        .text_ellipsis()
-                        .child(original.to_string()),
-                )
-                .when(applied, |v| v.child(applied_check(theme))),
-        )
+        .when(variant, |v| {
+            v.child(
+                div()
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .text_size(px(11.))
+                    .text_color(palette.header_muted)
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .text_ellipsis()
+                            .child(original.to_string()),
+                    )
+                    .when(applied, |v| v.child(applied_check(theme))),
+            )
+        })
         .when(undo, |v| {
             let id = annotation & !APPLIED_ID;
             v.child(
@@ -400,15 +413,25 @@ impl DocumentView {
                 })),
             )
         })
-        .child(div().w_full().text_ellipsis().child(
-            StyledText::new(format!("{before}{word}{after}")).with_highlights([(
-                before.len()..before.len() + word.len(),
-                HighlightStyle {
-                    color: Some(state),
-                    ..Default::default()
-                },
-            )]),
-        ))
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .items_center()
+                .gap_1()
+                .child(div().min_w_0().flex_1().text_ellipsis().child(
+                    StyledText::new(format!("{before}{word}{after}")).with_highlights([(
+                        before.len()..before.len() + word.len(),
+                        HighlightStyle {
+                            color: Some(state),
+                            ..Default::default()
+                        },
+                    )]),
+                ))
+                .when(applied && !variant && !undo, |v| {
+                    v.child(applied_check(theme))
+                }),
+        )
         .on_click(cx.listener(move |this, _, window, cx| {
             window.focus(&this.pii.mapping.focus, cx);
             this.panel_select_mention(annotation, cx);
@@ -532,7 +555,7 @@ impl DocumentView {
             })
             .w_full()
             .h(px(48.))
-            .pl(px(26.))
+            .pl(px(MENTION_INSET))
             .pr_2()
             .flex()
             .items_center()
@@ -541,7 +564,7 @@ impl DocumentView {
             .text_size(px(12.))
             // Continues the selected mention's surface and guide.
             .bg(colors.selected)
-            .child(guide(colors.guide_selected))
+            .child(guide(colors.guide_for(applied, true)))
             .child(
                 div()
                     .flex()

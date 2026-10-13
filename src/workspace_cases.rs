@@ -83,7 +83,24 @@ pub(super) struct CaseState {
     pub(super) collapsed: HashSet<String>,
     /// The case whose category switches are shown.
     pub(super) categories_open: Option<String>,
+    /// The Keychain explainer is shown (ADR 0043).
+    pub(super) explainer: bool,
+    /// What runs once the explainer's Continue opened the key.
+    then: Option<AfterUnlock>,
+    /// Case members wait for an explicit unlock: the key was not read at
+    /// launch because reading it may ask for the Mac password.
+    pub(super) locked: bool,
+    /// The last macOS Keychain dialog was declined.
+    pub(super) denied: bool,
+    /// Stands in for "reading the key may ask" in tests.
+    #[cfg(test)]
+    pub(super) test_may_ask: bool,
+    /// What opening the key yields in tests: a store, or an error.
+    #[cfg(test)]
+    pub(super) test_open: Option<Result<Store, String>>,
 }
+
+type AfterUnlock = Box<dyn FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>)>;
 
 impl Workspace {
     /// The store, opening the OS-held key on first use.
@@ -92,29 +109,145 @@ impl Workspace {
             return Ok(store.clone());
         }
         // Tests inject a store; they never reach the real key or app data.
-        if cfg!(test) {
-            return Err("Saved cases are not set up in this test.".into());
-        }
-        let dir = Store::default_dir().ok_or("No folder for app data on this system.")?;
-        let store = Arc::new(Store::open(dir)?);
+        let open = if cfg!(test) {
+            self.test_open()
+        } else {
+            Store::default_dir()
+                .ok_or_else(|| "No folder for app data on this system.".to_string())
+                .and_then(Store::open)
+        };
+        let store = Arc::new(open?);
         self.cases.store = Some(store.clone());
         Ok(store)
+    }
+    #[cfg(test)]
+    fn test_open(&mut self) -> Result<Store, String> {
+        self.cases
+            .test_open
+            .take()
+            .unwrap_or_else(|| Err("Saved cases are not set up in this test.".into()))
+    }
+    #[cfg(not(test))]
+    fn test_open(&mut self) -> Result<Store, String> {
+        unreachable!()
+    }
+    /// Opening the key will ask (as on a Mac that has not allowed mdoc yet)
+    /// and then yield `open`.
+    #[cfg(test)]
+    pub(super) fn stage_case_key(&mut self, open: Result<Store, String>) {
+        self.cases.store = None;
+        self.cases.loaded = false;
+        self.cases.test_may_ask = true;
+        self.cases.test_open = Some(open);
     }
     #[cfg(test)]
     pub(super) fn use_case_store(&mut self, store: Store) {
         self.cases.store = Some(Arc::new(store));
         self.cases.loaded = false;
     }
+    /// Whether opening the key now may show the macOS password dialog.
+    fn key_may_ask(&self) -> bool {
+        if self.cases.store.is_some() {
+            return false;
+        }
+        #[cfg(test)]
+        let staged = self.cases.test_may_ask;
+        #[cfg(not(test))]
+        let staged = false;
+        if cfg!(test) {
+            return staged;
+        }
+        Store::default_dir().is_some_and(|dir| Store::may_ask(&dir))
+    }
+    /// True when a case action can use the key now. Otherwise the Keychain
+    /// explainer opens and `then` runs after its Continue (ADR 0043).
+    pub(super) fn case_key_ready(
+        &mut self,
+        then: impl FnOnce(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.key_may_ask() {
+            return true;
+        }
+        self.cases.explainer = true;
+        self.explainer_focus_pending = true;
+        self.cases.then = Some(Box::new(then));
+        cx.notify();
+        false
+    }
+    /// Show the explainer for locked or denied cases; Continue loads them.
+    pub(super) fn unlock_cases(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.case_key_ready(|_, _, _| {}, cx) {
+            self.continue_unlock(window, cx);
+        }
+    }
+    /// The explainer's Continue: open the key (macOS may ask now), then load
+    /// locked members and run the waiting action.
+    pub(super) fn continue_unlock(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.cases.explainer = false;
+        let then = self.cases.then.take();
+        match self.case_store() {
+            Ok(_) => {
+                self.cases.denied = false;
+                if std::mem::take(&mut self.cases.locked) {
+                    self.cases.loaded = false;
+                    self.load_cases(window, cx);
+                }
+                if let Some(then) = then {
+                    then(self, window, cx);
+                }
+            }
+            Err(error) => self.key_failed(error),
+        }
+        cx.notify();
+    }
+    /// The explainer's Not now: the waiting action is cancelled.
+    pub(super) fn cancel_unlock(&mut self, cx: &mut Context<Self>) {
+        self.cases.explainer = false;
+        self.cases.then = None;
+        cx.notify();
+    }
+    /// A declined dialog keeps members locked behind Try again; other errors
+    /// are reported as before.
+    fn key_failed(&mut self, error: String) {
+        if error == crate::cases::KEY_DENIED {
+            self.cases.denied = true;
+        } else {
+            self.notice = Some(error);
+        }
+    }
+    /// The banner for members waiting on the key, or a declined dialog.
+    pub(super) fn case_key_banner(&self) -> Option<(&'static str, &'static str)> {
+        if self.cases.store.is_some() {
+            return None;
+        }
+        if self.cases.denied {
+            return Some((
+                "Saved cases need Keychain access to open their replacements.",
+                "Try again…",
+            ));
+        }
+        (self.cases.locked && self.tabs.iter().any(|t| t.record.case.is_some())).then_some((
+            "Some documents belong to saved cases. Unlock them to restore their replacements.",
+            "Unlock…",
+        ))
+    }
     /// Read every case in the background, then attach loaded member tabs.
-    /// Nothing touches the key until a cases folder exists.
+    /// Nothing touches the key until a cases folder exists, and nothing at
+    /// launch when reading it may ask for the Mac password (ADR 0043).
     pub(super) fn load_cases(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.cases.loaded || self.cases.loading {
+        if self.cases.loaded || self.cases.loading || self.cases.locked {
             return;
         }
         let store = match &self.cases.store {
             Some(store) => store.clone(),
             None => {
                 let exists = Store::default_dir().is_some_and(|d| d.exists());
+                if (exists || cfg!(test)) && self.key_may_ask() {
+                    self.cases.locked = true;
+                    cx.notify();
+                    return;
+                }
                 if !exists || cfg!(test) {
                     self.cases.loaded = true;
                     return;
@@ -122,8 +255,10 @@ impl Workspace {
                 match self.case_store() {
                     Ok(store) => store,
                     Err(error) => {
-                        self.notice = Some(error);
-                        self.cases.loaded = true;
+                        // Stay unloaded so members keep their case link.
+                        self.cases.locked = true;
+                        self.key_failed(error);
+                        cx.notify();
                         return;
                     }
                 }
@@ -270,8 +405,16 @@ impl Workspace {
             cx.notify();
             return None;
         }
+        if !self.case_key_ready(
+            move |this, window, cx| {
+                this.create_case(id, window, cx);
+            },
+            cx,
+        ) {
+            return None;
+        }
         if let Err(error) = self.case_store() {
-            self.notice = Some(error);
+            self.key_failed(error);
             cx.notify();
             return None;
         }
@@ -331,6 +474,13 @@ impl Workspace {
             notes.insert(0, format!("“{}” has no supported files", folder.name));
             self.notice = Some(notes.join("; ") + ".");
             cx.notify();
+            return;
+        }
+        if self.key_may_ask() {
+            self.case_key_ready(
+                move |this, window, cx| this.open_folder_case(folder, window, cx),
+                cx,
+            );
             return;
         }
         if let Err(error) = self.case_store() {
@@ -893,9 +1043,12 @@ impl Workspace {
         cx.notify();
     }
     pub(super) fn show_case_list(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.case_key_ready(|this, window, cx| this.show_case_list(window, cx), cx) {
+            return;
+        }
         self.load_cases(window, cx);
         if let Err(error) = self.case_store() {
-            self.notice = Some(error);
+            self.key_failed(error);
             cx.notify();
             return;
         }
@@ -1409,6 +1562,22 @@ impl Workspace {
         )
     }
 
+    /// Save the tab as a case and close it once the case is safely written;
+    /// after the Keychain explainer when that comes first (ADR 0043).
+    fn save_case_and_close(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.cases.asked.remove(&id);
+        if !self.case_key_ready(
+            move |this, window, cx| this.save_case_and_close(id, window, cx),
+            cx,
+        ) {
+            return;
+        }
+        if let Some(case) = self.create_case(id, window, cx) {
+            self.cases.asked.insert(id);
+            self.cases.close_after.insert(case, id);
+        }
+    }
+
     /// Before closing a tab whose mapping would be lost, offer to keep it.
     /// Returns true when the close continues now.
     pub(super) fn confirm_mapping_close(
@@ -1456,14 +1625,7 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let answer = answer.await.ok();
             let _ = this.update_in(cx, |this, window, cx| match answer {
-                Some(0) => {
-                    // Close only once the case is safely written.
-                    if let Some(case) = this.create_case(id, window, cx) {
-                        this.cases.close_after.insert(case, id);
-                    } else {
-                        this.cases.asked.remove(&id);
-                    }
-                }
+                Some(0) => this.save_case_and_close(id, window, cx),
                 Some(1) => this.close_tab(id, window, cx),
                 _ => {
                     this.cases.asked.remove(&id);

@@ -170,8 +170,6 @@ pub(super) struct MappingUi {
     pub(super) key_moving: bool,
     /// The selection came from the panel: inline controls, no popup.
     pub(super) panel_selected: bool,
-    /// Groups opened by triage focus, closed again once fully decided.
-    pub(super) triage_expanded: std::collections::HashSet<u64>,
     pub(super) panel_menu: Option<PanelMenu>,
     /// The group whose alias is being renamed in place, and its draft.
     pub(super) header_edit: Option<u64>,
@@ -397,7 +395,6 @@ impl MappingUi {
             cursor: None,
             key_moving: false,
             panel_selected: false,
-            triage_expanded: Default::default(),
             panel_menu: None,
             header_edit: None,
             header_alias: input("New alias"),
@@ -484,7 +481,7 @@ impl DocumentView {
         }
         cx.notify();
     }
-    fn selected_entity(&self) -> Option<u64> {
+    pub(super) fn selected_entity(&self) -> Option<u64> {
         match self.pii.mapping.selected.as_ref()? {
             Selection::Entity(id) => Some(*id),
             Selection::Candidate {

@@ -32,7 +32,7 @@ blue fills, a ⋯ menu hid Rescan, and decisions needed the popup or the mouse.
   header toggles; ⇧⌘ variants act on the whole entity. ⌥↑/↓ is a keyboard move:
   step through target groups (then "New alias" for a mention of a multi-mention
   entity), release ⌥ to drop, Esc to cancel. After a decision, focus goes to the
-  next undecided mention. Search ↔ list with ↓/↑; Esc returns to search, then closes.
+  next undecided mention (superseded by ADR 0044: the selection stays). Search ↔ list with ↓/↑; Esc returns to search, then closes.
 - **Mouse.** Wheel (line deltas) steps the selection; trackpad scrolls. Middle
   click keeps the original under the pointer (⌘ Same text, ⇧⌘ All; Undo on
   applied rows), in the panel and on editor chips.

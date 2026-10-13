@@ -3133,3 +3133,134 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
     draw(cx);
     assert!(cx.debug_bounds("compare-view").is_some());
 }
+
+/// A case to restore, saved in an isolated store under `dir`.
+fn saved_case(dir: &std::path::Path) -> (crate::cases::Case, std::path::PathBuf) {
+    let store = crate::cases::Store::with_key(dir.join("cases"), &[3; 32]);
+    let path = dir.join("contract.md");
+    std::fs::write(&path, "PERSON_1 met Bob.").unwrap();
+    let case = crate::cases::Case::new(
+        "Petrova".into(),
+        &[crate::pii::restore::ExportedIdentity {
+            alias: "PERSON_1".into(),
+            previous: vec![],
+            category: crate::pii::Category::Person,
+            custom: false,
+            originals: vec!["Anna Petrova".into()],
+        }],
+        Some(session_store::identity(&path)),
+    );
+    store.save(&case).unwrap();
+    (case, path)
+}
+
+#[gpui::test]
+fn saving_a_case_explains_the_keychain_before_asking(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let store = || crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    // Not now cancels: nothing is saved and the key is not read.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(store()));
+        assert!(tabs.create_case(tab, window, cx).is_none());
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("keychain-explainer").is_some());
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    assert!(cx.debug_bounds("keychain-explainer").is_none());
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.cases.test_open.is_some() && !tabs.cases.explainer);
+    });
+    assert!(store().list().0.is_empty());
+    // Continue reads the key, then saves the case it was opened for.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(tab, window, cx);
+    });
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    assert!(cx.debug_bounds("keychain-explainer").is_none());
+    assert_eq!(store().list().0.len(), 1);
+    // The key is open now: later case actions do not explain again.
+    cx.update(|_, cx| assert!(tabs.read(cx).case_key_banner().is_none()));
+}
+
+#[gpui::test]
+fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (case, path) = saved_case(dir.path());
+    let session = Session {
+        tabs: vec![TabRecord {
+            markdown: session_store::identity(&path),
+            case: Some(case.id.clone()),
+            ..TabRecord::default()
+        }],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        // The first attempt is declined, the second allowed.
+        tabs.stage_case_key(Err(crate::cases::KEY_DENIED.into()));
+        tabs.restore(session, window, cx);
+        let restored = tabs.tabs.last().unwrap().id;
+        tabs.activate(restored, window, cx);
+    });
+    cx.run_until_parked();
+    draw(cx);
+    // Nothing asked at launch: the member opened without its mapping, kept
+    // its case link, and the bar offers Unlock.
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert!(view.read(cx).case.is_none());
+        let tabs = tabs.read(cx);
+        assert!(tabs.cases.locked && !tabs.cases.explainer);
+        assert!(tabs.cases.test_open.is_some());
+        assert_eq!(
+            tabs.snapshot(cx).tabs.last().unwrap().case.as_deref(),
+            Some(case.id.as_str())
+        );
+    });
+    let unlock = cx.debug_bounds("unlock-cases").unwrap();
+    cx.simulate_click(unlock.center(), Default::default());
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    // Declined: still locked, and the bar offers Try again.
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.cases.denied);
+        assert_eq!(tabs.case_key_banner().map(|b| b.1), Some("Try again…"));
+        assert_eq!(
+            tabs.snapshot(cx).tabs.last().unwrap().case.as_deref(),
+            Some(case.id.as_str())
+        );
+    });
+    tabs.update(cx, |tabs, _| {
+        tabs.cases.test_open = Some(Ok(crate::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        )));
+    });
+    let unlock = cx.debug_bounds("unlock-cases").unwrap();
+    cx.simulate_click(unlock.center(), Default::default());
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).case.as_ref().map(|l| l.name.as_str()),
+            Some("Petrova")
+        );
+        assert!(tabs.read(cx).case_key_banner().is_none());
+    });
+    assert!(cx.debug_bounds("unlock-cases").is_none());
+}
