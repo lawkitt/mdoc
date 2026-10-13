@@ -403,9 +403,12 @@ mod key {
             Err(e) if e.code() == -25300 => {
                 // errSecItemNotFound: first use.
                 let key = fresh();
-                set_generic_password(SERVICE, ACCOUNT, &key)
-                    .map_err(|e| format!("Could not store the case key in the Keychain: {e}"))?;
-                Ok(Some(key))
+                match set_generic_password(SERVICE, ACCOUNT, &key) {
+                    Ok(()) => Ok(Some(key)),
+                    // A locked keychain: creating it needs the dialog too.
+                    Err(e) if quiet && e.code() == -25308 => Ok(None),
+                    Err(e) => Err(format!("Could not store the case key in the Keychain: {e}")),
+                }
             }
             Err(e) => Err(format!(
                 "Could not read the case key from the Keychain: {e}"

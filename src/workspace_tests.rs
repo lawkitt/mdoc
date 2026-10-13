@@ -3342,8 +3342,12 @@ fn the_keychain_explainer_is_modal_and_returns_keyboard_focus(cx: &mut TestAppCo
             assert!(tabs.explainer_group.contains_focused(window, cx), "{keys}");
         });
     }
-    // Window shortcuts stop at the dialog: the waiting tab stays open.
+    // Window shortcuts and clicks stop at the dialog: no tab opens or closes.
     let open = cx.update(|_, cx| tabs.read(cx).tabs.len());
+    let new_tab = cx
+        .debug_bounds("sidebar-new")
+        .expect("the sidebar's New tab button");
+    cx.simulate_click(new_tab.center(), Default::default());
     cx.dispatch_action(Close);
     cx.dispatch_action(New);
     draw(cx);

@@ -357,6 +357,12 @@ impl Workspace {
                     .justify_center()
                     .pt(px(64.))
                     .bg(gpui::hsla(0., 0., 0., 0.25))
+                    // A modal, like Settings: nothing behind it takes clicks.
+                    .id("keychain-overlay")
+                    .occlude()
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_mouse_down(gpui::MouseButton::Right, |_, _, cx| cx.stop_propagation())
+                    .on_mouse_down(gpui::MouseButton::Middle, |_, _, cx| cx.stop_propagation())
                     .child(
                         ui::panel("keychain-explainer", theme)
                             .when(cfg!(test), |v| {
