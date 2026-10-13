@@ -172,22 +172,26 @@ impl RestoreMap {
         if patterns.is_empty() {
             return (text.to_string(), 0);
         }
-        let Ok(matcher) = aho_corasick::AhoCorasick::builder()
-            .match_kind(aho_corasick::MatchKind::LeftmostLongest)
-            .build(&patterns)
-        else {
+        let Ok(matcher) = aho_corasick::AhoCorasick::new(&patterns) else {
             return (text.to_string(), 0);
         };
+        // Whole words first, then the leftmost and longest of those: a longer
+        // match that is not a whole word must not hide a shorter one that is.
+        let mut found: Vec<_> = matcher
+            .find_overlapping_iter(text)
+            .map(|m| (m.start()..m.end(), owners[m.pattern().as_usize()]))
+            .filter(|(range, _)| super::exact_boundary(text, range, &text[range.clone()]))
+            .collect();
+        found.sort_by_key(|(r, _)| (r.start, std::cmp::Reverse(r.end)));
         let mut out = String::with_capacity(text.len());
         let mut last = 0;
         let mut count = 0;
-        for found in matcher.find_iter(text) {
-            let range = found.start()..found.end();
-            if !super::exact_boundary(text, &range, &text[range.clone()]) {
+        for (range, owner) in found {
+            if range.start < last {
                 continue;
             }
             out.push_str(&text[last..range.start]);
-            out.push_str(&self.identities[owners[found.pattern().as_usize()]].alias);
+            out.push_str(&self.identities[owner].alias);
             last = range.end;
             count += 1;
         }

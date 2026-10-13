@@ -3040,6 +3040,7 @@ fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
     std::fs::write(folder.join("b.md"), "Second").unwrap();
     std::fs::write(folder.join("a.md"), "First").unwrap();
     std::fs::write(folder.join("notes.bin"), [0u8, 1, 2]).unwrap();
+    std::fs::write(folder.join(".draft.md"), "Hidden").unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.use_case_store(crate::cases::Store::with_key(
@@ -3075,7 +3076,9 @@ fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
             ["a.md", "b.md"],
             "sorted by name; unsupported skipped"
         );
-        assert!(tabs.notice.as_deref().unwrap().contains("1 subfolder"));
+        assert_eq!(case.members.len(), 2, "members are recorded as they join");
+        let notice = tabs.notice.as_deref().unwrap();
+        assert!(notice.contains("1 subfolder") && notice.contains("1 hidden file"));
     });
 }
 
@@ -3120,6 +3123,11 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
         );
         assert_eq!(tabs.read(cx).cases.cases[0].skip, ["ADDRESS"]);
     });
+    // Leaving the case ends its category switches for this tab.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.remove_from_case(tab, window, cx)
+    });
+    cx.update(|_, cx| assert!(view.read(cx).case_skip.is_empty()));
     // Before/after shows originals beside aliases.
     view.update(cx, |view, cx| view.toggle_compare(cx));
     draw(cx);

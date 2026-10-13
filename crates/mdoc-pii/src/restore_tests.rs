@@ -486,3 +486,15 @@ fn pseudonymizing_replaces_known_whole_names_longest_first() {
     assert_eq!(count, 3);
     assert_eq!(map.pseudonymize("nothing here"), ("nothing here".into(), 0));
 }
+
+#[test]
+fn a_partial_longer_match_does_not_hide_a_whole_shorter_name() {
+    let map = RestoreMap::new(vec![
+        identity("PERSON_1", Category::Person, &["Anna Petrova"]),
+        identity("PERSON_2", Category::Person, &["Petrova"]),
+    ]);
+    assert_eq!(
+        map.pseudonymize("XAnna Petrova"),
+        ("XAnna PERSON_2".into(), 1)
+    );
+}

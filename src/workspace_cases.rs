@@ -19,6 +19,7 @@ pub(super) struct DroppedFolder {
     pub name: String,
     pub files: Vec<PathBuf>,
     pub skipped_folders: usize,
+    pub skipped_hidden: usize,
 }
 impl DroppedFolder {
     /// The folder's own supported files, sorted by name; subfolders skipped.
@@ -31,16 +32,20 @@ impl DroppedFolder {
         }
         let mut files = Vec::new();
         let mut skipped_folders = 0;
+        let mut skipped_hidden = 0;
         for entry in std::fs::read_dir(path).ok()?.flatten() {
             let entry = entry.path();
+            let hidden = entry
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with('.'));
             if entry.is_dir() {
-                skipped_folders += 1;
-            } else if supported(&entry)
-                && !entry
-                    .file_name()
-                    .is_some_and(|n| n.to_string_lossy().starts_with('.'))
-            {
-                files.push(session_store::identity(&entry));
+                skipped_folders += usize::from(!hidden);
+            } else if supported(&entry) {
+                if hidden {
+                    skipped_hidden += 1;
+                } else {
+                    files.push(session_store::identity(&entry));
+                }
             }
         }
         files.sort_by_key(|f| f.file_name().map(|n| n.to_string_lossy().to_lowercase()));
@@ -50,6 +55,7 @@ impl DroppedFolder {
                 .map_or_else(|| "Folder".into(), |n| n.to_string_lossy().into_owned()),
             files,
             skipped_folders,
+            skipped_hidden,
         })
     }
 }
@@ -190,10 +196,27 @@ impl Workspace {
                 let link = CaseLink::of(case);
                 let identities = case.exported();
                 let skip = case.skipped();
+                let case_id = link.id.clone();
                 view.update(cx, |view, cx| {
                     view.case_skip = skip;
                     view.open_case_mapping(link, &identities, cx)
                 });
+                // A saved document is a member from the moment it joins.
+                let path = view
+                    .read(cx)
+                    .session
+                    .document
+                    .path
+                    .as_deref()
+                    .map(session_store::identity);
+                if let Some(path) = path
+                    && let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == case_id)
+                    && !case.members.contains(&path)
+                {
+                    case.members.push(path);
+                    let case = case.clone();
+                    self.enqueue_case(case, cx);
+                }
             }
             None if wanted.is_some() => {
                 let name = view.read(cx).display_name();
@@ -291,6 +314,17 @@ impl Workspace {
                     "subfolders"
                 },
                 folder.name
+            ));
+        }
+        if folder.skipped_hidden > 0 {
+            notes.push(format!(
+                "{} hidden {} skipped",
+                folder.skipped_hidden,
+                if folder.skipped_hidden == 1 {
+                    "file"
+                } else {
+                    "files"
+                }
             ));
         }
         if folder.files.is_empty() {
@@ -675,6 +709,7 @@ impl Workspace {
         let Some(link) = view.update(cx, |view, cx| {
             view.case_save = None;
             cx.notify();
+            view.case_skip.clear();
             view.case.take()
         }) else {
             return;
@@ -753,6 +788,7 @@ impl Workspace {
                 view.update(cx, |view, cx| {
                     if view.case.as_ref().is_some_and(|l| l.id == case_id) {
                         view.case = None;
+                        view.case_skip.clear();
                         view.case_save = None;
                         cx.notify();
                     }
