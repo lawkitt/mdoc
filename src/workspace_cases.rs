@@ -216,10 +216,7 @@ impl Workspace {
         match self.case_store() {
             Ok(_) => {
                 self.cases.denied = false;
-                if std::mem::take(&mut self.cases.locked) {
-                    self.cases.loaded = false;
-                    self.load_cases(window, cx);
-                }
+                self.resume_locked(window, cx);
                 if let Some(then) = then {
                     then(self, window, cx);
                 }
@@ -234,6 +231,14 @@ impl Workspace {
             }
         }
         cx.notify();
+    }
+    /// Once the store is open, members left locked at launch load and get
+    /// their mappings, however the key became readable.
+    fn resume_locked(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.cases.store.is_some() && std::mem::take(&mut self.cases.locked) {
+            self.cases.loaded = false;
+            self.load_cases(window, cx);
+        }
     }
     /// The explainer's Not now: the waiting action is cancelled.
     pub(super) fn cancel_unlock(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -471,6 +476,7 @@ impl Workspace {
             cx.notify();
             return None;
         }
+        self.resume_locked(window, cx);
         let case = Case::new(
             name,
             &identities,
@@ -542,6 +548,7 @@ impl Workspace {
             cx.notify();
             return;
         }
+        self.resume_locked(window, cx);
         let case = Case::new(folder.name.clone(), &[], None);
         let case_id = case.id.clone();
         self.cases.cases.insert(0, case.clone());
@@ -1099,12 +1106,13 @@ impl Workspace {
         if !self.case_key_ready(|this, window, cx| this.show_case_list(window, cx), cx) {
             return;
         }
-        self.load_cases(window, cx);
         if let Err(error) = self.case_store() {
             self.key_failed(error);
             cx.notify();
             return;
         }
+        self.resume_locked(window, cx);
+        self.load_cases(window, cx);
         self.cases.list_open = true;
         cx.notify();
     }

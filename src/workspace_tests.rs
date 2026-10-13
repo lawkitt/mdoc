@@ -3364,3 +3364,45 @@ fn the_keychain_explainer_is_modal_and_returns_keyboard_focus(cx: &mut TestAppCo
         assert!(before.is_focused(window));
     });
 }
+
+#[gpui::test]
+fn locked_members_load_when_the_key_opens_without_a_dialog_later(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (case, path) = saved_case(dir.path());
+    let session = Session {
+        tabs: vec![TabRecord {
+            markdown: session_store::identity(&path),
+            case: Some(case.id.clone()),
+            ..TabRecord::default()
+        }],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(crate::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        )));
+        tabs.restore(session, window, cx);
+        let restored = tabs.tabs.last().unwrap().id;
+        tabs.activate(restored, window, cx);
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| assert!(tabs.read(cx).cases.locked && view.read(cx).case.is_none()));
+    // The key became readable without a dialog (e.g. allowed elsewhere):
+    // Open Case… opens it quietly and the locked member gets its mapping.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.cases.test_may_ask = false;
+        tabs.show_case_list(window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(!tabs.cases.locked && tabs.cases.list_open);
+        assert_eq!(
+            view.read(cx).case.as_ref().map(|l| l.name.as_str()),
+            Some("Petrova")
+        );
+    });
+}
