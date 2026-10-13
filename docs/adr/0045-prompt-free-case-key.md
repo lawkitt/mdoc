@@ -32,7 +32,9 @@ key made under another signature are affected.
    all mean "may ask", never "denied". Launch never falls back to a read with
    dialogs allowed: any quiet error leaves cases locked, and an unsure answer
    shows the explainer before a gated action. ADR 0043's process-wide switch
-   stays; the per-query UI flag does not work.
+   stays; the per-query UI flag does not work. On Windows and Linux the quiet
+   read is the real one, so its errors are reported as before, with no
+   Keychain explainer.
 2. **Keep the launch probe.** Cases that open without a dialog unlock on their own.
 3. **Data protection keychain** (`kSecUseDataProtectionKeychain`, the "Later"
    step of ADR 0043) for builds signed with a Developer ID provisioning
@@ -56,7 +58,8 @@ key made under another signature are affected.
      `mdoc/cases-dev/`. A dev build can no longer create a key that later
      prompts the release, which is how the 2026-10-11 key came about.
    A Protected build whose profile lacks the entitlement
-   (`errSecMissingEntitlement`) behaves as Release.
+   (`errSecMissingEntitlement`) behaves as Release. Signing refuses a
+   profile that does not allow the access group (exactly, or `F33DLM8K53.*`).
 6. **Only cases are kept apart for dev builds.** Settings, the session and the
    large downloaded models stay shared. A dev build that restores a session
    with case members finds no such case in `cases-dev/` and treats them as

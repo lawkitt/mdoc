@@ -168,9 +168,12 @@ impl Workspace {
                 false
             }
             Ok(None) => true,
-            // Unsure: explain first. Continue's own attempt reports the error,
-            // and launch leaves cases locked rather than read loudly (ADR 0045).
-            Err(_) => true,
+            // macOS, unsure: explain first. Continue's own attempt reports the
+            // error, and launch leaves cases locked rather than read loudly
+            // (ADR 0045). Elsewhere the quiet read is the real one, so its
+            // error is reported by the action's own attempt, without a
+            // Keychain explainer.
+            Err(_) => cfg!(target_os = "macos"),
         }
     }
     /// True when a case action can use the key now. Otherwise the Keychain
@@ -305,12 +308,20 @@ impl Workspace {
                     cx.notify();
                     return;
                 }
-                // Otherwise the quiet read opened the store; launch never
-                // falls back to a read that may ask (ADR 0045).
-                match self.cases.store.clone() {
-                    Some(store) if exists => store,
-                    _ => {
-                        self.cases.loaded = true;
+                if !exists || cfg!(test) {
+                    self.cases.loaded = true;
+                    return;
+                }
+                // On macOS the quiet read has opened the store by now, so this
+                // never reads loudly at launch (ADR 0045); elsewhere it reports
+                // the key store's own error.
+                match self.case_store() {
+                    Ok(store) => store,
+                    Err(error) => {
+                        // Stay unloaded so members keep their case link.
+                        self.cases.locked = true;
+                        self.key_failed(error);
+                        cx.notify();
                         return;
                     }
                 }

@@ -56,6 +56,12 @@ case "$kind" in
       profile=$(security cms -D -i "$APPLE_PROVISIONING_PROFILE")
       [ "$(/usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.application-identifier" /dev/stdin <<<"$profile")" = "$app_id" ] ||
         die "the provisioning profile is not for $app_id"
+      # The profile, not the signature, allows the access group (TN3125);
+      # without it macOS refuses the protected keychain.
+      groups=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:keychain-access-groups" /dev/stdin <<<"$profile" 2>/dev/null) ||
+        die "the provisioning profile does not allow Keychain access groups"
+      grep -qxE "[[:space:]]*(${app_id//./\\.}|$team\.\*)" <<<"$groups" ||
+        die "the provisioning profile does not allow the access group $app_id"
       cp "$APPLE_PROVISIONING_PROFILE" "$target/Contents/embedded.provisionprofile"
       entitlements="$(mktemp -d)/entitlements.plist"
       cp resources/entitlements.plist "$entitlements"
