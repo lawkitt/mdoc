@@ -4,8 +4,6 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
-- Saved cases on Linux keep their key in the Secret Service keyring (GNOME
-  Keyring or KWallet); without one, cases stay unavailable (ADR 0041).
 - Dropping a folder opens its files (not subfolders) as one new case named after
   it; each document joins once it has Markdown. **File → Pseudonymize
   Clipboard** (⌥⇧⌘C) replaces names the active tab's case knows in the
@@ -23,15 +21,16 @@ All notable changes to **mdoc** are documented here.
   appear. Case headers fold their documents away (ADR 0041, phase 3).
 - Saved cases: right-click a tab with applied replacements and choose **Save
   mapping as case** to keep which original each alias stands for, encrypted on
-  this computer (AES-256-GCM; the key is held by the macOS Keychain or Windows
-  data protection). The sidebar shows the case above its document; later
+  this computer (AES-256-GCM; the key is held by the macOS Keychain, Windows
+  data protection or, on Linux, the Secret Service keyring such as GNOME
+  Keyring or KWallet). The sidebar shows the case above its document; later
   mapping changes save automatically. Reopening the document gives its aliases
   back their originals, so they can be restored and AI replies pasted again. Old
   aliases keep restoring after a rename. **File → Open Case…** lists saved
   cases; a case can be renamed, a document removed from it, or the case deleted
   and its originals forgotten. Closing a tab whose mapping isn't saved asks
-  once (Settings → Saved cases turns this off). Not available on Linux
-  (ADR 0041, phase 2).
+  once (Settings → Saved cases turns this off). On Linux without a keyring,
+  cases are unavailable (ADR 0041, phase 2).
 - AI return journey: after applying replacements, **Copy for AI** copies the
   Markdown with a short note asking the assistant to keep placeholders such as
   `PERSON_1` exactly. **Paste AI Response** (⌥⇧⌘V, the toolbar or the File
