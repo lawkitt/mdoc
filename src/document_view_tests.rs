@@ -1730,3 +1730,13 @@ fn ignore_is_per_document_and_dictionary_words_apply_everywhere(cx: &mut TestApp
     cx.run_until_parked();
     assert_eq!(misspelled(&second, cx), ["Kowalczyk", "Nowakowskiego"]);
 }
+
+#[test]
+fn a_missing_file_dialog_is_explained_not_silent() {
+    let message = crate::document_view::chooser_unavailable(&"portal not found");
+    assert!(message.starts_with("The file dialog could not open: portal not found."));
+    assert_eq!(
+        message.contains("xdg-desktop-portal"),
+        cfg!(target_os = "linux")
+    );
+}

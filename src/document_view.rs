@@ -94,6 +94,18 @@ pub(crate) struct DocumentView {
     pub(crate) _markdown_search_subscription: Subscription,
 }
 
+/// The system file dialog could not open. On Linux GPUI uses the
+/// xdg-desktop-portal file chooser, which minimal systems and WSL lack.
+pub(crate) fn chooser_unavailable(error: &impl std::fmt::Display) -> String {
+    let hint = if cfg!(target_os = "linux") {
+        " Install xdg-desktop-portal with a backend such as xdg-desktop-portal-gtk, \
+         or open files from the command line (mdoc path/to/file) or by dropping them."
+    } else {
+        ""
+    };
+    format!("The file dialog could not open: {error}.{hint}")
+}
+
 pub(crate) struct DocumentViewDependencies {
     pub(crate) owner: (u64, gpui::WeakEntity<workspace::Workspace>),
     pub(crate) preferences: settings::Shared,
@@ -1120,8 +1132,13 @@ impl DocumentView {
             let result = paths.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.prompting = false;
-                if let Ok(Ok(Some(paths))) = result {
-                    cx.emit(workspace::TabEvent::Open(paths));
+                match result {
+                    Ok(Ok(Some(paths))) => cx.emit(workspace::TabEvent::Open(paths)),
+                    Ok(Err(error)) => {
+                        this.error = Some(chooser_unavailable(&error));
+                        cx.notify();
+                    }
+                    _ => {}
                 }
                 this.resume_import(window, cx);
             });
@@ -1167,6 +1184,10 @@ impl DocumentView {
                     }
                     this.write(path, next, window, cx);
                 } else {
+                    if let Ok(Err(error)) = &result {
+                        this.error = Some(chooser_unavailable(error));
+                        cx.notify();
+                    }
                     cx.emit(workspace::TabEvent::CloseCancelled);
                 }
                 this.resume_import(window, cx);
