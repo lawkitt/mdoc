@@ -60,6 +60,40 @@ fn scan_proposes_without_applying_until_explicit_apply(cx: &mut gpui::TestAppCon
 }
 
 #[gpui::test]
+fn a_failed_scan_still_offers_manual_replace(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("Alice Morgan signs", cx));
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        // Selected before the scan finishes: Replace appears once it fails.
+        app.editor
+            .update(cx, |editor, cx| editor.set_selection(0..12, cx));
+        let (generation, identity, revision) = install_scan(app, cx);
+        app.complete_pii_scan(
+            generation,
+            identity,
+            revision,
+            Err("Automatic scanning is unavailable on this platform.".into()),
+            cx,
+        );
+        assert!(app.pii.scans.is_empty());
+        app.editor
+            .update(cx, |editor, cx| editor.set_selection(0..12, cx));
+        assert!(
+            matches!(app.manual_target(cx), Some(Ok(_))),
+            "the panel tells the user to select text and choose Replace"
+        );
+        assert!(
+            app.editor.read(cx).selection_action().is_some(),
+            "the pill is refreshed without a new selection"
+        );
+    });
+}
+
+#[gpui::test]
 #[ignore = "requires installed verified GLiNER2 FP16 and ONNX Runtime; no downloads"]
 fn installed_model_offline_smoke(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);

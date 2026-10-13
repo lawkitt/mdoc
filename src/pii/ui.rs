@@ -506,10 +506,15 @@ impl DocumentView {
             });
         }
     }
-    /// Pseudonymize has run in this tab, so manual additions are offered.
+    /// Pseudonymize has run in this tab, so manual additions are offered. A
+    /// review opened without a finished scan counts too: where scanning is
+    /// unavailable or failed, marking names by hand is the way in.
     fn has_pii_review(&self) -> bool {
         let review = &self.pii.review;
-        !self.pii.scans.is_empty() || !review.variants().is_empty() || !review.applied().is_empty()
+        self.pii.reviewing
+            || !self.pii.scans.is_empty()
+            || !review.variants().is_empty()
+            || !review.applied().is_empty()
     }
     /// The span a manual addition would replace for the editor selection.
     fn manual_target(&self, cx: &App) -> Option<Result<Range<usize>, String>> {

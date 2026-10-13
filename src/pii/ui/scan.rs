@@ -108,6 +108,9 @@ impl DocumentView {
                 self.pii.error = Some(error);
             }
         }
+        // A selection made before or during the scan may now qualify for
+        // Replace, even when the scan failed.
+        self.sync_selection_action(cx);
         cx.notify();
     }
 }
