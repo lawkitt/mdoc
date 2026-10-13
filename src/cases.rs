@@ -14,6 +14,9 @@ use std::{
     sync::Arc,
 };
 
+/// The error when the user declines the macOS Keychain dialog (ADR 0043).
+pub const KEY_DENIED: &str = "Saved cases need Keychain access.";
+
 /// File header: magic and format version, also authenticated with the case id.
 const MAGIC: &[u8; 9] = b"MDOCCASE1";
 const NONCE: usize = 12;
@@ -206,6 +209,10 @@ impl Store {
     pub fn default_dir() -> Option<PathBuf> {
         dirs::data_local_dir().map(|p| p.join("mdoc/cases"))
     }
+    /// Whether opening the store may ask for the Mac password (ADR 0043).
+    pub fn may_ask(dir: &Path) -> bool {
+        key::may_ask(dir)
+    }
     /// Open the store, creating the OS-held key on first use.
     pub fn open(dir: PathBuf) -> Result<Self, String> {
         let key = key::load_or_create(&dir)?;
@@ -353,19 +360,62 @@ mod key {
     use super::*;
 
     #[cfg(target_os = "macos")]
-    pub fn load_or_create(_: &Path) -> Result<[u8; 32], String> {
+    const SERVICE: &str = "io.github.lawkitt.mdoc";
+    #[cfg(target_os = "macos")]
+    const ACCOUNT: &str = "case-key";
+    /// Marks that this installation has read the key, so macOS has been
+    /// asked once already (ADR 0043).
+    #[cfg(target_os = "macos")]
+    const ALLOWED: &str = ".keychain-allowed";
+
+    /// Whether reading the key may show the macOS password dialog, so the
+    /// explainer should come first (ADR 0043): the key exists (a new key is
+    /// created without a dialog) and this installation has not read it yet.
+    /// Looking up the item's attributes never asks.
+    #[cfg(target_os = "macos")]
+    pub fn may_ask(dir: &Path) -> bool {
+        use security_framework::item::{ItemClass, ItemSearchOptions};
+        if dir.join(ALLOWED).exists() {
+            return false;
+        }
+        ItemSearchOptions::new()
+            .class(ItemClass::generic_password())
+            .service(SERVICE)
+            .account(ACCOUNT)
+            .load_attributes(true)
+            .search()
+            .is_ok_and(|found| !found.is_empty())
+    }
+    #[cfg(not(target_os = "macos"))]
+    pub fn may_ask(_: &Path) -> bool {
+        false
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn load_or_create(dir: &Path) -> Result<[u8; 32], String> {
         use security_framework::passwords::{get_generic_password, set_generic_password};
-        const SERVICE: &str = "io.github.lawkitt.mdoc";
-        const ACCOUNT: &str = "case-key";
+        let allowed = || {
+            let _ =
+                std::fs::create_dir_all(dir).and_then(|_| std::fs::write(dir.join(ALLOWED), b""));
+        };
         match get_generic_password(SERVICE, ACCOUNT) {
-            Ok(bytes) => bytes
-                .try_into()
-                .map_err(|_| "The case key in the Keychain is damaged.".to_string()),
+            Ok(bytes) => {
+                allowed();
+                bytes
+                    .try_into()
+                    .map_err(|_| "The case key in the Keychain is damaged.".to_string())
+            }
+            // errSecUserCanceled, errSecAuthFailed: the dialog was declined.
+            Err(e) if matches!(e.code(), -128 | -25293) => {
+                let _ = std::fs::remove_file(dir.join(ALLOWED));
+                Err(super::KEY_DENIED.into())
+            }
             Err(e) if e.code() == -25300 => {
                 // errSecItemNotFound: first use.
                 let key = fresh();
                 set_generic_password(SERVICE, ACCOUNT, &key)
                     .map_err(|e| format!("Could not store the case key in the Keychain: {e}"))?;
+                allowed();
                 Ok(key)
             }
             Err(e) => Err(format!(

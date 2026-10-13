@@ -4,6 +4,19 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Keychain access is explained before macOS asks.** mdoc no longer reads the
+  saved-case key at launch while doing so could show the macOS password dialog.
+  Documents restored from a case wait behind an **Unlock…** bar. Saving a case,
+  opening one, or unlocking first shows a short explainer with an animated
+  preview of the macOS dialog, recommending **Always Allow**. Declining keeps
+  the documents linked to their case and offers **Try again…** (ADR 0043).
+- **Replacements panel:** Apply, Keep and Undo leave the selection on the
+  mention you acted on, rather than jumping to the next one; after Keep, its
+  group header is selected. Applied mentions show a blue bar, dimmed when not
+  selected. Group headers lose their ▸/▾ markers and line up with their
+  mentions. A mention row repeats the original only when its wording differs.
+  A selected row shows one Undo. The panel's close button now matches the
+  Original viewer's (ADR 0044).
 - **Before / after** follows the Replacements panel live: applying, undoing or
   keeping originals updates both columns with the editor's replacement motion.
   The header row is gone: quiet floating labels name the columns, a floating

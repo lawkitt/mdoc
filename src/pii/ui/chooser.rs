@@ -94,7 +94,7 @@ impl DocumentView {
                                     .child(format!("Choose a field · {count}")),
                             )
                             .child(
-                                ui::control("chooser-close", "×", self.theme.get(), true)
+                                ui::close_control("chooser-close", self.theme.get())
                                     .aria_label("Close field chooser")
                                     .on_click(|_, window, cx| {
                                         window.dispatch_action(Box::new(PiiClosePopup), cx)

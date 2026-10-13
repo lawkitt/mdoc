@@ -84,6 +84,43 @@ pub enum LoadError {
 /// Parse a PDF's bytes into a reusable [`Document`]. The `Document` owns the bytes,
 /// so the caller can drop its own copy. Returns [`LoadError::Locked`] for a
 /// password-protected file (retry with [`parse_with_password`]).
+/// A compact header button: the Original viewer's toolbar style.
+pub fn header_control(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    style: &PdfStyle,
+) -> gpui::Stateful<gpui::Div> {
+    let style = *style;
+    let label = label.into();
+    div()
+        .id(id)
+        .key_context("PdfControl")
+        .tab_index(0)
+        .role(gpui::Role::Button)
+        .aria_label(label.clone())
+        .focus_visible(move |s| s.bg(style.placeholder_bg))
+        .flex()
+        .items_center()
+        .justify_center()
+        .flex_shrink_0()
+        .min_w(px(20.0))
+        .px(px(6.0))
+        .py(px(1.0))
+        .rounded(px(4.0))
+        .cursor_pointer()
+        .text_color(style.header_fg)
+        .hover(move |s| s.bg(style.placeholder_bg))
+        .child(label)
+}
+
+/// The Original viewer's close button; panels reuse it so the two match.
+pub fn close_control(
+    id: impl Into<gpui::ElementId>,
+    style: &PdfStyle,
+) -> gpui::Stateful<gpui::Div> {
+    header_control(id, "✕", style).text_size(px(11.0))
+}
+
 pub fn parse(bytes: Arc<Vec<u8>>) -> Result<Arc<Document>, LoadError> {
     parse_with_password(bytes, "")
 }
@@ -1363,28 +1400,8 @@ impl PdfView {
         id: &'static str,
         label: impl Into<gpui::SharedString>,
     ) -> gpui::Stateful<gpui::Div> {
-        let style = (self.style)();
-        let label = label.into();
-        div()
-            .id(id)
+        header_control(id, label, &(self.style)())
             .when(cfg!(test), |v| v.debug_selector(move || id.into()))
-            .key_context("PdfControl")
-            .tab_index(0)
-            .role(gpui::Role::Button)
-            .aria_label(label.clone())
-            .focus_visible(|s| s.bg(style.placeholder_bg))
-            .flex()
-            .items_center()
-            .justify_center()
-            .flex_shrink_0()
-            .min_w(px(20.0))
-            .px(px(6.0))
-            .py(px(1.0))
-            .rounded(px(4.0))
-            .cursor_pointer()
-            .text_color(style.header_fg)
-            .hover(|s| s.bg(style.placeholder_bg))
-            .child(label)
     }
 
     /// Host-facing source identity, independent of a temporary PDF backing path.
@@ -2151,7 +2168,8 @@ impl Render for PdfView {
                 )
                 .when_some(on_close, |row, on_close| {
                     row.child(
-                        self.control("pdf-close", "✕")
+                        close_control("pdf-close", &(self.style)())
+                            .when(cfg!(test), |v| v.debug_selector(|| "pdf-close".into()))
                             .aria_label("Close original")
                             .tooltip(self.tip("Close original"))
                             .on_click(move |_, window, cx| on_close(window, cx)),

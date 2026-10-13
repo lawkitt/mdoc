@@ -377,6 +377,13 @@ pub fn control(
     control_base(id, label.clone(), theme, enabled).when(!label.is_empty(), |v| v.child(label))
 }
 
+/// A close button matching the Original viewer's (ADR 0044).
+pub fn close_control(id: impl Into<gpui::ElementId>, theme: Theme) -> gpui::Stateful<gpui::Div> {
+    gpui_pdf::close_control(id, &theme.pdf_style())
+        .key_context("UiControl")
+        .tab_stop(true)
+}
+
 #[derive(Clone, Copy)]
 pub enum Icon {
     Open,

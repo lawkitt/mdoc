@@ -964,13 +964,29 @@ fn panel_mention_undo_icon_reverts_only_that_mention(cx: &mut gpui::TestAppConte
             app.apply_scope(cx);
             assert_eq!(app.editor.read(cx).text(), "ORG_1 · ORG_1");
         });
+        // Selected from the panel, the row's inline Undo is the only undo.
+        let annotation = app.update(cx, |app, cx| {
+            let annotation = app.active_annotation().unwrap();
+            app.panel_select_mention(annotation, cx);
+            annotation
+        });
         cx.run_until_parked();
         cx.update(|window, cx| window.draw(cx).clear(cx));
-        let annotation = app.update(cx, |app, _| app.active_annotation().unwrap());
         let selector = Box::leak(format!("mention-undo-{annotation}").into_boxed_str());
+        assert!(cx.debug_bounds(selector).is_none());
+        assert!(cx.debug_bounds("inline-undo").is_some());
+        // Unselected, a hovered applied row offers its undo icon.
+        app.update(cx, |app, cx| {
+            app.pii.dismiss_popup();
+            app.pii.mapping.panel_selected = false;
+            app.pii.mapping.hovered = Some(annotation);
+            cx.notify();
+        });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let undo = cx
             .debug_bounds(selector)
-            .expect("the active applied mention row offers undo");
+            .expect("a hovered applied mention row offers undo");
         let panel = cx.debug_bounds("identity-panel").unwrap();
         assert!(undo.left() >= panel.left() && undo.right() <= panel.right());
         cx.simulate_click(undo.center(), Default::default());
@@ -1249,7 +1265,7 @@ fn panel_groups_expand_independently_filter_and_edit_from_headers(cx: &mut gpui:
 }
 
 #[gpui::test]
-fn panel_keyboard_moves_decides_and_triages(cx: &mut gpui::TestAppContext) {
+fn panel_keyboard_moves_and_decides_in_place(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (full, initials) = app.update(cx, |app, cx| {
@@ -1291,27 +1307,50 @@ fn panel_keyboard_moves_decides_and_triages(cx: &mut gpui::TestAppContext) {
         assert!(app.pii.popup.is_none());
     });
     assert!(cx.debug_bounds("inline-controls").is_some());
-    // Enter applies this mention; triage moves to the next undecided one,
-    // opening the initials group.
+    // Enter applies this mention and the selection stays on it (ADR 0044).
     key(cx, "enter");
     assert!(text(cx).starts_with("PERSON_1 ·"));
     app.read_with(cx, |app, _| {
-        assert!(app.pii.mapping.expanded.contains(&initials));
+        let Some(PanelCursor::Mention(annotation)) = app.pii.mapping.cursor else {
+            panic!("the applied mention keeps the cursor");
+        };
+        assert_ne!(annotation & APPLIED_ID, 0);
+        assert_eq!(app.selected_entity(), Some(full));
+        assert!(!app.pii.mapping.expanded.contains(&initials));
+    });
+    assert!(cx.debug_bounds("inline-undo").is_some());
+    // ↓ reaches the initials header; Enter opens it, ↓ selects a mention.
+    key(cx, "down");
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.mapping.cursor, Some(PanelCursor::Header(initials)));
+    });
+    key(cx, "enter");
+    key(cx, "down");
+    app.read_with(cx, |app, _| {
         assert_eq!(app.selected_entity(), Some(initials));
     });
-    // ⌘⌫ keeps both initials (same text) in one step; triage reaches e-mail.
+    // Keep on one initial: it leaves the list, so its header takes the cursor.
+    key(cx, "backspace");
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.review.identity_count(initials), 1);
+        assert_eq!(app.pii.mapping.cursor, Some(PanelCursor::Header(initials)));
+        assert!(app.pii.mapping.expanded.contains(&initials));
+    });
+    // ↓ to the remaining initial; ⌘⌫ keeps it, and the emptied group is gone.
+    key(cx, "down");
     key(cx, "secondary-backspace");
     app.read_with(cx, |app, cx| {
         assert_eq!(app.pii.review.identity_count(initials), 0);
-        // The triage-opened initials group closed once decided.
-        assert!(!app.pii.mapping.expanded.contains(&initials));
-        assert!(app.selected_entity().is_some());
+        assert_eq!(app.pii.mapping.cursor, None);
         assert_eq!(app.editor.read(cx).text(), text_of(source));
     });
     // ⌘Z in the panel undoes the keep.
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.focus, cx)
+    });
     key(cx, "secondary-z");
     app.read_with(cx, |app, _| {
-        assert_eq!(app.pii.review.identity_count(initials), 2)
+        assert_eq!(app.pii.review.identity_count(initials), 1)
     });
     // ↑ to the top, then ↑ again returns to search; Esc there closes.
     key(cx, "secondary-up");

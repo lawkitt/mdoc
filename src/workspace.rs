@@ -7,6 +7,8 @@ use std::{collections::VecDeque, time::Duration};
 
 #[path = "workspace_cases.rs"]
 mod cases_ui;
+#[path = "workspace_keychain.rs"]
+mod keychain_ui;
 pub(crate) use cases_ui::{CancelCaseName, ConfirmCaseName, bind_keys as bind_case_keys};
 
 pub(super) enum TabEvent {
@@ -123,6 +125,9 @@ pub(super) struct Workspace {
     panel_toggle_focus: gpui::FocusHandle,
     panel_new_focus: gpui::FocusHandle,
     menu_focus: gpui::FocusHandle,
+    /// The Keychain explainer's Continue, focused when it opens (ADR 0043).
+    explainer_focus: gpui::FocusHandle,
+    explainer_focus_pending: bool,
     menu_return: Option<gpui::FocusHandle>,
     sidebar_scroll: gpui::ScrollHandle,
     compact_scroll: gpui::ScrollHandle,
@@ -253,6 +258,8 @@ impl Workspace {
             panel_toggle_focus: cx.focus_handle().tab_stop(true),
             panel_new_focus: cx.focus_handle().tab_stop(true),
             menu_focus: cx.focus_handle(),
+            explainer_focus: cx.focus_handle(),
+            explainer_focus_pending: false,
             menu_return: None,
             sidebar_scroll: gpui::ScrollHandle::new(),
             compact_scroll: gpui::ScrollHandle::new(),
@@ -2564,6 +2571,8 @@ impl Render for Workspace {
             })
             .children(self.case_list(cx))
             .children(self.case_categories(cx))
+            .children(self.keychain_explainer(window, cx))
+            .children(self.case_key_bar(cx))
             .when_some(self.update_banner(cx), |view, banner| view.child(banner))
             .when_some(self.notice.clone(), |view, notice| {
                 let palette = self.theme.get().pdf_style();

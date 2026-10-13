@@ -1,5 +1,5 @@
-//! Panel keyboard, panel selection, shared decision keys and triage focus
-//! (ADR 0033).
+//! Panel keyboard, panel selection and shared decision keys (ADR 0033,
+//! ADR 0044).
 use super::panel::PanelItem;
 use super::*;
 use gpui::prelude::*;
@@ -148,7 +148,9 @@ impl DocumentView {
         true
     }
 
-    /// A decision on the panel's keyboard row, then triage focus (D14).
+    /// A decision on the panel's keyboard row. The selection stays on the
+    /// mention acted on; a kept mention leaves the list, so its group header
+    /// takes the cursor (ADR 0044).
     pub(super) fn panel_decide(
         &mut self,
         scope: Scope,
@@ -156,74 +158,53 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let after = match self.pii.mapping.cursor {
+        let (identity, on_header) = match self.pii.mapping.cursor {
             Some(PanelCursor::Mention(annotation)) => {
                 if self.active_annotation() != Some(annotation) {
                     self.panel_select_mention(annotation, cx);
                 }
-                self.active_replacement_range().map(|r| r.start)
+                let Some(identity) = self.selected_entity() else {
+                    return;
+                };
+                (identity, false)
             }
             // A header takes only the whole-entity keys.
             Some(PanelCursor::Header(id)) if scope == Scope::Entity => {
-                let Some((annotation, range)) = self.identity_occurrences(id).into_iter().next()
-                else {
+                let Some((annotation, _)) = self.identity_occurrences(id).into_iter().next() else {
                     return;
                 };
                 self.panel_select_mention(annotation, cx);
                 self.pii.mapping.cursor = Some(PanelCursor::Header(id));
-                Some(range.start)
+                (id, true)
             }
             _ => return,
         };
-        if self.decide(scope, keep, window, cx) {
-            // Keep hands focus to the editor for the popup; the panel keeps it.
-            window.focus(&self.pii.mapping.focus, cx);
-            self.triage_next(after.unwrap_or(0), cx);
+        let before = self.identity_occurrences(identity);
+        let Some(annotation) = self.active_annotation() else {
+            return;
+        };
+        let index = before.iter().position(|(a, _)| *a == annotation);
+        let kept = keep && annotation & APPLIED_ID == 0;
+        if !self.decide(scope, keep, window, cx) {
+            return;
         }
-    }
-
-    /// Focus the next undecided mention after `offset` in document order,
-    /// opening its group; groups opened this way close once fully decided.
-    pub(super) fn triage_next(&mut self, offset: usize, cx: &mut Context<Self>) {
-        let review = &self.pii.review;
-        let pending: Vec<_> = review
-            .candidates()
-            .iter()
-            .filter_map(|c| {
-                Some((
-                    c.id,
-                    c.range.start,
-                    review.occurrence_identity(c.variant, &c.range)?,
-                ))
-            })
-            .collect();
-        let mapping = &mut self.pii.mapping;
-        let open: std::collections::HashSet<_> = pending.iter().map(|(_, _, id)| *id).collect();
-        let done: Vec<_> = mapping
-            .triage_expanded
-            .iter()
-            .copied()
-            .filter(|id| !open.contains(id))
-            .collect();
-        for id in done {
-            mapping.triage_expanded.remove(&id);
-            mapping.expanded.remove(&id);
-        }
-        let next = pending
-            .iter()
-            .find(|(_, start, _)| *start > offset)
-            .or_else(|| pending.first())
-            .copied();
-        match next {
-            Some((annotation, _, identity)) => {
-                if mapping.expanded.insert(identity) {
-                    mapping.triage_expanded.insert(identity);
-                }
-                self.panel_select_mention(annotation, cx);
+        // Keep hands focus to the editor for the popup; the panel keeps it.
+        window.focus(&self.pii.mapping.focus, cx);
+        let after = self.identity_occurrences(identity);
+        match index.and_then(|i| after.get(i)) {
+            // Apply and Undo leave the mention in place under a new id.
+            Some((annotation, _)) if !kept && !on_header => {
+                self.panel_select_mention(*annotation, cx)
             }
-            None => {
-                mapping.cursor = None;
-                mapping.panel_selected = false;
+            _ if !after.is_empty() => {
+                self.pii.mapping.expanded.insert(identity);
+                self.pii.mapping.cursor = Some(PanelCursor::Header(identity));
+                self.pii.mapping.panel_selected = false;
+                cx.notify();
+            }
+            _ => {
+                self.pii.mapping.cursor = None;
+                self.pii.mapping.panel_selected = false;
                 cx.notify();
             }
         }
@@ -284,7 +265,6 @@ impl DocumentView {
             }))
             .on_action(cx.listener(|this, _: &crate::ApplyThis, window, cx| {
                 if let Some(PanelCursor::Header(id)) = this.pii.mapping.cursor {
-                    this.pii.mapping.triage_expanded.remove(&id);
                     this.toggle_group(id, cx);
                 } else {
                     this.panel_decide(Scope::Mention, false, window, cx);

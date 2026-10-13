@@ -31,11 +31,10 @@ impl PanelItem {
 }
 
 impl DocumentView {
-    pub(super) fn replacement_control(
+    /// The panel's close button, the Original viewer's (ADR 0044).
+    pub(super) fn replacement_close(
         &self,
         id: impl Into<gpui::ElementId>,
-        label: impl Into<SharedString>,
-        enabled: bool,
         cx: &App,
     ) -> gpui::Stateful<gpui::Div> {
         let id = id.into();
@@ -49,7 +48,7 @@ impl DocumentView {
             .or_insert_with(|| cx.focus_handle().tab_stop(true))
             .clone();
         ui::reveal_focus(
-            ui::control(id, label, self.theme.get(), enabled)
+            ui::close_control(id, self.theme.get())
                 .when(cfg!(test), |v| v.debug_selector(move || debug.clone()))
                 .track_focus(&focus),
             focus,
@@ -612,7 +611,7 @@ impl DocumentView {
                             })),
                     )
                     .child(
-                        self.replacement_control("close-replacements", "×", true, cx)
+                        self.replacement_close("close-replacements", cx)
                             .aria_label("Close replacements workspace")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.close_replacements(window, cx)
