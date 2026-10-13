@@ -441,46 +441,55 @@ mod key {
     #[cfg(target_os = "macos")]
     fn load(quiet: bool) -> Result<Option<[u8; 32]>, String> {
         match keychain() {
-            Keychain::Release => login(SERVICE, quiet, true),
-            Keychain::Dev => login(DEV_SERVICE, quiet, true),
+            Keychain::Release => login_or_create(SERVICE, quiet),
+            Keychain::Dev => login_or_create(DEV_SERVICE, quiet),
             Keychain::Protected => match protected::read() {
                 // Missing entitlement (errSecMissingEntitlement): a profile
                 // without keychain access; behave like a build without one.
-                Err(-34018) => login(SERVICE, quiet, true),
+                Err(-34018) => login_or_create(SERVICE, quiet),
                 Err(e) => Err(format!(
                     "Could not read the case key from the Keychain: {e}"
                 )),
                 Ok(Some(key)) => Ok(Some(key)),
                 // Not there yet: move the login-keychain key over (the one
-                // dialog, behind the explainer), or create a new one.
+                // dialog, behind the explainer), or create a new one only
+                // when there is certainly no old key to lose.
                 Ok(None) => {
-                    let key = match login(SERVICE, quiet, false)? {
-                        Some(key) => key,
-                        None if quiet && legacy_exists() => return Ok(None),
-                        None => fresh(),
+                    let (key, moved) = match login(SERVICE, quiet)? {
+                        Login::Key(key) => (key, true),
+                        Login::MayAsk => return Ok(None),
+                        Login::Missing => (fresh(), false),
                     };
                     protected::write(&key).map_err(|e| {
                         format!("Could not store the case key in the Keychain: {e}")
                     })?;
-                    forget_legacy();
+                    if moved {
+                        forget_legacy();
+                    }
                     Ok(Some(key))
                 }
             },
         }
     }
 
+    #[cfg(target_os = "macos")]
+    enum Login {
+        Key([u8; 32]),
+        /// Reading it would show the macOS password dialog.
+        MayAsk,
+        Missing,
+    }
+
     /// The key in the login keychain. A quiet read runs with Keychain dialogs
     /// off; macOS then refuses a read that would ask with
     /// errSecInteractionNotAllowed or, for an item whose access list does not
-    /// trust this app, errSecAuthFailed. Both mean "may ask" (`None`), never a
-    /// denial: treating errSecAuthFailed as denied is how beta.7 fell through
-    /// to a loud read at launch (ADR 0045). `None` also means "not there"
-    /// when `create` is false.
+    /// trust this app, errSecAuthFailed. Both mean "may ask", never a denial:
+    /// treating errSecAuthFailed as denied is how beta.7 fell through to a
+    /// loud read at launch (ADR 0045).
     #[cfg(target_os = "macos")]
-    fn login(service: &str, quiet: bool, create: bool) -> Result<Option<[u8; 32]>, String> {
+    fn login(service: &str, quiet: bool) -> Result<Login, String> {
         use security_framework::{
-            os::macos::keychain::SecKeychain,
-            passwords::{get_generic_password, set_generic_password},
+            os::macos::keychain::SecKeychain, passwords::get_generic_password,
         };
         let _quiet = quiet
             .then(SecKeychain::disable_user_interaction)
@@ -489,16 +498,36 @@ mod key {
         match get_generic_password(service, ACCOUNT) {
             Ok(bytes) => bytes
                 .try_into()
-                .map(Some)
+                .map(Login::Key)
                 .map_err(|_| "The case key in the Keychain is damaged.".to_string()),
             // errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled
             // with dialogs off: reading would show the dialog.
-            Err(e) if quiet && matches!(e.code(), -25308 | -25293 | -128) => Ok(None),
+            Err(e) if quiet && matches!(e.code(), -25308 | -25293 | -128) => Ok(Login::MayAsk),
             // errSecUserCanceled, errSecAuthFailed: the dialog was declined.
             Err(e) if matches!(e.code(), -128 | -25293) => Err(super::KEY_DENIED.into()),
-            // errSecItemNotFound: first use.
-            Err(e) if e.code() == -25300 && !create => Ok(None),
-            Err(e) if e.code() == -25300 => {
+            // errSecItemNotFound
+            Err(e) if e.code() == -25300 => Ok(Login::Missing),
+            Err(e) => Err(format!(
+                "Could not read the case key from the Keychain: {e}"
+            )),
+        }
+    }
+
+    /// The login-keychain key, created on first use; `None` when reading or
+    /// creating it would show the dialog.
+    #[cfg(target_os = "macos")]
+    fn login_or_create(service: &str, quiet: bool) -> Result<Option<[u8; 32]>, String> {
+        use security_framework::{
+            os::macos::keychain::SecKeychain, passwords::set_generic_password,
+        };
+        match login(service, quiet)? {
+            Login::Key(key) => Ok(Some(key)),
+            Login::MayAsk => Ok(None),
+            Login::Missing => {
+                let _quiet = quiet
+                    .then(SecKeychain::disable_user_interaction)
+                    .transpose()
+                    .map_err(|e| format!("Could not store the case key in the Keychain: {e}"))?;
                 let key = fresh();
                 match set_generic_password(service, ACCOUNT, &key) {
                     Ok(()) => Ok(Some(key)),
@@ -507,24 +536,7 @@ mod key {
                     Err(e) => Err(format!("Could not store the case key in the Keychain: {e}")),
                 }
             }
-            Err(e) => Err(format!(
-                "Could not read the case key from the Keychain: {e}"
-            )),
         }
-    }
-
-    /// Whether the release login keychain holds a key, without reading it
-    /// (attributes need no dialog).
-    #[cfg(target_os = "macos")]
-    fn legacy_exists() -> bool {
-        use security_framework::item::{ItemClass, ItemSearchOptions};
-        ItemSearchOptions::new()
-            .class(ItemClass::generic_password())
-            .service(SERVICE)
-            .account(ACCOUNT)
-            .load_attributes(true)
-            .search()
-            .is_ok_and(|found| !found.is_empty())
     }
 
     /// Delete the moved login-keychain key, with dialogs off: if macOS would
