@@ -191,12 +191,20 @@ impl DocumentView {
         // Keep hands focus to the editor for the popup; the panel keeps it.
         window.focus(&self.pii.mapping.focus, cx);
         let after = self.identity_occurrences(identity);
+        // Only rows the panel's filter still shows can hold the cursor.
+        let shown: Vec<PanelCursor> = self
+            .replacement_entries(cx)
+            .iter()
+            .filter_map(Self::cursor_of)
+            .collect();
         match index.and_then(|i| after.get(i)) {
             // Apply and Undo leave the mention in place under a new id.
-            Some((annotation, _)) if !kept && !on_header => {
+            Some((annotation, _))
+                if !kept && !on_header && shown.contains(&PanelCursor::Mention(*annotation)) =>
+            {
                 self.panel_select_mention(*annotation, cx)
             }
-            _ if !after.is_empty() => {
+            _ if !after.is_empty() && shown.contains(&PanelCursor::Header(identity)) => {
                 self.pii.mapping.expanded.insert(identity);
                 self.pii.mapping.cursor = Some(PanelCursor::Header(identity));
                 self.pii.mapping.panel_selected = false;

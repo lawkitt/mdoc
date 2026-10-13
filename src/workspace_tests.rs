@@ -3292,3 +3292,25 @@ fn try_again_after_a_declined_keychain_dialog_finishes_the_action(cx: &mut TestA
     assert_eq!(store().list().0.len(), 1);
     cx.update(|_, cx| assert!(tabs.read(cx).case_key_banner().is_none()));
 }
+
+#[gpui::test]
+fn a_second_case_action_waits_with_the_first_for_the_keychain(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let store = || crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(store()));
+        tabs.create_case(tab, window, cx);
+        // Open Case… while the save waits, and the save requested again.
+        tabs.show_case_list(window, cx);
+        tabs.create_case(tab, window, cx);
+    });
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    // Both ran, in order, and the repeated save made no second case.
+    assert_eq!(store().list().0.len(), 1);
+    cx.update(|_, cx| assert!(tabs.read(cx).cases.list_open));
+}

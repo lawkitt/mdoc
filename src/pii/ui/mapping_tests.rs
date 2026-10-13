@@ -1488,3 +1488,30 @@ fn keyboard_move_wheel_and_middle_click(cx: &mut gpui::TestAppContext) {
         assert_eq!(app.pii.review.identity_count(full), 0)
     });
 }
+
+#[gpui::test]
+fn applying_under_the_proposed_filter_keeps_the_cursor_on_a_shown_row(
+    cx: &mut gpui::TestAppContext,
+) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С.";
+    app.update_in(cx, |app, window, cx| {
+        let (_, initials) = seed(app, source, cx);
+        let identity = app.pii.review.variant_identity(initials).unwrap();
+        app.pii.mapping.filter = PanelFilter::Proposed;
+        app.pii.mapping.expanded.insert(identity);
+        let (first, _) = app.identity_occurrences(identity)[0].clone();
+        app.panel_select_mention(first, cx);
+        app.panel_decide(Scope::Mention, false, window, cx);
+        // The applied mention is filtered out; its header takes the cursor.
+        assert_eq!(app.pii.review.applied().len(), 1);
+        assert_eq!(app.pii.mapping.cursor, Some(PanelCursor::Header(identity)));
+        // Applying the last one hides the whole group: no hidden cursor.
+        let (second, _) = app.identity_occurrences(identity)[1].clone();
+        assert_eq!(second & APPLIED_ID, 0);
+        app.panel_select_mention(second, cx);
+        app.panel_decide(Scope::Mention, false, window, cx);
+        assert_eq!(app.pii.review.applied().len(), 2);
+        assert_eq!(app.pii.mapping.cursor, None);
+    });
+}

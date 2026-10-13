@@ -10,7 +10,9 @@ goes to the next undecided mention" and its group disclosure glyphs.
    variants) alike. The group stays expanded. Keyboard triage is now Enter, ↓,
    Enter. `triage_next` and triage-expanded auto-collapse go away.
 2. **After Keep** the mention leaves the list, so the cursor moves to its group
-   header.
+   header. The same happens when the panel's filter (Proposed / Applied) hides
+   the decided mention; when the filter hides the whole group, nothing is
+   selected.
 3. **Mention bar colour**: applied and selected = the applied blue
    (`theme.applied()`, as alias highlighting); applied and not selected = the
    same blue at about 45% opacity. Proposed mentions unchanged: white when
