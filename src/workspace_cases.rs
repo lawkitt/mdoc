@@ -176,8 +176,14 @@ impl Workspace {
         false
     }
     /// Show the explainer for locked or denied cases; Continue loads them.
+    /// An action whose dialog was declined is still waiting and runs once
+    /// the key opens.
     pub(super) fn unlock_cases(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.case_key_ready(|_, _, _| {}, cx) {
+        if self.key_may_ask() {
+            self.cases.explainer = true;
+            self.explainer_focus_pending = true;
+            cx.notify();
+        } else {
             self.continue_unlock(window, cx);
         }
     }
@@ -197,7 +203,14 @@ impl Workspace {
                     then(self, window, cx);
                 }
             }
-            Err(error) => self.key_failed(error),
+            Err(error) => {
+                // Declined: Try again still owes the user the action they
+                // asked for; Not now cancels it.
+                if error == crate::cases::KEY_DENIED {
+                    self.cases.then = then;
+                }
+                self.key_failed(error);
+            }
         }
         cx.notify();
     }
