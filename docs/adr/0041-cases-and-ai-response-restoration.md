@@ -111,9 +111,11 @@ manifest or plaintext app data).
   `RestoreMap::pseudonymize`: exact whole-word originals of the active tab's
   case (or its live mapping), longest first, no detection. A system-wide hotkey
   needs platform code and is deferred.
-- **Before / after** replaces the editor with a read-only, line-paired view of
-  originals beside aliases. Pairing relies on originals and aliases never
-  containing line breaks. Rows are not virtualized.
+- **Before / after** replaces the editor with two read-only `mdoc-editor`
+  instances, original and pseudonymized, formatted like the editor, replaced
+  names highlighted, scrolling together by fraction of height. It is a snapshot
+  taken when opened. The editor's read-only mode blocks every user edit path
+  while the host can still set the text.
 - A case stores category tokens its scans skip; member tabs filter scan
   results before ingesting. Manual additions are unaffected. The empty page
   still does not list cases.
