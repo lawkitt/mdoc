@@ -7,6 +7,10 @@
 # Environment:
 #   APPLE_SIGNING_IDENTITY  "Developer ID Application: <name> (<team id>)", in
 #                           the keychain
+#   APPLE_PROVISIONING_PROFILE  optional: a Developer ID provisioning profile for
+#                           io.github.lawkitt.mdoc with Keychain sharing. Embedded
+#                           with the Keychain access-group entitlements, so the
+#                           case key uses the data protection keychain (ADR 0045).
 #   Notarization, either:
 #     APPLE_KEYCHAIN_PROFILE  a `xcrun notarytool store-credentials` profile
 #   or the Apple ID with an app-specific password (CI):
@@ -43,9 +47,31 @@ notarize() {
 
 case "$kind" in
   app)
+    entitlements=resources/entitlements.plist
+    if [ -n "${APPLE_PROVISIONING_PROFILE:-}" ]; then
+      [ -f "$APPLE_PROVISIONING_PROFILE" ] || die "$APPLE_PROVISIONING_PROFILE not found"
+      team=$(sed -n 's/.*(\([A-Z0-9]\{10\}\))$/\1/p' <<<"$APPLE_SIGNING_IDENTITY")
+      [ -n "$team" ] || die "no team id in APPLE_SIGNING_IDENTITY"
+      app_id="$team.io.github.lawkitt.mdoc"
+      profile=$(security cms -D -i "$APPLE_PROVISIONING_PROFILE")
+      [ "$(/usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.application-identifier" /dev/stdin <<<"$profile")" = "$app_id" ] ||
+        die "the provisioning profile is not for $app_id"
+      cp "$APPLE_PROVISIONING_PROFILE" "$target/Contents/embedded.provisionprofile"
+      entitlements="$(mktemp -d)/entitlements.plist"
+      cp resources/entitlements.plist "$entitlements"
+      # PlistBuddy, not plutil: these keys contain dots.
+      for add in "com.apple.application-identifier string $app_id" \
+        "com.apple.developer.team-identifier string $team" \
+        "keychain-access-groups array" "keychain-access-groups:0 string $app_id"; do
+        /usr/libexec/PlistBuddy -c "Add :$add" "$entitlements" >/dev/null
+      done
+      echo "embedding the provisioning profile: case key in the data protection keychain"
+    else
+      echo "no APPLE_PROVISIONING_PROFILE: case key in the login keychain"
+    fi
     # The bundle holds one executable, so signing the bundle covers all code.
     codesign --force --timestamp --options runtime \
-      --entitlements resources/entitlements.plist \
+      --entitlements "$entitlements" \
       --sign "$APPLE_SIGNING_IDENTITY" "$target"
     codesign --verify --strict --verbose=2 "$target"
     zip="$(mktemp -d)/mdoc.zip"

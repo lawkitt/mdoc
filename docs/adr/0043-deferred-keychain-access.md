@@ -96,3 +96,12 @@ is not only the signature and the "Later" step moves forward.
   it returns focus to where it was. The preview loops every 4.2 s at up to 30 fps and,
   under Reduce Motion, shows a single frame: password typed, Always Allow
   pressed.
+
+## Amended by ADR 0045
+
+The quiet read returns `errSecAuthFailed`, not `errSecInteractionNotAllowed`,
+for a key whose access list does not trust the running build. It was treated as
+a denial, and launch then read the key loudly: two dialogs in beta.7. Quiet
+refusals now always mean "may ask", launch never reads loudly, and builds with
+a provisioning profile use the data protection keychain
+([ADR 0045](0045-prompt-free-case-key.md)).

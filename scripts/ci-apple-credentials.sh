@@ -6,6 +6,9 @@
 # Environment (secrets of the `release` environment):
 #   APPLE_CERTIFICATE           base64 of the Developer ID Application .p12
 #   APPLE_CERTIFICATE_PASSWORD  its export password
+#   APPLE_PROVISIONING_PROFILE_BASE64  optional: base64 of the Developer ID
+#                               provisioning profile (ADR 0045); exported as
+#                               APPLE_PROVISIONING_PROFILE for macos-sign.sh
 # shellcheck source=lib.sh
 source "$(dirname "$0")/lib.sh"
 
@@ -32,9 +35,15 @@ case "${1:-}" in
     # shellcheck disable=SC2046 # one path per line, none with spaces
     security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
     security find-identity -v -p codesigning "$keychain"
+    if [ -n "${APPLE_PROVISIONING_PROFILE_BASE64:-}" ]; then
+      profile="$RUNNER_TEMP/mdoc.provisionprofile"
+      base64 --decode <<<"$APPLE_PROVISIONING_PROFILE_BASE64" >"$profile"
+      echo "APPLE_PROVISIONING_PROFILE=$profile" >>"$GITHUB_ENV"
+    fi
     ;;
   cleanup)
     security delete-keychain "$keychain" 2>/dev/null || true
+    rm -f "$RUNNER_TEMP/mdoc.provisionprofile"
     ;;
   *) die "usage: scripts/ci-apple-credentials.sh setup|cleanup" ;;
 esac

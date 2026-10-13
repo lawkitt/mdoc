@@ -88,7 +88,15 @@ in the sidebar. One case per document. Avoid "matter" and "project".
 
 **Case key**: the 256-bit key encrypting saved cases, held by the OS (macOS
 Keychain, Windows DPAPI, Linux Secret Service). Read only for an action that
-needs it ([ADR 0043](docs/adr/0043-deferred-keychain-access.md)).
+needs it ([ADR 0043](docs/adr/0043-deferred-keychain-access.md)). Signed
+macOS builds move it to the data protection keychain, which never asks
+([ADR 0045](docs/adr/0045-prompt-free-case-key.md)).
+
+**Quiet probe**: the launch read of the case key with per-query "no UI"; it
+either opens cases or leaves them locked, and never shows a system dialog.
+
+**Dev key**: the case key of unsigned, ad-hoc and debug builds, under its own
+Keychain service so it never collides with the release key.
 
 **Keychain explainer**: the dialog shown before the first case-key access (and
 after a denial), with an animated preview of the macOS password dialog.

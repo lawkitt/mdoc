@@ -168,8 +168,9 @@ impl Workspace {
                 false
             }
             Ok(None) => true,
-            // Reported by the action's own attempt to open the store.
-            Err(_) => false,
+            // Unsure: explain first. Continue's own attempt reports the error,
+            // and launch leaves cases locked rather than read loudly (ADR 0045).
+            Err(_) => true,
         }
     }
     /// True when a case action can use the key now. Otherwise the Keychain
@@ -288,7 +289,7 @@ impl Workspace {
     /// Read every case in the background, then attach loaded member tabs.
     /// Nothing touches the key until a cases folder exists, and launch never
     /// shows the Mac password dialog: it reads the key with dialogs off and
-    /// otherwise leaves members locked (ADR 0043).
+    /// otherwise leaves members locked (ADR 0043, ADR 0045).
     pub(super) fn load_cases(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.cases.loaded || self.cases.loading || self.cases.locked {
             return;
@@ -304,17 +305,12 @@ impl Workspace {
                     cx.notify();
                     return;
                 }
-                if !exists || cfg!(test) {
-                    self.cases.loaded = true;
-                    return;
-                }
-                match self.case_store() {
-                    Ok(store) => store,
-                    Err(error) => {
-                        // Stay unloaded so members keep their case link.
-                        self.cases.locked = true;
-                        self.key_failed(error);
-                        cx.notify();
+                // Otherwise the quiet read opened the store; launch never
+                // falls back to a read that may ask (ADR 0045).
+                match self.cases.store.clone() {
+                    Some(store) if exists => store,
+                    _ => {
+                        self.cases.loaded = true;
                         return;
                     }
                 }
