@@ -72,10 +72,12 @@ is not only the signature and the "Later" step moves forward.
   changed signature; a remembered "allowed once" flag would not (Codex
   review). Creating a first key in a locked keychain also needs the dialog,
   so a refused quiet creation counts as "may ask" too. Windows and Linux never see the explainer.
-- **Launch** reads the key only when it may not ask. While it may, members
-  restored at launch stay locked. Their case link is kept, and a bar says
-  "Some documents belong to saved cases. Unlock them to restore their
-  replacements." with **Unlock…**. The session manifest has no case names, so
+- **Launch** reads the key only when it may not ask. While it may, cases stay
+  locked: members keep their case link, and a bar says "Saved cases are
+  locked. Unlock them to restore replacements in their documents." with
+  **Unlock…**. The bar shows whenever cases are locked, not only for tabs the
+  session tagged, because a document opened by hand is matched to its case by
+  path, which needs the cases loaded. The session manifest has no case names, so
   the bar does not name the case and there is no dimmed dot.
 - **Gated actions:** Save mapping as case (including the save-on-close
   question), folder drop as a case, and File → Open Case…. Moving a tab into a

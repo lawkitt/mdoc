@@ -3406,3 +3406,36 @@ fn locked_members_load_when_the_key_opens_without_a_dialog_later(cx: &mut TestAp
         );
     });
 }
+
+#[gpui::test]
+fn a_member_opened_by_hand_offers_unlock_and_gets_its_mapping(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, path) = saved_case(dir.path());
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(crate::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        )));
+        // Opened from disk: no session record names its case.
+        tabs.open_paths(vec![path.clone()], window, cx);
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| assert!(view.read(cx).case.is_none()));
+    let unlock = cx
+        .debug_bounds("unlock-cases")
+        .expect("locked cases offer Unlock even without a tagged tab");
+    cx.simulate_click(unlock.center(), Default::default());
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).case.as_ref().map(|l| l.name.as_str()),
+            Some("Petrova")
+        );
+    });
+}
