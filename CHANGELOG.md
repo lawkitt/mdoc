@@ -4,6 +4,15 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Before / after** follows the Replacements panel live: applying, undoing or
+  keeping originals updates both columns with the editor's replacement motion.
+  The header row is gone: quiet floating labels name the columns, a floating
+  **Close** (or Esc) leaves the view, and originals are marked gold beside blue
+  aliases. The toolbar shows a two-column icon that stays pressed while the view
+  is open (⌘\\, also in the File menu). Selecting a replacement scrolls both
+  columns to it, clicking a name selects its row, and narrow windows show one
+  column at a time. Opening the view hides the PDF preview until it closes
+  (ADR 0042).
 - Dropping a folder opens its files (not subfolders) as one new case named after
   it; each document joins once it has Markdown. **File → Pseudonymize
   Clipboard** (⌥⇧⌘C) replaces names the active tab's case knows in the

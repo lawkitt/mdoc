@@ -177,6 +177,9 @@ pub(crate) fn bind_keys(cx: &mut App) {
         // the shared decision keys apply (ADR 0033).
         KeyBinding::new("enter", PiiConfirm, Some("PseudonymReplacement")),
         KeyBinding::new("escape", PiiClosePopup, Some("PseudonymReview")),
+        // Esc leaves before/after, also from inside its read-only columns.
+        KeyBinding::new("escape", crate::CloseCompare, Some("CompareView")),
+        KeyBinding::new("escape", crate::CloseCompare, Some("CompareView > Editor")),
         KeyBinding::new("escape", crate::PanelEscape, Some("IdentityPanel")),
         KeyBinding::new("down", crate::PanelEnterList, Some("ReplacementSearch")),
         // Document undo from anywhere in the replacements panel (ADR 0033).

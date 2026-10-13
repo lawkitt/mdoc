@@ -398,6 +398,8 @@ pub enum Icon {
     Ocr,
     Spelling,
     PasteReply,
+    Compare,
+    Close,
 }
 
 impl Icon {
@@ -422,6 +424,8 @@ impl Icon {
             Self::Ocr => include_bytes!("../resources/ui/ocr.svg"),
             Self::Spelling => include_bytes!("../resources/ui/spelling.svg"),
             Self::PasteReply => include_bytes!("../resources/ui/paste-reply.svg"),
+            Self::Compare => include_bytes!("../resources/ui/compare.svg"),
+            Self::Close => include_bytes!("../resources/ui/close.svg"),
         }
     }
 }
@@ -434,6 +438,33 @@ pub fn icon_control(
     enabled: bool,
 ) -> gpui::Stateful<gpui::Div> {
     icon_button(id, label, icon, theme, enabled)
+        .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+}
+/// [`icon_control`] for a mode: while `on` it stays pressed, with a tinted
+/// fill and the accent colour on its icon.
+pub fn toggle_icon_control(
+    id: &'static str,
+    label: impl Into<gpui::SharedString>,
+    icon: Icon,
+    theme: Theme,
+    on: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    let label = label.into();
+    control_base(id, label.clone(), theme, true)
+        .p_0()
+        .size(px(32.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .when(on, |v| v.bg(p.placeholder_bg))
+        .child(
+            gpui::svg()
+                .data(icon.data())
+                .size(px(18.))
+                .text_color(if on { theme.applied() } else { p.header_fg }),
+        )
+        .tooltip(crate::style::tooltip(label.to_string(), theme))
         .when(cfg!(test), |v| v.debug_selector(move || id.into()))
 }
 /// A 32 px icon control whose label is its tooltip and accessible name.

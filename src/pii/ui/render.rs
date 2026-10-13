@@ -67,17 +67,25 @@ impl DocumentView {
                     }),
                 )
                 .child(
-                    ui::control(
+                    ui::toggle_icon_control(
                         "Compare",
-                        if self.compare.is_some() {
-                            "Edit"
-                        } else {
-                            "Before / after"
-                        },
+                        format!(
+                            "{} ({})",
+                            if self.compare.is_some() {
+                                "Back to editing"
+                            } else {
+                                "Before / after"
+                            },
+                            if cfg!(target_os = "macos") {
+                                "⌘\\"
+                            } else {
+                                "Ctrl+\\"
+                            }
+                        ),
+                        ui::Icon::Compare,
                         theme,
-                        true,
+                        self.compare.is_some(),
                     )
-                    .when(cfg!(test), |v| v.debug_selector(|| "Compare".into()))
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_compare(window, cx))),
                 )
             })
