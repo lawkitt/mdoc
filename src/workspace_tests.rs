@@ -3264,3 +3264,31 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
     });
     assert!(cx.debug_bounds("unlock-cases").is_none());
 }
+
+#[gpui::test]
+fn try_again_after_a_declined_keychain_dialog_finishes_the_action(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let store = || crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Err(crate::cases::KEY_DENIED.into()));
+        tabs.create_case(tab, window, cx);
+    });
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    assert!(store().list().0.is_empty());
+    // Try again → Continue saves the case the user asked for.
+    tabs.update(cx, |tabs, _| tabs.cases.test_open = Some(Ok(store())));
+    let retry = cx.debug_bounds("unlock-cases").unwrap();
+    cx.simulate_click(retry.center(), Default::default());
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    assert_eq!(store().list().0.len(), 1);
+    cx.update(|_, cx| assert!(tabs.read(cx).case_key_banner().is_none()));
+}

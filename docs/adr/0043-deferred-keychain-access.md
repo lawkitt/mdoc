@@ -77,7 +77,8 @@ is not only the signature and the "Later" step moves forward.
   question), folder drop as a case, and File → Open Case…. Moving a tab into a
   case needs a loaded case, so the key is already open.
 - **Denial** (`errSecUserCanceled`, `errSecAuthFailed`) removes the marker,
-  keeps members locked, and the bar offers **Try again…**. Before this change,
+  keeps members locked and keeps the action the user asked for; the bar offers
+  **Try again…**, which finishes it once the key opens. Before this change,
   a failed key read at launch marked cases as loaded and dropped members'
   case links ("could not be found"); now they stay linked.
 - **Explainer:** `src/workspace_keychain.rs`. Esc means Not now; Continue has
