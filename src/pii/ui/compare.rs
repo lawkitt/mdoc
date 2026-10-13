@@ -166,6 +166,11 @@ impl DocumentView {
         let Some(state) = self.compare.as_ref() else {
             return;
         };
+        // Focus handed back to the hidden editor (e.g. by closing the panel)
+        // moves to the view, so Esc still reaches it.
+        if self.editor.read(cx).focus_handle(cx).is_focused(window) {
+            window.focus(&state.focus, cx);
+        }
         let editor = self.editor.read(cx);
         let text = editor.text();
         let applied: Vec<_> = self
@@ -321,13 +326,19 @@ impl DocumentView {
         let Some(state) = self.compare.as_ref() else {
             return;
         };
-        let id = self
-            .pii
-            .review
+        let review = &self.pii.review;
+        let id = review
             .applied()
             .iter()
             .find(|a| a.range.start == offset)
             .map(|a| APPLIED_ID | a.id);
+        // A pending mention is plain text in both columns: a gold ghost
+        // marks it instead.
+        let pending = review
+            .candidates()
+            .iter()
+            .find(|c| id.is_none() && c.range.start == offset)
+            .map(|c| c.range.len());
         let left_offset = to_before(offset, &state.marks);
         let theme = self.theme.get();
         for (editor, scroll, at, accent) in [
@@ -345,6 +356,22 @@ impl DocumentView {
             }
             editor.update(cx, |editor, cx| {
                 editor.set_active_annotation(id, cx);
+                if let Some(len) = pending.filter(|_| !cx.reduce_motion()) {
+                    let gold = theme.proposed();
+                    let revision = editor.revision();
+                    editor.flash_ranges(
+                        mdoc_editor::RangeFlash {
+                            revision,
+                            ranges: vec![(
+                                at..at + len,
+                                Hsla { a: 0.4, ..gold },
+                                Hsla { a: 0.95, ..gold },
+                            )],
+                            duration: std::time::Duration::from_millis(1200),
+                        },
+                        cx,
+                    );
+                }
                 if let Some(id) = id.filter(|_| !cx.reduce_motion()) {
                     let strong = (Hsla { a: 0.45, ..accent }, Hsla { a: 0.95, ..accent });
                     editor.flash_annotations(

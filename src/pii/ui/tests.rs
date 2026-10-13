@@ -1729,6 +1729,15 @@ fn before_after_follows_replacements_live_and_escape_closes(cx: &mut gpui::TestA
     cx.simulate_keystrokes("escape");
     cx.update(|window, cx| window.draw(cx).clear(cx));
     app.update(cx, |app, _| assert!(app.compare.is_none()));
+    // Focus handed back to the hidden editor (closing the panel) moves to
+    // the view, so Esc still closes it.
+    app.update_in(cx, |app, window, cx| {
+        app.toggle_compare(window, cx);
+        window.focus(&app.editor.read(cx).focus_handle(cx), cx);
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    cx.simulate_keystrokes("escape");
+    app.update(cx, |app, _| assert!(app.compare.is_none()));
     // With no replacements left, an open view returns to the editor.
     app.update_in(cx, |app, window, cx| app.toggle_compare(window, cx));
     app.update(cx, |app, cx| {
