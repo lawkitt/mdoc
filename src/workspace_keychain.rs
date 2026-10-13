@@ -369,7 +369,20 @@ impl Workspace {
                             .flex()
                             .flex_col()
                             .gap_3()
-                            // A modal: Tab cycles only its own buttons.
+                            // A modal: window shortcuts (close tab, open, new
+                            // tab…) stop here, so the waiting action finds the
+                            // state it was asked for. Quit still works.
+                            .on_action(|_: &Close, _, _| {})
+                            .on_action(|_: &New, _, _| {})
+                            .on_action(|_: &Open, _, _| {})
+                            .on_action(|_: &Import, _, _| {})
+                            .on_action(|_: &OpenCase, _, _| {})
+                            .on_action(|_: &Settings, _, _| {})
+                            .on_action(|_: &NextTab, _, _| {})
+                            .on_action(|_: &PreviousTab, _, _| {})
+                            .on_action(|_: &ToggleSidebar, _, _| {})
+                            .on_action(|_: &RetryDocument, _, _| {})
+                            // Tab cycles only its own buttons.
                             .key_context("UiPanel")
                             .track_focus(&self.explainer_group)
                             .tab_group()

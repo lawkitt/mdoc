@@ -87,7 +87,8 @@ is not only the signature and the "Later" step moves forward.
   open or declined) runs after it, not instead of it; a repeated Save as case
   for an already-saved tab does nothing.
 - **Explainer:** `src/workspace_keychain.rs`. Esc means Not now; Continue has
-  focus, so Enter continues. Tab stays within the dialog, and closing it
-  returns focus to where it was. The preview loops every 4.2 s at up to 30 fps and,
+  focus, so Enter continues. Tab stays within the dialog, window shortcuts
+  (close tab, new tab, open, Settings…) are stopped while it shows, and closing
+  it returns focus to where it was. The preview loops every 4.2 s at up to 30 fps and,
   under Reduce Motion, shows a single frame: password typed, Always Allow
   pressed.

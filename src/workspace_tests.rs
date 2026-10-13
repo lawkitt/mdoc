@@ -3316,7 +3316,7 @@ fn a_second_case_action_waits_with_the_first_for_the_keychain(cx: &mut TestAppCo
 }
 
 #[gpui::test]
-fn the_keychain_explainer_keeps_and_returns_keyboard_focus(cx: &mut TestAppContext) {
+fn the_keychain_explainer_is_modal_and_returns_keyboard_focus(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let tab = cx.update(|_, cx| tabs.read(cx).active);
@@ -3342,6 +3342,16 @@ fn the_keychain_explainer_keeps_and_returns_keyboard_focus(cx: &mut TestAppConte
             assert!(tabs.explainer_group.contains_focused(window, cx), "{keys}");
         });
     }
+    // Window shortcuts stop at the dialog: the waiting tab stays open.
+    let open = cx.update(|_, cx| tabs.read(cx).tabs.len());
+    cx.dispatch_action(Close);
+    cx.dispatch_action(New);
+    draw(cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.tabs.len(), open);
+        assert!(tabs.cases.explainer);
+    });
     // Esc closes it and hands focus back to the editor.
     cx.simulate_keystrokes("escape");
     draw(cx);
