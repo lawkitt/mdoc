@@ -209,9 +209,10 @@ impl Store {
     pub fn default_dir() -> Option<PathBuf> {
         dirs::data_local_dir().map(|p| p.join("mdoc/cases"))
     }
-    /// Whether opening the store may ask for the Mac password (ADR 0043).
-    pub fn may_ask(dir: &Path) -> bool {
-        key::may_ask(dir)
+    /// Open the store without any OS dialog: `None` when the key can only be
+    /// read after the macOS password dialog (ADR 0043).
+    pub fn open_quietly(dir: PathBuf) -> Result<Option<Self>, String> {
+        Ok(key::load_quietly(&dir)?.map(|key| Self::with_key(dir, &key)))
     }
     /// Open the store, creating the OS-held key on first use.
     pub fn open(dir: PathBuf) -> Result<Self, String> {
@@ -363,60 +364,48 @@ mod key {
     const SERVICE: &str = "io.github.lawkitt.mdoc";
     #[cfg(target_os = "macos")]
     const ACCOUNT: &str = "case-key";
-    /// Marks that this installation has read the key, so macOS has been
-    /// asked once already (ADR 0043).
+    /// Read (or create) the key with Keychain dialogs turned off, so this
+    /// never asks: `None` when reading it would show the macOS password
+    /// dialog, e.g. for a new build or after "Allow Once" (ADR 0043).
     #[cfg(target_os = "macos")]
-    const ALLOWED: &str = ".keychain-allowed";
-
-    /// Whether reading the key may show the macOS password dialog, so the
-    /// explainer should come first (ADR 0043): the key exists (a new key is
-    /// created without a dialog) and this installation has not read it yet.
-    /// Looking up the item's attributes never asks.
-    #[cfg(target_os = "macos")]
-    pub fn may_ask(dir: &Path) -> bool {
-        use security_framework::item::{ItemClass, ItemSearchOptions};
-        if dir.join(ALLOWED).exists() {
-            return false;
-        }
-        ItemSearchOptions::new()
-            .class(ItemClass::generic_password())
-            .service(SERVICE)
-            .account(ACCOUNT)
-            .load_attributes(true)
-            .search()
-            .is_ok_and(|found| !found.is_empty())
+    pub fn load_quietly(_: &Path) -> Result<Option<[u8; 32]>, String> {
+        load(true)
     }
     #[cfg(not(target_os = "macos"))]
-    pub fn may_ask(_: &Path) -> bool {
-        false
+    pub fn load_quietly(dir: &Path) -> Result<Option<[u8; 32]>, String> {
+        load_or_create(dir).map(Some)
     }
 
     #[cfg(target_os = "macos")]
-    pub fn load_or_create(dir: &Path) -> Result<[u8; 32], String> {
-        use security_framework::passwords::{get_generic_password, set_generic_password};
-        let allowed = || {
-            let _ =
-                std::fs::create_dir_all(dir).and_then(|_| std::fs::write(dir.join(ALLOWED), b""));
+    pub fn load_or_create(_: &Path) -> Result<[u8; 32], String> {
+        Ok(load(false)?.expect("only a quiet read is refused"))
+    }
+
+    #[cfg(target_os = "macos")]
+    fn load(quiet: bool) -> Result<Option<[u8; 32]>, String> {
+        use security_framework::{
+            os::macos::keychain::SecKeychain,
+            passwords::{get_generic_password, set_generic_password},
         };
+        let _quiet = quiet
+            .then(SecKeychain::disable_user_interaction)
+            .transpose()
+            .map_err(|e| format!("Could not read the case key from the Keychain: {e}"))?;
         match get_generic_password(SERVICE, ACCOUNT) {
-            Ok(bytes) => {
-                allowed();
-                bytes
-                    .try_into()
-                    .map_err(|_| "The case key in the Keychain is damaged.".to_string())
-            }
+            Ok(bytes) => bytes
+                .try_into()
+                .map(Some)
+                .map_err(|_| "The case key in the Keychain is damaged.".to_string()),
+            // errSecInteractionNotAllowed: reading would show the dialog.
+            Err(e) if quiet && e.code() == -25308 => Ok(None),
             // errSecUserCanceled, errSecAuthFailed: the dialog was declined.
-            Err(e) if matches!(e.code(), -128 | -25293) => {
-                let _ = std::fs::remove_file(dir.join(ALLOWED));
-                Err(super::KEY_DENIED.into())
-            }
+            Err(e) if matches!(e.code(), -128 | -25293) => Err(super::KEY_DENIED.into()),
             Err(e) if e.code() == -25300 => {
                 // errSecItemNotFound: first use.
                 let key = fresh();
                 set_generic_password(SERVICE, ACCOUNT, &key)
                     .map_err(|e| format!("Could not store the case key in the Keychain: {e}"))?;
-                allowed();
-                Ok(key)
+                Ok(Some(key))
             }
             Err(e) => Err(format!(
                 "Could not read the case key from the Keychain: {e}"

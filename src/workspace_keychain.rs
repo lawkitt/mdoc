@@ -327,6 +327,10 @@ impl Workspace {
             return None;
         }
         if std::mem::take(&mut self.explainer_focus_pending) {
+            // Keep the first return point when Try again reopens it.
+            if !self.explainer_group.contains_focused(window, cx) {
+                self.explainer_return = window.focused(cx);
+            }
             window.focus(&self.explainer_focus, cx);
         }
         let theme = self.theme.get();
@@ -365,9 +369,22 @@ impl Workspace {
                             .flex()
                             .flex_col()
                             .gap_3()
-                            .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, _, cx| {
+                            // A modal: Tab cycles only its own buttons.
+                            .key_context("UiPanel")
+                            .track_focus(&self.explainer_group)
+                            .tab_group()
+                            .tab_stop(false)
+                            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
+                                ui::cycle(window, cx, Some(&this.explainer_group), false);
+                                cx.stop_propagation();
+                            }))
+                            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
+                                ui::cycle(window, cx, Some(&this.explainer_group), true);
+                                cx.stop_propagation();
+                            }))
+                            .on_key_down(cx.listener(|this, e: &gpui::KeyDownEvent, window, cx| {
                                 if e.keystroke.key == "escape" {
-                                    this.cancel_unlock(cx);
+                                    this.cancel_unlock(window, cx);
                                     cx.stop_propagation();
                                 }
                             }))
@@ -411,8 +428,13 @@ impl Workspace {
                                             true,
                                             false,
                                         )
+                                        .when(cfg!(test), |v| {
+                                            v.debug_selector(|| "keychain-not-now".into())
+                                        })
                                         .on_click(
-                                            cx.listener(|this, _, _, cx| this.cancel_unlock(cx)),
+                                            cx.listener(|this, _, window, cx| {
+                                                this.cancel_unlock(window, cx)
+                                            }),
                                         ),
                                     )
                                     .child(
