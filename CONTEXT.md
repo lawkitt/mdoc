@@ -86,6 +86,12 @@ document; a case stores its mapping encrypted on disk.
 **Case**: a named, saved mapping shared by a group of tabs; shown as a tab group
 in the sidebar. One case per document. Avoid "matter" and "project".
 
+**Pseudonymize Clipboard**: replace the clipboard text's known case names with
+their aliases, without detection. Unknown names stay; it is not a scan.
+
+**Before / after view**: read-only, line-paired view of original wording beside
+pseudonymized text. Avoid "diff", which suggests arbitrary edits.
+
 **Primary wording**: the variant an identity restores to; defaults to the
 longest full form and can be changed.
 

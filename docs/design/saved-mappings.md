@@ -241,6 +241,20 @@ revisit: case-wide undo is propagation rather than a linked, blockable undo
 (#22); merges and splits are not pushed to other members; Move to case lists
 five recent cases; an added term's category is guessed, not chosen.
 
+### Round 6 — phase 4 (confirmed 2026-10-13)
+
+28. **Folder drop.** Supported files directly in the folder, sorted by name;
+    subfolders skipped and counted in the notice.
+29. **Folder case.** Dropping a folder creates an empty case named after it at
+    once; each document joins when it has Markdown (Markdown at once, PDF/DOCX
+    after conversion). The first scan fills the shared mapping.
+30. **Clipboard.** In-app command first: "Pseudonymize Clipboard" replaces the
+    clipboard text using the active tab's case (or its live mapping), exact
+    known names only, no model. A system-wide hotkey is a later, separate step.
+31. **Also in phase 4:** a read-only before/after view (original beside
+    pseudonymized text, scrolling together) and per-case category switches that
+    scans in member documents respect. Empty-page case list stays deferred.
+
 ## Frontier
 
 Empty as of round 5. Accepted record: [ADR 0041](../adr/0041-cases-and-ai-response-restoration.md).

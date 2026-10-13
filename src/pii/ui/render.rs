@@ -66,6 +66,20 @@ impl DocumentView {
                         window.dispatch_action(Box::new(crate::PasteAiResponse), cx)
                     }),
                 )
+                .child(
+                    ui::control(
+                        "Compare",
+                        if self.compare_open {
+                            "Edit"
+                        } else {
+                            "Before / after"
+                        },
+                        theme,
+                        true,
+                    )
+                    .when(cfg!(test), |v| v.debug_selector(|| "Compare".into()))
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_compare(cx))),
+                )
             })
             .into_any_element()
     }

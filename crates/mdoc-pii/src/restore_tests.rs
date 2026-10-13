@@ -473,3 +473,16 @@ fn bulk_recategorizing_an_owner_releases_its_contacts() {
         .unwrap();
     assert_eq!(review.identity(mail).unwrap().owner, None);
 }
+
+#[test]
+fn pseudonymizing_replaces_known_whole_names_longest_first() {
+    let map = RestoreMap::new(vec![
+        identity("PERSON_1", Category::Person, &["Anna Petrova", "Anna"]),
+        identity("ORG_1", Category::Organization, &["Northwind Ltd"]),
+    ]);
+    let (text, count) =
+        map.pseudonymize("Anna Petrova and Anna met Northwind Ltd; Annabel did not.");
+    assert_eq!(text, "PERSON_1 and PERSON_1 met ORG_1; Annabel did not.");
+    assert_eq!(count, 3);
+    assert_eq!(map.pseudonymize("nothing here"), ("nothing here".into(), 0));
+}

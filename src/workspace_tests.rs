@@ -3031,3 +3031,97 @@ fn a_term_added_to_the_case_is_proposed_in_every_member(cx: &mut TestAppContext)
         assert_eq!(view.case_names.len(), 2);
     });
 }
+
+#[gpui::test]
+fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("Petrova v Northwind");
+    std::fs::create_dir_all(folder.join("drafts")).unwrap();
+    std::fs::write(folder.join("b.md"), "Second").unwrap();
+    std::fs::write(folder.join("a.md"), "First").unwrap();
+    std::fs::write(folder.join("notes.bin"), [0u8, 1, 2]).unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.use_case_store(crate::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ));
+        tabs.open_paths(vec![folder.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    // Members join when their Markdown loads; activate the second too.
+    let ids: Vec<_> = cx.update(|_, cx| tabs.read(cx).tabs.iter().map(|t| t.id).collect());
+    for id in &ids {
+        tabs.update_in(cx, |tabs, window, cx| tabs.activate(*id, window, cx));
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.cases.cases.len(), 1);
+        let case = &tabs.cases.cases[0];
+        assert_eq!(case.name, "Petrova v Northwind");
+        let names: Vec<_> = tabs
+            .tabs
+            .iter()
+            .filter_map(|t| t.view.as_ref())
+            .map(|v| {
+                let v = v.read(cx);
+                assert_eq!(v.case.as_ref().unwrap().id, case.id);
+                v.display_name()
+            })
+            .collect();
+        assert_eq!(
+            names,
+            ["a.md", "b.md"],
+            "sorted by name; unsupported skipped"
+        );
+        assert!(tabs.notice.as_deref().unwrap().contains("1 subfolder"));
+    });
+}
+
+#[gpui::test]
+fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "Call Anna Petrova at Northwind Traders Ltd today.".into(),
+    ));
+    view.update_in(cx, |view, window, cx| {
+        view.pseudonymize_clipboard(&PseudonymizeClipboard, window, cx)
+    });
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("Call PERSON_1 at ORG_1 today.")
+        );
+        assert!(
+            view.read(cx)
+                .clipboard_notice
+                .as_deref()
+                .unwrap()
+                .contains("Replaced 2 names")
+        );
+    });
+
+    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
+    cx.run_until_parked();
+    let case = cx.update(|_, cx| tabs.read(cx).cases.cases[0].id.clone());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, crate::pii::Category::Address, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(
+            view.read(cx)
+                .case_skip
+                .contains(&crate::pii::Category::Address)
+        );
+        assert_eq!(tabs.read(cx).cases.cases[0].skip, ["ADDRESS"]);
+    });
+    // Before/after shows originals beside aliases.
+    view.update(cx, |view, cx| view.toggle_compare(cx));
+    draw(cx);
+    assert!(cx.debug_bounds("compare-view").is_some());
+}

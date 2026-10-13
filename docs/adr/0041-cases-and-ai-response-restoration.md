@@ -1,7 +1,7 @@
 # Cases and AI-response restoration
 
 Status: Accepted design, 2026-10-11; phases 1–2 implemented the same day and
-phase 3 on 2026-10-12; phase 4 not yet. See the [design interview](../design/saved-mappings.md) for all 27 decisions and the
+phase 3 on 2026-10-12, phase 4 on 2026-10-13. See the [design interview](../design/saved-mappings.md) for all 27 decisions and the
 prior-art review. From phase 2, supersedes the "mappings and originals are never
 serialized" rule of [ADR 0002](0002-reviewable-local-pseudonymization.md),
 [ADR 0014](0014-highlighted-pii-replacements.md) and
@@ -100,6 +100,23 @@ manifest or plaintext app data).
   those names with their aliases, and a field adding a name to the case
   (category guessed; reclassify it in a member). Case headers fold their
   member rows (the active tab stays visible); folding is kept in the session.
+
+## Phase 4 as implemented
+
+- A dropped folder opens its own supported files, sorted by name; subfolders
+  and hidden files are skipped and counted. An empty case named after the folder
+  is created at once and its tabs carry it as a pending membership: each joins
+  when its Markdown loads or its conversion finishes.
+- **Pseudonymize Clipboard** (File menu, ⌥⇧⌘C, mdoc focused) runs
+  `RestoreMap::pseudonymize`: exact whole-word originals of the active tab's
+  case (or its live mapping), longest first, no detection. A system-wide hotkey
+  needs platform code and is deferred.
+- **Before / after** replaces the editor with a read-only, line-paired view of
+  originals beside aliases. Pairing relies on originals and aliases never
+  containing line breaks. Rows are not virtualized.
+- A case stores category tokens its scans skip; member tabs filter scan
+  results before ingesting. Manual additions are unaffected. The empty page
+  still does not list cases.
 
 ## Consequences
 

@@ -1608,3 +1608,41 @@ fn homonyms_keep_their_own_aliases_through_restore_and_apply(cx: &mut gpui::Test
         );
     });
 }
+
+#[gpui::test]
+fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("Alice at 1 Main St", cx));
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        app.case_skip.insert(Category::Address);
+        let (generation, identity, revision) = install_scan(app, cx);
+        let detection = |range, category| pii::Detection {
+            range,
+            category,
+            score: 0.9,
+            recognizer: crate::pii::Recognizer::Model,
+        };
+        app.complete_pii_scan(
+            generation,
+            identity,
+            revision,
+            Ok(vec![
+                detection(0..5, Category::Person),
+                detection(9..18, Category::Address),
+            ]),
+            cx,
+        );
+        let categories: Vec<_> = app
+            .pii
+            .review
+            .variants()
+            .iter()
+            .map(|v| v.category)
+            .collect();
+        assert_eq!(categories, [Category::Person]);
+    });
+}

@@ -154,6 +154,46 @@ impl RestoreMap {
         choices.sort_by_key(|&i| Some(self.identities[i].category) != category);
         choices
     }
+    /// The reverse of [`Self::restore`]: replace every known original in
+    /// `text` with its identity's alias (exact wording, whole words, longest
+    /// first). Returns the text and how many names were replaced. Names this
+    /// map doesn't know stay as they are; no detection runs.
+    pub fn pseudonymize(&self, text: &str) -> (String, usize) {
+        let mut patterns = Vec::new();
+        let mut owners = Vec::new();
+        for (index, identity) in self.identities.iter().enumerate() {
+            for original in &identity.originals {
+                if !original.trim().is_empty() {
+                    patterns.push(original.as_ref());
+                    owners.push(index);
+                }
+            }
+        }
+        if patterns.is_empty() {
+            return (text.to_string(), 0);
+        }
+        let Ok(matcher) = aho_corasick::AhoCorasick::builder()
+            .match_kind(aho_corasick::MatchKind::LeftmostLongest)
+            .build(&patterns)
+        else {
+            return (text.to_string(), 0);
+        };
+        let mut out = String::with_capacity(text.len());
+        let mut last = 0;
+        let mut count = 0;
+        for found in matcher.find_iter(text) {
+            let range = found.start()..found.end();
+            if !super::exact_boundary(text, &range, &text[range.clone()]) {
+                continue;
+            }
+            out.push_str(&text[last..range.start]);
+            out.push_str(&self.identities[owners[found.pattern().as_usize()]].alias);
+            last = range.end;
+            count += 1;
+        }
+        out.push_str(&text[last..]);
+        (out, count)
+    }
     /// Alias-shaped tokens that name no identity of this map.
     pub fn unresolved(&self, text: &str) -> Vec<Range<usize>> {
         self.tokens(text)

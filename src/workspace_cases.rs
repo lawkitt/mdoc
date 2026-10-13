@@ -14,6 +14,46 @@ pub(crate) fn bind_keys(cx: &mut App) {
     ]);
 }
 
+/// A dropped folder: its supported files, read off the UI thread.
+pub(super) struct DroppedFolder {
+    pub name: String,
+    pub files: Vec<PathBuf>,
+    pub skipped_folders: usize,
+}
+impl DroppedFolder {
+    /// The folder's own supported files, sorted by name; subfolders skipped.
+    pub fn read(
+        path: &std::path::Path,
+        supported: impl Fn(&std::path::Path) -> bool,
+    ) -> Option<Self> {
+        if !path.is_dir() {
+            return None;
+        }
+        let mut files = Vec::new();
+        let mut skipped_folders = 0;
+        for entry in std::fs::read_dir(path).ok()?.flatten() {
+            let entry = entry.path();
+            if entry.is_dir() {
+                skipped_folders += 1;
+            } else if supported(&entry)
+                && !entry
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with('.'))
+            {
+                files.push(session_store::identity(&entry));
+            }
+        }
+        files.sort_by_key(|f| f.file_name().map(|n| n.to_string_lossy().to_lowercase()));
+        Some(Self {
+            name: path
+                .file_name()
+                .map_or_else(|| "Folder".into(), |n| n.to_string_lossy().into_owned()),
+            files,
+            skipped_folders,
+        })
+    }
+}
+
 #[derive(Default)]
 pub(super) struct CaseState {
     store: Option<Arc<Store>>,
@@ -35,6 +75,8 @@ pub(super) struct CaseState {
     pub(super) asked: HashSet<u64>,
     /// Cases whose member rows are folded under their header.
     pub(super) collapsed: HashSet<String>,
+    /// The case whose category switches are shown.
+    pub(super) categories_open: Option<String>,
 }
 
 impl Workspace {
@@ -147,7 +189,11 @@ impl Workspace {
             Some(case) => {
                 let link = CaseLink::of(case);
                 let identities = case.exported();
-                view.update(cx, |view, cx| view.open_case_mapping(link, &identities, cx));
+                let skip = case.skipped();
+                view.update(cx, |view, cx| {
+                    view.case_skip = skip;
+                    view.open_case_mapping(link, &identities, cx)
+                });
             }
             None if wanted.is_some() => {
                 let name = view.read(cx).display_name();
@@ -225,6 +271,64 @@ impl Workspace {
         self.checkpoint(window, cx);
         cx.notify();
         Some(case_id)
+    }
+    /// Opened files of a dropped folder share a new, empty case named after it
+    /// (ADR 0041 #29). Each document joins once it has Markdown.
+    pub(super) fn open_folder_case(
+        &mut self,
+        folder: DroppedFolder,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut notes = Vec::new();
+        if folder.skipped_folders > 0 {
+            notes.push(format!(
+                "{} {} inside “{}” skipped",
+                folder.skipped_folders,
+                if folder.skipped_folders == 1 {
+                    "subfolder"
+                } else {
+                    "subfolders"
+                },
+                folder.name
+            ));
+        }
+        if folder.files.is_empty() {
+            notes.insert(0, format!("“{}” has no supported files", folder.name));
+            self.notice = Some(notes.join("; ") + ".");
+            cx.notify();
+            return;
+        }
+        if let Err(error) = self.case_store() {
+            notes.push(format!("the folder opened without a case: {error}"));
+            self.notice = Some(notes.join("; "));
+            cx.notify();
+            return;
+        }
+        let case = Case::new(folder.name.clone(), &[], None);
+        let case_id = case.id.clone();
+        self.cases.cases.insert(0, case.clone());
+        self.enqueue_case(case, cx);
+        let mut joined = Vec::new();
+        for path in &folder.files {
+            let Some(tab) = self.tabs.iter_mut().find(|t| {
+                t.identity.as_ref() == Some(path) || t.record.attachment.as_ref() == Some(path)
+            }) else {
+                continue;
+            };
+            let in_case = tab.view.as_ref().is_some_and(|v| v.read(cx).case.is_some());
+            if !in_case && tab.record.case.is_none() {
+                tab.record.case = Some(case_id.clone());
+                joined.push(tab.id);
+            }
+        }
+        for id in joined {
+            self.attach_case(id, window, cx);
+        }
+        notes.insert(0, format!("Opened “{}” as a case", folder.name));
+        self.notice = Some(notes.join("; ") + ".");
+        self.checkpoint(window, cx);
+        cx.notify();
     }
     /// A member tab's mapping changed: fold it into the case and save.
     pub(super) fn case_changed(&mut self, id: u64, cx: &mut Context<Self>) {
@@ -355,7 +459,9 @@ impl Workspace {
         };
         let link = CaseLink::of(case);
         let identities = case.exported();
+        let skip = case.skipped();
         let result = view.update(cx, |view, cx| {
+            view.case_skip = skip;
             let result = view.join_case_identities(&identities, cx);
             if result.is_ok() {
                 view.case = Some(link.clone());
@@ -881,6 +987,126 @@ impl Workspace {
             .into_any_element()
     }
 
+    /// Switch a category on or off for a case and its open members.
+    pub(super) fn toggle_case_category(
+        &mut self,
+        case_id: &str,
+        category: pii::Category,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == case_id) else {
+            return;
+        };
+        let token = category.token().to_string();
+        if case.skip.contains(&token) {
+            case.skip.retain(|s| *s != token);
+        } else {
+            case.skip.push(token);
+        }
+        let skip = case.skipped();
+        let case = case.clone();
+        self.enqueue_case(case, cx);
+        for view in self.tabs.iter().filter_map(|t| t.view.clone()) {
+            view.update(cx, |view, cx| {
+                if view.case.as_ref().is_some_and(|l| l.id == case_id) {
+                    view.case_skip = skip.clone();
+                    cx.notify();
+                }
+            });
+        }
+        cx.notify();
+    }
+    /// The categories a case detects, as switches.
+    pub(super) fn case_categories(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let case_id = self.cases.categories_open.clone()?;
+        let case = self.cases.cases.iter().find(|c| c.id == case_id)?;
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let skip = case.skipped();
+        let rows: Vec<AnyElement> = pii::Category::ALL
+            .into_iter()
+            // Date and Other are manual-only; the detector never emits them.
+            .filter(|c| !matches!(c, pii::Category::Date | pii::Category::Other))
+            .map(|category| {
+                let on = !skip.contains(&category);
+                let id = case_id.clone();
+                ui::control(
+                    gpui::SharedString::from(format!("case-category-{}", category.token())),
+                    format!("{} {}", if on { "✓" } else { "  " }, category.label()),
+                    theme,
+                    true,
+                )
+                .when(cfg!(test), move |v| {
+                    v.debug_selector(move || format!("case-category-{}", category.token()))
+                })
+                .aria_toggled(if on {
+                    gpui::Toggled::True
+                } else {
+                    gpui::Toggled::False
+                })
+                .on_click(
+                    cx.listener(move |this, _, _, cx| this.toggle_case_category(&id, category, cx)),
+                )
+                .into_any_element()
+            })
+            .collect();
+        Some(
+            gpui::deferred(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .flex()
+                    .items_start()
+                    .justify_center()
+                    .pt(px(80.))
+                    .child(
+                        ui::panel("case-categories", theme)
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "case-categories".into())
+                            })
+                            .w(px(320.))
+                            .p_2()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                                this.cases.categories_open = None;
+                                cx.notify();
+                            }))
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .px_2()
+                                    .child(
+                                        div().flex_1().child(format!("Detect in “{}”", case.name)),
+                                    )
+                                    .child(
+                                        ui::control("close-case-categories", "×", theme, true)
+                                            .aria_label("Close")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.cases.categories_open = None;
+                                                cx.notify();
+                                            })),
+                                    ),
+                            )
+                            .child(
+                                div()
+                                    .px_2()
+                                    .text_size(px(11.))
+                                    .text_color(palette.header_muted)
+                                    .child(
+                                        "Scans in this case's documents skip categories that are \
+                                         off. Names you mark yourself are still replaced.",
+                                    ),
+                            )
+                            .children(rows),
+                    ),
+            )
+            .with_priority(2)
+            .into_any_element(),
+        )
+    }
     /// Case entries for the tab context menu.
     pub(super) fn case_menu_items(&self, tab: u64, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let theme = self.theme.get();
@@ -944,7 +1170,15 @@ impl Workspace {
             Some(link) => {
                 let rename = link.id.clone();
                 let delete = link.id.clone();
+                let categories = link.id.clone();
                 vec![
+                    row("context-case-categories", "Categories to detect…")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.tab_menu = None;
+                            this.cases.categories_open = Some(categories.clone());
+                            cx.notify();
+                        }))
+                        .into_any_element(),
                     row("context-rename-case", "Rename case…")
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.tab_menu = None;

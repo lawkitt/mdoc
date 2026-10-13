@@ -39,17 +39,17 @@ This roadmap tracks work remaining as of 2026-10-10; accepted behavior lives in
    clipboard, accessibility and affected popup, setup and file-drop flows.
    Apple Silicon macOS and Windows x64 are the first qualification targets;
    keep macOS, Windows and Linux buildable. Record unavailable checks explicitly.
-
 4. **Cases and the AI return journey** (accepted design:
    [saved mappings](docs/design/saved-mappings.md), [ADR 0041](docs/adr/0041-cases-and-ai-response-restoration.md)). Save a document's mapping
    as an encrypted local case, group tabs that share one case, and restore AI
-   responses into a new tab with reviewable restored values. Phases 1 (Copy for
-   AI, Paste AI Response), 2 (saved cases) and 3 (multi-document cases) are implemented;
-   captured ChatGPT/Claude reply fixtures, Windows/native checks and Linux
-   Secret Service support are still needed, then phase 4.
+   responses into a new tab with reviewable restored values. All four phases are
+   implemented; captured ChatGPT/Claude reply fixtures, Windows/native checks
+   and Linux Secret Service support are still needed.
 5. **Preparation conveniences** from the [Anoni review](docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11):
-   a global shortcut that pseudonymizes the clipboard with the active case; a
-   before/after/side-by-side view of pseudonymized text; per-case category toggles.
+   in-app Pseudonymize Clipboard, the before/after view and per-case category
+   switches are implemented; a system-wide clipboard hotkey (macOS
+   `RegisterEventHotKey`, Windows `RegisterHotKey`) and listing cases on the
+   empty page remain.
 
 Keep the app and internal crates maintainable through concrete ownership/test
 improvements ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)). Conversion

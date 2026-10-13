@@ -3,7 +3,7 @@
 //! restored as proposals that keep their aliases. Unknown alias-shaped tokens
 //! are highlighted and can be assigned to an identity, never guessed.
 use super::*;
-use crate::{CopyForAi, PasteAiResponse, ui};
+use crate::{CopyForAi, PasteAiResponse, PseudonymizeClipboard, ui};
 use gpui::{AnyElement, anchored, deferred, div, prelude::*};
 use pii::restore::{ExportedIdentity, RestoreMap};
 use std::collections::HashSet;
@@ -76,6 +76,50 @@ impl DocumentView {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(copied));
         self.copied_for_ai = true;
         self.show_copy_feedback(cx);
+    }
+    /// Replace the clipboard text with this tab's aliases (ADR 0041 #30):
+    /// the case's names, or the tab's own mapping. Exact known names only.
+    pub(crate) fn pseudonymize_clipboard(
+        &mut self,
+        _: &PseudonymizeClipboard,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let identities = if self.case.is_some() {
+            self.case_names.clone()
+        } else {
+            self.pii.review.export_identities()
+        };
+        if identities.is_empty() {
+            self.clipboard_notice = Some(
+                "This tab has no names to replace yet. Pseudonymize a document or open a case first."
+                    .into(),
+            );
+            cx.notify();
+            return;
+        }
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            self.clipboard_notice = Some("The clipboard has no text.".into());
+            cx.notify();
+            return;
+        };
+        let (replaced, count) = RestoreMap::new(identities).pseudonymize(&text);
+        if count > 0 {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(replaced));
+        }
+        let source = self
+            .case
+            .as_ref()
+            .map_or_else(|| "this document".to_string(), |l| format!("“{}”", l.name));
+        self.clipboard_notice = Some(match count {
+            0 => format!("No names from {source} were found in the clipboard. It is unchanged."),
+            n => format!(
+                "Replaced {n} {} from {source} in the clipboard. Names mdoc doesn't know yet \
+                 were not replaced; check before pasting.",
+                if n == 1 { "name" } else { "names" }
+            ),
+        });
+        cx.notify();
     }
     pub(crate) fn paste_ai_response(
         &mut self,

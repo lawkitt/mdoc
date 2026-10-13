@@ -4,6 +4,13 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- Dropping a folder opens its files (not subfolders) as one new case named after
+  it; each document joins once it has Markdown. **File → Pseudonymize
+  Clipboard** (⌥⇧⌘C) replaces names the active tab's case knows in the
+  clipboard text, without running detection. **Before / after** shows the
+  original wording beside the pseudonymized text, line by line. A case's
+  **Categories to detect…** switches categories off for scans in its documents
+  (ADR 0041, phase 4).
 - Cases with several documents: right-click a tab and choose **Move to case**,
   or drag it onto a case's header. Names the case already knows take its
   aliases, other names that clash get the next free number (one undo step), and

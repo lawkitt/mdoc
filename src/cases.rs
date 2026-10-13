@@ -94,6 +94,9 @@ pub struct Case {
     /// Bumped on every change; a store never writes an older revision.
     #[serde(default)]
     pub revision: u64,
+    /// Category tokens scans in member documents skip.
+    #[serde(default)]
+    pub skip: Vec<String>,
 }
 impl Case {
     pub fn new(name: String, identities: &[ExportedIdentity], member: Option<PathBuf>) -> Self {
@@ -108,6 +111,7 @@ impl Case {
             identities: Vec::new(),
             members: member.into_iter().collect(),
             revision: 0,
+            skip: Vec::new(),
         };
         case.merge(identities);
         case
@@ -119,6 +123,12 @@ impl Case {
             .map(|n| format!("{}_{n}", category.token()))
             .find(|alias| !used(alias))
             .unwrap()
+    }
+    pub fn skipped(&self) -> std::collections::HashSet<Category> {
+        Category::ALL
+            .into_iter()
+            .filter(|c| self.skip.iter().any(|s| s == c.token()))
+            .collect()
     }
     pub fn exported_one(&self, index: usize) -> Option<ExportedIdentity> {
         self.identities.get(index)?.exported()

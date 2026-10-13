@@ -948,19 +948,29 @@ impl Workspace {
             return;
         }
         let task = cx.background_executor().spawn(async move {
-            paths
-                .into_iter()
-                .map(|path| {
-                    let supported = !path.is_dir()
-                        && (document::is_markdown(&path) || import::supported_source(&path));
-                    (session_store::identity(&path), supported)
-                })
-                .collect::<Vec<_>>()
+            let supported = |path: &std::path::Path| {
+                !path.is_dir() && (document::is_markdown(path) || import::supported_source(path))
+            };
+            let mut files = Vec::new();
+            let mut folders = Vec::new();
+            for path in paths {
+                if let Some(folder) = cases_ui::DroppedFolder::read(&path, supported) {
+                    files.extend(folder.files.iter().map(|f| (f.clone(), true)));
+                    folders.push(folder);
+                } else {
+                    let ok = supported(&path);
+                    files.push((session_store::identity(&path), ok));
+                }
+            }
+            (files, folders)
         });
         cx.spawn_in(window, async move |this, cx| {
-            let paths = task.await;
+            let (paths, folders) = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.finish_open(paths, at, window, cx)
+                this.finish_open(paths, at, window, cx);
+                for folder in folders {
+                    this.open_folder_case(folder, window, cx);
+                }
             });
         })
         .detach();
@@ -1110,7 +1120,11 @@ impl Workspace {
                     view.update(cx, |view, cx| view.start_restored(&reply, window, cx));
                 }
             }
-            TabEvent::ImportState => self.refresh_import(window, cx),
+            TabEvent::ImportState => {
+                self.refresh_import(window, cx);
+                // A converted document of a folder case joins it now.
+                self.attach_case(id, window, cx);
+            }
             TabEvent::CloseRequested => self.close_tab(id, window, cx),
             TabEvent::OcrState(state) => self.set_ocr(state.clone(), cx),
             TabEvent::Saved => {
@@ -1417,7 +1431,10 @@ impl Workspace {
                     && view.preview.source.is_none()
                     && view.editor.read(cx).text().is_empty();
                 record.blank_disposable = record.blank && view.blank_disposable;
-                record.case = view.case.as_ref().map(|link| link.id.clone());
+                // A document still waiting to join its folder's case keeps it.
+                if let Some(link) = &view.case {
+                    record.case = Some(link.id.clone());
+                }
                 if let Some(path) = &view.session.document.path {
                     record.markdown = path.clone();
                 }
@@ -2546,6 +2563,7 @@ impl Render for Workspace {
                 )
             })
             .children(self.case_list(cx))
+            .children(self.case_categories(cx))
             .when_some(self.update_banner(cx), |view, banner| view.child(banner))
             .when_some(self.notice.clone(), |view, notice| {
                 let palette = self.theme.get().pdf_style();

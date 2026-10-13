@@ -70,6 +70,12 @@ pub(crate) struct DocumentView {
     pub(crate) case_names: Vec<pii::restore::ExportedIdentity>,
     pub(crate) case_names_open: bool,
     pub(crate) case_term: Option<Entity<markdown_search::SearchInput>>,
+    /// The result of Pseudonymize Clipboard, until dismissed.
+    pub(crate) clipboard_notice: Option<String>,
+    /// The before/after view replaces the editor.
+    pub(crate) compare_open: bool,
+    /// Categories this tab's case does not detect.
+    pub(crate) case_skip: std::collections::HashSet<pii::Category>,
     pub(crate) view_bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
     pub(crate) split_dragging: bool,
     pub(crate) original_selected: bool,
@@ -203,6 +209,9 @@ impl DocumentView {
             case_names: Vec::new(),
             case_names_open: false,
             case_term: None,
+            clipboard_notice: None,
+            compare_open: false,
+            case_skip: Default::default(),
             view_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
             split_dragging: false,
             original_selected: false,
@@ -1036,6 +1045,7 @@ impl DocumentView {
                                     "ocr-notice" => this.ocr_notice_dismissed = true,
                                     "preview-notice" => this.preview.message = None,
                                     "setup-notice" => this.setup_error_dismissed = true,
+                                    "clipboard-notice" => this.clipboard_notice = None,
                                     _ => this.error = None,
                                 }
                                 cx.notify();
@@ -1469,6 +1479,10 @@ impl Render for DocumentView {
             }
             _ => None,
         };
+        let clipboard_notice = self
+            .clipboard_notice
+            .clone()
+            .map(|detail| self.notice("clipboard-notice", "Clipboard", detail, false, cx));
         let error_notice = self
             .error
             .clone()
@@ -1506,10 +1520,10 @@ impl Render for DocumentView {
             .when(empty_page, |v| v
                 .on_drag_move(cx.listener(|this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
                     let over = event.bounds.contains(&event.event.position);
-                    let state = over.then(|| event.drag(cx).paths().iter().any(|path| import::supported_extension(path)));
+                    let state = over.then(|| event.drag(cx).paths().iter().any(|path| import::droppable(path)));
                     if this.file_drag != state { this.file_drag = state; cx.notify(); }
                 }))
-                .can_drop(|drag, _, _| drag.downcast_ref::<gpui::ExternalPaths>().is_some_and(|drag| drag.paths().iter().any(|path| import::supported_extension(path))))
+                .can_drop(|drag, _, _| drag.downcast_ref::<gpui::ExternalPaths>().is_some_and(|drag| drag.paths().iter().any(|path| import::droppable(path))))
                 .on_drop(cx.listener(|this, drag: &gpui::ExternalPaths, _, cx| {
                     this.file_drag = None;
                     cx.emit(workspace::TabEvent::Open(drag.paths().to_vec()));
@@ -1524,6 +1538,7 @@ impl Render for DocumentView {
             .on_action(cx.listener(Self::copy_markdown))
             .on_action(cx.listener(Self::copy_for_ai))
             .on_action(cx.listener(Self::paste_ai_response))
+            .on_action(cx.listener(Self::pseudonymize_clipboard))
             .on_action(cx.listener(Self::pseudonymize))
             .on_action(cx.listener(Self::add_pii_candidate))
             .on_action(cx.listener(Self::apply_all_pii))
@@ -1552,7 +1567,7 @@ impl Render for DocumentView {
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
-            .children(import_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))
+            .children(import_notice).children(clipboard_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx)))
             .child(div().flex().flex_1().min_h_0()
                 .when(!self.source_only && show_markdown, |row| row.child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
@@ -1560,6 +1575,8 @@ impl Render for DocumentView {
                     .child(if self.loading || self.unavailable {
                         div().p_6().child(if self.loading { ui::activity("markdown-loading", "Loading Markdown…", theme).into_any_element() } else { div().child("Markdown unavailable").into_any_element() })
                             .when(self.unavailable, |view| view.child(button("Retry", RetryDocument, theme))).into_any_element()
+                    } else if self.compare_open && self.has_applied_aliases() {
+                        self.compare_view(cx)
                     } else { div().relative().flex_1().min_w_0().min_h_0()
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6()
                             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))

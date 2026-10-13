@@ -11,6 +11,12 @@ pub fn supported_extension(path: &Path) -> bool {
     crate::document::is_markdown(path) || anydoc::Format::from_path(path).is_some()
 }
 
+/// What a drop target accepts: a supported file, or a folder that opens as a
+/// case (ADR 0041 #28). One stat per dragged path.
+pub fn droppable(path: &Path) -> bool {
+    supported_extension(path) || path.is_dir()
+}
+
 /// Admission does not convert documents. Unknown extensions retain AnyDoc's
 /// content detection, with bounded reads performed on the background executor.
 pub fn supported_source(path: &Path) -> bool {
