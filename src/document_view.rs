@@ -1555,7 +1555,7 @@ impl Render for DocumentView {
             // Toolbar clicks must dispatch inside this document view, not the outer workspace.
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::toggle_theme))
-            .on_action(cx.listener(|this, _: &TogglePreview, window, cx| this.toggle_preview(window, cx)))
+            .on_action(cx.listener(|this, _: &TogglePreview, window, cx| if this.compare.is_none() { this.toggle_preview(window, cx) }))
             .on_action(cx.listener(Self::open))
             .on_action(cx.listener(Self::import))
             .on_action(cx.listener(Self::copy_markdown))

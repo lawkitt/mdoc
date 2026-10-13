@@ -29,18 +29,21 @@ mode rather than the current one, and was the only text control among icons.
    an active (pressed) state while the view is open, a tooltip and a keyboard
    shortcut. No label swap.
 5. **Opening the view hides the PDF preview** ("Show original") and closing
-   it restores the previous state. The Replacements panel stays.
+   it restores the previous state; "Show original" is unavailable meanwhile.
+   The Replacements panel stays.
 6. **Gold originals, blue aliases.** The original column marks the original
    wording in gold and the pseudonymized column marks aliases in blue, the
    two colours of the editor's review (ADR 0032), so each side reads as what
    it is. A new replacement settles in as in the editor: its alias eases from
    gold into blue and rolls from the original words; its original glows gold.
 7. **Panel → view navigation.** Selecting a Replacements row scrolls both
-   columns to that identity's first occurrence and briefly highlights it.
+   columns to that identity's first occurrence and briefly highlights it; a
+   pending mention, plain text in both columns, gets a fading gold ghost.
 8. **⌘\\ (Ctrl+\\) toggles** the view; it is also in the File menu.
 9. **Esc closes innermost first**: a popup, then search, then the panel's own
    Esc; the view closes only when nothing else is open, including from inside
-   its columns. Focus returns to the editor.
+   its columns. Focus handed back to the hidden editor (e.g. by closing the
+   panel) moves to the view. Closing the view returns focus to the editor.
 10. **View → panel navigation.** Clicking a name in either column selects its
     Replacements row.
 11. **Narrow windows** (under 720 px for the text) show one column at a time;

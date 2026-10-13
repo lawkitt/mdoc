@@ -154,7 +154,8 @@ impl DocumentView {
             .items_center()
             .gap_1()
             .ml_auto()
-            .when(has_preview, |v| {
+            // The PDF stays hidden while before/after is open (ADR 0042).
+            .when(has_preview && self.compare.is_none(), |v| {
                 v.child(button(
                     if self.preview.visible {
                         "Hide original"
