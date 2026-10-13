@@ -55,10 +55,12 @@ encrypted map, and the better ones keep one map per case.
 3. Multi-document cases and case-wide edits.
 4. Folder drop as a case; clipboard shortcut and other roadmap step 5 items.
 
-Phase 1 ships only after CI fixtures of real EN/RU AI replies restore as expected.
-The fixtures in `crates/mdoc-pii/fixtures/restore/` are synthetic replies
-modelled on typical assistant output; replies captured from ChatGPT and Claude
-still need adding before release.
+Phase 1 ships in a **stable** release only after CI fixtures of real EN/RU AI
+replies restore as expected (amended 2026-10-13: pre-releases may ship it
+first, so beta testers can supply those replies). The fixtures in
+`crates/mdoc-pii/fixtures/restore/` are synthetic replies modelled on typical
+assistant output; replies captured from ChatGPT and Claude still need adding
+before 0.1.0.
 Phase 2 requires encryption, tamper and leak checks (no originals in the
 manifest or plaintext app data).
 
