@@ -59,6 +59,8 @@ source/output comparisons. Numerical budgets require measured baselines.
 
 ## Deferred
 
+- An optional case passphrase on top of the OS keyring
+  ([ADR 0045](docs/adr/0045-prompt-free-case-key.md)).
 - Exporting or sharing a case key (encrypted file plus passphrase), a
   cross-case dictionary, deliberate forgetting of originals, and stronger
   anonymization claims. Saved cases and restoration moved to step 4.
