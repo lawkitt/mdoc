@@ -1791,3 +1791,38 @@ fn view_switcher_picks_edit_original_pseudonymized_or_side_by_side(cx: &mut gpui
     app.update_in(cx, |app, window, cx| app.toggle_compare(window, cx));
     assert_eq!(mode(&app, cx), Some(CompareMode::Side));
 }
+
+#[gpui::test]
+fn switching_single_column_views_keeps_the_reading_position(cx: &mut gpui::TestAppContext) {
+    use crate::pii::ui::compare::CompareMode;
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1200.), px(600.)));
+    let source = "Anna Bob Anna\n\n".repeat(200);
+    app.update(cx, |app, cx| prepare_applied(app, &source, cx));
+    cx.run_until_parked();
+    let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
+    app.update_in(cx, |app, window, cx| {
+        app.set_view_mode(Some(CompareMode::Original), window, cx)
+    });
+    draw(cx);
+    draw(cx);
+    app.update(cx, |app, _| {
+        let left = &app.compare.as_ref().unwrap().left;
+        let mut offset = left.offset();
+        offset.y = -(left.max_offset().y / 2.);
+        left.set_offset(offset);
+    });
+    draw(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.set_view_mode(Some(CompareMode::Pseudonymized), window, cx)
+    });
+    draw(cx);
+    app.read_with(cx, |app, _| {
+        let right = &app.compare.as_ref().unwrap().right;
+        let fraction = f32::from(-right.offset().y) / f32::from(right.max_offset().y);
+        assert!(
+            (fraction - 0.5).abs() < 0.05,
+            "the pseudonymized column opens where the original was: {fraction}"
+        );
+    });
+}

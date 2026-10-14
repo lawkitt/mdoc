@@ -93,5 +93,7 @@ removes prompts only by removing the protection.
   groups.
 - **Local note:** tooltips are now capped at 320 px and wrap.
 - **View switcher:** Original and Pseudonymized reuse the ADR 0042 view with
-  one column; the floating Close stays. The document and the columns get
+  one column; the column not shown stays laid out, invisible, so its scroll
+  keeps following and switching columns keeps the reading position (Codex
+  review). The floating Close stays. The document and the columns get
   extra bottom padding so the control never covers the last lines.

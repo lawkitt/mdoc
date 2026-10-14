@@ -147,55 +147,32 @@ fn path_start(text: &str) -> Option<usize> {
 }
 
 /// A panic message can carry document text in any form: quoted by a slicing
-/// panic, in `assert_eq!` debug output, or plain in `panic!("{}", text)`. Keep
-/// only the first line of a known standard-library message, cut before any
-/// value it prints, with quoted parts masked unless they are code; withhold
-/// everything else. The location and backtrace still place the crash.
+/// panic (and the text may itself contain quotes), in `assert_eq!` debug
+/// output, or plain in `panic!("{}", text)`. Keep only a known standard-library
+/// prefix and cut at the first quote after it, never parsing past a delimiter
+/// the text could contain; withhold any other message. The location and
+/// backtrace still place the crash.
 fn safe_message(message: &str) -> String {
-    const KNOWN: [&str; 8] = [
-        "called `Option::unwrap()`",
+    const KNOWN: [&str; 9] = [
+        "called `Option::unwrap()` on a `None` value",
+        "called `Result::unwrap()` on an `Err` value",
         "called `Option::expect()`",
-        "called `Result::unwrap()`",
         "called `Result::expect()`",
+        "assertion `left == right` failed",
+        "assertion `left != right` failed",
         "index out of bounds",
         "byte index ",
         "attempt to ",
-        "assertion `",
     ];
     let first = message.lines().next().unwrap_or("");
-    if !KNOWN.iter().any(|known| first.starts_with(known)) {
+    let Some(known) = KNOWN.iter().find(|known| first.starts_with(**known)) else {
         return "(message withheld: it may contain document text)".into();
-    }
-    // `…on an `Err` value: <debug of the error>` — the error may hold text.
-    let first = match first.find(" value: ") {
-        Some(at) => &first[..at + " value".len()],
-        None => first,
     };
-    mask_quotes(first)
-}
-
-fn mask_quotes(message: &str) -> String {
-    let mut out = String::with_capacity(message.len());
-    let mut rest = message;
-    while let Some(open) = rest.find(['`', '\'', '"']) {
-        let quote = rest[open..].chars().next().unwrap();
-        let Some(len) = rest[open + 1..].find(quote) else {
-            // An unmatched quote: drop the rest rather than guess.
-            out.push_str(&rest[..open + 1]);
-            out.push('…');
-            return out;
-        };
-        let inner = &rest[open + 1..open + 1 + len];
-        out.push_str(&rest[..open + 1]);
-        let code = inner.contains("::")
-            || inner.ends_with("()")
-            || matches!(inner, "left == right" | "Err" | "None");
-        out.push_str(if code { inner } else { "…" });
-        out.push(quote);
-        rest = &rest[open + 2 + len..];
+    let rest = &first[known.len()..];
+    match rest.find(['`', '\'', '"', ':']) {
+        Some(cut) => format!("{known}{}…", &rest[..cut]),
+        None => first.to_string(),
     }
-    out.push_str(rest);
-    out
 }
 
 #[cfg(test)]
@@ -228,20 +205,24 @@ mod tests {
         );
         assert_eq!(
             safe_message("called `Result::unwrap()` on an `Err` value: Io(\"/Users/a/Иван.docx\")"),
-            "called `Result::unwrap()` on an `Err` value"
+            "called `Result::unwrap()` on an `Err` value…"
         );
     }
 
     #[test]
-    fn quoted_text_is_masked_but_code_kept() {
+    fn printed_values_are_cut_even_when_they_contain_quotes() {
         assert_eq!(
-            mask_quotes(
-                "byte index 3 is not a char boundary; it is inside 'ж' (bytes 2..4) of `Иван Петров`"
+            safe_message(
+                "byte index 1 is not a char boundary; it is inside 'é' (bytes 0..2) of `é`CLIENT_SECRET`"
             ),
-            "byte index 3 is not a char boundary; it is inside '…' (bytes 2..4) of `…`"
+            "byte index 1 is not a char boundary; it is inside …"
         );
         assert_eq!(
-            mask_quotes("called `Option::unwrap()` on a `None` value"),
+            safe_message("index out of bounds: the len is 3 but the index is 5"),
+            "index out of bounds…"
+        );
+        assert_eq!(
+            safe_message("called `Option::unwrap()` on a `None` value"),
             "called `Option::unwrap()` on a `None` value"
         );
     }
@@ -255,7 +236,6 @@ mod tests {
             "frames",
         );
         assert!(report.starts_with(&format!("mdoc {}", env!("CARGO_PKG_VERSION"))));
-        assert!(report.contains("index out of bounds: '…'"));
         let url = issue_url(&"x".repeat(20_000));
         assert!(url.starts_with(ISSUES));
         assert!(url.len() < URL_BODY_LIMIT + 1000);
