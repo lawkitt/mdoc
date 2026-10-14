@@ -44,13 +44,12 @@ are not recorded; that needs platform crash handlers and can come later.
 - **Masking.** Absolute paths lose their folders (`<path>/main.rs:12`,
   `~/…/main.rs` under the home folder), since folder names can name clients;
   only Rust source file names are kept, any other becomes `<file>`.
-  The panic message is kept only when it starts with a known standard-library
-  form (unwrap/expect, index out of bounds, byte index, arithmetic overflow,
-  assertion): the known prefix, then the text up to the first quote or colon
-  after it, marked `…` where cut. Nothing past a delimiter is parsed, because
-  the printed value may itself contain quotes. Any other message is withheld, since
-  `assert_eq!` output or `panic!("{}", text)` can carry document text in any
-  form (Codex review). Location and backtrace still place the crash.
+  The panic message itself is never kept. A known standard-library panic
+  (unwrap on `None`/`Err`, assertion, index out of bounds, byte index,
+  arithmetic overflow) gets a fixed label; any other message is withheld,
+  since `assert_eq!` output or `panic!("{}", text)` can carry document text in
+  any form, even text that starts like a standard message
+  (Codex review). Location and backtrace still place the crash.
   Masking is best effort; the preview is what guarantees the user sees what
   would leave the Mac.
 - **Wording:** "mdoc had a problem last time it ran.", because a panic on a
