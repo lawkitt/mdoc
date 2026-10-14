@@ -4,6 +4,9 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Paste AI Response** with a reply that has no placeholders now says
+  "No placeholders found in this reply." instead of "Restored 0 mentions of
+  0 values" (ADR 0046).
 - **Line breaks in table cells.** `<br>` inside a table cell, as converted
   Word tables produce, now shows as a line break instead of literal text. The
   saved Markdown is unchanged (ADR 0046).

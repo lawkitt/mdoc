@@ -368,28 +368,7 @@ impl DocumentView {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let unresolved = self.unresolved_tokens(cx).len();
-        let mut detail = format!(
-            "Restored {} {} of {} {} as proposals that keep their aliases. \
-             Apply them before copying the text back to the AI.",
-            state.restored,
-            if state.restored == 1 {
-                "mention"
-            } else {
-                "mentions"
-            },
-            state.values,
-            if state.values == 1 { "value" } else { "values" },
-        );
-        if unresolved > 0 {
-            detail = format!(
-                "{detail} {unresolved} unrecognized {} highlighted in red.",
-                if unresolved == 1 {
-                    "placeholder is"
-                } else {
-                    "placeholders are"
-                }
-            );
-        }
+        let (headline, detail) = summary_text(state.restored, state.values, unresolved);
         let accent = if unresolved > 0 {
             crate::style::markdown_style(theme).alert_caution
         } else {
@@ -416,7 +395,7 @@ impl DocumentView {
                     div()
                         .flex_shrink_0()
                         .text_color(palette.header_fg)
-                        .child("AI reply restored"),
+                        .child(headline),
                 )
                 .child(
                     div()
@@ -605,5 +584,58 @@ impl DocumentView {
             .with_priority(2)
             .into_any_element(),
         )
+    }
+}
+
+/// The restore bar's headline and detail. A reply without any placeholder says
+/// so rather than "Restored 0 mentions of 0 values" (ADR 0046).
+fn summary_text(restored: usize, values: usize, unresolved: usize) -> (&'static str, String) {
+    let plural = |n: usize, one: &'static str, many: &'static str| if n == 1 { one } else { many };
+    if restored == 0 && unresolved == 0 {
+        return (
+            "Nothing to restore",
+            "No placeholders found in this reply.".into(),
+        );
+    }
+    let mut detail = if restored == 0 {
+        "No known placeholders were restored.".to_string()
+    } else {
+        format!(
+            "Restored {restored} {} of {values} {} as proposals that keep their aliases. \
+             Apply them before copying the text back to the AI.",
+            plural(restored, "mention", "mentions"),
+            plural(values, "value", "values"),
+        )
+    };
+    if unresolved > 0 {
+        detail = format!(
+            "{detail} {unresolved} unrecognized {} highlighted in red.",
+            plural(unresolved, "placeholder is", "placeholders are"),
+        );
+    }
+    ("AI reply restored", detail)
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::summary_text;
+
+    #[test]
+    fn a_reply_without_placeholders_says_so() {
+        assert_eq!(
+            summary_text(0, 0, 0),
+            (
+                "Nothing to restore",
+                "No placeholders found in this reply.".into()
+            )
+        );
+        let (_, detail) = summary_text(0, 0, 2);
+        assert_eq!(
+            detail,
+            "No known placeholders were restored. 2 unrecognized placeholders are highlighted in red."
+        );
+        let (headline, detail) = summary_text(3, 1, 0);
+        assert_eq!(headline, "AI reply restored");
+        assert!(detail.starts_with("Restored 3 mentions of 1 value as proposals"));
     }
 }
