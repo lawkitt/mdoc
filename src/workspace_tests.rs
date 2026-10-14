@@ -2238,6 +2238,10 @@ fn empty_page_opens_several_files_and_yields_to_typing(cx: &mut TestAppContext) 
     let (tabs, cx) = boot(cx, Session::default());
     draw(cx);
     assert!(cx.debug_bounds("empty-page").is_some());
+    assert!(
+        cx.debug_bounds("empty-page-local").is_some(),
+        "the local note shows"
+    );
     click_toolbar(cx, "empty-page-open");
     cx.simulate_path_prompt_response(|_| Some(vec![a.clone(), b.clone()]));
     cx.run_until_parked();

@@ -63,6 +63,7 @@ impl DocumentView {
                         .opacity(0.7)
                         .child("or just start typing"),
                 )
+                .child(local_note(theme))
                 .into_any_element(),
         };
         div()
@@ -326,4 +327,39 @@ impl DocumentView {
             ))
             .into_any_element()
     }
+}
+
+/// "Documents stay on this Mac", explained on hover (ADR 0046). Literally
+/// true: the only network use is the update check and chosen model downloads.
+fn local_note(theme: crate::style::Theme) -> impl IntoElement {
+    let p = theme.pdf_style();
+    let machine = if cfg!(target_os = "macos") {
+        "this Mac"
+    } else {
+        "this computer"
+    };
+    let detail = format!(
+        "Detection, conversion and saved cases run on {machine}. mdoc goes online only \
+         to check for updates and to download models you choose."
+    );
+    div()
+        .id("empty-page-local")
+        .when(cfg!(test), |v| {
+            v.debug_selector(|| "empty-page-local".into())
+        })
+        .mt_3()
+        .flex()
+        .items_center()
+        .gap_1()
+        .text_size(px(12.))
+        .text_color(p.header_muted)
+        .aria_label(format!("Documents stay on {machine}. {detail}"))
+        .tooltip(crate::style::tooltip(detail, theme))
+        .child(
+            gpui::svg()
+                .data(include_bytes!("../../resources/ui/lock.svg"))
+                .size(px(13.))
+                .text_color(p.header_muted),
+        )
+        .child(format!("Documents stay on {machine}"))
 }

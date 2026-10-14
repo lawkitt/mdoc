@@ -4,6 +4,9 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **The empty page says documents stay on this Mac**, with a hover note on the
+  only network use: the update check and model downloads you choose. Long
+  tooltips now wrap (ADR 0046).
 - **Replacements panel groups by category.** Names are listed under a label
   per category with counts, e.g. "Person 3 (7)": names, then mentions. The
   labels are not selectable; arrow keys skip them (ADR 0046).
