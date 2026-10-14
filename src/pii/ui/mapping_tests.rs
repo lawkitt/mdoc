@@ -1223,7 +1223,27 @@ fn panel_groups_expand_independently_filter_and_edit_from_headers(cx: &mut gpui:
     click(cx, "replacement-expand-all".into());
     app.read_with(cx, |app, cx| {
         assert_eq!(app.pii.mapping.expanded.len(), 3);
-        assert_eq!(app.replacement_entries(cx).len(), 3 + 4);
+        let entries = app.replacement_entries(cx);
+        // A category label above each group (ADR 0046): three categories,
+        // three entities, four mentions.
+        assert_eq!(entries.len(), 3 + 3 + 4);
+        let labels: Vec<_> = entries
+            .iter()
+            .filter_map(|(row, item)| match item {
+                super::panel::PanelItem::Category { entities, mentions } => {
+                    Some((row.category, *entities, *mentions))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                (Category::Person, 1, 1),
+                (Category::Organization, 1, 2),
+                (Category::Email, 1, 1)
+            ]
+        );
     });
     // Apply one mention; the Applied filter shows only it and its group.
     app.update(cx, |app, cx| {
@@ -1238,8 +1258,8 @@ fn panel_groups_expand_independently_filter_and_edit_from_headers(cx: &mut gpui:
     click(cx, "replacement-filter-Applied".into());
     app.read_with(cx, |app, cx| {
         let entries = app.replacement_entries(cx);
-        assert_eq!(entries.len(), 2);
-        assert!(entries[1].1.mention().unwrap() & APPLIED_ID != 0);
+        assert_eq!(entries.len(), 3);
+        assert!(entries[2].1.mention().unwrap() & APPLIED_ID != 0);
     });
     click(cx, "replacement-filter".into());
     click(cx, "replacement-filter-All".into());

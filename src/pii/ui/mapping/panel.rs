@@ -16,6 +16,12 @@ pub(super) struct ReplacementRow {
 pub(super) type PanelEntry = (Arc<ReplacementRow>, PanelItem);
 #[derive(Clone)]
 pub(super) enum PanelItem {
+    /// A category's label above its group headers: entities and mentions shown
+    /// (ADR 0046). Not focusable; navigation skips it.
+    Category {
+        entities: usize,
+        mentions: usize,
+    },
     Header,
     Mention(u64, Range<usize>),
     /// Inline controls under the mention selected in the panel (ADR 0033).
@@ -115,8 +121,18 @@ impl DocumentView {
     pub(super) fn replacement_entries(&self, cx: &App) -> Vec<PanelEntry> {
         let mapping = &self.pii.mapping;
         let mut entries = Vec::new();
-        for row in self.replacement_rows(cx).iter() {
+        // Grouped by category in the category menu's order; entities keep
+        // their order inside a group (ADR 0046).
+        let rank = |c: Category| Category::ALL.iter().position(|a| *a == c);
+        let mut rows = self.replacement_rows(cx).to_vec();
+        rows.sort_by_key(|row| rank(row.category));
+        for (i, row) in rows.iter().enumerate() {
             let row = Arc::new(row.clone());
+            if i == 0 || rows[i - 1].category != row.category {
+                let group = rows[i..].iter().take_while(|r| r.category == row.category);
+                let (entities, mentions) = group.fold((0, 0), |(e, m), r| (e + 1, m + r.mentions));
+                entries.push((row.clone(), PanelItem::Category { entities, mentions }));
+            }
             entries.push((row.clone(), PanelItem::Header));
             if mapping.expanded.contains(&row.id) {
                 for (annotation, range) in self.identity_occurrences(row.id) {

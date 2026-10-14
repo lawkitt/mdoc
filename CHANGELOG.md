@@ -4,6 +4,9 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Replacements panel groups by category.** Names are listed under a label
+  per category with counts, e.g. "Person 3 (7)": names, then mentions. The
+  labels are not selectable; arrow keys skip them (ADR 0046).
 - **Paste AI Response** with a reply that has no placeholders now says
   "No placeholders found in this reply." instead of "Restored 0 mentions of
   0 values" (ADR 0046).

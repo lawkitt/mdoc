@@ -137,13 +137,57 @@ impl DocumentView {
             .on_drop(
                 cx.listener(move |this, drag: &PanelDrag, _, cx| this.drop_on_entity(drag, id, cx)),
             );
+        if let PanelItem::Category { entities, mentions } = mention {
+            return self.category_row(index, row.category, entities, mentions);
+        }
         match mention {
+            PanelItem::Category { .. } => unreachable!(),
             PanelItem::Mention(annotation, range) => {
                 self.mention_row(base, &row, annotation, range, cx)
             }
             PanelItem::Header => self.header_row(base, &row, cx),
             PanelItem::Controls(annotation) => self.inline_controls(index, annotation, cx),
         }
+    }
+
+    /// A category label over its groups, "Person 3 (7)": entities, then
+    /// mentions. Inert: no hover, focus or drop (ADR 0046).
+    fn category_row(
+        &self,
+        index: usize,
+        category: Category,
+        entities: usize,
+        mentions: usize,
+    ) -> AnyElement {
+        let palette = self.theme.get().pdf_style();
+        div()
+            .id(SharedString::from(format!("replacement-entry-{index}")))
+            .when(cfg!(test), |v| {
+                v.debug_selector(move || format!("replacement-category-{}", category.token()))
+            })
+            .role(gpui::Role::Heading)
+            .aria_label(format!(
+                "{}, {entities} {}, {mentions} {}",
+                category.label(),
+                if entities == 1 { "name" } else { "names" },
+                if mentions == 1 { "mention" } else { "mentions" },
+            ))
+            .w_full()
+            .h(px(48.))
+            .px_3()
+            .pb_1()
+            .flex()
+            .items_end()
+            .gap_1()
+            .text_size(px(11.))
+            .text_color(palette.header_muted)
+            .child(
+                div()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(category.label()),
+            )
+            .child(format!("{entities} ({mentions})"))
+            .into_any_element()
     }
 
     /// A group header: original, category, alias and count. A click toggles
