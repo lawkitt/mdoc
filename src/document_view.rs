@@ -1594,7 +1594,7 @@ impl Render for DocumentView {
             .children(import_notice).children(clipboard_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx)))
             .child(div().flex().flex_1().min_h_0()
-                .when(!self.source_only && show_markdown, |row| row.child(div().flex().flex_1().min_w_0().h_full().flex().flex_col()
+                .when(!self.source_only && show_markdown, |row| row.child(div().relative().flex().flex_1().min_w_0().h_full().flex().flex_col()
                     .when(self.search.open, |column| column.child(search_bar))
                     .child(if self.loading || self.unavailable {
                         div().p_6().child(if self.loading { ui::activity("markdown-loading", "Loading Markdown…", theme).into_any_element() } else { div().child("Markdown unavailable").into_any_element() })
@@ -1602,9 +1602,10 @@ impl Render for DocumentView {
                     } else if let Some(compare) = self.compare_view(content_width, cx) {
                         compare
                     } else { div().relative().flex_1().min_w_0().min_h_0()
-                        .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6()
+                        .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().when(self.has_applied_aliases(), |v| v.pb(px(72.)))
                             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))
-                        .child(markdown_scrollbar).children(empty_page.then(|| self.empty_page(cx))).child(self.copy_button(cx)).into_any_element() })))
+                        .child(markdown_scrollbar).children(empty_page.then(|| self.empty_page(cx))).child(self.copy_button(cx)).into_any_element() })
+                    .children(self.view_switcher(cx).filter(|_| !self.loading && !self.unavailable))))
                 // Replacements sit beside the text they describe, before Original.
                 .children(self.replacements_panel(window, cx))
                 .when(self.source_only && show_markdown, |row| row.child(div().id("conversion-pane").flex_1().min_w_0().p_6().flex().items_center().justify_center().overflow_y_scroll()
