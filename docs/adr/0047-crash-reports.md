@@ -34,3 +34,21 @@ documents.
 The only new network path is the user's browser opening a GitHub page they
 chose to open. Crashes that kill the process without a panic (aborts, signals)
 are not recorded; that needs platform crash handlers and can come later.
+
+## As implemented
+
+- `src/crash.rs`; the hook is installed in `main` for the app only, not for the
+  DOCX worker or self-test modes.
+- **No log lines:** mdoc keeps no log file, so the report is version, OS and
+  architecture, thread, panic message and location, and the backtrace.
+- **Masking.** Absolute paths lose their folders (`<path>/main.rs:12`,
+  `~/…/main.rs` under the home folder), since folder names can name clients;
+  only Rust source file names are kept, any other becomes `<file>`.
+  Quoted text in the panic message becomes `…` unless it looks like code
+  (`Option::unwrap()`), because a string slicing panic quotes the string.
+  Masking is best effort; the preview is what guarantees the user sees what
+  would leave the Mac.
+- **Wording:** "mdoc had a problem last time it ran.", because a panic on a
+  background thread does not always end the process.
+- The bar offers **See what would be sent** and **Dismiss**; the preview adds
+  **Send…** (GitHub issue, report cut to about 6,000 characters) and **Copy**.

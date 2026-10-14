@@ -4,6 +4,11 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Crash reports you check first.** If mdoc hits an internal error, the next
+  launch says so and offers **See what would be sent**: the report with folder
+  names and quoted text masked, and never document text. **Send…** opens a
+  prefilled GitHub issue for you to review; **Copy** and **Dismiss** also
+  work. Nothing is sent automatically (ADR 0047).
 - **View switcher.** While replacements are applied, a floating control at the
   bottom of the document switches between **Edit**, **Original**,
   **Pseudonymized** and **Side by side**. The toolbar button and ⌘\ still
