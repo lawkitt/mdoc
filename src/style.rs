@@ -161,6 +161,8 @@ impl gpui::Render for Tip {
             .px_2()
             .py_1()
             .rounded_md()
+            // Long explanations wrap instead of running off the window.
+            .max_w(px(320.))
             .text_size(px(12.))
             .bg(palette.placeholder_bg)
             .text_color(palette.header_fg)
