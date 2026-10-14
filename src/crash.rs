@@ -49,7 +49,7 @@ fn compose(message: &str, location: &str, thread: &str, backtrace: &str) -> Stri
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
         std::env::consts::ARCH,
-        mask_quotes(message),
+        safe_message(message),
     )
 }
 
@@ -146,19 +146,50 @@ fn path_start(text: &str) -> Option<usize> {
     })
 }
 
-/// Quoted text in a panic message may be document text (a string slicing
-/// panic quotes the string). Keep only code-like quotes: `Option::unwrap()`.
+/// A panic message can carry document text in any form: quoted by a slicing
+/// panic, in `assert_eq!` debug output, or plain in `panic!("{}", text)`. Keep
+/// only the first line of a known standard-library message, cut before any
+/// value it prints, with quoted parts masked unless they are code; withhold
+/// everything else. The location and backtrace still place the crash.
+fn safe_message(message: &str) -> String {
+    const KNOWN: [&str; 8] = [
+        "called `Option::unwrap()`",
+        "called `Option::expect()`",
+        "called `Result::unwrap()`",
+        "called `Result::expect()`",
+        "index out of bounds",
+        "byte index ",
+        "attempt to ",
+        "assertion `",
+    ];
+    let first = message.lines().next().unwrap_or("");
+    if !KNOWN.iter().any(|known| first.starts_with(known)) {
+        return "(message withheld: it may contain document text)".into();
+    }
+    // `…on an `Err` value: <debug of the error>` — the error may hold text.
+    let first = match first.find(" value: ") {
+        Some(at) => &first[..at + " value".len()],
+        None => first,
+    };
+    mask_quotes(first)
+}
+
 fn mask_quotes(message: &str) -> String {
     let mut out = String::with_capacity(message.len());
     let mut rest = message;
-    while let Some(open) = rest.find(['`', '\'']) {
+    while let Some(open) = rest.find(['`', '\'', '"']) {
         let quote = rest[open..].chars().next().unwrap();
         let Some(len) = rest[open + 1..].find(quote) else {
-            break;
+            // An unmatched quote: drop the rest rather than guess.
+            out.push_str(&rest[..open + 1]);
+            out.push('…');
+            return out;
         };
         let inner = &rest[open + 1..open + 1 + len];
         out.push_str(&rest[..open + 1]);
-        let code = inner.contains("::") || inner.ends_with("()");
+        let code = inner.contains("::")
+            || inner.ends_with("()")
+            || matches!(inner, "left == right" | "Err" | "None");
         out.push_str(if code { inner } else { "…" });
         out.push(quote);
         rest = &rest[open + 2 + len..];
@@ -187,6 +218,21 @@ mod tests {
     }
 
     #[test]
+    fn only_known_panic_messages_are_kept() {
+        let withheld = "(message withheld: it may contain document text)";
+        assert_eq!(safe_message("Иван Петров signed"), withheld);
+        assert_eq!(safe_message("unexpected \"Иван\""), withheld);
+        assert_eq!(
+            safe_message("assertion `left == right` failed\n  left: \"Иван\"\n right: \"Пётр\""),
+            "assertion `left == right` failed"
+        );
+        assert_eq!(
+            safe_message("called `Result::unwrap()` on an `Err` value: Io(\"/Users/a/Иван.docx\")"),
+            "called `Result::unwrap()` on an `Err` value"
+        );
+    }
+
+    #[test]
     fn quoted_text_is_masked_but_code_kept() {
         assert_eq!(
             mask_quotes(
@@ -196,15 +242,20 @@ mod tests {
         );
         assert_eq!(
             mask_quotes("called `Option::unwrap()` on a `None` value"),
-            "called `Option::unwrap()` on a `…` value"
+            "called `Option::unwrap()` on a `None` value"
         );
     }
 
     #[test]
     fn a_report_names_the_version_and_the_issue_url_is_bounded() {
-        let report = compose("boom 'secret'", "src/a.rs:1:1", "main", "frames");
+        let report = compose(
+            "index out of bounds: 'secret'",
+            "src/a.rs:1:1",
+            "main",
+            "frames",
+        );
         assert!(report.starts_with(&format!("mdoc {}", env!("CARGO_PKG_VERSION"))));
-        assert!(report.contains("boom '…'"));
+        assert!(report.contains("index out of bounds: '…'"));
         let url = issue_url(&"x".repeat(20_000));
         assert!(url.starts_with(ISSUES));
         assert!(url.len() < URL_BODY_LIMIT + 1000);
