@@ -4908,6 +4908,53 @@ mod tests {
     }
 
     #[gpui::test]
+    fn br_in_a_table_cell_breaks_the_line(cx: &mut gpui::TestAppContext) {
+        use super::*;
+        assert_eq!(
+            tables::cell_breaks("a<br>b<BR/>c<br />d<br x>"),
+            vec![1..5, 6..11, 12..18]
+        );
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        cx.simulate_resize(size(px(700.), px(700.)));
+        let draw = |cx: &mut gpui::VisualTestContext| {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+        };
+        let mut heights = Vec::new();
+        for source in [
+            "| A | B |\n| --- | --- |\n| one | two |\nend",
+            "| A | B |\n| --- | --- |\n| one<br>first | two |\nend",
+        ] {
+            editor.update(cx, |e, cx| {
+                e.set_text(source, cx);
+                e.set_markdown_style(markdown_syntax::search_style(), cx);
+            });
+            draw(cx);
+            heights.push(editor.read_with(cx, |e, _| e.line_tops[3] - e.line_tops[2]));
+        }
+        let line_h = editor.read_with(cx, |e, _| e.font_size * LINE_HEIGHT_RATIO);
+        let grown = heights[1] - heights[0];
+        assert!(
+            (f32::from(grown - line_h)).abs() < 0.5,
+            "a <br> row is one line taller: {heights:?}"
+        );
+        // A click on the second line lands after the tag, not inside it.
+        let source = "| A | B |\n| --- | --- |\n| one<br>first | two |\nend";
+        let offset = cx.update(|window, cx| {
+            editor.update(cx, |e, _| {
+                let bounds = e.last_bounds.unwrap();
+                let top = bounds.top() + e.line_tops[2] + px(6.) + line_h * 1.5;
+                let x = bounds.left() + px(TABLE_GUTTER) + px(TABLE_CELL_PAD) + px(1.);
+                e.table_offset_at(point(x, top), window)
+            })
+        });
+        assert_eq!(offset, Some(source.find("first").unwrap()));
+        editor.read_with(cx, |e, _| assert_eq!(e.text(), source));
+    }
+
+    #[gpui::test]
     fn resizing_wrapped_table_preserves_other_columns_and_wrap_through_release(
         cx: &mut gpui::TestAppContext,
     ) {

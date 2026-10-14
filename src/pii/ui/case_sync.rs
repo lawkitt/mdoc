@@ -154,12 +154,21 @@ impl DocumentView {
                 .child(
                     ui::control(
                         "case-names-toggle",
-                        format!(
-                            "{} In “{}”, not in this document ({})",
-                            if open { "▾" } else { "▸" },
-                            link.name,
-                            absent.len()
-                        ),
+                        if absent.is_empty() {
+                            // Nothing to list: keep only the way to add a name (ADR 0046).
+                            format!(
+                                "{} Add a name to “{}”",
+                                if open { "▾" } else { "▸" },
+                                link.name
+                            )
+                        } else {
+                            format!(
+                                "{} In “{}”, not in this document ({})",
+                                if open { "▾" } else { "▸" },
+                                link.name,
+                                absent.len()
+                            )
+                        },
                         theme,
                         true,
                     )
@@ -185,35 +194,37 @@ impl DocumentView {
                     })),
                 )
                 .when(open, |v| {
-                    v.child(
-                        div()
-                            .id("case-names")
-                            .when(cfg!(test), |v| v.debug_selector(|| "case-names".into()))
-                            .max_h(px(160.))
-                            .overflow_y_scroll()
-                            .flex()
-                            .flex_col()
-                            .children(absent.iter().map(|c| {
-                                div()
-                                    .flex()
-                                    .gap_2()
-                                    .px_2()
-                                    .text_size(px(12.))
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .truncate()
-                                            .child(c.wording().to_string()),
-                                    )
-                                    .child(
-                                        div()
-                                            .flex_shrink_0()
-                                            .text_color(theme.applied())
-                                            .child(c.alias.clone()),
-                                    )
-                            })),
-                    )
+                    v.when(!absent.is_empty(), |v| {
+                        v.child(
+                            div()
+                                .id("case-names")
+                                .when(cfg!(test), |v| v.debug_selector(|| "case-names".into()))
+                                .max_h(px(160.))
+                                .overflow_y_scroll()
+                                .flex()
+                                .flex_col()
+                                .children(absent.iter().map(|c| {
+                                    div()
+                                        .flex()
+                                        .gap_2()
+                                        .px_2()
+                                        .text_size(px(12.))
+                                        .child(
+                                            div()
+                                                .flex_1()
+                                                .min_w_0()
+                                                .truncate()
+                                                .child(c.wording().to_string()),
+                                        )
+                                        .child(
+                                            div()
+                                                .flex_shrink_0()
+                                                .text_color(theme.applied())
+                                                .child(c.alias.clone()),
+                                        )
+                                })),
+                        )
+                    })
                     .children(self.case_term.clone().map(|input| {
                         div()
                             .mx_2()

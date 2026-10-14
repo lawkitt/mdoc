@@ -2686,6 +2686,28 @@ fn a_saved_case_is_encrypted_named_and_listed_in_the_sidebar(cx: &mut TestAppCon
 }
 
 #[gpui::test]
+fn a_long_case_name_keeps_the_categories_popup_close_button_inside(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
+    cx.run_until_parked();
+    tabs.update(cx, |tabs, cx| {
+        let case = &mut tabs.cases.cases[0];
+        case.name = "Заявка_на_приемку_первой_партии_10000_единиц_и_ещё_немного".into();
+        tabs.cases.categories_open = Some(case.id.clone());
+        cx.notify();
+    });
+    draw(cx);
+    let panel = cx.debug_bounds("case-categories").unwrap();
+    let close = cx.debug_bounds("close-case-categories").unwrap();
+    assert!(
+        close.right() <= panel.right() && close.left() >= panel.left(),
+        "× {close:?} must stay inside the popup {panel:?}"
+    );
+}
+
+#[gpui::test]
 fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let store = crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
