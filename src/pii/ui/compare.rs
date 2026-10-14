@@ -11,6 +11,15 @@ use std::hash::{Hash, Hasher};
 /// Below this width the view shows one column at a time.
 const NARROW: f32 = 720.;
 
+/// Which columns an open before/after view shows (ADR 0046's view switcher).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CompareMode {
+    /// Both columns (one at a time in a narrow window).
+    Side,
+    Original,
+    Pseudonymized,
+}
+
 /// The two read-only editors of an open before/after view.
 pub(crate) struct CompareState {
     original: Entity<mdoc_editor::EditorState>,
@@ -31,6 +40,7 @@ pub(crate) struct CompareState {
     hid_preview: bool,
     /// In a narrow window, the one column shown is the original.
     original_only: bool,
+    pub(crate) mode: CompareMode,
     _subscriptions: [Subscription; 2],
 }
 
@@ -143,10 +153,105 @@ impl DocumentView {
             marks: Vec::new(),
             hid_preview,
             original_only: false,
+            mode: CompareMode::Side,
             _subscriptions: [left, right],
         });
         self.refresh_compare(window, cx);
         cx.notify();
+    }
+    /// The view switcher's choice: `None` is Edit (ADR 0046).
+    pub(crate) fn set_view_mode(
+        &mut self,
+        mode: Option<CompareMode>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match mode {
+            None => {
+                if self.compare.is_some() {
+                    self.close_compare(window, cx);
+                }
+            }
+            Some(mode) => {
+                if self.compare.is_none() {
+                    self.toggle_compare(window, cx);
+                }
+                if let Some(state) = self.compare.as_mut() {
+                    state.mode = mode;
+                }
+                cx.notify();
+            }
+        }
+    }
+    /// Edit · Original · Pseudonymized · Side by side, floating at the bottom
+    /// of the document while replacements are applied (ADR 0046).
+    pub(crate) fn view_switcher(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.has_applied_aliases() {
+            return None;
+        }
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let current = self.compare.as_ref().map(|state| state.mode);
+        let segment = |id: &'static str, label: &'static str, mode: Option<CompareMode>| {
+            let selected = current == mode;
+            ui::control(id, label, theme, true)
+                .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
+                .aria_toggled(if selected {
+                    gpui::Toggled::True
+                } else {
+                    gpui::Toggled::False
+                })
+                .px_3()
+                .text_size(px(12.))
+                .when(selected, |v| {
+                    v.bg(theme.sidebar_selected())
+                        .text_color(theme.search_accent())
+                })
+                .on_click(
+                    cx.listener(move |this, _, window, cx| this.set_view_mode(mode, window, cx)),
+                )
+        };
+        Some(
+            div()
+                .absolute()
+                .bottom(px(16.))
+                .left_0()
+                .right_0()
+                .flex()
+                .justify_center()
+                .child(
+                    div()
+                        .id("view-switcher")
+                        .when(cfg!(test), |v| v.debug_selector(|| "view-switcher".into()))
+                        .role(gpui::Role::Group)
+                        .aria_label("View")
+                        .flex()
+                        .gap_1()
+                        .p_1()
+                        .rounded_lg()
+                        .bg(palette.bg)
+                        .border_1()
+                        .border_color(palette.border)
+                        .shadow_md()
+                        .child(segment("view-edit", "Edit", None))
+                        .child(segment(
+                            "view-original",
+                            "Original",
+                            Some(CompareMode::Original),
+                        ))
+                        .child(segment(
+                            "view-pseudonymized",
+                            "Pseudonymized",
+                            Some(CompareMode::Pseudonymized),
+                        ))
+                        .child(segment(
+                            "view-side",
+                            "Side by side",
+                            Some(CompareMode::Side),
+                        )),
+                )
+                .into_any_element(),
+        )
     }
     pub(crate) fn close_compare(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(state) = self.compare.take()
@@ -397,7 +502,9 @@ impl DocumentView {
         let state = self.compare.as_ref()?;
         let theme = self.theme.get();
         let palette = theme.pdf_style();
-        let narrow = width < NARROW;
+        // A single-column mode shows one column full width; Side by side
+        // shows one at a time only in a narrow window.
+        let narrow = width < NARROW || state.mode != CompareMode::Side;
         // Scroll together: whichever pane moved since the last frame leads,
         // by the same fraction of its height (lines pair up, wrapping differs).
         let (left, right) = (state.left.offset().y, state.right.offset().y);
@@ -423,6 +530,7 @@ impl DocumentView {
             .set((state.left.offset().y, state.right.offset().y));
         // A quiet floating label names each column; it dims once the column
         // scrolls under it. In a narrow window it switches columns.
+        let switchable = narrow && state.mode == CompareMode::Side;
         let label = |id: &'static str, text: &'static str, scroll: &gpui::ScrollHandle| {
             let scrolled = scroll.offset().y < px(-8.);
             div()
@@ -441,12 +549,12 @@ impl DocumentView {
                 .text_color(palette.header_muted)
                 .when(scrolled, |v| v.opacity(0.35))
                 .hover(|s| s.opacity(1.))
-                .child(if narrow {
+                .child(if switchable {
                     format!("{text}  ⇄")
                 } else {
                     text.into()
                 })
-                .when(narrow, |v| {
+                .when(switchable, |v| {
                     v.cursor_pointer()
                         .tooltip(crate::style::tooltip("Switch column".into(), theme))
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -474,14 +582,21 @@ impl DocumentView {
                         .track_scroll(scroll)
                         .px_6()
                         .pt(px(44.))
-                        .pb_6()
+                        // Room for the view switcher over the last lines.
+                        .pb(px(72.))
                         .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
                         .child(editor.clone()),
                 )
                 .child(label)
         };
-        let show_left = !narrow || state.original_only;
-        let show_right = !narrow || !state.original_only;
+        let (show_left, show_right) = match state.mode {
+            CompareMode::Original => (true, false),
+            CompareMode::Pseudonymized => (false, true),
+            CompareMode::Side => (
+                !narrow || state.original_only,
+                !narrow || !state.original_only,
+            ),
+        };
         let close = ui::floating_button(
             "close-compare",
             "Close before / after (Esc)",

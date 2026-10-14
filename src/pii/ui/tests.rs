@@ -1747,3 +1747,47 @@ fn before_after_follows_replacements_live_and_escape_closes(cx: &mut gpui::TestA
     cx.update(|window, cx| window.draw(cx).clear(cx));
     app.update(cx, |app, _| assert!(app.compare.is_none()));
 }
+
+#[gpui::test]
+fn view_switcher_picks_edit_original_pseudonymized_or_side_by_side(cx: &mut gpui::TestAppContext) {
+    use crate::pii::ui::compare::CompareMode;
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1200.), px(800.)));
+    let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
+    draw(cx);
+    assert!(
+        cx.debug_bounds("view-switcher").is_none(),
+        "only with applied replacements"
+    );
+    app.update(cx, |app, cx| prepare_applied(app, "Anna Bob Anna", cx));
+    cx.run_until_parked();
+    draw(cx);
+    let click = |cx: &mut gpui::VisualTestContext, id: &'static str| {
+        draw(cx);
+        let at = cx.debug_bounds(id).unwrap().center();
+        cx.simulate_click(at, Default::default());
+        cx.run_until_parked();
+        draw(cx);
+    };
+    let mode = |app: &Entity<DocumentView>, cx: &mut gpui::VisualTestContext| {
+        app.read_with(cx, |app, _| app.compare.as_ref().map(|s| s.mode))
+    };
+    click(cx, "view-original");
+    assert_eq!(mode(&app, cx), Some(CompareMode::Original));
+    assert!(cx.debug_bounds("compare-label-original").is_some());
+    assert!(cx.debug_bounds("compare-label-current").is_none());
+    click(cx, "view-pseudonymized");
+    assert_eq!(mode(&app, cx), Some(CompareMode::Pseudonymized));
+    assert!(cx.debug_bounds("compare-label-original").is_none());
+    assert!(cx.debug_bounds("compare-label-current").is_some());
+    click(cx, "view-side");
+    assert_eq!(mode(&app, cx), Some(CompareMode::Side));
+    assert!(cx.debug_bounds("compare-label-original").is_some());
+    assert!(cx.debug_bounds("compare-label-current").is_some());
+    click(cx, "view-edit");
+    assert_eq!(mode(&app, cx), None);
+    assert!(cx.debug_bounds("compare-view").is_none());
+    // The toolbar toggle still opens Side by side.
+    app.update_in(cx, |app, window, cx| app.toggle_compare(window, cx));
+    assert_eq!(mode(&app, cx), Some(CompareMode::Side));
+}

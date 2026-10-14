@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **View switcher.** While replacements are applied, a floating control at the
+  bottom of the document switches between **Edit**, **Original**,
+  **Pseudonymized** and **Side by side**. The toolbar button and ⌘\ still
+  toggle Side by side (ADR 0046).
 - **The empty page says documents stay on this Mac**, with a hover note on the
   only network use: the update check and model downloads you choose. Long
   tooltips now wrap (ADR 0046).
