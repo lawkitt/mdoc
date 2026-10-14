@@ -24,8 +24,8 @@ pub(crate) enum CompareMode {
 pub(crate) struct CompareState {
     original: Entity<mdoc_editor::EditorState>,
     current: Entity<mdoc_editor::EditorState>,
-    left: gpui::ScrollHandle,
-    right: gpui::ScrollHandle,
+    pub(super) left: gpui::ScrollHandle,
+    pub(super) right: gpui::ScrollHandle,
     /// Scroll offsets at the last render, to tell which pane moved.
     last: std::cell::Cell<(Pixels, Pixels)>,
     focus: FocusHandle,
@@ -619,25 +619,30 @@ impl DocumentView {
                 .relative()
                 .size_full()
                 .flex()
-                .when(show_left, |v| {
-                    v.child(column(
+                // A column not shown stays laid out, invisible, under the shown
+                // one: its scroll keeps following, so switching columns keeps
+                // the reading position (Codex review).
+                .child(
+                    column(
                         "compare-original",
                         &state.left,
                         &state.original,
                         label("compare-label-original", "Original", &state.left),
-                    ))
-                })
-                .when(!narrow, |v| {
+                    )
+                    .when(!show_left, |v| v.absolute().inset_0().invisible()),
+                )
+                .when(show_left && show_right, |v| {
                     v.child(div().w(px(1.)).h_full().bg(palette.border))
                 })
-                .when(show_right, |v| {
-                    v.child(column(
+                .child(
+                    column(
                         "compare-current",
                         &state.right,
                         &state.current,
                         label("compare-label-current", "Pseudonymized", &state.right),
-                    ))
-                })
+                    )
+                    .when(!show_right, |v| v.absolute().inset_0().invisible()),
+                )
                 .child(div().absolute().top(px(12.)).right(px(20.)).child(close))
                 .into_any_element(),
         )
