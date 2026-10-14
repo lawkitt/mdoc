@@ -108,6 +108,12 @@ their aliases, without detection. Unknown names stay; it is not a scan.
 pseudonymized text. Live: it follows every applied-replacement change
 (ADR 0042). Avoid "diff", which suggests arbitrary edits.
 
+**View switcher**: the floating Edit · Original · Pseudonymized · Side by side
+control shown while replacements are applied ([ADR 0046](docs/adr/0046-workspace-polish-from-anoni-review.md)).
+
+**Crash report**: a local, masked panic record the user may preview and send
+on the next launch; never sent automatically ([ADR 0047](docs/adr/0047-crash-reports.md)).
+
 **Primary wording**: the variant an identity restores to; defaults to the
 longest full form and can be changed.
 
@@ -137,6 +143,9 @@ Apply; tracked replacements remain correctable afterward ([ADR 0018](docs/adr/00
 Selecting a mention row reveals and outlines it in the editor and shows inline
 controls; editor selections use the word popup ([ADR 0020](docs/adr/0020-direct-replacement-workspace.md),
 [ADR 0033](docs/adr/0033-replacements-panel-redesign.md)).
+
+**Category header**: a non-interactive panel line above a category's group
+headers, "Person 3 (7)" (entities, mentions) ([ADR 0046](docs/adr/0046-workspace-polish-from-anoni-review.md)).
 
 **Group header**: an entity's panel row (original, alias, count). Expands
 independently of selection; its alias and category edit the whole entity.

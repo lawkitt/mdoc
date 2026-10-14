@@ -82,3 +82,12 @@ a `cases/` folder, launches the app, and checks for no SecurityAgent dialog and
 the locked bar. It removes the seeded key and folder afterwards. CI cannot see
 system dialogs. With a profile build, also check: Unlock → one dialog →
 relaunch → no locked bar.
+
+## Amended 2026-10-14
+
+A plaintext key file beside the cases, as Anoni does, was considered as the
+default with the Keychain as an opt-in, and rejected: it avoids prompts only by
+giving up the protection. The data protection keychain (decision 3) is a
+release blocker for beta.9; the owner's Apple setup is listed in the
+[Anoni comparison](../design/anoni-comparison.md#owner-checklist-data-protection-keychain).
+An optional case passphrase and case sharing stay deferred (ROADMAP).
