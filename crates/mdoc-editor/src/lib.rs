@@ -4940,6 +4940,25 @@ mod tests {
             (f32::from(grown - line_h)).abs() < 0.5,
             "a <br> row is one line taller: {heights:?}"
         );
+        // Formatting spanning a tag holds on both lines: no stray markers.
+        let texts = cx.update(|window, _| {
+            let font = window.text_style().font();
+            tables::shape_cell_lines(
+                window,
+                "**first<br>second**",
+                &font,
+                px(14.),
+                None,
+                gpui::black(),
+            )
+            .into_iter()
+            .map(|line| (line.line.text.to_string(), line.range))
+            .collect::<Vec<_>>()
+        });
+        assert_eq!(
+            texts,
+            [("first".to_string(), 0..7), ("second".to_string(), 11..19)]
+        );
         // A click on the second line lands after the tag, not inside it.
         let source = "| A | B |\n| --- | --- |\n| one<br>first | two |\nend";
         let offset = cx.update(|window, cx| {

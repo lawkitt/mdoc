@@ -1204,9 +1204,11 @@ pub(crate) struct CellLine {
     pub(crate) rows: usize,
 }
 
-/// Shape a cell as its `<br>`-separated lines. A cell without `<br>` is one line,
+/// Shape a cell as its `<br>`-separated lines. The whole cell is styled first,
+/// so bold or a link spanning a `<br>` keeps its formatting on both lines; the
+/// styled text is then cut at the tags. A cell without `<br>` is one line,
 /// exactly as [`shape_cell`] shapes it.
-fn shape_cell_lines(
+pub(crate) fn shape_cell_lines(
     window: &mut Window,
     content: &str,
     font: &Font,
@@ -1214,29 +1216,81 @@ fn shape_cell_lines(
     wrap: Option<Pixels>,
     color: Hsla,
 ) -> Vec<CellLine> {
-    let mut ranges = Vec::new();
-    let mut start = 0;
-    for tag in cell_breaks(content) {
-        ranges.push(start..tag.start);
-        start = tag.end;
+    let breaks = cell_breaks(content);
+    if breaks.is_empty() {
+        return shape_cell(window, content, font, font_size, wrap, color)
+            .map(|(line, map)| {
+                let rows = line.wrap_boundaries().len() + 1;
+                vec![CellLine {
+                    line,
+                    map,
+                    range: 0..content.len(),
+                    rows,
+                }]
+            })
+            .unwrap_or_default();
     }
-    ranges.push(start..content.len());
-    ranges
+    let mut style = markdown_syntax::search_style();
+    style.code = color;
+    style.link = color;
+    style.mono = font.clone();
+    let (display, runs, map) =
+        markdown_syntax::hidden_runs(content, font, color, &[], None, 0, 0, false, &style);
+    // Each line: its display bytes and its source range between tags.
+    let mut lines = Vec::new();
+    let (mut from, mut source_from) = (0, 0);
+    for tag in &breaks {
+        // A tag shows literally, so its bytes are one display run.
+        let start = map.partition_point(|&m| m < tag.start).min(display.len());
+        let end = map.partition_point(|&m| m < tag.end).min(display.len());
+        lines.push((from..start, source_from..tag.start));
+        from = end;
+        source_from = tag.end;
+    }
+    lines.push((from..display.len(), source_from..content.len()));
+    lines
         .into_iter()
-        .filter_map(|range| {
-            let text = &content[range.clone()];
-            // An empty line still takes a row; shape a space for its geometry.
-            let (line, map) = if text.is_empty() {
-                let (line, _) = shape_cell(window, " ", font, font_size, wrap, color)?;
-                (line, vec![range.start, range.start])
+        .filter_map(|(bytes, range)| {
+            let (text, line_runs, line_map) = if bytes.is_empty() {
+                // An empty line still takes a row; shape a space for its geometry.
+                let run = TextRun {
+                    len: 1,
+                    font: font.clone(),
+                    color,
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                };
+                (" ".to_string(), vec![run], vec![range.start, range.start])
             } else {
-                let (line, map) = shape_cell(window, text, font, font_size, wrap, color)?;
-                (line, map.into_iter().map(|m| m + range.start).collect())
+                let mut cut = Vec::new();
+                let mut at = 0;
+                for run in &runs {
+                    let (a, b) = (at.max(bytes.start), (at + run.len).min(bytes.end));
+                    if a < b {
+                        cut.push(TextRun {
+                            len: b - a,
+                            ..run.clone()
+                        });
+                    }
+                    at += run.len;
+                }
+                (
+                    display[bytes.clone()].to_string(),
+                    cut,
+                    map[bytes.start..=bytes.end].to_vec(),
+                )
             };
+            let line = window
+                .text_system()
+                .shape_text(text.into(), font_size, &line_runs, wrap, None)
+                .ok()?
+                .into_iter()
+                .next()?;
             let rows = line.wrap_boundaries().len() + 1;
             Some(CellLine {
                 line,
-                map,
+                map: line_map,
                 range,
                 rows,
             })
