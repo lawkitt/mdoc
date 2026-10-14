@@ -1335,13 +1335,32 @@ impl Workspace {
                             .child(
                                 div()
                                     .flex()
-                                    .items_center()
+                                    .items_start()
+                                    .gap_2()
                                     .px_2()
                                     .child(
-                                        div().flex_1().child(format!("Detect in “{}”", case.name)),
+                                        // A long case name ellipsizes rather than
+                                        // pushing × out of the panel (ADR 0046).
+                                        div()
+                                            .flex_1()
+                                            .min_w_0()
+                                            .flex()
+                                            .flex_col()
+                                            .child("Categories to detect")
+                                            .child(
+                                                div()
+                                                    .text_size(px(11.))
+                                                    .text_color(palette.header_muted)
+                                                    .truncate()
+                                                    .child(case.name.clone()),
+                                            ),
                                     )
                                     .child(
                                         ui::control("close-case-categories", "×", theme, true)
+                                            .flex_shrink_0()
+                                            .when(cfg!(test), |v| {
+                                                v.debug_selector(|| "close-case-categories".into())
+                                            })
                                             .aria_label("Close")
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 this.cases.categories_open = None;
@@ -1414,6 +1433,8 @@ impl Workspace {
                         .rounded_sm()
                         .cursor_pointer()
                         .hover(move |v| v.bg(palette.placeholder_bg))
+                        .max_w(px(320.))
+                        .truncate()
                         .child(label)
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.tab_menu = None;

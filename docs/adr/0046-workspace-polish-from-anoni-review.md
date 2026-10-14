@@ -33,8 +33,9 @@ beta.8 screenshots found three defects and several ideas worth taking:
 2. **`<br>` in table cells** renders as a line break. Only inside a table cell
    and only the exact forms `<br>`, `<br/>`, `<br />` (any case). Saved bytes,
    Copy Markdown and search are unchanged. A narrow exception to ADR 0030.
-3. **Zero-count footer** "In “case”, not in this document" is hidden when it
-   has nothing to list.
+3. **Zero-count footer.** With nothing to list, "In “case”, not in this
+   document (0)" becomes "Add a name to “case”", which still opens the field
+   for adding a name to the case.
 4. **Restore summary with nothing restored.** When a pasted reply has no
    placeholder at all, the bar says "No placeholders found in this reply." The
    existing bar (live unrecognized count, Next unrecognized, ×) is otherwise

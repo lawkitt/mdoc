@@ -4,6 +4,14 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Line breaks in table cells.** `<br>` inside a table cell, as converted
+  Word tables produce, now shows as a line break instead of literal text. The
+  saved Markdown is unchanged (ADR 0046).
+- **Categories to detect** keeps its close button inside the popup for long
+  case names; the name is shortened under the title. Long names in
+  **Move to case “…”** are shortened too. The panel footer no longer reads
+  "not in this document (0)": with nothing to list it offers
+  **Add a name to “case”** (ADR 0046).
 - **No Keychain dialogs at launch.** When a saved-case key was made by another
   build, launching mdoc could still show two macOS password dialogs: the quiet
   check reported "denied" where macOS meant "would ask", and launch then read the

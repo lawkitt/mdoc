@@ -248,30 +248,34 @@ impl EditorState {
         let content = t.cells.get(cell)?;
         let cw = cell_span_width(&t.col_widths, t.cells.len(), cell);
         let cf = cell_font(&font, t.is_header);
-        let full_w = shape_cell(window, content, &cf, font_size, None, Hsla::default())
-            .map_or(px(0.), |(line, _)| line.width());
         let avail = (cw - pad * 2.).max(px(8.));
-        // Alignment shifts only unwrapped content (a wrapped cell fills its width).
-        let align_off = if full_w > avail {
-            px(0.)
-        } else {
-            match t.aligns.get(cell) {
-                Some(markdown_syntax::Align::Center) => (avail - full_w).max(px(0.)) / 2.,
-                Some(markdown_syntax::Align::Right) => (avail - full_w).max(px(0.)),
-                // Unaligned cells follow the table's direction — same rule the
-                // paint uses, so the hit-test matches what's on screen.
-                _ if t.rtl => (avail - full_w).max(px(0.)),
-                _ => px(0.),
+        let align = t.aligns.get(cell).cloned();
+        let rtl = t.rtl;
+        // Each `<br>` line aligns on its own, as the paint does. Alignment shifts
+        // only unwrapped content (a wrapped line fills its width).
+        let align_off = move |full_w: Pixels| {
+            if full_w > avail {
+                px(0.)
+            } else {
+                match align {
+                    Some(markdown_syntax::Align::Center) => (avail - full_w).max(px(0.)) / 2.,
+                    Some(markdown_syntax::Align::Right) => (avail - full_w).max(px(0.)),
+                    // Unaligned cells follow the table's direction — same rule the
+                    // paint uses, so the hit-test matches what's on screen.
+                    _ if rtl => (avail - full_w).max(px(0.)),
+                    _ => px(0.),
+                }
             }
         };
         // In-cell y: from the row's top, minus the cell's constant 6px top pad
         // (`table_row_h` = line height + 12, text centered → 6 above).
         let pad_y = px(6.);
         let target = point(
-            (rel.x - cx - pad - align_off).max(px(0.)),
+            (rel.x - cx - pad).max(px(0.)),
             rel.y - self.line_tops[row] - pad_y,
         );
-        let in_cell = cell_offset_for_point(content, target, avail, &cf, font_size, window);
+        let in_cell =
+            cell_offset_for_point(content, target, avail, align_off, &cf, font_size, window);
         Some(self.line_starts()[row] + t.cell_ranges.get(cell)?.start + in_cell)
     }
 
@@ -1028,24 +1032,34 @@ pub(crate) fn table_column_widths(
             if header {
                 font.weight = gpui::FontWeight::BOLD;
             }
-            let run = TextRun {
-                len: cell.len(),
-                font,
-                color,
-                background_color: None,
-                underline: None,
-                strikethrough: None,
-            };
-            let w = window
-                .text_system()
-                .shape_line(
-                    SharedString::from(cell.to_string()),
-                    font_size,
-                    &[run],
-                    None,
-                )
-                .width();
-            widths[c] = widths[c].max(w + pad * 2.);
+            // A `<br>` cell is as wide as its widest line (ADR 0046).
+            let mut start = 0;
+            let mut parts = Vec::new();
+            for tag in cell_breaks(cell) {
+                parts.push(&cell[start..tag.start]);
+                start = tag.end;
+            }
+            parts.push(&cell[start..]);
+            for part in parts.into_iter().filter(|p| !p.is_empty()) {
+                let run = TextRun {
+                    len: part.len(),
+                    font: font.clone(),
+                    color,
+                    background_color: None,
+                    underline: None,
+                    strikethrough: None,
+                };
+                let w = window
+                    .text_system()
+                    .shape_line(
+                        SharedString::from(part.to_string()),
+                        font_size,
+                        &[run],
+                        None,
+                    )
+                    .width();
+                widths[c] = widths[c].max(w + pad * 2.);
+            }
         }
     }
     for w in &mut widths {
@@ -1146,6 +1160,98 @@ fn shape_cell(
         .into_iter()
         .next()?;
     Some((line, map))
+}
+
+/// Byte ranges of the `<br>`, `<br/>` and `<br />` tags (any case) in a table
+/// cell: converted DOCX tables break cell lines with them (ADR 0046).
+pub(crate) fn cell_breaks(content: &str) -> Vec<Range<usize>> {
+    let b = content.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(rel) = content[i..].find('<') {
+        let at = i + rel;
+        let tag = |len: usize| {
+            b.get(at..at + len)
+                .is_some_and(|t| t[1..3].eq_ignore_ascii_case(b"br"))
+        };
+        let len = [4, 5, 6].into_iter().find(|&len| {
+            tag(len)
+                && match len {
+                    4 => b[at + 3] == b'>',
+                    5 => &b[at + 3..at + 5] == b"/>",
+                    _ => &b[at + 3..at + 6] == b" />",
+                }
+        });
+        match len {
+            Some(len) => {
+                out.push(at..at + len);
+                i = at + len;
+            }
+            None => i = at + 1,
+        }
+    }
+    out
+}
+
+/// One `<br>`-separated line of a table cell, shaped at the cell's width.
+pub(crate) struct CellLine {
+    pub(crate) line: WrappedLine,
+    /// Display index → byte offset within the whole cell.
+    pub(crate) map: Vec<usize>,
+    /// The segment's byte range within the cell, tags excluded.
+    pub(crate) range: Range<usize>,
+    /// Visual rows the segment takes (its wraps + 1).
+    pub(crate) rows: usize,
+}
+
+/// Shape a cell as its `<br>`-separated lines. A cell without `<br>` is one line,
+/// exactly as [`shape_cell`] shapes it.
+fn shape_cell_lines(
+    window: &mut Window,
+    content: &str,
+    font: &Font,
+    font_size: Pixels,
+    wrap: Option<Pixels>,
+    color: Hsla,
+) -> Vec<CellLine> {
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    for tag in cell_breaks(content) {
+        ranges.push(start..tag.start);
+        start = tag.end;
+    }
+    ranges.push(start..content.len());
+    ranges
+        .into_iter()
+        .filter_map(|range| {
+            let text = &content[range.clone()];
+            // An empty line still takes a row; shape a space for its geometry.
+            let (line, map) = if text.is_empty() {
+                let (line, _) = shape_cell(window, " ", font, font_size, wrap, color)?;
+                (line, vec![range.start, range.start])
+            } else {
+                let (line, map) = shape_cell(window, text, font, font_size, wrap, color)?;
+                (line, map.into_iter().map(|m| m + range.start).collect())
+            };
+            let rows = line.wrap_boundaries().len() + 1;
+            Some(CellLine {
+                line,
+                map,
+                range,
+                rows,
+            })
+        })
+        .collect()
+}
+
+/// The cell line holding byte `offset`: an offset inside a `<br>` tag belongs
+/// to the end of the line before it. Returns the line's index and the rows above it.
+fn cell_line_at(lines: &[CellLine], offset: usize) -> (usize, usize) {
+    let index = lines
+        .iter()
+        .rposition(|line| line.range.start <= offset)
+        .unwrap_or(0);
+    (index, lines[..index].iter().map(|line| line.rows).sum())
 }
 
 /// A wide table's scroll thumb — its visual rect, (padded) grab rect, and
@@ -1257,11 +1363,8 @@ pub(crate) fn table_row_wrap_rows(
             continue;
         }
         let avail = (cw - pad * 2.).max(px(8.));
-        if let Some((wl, _)) =
-            shape_cell(window, cell, &cf, font_size, Some(avail), Hsla::default())
-        {
-            rows = rows.max(wl.wrap_boundaries().len() + 1);
-        }
+        let lines = shape_cell_lines(window, cell, &cf, font_size, Some(avail), Hsla::default());
+        rows = rows.max(lines.iter().map(|line| line.rows).sum());
     }
     rows
 }
@@ -1302,28 +1405,37 @@ pub(crate) fn table_caret_pos(
     let cf = cell_font(font, t.is_header);
     let line_h = font_size * LINE_HEIGHT_RATIO;
     let avail = (cw - pad * 2.).max(px(8.));
-    let (wl, source_map) = shape_cell(
+    let lines = shape_cell_lines(
         window,
         content,
         &cf,
         font_size,
         Some(avail),
         Hsla::default(),
-    )?;
+    );
+    let (index, above) = cell_line_at(&lines, in_cell);
+    let CellLine {
+        line: wl,
+        map: source_map,
+        range,
+        ..
+    } = lines.get(index)?;
+    let in_line = in_cell.min(range.end);
     let display_offset = source_map
-        .partition_point(|&offset| offset < in_cell)
+        .partition_point(|&offset| offset < in_line)
         .min(source_map.len().saturating_sub(1));
     let mut pos = wl
         .position_for_index(display_offset, line_h)
         .unwrap_or_default();
+    pos.y += line_h * above as f32;
     let wrapped = !wl.wrap_boundaries().is_empty();
     // A cell holding right-to-left text needs the same index↔x map the rest of
     // the editor uses: gpui's `position_for_index` collapses every offset in an
     // RTL run onto one x, which is a caret that won't move through the word.
     // Only an unwrapped cell can use it — a map's x's run along the single
     // pre-wrap line (same limit as elsewhere).
-    if !wrapped && crate::syntax::contains_rtl(content) {
-        let map = gpui_bidi::map_of_wrapped(&wl, source_map.len().saturating_sub(1));
+    if !wrapped && crate::syntax::contains_rtl(&content[range.clone()]) {
+        let map = gpui_bidi::map_of_wrapped(wl, source_map.len().saturating_sub(1));
         pos.x = px(map.x_for_index(display_offset));
     }
     let full_w = wl.width();
@@ -1347,24 +1459,44 @@ fn cell_offset_for_point(
     content: &str,
     target: Point<Pixels>,
     wrap: Pixels,
+    align: impl Fn(Pixels) -> Pixels,
     font: &Font,
     font_size: Pixels,
     window: &mut Window,
 ) -> usize {
     let line_h = font_size * LINE_HEIGHT_RATIO;
-    let Some((wl, source_map)) = shape_cell(
+    let lines = shape_cell_lines(
         window,
         content,
         font,
         font_size,
         Some(wrap),
         Hsla::default(),
-    ) else {
+    );
+    // The `<br>` line under the pointer: rows stack from the cell's top.
+    let mut top = px(0.);
+    let mut found = None;
+    for (i, line) in lines.iter().enumerate() {
+        let height = line_h * line.rows as f32;
+        if target.y < top + height || i + 1 == lines.len() {
+            found = Some(line);
+            break;
+        }
+        top += height;
+    }
+    let Some(CellLine {
+        line: wl,
+        map: source_map,
+        range,
+        ..
+    }) = found
+    else {
         return 0;
     };
-    if wl.wrap_boundaries().is_empty() && crate::syntax::contains_rtl(content) {
+    let target = point((target.x - align(wl.width())).max(px(0.)), target.y - top);
+    if wl.wrap_boundaries().is_empty() && crate::syntax::contains_rtl(&content[range.clone()]) {
         // Same reason as the caret above, in reverse.
-        let map = gpui_bidi::map_of_wrapped(&wl, source_map.len().saturating_sub(1));
+        let map = gpui_bidi::map_of_wrapped(wl, source_map.len().saturating_sub(1));
         return source_map[map
             .index_for_x(f32::from(target.x))
             .min(source_map.len() - 1)];
@@ -1455,28 +1587,24 @@ pub(crate) fn paint_table_row(
             // row's last cell spans the remaining columns.
             let cw = cell_span_width(&t.col_widths, t.cells.len(), c);
             let avail = (cw - pad * 2.).max(px(8.));
-            if let Some((shaped, _)) =
-                shape_cell(window, cell, &cell_font, font_size, Some(avail), color)
-            {
-                let align = match t.aligns.get(c) {
-                    Some(markdown_syntax::Align::Center) => gpui::TextAlign::Center,
-                    Some(markdown_syntax::Align::Right) => gpui::TextAlign::Right,
-                    // No explicit alignment: follow the table's direction, so
-                    // RTL cells start at the right like their text does.
-                    _ if t.rtl => gpui::TextAlign::Right,
-                    _ => gpui::TextAlign::Left,
-                };
-                let _ = shaped.paint(
-                    point(x + pad, origin.y + px(6.)),
-                    line_h,
-                    align,
-                    Some(Bounds::new(
-                        point(x + pad, origin.y + px(6.)),
-                        size(avail, (row_h - px(12.)).max(line_h)),
-                    )),
-                    window,
-                    cx,
-                );
+            let align = match t.aligns.get(c) {
+                Some(markdown_syntax::Align::Center) => gpui::TextAlign::Center,
+                Some(markdown_syntax::Align::Right) => gpui::TextAlign::Right,
+                // No explicit alignment: follow the table's direction, so
+                // RTL cells start at the right like their text does.
+                _ if t.rtl => gpui::TextAlign::Right,
+                _ => gpui::TextAlign::Left,
+            };
+            let clip = Bounds::new(
+                point(x + pad, origin.y + px(6.)),
+                size(avail, (row_h - px(12.)).max(line_h)),
+            );
+            let mut y = origin.y + px(6.);
+            for line in shape_cell_lines(window, cell, &cell_font, font_size, Some(avail), color) {
+                let _ = line
+                    .line
+                    .paint(point(x + pad, y), line_h, align, Some(clip), window, cx);
+                y += line_h * line.rows as f32;
             }
         }
     }
