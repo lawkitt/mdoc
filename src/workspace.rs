@@ -144,6 +144,8 @@ pub(super) struct Workspace {
     ocr_state: OcrState,
     pending_open: Vec<PathBuf>,
     notice: Option<String>,
+    /// Last run's masked crash report and whether its preview is open (ADR 0047).
+    crash: Option<(String, bool)>,
     tab_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
     import_busy: Arc<AtomicBool>,
     docx_queue: VecDeque<DocxJob>,
@@ -172,6 +174,9 @@ impl Workspace {
             })
             .unwrap_or(true)
         });
+        if !cfg!(test) {
+            this.crash = crate::crash::pending().map(|report| (report, false));
+        }
         this.session_path = if cfg!(test) {
             None
         } else {
@@ -282,6 +287,7 @@ impl Workspace {
             },
             pending_open: Vec::new(),
             notice: None,
+            crash: None,
             tab_menu: None,
             import_busy: Arc::new(AtomicBool::new(false)),
             docx_queue: VecDeque::new(),
@@ -518,6 +524,109 @@ impl Workspace {
                             crate::updater::dismiss_banner(cx);
                         })),
                 )
+                .into_any_element(),
+        )
+    }
+
+    /// "mdoc had a problem last time it ran", with the exact report before
+    /// anything leaves the Mac (ADR 0047). Send and Copy also discard it.
+    fn crash_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let (report, open) = self.crash.clone()?;
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let accent = style::markdown_style(theme).alert_warning;
+        let done = |this: &mut Self, cx: &mut Context<Self>| {
+            crate::crash::discard();
+            this.crash = None;
+            cx.notify();
+        };
+        let action = |id: &'static str, label: &'static str| {
+            ui::control(id, label, theme, true)
+                .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
+                .text_size(px(12.))
+        };
+        let send_report = report.clone();
+        let copy_report = report.clone();
+        Some(
+            div()
+                .id("crash-bar")
+                .when(cfg!(test), |v| v.debug_selector(|| "crash-bar".into()))
+                .flex()
+                .flex_col()
+                .gap_1()
+                .px_3()
+                .py_1()
+                .text_size(px(12.))
+                .bg(gpui::Hsla { a: 0.07, ..accent })
+                .border_b_1()
+                .border_color(palette.border)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .text_color(palette.header_fg)
+                                .child("mdoc had a problem last time it ran."),
+                        )
+                        .when(!open, |v| {
+                            v.child(action("crash-preview", "See what would be sent").on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    if let Some((_, open)) = &mut this.crash {
+                                        *open = true;
+                                    }
+                                    cx.notify();
+                                }),
+                            ))
+                        })
+                        .when(open, |v| {
+                            v.child(
+                                action("crash-send", "Send…")
+                                    .tooltip(style::tooltip(
+                                        "Opens a new GitHub issue with this report for you to check and submit."
+                                            .into(),
+                                        theme,
+                                    ))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.open_url(&crate::crash::issue_url(&send_report));
+                                        done(this, cx);
+                                    })),
+                            )
+                            .child(action("crash-copy", "Copy").on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                        copy_report.clone(),
+                                    ));
+                                    done(this, cx);
+                                },
+                            )))
+                        })
+                        .child(
+                            action("crash-dismiss", "Dismiss")
+                                .on_click(cx.listener(move |this, _, _, cx| done(this, cx))),
+                        ),
+                )
+                .when(open, |v| {
+                    v.child(
+                        div()
+                            .id("crash-report")
+                            .when(cfg!(test), |v| v.debug_selector(|| "crash-report".into()))
+                            .max_h(px(220.))
+                            .overflow_y_scroll()
+                            .p_2()
+                            .rounded_md()
+                            .bg(palette.bg)
+                            .border_1()
+                            .border_color(palette.border)
+                            .font_family("Menlo")
+                            .text_size(px(11.))
+                            .text_color(palette.header_muted)
+                            .child(report),
+                    )
+                })
                 .into_any_element(),
         )
     }
@@ -2579,6 +2688,7 @@ impl Render for Workspace {
             .children(self.keychain_explainer(window, cx))
             .children(self.case_key_bar(cx))
             .when_some(self.update_banner(cx), |view, banner| view.child(banner))
+            .children(self.crash_bar(cx))
             .when_some(self.notice.clone(), |view, notice| {
                 let palette = self.theme.get().pdf_style();
                 let accent = style::markdown_style(self.theme.get()).alert_warning;

@@ -3465,3 +3465,34 @@ fn a_member_opened_by_hand_offers_unlock_and_gets_its_mapping(cx: &mut TestAppCo
         );
     });
 }
+
+#[gpui::test]
+fn a_crash_report_is_previewed_before_it_is_copied(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, cx| {
+        tabs.crash = Some((
+            "mdoc 0.1 — macos aarch64\nPanic at <path>/a.rs:1:1".into(),
+            false,
+        ));
+        cx.notify();
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("crash-bar").is_some());
+    assert!(
+        cx.debug_bounds("crash-report").is_none(),
+        "nothing shown until asked"
+    );
+    assert!(cx.debug_bounds("crash-copy").is_none());
+    click_toolbar(cx, "crash-preview");
+    draw(cx);
+    assert!(cx.debug_bounds("crash-report").is_some());
+    click_toolbar(cx, "crash-copy");
+    draw(cx);
+    let copied = cx.read_from_clipboard().and_then(|item| item.text());
+    assert_eq!(
+        copied.as_deref(),
+        Some("mdoc 0.1 — macos aarch64\nPanic at <path>/a.rs:1:1")
+    );
+    assert!(cx.debug_bounds("crash-bar").is_none());
+    tabs.read_with(cx, |tabs, _| assert!(tabs.crash.is_none()));
+}

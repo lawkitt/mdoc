@@ -5,6 +5,7 @@
 )]
 mod cases;
 mod comment_panel;
+mod crash;
 mod document;
 mod document_session;
 mod document_view;
@@ -167,6 +168,8 @@ fn main() {
         }
         return;
     }
+    // The app itself, not its worker modes, records panics (ADR 0047).
+    crash::install();
     let initial: Vec<_> = args.into_iter().skip(1).map(PathBuf::from).collect();
     let application = gpui_platform::application();
     let open_context = Rc::new(RefCell::new(
