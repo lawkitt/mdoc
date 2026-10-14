@@ -148,31 +148,47 @@ fn path_start(text: &str) -> Option<usize> {
 
 /// A panic message can carry document text in any form: quoted by a slicing
 /// panic (and the text may itself contain quotes), in `assert_eq!` debug
-/// output, or plain in `panic!("{}", text)`. Keep only a known standard-library
-/// prefix and cut at the first quote after it, never parsing past a delimiter
-/// the text could contain; withhold any other message. The location and
-/// backtrace still place the crash.
+/// output, or plain in `panic!("{}", text)`, even text that happens to start
+/// like a standard message. So the report names a known standard-library
+/// panic with a fixed label and keeps nothing of the message itself; any
+/// other message is withheld. The location and backtrace still place the crash.
 fn safe_message(message: &str) -> String {
-    const KNOWN: [&str; 9] = [
-        "called `Option::unwrap()` on a `None` value",
-        "called `Result::unwrap()` on an `Err` value",
-        "called `Option::expect()`",
-        "called `Result::expect()`",
-        "assertion `left == right` failed",
-        "assertion `left != right` failed",
-        "index out of bounds",
-        "byte index ",
-        "attempt to ",
-    ];
     let first = message.lines().next().unwrap_or("");
-    let Some(known) = KNOWN.iter().find(|known| first.starts_with(**known)) else {
-        return "(message withheld: it may contain document text)".into();
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    // Arithmetic panics are matched whole: they carry no values.
+    const ARITHMETIC: [&str; 9] = [
+        "attempt to add with overflow",
+        "attempt to subtract with overflow",
+        "attempt to multiply with overflow",
+        "attempt to divide by zero",
+        "attempt to divide with overflow",
+        "attempt to calculate the remainder with a divisor of zero",
+        "attempt to negate with overflow",
+        "attempt to shift left with overflow",
+        "attempt to shift right with overflow",
+    ];
+    let label = if let Some(known) = ARITHMETIC.iter().find(|a| first == **a) {
+        known
+    } else if first == "called `Option::unwrap()` on a `None` value" {
+        "called `Option::unwrap()` on a `None` value"
+    } else if first.starts_with("called `Result::unwrap()` on an `Err` value") {
+        "called `Result::unwrap()` on an `Err` value (value withheld)"
+    } else if first.starts_with("assertion `left == right` failed")
+        || first.starts_with("assertion `left != right` failed")
+    {
+        "assertion failed (values withheld)"
+    } else if first
+        .strip_prefix("index out of bounds: the len is ")
+        .and_then(|rest| rest.split_once(" but the index is "))
+        .is_some_and(|(len, index)| digits(len) && digits(index))
+    {
+        "index out of bounds"
+    } else if first.starts_with("byte index ") {
+        "string sliced at an invalid byte index (text withheld)"
+    } else {
+        "(message withheld: it may contain document text)"
     };
-    let rest = &first[known.len()..];
-    match rest.find(['`', '\'', '"', ':']) {
-        Some(cut) => format!("{known}{}…", &rest[..cut]),
-        None => first.to_string(),
-    }
+    label.to_string()
 }
 
 #[cfg(test)]
@@ -201,29 +217,37 @@ mod tests {
         assert_eq!(safe_message("unexpected \"Иван\""), withheld);
         assert_eq!(
             safe_message("assertion `left == right` failed\n  left: \"Иван\"\n right: \"Пётр\""),
-            "assertion `left == right` failed"
+            "assertion failed (values withheld)"
         );
         assert_eq!(
             safe_message("called `Result::unwrap()` on an `Err` value: Io(\"/Users/a/Иван.docx\")"),
-            "called `Result::unwrap()` on an `Err` value…"
+            "called `Result::unwrap()` on an `Err` value (value withheld)"
         );
     }
 
     #[test]
-    fn printed_values_are_cut_even_when_they_contain_quotes() {
+    fn known_panics_get_fixed_labels() {
         assert_eq!(
             safe_message(
                 "byte index 1 is not a char boundary; it is inside 'é' (bytes 0..2) of `é`CLIENT_SECRET`"
             ),
-            "byte index 1 is not a char boundary; it is inside …"
+            "string sliced at an invalid byte index (text withheld)"
         );
         assert_eq!(
             safe_message("index out of bounds: the len is 3 but the index is 5"),
-            "index out of bounds…"
+            "index out of bounds"
         );
         assert_eq!(
-            safe_message("called `Option::unwrap()` on a `None` value"),
-            "called `Option::unwrap()` on a `None` value"
+            safe_message("index out of bounds: the client Иван"),
+            "(message withheld: it may contain document text)"
+        );
+        assert_eq!(
+            safe_message("attempt to settle the dispute with Иван"),
+            "(message withheld: it may contain document text)"
+        );
+        assert_eq!(
+            safe_message("attempt to add with overflow"),
+            "attempt to add with overflow"
         );
     }
 

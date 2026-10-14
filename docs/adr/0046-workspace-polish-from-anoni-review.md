@@ -84,7 +84,8 @@ removes prompts only by removing the protection.
   hit-testing and column measurement all use the same split. A caret inside a
   tag sits at the end of the line before it. The whole cell is styled before
   it is cut at the tags, so bold or a link spanning a `<br>` keeps its
-  formatting on both lines (Codex review).
+  formatting on both lines, and a tag inside a code span or after a
+  backslash stays literal text (Codex review).
 - **Restore summary:** the bar already existed (ADR 0041); only its empty case
   changed, to "Nothing to restore · No placeholders found in this reply."
 - **Category groups:** entities keep the panel's existing order inside a group

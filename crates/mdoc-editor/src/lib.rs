@@ -4914,6 +4914,12 @@ mod tests {
             tables::cell_breaks("a<br>b<BR/>c<br />d<br x>"),
             vec![1..5, 6..11, 12..18]
         );
+        // Literal tags: in a code span, after a backslash.
+        assert_eq!(
+            tables::cell_breaks("`<br>` and ``a`<br>`` \\<br> x<br>"),
+            vec![29..33]
+        );
+        assert_eq!(tables::cell_breaks("` unmatched <br>"), vec![12..16]);
         let (editor, cx) = cx.add_window_view(EditorState::new);
         cx.simulate_resize(size(px(700.), px(700.)));
         let draw = |cx: &mut gpui::VisualTestContext| {
