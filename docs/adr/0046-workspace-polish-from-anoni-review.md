@@ -76,3 +76,20 @@ removes prompts only by removing the protection.
   the applied replacements (ADR 0042).
 - Category headers carry no state and accept no input.
 - `<br>` handling is display-only.
+
+## As implemented
+
+- **`<br>`** (`mdoc-editor` `tables.rs`): a cell is shaped as its
+  `<br>`-separated lines stacked top to bottom; row height, caret, click
+  hit-testing and column measurement all use the same split. A caret inside a
+  tag sits at the end of the line before it.
+- **Restore summary:** the bar already existed (ADR 0041); only its empty case
+  changed, to "Nothing to restore · No placeholders found in this reply."
+- **Category groups:** entities keep the panel's existing order inside a group
+  (identity creation order, which is detection order). The label row has the
+  panel's fixed row height, with the label at its foot, so it also spaces the
+  groups.
+- **Local note:** tooltips are now capped at 320 px and wrap.
+- **View switcher:** Original and Pseudonymized reuse the ADR 0042 view with
+  one column; the floating Close stays. The document and the columns get
+  extra bottom padding so the control never covers the last lines.
