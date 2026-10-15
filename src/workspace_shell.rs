@@ -170,33 +170,40 @@ impl Workspace {
     }
 
     /// Remember files as they open or save (paths only).
-    pub(super) fn remember_recents(&mut self, cx: &App) {
-        let mut changed = false;
-        for tab in &self.tabs {
-            let Some(view) = tab.view.as_ref().map(|v| v.read(cx)) else {
-                continue;
-            };
-            if view.loading {
-                continue;
-            }
-            let path = view
-                .preview
-                .attachment
-                .as_ref()
-                .or(view.preview.source.as_ref())
-                .or(view.session.document.path.as_ref());
-            if let Some(path) = path
-                && !self
+    pub(super) fn remember_recent(&mut self, id: u64, cx: &App) {
+        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
+            return;
+        };
+        let Some(view) = tab.view.as_ref().map(|view| view.read(cx)) else {
+            return;
+        };
+        if view.loading || view.unavailable {
+            return;
+        }
+        let path = view
+            .preview
+            .attachment
+            .as_ref()
+            .or(view.preview.source.as_ref())
+            .or(view.session.document.path.as_ref());
+        let opened = path != tab.recent_path.as_ref();
+        if opened {
+            tab.recent_path = path.cloned();
+        }
+        if let Some(path) = path {
+            let pseudonymized = view.pseudonymized();
+            let new_badge = pseudonymized
+                && self
                     .shell
                     .recents
                     .files
                     .iter()
-                    .any(|r| &r.path == path && r.pseudonymized >= view.pseudonymized())
-            {
-                changed |= self.shell.recents.touch(path, view.pseudonymized());
+                    .any(|recent| &recent.path == path && !recent.pseudonymized);
+            // Cleared or evicted entries return only on a new file event.
+            if opened || new_badge {
+                self.shell.recents.touch(path, pseudonymized);
             }
         }
-        let _ = changed;
     }
 
     // ---- Sidebar ------------------------------------------------------------
@@ -860,12 +867,15 @@ impl Workspace {
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
             )
             .child(
-                ui::primary_button("home-restore", "Restore AI reply", theme, true).on_click(
-                    |_, window, cx| window.dispatch_action(Box::new(PasteAiResponse), cx),
-                ),
+                ui::primary_button("home-restore", "Restore AI reply", theme, true)
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-restore".into()))
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(PasteAiResponse), cx)
+                    }),
             )
             .child(
                 ui::primary_button("home-clipboard", "Pseudonymize clipboard", theme, true)
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-clipboard".into()))
                     .on_click(|_, window, cx| {
                         window.dispatch_action(Box::new(PseudonymizeClipboard), cx)
                     }),
@@ -1079,7 +1089,12 @@ impl Workspace {
     }
 
     /// Home's clipboard actions belong to a document; with none open, say so.
-    pub(super) fn needs_document(&mut self, action: &'static str, cx: &mut Context<Self>) -> bool {
+    pub(super) fn clipboard_document(
+        &mut self,
+        action: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<DocumentView>> {
         let real = self
             .tabs
             .iter()
@@ -1090,8 +1105,13 @@ impl Workspace {
                 "{action} works from a pseudonymized document. Open one, or open a case, first."
             ));
             cx.notify();
+            return None;
         }
-        !real
+        // Leave Home so document-level feedback and any error are visible.
+        if self.showing_home(cx) {
+            self.activate(self.active, window, cx);
+        }
+        self.active_view()
     }
 
     // ---- Command palette ------------------------------------------------------

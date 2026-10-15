@@ -100,110 +100,37 @@ impl DocumentView {
         self.keep_mentions_now(pending, applied, cx);
     }
 
-    /// Tick an unticked or mixed entity: propose its kept wordings again, as
-    /// one undo step.
+    /// Tick an unticked or mixed entity: propose its kept mentions again as
+    /// one undo step, retaining every other entity's Keep decisions.
     pub(in crate::pii::ui) fn retick(&mut self, id: u64, cx: &mut Context<Self>) {
-        if self.pii.scanning() || !self.can_copy_markdown() {
-            return;
-        }
-        let Some(category) = self
-            .pii
-            .review
-            .identity(id)
-            .map(|i| i.category)
-            .or_else(|| {
-                self.pii
-                    .mapping
-                    .kept_names
-                    .values()
-                    .find(|k| k.identity == id)
-                    .map(|k| k.category)
-            })
-        else {
-            return;
-        };
-        let source = self.editor.read(cx).text().to_owned();
-        let mut seen = std::collections::HashSet::new();
-        let ranges: Vec<Range<usize>> = self
+        let ranges: Vec<_> = self
             .kept_of(id)
             .into_iter()
-            .filter(|(range, original)| {
-                source.get(range.clone()) == Some(original.as_ref())
-                    && seen.insert(original.clone())
-            })
             .map(|(range, _)| range)
             .collect();
-        if ranges.is_empty() {
-            return;
-        }
-        let added = self.checkpoint_review(cx, |review| {
-            ranges
-                .iter()
-                .filter(|range| {
-                    review
-                        .add_manual(&source, (*range).clone(), category)
-                        .is_ok()
-                })
-                .count()
-        });
-        if added.unwrap_or(0) == 0 {
-            self.pii.error = Some("Couldn't propose it again; select the text to add it.".into());
-            cx.notify();
-            return;
-        }
-        self.pii.reviewing = true;
-        self.pii.error = None;
-        self.sync_annotations(cx);
-        cx.notify();
+        self.propose_kept(ranges, cx);
     }
 
-    /// Tick one kept mention: propose it again, as one undo step; other kept
-    /// mentions of the same wording stay kept.
+    /// Tick one kept mention, leaving other occurrences of its wording kept.
     pub(in crate::pii::ui) fn retick_mention(
         &mut self,
         id: u64,
         range: Range<usize>,
         cx: &mut Context<Self>,
     ) {
-        if self.pii.scanning() || !self.can_copy_markdown() {
+        if self.kept_of(id).iter().any(|(r, _)| *r == range) {
+            self.propose_kept(vec![range], cx);
+        }
+    }
+
+    fn propose_kept(&mut self, ranges: Vec<Range<usize>>, cx: &mut Context<Self>) {
+        if self.pii.scanning() || !self.can_copy_markdown() || ranges.is_empty() {
             return;
         }
-        let Some(category) = self
-            .pii
-            .review
-            .identity(id)
-            .map(|i| i.category)
-            .or_else(|| {
-                self.pii
-                    .mapping
-                    .kept_names
-                    .values()
-                    .find(|k| k.identity == id)
-                    .map(|k| k.category)
-            })
-        else {
-            return;
-        };
         let source = self.editor.read(cx).text().to_owned();
-        let Some(original) = source.get(range.clone()).map(Arc::<str>::from) else {
-            return;
-        };
-        // Re-proposing a wording lifts all its Keep decisions; the other kept
-        // mentions of that wording are kept again in the same undo step.
-        let others: Vec<Range<usize>> = self
-            .kept_of(id)
-            .into_iter()
-            .filter(|(r, o)| *o == original && *r != range)
-            .map(|(r, _)| r)
-            .collect();
-        let added = self.checkpoint_review(cx, |review| {
-            let Ok(variant) = review.add_manual(&source, range, category) else {
-                return false;
-            };
-            review.keep_mentions(others.into_iter().map(|r| (variant, r)));
-            true
-        });
-        if added != Some(true) {
+        let added =
+            self.checkpoint_review(cx, |review| review.propose_kept_mentions(&source, &ranges));
+        if added.unwrap_or(0) == 0 {
             self.pii.error = Some("Couldn't propose it again; select the text to add it.".into());
         } else {
             self.pii.reviewing = true;

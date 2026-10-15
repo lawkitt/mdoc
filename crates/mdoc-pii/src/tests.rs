@@ -23,6 +23,33 @@ fn detection(range: Range<usize>, category: Category) -> Detection {
     }
 }
 #[test]
+fn kept_homonyms_retain_each_occurrences_assigned_identity() {
+    let source = "Ann Ann Ann";
+    let mut review = Review::default();
+    let variant = review.add_manual(source, 0..3, Category::Person).unwrap();
+    let first = review.variant_identity(variant).unwrap();
+    let second = review.new_identity(Category::Person);
+    review.commit_assignment(0, 4..7, second);
+    review.keep(variant, Some(4..7));
+    review.keep_mentions([(variant, 0..3), (variant, 8..11)]);
+    let kept = review.kept_mentions();
+    assert_eq!(kept.len(), 3);
+    assert_eq!(kept[0].2, Some(first));
+    assert_eq!(kept[1].2, Some(second));
+    assert_eq!(kept[2].2, Some(first));
+    assert_eq!(
+        review.propose_kept_mentions(source, std::slice::from_ref(&(4..7))),
+        1
+    );
+    let kept = review.kept_mentions();
+    assert_eq!(kept.len(), 2);
+    assert!(kept.iter().all(|(_, _, id)| *id == Some(first)));
+    let plans = review.pending_plans(source, &HashMap::new()).unwrap();
+    assert_eq!(plans.len(), 1);
+    assert_eq!(plans[0].identity, second);
+}
+
+#[test]
 fn batch_keeps_exclusions_protects_markdown_and_skips_detected_markers() {
     let source =
         "**Анна** Bob Анна [mail](anna@example.invalid) <span title='Bob'>Bob</span> 2026 100";

@@ -112,6 +112,11 @@ fn first_own_frame(backtrace: &str) -> Option<String> {
         let Some((_, function)) = line.trim_start().split_once(": ") else {
             continue;
         };
+        // Capturing inside the panic hook puts its closure before the panic's
+        // callers. It reports the failure; it is not the failing frame.
+        if function.starts_with("mdoc::crash::install::") {
+            continue;
+        }
         let Some(at) = lines
             .peek()
             .and_then(|l| l.trim_start().strip_prefix("at "))
@@ -490,10 +495,11 @@ mod tests {
     fn context_names_the_first_mdoc_frame_and_a_rebuilt_binary() {
         let root = env!("CARGO_MANIFEST_DIR");
         let backtrace = format!(
-            "   0: std::panicking::begin_panic\n             at /rustc/abc/library/std/src/panicking.rs:10:5\n\
-             \x20  1: gpui_macos::text_system::layout_line\n             at /Users/a/.cargo/registry/src/gpui-pre-macos/src/text_system.rs:543:17\n\
-             \x20  2: mdoc_editor::element::EditorElement::prepaint\n             at {root}/crates/mdoc-editor/src/element.rs:964:58\n\
-             \x20  3: mdoc::main\n             at ./src/main.rs:157:13\n"
+            "   0: mdoc::crash::install::{{{{closure}}}}\n             at {root}/src/crash.rs:57:29\n\
+             \x20  1: std::panicking::begin_panic\n             at /rustc/abc/library/std/src/panicking.rs:10:5\n\
+             \x20  2: gpui_macos::text_system::layout_line\n             at /Users/a/.cargo/registry/src/gpui-pre-macos/src/text_system.rs:543:17\n\
+             \x20  3: mdoc_editor::element::EditorElement::prepaint\n             at {root}/crates/mdoc-editor/src/element.rs:964:58\n\
+             \x20  4: mdoc::main\n             at ./src/main.rs:157:13\n"
         );
         let lines = context(&backtrace, true, "Markdown, 10 bytes, zoom 100%".into());
         assert!(lines.contains(
@@ -505,6 +511,10 @@ mod tests {
         // A report keeps the context ahead of the backtrace.
         let report = compose("x", "src/a.rs:1:1", "main", "frames");
         assert!(report.contains("\n\nBacktrace:"));
+        assert!(
+            first_own_frame("0: mdoc::crash::install::{{closure}}\n    at ./src/crash.rs:57:29\n")
+                .is_none()
+        );
     }
 
     #[test]

@@ -46,7 +46,7 @@ fn click_toolbar(cx: &mut VisualTestContext, label: &'static str) {
     });
     let bounds = cx
         .debug_bounds(label)
-        .expect("toolbar button must be rendered");
+        .unwrap_or_else(|| panic!("button {label} must be rendered"));
     cx.simulate_click(bounds.center(), gpui::Modifiers::none());
     cx.run_until_parked();
 }
@@ -697,6 +697,34 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
         assert!(!view.read(cx).preview.visible);
         assert_eq!(view.read(cx).preview.attachment.as_ref(), Some(&path));
     });
+}
+
+#[gpui::test]
+fn detached_header_routes_preview_and_document_shortcuts(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    collapse(&tabs, cx);
+    for theme in [Theme::Dark, Theme::Light] {
+        tabs.update(cx, |tabs, cx| {
+            tabs.theme.set(theme);
+            cx.notify();
+        });
+        click_toolbar(cx, "header-source");
+        cx.update(|_, cx| assert!(!view.read(cx).preview.visible));
+        click_toolbar(cx, "header-source");
+        cx.update(|_, cx| assert!(view.read(cx).preview.visible));
+        click_toolbar(cx, "header-more");
+        let zoom = cx.update(|_, cx| view.read(cx).zoom);
+        cx.dispatch_action(ZoomIn);
+        cx.run_until_parked();
+        cx.update(|_, cx| assert!(view.read(cx).zoom > zoom));
+        cx.dispatch_action(ZoomReset);
+        click_toolbar(cx, "more-copy-markdown");
+    }
 }
 
 #[gpui::test]
@@ -2297,6 +2325,41 @@ fn home_opens_several_files_and_new_tab_is_a_plain_editor(cx: &mut TestAppContex
 }
 
 #[gpui::test]
+fn recents_stay_capped_and_cleared_when_open_documents_notify(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let mut views = Vec::new();
+    for i in 0..13 {
+        let path = dir.path().join(format!("{i}.md"));
+        std::fs::write(&path, "text").unwrap();
+        tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+        cx.run_until_parked();
+        views.push(active(&tabs, cx));
+    }
+    let before = cx.update(|_, cx| tabs.read(cx).shell.recents.clone());
+    assert_eq!(before.files.len(), 12);
+    for _ in 0..2 {
+        for view in &views {
+            view.update(cx, |_, cx| cx.notify());
+        }
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.recents, before));
+    }
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_settings(window, cx));
+    tabs.update(cx, |tabs, cx| {
+        tabs.settings
+            .update(cx, |_, cx| cx.emit(settings_ui::Event::ClearRecents));
+    });
+    for view in &views {
+        view.update(cx, |_, cx| cx.notify());
+    }
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| assert!(tabs.read(cx).shell.recents.files.is_empty()));
+}
+
+#[gpui::test]
 fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
@@ -2650,6 +2713,38 @@ fn applied_document<'a>(
     });
     cx.run_until_parked();
     (tabs, cx, path)
+}
+
+#[gpui::test]
+fn home_clipboard_actions_use_the_active_documents_mapping(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let source = active(&tabs, cx);
+    click_toolbar(cx, "sidebar-home");
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("Call Anna Petrova.".into()));
+    click_toolbar(cx, "home-clipboard");
+    cx.update(|_, cx| {
+        assert!(!tabs.read(cx).showing_home(cx));
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("Call PERSON_1.")
+        );
+        assert!(source.read(cx).clipboard_notice.is_some());
+    });
+    click_toolbar(cx, "sidebar-home");
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "PERSON_1 owes ORG_1.".into(),
+    ));
+    click_toolbar(cx, "home-restore");
+    let restored = active(&tabs, cx);
+    assert_ne!(source, restored);
+    cx.update(|_, cx| {
+        assert!(!tabs.read(cx).showing_home(cx));
+        assert_eq!(
+            restored.read(cx).editor.read(cx).text(),
+            "Anna Petrova owes Northwind Traders Ltd."
+        );
+    });
 }
 
 #[gpui::test]
