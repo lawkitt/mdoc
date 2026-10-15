@@ -94,10 +94,10 @@ ADR.
   the entity's alias.
 - **Category menu** opens with a right-click on an entity row; a hover control
   would cover the alias. The mention bar also carries the category.
-- **Mention bar** keeps the popup's keyboard (Enter applies this mention, ⌘↩ in
-  the bar the same wording, ⌫ keeps). Its ☑ Replace unticks in the selected
-  scope. The applied-mention "Undo (back to proposed)" button is gone; ⌘Z does
-  it.
+- **Mention bar** keys: Enter applies this mention, Space unticks ☑ Replace in
+  the selected scope, ⌫ / ⌘⌫ / ⇧⌘⌫ keep this / same wording / all, ⌘↩ applies
+  everything as everywhere else. The applied-mention "Undo (back to proposed)"
+  button is gone; ⌘Z does it.
 - **Proposed highlights** are a light category tint with a 2 px category
   underline (`SourceAnnotation::underline`); applied ones keep the blue chip.
 - **Zoom** scales the Markdown column's text size, 50–200% in 10% steps,

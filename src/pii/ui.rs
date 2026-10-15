@@ -215,14 +215,11 @@ fn decision_bindings(modifier: &str) -> Vec<KeyBinding> {
         KeyBinding::new("delete", crate::PanelKeep, Some(LIST)),
         KeyBinding::new(&format!("{modifier}-enter"), PiiApplyAll, None),
     ];
+    // The mention bar: Enter applies this mention, Space unticks in the
+    // selected scope, ⌘↩ applies everything (ADR 0048).
     bindings.extend([
         KeyBinding::new("enter", crate::ApplyThis, Some(POPUP)),
-        KeyBinding::new(&format!("{modifier}-enter"), crate::ApplySame, Some(POPUP)),
-        KeyBinding::new(
-            &format!("{modifier}-shift-enter"),
-            crate::ApplyAll,
-            Some(POPUP),
-        ),
+        KeyBinding::new("space", crate::PanelKeep, Some(POPUP)),
     ]);
     for key in ["backspace", "delete"] {
         bindings.extend([
