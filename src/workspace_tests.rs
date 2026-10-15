@@ -3490,3 +3490,29 @@ fn a_crash_report_is_previewed_before_it_is_copied(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("crash-bar").is_none());
     tabs.read_with(cx, |tabs, _| assert!(tabs.crash.is_none()));
 }
+
+#[gpui::test]
+fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
+    cx.update(shell::bind_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    draw(cx);
+    // ⌘K opens it from the document (ADR 0048).
+    cx.simulate_keystrokes("secondary-k");
+    draw(cx);
+    assert!(cx.debug_bounds("command-palette").is_some());
+    cx.simulate_input("home");
+    draw(cx);
+    cx.simulate_keystrokes("enter");
+    draw(cx);
+    assert!(cx.debug_bounds("command-palette").is_none());
+    assert!(cx.debug_bounds("home").is_some());
+    // From Home, Esc closes it again.
+    cx.simulate_keystrokes("secondary-k");
+    draw(cx);
+    assert!(cx.debug_bounds("command-palette").is_some());
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    assert!(cx.debug_bounds("command-palette").is_none());
+    cx.update(|_, cx| assert!(tabs.read(cx).shell.palette.is_none()));
+}
