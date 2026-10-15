@@ -56,3 +56,25 @@ are not recorded; that needs platform crash handlers and can come later.
   background thread does not always end the process.
 - The bar offers **See what would be sent** and **Dismiss**; the preview adds
   **Send…** (GitHub issue, report cut to about 6,000 characters) and **Copy**.
+
+## Amendment, 2026-10-15: reports that place the crash
+
+A beta.9 crash arrived as `str/mod.rs:862` with a scrambled backtrace and a
+withheld message, which was not enough to find it. Reports now also carry:
+
+- **String-slicing panics as numbers.** Rust 1.99's messages ("end byte index
+  37 is not a char boundary; it is inside 'и' (bytes 36..38 of string)", "…
+  out of bounds for string of length L", "byte range starts at A but ends at
+  B") and the older form are parsed strictly and kept as numbers: the index,
+  the character's byte range, size and script, the string's length. Never the
+  character or the text; anything that does not parse exactly is still
+  withheld. For `str::split_at(n)`, such as CoreText shaping a line run by
+  run, the index is the run's length.
+- **First mdoc frame:** the innermost backtrace frame in the workspace, as a
+  function and a workspace-relative line.
+- **Rebuilt-binary warning** when the program file changed after launch:
+  backtraces are symbolized from the file at panic time, so a rebuild or
+  update underneath the app scrambles them (the panic location stays right).
+- **Window state:** a line in words and numbers (Home or the document kind,
+  its size in bytes, zoom, panel tab, proposed and applied counts, popup,
+  before/after, find, tabs, sidebar, theme). No text and no names.

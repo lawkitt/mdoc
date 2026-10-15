@@ -355,6 +355,54 @@ impl DocumentView {
         self.start_pii_scan(cx);
     }
     /// The toolbar scans once, then shows or hides the existing review.
+    /// What this document shows, for a crash report: words and numbers only,
+    /// never its text or name.
+    pub(crate) fn crash_state(&self, cx: &App) -> String {
+        let kind = if self.pii.restore.is_some() {
+            "restored reply"
+        } else if self.source_only {
+            "source only"
+        } else if self.preview.pdf.is_some() {
+            "PDF"
+        } else if self.preview.source.is_some() {
+            "converted"
+        } else {
+            "Markdown"
+        };
+        let mut parts = vec![format!(
+            "{kind}, {} bytes, zoom {}%",
+            self.editor.read(cx).text().len(),
+            (self.zoom * 100.).round() as i32
+        )];
+        if self.preview.visible {
+            parts.push("source shown".into());
+        }
+        if self.pii.mapping.open {
+            parts.push(
+                if self.inspector_share {
+                    "Share tab"
+                } else {
+                    "Review tab"
+                }
+                .into(),
+            );
+            parts.push(format!(
+                "{} proposed, {} applied",
+                self.pii.review.remaining(),
+                self.pii.review.applied().len()
+            ));
+        }
+        if self.pii.popup.is_some() {
+            parts.push("popup open".into());
+        }
+        if self.compare.is_some() {
+            parts.push("before/after view".into());
+        }
+        if self.search.open {
+            parts.push("find open".into());
+        }
+        parts.join(", ")
+    }
     /// Whether the replacements panel is open (ADR 0048 header toggle).
     pub(crate) fn replacements_open(&self) -> bool {
         self.pii.mapping.open
