@@ -355,6 +355,74 @@ impl Workspace {
             .into_any_element()
     }
 
+    /// The collapsed rail's foot: Settings, theme and Help as icons, the
+    /// update shown as a dot on Settings (ADR 0048).
+    pub(super) fn rail_foot(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let update = crate::updater::state(cx).banner().is_some();
+        let theme_icon = match self.theme_choice {
+            style::ThemeChoice::System => ui::Icon::ThemeSystem,
+            style::ThemeChoice::Light => ui::Icon::Sun,
+            style::ThemeChoice::Dark => ui::Icon::Moon,
+        };
+        div()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(2.))
+            .pt_1()
+            .pb_3()
+            .flex_shrink_0()
+            .child(
+                div()
+                    .relative()
+                    .child(
+                        ui::header_icon(
+                            "rail-settings",
+                            if update {
+                                "Settings — update available"
+                            } else {
+                                "Settings"
+                            },
+                            ui::Icon::Settings,
+                            theme,
+                            false,
+                        )
+                        .when(cfg!(test), |v| v.debug_selector(|| "rail-settings".into()))
+                        .size(px(32.))
+                        .on_click(|_, window, cx| window.dispatch_action(Box::new(Settings), cx)),
+                    )
+                    .when(update, |v| {
+                        v.child(
+                            div()
+                                .absolute()
+                                .top(px(6.))
+                                .right(px(6.))
+                                .size(px(6.))
+                                .rounded_full()
+                                .bg(style::markdown_style(theme).alert_warning),
+                        )
+                    }),
+            )
+            .child(
+                ui::header_icon(
+                    "rail-theme",
+                    self.theme_choice.label(),
+                    theme_icon,
+                    theme,
+                    false,
+                )
+                .size(px(32.))
+                .on_click(cx.listener(|this, _, window, cx| this.cycle_theme(window, cx))),
+            )
+            .child(
+                ui::header_icon("rail-help", "Help ↗", ui::Icon::Help, theme, false)
+                    .size(px(32.))
+                    .on_click(|_, _, cx| cx.open_url("https://github.com/lawkitt/mdoc#readme")),
+            )
+            .into_any_element()
+    }
+
     /// A quiet card while an update is on its way (ADR 0048 decision 9).
     fn update_card(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         use crate::updater::BannerKind;
