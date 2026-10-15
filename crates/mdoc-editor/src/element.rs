@@ -694,7 +694,8 @@ impl Element for EditorElement {
         if editor.markdown_style.is_some() && !editor.content.is_empty() {
             let starts = &line_starts;
             for (i, line_shaped) in wrapped.iter().enumerate() {
-                if widgets.get(i).and_then(Option::as_ref).is_some()
+                if !is_visible_row(i)
+                    || widgets.get(i).and_then(Option::as_ref).is_some()
                     || backgrounds.get(i).and_then(Option::as_ref).is_some()
                     || tables.get(i).and_then(Option::as_ref).is_some()
                 {
@@ -705,14 +706,33 @@ impl Element for EditorElement {
                 };
                 let line = &editor.content[start..line_end(i)];
                 let inset = row_x(i);
-                for (range, _) in markdown_syntax::links(line) {
+                let links = markdown_syntax::links(line);
+                // Long wrapped paragraphs can contain thousands of links.
+                // GPUI's per-offset lookup scans all glyphs each time; reuse
+                // the same indexed positions as search/annotation geometry.
+                let positions = (links.len() > 8 && line_shaped.len() > 256 && bidi(i).is_none())
+                    .then(|| {
+                        crate::search_geometry::CachedLinePositions::get(
+                            &mut editor.position_cache.borrow_mut(),
+                            i,
+                            line_shaped,
+                        )
+                    })
+                    .flatten();
+                let position = |column| {
+                    positions.as_ref().map_or_else(
+                        || line_pos(line_shaped, bidi(i), column, *lh),
+                        |index| index.position(column, *lh),
+                    )
+                };
+                let visible = |hit: &Bounds<Pixels>| {
+                    hit.bottom() + px(64.) >= px(0.) && hit.top() - px(64.) <= viewport_h
+                };
+                for (range, _) in links {
                     let map = maps.get(i).and_then(Option::as_ref);
                     let d1 = display_col_in(map, range.start);
                     let d2 = display_col_in(map, range.end);
-                    let (Some(p1), Some(p2)) = (
-                        line_pos(line_shaped, bidi(i), d1, *lh),
-                        line_pos(line_shaped, bidi(i), d2, *lh),
-                    ) else {
+                    let (Some(p1), Some(p2)) = (position(d1), position(d2)) else {
                         continue;
                     };
                     if d1 >= d2 {
@@ -726,7 +746,9 @@ impl Element for EditorElement {
                             point(origin.x + p1.x.min(p2.x), origin.y + p1.y),
                             size((p2.x - p1.x).abs(), *lh),
                         );
-                        link_grips.push(window.insert_hitbox(hit, HitboxBehavior::Normal));
+                        if visible(&hit) {
+                            link_grips.push(window.insert_hitbox(hit, HitboxBehavior::Normal));
+                        }
                     } else {
                         // Wrapped: head runs to the row's end, tail from its row's start.
                         let head = Bounds::new(
@@ -734,8 +756,11 @@ impl Element for EditorElement {
                             size((line_shaped.width() - p1.x).max(px(0.)), *lh),
                         );
                         let tail = Bounds::new(point(origin.x, origin.y + p2.y), size(p2.x, *lh));
-                        link_grips.push(window.insert_hitbox(head, HitboxBehavior::Normal));
-                        link_grips.push(window.insert_hitbox(tail, HitboxBehavior::Normal));
+                        for hit in [head, tail] {
+                            if visible(&hit) {
+                                link_grips.push(window.insert_hitbox(hit, HitboxBehavior::Normal));
+                            }
+                        }
                     }
                 }
             }
@@ -1825,6 +1850,10 @@ impl Element for EditorElement {
         // wraps, resizes); re-render once when that geometry moves.
         let selection_bounds: Vec<_> = prepaint.selections.iter().map(|q| q.bounds).collect();
         let moved = self.editor.update(cx, |editor, _| {
+            #[cfg(test)]
+            {
+                editor.visible_link_hitboxes = prepaint.link_grips.len();
+            }
             let moved = editor.selection_bounds != selection_bounds;
             editor.selection_bounds = selection_bounds;
             moved && editor.selection_action.is_some()
@@ -4568,5 +4597,49 @@ mod diagnostic_range_tests {
         assert_eq!(visits, 20_000, "not 400 million candidate visits");
         let spanning = DiagnosticRanges::new(&[Diagnostic { range: 0..400_000 }]);
         assert_eq!(spanning.for_line(20, 39)[0].range, 0..19);
+    }
+}
+
+#[cfg(test)]
+mod link_geometry_tests {
+    use super::*;
+    #[gpui::test]
+    fn long_wrapped_links_bound_hitboxes_to_the_viewport(cx: &mut gpui::TestAppContext) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        cx.simulate_resize(size(px(400.), px(250.)));
+        editor.update(cx, |editor, cx| {
+            editor.set_text("[link label](https://example.invalid) ".repeat(2000), cx);
+            editor.set_cursor(editor.text().len(), cx);
+            editor.set_markdown_style(markdown_syntax::search_style(), cx);
+        });
+        for _ in 0..2 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            editor.read_with(cx, |editor, _| {
+                assert!(
+                    editor.visible_link_hitboxes > 0 && editor.visible_link_hitboxes < 300,
+                    "offscreen links must not allocate cursor hitboxes"
+                );
+                assert_eq!(
+                    editor.position_cache.borrow().len(),
+                    1,
+                    "reuse the long-line index"
+                );
+            });
+        }
+        cx.simulate_resize(size(px(600.), px(250.)));
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        editor.read_with(cx, |editor, _| {
+            assert!(editor.visible_link_hitboxes > 0 && editor.visible_link_hitboxes < 300);
+            assert_eq!(
+                editor.text().matches("https://example.invalid").count(),
+                2000
+            );
+        });
     }
 }
