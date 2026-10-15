@@ -2372,6 +2372,10 @@ impl Workspace {
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
+                        // Tab tiles share the icons' centre line (ADR 0048).
+                        .flex()
+                        .flex_col()
+                        .items_center()
                         .px_1()
                         .pb_1()
                         .children(compact_rows)
