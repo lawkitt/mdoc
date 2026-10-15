@@ -4,14 +4,14 @@ use crate::document_view_tests::{boot, close_document, open_document};
 use gpui::{TestAppContext, VisualTestContext};
 use std::time::Instant;
 
-fn draw(cx: &mut VisualTestContext) {
+pub(crate) fn draw(cx: &mut VisualTestContext) {
     cx.update(|window, cx| {
         window.refresh();
         window.draw(cx).clear(cx);
     });
 }
 
-fn report(label: &str, values: &mut [f64]) -> f64 {
+pub(crate) fn report(label: &str, values: &mut [f64]) -> f64 {
     values.sort_by(f64::total_cmp);
     eprintln!(
         "HOST_PERF {label} median_ms={:.3} p95_ms={:.3}",
@@ -56,7 +56,7 @@ pub(super) fn rss_kib() -> Option<u64> {
 #[ignore = "host performance matrix; run serially on an idle machine"]
 fn host_performance_matrix(cx: &mut TestAppContext) {
     let (mut app, cx) = boot(cx);
-    // Preserve the original 1100px document viewport beside the 232px tab sidebar.
+    // Fixed outer window; log the actual reading-column and pane widths below.
     cx.simulate_resize(gpui::size(px(1332.), px(750.)));
     let dir = tempfile::tempdir().unwrap();
     let image = dir.path().join("pixel.png");
@@ -86,6 +86,7 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
     if let Some(path) = std::env::var_os("MDOC_PERF_MARKDOWN") {
         workloads.push(("local", std::fs::read_to_string(path).unwrap()));
     }
+    let mut failures = Vec::new();
     for (name, source) in workloads {
         let path = if name == "local" {
             PathBuf::from(std::env::var_os("MDOC_PERF_MARKDOWN").unwrap())
@@ -99,9 +100,16 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
         cx.run_until_parked();
         draw(cx);
         eprintln!(
-            "HOST_PERF {name} bytes={} open_ms={:.3}",
+            "HOST_PERF {name} bytes={} open_ms={:.3} profile={} pane_width={} editor_width={:?}",
             source.len(),
-            started.elapsed().as_secs_f64() * 1000.
+            started.elapsed().as_secs_f64() * 1000.,
+            if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
+            app.read_with(cx, |v, _| f32::from(v.scroll.bounds().size.width)),
+            app.read_with(cx, |v, cx| v.editor.read(cx).layout_width().map(f32::from)),
         );
         let mut scroll = Vec::new();
         for frame in 0..20 {
@@ -175,10 +183,9 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
             .into_iter()
             .zip(limits)
             {
-                assert!(
-                    measured <= limit,
-                    "{name} {label}: {measured:.3}ms exceeds {limit}ms host regression budget"
-                );
+                if measured > limit {
+                    failures.push(format!("{name} {label}: {measured:.3}ms exceeds {limit}ms"));
+                }
             }
         }
         cx.dispatch_action(CloseMarkdownSearch);
@@ -237,6 +244,10 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
         );
         eprintln!("HOST_PERF switch_cycle={cycle} rss_kib={:?}", rss_kib());
     }
+    assert!(
+        failures.is_empty(),
+        "host regression budgets exceeded: {failures:#?}"
+    );
 }
 
 #[gpui::test]
@@ -252,7 +263,7 @@ fn local_preview_performance(cx: &mut TestAppContext) {
                 || extension.eq_ignore_ascii_case("docx"))
     );
     let (app, cx) = boot(cx);
-    // Preserve the original 1100px document viewport beside the 232px tab sidebar.
+    // Fixed outer window; log the actual reading-column and pane widths below.
     cx.simulate_resize(gpui::size(px(1332.), px(750.)));
     let mut times = Vec::new();
     for cycle in 0..3 {

@@ -1241,9 +1241,13 @@ impl EditorState {
         );
     }
 
-    /// Window-space bounds for the first source range of one highlighted
-    /// occurrence, taken from the same quads used to paint the highlights.
-    /// Includes wrapped prose and table cells. Unavailable until the next paint.
+    /// Actual width used by the last painted layout, for host measurements.
+    pub fn layout_width(&self) -> Option<Pixels> {
+        self.last_bounds.map(|bounds| bounds.size.width)
+    }
+
+    /// Window-space bounds from the painted highlight quads. Includes wrapped
+    /// prose and table cells; unavailable until the next paint.
     pub fn search_match_bounds(&self, index: usize) -> Option<Bounds<Pixels>> {
         self.search_bounds.get(index).copied().flatten()
     }

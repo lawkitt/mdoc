@@ -28,7 +28,13 @@ This roadmap tracks work remaining as of 2026-10-10; accepted behavior lives in
 
 1. **Measure and resolve responsiveness/resource blockers.** Separate editor
    layout cost from PII overhead using fixed viewports and representative
-   workloads. Existing [restoration measurements](docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
+   workloads. The [October 16 review](docs/design/maintainability-review.md)
+   scopes a focused stabilization pass over case-save failures, refresh/scheduling,
+   spelling, layout and panel preparation. Ordinary legal documents are the hard
+   interactive target; 2 MiB / 20,000 mentions form a measured stress tier with
+   bounded work and memory. Set numerical budgets after release/native baselines
+   ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
+   Existing [restoration measurements](docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
    expose a dense-document layout bottleneck; historical timings are not current
    performance guarantees.
 2. **Qualify the outgoing AI-analysis journey.** Agree release targets and test
@@ -51,6 +57,16 @@ This roadmap tracks work remaining as of 2026-10-10; accepted behavior lives in
    switches are implemented; a system-wide clipboard hotkey (macOS
    `RegisterEventHotKey`, Windows `RegisterHotKey`) and listing cases on the
    empty page remain.
+6. **TODO: Broader architectural refactoring**
+   ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
+   After focused stabilization, deliver case coordination and document lifecycle
+   as separate, incremental projects: explicit owners for case persistence and
+   synchronization, and explicit document transitions across the shell/view.
+   GPUI keeps presentation, prompts and scheduling; existing editor/history,
+   import and preview owners retain their contracts. Define each migration's
+   boundary before implementation. Investigate retained editor layout only if
+   remaining release-build costs justify it after local fixes; that replacement
+   is not committed work. Preserve behavior and lifecycle invariants throughout.
 
 Keep the app and internal crates maintainable through concrete ownership/test
 improvements ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)). Conversion

@@ -3651,3 +3651,126 @@ fn notices_wait_behind_the_header_bell(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("header-notices").is_none());
     assert!(cx.debug_bounds("notices-popover").is_none());
 }
+
+/// Public synthetic input through the real editor/review/case host. Timings are
+/// observations until release/native budgets are qualified (ADR 0049).
+#[gpui::test]
+#[ignore = "review/diagnostics/compare/case CPU matrix; run serially on an idle machine"]
+fn review_host_performance(cx: &mut TestAppContext) {
+    use crate::perf_tests::{draw, report};
+    use crate::pii::Category;
+    use std::time::Instant;
+    let stress = std::env::var_os("MDOC_PERF_STRESS").is_some();
+    let (entities, mentions) = if stress { (64, 20_000) } else { (16, 160) };
+    let names: Vec<_> = (0..entities).map(|i| format!("ClientName{i:04}")).collect();
+    let wordings: Vec<_> = names
+        .iter()
+        .map(|n| (n.as_str(), Category::Person))
+        .collect();
+    let mut text: String = (0..mentions)
+        .map(|i| {
+            format!(
+                "{} agrees to the agreemnt. Проверить условия.\n\n",
+                names[i % entities]
+            )
+        })
+        .collect();
+    if stress {
+        text.push_str(&" ".repeat(2_097_152_usize.saturating_sub(text.len())));
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(crate::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ));
+    });
+    let first = open_applied(&tabs, cx, dir.path(), "first.md", &text, &wordings);
+    let first_view = active(&tabs, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
+    cx.run_until_parked();
+    let case = tabs.read_with(cx, |tabs, _| tabs.cases.cases[0].id.clone());
+    for name in ["second.md", "third.md"] {
+        let member = open_applied(&tabs, cx, dir.path(), name, &text, &wordings);
+        tabs.update_in(cx, |tabs, window, cx| {
+            tabs.join_case(member, &case, window, cx)
+        });
+        cx.run_until_parked();
+    }
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(first, window, cx));
+    for phase in ["proposed_panel", "applied_panel", "before_after"] {
+        first_view.update_in(cx, |view, window, cx| {
+            match phase {
+                "proposed_panel" => view
+                    .editor
+                    .update(cx, |editor, cx| editor.undo_step(window, cx)),
+                "applied_panel" => view.apply_all_pii(&PiiApplyAll, window, cx),
+                _ => view.toggle_compare(window, cx),
+            }
+            if !view.replacements_open() {
+                view.toggle_replacements_panel(window, cx);
+            }
+        });
+        cx.run_until_parked();
+        draw(cx);
+        draw(cx);
+        let mut samples = Vec::new();
+        for _ in 0..7 {
+            let start = Instant::now();
+            draw(cx);
+            samples.push(start.elapsed().as_secs_f64() * 1000.);
+        }
+        eprintln!(
+            "REVIEW_PERF phase={phase} bytes={} entities={entities} mentions={mentions} editor_width={:?}",
+            text.len(),
+            first_view.read_with(cx, |v, cx| v.editor.read(cx).layout_width().map(f32::from))
+        );
+        report(&format!("review_{phase}"), &mut samples);
+        first_view.read_with(cx, |view, _| {
+            assert_eq!(
+                view.pii.review.candidates().len() + view.pii.review.applied().len(),
+                mentions
+            );
+        });
+    }
+    let start = Instant::now();
+    first_view.update_in(cx, |view, window, cx| {
+        view.close_compare(window, cx);
+        let id = view.pii.review.identity_by_alias("PERSON_1").unwrap();
+        view.retag_identities(&[(id, "CLIENT".into(), Category::Person, true)], cx)
+            .unwrap();
+    });
+    tabs.update(cx, |tabs, cx| tabs.case_changed(first, cx));
+    cx.run_until_parked();
+    draw(cx);
+    eprintln!(
+        "REVIEW_PERF case_fanout_3_members_ms={:.3} rss_kib={:?}",
+        start.elapsed().as_secs_f64() * 1000.,
+        crate::perf_tests::rss_kib()
+    );
+    tabs.read_with(cx, |tabs, cx| {
+        let members: Vec<_> = tabs
+            .tabs
+            .iter()
+            .filter_map(|tab| tab.view.as_ref())
+            .filter(|view| {
+                view.read(cx)
+                    .case
+                    .as_ref()
+                    .is_some_and(|link| link.id == case)
+            })
+            .collect();
+        assert_eq!(members.len(), 3);
+        for view in members {
+            assert!(
+                view.read(cx)
+                    .pii
+                    .review
+                    .identity_by_alias("CLIENT")
+                    .is_some()
+            );
+        }
+    });
+}
