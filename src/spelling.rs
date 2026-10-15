@@ -274,7 +274,6 @@ impl DocumentView {
         cx.notify();
     }
 
-    #[cfg(test)]
     pub(crate) fn spelling_control_off(&self) -> bool {
         configured_options(&self.preferences).is_none()
     }

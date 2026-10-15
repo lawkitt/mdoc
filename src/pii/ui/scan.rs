@@ -9,7 +9,7 @@ pub(super) struct ScanJob {
 }
 
 impl DocumentView {
-    pub(super) fn start_pii_scan(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn start_pii_scan(&mut self, cx: &mut Context<Self>) {
         if !self.can_copy_markdown() {
             return;
         }

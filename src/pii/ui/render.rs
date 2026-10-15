@@ -94,7 +94,7 @@ impl DocumentView {
     /// While a scan runs: a spinner and a stage label beside Pseudonymize that
     /// crossfades through the scan's stages (ADR 0032). The scan reports no
     /// progress, so stages advance on a timer and settle on the last ones.
-    fn scan_status(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn scan_status(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         const STAGES: [&str; 4] = [
             "Reading…",
             "Analyzing…",

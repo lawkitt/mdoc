@@ -27,6 +27,7 @@ mod ocr;
 #[cfg(test)]
 mod perf_tests;
 mod pii;
+mod recents;
 mod preview;
 mod session_store;
 mod settings;
@@ -214,6 +215,7 @@ fn main() {
         markdown_search::bind_keys(cx);
         pii::ui::bind_keys(cx);
         workspace::bind_case_keys(cx);
+        workspace::bind_shell_keys(cx);
         settings_ui::bind_keys(cx);
         ui::bind_keys(cx);
         cx.bind_keys([KeyBinding::new(
@@ -274,6 +276,19 @@ fn main() {
             .open_window(
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    // One unified row for traffic lights, sidebar toggle and the
+                    // document header (ADR 0048). Linux asks for client-side
+                    // decorations and falls back to the compositor's title bar.
+                    titlebar: Some(gpui::TitlebarOptions {
+                        title: Some("mdoc".into()),
+                        appears_transparent: true,
+                        traffic_light_position: Some(gpui::point(
+                            px(style::TRAFFIC_LIGHT_X),
+                            px(style::TRAFFIC_LIGHT_Y),
+                        )),
+                    }),
+                    window_decorations: Some(gpui::WindowDecorations::Client),
+                    window_min_size: Some(size(px(720.), px(480.))),
                     ..Default::default()
                 },
                 |window, cx| {

@@ -1,0 +1,1250 @@
+//! The window shell (ADR 0048): theme choice, the sidebar's top and foot,
+//! Home with its drop zone, and the ⌘K command palette.
+use super::*;
+use crate::markdown_search::{SearchInput, SearchInputEvent};
+use crate::recents::{self, Recents};
+use gpui::{AnyElement, Hsla, SharedString};
+
+actions!(
+    mdoc_shell,
+    [
+        OpenPalette,
+        PaletteUp,
+        PalettePrevious,
+        PaletteDown,
+        PaletteConfirm,
+        PaletteClose,
+        ShowHome,
+        PasteAsNewTab,
+    ]
+);
+
+const PALETTE: &str = "CommandPalette";
+
+pub(crate) fn bind_keys(cx: &mut App) {
+    let modifier = if cfg!(target_os = "macos") {
+        "cmd"
+    } else {
+        "ctrl"
+    };
+    cx.bind_keys([
+        KeyBinding::new(&format!("{modifier}-k"), OpenPalette, None),
+        KeyBinding::new(&format!("{modifier}-shift-h"), ShowHome, None),
+        KeyBinding::new("up", PaletteUp, Some(PALETTE)),
+        KeyBinding::new("down", PaletteDown, Some(PALETTE)),
+        KeyBinding::new("enter", PaletteConfirm, Some(PALETTE)),
+        KeyBinding::new("escape", PaletteClose, Some(PALETTE)),
+    ]);
+}
+
+pub(super) struct ShellState {
+    pub recents: Recents,
+    pub palette: Option<Palette>,
+    /// Files dragged over the window while Home shows: how many are droppable.
+    pub drop: Option<usize>,
+    pub drop_generation: u64,
+    home_scroll: gpui::ScrollHandle,
+}
+
+impl ShellState {
+    pub fn new(_cx: &mut App) -> Self {
+        Self {
+            recents: Recents::load(),
+            palette: None,
+            drop: None,
+            drop_generation: 0,
+            home_scroll: gpui::ScrollHandle::new(),
+        }
+    }
+}
+
+pub(super) struct Palette {
+    input: Entity<SearchInput>,
+    selected: usize,
+    return_focus: Option<gpui::FocusHandle>,
+    _changes: Subscription,
+}
+
+/// What a palette row does when chosen.
+#[derive(Clone)]
+enum Command {
+    NewTab,
+    OpenFiles,
+    PasteText,
+    Pseudonymize,
+    PseudonymizeClipboard,
+    RestoreReply,
+    CopyForAi,
+    CopyMarkdown,
+    Save,
+    OpenCase,
+    Home,
+    Settings,
+    Theme,
+    Tab(u64),
+    Case(String),
+    Recent(PathBuf),
+}
+
+struct Row {
+    section: &'static str,
+    label: String,
+    detail: Option<String>,
+    shortcut: Option<&'static str>,
+    command: Command,
+}
+
+fn shortcut(mac: &'static str, other: &'static str) -> &'static str {
+    if cfg!(target_os = "macos") { mac } else { other }
+}
+
+impl Workspace {
+    // ---- Theme ------------------------------------------------------------
+
+    /// Resolve the theme choice against the OS appearance and repaint every
+    /// open document when the result changes.
+    pub(super) fn apply_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let theme = self.theme_choice.resolve(window.appearance());
+        if theme == self.theme.get() {
+            return;
+        }
+        self.theme.set(theme);
+        for tab in &self.tabs {
+            if let Some(view) = &tab.view {
+                view.update(cx, |view, cx| {
+                    view.editor.update(cx, |editor, cx| {
+                        editor.set_markdown_style(style::markdown_style(theme), cx)
+                    });
+                    view.sync_pii_theme(cx);
+                    cx.notify();
+                });
+            }
+        }
+        cx.notify();
+    }
+
+    pub(super) fn cycle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.theme_choice = self.theme_choice.next();
+        self.apply_theme(window, cx);
+        self.checkpoint(window, cx);
+        cx.notify();
+    }
+
+    // ---- Home state -------------------------------------------------------
+
+    /// The hidden blank tab under Home: never edited, never listed.
+    pub(super) fn is_placeholder(&self, tab: &Tab, cx: &App) -> bool {
+        tab.record.blank_disposable
+            && tab.view.as_ref().is_none_or(|view| {
+                let view = view.read(cx);
+                view.blank_disposable
+                    && view.session.document.path.is_none()
+                    && view.preview.source.is_none()
+                    && view.editor.read(cx).text().is_empty()
+            })
+    }
+
+    pub(super) fn showing_home(&self, cx: &App) -> bool {
+        self.home
+            || self
+                .tabs
+                .iter()
+                .find(|tab| tab.id == self.active)
+                .is_some_and(|tab| self.is_placeholder(tab, cx))
+    }
+
+    pub(super) fn show_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(old) = self.active_view() {
+            old.update(cx, |view, _| view.pii.dismiss_popup());
+        }
+        self.home = true;
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    /// Remember files as they open or save (paths only).
+    pub(super) fn remember_recents(&mut self, cx: &App) {
+        let mut changed = false;
+        for tab in &self.tabs {
+            let Some(view) = tab.view.as_ref().map(|v| v.read(cx)) else {
+                continue;
+            };
+            if view.loading {
+                continue;
+            }
+            let path = view
+                .preview
+                .attachment
+                .as_ref()
+                .or(view.preview.source.as_ref())
+                .or(view.session.document.path.as_ref());
+            if let Some(path) = path
+                && !self
+                    .shell
+                    .recents
+                    .files
+                    .iter()
+                    .any(|r| &r.path == path && r.pseudonymized >= view.pseudonymized())
+            {
+                changed |= self.shell.recents.touch(path, view.pseudonymized());
+            }
+        }
+        let _ = changed;
+    }
+
+    // ---- Sidebar ------------------------------------------------------------
+
+    /// The sidebar's first row: room for the traffic lights, then the toggle.
+    /// It moves the window like a title bar.
+    pub(super) fn sidebar_top(&self, toggle: AnyElement) -> AnyElement {
+        ui::title_drag(
+            div()
+                .flex()
+                .items_center()
+                .flex_shrink_0()
+                .h(px(style::CARD_MARGIN + style::HEADER_HEIGHT))
+                .pt(px(style::CARD_MARGIN))
+                .pl(px(style::TRAFFIC_LIGHT_INSET))
+                .pr_2(),
+            self.title.armed.clone(),
+        )
+        .child(ui::no_drag(div().child(toggle)))
+        .into_any_element()
+    }
+
+    /// Search ⌘K and Home under the top row.
+    pub(super) fn sidebar_nav(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let home = self.showing_home(cx);
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .px_2()
+            .pb_2()
+            .flex_shrink_0()
+            .child(
+                div()
+                    .id("sidebar-search")
+                    .when(cfg!(test), |v| v.debug_selector(|| "sidebar-search".into()))
+                    .role(gpui::Role::Button)
+                    .aria_label("Search or run an action")
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .h(px(30.))
+                    .px_2()
+                    .mb_1()
+                    .rounded_md()
+                    .border_1()
+                    .border_color(p.border)
+                    .bg(p.bg)
+                    .text_color(p.header_muted)
+                    .cursor_pointer()
+                    .hover(move |s| s.border_color(p.header_muted))
+                    .focus_visible(move |s| s.border_color(theme.search_accent()))
+                    .child(
+                        gpui::svg()
+                            .data(ui::Icon::Search.data())
+                            .size(px(14.))
+                            .text_color(p.header_muted),
+                    )
+                    .child(div().flex_1().child("Search…"))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .child(shortcut("⌘K", "Ctrl+K")),
+                    )
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenPalette), cx)),
+            )
+            .child(
+                nav_row("sidebar-home", ui::Icon::Home, "Home", theme, home)
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(p.header_muted)
+                            .child(shortcut("⇧⌘H", "Ctrl+Shift+H")),
+                    )
+                    .on_click(cx.listener(|this, _, window, cx| this.show_home(window, cx))),
+            )
+            .into_any_element()
+    }
+
+    /// A small section label, e.g. "Open" over tabs without a case.
+    pub(super) fn section_label(&self, label: &'static str) -> AnyElement {
+        let p = self.theme.get().pdf_style();
+        div()
+            .px_2()
+            .pt_3()
+            .pb_1()
+            .text_size(px(11.))
+            .text_color(p.header_muted)
+            .child(label)
+            .into_any_element()
+    }
+
+    /// The update card and the Settings · theme · Help row.
+    pub(super) fn sidebar_foot(&self, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let theme_icon = match self.theme_choice {
+            style::ThemeChoice::System => ui::Icon::ThemeSystem,
+            style::ThemeChoice::Light => ui::Icon::Sun,
+            style::ThemeChoice::Dark => ui::Icon::Moon,
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .px_2()
+            .pb_2()
+            .pt_1()
+            .flex_shrink_0()
+            .children(self.update_card(cx))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        nav_row("sidebar-settings", ui::Icon::Settings, "Settings", theme, false)
+                            .flex_1()
+                            .when(crate::updater::state(cx).available.is_some(), |v| {
+                                v.child(
+                                    div()
+                                        .when(cfg!(test), |v| {
+                                            v.debug_selector(|| "update-dot".into())
+                                        })
+                                        .size(px(7.))
+                                        .rounded_full()
+                                        .bg(style::markdown_style(theme).alert_warning),
+                                )
+                            })
+                            .on_click(|_, window, cx| {
+                                window.dispatch_action(Box::new(Settings), cx)
+                            }),
+                    )
+                    .child(
+                        ui::header_icon(
+                            "theme-toggle",
+                            self.theme_choice.label(),
+                            theme_icon,
+                            theme,
+                            false,
+                        )
+                        .when(cfg!(test), |v| v.debug_selector(|| "theme-toggle".into()))
+                        .on_click(cx.listener(|this, _, window, cx| this.cycle_theme(window, cx))),
+                    )
+                    .child(
+                        ui::header_icon("sidebar-help", "Help ↗", ui::Icon::Help, theme, false)
+                            .on_click(|_, _, cx| {
+                                cx.open_url("https://github.com/lawkitt/mdoc#readme")
+                            }),
+                    ),
+            )
+            .child(div().h(px(1.)).bg(gpui::transparent_black()).text_color(p.header_muted))
+            .into_any_element()
+    }
+
+    /// A quiet card while an update is on its way (ADR 0048 decision 9).
+    fn update_card(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use crate::updater::BannerKind;
+        let state = crate::updater::state(cx);
+        let banner = state.banner()?;
+        if banner.kind == BannerKind::Updated {
+            return None;
+        }
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let accent = theme.search_accent();
+        let version = banner.version.clone();
+        let (title, detail) = match banner.kind {
+            BannerKind::Available => ("Update available".to_string(), format!("v{version} · update")),
+            BannerKind::Downloading => (
+                "Downloading update".to_string(),
+                format!("v{version} · {}%", state.percent().unwrap_or(0)),
+            ),
+            BannerKind::Ready => ("Installed, next launch".to_string(), format!("v{version} · relaunch")),
+            BannerKind::Failed => ("Update failed".to_string(), format!("v{version} · details")),
+            BannerKind::Updated => unreachable!(),
+        };
+        let ready = banner.kind == BannerKind::Ready;
+        Some(
+            div()
+                .id("update-banner")
+                .when(cfg!(test), |v| v.debug_selector(|| "update-banner".into()))
+                .role(gpui::Role::Button)
+                .aria_label(format!("{title}. {detail}"))
+                .key_context("UiControl")
+                .tab_index(0)
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_2()
+                .py(px(6.))
+                .mb_1()
+                .rounded_lg()
+                .border_1()
+                .border_color(p.border)
+                .bg(p.bg)
+                .cursor_pointer()
+                .hover(move |s| s.border_color(p.header_muted))
+                .focus_visible(move |s| s.border_color(accent))
+                .child(
+                    gpui::svg()
+                        .data(ui::Icon::Download.data())
+                        .size(px(14.))
+                        .flex_shrink_0()
+                        .text_color(p.header_fg),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .truncate()
+                                .text_size(px(12.))
+                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .child(title),
+                        )
+                        .child(
+                            div()
+                                .truncate()
+                                .text_size(px(11.))
+                                .text_color(p.header_muted)
+                                .child(detail),
+                        ),
+                )
+                .child(
+                    div()
+                        .size(px(8.))
+                        .flex_shrink_0()
+                        .rounded_full()
+                        .bg(if ready { accent } else { style::markdown_style(theme).alert_warning }),
+                )
+                .child(
+                    div()
+                        .id("dismiss-update-banner")
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "dismiss-update-banner".into())
+                        })
+                        .aria_label("Dismiss")
+                        .px_1()
+                        .rounded_sm()
+                        .text_color(p.header_muted)
+                        .hover(move |s| s.bg(p.placeholder_bg))
+                        .child("×")
+                        .on_click(|_, _, cx| {
+                            cx.stop_propagation();
+                            crate::updater::dismiss_banner(cx);
+                        }),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| match banner.kind {
+                    BannerKind::Ready => this.restart_to_update(window, cx),
+                    _ => {
+                        window.activate_window();
+                        this.settings
+                            .update(cx, |panel, cx| panel.show_updates(window, cx));
+                    }
+                }))
+                .into_any_element(),
+        )
+    }
+
+    // ---- Home -----------------------------------------------------------------
+
+    pub(super) fn home_view(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let header = ui::title_drag(
+            div()
+                .flex()
+                .items_center()
+                .flex_shrink_0()
+                .h(px(style::HEADER_HEIGHT))
+                .pl(px(16. + self.title.inset.get()))
+                .pr_2()
+                .gap_2()
+                .border_b_1()
+                .border_color(p.border)
+                .text_size(px(13.)),
+            self.title.armed.clone(),
+        )
+        .child(div().font_weight(gpui::FontWeight::MEDIUM).child("Home"))
+        .child(div().flex_1())
+        .children(ui::caption_buttons(window, theme));
+        let banner = self.whats_new(cx);
+        div()
+            .id("home")
+            .when(cfg!(test), |v| v.debug_selector(|| "home".into()))
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(header)
+            .children(banner)
+            .child(
+                div()
+                    .id("home-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.shell.home_scroll)
+                    .child(
+                        div()
+                            .w_full()
+                            .flex()
+                            .justify_center()
+                            .px_6()
+                            .pt(px(56.))
+                            .pb(px(48.))
+                            .child(
+                                div()
+                                    .w_full()
+                                    .max_w(px(680.))
+                                    .flex()
+                                    .flex_col()
+                                    .gap_4()
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .gap_1()
+                                            .child(
+                                                div()
+                                                    .text_size(px(26.))
+                                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                                    .child("Hello"),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_size(px(14.))
+                                                    .text_color(p.header_muted)
+                                                    .child("What would you like to prepare for AI?"),
+                                            ),
+                                    )
+                                    .child(self.drop_zone(cx))
+                                    .child(self.home_actions(cx))
+                                    .children(self.home_cases(cx))
+                                    .children(self.home_recents(cx)),
+                            ),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// One-time "What's new" after an update (ADR 0048 decision 9).
+    fn whats_new(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use crate::updater::BannerKind;
+        let banner = crate::updater::state(cx).banner()?;
+        if banner.kind != BannerKind::Updated {
+            return None;
+        }
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let version = banner.version.clone();
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .gap_3()
+                .px_4()
+                .py_2()
+                .bg(p.placeholder_bg)
+                .text_size(px(13.))
+                .child(div().flex_1().child(format!("mdoc {version} is installed.")))
+                .child(
+                    ui::link_button("whats-new", "What's new", theme, true).on_click(
+                        move |_, _, cx| cx.open_url(&crate::updater::release_url(&version)),
+                    ),
+                )
+                .child(
+                    ui::control("dismiss-whats-new", "×", theme, true)
+                        .aria_label("Dismiss")
+                        .on_click(|_, _, cx| crate::updater::dismiss_banner(cx)),
+                )
+                .into_any_element(),
+        )
+    }
+
+    fn drop_zone(&self, _cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let accent = theme.search_accent();
+        let active = self.shell.drop.is_some_and(|n| n > 0);
+        let refused = self.shell.drop == Some(0);
+        let ink = if active { accent } else { p.header_muted };
+        let layer = |data: &'static [u8], color: gpui::Hsla| {
+            gpui::svg()
+                .data(data)
+                .absolute()
+                .inset_0()
+                .size_full()
+                .text_color(color)
+        };
+        let illustration = div()
+            .relative()
+            .w(px(160.))
+            .h(px(112.))
+            .child(layer(include_bytes!("../resources/ui/drop-page.svg"), ink))
+            .child(layer(
+                include_bytes!("../resources/ui/drop-bars.svg"),
+                if active { accent } else { Hsla { a: 0.35, ..p.header_muted } },
+            ))
+            .child(layer(include_bytes!("../resources/ui/drop-disc.svg"), if active { accent } else { p.header_fg }))
+            .child(layer(include_bytes!("../resources/ui/drop-lock.svg"), p.bg));
+        let illustration = if active {
+            illustration
+                .with_animation(
+                    ("drop-lift", self.shell.drop_generation),
+                    Animation::new(Duration::from_millis(180)).with_easing(gpui::ease_out_quint()),
+                    |v, delta| v.mt(px(-6. * delta)).mb(px(6. * delta)),
+                )
+                .into_any_element()
+        } else {
+            illustration.into_any_element()
+        };
+        let title = match self.shell.drop {
+            Some(0) => "These files can't be opened".to_string(),
+            Some(1) => "Drop to open".to_string(),
+            Some(n) => format!("Drop {n} files"),
+            None => "Drop documents here".to_string(),
+        };
+        div()
+            .id("home-drop")
+            .when(cfg!(test), |v| v.debug_selector(|| "home-drop".into()))
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_2()
+            .pt_6()
+            .pb_5()
+            .rounded_xl()
+            .border_1()
+            .border_dashed()
+            .border_color(p.border)
+            .when(active, |v| {
+                v.border_2()
+                    .border_color(accent)
+                    .bg(Hsla { a: 0.05, ..accent })
+            })
+            .when(refused, |v| v.border_color(style::markdown_style(theme).alert_caution))
+            .child(illustration)
+            .child(
+                div()
+                    .text_size(px(15.))
+                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .text_color(if active { accent } else { p.header_fg })
+                    .child(title),
+            )
+            .child(
+                ui::filled_button("home-open", "Open files…", theme, true)
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-open".into()))
+                    .mt_1()
+                    .child(ui::key_hint(shortcut("⌘O", "Ctrl+O")))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(Open), cx)),
+            )
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .child("PDF, DOCX or Markdown · several at once open in their own tabs"),
+            )
+            .into_any_element()
+    }
+
+    fn home_actions(&self, _cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let machine = if cfg!(target_os = "macos") {
+            "this Mac"
+        } else {
+            "this computer"
+        };
+        let detail = format!(
+            "Detection, conversion and saved cases run on {machine}. mdoc goes online only \
+             to check for updates and to download models you choose."
+        );
+        div()
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_2()
+            .child(
+                ui::primary_button("home-paste", "Paste text", theme, true)
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
+            )
+            .child(
+                ui::primary_button("home-restore", "Restore AI reply", theme, true)
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAiResponse), cx)),
+            )
+            .child(
+                ui::primary_button("home-clipboard", "Pseudonymize clipboard", theme, true)
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(PseudonymizeClipboard), cx)
+                    }),
+            )
+            .child(div().flex_1())
+            .child(
+                div()
+                    .id("empty-page-local")
+                    .when(cfg!(test), |v| v.debug_selector(|| "empty-page-local".into()))
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .text_size(px(12.))
+                    .text_color(p.header_muted)
+                    .aria_label(format!("Documents stay on {machine}. {detail}"))
+                    .tooltip(style::tooltip(detail, theme))
+                    .child(
+                        gpui::svg()
+                            .data(include_bytes!("../resources/ui/lock.svg"))
+                            .size(px(13.))
+                            .text_color(p.header_muted),
+                    )
+                    .child(format!("Documents stay on {machine}")),
+            )
+            .into_any_element()
+    }
+
+    fn home_cases(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let cases = &self.cases.cases;
+        let mut list = div().flex().flex_col();
+        if cases.is_empty() {
+            return Some(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(home_label("Cases", theme))
+                    .child(div().flex_1())
+                    .child(
+                        ui::link_button("home-open-case", "Open a case…", theme, true)
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenCase), cx)),
+                    )
+                    .into_any_element(),
+            );
+        }
+        for case in cases.iter().take(6) {
+            let link = crate::cases::CaseLink::of(case);
+            let id = case.id.clone();
+            let documents = case.members.len();
+            list = list.child(
+                home_row(SharedString::from(format!("home-case-{}", case.id)), theme)
+                    .child(div().size(px(8.)).rounded_full().bg(link.color()).flex_shrink_0())
+                    .child(div().flex_1().min_w_0().truncate().child(case.name.clone()))
+                    .child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(p.header_muted)
+                            .child(format!(
+                                "{documents} {}",
+                                if documents == 1 { "document" } else { "documents" }
+                            )),
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| this.open_case(&id, window, cx))),
+            );
+        }
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(home_label("Cases", theme))
+                .child(list)
+                .into_any_element(),
+        )
+    }
+
+    fn home_recents(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        if self.shell.recents.files.is_empty() {
+            return None;
+        }
+        let rows = self.shell.recents.files.iter().take(8).enumerate().map(|(i, recent)| {
+            let path = recent.path.clone();
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let folder = path
+                .parent()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            home_row(("home-recent", i), theme)
+                .when(cfg!(test), |v| v.debug_selector(move || format!("home-recent-{i}")))
+                .tooltip(style::tooltip(path.to_string_lossy().into_owned(), theme))
+                .child(
+                    gpui::svg()
+                        .data(ui::Icon::Source.data())
+                        .size(px(14.))
+                        .flex_shrink_0()
+                        .text_color(p.header_muted),
+                )
+                .child(div().min_w_0().truncate().child(name))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_size(px(12.))
+                        .text_color(p.header_muted)
+                        .child(folder),
+                )
+                .when(recent.pseudonymized, |v| {
+                    v.child(
+                        div()
+                            .px(px(6.))
+                            .rounded_sm()
+                            .bg(p.placeholder_bg)
+                            .text_size(px(11.))
+                            .text_color(p.header_muted)
+                            .child("pseudonymized"),
+                    )
+                })
+                .child(
+                    div()
+                        .w(px(84.))
+                        .flex_shrink_0()
+                        .text_right()
+                        .text_size(px(12.))
+                        .text_color(p.header_muted)
+                        .child(recents::when(recent.opened)),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.open_paths(vec![path.clone()], window, cx)
+                }))
+        });
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(home_label("Recent", theme))
+                .child(div().flex().flex_col().children(rows))
+                .into_any_element(),
+        )
+    }
+
+    /// A file drag anywhere over the window while Home shows (ADR 0048).
+    pub(super) fn home_drag(
+        &mut self,
+        event: &gpui::DragMoveEvent<gpui::ExternalPaths>,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.showing_home(cx) {
+            return;
+        }
+        let over = event.bounds.contains(&event.event.position);
+        let count = over.then(|| {
+            event
+                .drag(cx)
+                .paths()
+                .iter()
+                .filter(|path| import::droppable(path))
+                .count()
+        });
+        if self.shell.drop != count {
+            if self.shell.drop.is_none() {
+                self.shell.drop_generation += 1;
+            }
+            self.shell.drop = count;
+            cx.notify();
+        }
+    }
+
+    pub(super) fn paste_as_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let text = cx.read_from_clipboard().and_then(|item| item.text());
+        if text.as_deref().is_none_or(|t| t.trim().is_empty()) {
+            self.notice = Some("The clipboard has no text to paste.".into());
+            cx.notify();
+            return;
+        }
+        self.new_tab(window, cx);
+        window.dispatch_action(Box::new(mdoc_editor::Paste), cx);
+    }
+
+    /// Home's clipboard actions belong to a document; with none open, say so.
+    pub(super) fn needs_document(&mut self, action: &'static str, cx: &mut Context<Self>) -> bool {
+        let real = self
+            .tabs
+            .iter()
+            .find(|tab| tab.id == self.active)
+            .is_some_and(|tab| !self.is_placeholder(tab, cx));
+        if !real {
+            self.notice = Some(format!(
+                "{action} works from a pseudonymized document. Open one, or open a case, first."
+            ));
+            cx.notify();
+        }
+        !real
+    }
+
+    // ---- Command palette ------------------------------------------------------
+
+    pub(super) fn open_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.shell.palette.is_some() {
+            self.close_palette(window, cx);
+            return;
+        }
+        let input = cx.new(|cx| {
+            SearchInput::new(cx)
+                .with_key_context(PALETTE)
+                .with_placeholder("Search or run an action…")
+        });
+        let changes = cx.subscribe(&input, |this, _, _: &SearchInputEvent, cx| {
+            if let Some(palette) = &mut this.shell.palette {
+                palette.selected = 0;
+            }
+            cx.notify();
+        });
+        let return_focus = window.focused(cx);
+        window.focus(&input.read(cx).focus_handle(cx), cx);
+        self.shell.palette = Some(Palette {
+            input,
+            selected: 0,
+            return_focus,
+            _changes: changes,
+        });
+        cx.notify();
+    }
+
+    pub(super) fn close_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(palette) = self.shell.palette.take() {
+            match palette.return_focus {
+                Some(focus) => window.focus(&focus, cx),
+                None => self.focus_active(window, cx),
+            }
+        }
+        cx.notify();
+    }
+
+    fn palette_rows(&self, cx: &App) -> Vec<Row> {
+        let query = self
+            .shell
+            .palette
+            .as_ref()
+            .map(|p| p.input.read(cx).value().trim().to_lowercase())
+            .unwrap_or_default();
+        let has_document = !self.showing_home(cx);
+        let mut rows = vec![
+            Row { section: "Actions", label: "New tab".into(), detail: None, shortcut: Some(shortcut("⌘N", "Ctrl+N")), command: Command::NewTab },
+            Row { section: "Actions", label: "Open files…".into(), detail: None, shortcut: Some(shortcut("⌘O", "Ctrl+O")), command: Command::OpenFiles },
+            Row { section: "Actions", label: "Paste text as new tab".into(), detail: None, shortcut: None, command: Command::PasteText },
+        ];
+        if has_document {
+            rows.extend([
+                Row { section: "Actions", label: "Pseudonymize".into(), detail: None, shortcut: None, command: Command::Pseudonymize },
+                Row { section: "Actions", label: "Copy for AI".into(), detail: None, shortcut: None, command: Command::CopyForAi },
+                Row { section: "Actions", label: "Copy Markdown".into(), detail: None, shortcut: None, command: Command::CopyMarkdown },
+                Row { section: "Actions", label: "Save".into(), detail: None, shortcut: Some(shortcut("⌘S", "Ctrl+S")), command: Command::Save },
+            ]);
+        }
+        rows.extend([
+            Row { section: "Actions", label: "Restore AI reply".into(), detail: None, shortcut: Some(shortcut("⌥⇧⌘V", "Ctrl+Alt+Shift+V")), command: Command::RestoreReply },
+            Row { section: "Actions", label: "Pseudonymize clipboard".into(), detail: None, shortcut: Some(shortcut("⌥⇧⌘C", "Ctrl+Alt+Shift+C")), command: Command::PseudonymizeClipboard },
+            Row { section: "Actions", label: "Open a case…".into(), detail: None, shortcut: None, command: Command::OpenCase },
+            Row { section: "Actions", label: format!("Switch theme ({})", self.theme_choice.next().label().trim_start_matches("Theme: ")), detail: None, shortcut: None, command: Command::Theme },
+            Row { section: "Go to", label: "Home".into(), detail: None, shortcut: Some(shortcut("⇧⌘H", "Ctrl+Shift+H")), command: Command::Home },
+            Row { section: "Go to", label: "Settings".into(), detail: None, shortcut: Some(shortcut("⌘,", "Ctrl+,")), command: Command::Settings },
+        ]);
+        for tab in &self.tabs {
+            if self.is_placeholder(tab, cx) {
+                continue;
+            }
+            let name = tab
+                .view
+                .as_ref()
+                .map(|v| v.read(cx).display_name())
+                .unwrap_or_else(|| {
+                    tab.record
+                        .attachment
+                        .as_ref()
+                        .unwrap_or(&tab.record.markdown)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Untitled.md".into())
+                });
+            rows.push(Row { section: "Open tabs", label: name, detail: None, shortcut: None, command: Command::Tab(tab.id) });
+        }
+        for case in &self.cases.cases {
+            rows.push(Row {
+                section: "Cases",
+                label: case.name.clone(),
+                detail: Some(format!("{} documents", case.members.len())),
+                shortcut: None,
+                command: Command::Case(case.id.clone()),
+            });
+        }
+        for recent in &self.shell.recents.files {
+            let name = recent
+                .path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let kind = recent
+                .path
+                .extension()
+                .map(|e| e.to_string_lossy().to_uppercase())
+                .unwrap_or_default();
+            rows.push(Row { section: "Recent", label: name, detail: Some(kind), shortcut: None, command: Command::Recent(recent.path.clone()) });
+        }
+        if query.is_empty() {
+            return rows;
+        }
+        rows.into_iter()
+            .filter(|row| {
+                let label = row.label.to_lowercase();
+                query.split_whitespace().all(|word| label.contains(word))
+            })
+            .collect()
+    }
+
+    pub(super) fn palette_step(&mut self, delta: isize, cx: &mut Context<Self>) {
+        let count = self.palette_rows(cx).len();
+        if let Some(palette) = &mut self.shell.palette
+            && count > 0
+        {
+            palette.selected = (palette.selected as isize + delta).rem_euclid(count as isize) as usize;
+            cx.notify();
+        }
+    }
+
+    pub(super) fn palette_confirm(&mut self, index: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
+        let rows = self.palette_rows(cx);
+        let index = index.or(self.shell.palette.as_ref().map(|p| p.selected));
+        let Some(row) = index.and_then(|i| rows.into_iter().nth(i)) else {
+            return;
+        };
+        self.close_palette(window, cx);
+        let dispatch = |window: &mut Window, cx: &mut Context<Self>, action: Box<dyn gpui::Action>| {
+            window.dispatch_action(action, cx)
+        };
+        match row.command {
+            Command::NewTab => dispatch(window, cx, Box::new(New)),
+            Command::OpenFiles => dispatch(window, cx, Box::new(Open)),
+            Command::PasteText => self.paste_as_new_tab(window, cx),
+            Command::Pseudonymize => dispatch(window, cx, Box::new(Pseudonymize)),
+            Command::PseudonymizeClipboard => dispatch(window, cx, Box::new(PseudonymizeClipboard)),
+            Command::RestoreReply => dispatch(window, cx, Box::new(PasteAiResponse)),
+            Command::CopyForAi => dispatch(window, cx, Box::new(CopyForAi)),
+            Command::CopyMarkdown => dispatch(window, cx, Box::new(CopyMarkdown)),
+            Command::Save => dispatch(window, cx, Box::new(Save)),
+            Command::OpenCase => dispatch(window, cx, Box::new(OpenCase)),
+            Command::Home => self.show_home(window, cx),
+            Command::Settings => dispatch(window, cx, Box::new(Settings)),
+            Command::Theme => self.cycle_theme(window, cx),
+            Command::Tab(id) => self.activate(id, window, cx),
+            Command::Case(id) => self.open_case(&id, window, cx),
+            Command::Recent(path) => self.open_paths(vec![path], window, cx),
+        }
+    }
+
+    pub(super) fn palette_view(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let palette = self.shell.palette.as_ref()?;
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let rows = self.palette_rows(cx);
+        let selected = palette.selected.min(rows.len().saturating_sub(1));
+        let mut list = div().flex().flex_col().px_1().pb_1();
+        let mut section = "";
+        for (i, row) in rows.iter().enumerate() {
+            if row.section != section {
+                section = row.section;
+                list = list.child(
+                    div()
+                        .px_2()
+                        .pt_2()
+                        .pb_1()
+                        .text_size(px(11.))
+                        .text_color(p.header_muted)
+                        .child(section),
+                );
+            }
+            let icon = match &row.command {
+                Command::NewTab | Command::PasteText => ui::Icon::Plus,
+                Command::OpenFiles => ui::Icon::Open,
+                Command::Tab(_) | Command::Recent(_) => ui::Icon::Source,
+                Command::Home => ui::Icon::Home,
+                Command::Settings => ui::Icon::Settings,
+                Command::Theme => ui::Icon::ThemeSystem,
+                Command::RestoreReply => ui::Icon::Reply,
+                Command::CopyForAi | Command::CopyMarkdown => ui::Icon::Copy,
+                Command::Save => ui::Icon::Save,
+                Command::Pseudonymize | Command::PseudonymizeClipboard => ui::Icon::Anonymous,
+                Command::Case(_) | Command::OpenCase => ui::Icon::Sidebar,
+            };
+            list = list.child(
+                div()
+                    .id(("palette-row", i))
+                    .when(cfg!(test), |v| v.debug_selector(move || format!("palette-row-{i}")))
+                    .role(gpui::Role::MenuItem)
+                    .aria_label(row.label.clone())
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .h(px(32.))
+                    .px_2()
+                    .rounded_md()
+                    .cursor_pointer()
+                    .when(i == selected, |v| v.bg(p.placeholder_bg))
+                    .hover(move |s| s.bg(p.placeholder_bg))
+                    .child(gpui::svg().data(icon.data()).size(px(15.)).text_color(p.header_muted))
+                    .child(div().flex_1().min_w_0().truncate().child(row.label.clone()))
+                    .when_some(row.detail.clone(), |v, d| {
+                        v.child(div().text_size(px(11.)).text_color(p.header_muted).child(d))
+                    })
+                    .when_some(row.shortcut, |v, s| {
+                        v.child(div().text_size(px(11.)).text_color(p.header_muted).child(s))
+                    })
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.palette_confirm(Some(i), window, cx)
+                    })),
+            );
+        }
+        if rows.is_empty() {
+            list = list.child(
+                div()
+                    .px_3()
+                    .py_4()
+                    .text_color(p.header_muted)
+                    .child("Nothing matches."),
+            );
+        }
+        Some(
+            gpui::deferred(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .flex()
+                    .justify_center()
+                    .pt(px(72.))
+                    .bg(gpui::hsla(0., 0., 0., 0.18))
+                    .occlude()
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(|this, _, window, cx| this.close_palette(window, cx)),
+                    )
+                    .child(
+                        ui::panel("command-palette", theme)
+                            .when(cfg!(test), |v| v.debug_selector(|| "command-palette".into()))
+                            .key_context(PALETTE)
+                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_action(cx.listener(|this, _: &PaletteUp, _, cx| this.palette_step(-1, cx)))
+                            .on_action(cx.listener(|this, _: &PaletteDown, _, cx| this.palette_step(1, cx)))
+                            .on_action(cx.listener(|this, _: &PaletteConfirm, window, cx| {
+                                this.palette_confirm(None, window, cx)
+                            }))
+                            .on_action(cx.listener(|this, _: &PaletteClose, window, cx| {
+                                this.close_palette(window, cx)
+                            }))
+                            .w(px(560.))
+                            .max_h(px(520.))
+                            .flex()
+                            .flex_col()
+                            .rounded_xl()
+                            .shadow_lg()
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .px_3()
+                                    .h(px(44.))
+                                    .flex_shrink_0()
+                                    .border_b_1()
+                                    .border_color(p.border)
+                                    .child(
+                                        gpui::svg()
+                                            .data(ui::Icon::Search.data())
+                                            .size(px(15.))
+                                            .text_color(p.header_muted),
+                                    )
+                                    .child(div().flex_1().text_size(px(14.)).child(palette.input.clone())),
+                            )
+                            .child(
+                                div()
+                                    .id("palette-list")
+                                    .flex_1()
+                                    .min_h_0()
+                                    .overflow_y_scroll()
+                                    .child(list),
+                            ),
+                    ),
+            )
+            .with_priority(2)
+            .into_any_element(),
+        )
+    }
+}
+
+fn nav_row(
+    id: &'static str,
+    icon: ui::Icon,
+    label: &'static str,
+    theme: Theme,
+    selected: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    div()
+        .id(id)
+        .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+        .role(gpui::Role::Button)
+        .aria_label(label)
+        .key_context("UiControl")
+        .tab_index(0)
+        .flex()
+        .items_center()
+        .gap_2()
+        .h(px(30.))
+        .px_2()
+        .rounded_md()
+        .cursor_pointer()
+        .when(selected, |v| v.bg(theme.sidebar_selected()))
+        .hover(move |s| s.bg(p.placeholder_bg))
+        .focus_visible(move |s| s.bg(p.placeholder_bg))
+        .child(
+            gpui::svg()
+                .data(icon.data())
+                .size(px(15.))
+                .flex_shrink_0()
+                .text_color(if selected { p.header_fg } else { p.header_muted }),
+        )
+        .child(div().flex_1().child(label))
+}
+
+fn home_label(label: &'static str, theme: Theme) -> gpui::Div {
+    div()
+        .pt_2()
+        .text_size(px(12.))
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .text_color(theme.pdf_style().header_muted)
+        .child(label)
+}
+
+fn home_row(id: impl Into<gpui::ElementId>, theme: Theme) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap_3()
+        .h(px(36.))
+        .px_2()
+        .rounded_md()
+        .border_b_1()
+        .border_color(p.border)
+        .text_size(px(13.))
+        .cursor_pointer()
+        .hover(move |s| s.bg(p.placeholder_bg))
+}

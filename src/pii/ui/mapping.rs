@@ -437,7 +437,7 @@ struct MappingChange {
     assignments: Vec<(Range<usize>, u64)>,
 }
 impl DocumentView {
-    pub(super) fn toggle_replacements_panel(
+    pub(crate) fn toggle_replacements_panel(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,

@@ -115,7 +115,7 @@ impl ReviewUi {
         }
         self.generation = self.generation.wrapping_add(1);
     }
-    fn scanning(&self) -> bool {
+    pub(crate) fn scanning(&self) -> bool {
         self.job.is_some()
     }
     /// Open a popup, remembering where focus returns when it closes.
@@ -343,6 +343,10 @@ impl DocumentView {
         self.start_pii_scan(cx);
     }
     /// The toolbar scans once, then shows or hides the existing review.
+    /// Whether the replacements panel is open (ADR 0048 header toggle).
+    pub(crate) fn replacements_open(&self) -> bool {
+        self.pii.mapping.open
+    }
     pub(crate) fn toggle_pii_review(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let review = &self.pii.review;
         if self.pii.mapping.open
