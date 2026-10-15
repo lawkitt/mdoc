@@ -1549,7 +1549,8 @@ impl Render for DocumentView {
             .clamp(minimum, 1. - minimum);
         let measured_bounds = self.view_bounds.clone();
         let measured_owner = cx.entity().downgrade();
-        div().relative().size_full().flex().flex_col().bg(palette.bg).text_color(palette.header_fg).text_size(px(16.))
+        let detached = self.title.detached.get();
+        let body = div().relative().size_full().flex().flex_col().bg(palette.bg).text_color(palette.header_fg).text_size(px(16.))
             .child(gpui::canvas(move |bounds, _, cx| { if measured_bounds.replace(bounds) != bounds { let _ = measured_owner.update(cx, |_, cx| cx.notify()); } }, |_, _, _, _| {}).absolute().inset_0())
             .on_action(cx.listener(|_, _: &ui::NextControl, window, cx| ui::cycle(window, cx, None, false)))
             .on_action(cx.listener(|_, _: &ui::PreviousControl, window, cx| ui::cycle(window, cx, None, true)))
@@ -1617,7 +1618,7 @@ impl Render for DocumentView {
             .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.set_zoom(this.zoom + ZOOM_STEP, cx)))
             .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.set_zoom(this.zoom - ZOOM_STEP, cx)))
             .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_zoom(1., cx)))
-            .child(self.header(window, cx))
+            .when(!detached, |v| v.child(self.header(window, cx)))
             .when(!self.source_only && self.job.busy(), |v| v.child(
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
@@ -1656,6 +1657,23 @@ impl Render for DocumentView {
             .children(setup_notice.filter(|_| !(show_markdown && self.source_only && self.ocr_required.is_some()))).children(error_notice)
             // The word popup anchors to the editor, hidden under before/after.
             .children(self.pii_popup(window, cx).filter(|_| self.compare.is_none()))
-            .children(self.replacement_tip(window, cx).filter(|_| self.compare.is_none()))
+            .children(self.replacement_tip(window, cx).filter(|_| self.compare.is_none()));
+        // Sidebar collapsed: the header joins the title row and the document
+        // sits in its own card below it (ADR 0048).
+        if detached {
+            div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .text_color(palette.header_fg)
+                .child(self.header(window, cx))
+                .child(
+                    ui::card_surface(div().flex_1().min_h_0().ml(px(style::CARD_MARGIN)), theme)
+                        .child(body),
+                )
+                .into_any_element()
+        } else {
+            body.into_any_element()
+        }
     }
 }

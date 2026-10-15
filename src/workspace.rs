@@ -105,6 +105,8 @@ pub(super) struct Workspace {
     sidebar_choice: Option<bool>,
     /// Bumped by explicit toggles so only they animate the sidebar width.
     sidebar_generation: u64,
+    /// When the current toggle's slide ends (ADR 0048).
+    sidebar_slide: Option<std::time::Instant>,
     reveal: Reveal,
     reveal_generation: u64,
     /// Opened by keyboard focus, so focus inside it also keeps it open.
@@ -264,6 +266,7 @@ impl Workspace {
             sidebar_visible: true,
             sidebar_choice: None,
             sidebar_generation: 0,
+            sidebar_slide: None,
             reveal: Reveal::Hidden,
             reveal_generation: 0,
             reveal_keyboard: false,
@@ -2283,7 +2286,13 @@ impl Workspace {
             .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx));
         // The full list, either pinned open or revealed over the editor. Its
         // width is fixed so animations clip it rather than reflow it.
-        let mut panel = (expanded || revealed).then(|| {
+        // A collapse slides the full list away over the content (ADR 0048).
+        let sliding = self
+            .sidebar_slide
+            .is_some_and(|until| std::time::Instant::now() < until)
+            && !cx.reduce_motion();
+        let collapsing = sliding && !expanded && !revealed;
+        let mut panel = (expanded || revealed || collapsing).then(|| {
             div()
                 .id("sidebar-panel")
                 .w(px(PANEL_WIDTH - 1.))
@@ -2323,15 +2332,35 @@ impl Workspace {
                 .child(self.sidebar_foot(cx))
         });
         let content = if expanded {
-            div().size_full().children(panel.take()).into_any_element()
+            // Expanding: the list is revealed inside its final width, so the
+            // content beside it is laid out once, not on every frame.
+            let list = div().size_full().children(panel.take());
+            if sliding {
+                div()
+                    .size_full()
+                    .child(
+                        div()
+                            .h_full()
+                            .overflow_hidden()
+                            .child(div().w(px(PANEL_WIDTH)).h_full().child(list))
+                            .with_animation(
+                                ("sidebar-open", self.sidebar_generation),
+                                Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
+                                |v, delta| v.w(px(RAIL_WIDTH + (PANEL_WIDTH - RAIL_WIDTH) * delta)),
+                            ),
+                    )
+                    .into_any_element()
+            } else {
+                list.into_any_element()
+            }
         } else {
             div()
                 .w(px(RAIL_WIDTH - 1.))
                 .h_full()
                 .flex()
                 .flex_col()
-                // The title-bar row holds the traffic lights; the expand
-                // toggle leads the rail below them (ADR 0048).
+                // The rail starts below the title row, which holds the traffic
+                // lights, the expand toggle and the document header (ADR 0048).
                 .child(ui::title_drag(
                     div()
                         .flex_shrink_0()
@@ -2346,11 +2375,6 @@ impl Workspace {
                         .gap(px(2.))
                         .pb_2()
                         .flex_shrink_0()
-                        .child(sidebar_toggle(
-                            &self.rail_toggle_focus.clone().tab_stop(!revealed),
-                            false,
-                            theme,
-                        ))
                         .child(
                             ui::header_icon(
                                 "rail-search",
@@ -2441,7 +2465,7 @@ impl Workspace {
                     },
                 ))
             });
-        if let Some(panel) = panel.filter(|_| revealed) {
+        if revealed && let Some(panel) = panel.take() {
             let (from, to) = if self.reveal == Reveal::Shown {
                 (RAIL_WIDTH, PANEL_WIDTH)
             } else {
@@ -2488,23 +2512,32 @@ impl Workspace {
                     ),
             ));
         }
-        if self.sidebar_generation == 0 {
-            return sidebar.into_any_element();
+        // Collapsing: the content already has its final width; the full list
+        // narrows over it to the rail, drawn above the card.
+        if collapsing && let Some(list) = panel.take() {
+            sidebar = sidebar.child(gpui::deferred(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .h_full()
+                    .overflow_hidden()
+                    .bg(theme.sidebar_bg())
+                    .child(div().w(px(PANEL_WIDTH)).h_full().child(list))
+                    .with_animation(
+                        ("sidebar-close", self.sidebar_generation),
+                        Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
+                        |v, delta| v.w(px(PANEL_WIDTH - (PANEL_WIDTH - RAIL_WIDTH) * delta)),
+                    ),
+            ));
         }
-        let (from, to) = (width(!expanded), width(expanded));
-        sidebar
-            .with_animation(
-                ("sidebar-width", self.sidebar_generation),
-                Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
-                move |v, delta| v.w(px(from + (to - from) * delta)),
-            )
-            .into_any_element()
+        sidebar.into_any_element()
     }
 }
 
-/// The collapsed rail: on macOS wide enough for the traffic lights, so they
-/// never sit over the card and the card keeps its full height (ADR 0048).
-const RAIL_WIDTH: f32 = if cfg!(target_os = "macos") { 76. } else { 40. };
+/// The collapsed rail. Narrow: the traffic lights and the expand toggle sit
+/// in the title row beside the document header, above it (ADR 0048).
+const RAIL_WIDTH: f32 = 44.;
 const PANEL_WIDTH: f32 = 240.;
 const REVEAL_DELAY: Duration = Duration::from_millis(200);
 const REVEAL_GRACE: Duration = Duration::from_millis(300);
@@ -2604,10 +2637,14 @@ impl Render for Workspace {
                 ""
             },
         ));
-        // Collapsed on macOS, the traffic lights and the toggle get their own
-        // strip above the card, so the header needs no room for them; on
-        // other systems the toggle sits on the rail (ADR 0048).
-        self.title.inset.set(0.);
+        // Collapsed, headers join the title row: they leave room for the
+        // traffic lights and the expand toggle that sit in it (ADR 0048).
+        self.title.detached.set(!self.sidebar_visible);
+        self.title.inset.set(if self.sidebar_visible {
+            0.
+        } else {
+            (style::TRAFFIC_LIGHT_INSET + 32. + 12. - RAIL_WIDTH - 16.).max(0.)
+        });
         div()
             .track_focus(&self.focus)
             .relative()
@@ -2678,6 +2715,15 @@ impl Render for Workspace {
                 this.sidebar_visible = !this.sidebar_visible;
                 this.sidebar_choice = Some(this.sidebar_visible);
                 this.sidebar_generation += 1;
+                // Only the sidebar layer animates; one repaint ends it.
+                this.sidebar_slide = Some(std::time::Instant::now() + SLIDE);
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(SLIDE + Duration::from_millis(16))
+                        .await;
+                    let _ = this.update(cx, |_, cx| cx.notify());
+                })
+                .detach();
                 this.reveal = Reveal::Hidden;
                 this.reveal_pending = None;
                 this.reveal_hover = (false, false);
@@ -2782,6 +2828,24 @@ impl Render for Workspace {
                     .child(self.sidebar(cx))
                     .child(self.card(home, window, cx)),
             )
+            // Collapsed: the expand toggle sits right of the traffic lights in
+            // the title row, before the document header (ADR 0048).
+            .when(!self.sidebar_visible, |v| {
+                v.child(
+                    div()
+                        .absolute()
+                        .left(px(style::TRAFFIC_LIGHT_INSET))
+                        .top(px(style::CARD_MARGIN + (style::HEADER_HEIGHT - 32.) / 2.))
+                        .child(sidebar_toggle(
+                            &self
+                                .rail_toggle_focus
+                                .clone()
+                                .tab_stop(self.reveal == Reveal::Hidden),
+                            false,
+                            theme,
+                        )),
+                )
+            })
             .children(self.palette_view(cx))
             .when(self.settings.read(cx).open, |v| {
                 v.child(self.settings.clone())
@@ -2794,7 +2858,6 @@ impl Workspace {
     /// then Home or the active document.
     fn card(&mut self, home: bool, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
-        let palette = theme.pdf_style();
         let content = if home {
             self.home_view(window, cx)
         } else {
@@ -2807,21 +2870,19 @@ impl Workspace {
             .flex_1()
             .min_w_0()
             .h_full()
-            // One margin all round in both sidebar states: collapsing animates
-            // only the sidebar's width, nothing else moves (ADR 0048).
-            .p(px(style::CARD_MARGIN))
+            // Expanded: one margin all round. Collapsed: the view's header
+            // fills the title row and it draws its own card below (ADR 0048).
+            .when(self.sidebar_visible, |v| v.p(px(style::CARD_MARGIN)))
+            .when(!self.sidebar_visible, |v| {
+                v.pr(px(style::CARD_MARGIN)).pb(px(style::CARD_MARGIN))
+            })
             .child(
                 div()
                     .id("content-card")
                     .size_full()
                     .flex()
                     .flex_col()
-                    .rounded_lg()
-                    .overflow_hidden()
-                    .bg(palette.bg)
-                    .border_1()
-                    .border_color(theme.card_border())
-                    .shadow_sm()
+                    .when(self.sidebar_visible, |v| ui::card_surface(v, theme))
                     .when(home, |v| {
                         v.on_drop(
                             cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {

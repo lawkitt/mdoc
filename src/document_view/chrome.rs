@@ -348,8 +348,15 @@ impl DocumentView {
                 .flex_shrink_0()
                 .pl(px(16. + self.title.inset.get()))
                 .pr_2()
-                .border_b_1()
-                .border_color(p.border),
+                // In the title row (sidebar collapsed) it sits on the window
+                // ground, level with the traffic lights; in the card it has a rule.
+                .when(self.title.detached.get(), |v| {
+                    v.h(px(style::CARD_MARGIN + style::HEADER_HEIGHT))
+                        .pt(px(style::CARD_MARGIN))
+                })
+                .when(!self.title.detached.get(), |v| {
+                    v.border_b_1().border_color(p.border)
+                }),
             self.title.armed.clone(),
         )
         .child(crumb)

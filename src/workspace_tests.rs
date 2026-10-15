@@ -1861,8 +1861,14 @@ fn document_header_keeps_its_actions_in_a_narrow_window_in_both_themes(cx: &mut 
                     cx.run_until_parked();
                 }
                 // One header row (ADR 0048): ⋯ and the primary action inside it.
+                // Collapsed, it is the title row, level with the traffic lights.
                 let header = cx.debug_bounds("document-toolbar").unwrap();
-                assert_eq!(header.size.height, px(style::HEADER_HEIGHT));
+                let row = if expanded {
+                    style::HEADER_HEIGHT
+                } else {
+                    style::CARD_MARGIN + style::HEADER_HEIGHT
+                };
+                assert_eq!(header.size.height, px(row));
                 let primary = if source_only {
                     "primary-convert"
                 } else {

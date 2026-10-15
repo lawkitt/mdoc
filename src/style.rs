@@ -18,6 +18,9 @@ pub const TRAFFIC_LIGHT_INSET: f32 = if cfg!(target_os = "macos") { 76. } else {
 pub struct TitleBar {
     pub inset: std::rc::Rc<std::cell::Cell<f32>>,
     pub armed: std::rc::Rc<std::cell::Cell<bool>>,
+    /// Sidebar collapsed: headers sit in the window's title row, beside the
+    /// traffic lights, and the content gets its own card below (ADR 0048).
+    pub detached: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
