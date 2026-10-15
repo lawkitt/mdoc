@@ -500,7 +500,7 @@ impl Workspace {
                 .py_1()
                 .text_size(px(12.))
                 .bg(gpui::Hsla { a: 0.07, ..accent })
-                .border_t_1()
+                .border_b_0()
                 .border_color(palette.border)
                 .child(
                     div()
@@ -2891,12 +2891,47 @@ impl Workspace {
                             }),
                         )
                     })
-                    // The header stays in the title-bar row; workspace notices
-                    // sit at the card's foot (ADR 0048).
+                    .relative()
                     .child(div().flex_1().min_h_0().child(content))
-                    .children(self.case_key_bar(cx))
-                    .children(self.crash_bar(cx))
-                    .children(self.notice_bar(cx)),
+                    // Workspace notices float over the card's bottom-left as
+                    // toasts: they never move the header out of the title row,
+                    // in either sidebar state (ADR 0048).
+                    .child({
+                        let notices: Vec<AnyElement> = [
+                            self.case_key_bar(cx),
+                            self.crash_bar(cx),
+                            self.notice_bar(cx),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        .map(|bar| {
+                            div()
+                                .rounded_lg()
+                                .overflow_hidden()
+                                .border_1()
+                                .border_color(theme.pdf_style().border)
+                                .bg(theme.pdf_style().bg)
+                                .shadow_lg()
+                                .child(bar)
+                                .into_any_element()
+                        })
+                        .collect();
+                        div()
+                            .absolute()
+                            .left(px(if self.sidebar_visible {
+                                16.
+                            } else {
+                                16. + style::CARD_MARGIN
+                            }))
+                            // Above the view pill's row at the bottom centre.
+                            .bottom(px(68.))
+                            .w(px(460.))
+                            .max_w(gpui::relative(0.6))
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .children(notices)
+                    }),
             )
             .into_any_element()
     }
@@ -2910,7 +2945,7 @@ impl Workspace {
                 .flex_col()
                 .text_size(px(12.))
                 .bg(gpui::Hsla { a: 0.07, ..accent })
-                .border_t_1()
+                .border_b_0()
                 .border_color(palette.border)
                 .child(
                     div()

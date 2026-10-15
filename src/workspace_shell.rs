@@ -355,16 +355,11 @@ impl Workspace {
             .into_any_element()
     }
 
-    /// The collapsed rail's foot: Settings, theme and Help as icons, the
-    /// update shown as a dot on Settings (ADR 0048).
+    /// The collapsed rail's foot: Settings only, an update shown as a dot on
+    /// it (ADR 0048). Theme and Help live in the open sidebar.
     pub(super) fn rail_foot(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let update = crate::updater::state(cx).banner().is_some();
-        let theme_icon = match self.theme_choice {
-            style::ThemeChoice::System => ui::Icon::ThemeSystem,
-            style::ThemeChoice::Light => ui::Icon::Sun,
-            style::ThemeChoice::Dark => ui::Icon::Moon,
-        };
         div()
             .flex()
             .flex_col()
@@ -403,22 +398,6 @@ impl Workspace {
                                 .bg(style::markdown_style(theme).alert_warning),
                         )
                     }),
-            )
-            .child(
-                ui::header_icon(
-                    "rail-theme",
-                    self.theme_choice.label(),
-                    theme_icon,
-                    theme,
-                    false,
-                )
-                .size(px(32.))
-                .on_click(cx.listener(|this, _, window, cx| this.cycle_theme(window, cx))),
-            )
-            .child(
-                ui::header_icon("rail-help", "Help ↗", ui::Icon::Help, theme, false)
-                    .size(px(32.))
-                    .on_click(|_, _, cx| cx.open_url("https://github.com/lawkitt/mdoc#readme")),
             )
             .into_any_element()
     }
