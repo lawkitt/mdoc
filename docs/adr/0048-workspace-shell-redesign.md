@@ -106,3 +106,27 @@ ADR.
   appearance live.
 - **Not verified on Windows or Linux:** drawn caption buttons and client-side
   decorations compile but were not run there.
+
+## Amendment, 2026-10-15: owner review of the three branches
+
+The agreed design keeps two pieces of the variants: variant C's two-tab
+Inspector (**Review · N | Share**, header primary Pseudonymize / Apply, a quiet
+Share once applied) and variant B's centred reading column (760 px at 100%).
+Variant B's floating panel and folding sidebar are not adopted.
+
+- **Hover and click on a replacement.** Hovering shows a tooltip (alias,
+  category, "Click to edit"); clicking opens the popup. The popup has one
+  width (up to 720 px), sits just below its word (above only without room),
+  and keeps ‹ n of N › and × together at the row's end.
+- **Panel clicks open the popup.** An entity row click opens the group and the
+  popup on its first mention; a second click folds the group and closes the
+  popup. A mention row opens the popup on that mention.
+- **Unticked rows stay.** The entity a kept wording belonged to is recorded at
+  untick time, so the row stays, unticked, even when the review no longer
+  links the wording to its entity.
+- **Checkbox fill** is a soft warm grey (`Theme::checkbox`), clearly filled in
+  both themes.
+- **Zoom** steps by 5%.
+- **Workspace notices** (case key, crash, session notices) sit at the card's
+  foot, so the document header stays in the title-bar row.
+- **Header order:** panel toggle, Source, ⋯, primary.
