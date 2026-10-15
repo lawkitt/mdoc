@@ -209,16 +209,19 @@ impl Speller {
             let mut hasher = DefaultHasher::new();
             (line, &local_structural, &local_entities).hash(&mut hasher);
             let key = hasher.finish();
-            let found = match previous.remove(&key) {
-                Some(found) => found,
-                None => self.check_line(line, &local_structural, &local_entities),
-            };
+            // Repeated lines share the result in this pass too. Removing only
+            // from `previous` made every duplicate after the first a cold check.
+            let found = cache.lines.entry(key).or_insert_with(|| {
+                previous.remove(&key).unwrap_or_else(|| {
+                    self.check_line(line, &local_structural, &local_entities)
+                        .into()
+                })
+            });
             out.extend(
                 found
                     .iter()
                     .map(|r| r.start + range.start..r.end + range.start),
             );
-            cache.lines.insert(key, found);
         }
         out
     }
@@ -349,7 +352,7 @@ impl Speller {
 #[derive(Default)]
 pub struct LineCache {
     identity: Option<(Options, u64)>,
-    lines: HashMap<u64, Vec<Range<usize>>>,
+    lines: HashMap<u64, Arc<[Range<usize>]>>,
 }
 
 /// Sorted, non-overlapping copy of `ranges`.

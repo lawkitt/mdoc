@@ -227,3 +227,77 @@ fn accepted_words_skip_flags_and_invalidate_the_cache() {
         ["kowalczyk"]
     );
 }
+
+#[test]
+fn repeated_lines_share_cached_results_across_checks_and_keep_local_exclusions() {
+    let s = speller();
+    let text = "Frist line\n".repeat(1000);
+    let mut cache = LineCache::default();
+    let first = s.check_cached(&text, Exclusions::default(), &mut cache);
+    assert_eq!(first.len(), 1000);
+    assert_eq!(cache.lines.len(), 1);
+    let cached = cache.lines.values().next().unwrap().clone();
+    for _ in 0..3 {
+        assert_eq!(
+            s.check_cached(&text, Exclusions::default(), &mut cache),
+            first
+        );
+        assert!(
+            Arc::ptr_eq(&cached, cache.lines.values().next().unwrap()),
+            "unchanged duplicates must not reallocate or dictionary-check their line"
+        );
+    }
+    // The same spelling with a different entity exclusion is a different line
+    // result; only its second occurrence is flagged, at the shifted byte offset.
+    let text = "Frist line\nFrist line\n";
+    let found = s.check_cached(
+        text,
+        Exclusions {
+            structural: &[],
+            entities: &[0..5],
+        },
+        &mut cache,
+    );
+    assert_eq!(found, vec![11..16]);
+    assert_eq!(cache.lines.len(), 2);
+    assert!(
+        s.check_cached("Correct line\n", Exclusions::default(), &mut cache)
+            .is_empty()
+    );
+    assert_eq!(cache.lines.len(), 1, "retired lines must be pruned");
+}
+
+#[test]
+#[ignore = "spelling cold/warm cache timings; run serially on an idle machine"]
+fn spelling_cache_performance() {
+    use std::time::Instant;
+    let s = speller();
+    for repeated in [true, false] {
+        let text = if repeated {
+            "The parties agree to the terms of this contract.\n".repeat(10_000)
+        } else {
+            (0..10_000)
+                .map(|i| format!("The parties agree to the terms of this contract {i}.\n"))
+                .collect()
+        };
+        let mut cache = LineCache::default();
+        let start = Instant::now();
+        let found = s.check_cached(&text, Exclusions::default(), &mut cache);
+        let cold_ms = start.elapsed().as_secs_f64() * 1000.;
+        let mut warm = Vec::new();
+        for _ in 0..5 {
+            let start = Instant::now();
+            assert_eq!(
+                s.check_cached(&text, Exclusions::default(), &mut cache),
+                found
+            );
+            warm.push(start.elapsed().as_secs_f64() * 1000.);
+        }
+        warm.sort_by(f64::total_cmp);
+        eprintln!(
+            "SPELL_PERF repeated={repeated} bytes={} cold_ms={cold_ms:.3} warm_median_ms={:.3}",
+            text.len(),
+            warm[2]
+        );
+    }
+}
