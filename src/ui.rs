@@ -158,6 +158,124 @@ pub fn primary_button(
         .when(enabled, |v| v.hover(move |s| s.bg(p.placeholder_bg)))
 }
 
+/// The header's one filled button (ADR 0048): ink on paper inverted, so it is
+/// the darkest thing in light mode and the brightest in dark.
+pub fn filled_button(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    theme: Theme,
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    let label = label.into();
+    div()
+        .id(id)
+        .role(gpui::Role::Button)
+        .aria_label(label.clone())
+        .key_context("UiControl")
+        .tab_index(0)
+        .flex()
+        .items_center()
+        .justify_center()
+        .gap(px(6.))
+        .h(px(28.))
+        .px_3()
+        .rounded_md()
+        .bg(p.header_fg)
+        .text_color(p.bg)
+        .text_size(px(13.))
+        .font_weight(gpui::FontWeight::MEDIUM)
+        .child(label)
+        .focus_visible(move |s| s.border_2().border_color(theme.search_accent()))
+        .when(enabled, |v| v.cursor_pointer().hover(|s| s.opacity(0.88)))
+        .when(!enabled, |v| v.opacity(0.45))
+}
+
+/// A keyboard hint inside a button or menu row, such as "⌘↩".
+pub fn key_hint(text: impl Into<gpui::SharedString>) -> gpui::Div {
+    div()
+        .px(px(4.))
+        .rounded_sm()
+        .border_1()
+        .border_color(gpui::hsla(0., 0., 0.5, 0.45))
+        .text_size(px(11.))
+        .opacity(0.8)
+        .child(text.into())
+}
+
+/// A 28 px header icon control, quieter than [`icon_button`].
+pub fn header_icon(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    icon: Icon,
+    theme: Theme,
+    on: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    let label = label.into();
+    control_base(id, label.clone(), theme, true)
+        .p_0()
+        .size(px(28.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .when(on, |v| v.bg(p.placeholder_bg))
+        .child(
+            gpui::svg()
+                .data(icon.data())
+                .size(px(16.))
+                .text_color(if on { p.header_fg } else { p.header_muted }),
+        )
+        .tooltip(crate::style::tooltip(label.to_string(), theme))
+}
+
+/// One row of a popover menu: label, optional check and shortcut.
+pub fn menu_row(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    shortcut: Option<&'static str>,
+    checked: Option<bool>,
+    theme: Theme,
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    let label = label.into();
+    div()
+        .id(id)
+        .role(gpui::Role::MenuItem)
+        .aria_label(label.clone())
+        .key_context("UiControl")
+        .tab_index(0)
+        .flex()
+        .items_center()
+        .gap_2()
+        .min_w(px(220.))
+        .px_2()
+        .h(px(28.))
+        .rounded_md()
+        .text_size(px(13.))
+        .focus_visible(move |s| s.bg(p.placeholder_bg))
+        .when(enabled, |v| v.cursor_pointer().hover(move |s| s.bg(p.placeholder_bg)))
+        .when(!enabled, |v| v.opacity(0.45))
+        .child(
+            div()
+                .w(px(14.))
+                .flex_shrink_0()
+                .when(checked == Some(true), |v| {
+                    v.child(gpui::svg().data(Icon::Check.data()).size(px(14.)).text_color(p.header_fg))
+                }),
+        )
+        .child(div().flex_1().min_w_0().truncate().child(label))
+        .when_some(shortcut, |v, s| {
+            v.child(div().text_size(px(12.)).text_color(p.header_muted).child(s))
+        })
+}
+
+/// A thin divider between menu groups.
+pub fn menu_divider(theme: Theme) -> gpui::Div {
+    div().my_1().h(px(1.)).mx_2().bg(theme.pdf_style().border)
+}
+
 /// A tertiary text action, such as "Choose model…".
 pub fn link_button(
     id: impl Into<gpui::ElementId>,
@@ -407,6 +525,20 @@ pub enum Icon {
     PasteReply,
     Compare,
     Close,
+    Home,
+    Search,
+    More,
+    PanelRight,
+    Help,
+    Source,
+    ChevronRight,
+    ChevronDown,
+    Plus,
+    Reply,
+    ThemeSystem,
+    External,
+    Download,
+    Stop,
 }
 
 impl Icon {
@@ -433,6 +565,20 @@ impl Icon {
             Self::PasteReply => include_bytes!("../resources/ui/paste-reply.svg"),
             Self::Compare => include_bytes!("../resources/ui/compare.svg"),
             Self::Close => include_bytes!("../resources/ui/close.svg"),
+            Self::Home => include_bytes!("../resources/ui/home.svg"),
+            Self::Search => include_bytes!("../resources/ui/search.svg"),
+            Self::More => include_bytes!("../resources/ui/more.svg"),
+            Self::PanelRight => include_bytes!("../resources/ui/panel-right.svg"),
+            Self::Help => include_bytes!("../resources/ui/help.svg"),
+            Self::Source => include_bytes!("../resources/ui/source.svg"),
+            Self::ChevronRight => include_bytes!("../resources/ui/chevron-right.svg"),
+            Self::ChevronDown => include_bytes!("../resources/ui/chevron-down.svg"),
+            Self::Plus => include_bytes!("../resources/ui/plus.svg"),
+            Self::Reply => include_bytes!("../resources/ui/reply.svg"),
+            Self::ThemeSystem => include_bytes!("../resources/ui/theme-system.svg"),
+            Self::External => include_bytes!("../resources/ui/external.svg"),
+            Self::Download => include_bytes!("../resources/ui/download.svg"),
+            Self::Stop => include_bytes!("../resources/ui/stop.svg"),
         }
     }
 }
@@ -537,6 +683,90 @@ pub fn floating_button(
         )
         .child(text.into())
         .tooltip(crate::style::tooltip(label.to_string(), theme))
+}
+
+/// Make `area` move the window like a title bar (ADR 0048): a press that
+/// moves drags the window, a double click zooms. Controls inside stop the
+/// press first ([`no_drag`]), so clicking them never moves the window.
+pub fn title_drag(area: gpui::Div, armed: std::rc::Rc<std::cell::Cell<bool>>) -> gpui::Div {
+    let (down, up, out) = (armed.clone(), armed.clone(), armed.clone());
+    area.window_control_area(gpui::WindowControlArea::Drag)
+        .on_mouse_down(gpui::MouseButton::Left, move |event, window, _| {
+            if event.click_count == 2 {
+                down.set(false);
+                if cfg!(target_os = "macos") {
+                    window.titlebar_double_click();
+                } else {
+                    window.zoom_window();
+                }
+            } else {
+                down.set(true);
+            }
+        })
+        .on_mouse_up(gpui::MouseButton::Left, move |_, _, _| up.set(false))
+        .on_mouse_down_out(move |_, _, _| out.set(false))
+        .on_mouse_move(move |event, window, _| {
+            if armed.get() && event.pressed_button == Some(gpui::MouseButton::Left) {
+                armed.set(false);
+                window.start_window_move();
+            }
+        })
+}
+
+/// Keep a press on `control` from reaching an enclosing [`title_drag`].
+pub fn no_drag<E: InteractiveElement>(control: E) -> E {
+    control.on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+}
+
+/// Drawn window buttons for Windows and client-decorated Linux (ADR 0048);
+/// macOS keeps its traffic lights. Windows hit-tests them natively.
+pub fn caption_buttons(window: &Window, theme: Theme) -> Option<AnyElement> {
+    if cfg!(target_os = "macos") || cfg!(test) {
+        return None;
+    }
+    if cfg!(target_os = "linux")
+        && matches!(window.window_decorations(), gpui::Decorations::Server)
+    {
+        return None;
+    }
+    let p = theme.pdf_style();
+    let button = |id: &'static str, glyph: &'static str, area: gpui::WindowControlArea| {
+        div()
+            .id(id)
+            .w(px(40.))
+            .h_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_size(px(13.))
+            .text_color(p.header_muted)
+            .hover(move |s| s.bg(p.placeholder_bg))
+            .window_control_area(area)
+            .child(glyph)
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(move |_, window, cx| {
+                if cfg!(target_os = "linux") {
+                    match area {
+                        gpui::WindowControlArea::Min => window.minimize_window(),
+                        gpui::WindowControlArea::Max => window.zoom_window(),
+                        gpui::WindowControlArea::Close => {
+                            window.dispatch_action(Box::new(crate::Quit), cx)
+                        }
+                        gpui::WindowControlArea::Drag => {}
+                    }
+                }
+            })
+    };
+    Some(
+        div()
+            .flex()
+            .h(px(crate::style::HEADER_HEIGHT))
+            .flex_shrink_0()
+            .child(button("caption-min", "—", gpui::WindowControlArea::Min))
+            .child(button("caption-max", "☐", gpui::WindowControlArea::Max))
+            .child(button("caption-close", "✕", gpui::WindowControlArea::Close))
+            .into_any_element(),
+    )
 }
 
 /// Reveal a focused control inside a scrolling panel without moving document state.

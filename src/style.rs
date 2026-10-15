@@ -2,11 +2,70 @@ use gpui::{Hsla, font, hsla, rgb};
 use gpui_pdf::{PageOverlays, PdfStyle, ThemedPages};
 use mdoc_editor::SyntaxStyle;
 
+/// The unified title-bar row (ADR 0048): the content card's top margin and
+/// header height, and the traffic lights centred on that header.
+pub const CARD_MARGIN: f32 = 8.;
+pub const HEADER_HEIGHT: f32 = 44.;
+pub const TRAFFIC_LIGHT_X: f32 = 16.;
+pub const TRAFFIC_LIGHT_Y: f32 = CARD_MARGIN + HEADER_HEIGHT / 2. - 7.;
+/// Room left of the sidebar's top row for the macOS traffic lights.
+pub const TRAFFIC_LIGHT_INSET: f32 = if cfg!(target_os = "macos") { 76. } else { 8. };
+
+/// What a document header shares with the window (ADR 0048): the left room
+/// the traffic lights and a collapsed sidebar's toggle need, and the press
+/// state that turns a header drag into a window move.
+#[derive(Clone, Default)]
+pub struct TitleBar {
+    pub inset: std::rc::Rc<std::cell::Cell<f32>>,
+    pub armed: std::rc::Rc<std::cell::Cell<bool>>,
+}
+
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Theme {
     #[default]
     Dark,
     Light,
+}
+
+/// What the user picked at the foot of the sidebar (ADR 0048). System follows
+/// the OS appearance; the resolved [`Theme`] is what everything paints with.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ThemeChoice {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemeChoice {
+    pub fn next(self) -> Self {
+        match self {
+            Self::System => Self::Light,
+            Self::Light => Self::Dark,
+            Self::Dark => Self::System,
+        }
+    }
+
+    pub fn resolve(self, appearance: gpui::WindowAppearance) -> Theme {
+        match self {
+            Self::Light => Theme::Light,
+            Self::Dark => Theme::Dark,
+            Self::System => match appearance {
+                gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight => {
+                    Theme::Light
+                }
+                _ => Theme::Dark,
+            },
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::System => "Theme: System",
+            Self::Light => "Theme: Light",
+            Self::Dark => "Theme: Dark",
+        }
+    }
 }
 
 impl Theme {
@@ -81,12 +140,44 @@ impl Theme {
         .into()
     }
 
+    /// The window ground: the sidebar and the margin around the content card
+    /// (ADR 0048). A step darker than the card in both themes.
     pub fn sidebar_bg(self) -> Hsla {
         match self {
-            Self::Dark => rgb(0x1b1b1f),
-            Self::Light => rgb(0xf3f3f2),
+            Self::Dark => rgb(0x161619),
+            Self::Light => rgb(0xededeb),
         }
         .into()
+    }
+
+    /// The content card's hairline edge on the ground.
+    pub fn card_border(self) -> Hsla {
+        match self {
+            Self::Dark => hsla(0., 0., 1., 0.06),
+            Self::Light => hsla(0., 0., 0., 0.07),
+        }
+    }
+
+    /// A category's colour (ADR 0048): the dot on its panel header and the
+    /// underline of its mentions. Muted, readable on both cards; never state.
+    pub fn category(self, category: mdoc_pii::Category) -> Hsla {
+        use mdoc_pii::Category::*;
+        let (hue, sat) = match category {
+            Person => (0.10, 0.62),
+            Organization => (0.48, 0.45),
+            Email => (0.58, 0.50),
+            Phone => (0.80, 0.35),
+            Address => (0.62, 0.45),
+            Date => (0.74, 0.35),
+            Identity => (0.01, 0.50),
+            Tax => (0.92, 0.40),
+            Bank => (0.33, 0.40),
+            Other => (0.0, 0.0),
+        };
+        match self {
+            Self::Dark => hsla(hue, sat, 0.66, 1.),
+            Self::Light => hsla(hue, sat, 0.42, 1.),
+        }
     }
 
     pub fn sidebar_selected(self) -> Hsla {

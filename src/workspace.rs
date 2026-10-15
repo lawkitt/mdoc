@@ -9,7 +9,10 @@ use std::{collections::VecDeque, time::Duration};
 mod cases_ui;
 #[path = "workspace_keychain.rs"]
 mod keychain_ui;
+#[path = "workspace_shell.rs"]
+mod shell;
 pub(crate) use cases_ui::{CancelCaseName, ConfirmCaseName, bind_keys as bind_case_keys};
+pub(crate) use shell::bind_keys as bind_shell_keys;
 
 pub(super) enum TabEvent {
     New,
@@ -159,6 +162,14 @@ pub(super) struct Workspace {
     writing: bool,
     pending_write: Option<Session>,
     cases: cases_ui::CaseState,
+    /// The sidebar's theme pick; `theme` holds what it resolves to (ADR 0048).
+    theme_choice: style::ThemeChoice,
+    /// Home fills the card instead of the active tab (ADR 0048).
+    home: bool,
+    /// Shared with document headers: title-bar inset and drag state.
+    title: style::TitleBar,
+    shell: shell::ShellState,
+    _appearance: Option<Subscription>,
     _checkpoint: Option<gpui::Task<()>>,
 }
 
@@ -301,8 +312,17 @@ impl Workspace {
             writing: false,
             pending_write: None,
             cases: Default::default(),
+            theme_choice: style::ThemeChoice::default(),
+            home: false,
+            title: style::TitleBar::default(),
+            shell: shell::ShellState::new(cx),
+            _appearance: None,
             _checkpoint: None,
         };
+        this._appearance = Some(cx.observe_window_appearance(window, |this, window, cx| {
+            this.apply_theme(window, cx)
+        }));
+        this.theme.set(this.theme_choice.resolve(window.appearance()));
         this.settings_subscription =
             Some(
                 cx.subscribe_in(&panel, window, |this, _, event, window, cx| match event {
@@ -436,98 +456,6 @@ impl Workspace {
             crate::updater::spawn_check(updates.include_prereleases, true, cx);
         }
     }
-    /// The update banner (ADR 0040): a slim accent strip above the content.
-    /// Clicking it opens Settings → Updates (the *updated* notice opens the
-    /// release instead); × dismisses it.
-    fn update_banner(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        use crate::updater::BannerKind;
-        let state = crate::updater::state(cx);
-        let banner = state.banner()?;
-        let theme = self.theme.get();
-        let palette = theme.pdf_style();
-        let accent = theme.search_accent();
-        let version = banner.version.clone();
-        let (text, action) = match banner.kind {
-            BannerKind::Available => (format!("mdoc {version} is available."), "Update…"),
-            BannerKind::Downloading => (
-                format!(
-                    "Downloading mdoc {version}… {}%",
-                    state.percent().unwrap_or(0)
-                ),
-                "Details…",
-            ),
-            BannerKind::Ready => (format!("mdoc {version} is ready."), "Restart to update"),
-            BannerKind::Failed => (format!("Couldn't update to mdoc {version}."), "Details…"),
-            BannerKind::Updated => (format!("mdoc was updated to {version}."), "What's new ↗"),
-        };
-        let label = format!("{text} {action}");
-        let open =
-            move |this: &mut Self, window: &mut Window, cx: &mut Context<Self>| match banner.kind {
-                BannerKind::Updated => cx.open_url(&crate::updater::release_url(&version)),
-                BannerKind::Ready => this.restart_to_update(window, cx),
-                _ => {
-                    window.activate_window();
-                    this.settings
-                        .update(cx, |panel, cx| panel.show_updates(window, cx));
-                }
-            };
-        Some(
-            div()
-                .id("update-banner")
-                .when(cfg!(test), |v| v.debug_selector(|| "update-banner".into()))
-                .role(gpui::Role::Button)
-                .aria_label(label)
-                .key_context("UiControl")
-                .tab_index(0)
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_3()
-                .py_1()
-                .text_size(px(12.))
-                .bg(gpui::Hsla { a: 0.08, ..accent })
-                .border_b_1()
-                .border_color(palette.border)
-                .cursor_pointer()
-                .hover(move |s| s.bg(gpui::Hsla { a: 0.14, ..accent }))
-                .focus_visible(move |s| s.bg(gpui::Hsla { a: 0.14, ..accent }))
-                .on_click(cx.listener(move |this, _, window, cx| open(this, window, cx)))
-                .child(div().size(px(7.)).rounded_full().bg(accent).flex_shrink_0())
-                .child(div().min_w_0().text_color(palette.header_fg).child(text))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .text_color(accent)
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .child(action),
-                )
-                .child(
-                    div()
-                        .id("dismiss-update-banner")
-                        .when(cfg!(test), |v| {
-                            v.debug_selector(|| "dismiss-update-banner".into())
-                        })
-                        .flex_shrink_0()
-                        .role(gpui::Role::Button)
-                        .aria_label("Dismiss update notice")
-                        .key_context("UiControl")
-                        .tab_index(0)
-                        .px_2()
-                        .rounded_md()
-                        .cursor_pointer()
-                        .hover(|v| v.bg(palette.placeholder_bg))
-                        .focus_visible(|s| s.bg(palette.placeholder_bg))
-                        .child("×")
-                        .on_click(cx.listener(|_, _, _, cx| {
-                            cx.stop_propagation();
-                            crate::updater::dismiss_banner(cx);
-                        })),
-                )
-                .into_any_element(),
-        )
-    }
-
     /// "mdoc had a problem last time it ran", with the exact report before
     /// anything leaves the Mac (ADR 0047). Send and Copy also discard it.
     fn crash_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -772,6 +700,8 @@ impl Workspace {
     ) {
         self.sidebar_visible = session.sidebar_visible;
         self.sidebar_choice = session.sidebar_choice;
+        self.theme_choice = session.theme_choice;
+        self.apply_theme(window, cx);
         self.cases.collapsed = session.collapsed_cases.iter().cloned().collect();
         let selected = session.active;
         // Session paths were normalized when opened/saved. Do not stat every file
@@ -791,7 +721,9 @@ impl Workspace {
             self.push(record);
         }
         self.ready = true;
-        if self.tabs.is_empty() {
+        // Nothing to restore: Home, over a hidden placeholder tab (ADR 0048).
+        let home = self.tabs.is_empty();
+        if home {
             self.push(TabRecord {
                 blank: true,
                 blank_disposable: true,
@@ -800,6 +732,7 @@ impl Workspace {
         }
         let active = self.tabs[selected.min(self.tabs.len() - 1)].id;
         self.activate(active, window, cx);
+        self.home = home;
         let pending = std::mem::take(&mut self.pending_open);
         if !pending.is_empty() {
             self.open_paths(pending, window, cx);
@@ -849,6 +782,7 @@ impl Workspace {
                     theme,
                     import_busy,
                     ocr: self.ocr_state.clone(),
+                    title: self.title.clone(),
                 },
                 window,
                 cx,
@@ -992,6 +926,7 @@ impl Workspace {
             });
         }
         self.active = id;
+        self.home = false;
         self.initialize(id, window, cx);
         if let Some(view) = self.active_view() {
             view.update(cx, |view, cx| {
@@ -1263,21 +1198,7 @@ impl Workspace {
             }
             TabEvent::CaseChanged => self.case_changed(id, cx),
             TabEvent::AddCaseTerm(term) => self.add_case_term(id, term, cx),
-            TabEvent::ToggleTheme => {
-                let theme = self.theme.get().toggle();
-                self.theme.set(theme);
-                for tab in &self.tabs {
-                    if let Some(view) = &tab.view {
-                        view.update(cx, |view, cx| {
-                            view.editor.update(cx, |editor, cx| {
-                                editor.set_markdown_style(style::markdown_style(theme), cx)
-                            });
-                            view.sync_pii_theme(cx);
-                            cx.notify();
-                        });
-                    }
-                }
-            }
+            TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::CloseResolved => {
                 if self.quitting.is_some() {
                     self.continue_quit(window, cx);
@@ -1456,6 +1377,7 @@ impl Workspace {
                 ..TabRecord::default()
             });
             self.activate(id, window, cx);
+            self.home = true;
         } else if self.active == id {
             self.activate(self.tabs[index.min(self.tabs.len() - 1)].id, window, cx);
         } else if closed_reveal {
@@ -1535,6 +1457,7 @@ impl Workspace {
         let mut session = Session {
             sidebar_visible: self.sidebar_visible,
             sidebar_choice: self.sidebar_choice,
+            theme_choice: self.theme_choice,
             collapsed_cases: {
                 let mut ids: Vec<_> = self.cases.collapsed.iter().cloned().collect();
                 ids.sort();
@@ -1919,6 +1842,7 @@ impl Workspace {
         let palette = theme.pdf_style();
         let expanded = self.sidebar_visible;
         let revealed = !expanded && self.reveal != Reveal::Hidden;
+        let home = self.showing_home(cx);
         let mut compact_rows = Vec::with_capacity(self.tabs.len());
         let accent = theme.search_accent();
         let drop_index = self.file_drop_index();
@@ -1928,6 +1852,10 @@ impl Workspace {
             .enumerate()
             .map(|(index, tab)| {
                 let id = tab.id;
+                // Home's blank placeholder is never listed (ADR 0048).
+                if self.is_placeholder(tab, cx) {
+                    return None;
+                }
                 let view = tab.view.as_ref().map(|v| v.read(cx));
                 let name = view.map(|v| v.display_name()).unwrap_or_else(|| {
                     let path = if tab.record.source_only {
@@ -2054,7 +1982,7 @@ impl Workspace {
                         .justify_center()
                         .text_size(px(9.))
                         .mb(px(2.))
-                        .when(self.active == id, |v| v.bg(theme.sidebar_selected()))
+                        .when(self.active == id && !home, |v| v.bg(theme.sidebar_selected()))
                         .when(!revealed, |v| {
                             v.tooltip(style::tooltip(tooltip.clone(), theme))
                         })
@@ -2100,7 +2028,7 @@ impl Workspace {
                             }),
                         ),
                 );
-                div()
+                Some(div()
                     .id(("tab", id))
                     .map(|v| {
                         ui::reveal_focus(v.track_focus(&focus), focus, self.sidebar_scroll.clone())
@@ -2124,7 +2052,7 @@ impl Workspace {
                     .min_h(px(32.))
                     .mb(px(2.))
                     .rounded_md()
-                    .when(self.active == id, |v| v.bg(theme.sidebar_selected()))
+                    .when(self.active == id && !home, |v| v.bg(theme.sidebar_selected()))
                     .hover(move |v| v.bg(palette.placeholder_bg))
                     .focus_visible(move |v| v.bg(palette.placeholder_bg))
                     .tooltip(style::tooltip(tooltip, theme))
@@ -2237,19 +2165,26 @@ impl Workspace {
                         cx.listener(move |this, drag: &TabDrag, _, cx| {
                             this.reorder(drag.id, id, cx)
                         }),
-                    )
+                    ))
             })
             .collect::<Vec<_>>();
         // A case's header sits above its first member in each run of tabs.
         let mut rows_with_cases = Vec::with_capacity(rows.len());
-        let mut previous: Option<String> = None;
+        let mut previous: Option<Option<String>> = None;
         for (index, row) in rows.into_iter().enumerate() {
+            let Some(row) = row else {
+                continue;
+            };
             let link = self.tabs[index]
                 .view
                 .as_ref()
                 .and_then(|v| v.read(cx).case.clone());
             let id = link.as_ref().map(|l| l.id.clone());
-            if let Some(link) = link.filter(|_| id != previous) {
+            // Tabs without a case gather under "Open".
+            if link.is_none() && previous.as_ref() != Some(&None) {
+                rows_with_cases.push(self.section_label("Open"));
+            }
+            if let Some(link) = link.filter(|_| previous.as_ref() != Some(&id)) {
                 let count = self.tabs[index..]
                     .iter()
                     .take_while(|t| {
@@ -2265,24 +2200,26 @@ impl Workspace {
                 .as_ref()
                 .is_some_and(|id| self.cases.collapsed.contains(id))
                 && self.tabs[index].id != self.active;
-            previous = id;
+            previous = Some(id);
             if !folded {
                 rows_with_cases.push(row.into_any_element());
             }
         }
         let rows = rows_with_cases;
-        let new_row = ui::control("sidebar-new", "+", theme, true)
+        let new_row = ui::control("sidebar-new", "", theme, true)
             .track_focus(&self.panel_new_focus)
             .aria_label("New Markdown tab")
             .tooltip(style::tooltip("New Markdown tab".into(), theme))
             .when(cfg!(test), |v| v.debug_selector(|| "sidebar-new".into()))
             .flex()
             .items_center()
-            .justify_center()
-            .min_h(px(32.))
-            .text_size(px(16.))
-            .border_1()
-            .border_color(palette.border)
+            .gap_2()
+            .px_2()
+            .mt_1()
+            .min_h(px(30.))
+            .text_color(palette.header_muted)
+            .child(gpui::svg().data(ui::Icon::Plus.data()).size(px(14.)).text_color(palette.header_muted))
+            .child("New tab")
             .when(drop_index == Some(self.tabs.len()), |v| {
                 v.border_t_2().border_color(accent)
             })
@@ -2310,15 +2247,10 @@ impl Workspace {
                         this.drop_files(paths, true, window, cx)
                     }),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .p_1()
-                        .min_h(px(40.))
-                        .flex_shrink_0()
-                        .child(sidebar_toggle(&self.panel_toggle_focus, expanded, theme)),
-                )
+                .child(self.sidebar_top(
+                    sidebar_toggle(&self.panel_toggle_focus, expanded, theme).into_any_element(),
+                ))
+                .child(self.sidebar_nav(cx))
                 .child(
                     div()
                         .id("sidebar-tabs")
@@ -2326,11 +2258,12 @@ impl Workspace {
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
-                        .px_1()
+                        .px_2()
                         .pb_1()
                         .children(rows)
                         .child(new_row),
                 )
+                .child(self.sidebar_foot(cx))
         });
         let content = if expanded {
             div().size_full().children(panel.take()).into_any_element()
@@ -2340,19 +2273,34 @@ impl Workspace {
                 .h_full()
                 .flex()
                 .flex_col()
+                // The expand toggle floats right of the traffic lights; the
+                // rail starts below the title-bar row (ADR 0048).
+                .child(ui::title_drag(
+                    div()
+                        .flex_shrink_0()
+                        .h(px(style::CARD_MARGIN + style::HEADER_HEIGHT)),
+                    self.title.armed.clone(),
+                ))
                 .child(
                     div()
                         .flex()
                         .flex_col()
                         .items_center()
-                        .p_1()
-                        .min_h(px(40.))
+                        .gap(px(2.))
+                        .pb_2()
                         .flex_shrink_0()
-                        .child(sidebar_toggle(
-                            &self.rail_toggle_focus.clone().tab_stop(!revealed),
-                            false,
-                            theme,
-                        )),
+                        .child(
+                            ui::header_icon("rail-search", "Search or run an action", ui::Icon::Search, theme, false)
+                                .on_click(|_, window, cx| {
+                                    window.dispatch_action(Box::new(shell::OpenPalette), cx)
+                                }),
+                        )
+                        .child(
+                            ui::header_icon("rail-home", "Home", ui::Icon::Home, theme, home)
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.show_home(window, cx)
+                                })),
+                        ),
                 )
                 .child(
                     div()
@@ -2396,10 +2344,7 @@ impl Workspace {
             .w(px(width(expanded)))
             .flex_shrink_0()
             .h_full()
-            .bg(theme.sidebar_bg())
             .text_size(px(13.))
-            .border_r_1()
-            .border_color(palette.border)
             .child(div().size_full().overflow_hidden().child(content))
             .when(!expanded, |v| {
                 v.on_hover(cx.listener(|this, hovered: &bool, window, cx| {
@@ -2444,8 +2389,7 @@ impl Workspace {
                     .occlude()
                     .overflow_hidden()
                     .bg(theme.sidebar_bg())
-                    .border_r_1()
-                    .border_color(palette.border)
+                    .rounded_r_lg()
                     .shadow_lg()
                     .on_hover(cx.listener(|this, hovered: &bool, window, cx| {
                         this.hover_sidebar(true, *hovered, window, cx)
@@ -2483,7 +2427,7 @@ impl Workspace {
 }
 
 const RAIL_WIDTH: f32 = 40.;
-const PANEL_WIDTH: f32 = 200.;
+const PANEL_WIDTH: f32 = 240.;
 const REVEAL_DELAY: Duration = Duration::from_millis(200);
 const REVEAL_GRACE: Duration = Duration::from_millis(300);
 const SLIDE: Duration = Duration::from_millis(150);
@@ -2550,15 +2494,48 @@ impl Render for Workspace {
         {
             self.clear_file_drag(window, cx);
         }
-        let palette = self.theme.get().pdf_style();
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let home = self.showing_home(cx);
+        if !cx.has_active_drag() && self.shell.drop.is_some() {
+            self.shell.drop = None;
+        }
+        self.remember_recents(cx);
+        self.title.inset.set(if self.sidebar_visible {
+            0.
+        } else {
+            (style::TRAFFIC_LIGHT_INSET + 40. - RAIL_WIDTH - style::CARD_MARGIN).max(0.)
+        });
         div()
             .track_focus(&self.focus)
             .relative()
             .size_full()
             .flex()
             .flex_col()
-            .bg(palette.bg)
+            .bg(theme.sidebar_bg())
             .text_color(palette.header_fg)
+            .on_action(cx.listener(|this, _: &shell::OpenPalette, window, cx| {
+                this.open_palette(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &shell::ShowHome, window, cx| {
+                this.show_home(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &shell::PasteAsNewTab, window, cx| {
+                this.paste_as_new_tab(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleTheme, window, cx| this.cycle_theme(window, cx)))
+            // Home's clipboard actions need a document; documents handle them first.
+            .on_action(cx.listener(|this, _: &PasteAiResponse, _, cx| {
+                this.needs_document("Restore AI reply", cx);
+            }))
+            .on_action(cx.listener(|this, _: &PseudonymizeClipboard, _, cx| {
+                this.needs_document("Pseudonymize clipboard", cx);
+            }))
+            .on_drag_move(cx.listener(
+                |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                    this.home_drag(event, cx)
+                },
+            ))
             .on_action(cx.listener(|this, _: &Settings, window, cx| {
                 this.show_settings(window, cx);
             }))
@@ -2686,13 +2663,88 @@ impl Render for Workspace {
             .children(self.case_list(cx))
             .children(self.case_categories(cx))
             .children(self.keychain_explainer(window, cx))
-            .children(self.case_key_bar(cx))
-            .when_some(self.update_banner(cx), |view, banner| view.child(banner))
-            .children(self.crash_bar(cx))
-            .when_some(self.notice.clone(), |view, notice| {
+            .child(
+                div()
+                    .flex()
+                    .flex_1()
+                    .min_h_0()
+                    .child(self.sidebar(cx))
+                    .child(self.card(home, window, cx)),
+            )
+            // Collapsed: the expand toggle sits right of the traffic lights,
+            // over the card's header, which leaves it room (ADR 0048).
+            .when(!self.sidebar_visible, |v| {
+                v.child(
+                    div()
+                        .absolute()
+                        .left(px(style::TRAFFIC_LIGHT_INSET))
+                        .top(px(style::CARD_MARGIN + (style::HEADER_HEIGHT - 32.) / 2.))
+                        .child(sidebar_toggle(
+                            &self.rail_toggle_focus.clone().tab_stop(self.reveal == Reveal::Hidden),
+                            false,
+                            theme,
+                        )),
+                )
+            })
+            .children(self.palette_view(cx))
+            .when(self.settings.read(cx).open, |v| {
+                v.child(self.settings.clone())
+            })
+    }
+}
+
+impl Workspace {
+    /// The inset content card on the window ground (ADR 0048): workspace bars,
+    /// then Home or the active document.
+    fn card(&mut self, home: bool, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let content = if home {
+            self.home_view(window, cx)
+        } else {
+            match self.active_view() {
+                Some(active) => active.into_any_element(),
+                None => div().into_any_element(),
+            }
+        };
+        div()
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .pt(px(style::CARD_MARGIN))
+            .pr(px(style::CARD_MARGIN))
+            .pb(px(style::CARD_MARGIN))
+            .when(!self.sidebar_visible, |v| v.pl(px(style::CARD_MARGIN)))
+            .child(
+                div()
+                    .id("content-card")
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .rounded_lg()
+                    .overflow_hidden()
+                    .bg(palette.bg)
+                    .border_1()
+                    .border_color(theme.card_border())
+                    .shadow_sm()
+                    .when(home, |v| {
+                        v.on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
+                            this.shell.drop = None;
+                            this.open_paths(paths.paths().to_vec(), window, cx);
+                        }))
+                    })
+                    .children(self.case_key_bar(cx))
+                    .children(self.crash_bar(cx))
+                    .children(self.notice_bar(cx))
+                    .child(div().flex_1().min_h_0().child(content)),
+            )
+            .into_any_element()
+    }
+
+    fn notice_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        self.notice.clone().map(|notice| {
                 let palette = self.theme.get().pdf_style();
                 let accent = style::markdown_style(self.theme.get()).alert_warning;
-                view.child(
                     div()
                         .flex()
                         .flex_col()
@@ -2732,26 +2784,9 @@ impl Render for Workspace {
                                             cx.notify();
                                         })),
                                 ),
-                        ),
-                )
-            })
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.sidebar(cx))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .h_full()
-                            .when_some(self.active_view(), |view, active| view.child(active)),
-                    ),
-            )
-            .when(self.settings.read(cx).open, |v| {
-                v.child(self.settings.clone())
-            })
+                        )
+                        .into_any_element()
+        })
     }
 }
 

@@ -52,6 +52,7 @@ pub(crate) struct DocumentView {
     pub(crate) preferences: settings::Shared,
     pub(crate) model_panel: Entity<settings_ui::Panel>,
     pub(crate) theme: Rc<Cell<Theme>>,
+    pub(crate) title: style::TitleBar,
     pub(crate) editor: Entity<EditorState>,
     pub(crate) images: images::ImageCache,
     pub(crate) session: document_session::DocumentSession,
@@ -61,6 +62,8 @@ pub(crate) struct DocumentView {
     pub(crate) scroll: ScrollHandle,
     pub(crate) error: Option<String>,
     pub(crate) copy_feedback: Option<gpui::Task<()>>,
+    /// The header's ⋯ menu (ADR 0048).
+    pub(crate) more_open: bool,
     /// The running copy feedback belongs to Copy for AI, not Copy Markdown.
     pub(crate) copied_for_ai: bool,
     /// The saved case this tab's mapping belongs to (ADR 0041).
@@ -113,6 +116,7 @@ pub(crate) struct DocumentViewDependencies {
     pub(crate) theme: Rc<Cell<Theme>>,
     pub(crate) import_busy: Arc<AtomicBool>,
     pub(crate) ocr: OcrState,
+    pub(crate) title: style::TitleBar,
 }
 
 impl DocumentView {
@@ -206,6 +210,7 @@ impl DocumentView {
             preferences: dependencies.preferences,
             model_panel: dependencies.model_panel,
             theme: dependencies.theme,
+            title: dependencies.title,
             editor,
             images,
             session: document_session::DocumentSession::default(),
@@ -215,6 +220,7 @@ impl DocumentView {
             scroll: ScrollHandle::new(),
             error: None,
             copy_feedback: None,
+            more_open: false,
             copied_for_ai: false,
             case: None,
             case_save: None,
@@ -1586,7 +1592,7 @@ impl Render for DocumentView {
             .on_action(cx.listener(Self::find_previous_markdown))
             .on_action(cx.listener(Self::close_markdown_search))
             .on_action(cx.listener(Self::retry_preview))
-            .child(self.toolbar(window, cx))
+            .child(self.header(window, cx))
             .when(!self.source_only && self.job.busy(), |v| v.child(
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
@@ -1604,7 +1610,7 @@ impl Render for DocumentView {
                     } else { div().relative().flex_1().min_w_0().min_h_0()
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().when(self.has_applied_aliases(), |v| v.pb(px(72.)))
                             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))
-                        .child(markdown_scrollbar).children(empty_page.then(|| self.empty_page(cx))).child(self.copy_button(cx)).into_any_element() })
+                        .child(markdown_scrollbar).children(empty_page.then(|| self.empty_page(cx))).into_any_element() })
                     .children(self.view_switcher(cx).filter(|_| !self.loading && !self.unavailable))))
                 // Replacements sit beside the text they describe, before Original.
                 .children(self.replacements_panel(window, cx))
