@@ -36,7 +36,6 @@ pub(crate) struct DocumentView {
     pub(crate) loading: bool,
     pub(crate) load_generation: u64,
     pub(crate) unavailable: bool,
-    pub(crate) settings_focus: gpui::FocusHandle,
     pub(crate) source_only: bool,
     pub(crate) auto_convert_pending: bool,
     pub(crate) automatic_import: bool,
@@ -197,7 +196,6 @@ impl DocumentView {
             loading: false,
             load_generation: 0,
             unavailable: false,
-            settings_focus: cx.focus_handle(),
             source_only: false,
             auto_convert_pending: false,
             automatic_import: false,
@@ -1625,7 +1623,7 @@ impl Render for DocumentView {
                     } else { div().relative().flex_1().min_w_0().min_h_0()
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().pb(px(72.))
                             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))
-                        .child(markdown_scrollbar).children(empty_page.then(|| self.empty_page(cx))).into_any_element() })
+                        .child(markdown_scrollbar).children((empty_page && self.file_drag.is_some()).then(|| self.empty_page(cx))).into_any_element() })
                     .children(self.view_switcher(cx).filter(|_| !self.loading && !self.unavailable))))
                 // Replacements sit beside the text they describe, before Original.
                 .children(self.replacements_panel(window, cx))

@@ -339,13 +339,29 @@ impl DocumentView {
         let theme = self.theme.get();
         let modifier = |mac: &'static str, other: &'static str| if cfg!(target_os = "macos") { mac } else { other };
         let copy = self.can_copy_markdown() && !self.source_only;
+        let has_text = copy && !self.editor.read(cx).text().is_empty();
         let aliases = copy && self.has_applied_aliases();
         let spelling_on = !self.spelling_control_off() && !self.spelling.off_here;
         let misspelled = self.editor.read(cx).diagnostics().len();
+        // A menu choice hands focus back to the document first, so the action
+        // and the keys after it land there.
         let run = |this: &mut Self, window: &mut Window, cx: &mut Context<Self>, action: Box<dyn gpui::Action>| {
             this.more_open = false;
+            if this.source_only {
+                window.focus(&this.focus, cx);
+            } else {
+                window.focus(&this.editor.read(cx).focus_handle(cx), cx);
+            }
             window.dispatch_action(action, cx);
             cx.notify();
+        };
+        // Disabled rows stay visible but do nothing.
+        let guard = |enabled: bool, action: fn() -> Box<dyn gpui::Action>| {
+            move |this: &mut Self, _: &gpui::ClickEvent, window: &mut Window, cx: &mut Context<Self>| {
+                if enabled {
+                    run(this, window, cx, action());
+                }
+            }
         };
         let row = |id: &'static str, label: String, shortcut: Option<&'static str>, checked: Option<bool>, enabled: bool| {
             ui::menu_row(id, label, shortcut, checked, theme, enabled)
@@ -366,16 +382,16 @@ impl DocumentView {
                             cx.notify();
                         }))
                         .child(row("more-save", "Save".into(), Some(modifier("⌘S", "Ctrl+S")), None, copy)
-                            .on_click(cx.listener(move |this, _, window, cx| run(this, window, cx, Box::new(Save)))))
+                            .on_click(cx.listener(guard(copy, || Box::new(Save)))))
                         .child(row("more-save-as", "Save as…".into(), Some(modifier("⇧⌘S", "Ctrl+Shift+S")), None, copy)
-                            .on_click(cx.listener(move |this, _, window, cx| run(this, window, cx, Box::new(SaveAs)))))
+                            .on_click(cx.listener(guard(copy, || Box::new(SaveAs)))))
                         .child(ui::menu_divider(theme))
-                        .child(row("more-copy-markdown", "Copy Markdown".into(), None, None, copy)
-                            .on_click(cx.listener(move |this, _, window, cx| run(this, window, cx, Box::new(CopyMarkdown)))))
+                        .child(row("more-copy-markdown", "Copy Markdown".into(), None, None, has_text)
+                            .on_click(cx.listener(guard(has_text, || Box::new(CopyMarkdown)))))
                         .child(row("more-copy-for-ai", "Copy for AI".into(), None, None, aliases)
-                            .on_click(cx.listener(move |this, _, window, cx| run(this, window, cx, Box::new(CopyForAi)))))
+                            .on_click(cx.listener(guard(aliases, || Box::new(CopyForAi)))))
                         .child(row("more-paste-reply", "Paste AI reply…".into(), Some(modifier("⌥⇧⌘V", "Ctrl+Alt+Shift+V")), None, aliases)
-                            .on_click(cx.listener(move |this, _, window, cx| run(this, window, cx, Box::new(PasteAiResponse)))))
+                            .on_click(cx.listener(guard(aliases, || Box::new(PasteAiResponse)))))
                         .child(ui::menu_divider(theme))
                         .child(row(
                             "more-spelling",
@@ -384,7 +400,7 @@ impl DocumentView {
                             Some(spelling_on),
                             !self.spelling_control_off(),
                         )
-                        .on_click(cx.listener(move |this, _, window, cx| run(this, window, cx, Box::new(ToggleDocumentSpelling)))))
+                        .on_click(cx.listener(guard(!self.spelling_control_off(), || Box::new(ToggleDocumentSpelling)))))
                         .child(row("more-rescan", "Rescan".into(), None, None, copy && !self.pii.scanning())
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.more_open = false;
@@ -393,7 +409,7 @@ impl DocumentView {
                             })))
                         .child(ui::menu_divider(theme))
                         .child(row("more-close", "Close tab".into(), Some(modifier("⌘W", "Ctrl+W")), None, true)
-                            .on_click(cx.listener(move |this, _, window, cx| run(this, window, cx, Box::new(Close))))),
+                            .on_click(cx.listener(guard(true, || Box::new(Close))))),
                 ),
         )
         .with_priority(1)
@@ -468,7 +484,7 @@ impl DocumentView {
             .flex_shrink_0()
             .border_b_1()
             .border_color(theme.pdf_style().border)
-            .children([(false, "Markdown"), (true, "Original")].into_iter().map(
+            .children([(false, "Markdown"), (true, "Source")].into_iter().map(
                 |(original, label)| {
                     ui::control(label, label, theme, true)
                         .when(cfg!(test), |v| v.debug_selector(move || label.into()))
