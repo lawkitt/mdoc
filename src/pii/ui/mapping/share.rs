@@ -3,7 +3,7 @@
 use super::*;
 use crate::ui;
 use crate::{CopyForAi, CopyMarkdown, PasteAiResponse, SaveAs};
-use gpui::{AnyElement, App, div, prelude::*};
+use gpui::{AnyElement, App, Window, div, prelude::*};
 
 impl DocumentView {
     /// Review | Share, the Inspector's two tabs.
@@ -216,7 +216,7 @@ impl DocumentView {
 impl DocumentView {
     /// Hovering a replacement shows what it is; a click opens the mention
     /// bar (ADR 0048).
-    pub(crate) fn replacement_tip(&self, cx: &App) -> Option<AnyElement> {
+    pub(crate) fn replacement_tip(&self, window: &Window, cx: &App) -> Option<AnyElement> {
         let annotation = self.editor.read(cx).hovered_annotation()?;
         if self.pii.popup.is_some() && self.active_annotation() == Some(annotation) {
             return None;
@@ -239,6 +239,10 @@ impl DocumentView {
         };
         let identity = review.identity(identity)?;
         let bounds = self.editor.read(cx).annotation_bounds(annotation)?;
+        // The editor keeps its last hover when the pointer leaves it.
+        if !bounds.contains(&window.mouse_position()) {
+            return None;
+        }
         let theme = self.theme.get();
         let tip = gpui::hsla(0., 0., 0.18, 0.96);
         Some(

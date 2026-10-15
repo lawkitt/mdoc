@@ -1012,9 +1012,6 @@ fn entity_rows_jump_chevrons_expand_and_selection_survives_collapse(cx: &mut gpu
         cx.run_until_parked();
         draw(cx);
     };
-    let outlines = |cx: &mut gpui::VisualTestContext| {
-        app.read_with(cx, |app, cx| app.editor.read(cx).outlines().len())
-    };
     // An entity row click opens its group and the popup on its first
     // mention (ADR 0048).
     click(cx, format!("identity-{identity}"));

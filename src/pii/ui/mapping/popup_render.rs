@@ -144,7 +144,7 @@ impl DocumentView {
         }
         let hidden = self.editor.read(cx).annotation_is_hidden(annotation);
         // One width for every mention, so the bar never jumps (ADR 0048).
-        let width = px(600.).min((available.size.width - px(8.)).max(px(120.)));
+        let width = px(720.).min((available.size.width - px(8.)).max(px(120.)));
         // Shortcut hints only where they fit: in a narrow popup, Windows'
         // "⇧Ctrl+⌫" pushes Keep original past the edge. The keys still work.
         let hints = width >= px(240.);
@@ -342,7 +342,7 @@ impl DocumentView {
                                             v.debug_selector(|| "pseudonym-original".into())
                                         })
                                         .min_w_0()
-                                        .max_w(px(160.))
+                                        .max_w(px(130.))
                                         .truncate()
                                         .text_color(palette.header_muted)
                                         .child(original.to_string())
