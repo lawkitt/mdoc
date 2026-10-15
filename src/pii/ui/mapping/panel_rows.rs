@@ -449,8 +449,8 @@ impl DocumentView {
             }
             this.pii.mapping.expanded.insert(id);
             match this.identity_occurrences(id).into_iter().next() {
-                Some((annotation, range)) => {
-                    this.navigate_identity_mention(annotation, range.start, window, cx);
+                Some((annotation, _)) => {
+                    this.open_from_panel(annotation, window, cx);
                     this.pii.mapping.cursor = Some(PanelCursor::Header(id));
                 }
                 None => window.focus(&this.pii.mapping.focus, cx),
@@ -465,6 +465,15 @@ impl DocumentView {
             start_drag(cx.entity().downgrade(), theme),
         )
         .into_any_element()
+    }
+
+    /// Reveal a mention from the panel and open its popup there (ADR 0048):
+    /// the panel's own scroll lands it in view, then the popup anchors to it.
+    fn open_from_panel(&mut self, annotation: u64, window: &mut Window, cx: &mut Context<Self>) {
+        // A narrow window showing the source switches back to the Markdown.
+        self.original_selected = false;
+        self.panel_select_mention(annotation, cx);
+        self.activate_annotation(annotation, window, cx);
     }
 
     fn mention_selected(&self, annotation: u64) -> bool {
@@ -549,8 +558,7 @@ impl DocumentView {
         ))
         // A mention row opens the popup on that mention (ADR 0048).
         .on_click(cx.listener(move |this, _, window, cx| {
-            this.pii.mapping.cursor = Some(PanelCursor::Mention(annotation));
-            this.navigate_identity_mention(annotation, range.start, window, cx);
+            this.open_from_panel(annotation, window, cx);
         }))
         // Middle click keeps this original; ⌘ same text, ⇧⌘ all (ADR 0033).
         .on_mouse_down(

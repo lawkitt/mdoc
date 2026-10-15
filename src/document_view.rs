@@ -1554,6 +1554,8 @@ impl Render for DocumentView {
             .on_action(cx.listener(|_, _: &ui::NextControl, window, cx| ui::cycle(window, cx, None, false)))
             .on_action(cx.listener(|_, _: &ui::PreviousControl, window, cx| ui::cycle(window, cx, None, true)))
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
+                // Repaint so a replacement tooltip goes when the pointer leaves it.
+                if this.editor.read(cx).hovered_annotation().is_some() { cx.notify(); }
                 if event.pressed_button != Some(gpui::MouseButton::Left) { this.split_dragging = false; }
                 if this.split_dragging {
                     let bounds = this.view_bounds.get();
@@ -1654,6 +1656,6 @@ impl Render for DocumentView {
             .children(setup_notice.filter(|_| !(show_markdown && self.source_only && self.ocr_required.is_some()))).children(error_notice)
             // The word popup anchors to the editor, hidden under before/after.
             .children(self.pii_popup(window, cx).filter(|_| self.compare.is_none()))
-            .children(self.replacement_tip(cx).filter(|_| self.compare.is_none()))
+            .children(self.replacement_tip(window, cx).filter(|_| self.compare.is_none()))
     }
 }
