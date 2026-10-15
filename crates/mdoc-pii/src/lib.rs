@@ -245,6 +245,21 @@ impl Review {
     pub fn applied(&self) -> &[Applied] {
         &self.tracking.applied
     }
+    /// Mentions kept as their originals (Keep decisions): range, wording, and
+    /// the identity that wording belongs to, if it still has one (ADR 0048).
+    pub fn kept_mentions(&self) -> Vec<(Range<usize>, Arc<str>, Option<u64>)> {
+        self.tracking
+            .exclusions
+            .iter()
+            .map(|e| {
+                let identity = self
+                    .candidates
+                    .by_original(&e.original)
+                    .and_then(|variant| self.variant_identity(variant));
+                (e.range.clone(), e.original.clone(), identity)
+            })
+            .collect()
+    }
     pub fn applied_occurrence(&self, id: u64) -> Option<&Applied> {
         self.tracking.get(id)
     }

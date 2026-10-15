@@ -197,6 +197,8 @@ pub(crate) fn bind_keys(cx: &mut App) {
 fn decision_bindings(modifier: &str) -> Vec<KeyBinding> {
     const LIST: &str = "IdentityPanel && !ReplacementSearch && !SettingsInput && !UiControl";
     const POPUP: &str = "PseudonymReview && !PseudonymReplacement && !UiControl && !UiMenu";
+    // The checklist (ADR 0048): Space ticks, Enter jumps to the mention,
+    // →/← show and hide mentions, ⌫ keeps the original; ⌘↩ applies all.
     let mut bindings = vec![
         KeyBinding::new("up", crate::PanelUp, Some(LIST)),
         KeyBinding::new("down", crate::PanelDown, Some(LIST)),
@@ -205,32 +207,25 @@ fn decision_bindings(modifier: &str) -> Vec<KeyBinding> {
         KeyBinding::new("alt-up", crate::PanelMoveUp, Some(LIST)),
         KeyBinding::new("alt-down", crate::PanelMoveDown, Some(LIST)),
         KeyBinding::new("alt-escape", crate::PanelEscape, Some("IdentityPanel")),
+        KeyBinding::new("space", crate::PanelToggle, Some(LIST)),
+        KeyBinding::new("enter", crate::PanelOpen, Some(LIST)),
+        KeyBinding::new("right", crate::PanelExpand, Some(LIST)),
+        KeyBinding::new("left", crate::PanelCollapse, Some(LIST)),
+        KeyBinding::new("backspace", crate::PanelKeep, Some(LIST)),
+        KeyBinding::new("delete", crate::PanelKeep, Some(LIST)),
+        KeyBinding::new(&format!("{modifier}-enter"), PiiApplyAll, None),
     ];
-    for context in [LIST, POPUP] {
+    bindings.extend([
+        KeyBinding::new("enter", crate::ApplyThis, Some(POPUP)),
+        KeyBinding::new(&format!("{modifier}-enter"), crate::ApplySame, Some(POPUP)),
+        KeyBinding::new(&format!("{modifier}-shift-enter"), crate::ApplyAll, Some(POPUP)),
+    ]);
+    for key in ["backspace", "delete"] {
         bindings.extend([
-            KeyBinding::new("enter", crate::ApplyThis, Some(context)),
-            KeyBinding::new(
-                &format!("{modifier}-enter"),
-                crate::ApplySame,
-                Some(context),
-            ),
-            KeyBinding::new(
-                &format!("{modifier}-shift-enter"),
-                crate::ApplyAll,
-                Some(context),
-            ),
+            KeyBinding::new(key, crate::KeepThis, Some(POPUP)),
+            KeyBinding::new(&format!("{modifier}-{key}"), crate::KeepSame, Some(POPUP)),
+            KeyBinding::new(&format!("{modifier}-shift-{key}"), crate::KeepAll, Some(POPUP)),
         ]);
-        for key in ["backspace", "delete"] {
-            bindings.extend([
-                KeyBinding::new(key, crate::KeepThis, Some(context)),
-                KeyBinding::new(&format!("{modifier}-{key}"), crate::KeepSame, Some(context)),
-                KeyBinding::new(
-                    &format!("{modifier}-shift-{key}"),
-                    crate::KeepAll,
-                    Some(context),
-                ),
-            ]);
-        }
     }
     bindings
 }
@@ -268,8 +263,10 @@ impl DocumentView {
         self.sync_annotations(cx);
     }
     fn sync_annotations(&mut self, cx: &mut Context<Self>) {
-        // Proposals are gold; applied replacements share the alias blue (ADR 0032).
-        let accent = self.theme.get().proposed();
+        // Proposals take their category's colour; applied replacements share
+        // the alias blue (ADR 0032, ADR 0048).
+        let theme = self.theme.get();
+        let accent = theme.proposed();
         let applied_accent = self.theme.get().applied();
         let review = &self.pii.review;
         let show_candidates = self.pii.reviewing;
@@ -295,13 +292,22 @@ impl DocumentView {
             };
             annotations.push(if candidate_first {
                 let occurrence = candidates.next().unwrap();
+                // A proposal: a light tint of its category with the category's
+                // underline; the glyphs keep their colour (ADR 0048).
+                let category = review
+                    .occurrence_identity(occurrence.variant, &occurrence.range)
+                    .and_then(|id| review.identity(id))
+                    .map(|identity| identity.category)
+                    .or_else(|| review.variant(occurrence.variant).map(|v| v.category));
+                let tint = category.map_or(accent, |c| theme.category(c));
                 mdoc_editor::SourceAnnotation {
                     id: occurrence.id,
                     range: occurrence.range.clone(),
-                    color: Hsla { a: 0.14, ..accent },
-                    active_color: Hsla { a: 0.3, ..accent },
-                    border: Hsla { a: 0.5, ..accent },
-                    text_color: Some(accent),
+                    color: Hsla { a: 0.12, ..tint },
+                    active_color: Hsla { a: 0.28, ..tint },
+                    border: gpui::transparent_black(),
+                    text_color: None,
+                    underline: Some(Hsla { a: 0.9, ..tint }),
                 }
             } else {
                 let occurrence = applied.next().unwrap();
@@ -321,6 +327,7 @@ impl DocumentView {
                         ..applied_accent
                     },
                     text_color: Some(applied_accent),
+                    underline: None,
                 }
             });
         }

@@ -143,13 +143,13 @@ impl DocumentView {
             self.pii.popup_anchor.set(anchor);
         }
         let hidden = self.editor.read(cx).annotation_is_hidden(annotation);
-        let width = px(360.).min((available.size.width - px(16.)).max(px(160.)));
+        let width = px(640.).min((available.size.width - px(16.)).max(px(200.)));
         // Shortcut hints only where they fit: in a narrow popup, Windows'
         // "⇧Ctrl+⌫" pushes Keep original past the edge. The keys still work.
         let hints = width >= px(240.);
         let maximum = (available.size.height - px(44.)).max(px(110.));
         // Pickers float over the card, so its height no longer depends on them.
-        let desired = px(280.).min(maximum);
+        let desired = px(150.).min(maximum);
         let bounds = anchor
             .or(self.pii.popup_anchor.get())
             .unwrap_or(gpui::Bounds::new(
@@ -159,10 +159,12 @@ impl DocumentView {
         let below = (available.bottom() - bounds.bottom() - px(8.)).max(px(0.));
         let above = (bounds.top() - available.top() - px(8.)).max(px(0.));
         let height = desired.min(below.max(above).max(px(100.)));
-        let y = if below >= height || below >= above {
-            bounds.bottom() + px(4.)
+        // The bar sits above its mention when there is room (ADR 0048).
+        let bar = px(46.);
+        let y = if above >= bar || above >= below {
+            bounds.top() - bar - px(6.)
         } else {
-            bounds.top() - height - px(4.)
+            bounds.bottom() + px(6.)
         };
         let position = gpui::point(
             bounds.left().clamp(
@@ -186,14 +188,17 @@ impl DocumentView {
             .tab_stop(false)
             .track_focus(&self.pii.focus)
             .map(|v| self.popup_decision_actions(v, cx))
-            .w(width)
+            .max_w(width)
             .max_h(height)
             .overflow_y_scroll()
             .track_scroll(&self.pii.popup_scroll)
-            .p_3()
+            .px_2()
+            .py(px(6.))
+            .rounded_lg()
+            .shadow_lg()
             .flex()
             .flex_col()
-            .gap_2()
+            .gap_1()
             .text_size(px(13.))
             .on_action(cx.listener(|this, _: &crate::ui::NextControl, window, cx| {
                 crate::ui::cycle(window, cx, Some(&this.pii.focus), false);
@@ -253,20 +258,122 @@ impl DocumentView {
                     this.close_pii_popup(&PiiClosePopup, window, cx);
                 }),
             )
+            // The mention bar (ADR 0048): ☑ Replace · original → alias ·
+            // category ▾ · scope · ‹ n of N › · ×, wrapping when narrow.
             .child(
                 div()
                     .flex_shrink_0()
                     .flex()
+                    .flex_wrap()
                     .items_center()
-                    .gap_1()
+                    .gap_x_2()
+                    .gap_y_1()
+                    .child(if cancel {
+                        // A just-made selection is backed out, not kept (ADR 0032).
+                        secondary(
+                            self.popup_control("direct-cancel-addition", "Cancel", enabled, cx),
+                            theme,
+                        )
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "direct-cancel-addition".into())
+                        })
+                        .aria_label("Cancel addition")
+                        .on_click(cx.listener(|this, _, window, cx| this.cancel_addition(window, cx)))
+                        .into_any_element()
+                    } else {
+                        // Ticked: replaced. Unticking keeps the originals in scope.
+                        let (scoped_candidates, scoped_applied) = self.scoped_mentions();
+                        let in_scope = scoped_candidates.len() + scoped_applied.len();
+                        self.popup_control("direct-keep", "", enabled && in_scope > 0, cx)
+                            .when(cfg!(test), |v| v.debug_selector(|| "direct-keep".into()))
+                            .role(gpui::Role::CheckBox)
+                            .aria_label(format!("Replace · untick to keep {in_scope} originals"))
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .px_1()
+                            .child(
+                                div()
+                                    .size(px(15.))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(4.))
+                                    .bg(palette.header_fg)
+                                    .child(
+                                        gpui::svg()
+                                            .data(crate::ui::Icon::Check.data())
+                                            .size(px(11.))
+                                            .text_color(palette.bg),
+                                    ),
+                            )
+                            .child("Replace")
+                            .tooltip(crate::style::tooltip(
+                                format!("Untick to keep the original ({})", scope_keys(mapping.scope, "⌫")),
+                                theme,
+                            ))
+                            .on_click(cx.listener(|this, _, window, cx| this.keep_originals(window, cx)))
+                            .into_any_element()
+                    })
+                    .child(div().w(px(1.)).h(px(18.)).bg(palette.border))
+                    .child(
+                        self.with_dropdown(
+                            div()
+                                .flex_shrink_0()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .id("direct-original")
+                                        .when(cfg!(test), |v| {
+                                            v.debug_selector(|| "pseudonym-original".into())
+                                        })
+                                        .min_w_0()
+                                        .max_w(px(160.))
+                                        .truncate()
+                                        .text_color(palette.header_muted)
+                                        .child(original.to_string())
+                                        .tooltip(crate::style::tooltip(original.to_string(), theme)),
+                                )
+                                .child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .text_color(palette.header_muted)
+                                        .child("→"),
+                                )
+                                .child(self.alias_field(input_focused, cx)),
+                            choices.then(|| {
+                                self.alias_menu(
+                                    identity,
+                                    &draft,
+                                    changed,
+                                    selected_count,
+                                    targets,
+                                    enabled,
+                                    cx,
+                                )
+                            }),
+                        ),
+                    )
                     .child(
                         self.with_dropdown(
                             self.popup_control(
                                 "direct-category",
-                                format!("{} ▾", identity.category.label()),
+                                "",
                                 enabled,
                                 cx,
                             )
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
+                            .child(
+                                div()
+                                    .size(px(7.))
+                                    .rounded_full()
+                                    .bg(theme.category(identity.category)),
+                            )
+                            .child(format!("{} ▾", identity.category.label()))
                             .aria_label("Correct category for selected scope")
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.pii.mapping.toggle_category_picker();
@@ -309,6 +416,16 @@ impl DocumentView {
                                 .bg(Hsla { a: 0.16, ..accent })
                                 .child("Applied"),
                         )
+                    })
+                    .when(mentions.len() > 1, |v| {
+                        v.child(self.scope_control(
+                            wording,
+                            mentions.len(),
+                            &original,
+                            &identity.alias,
+                            enabled,
+                            cx,
+                        ))
                     })
                     .child(div().flex_1())
                     // One mention needs no navigation (ADR 0032).
@@ -360,59 +477,7 @@ impl DocumentView {
                         .child("Hidden source value · containing passage shown in document"),
                 )
             })
-            // original → [alias]: the arrow states the relationship.
-            .child(
-                self.with_dropdown(
-                    div()
-                        .flex_shrink_0()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(
-                            div()
-                                .id("direct-original")
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "pseudonym-original".into())
-                                })
-                                .min_w_0()
-                                .max_w(gpui::relative(0.45))
-                                .flex_shrink(1.)
-                                .line_clamp(2)
-                                .text_color(palette.header_muted)
-                                .child(original.to_string())
-                                .tooltip(crate::style::tooltip(original.to_string(), theme)),
-                        )
-                        .child(
-                            div()
-                                .flex_shrink_0()
-                                .text_color(palette.header_muted)
-                                .child("→"),
-                        )
-                        .child(self.alias_field(input_focused, cx)),
-                    choices.then(|| {
-                        self.alias_menu(
-                            identity,
-                            &draft,
-                            changed,
-                            selected_count,
-                            targets,
-                            enabled,
-                            cx,
-                        )
-                    }),
-                ),
-            )
             .children(owner_row)
-            .when(mentions.len() > 1, |v| {
-                v.child(self.scope_control(
-                    wording,
-                    mentions.len(),
-                    &original,
-                    &identity.alias,
-                    enabled,
-                    cx,
-                ))
-            })
             .when_some(mapping.field_error.clone(), |v, error| {
                 v.child(
                     div()
@@ -422,110 +487,7 @@ impl DocumentView {
                         .child(error),
                 )
             });
-        let (scoped_candidates, scoped_applied) = self.scoped_mentions();
-        let in_scope = scoped_candidates.len() + scoped_applied.len();
-        let accent = theme.applied();
-        panel = panel.child(
-            div()
-                .flex_shrink_0()
-                .pt_1()
-                .flex()
-                .flex_wrap()
-                .items_center()
-                .gap_2()
-                .map(|v| {
-                    if applied {
-                        let ids: std::collections::HashSet<_> =
-                            scoped_applied.iter().copied().collect();
-                        let count = ids.len();
-                        v.child(
-                            secondary(
-                                self.popup_control("direct-undo", "", enabled && count > 0, cx),
-                                theme,
-                            )
-                            .flex()
-                            .items_center()
-                            .gap(px(6.))
-                            .child(
-                                gpui::svg()
-                                    .data(crate::ui::Icon::Undo.data())
-                                    .size(px(14.))
-                                    .text_color(theme.pdf_style().header_fg),
-                            )
-                            .child("Undo")
-                            .when(cfg!(test), |v| v.debug_selector(|| "direct-undo".into()))
-                            .aria_label(format!("Undo replacement · {count} (back to proposed)"))
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| this.undo_replacements(ids.clone(), cx),
-                            )),
-                        )
-                    } else {
-                        let count = scoped_candidates.len();
-                        let ready = enabled && count > 0;
-                        v.child(
-                            self.popup_control("direct-apply", "", ready, cx)
-                                .px_3()
-                                .py_1()
-                                .rounded_md()
-                                .border_1()
-                                .border_color(Hsla { a: 0.6, ..accent })
-                                .bg(Hsla { a: 0.18, ..accent })
-                                .text_color(accent)
-                                .font_weight(gpui::FontWeight::MEDIUM)
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .child("Apply")
-                                // The key that applies the selected scope (ADR 0033).
-                                .when(ready && hints, |v| {
-                                    v.child(
-                                        div()
-                                            .text_size(px(11.))
-                                            .opacity(0.7)
-                                            .child(scope_keys(mapping.scope, "↵")),
-                                    )
-                                })
-                                .aria_label(format!("Apply {count} replacements in scope"))
-                                .on_click(cx.listener(|this, _, _, cx| this.apply_scope(cx))),
-                        )
-                    }
-                })
-                .child(if cancel {
-                    // A just-made selection is backed out, not kept (ADR 0032).
-                    secondary(
-                        self.popup_control("direct-cancel-addition", "Cancel", enabled, cx),
-                        theme,
-                    )
-                    .when(cfg!(test), |v| {
-                        v.debug_selector(|| "direct-cancel-addition".into())
-                    })
-                    .aria_label("Cancel addition")
-                    .on_click(cx.listener(|this, _, window, cx| this.cancel_addition(window, cx)))
-                } else {
-                    secondary(
-                        self.popup_control(
-                            "direct-keep",
-                            "Keep original",
-                            enabled && in_scope > 0,
-                            cx,
-                        ),
-                        theme,
-                    )
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .when(hints, |v| {
-                        v.child(
-                            div()
-                                .text_size(px(11.))
-                                .opacity(0.7)
-                                .child(scope_keys(mapping.scope, "⌫")),
-                        )
-                    })
-                    .aria_label(format!("Keep {in_scope} originals in scope"))
-                    .on_click(cx.listener(|this, _, window, cx| this.keep_originals(window, cx)))
-                }),
-        );
+        let _ = hints;
         // The editor records word geometry during paint, after this popup is rendered.
         // Reconcile once on the next frame so Apply and resize do not retain a stale anchor.
         let weak = cx.entity().downgrade();
@@ -1006,7 +968,7 @@ impl DocumentView {
                 div()
                     .text_size(px(12.))
                     .text_color(palette.header_muted)
-                    .child("Apply to"),
+                    .child("For"),
             )
             .child(
                 div()

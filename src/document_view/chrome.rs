@@ -157,7 +157,13 @@ impl DocumentView {
                 .into_any_element(),
             Primary::Pseudonymize => ui::filled_button("Pseudonymize", "Pseudonymize", theme, true)
                 .when(cfg!(test), |v| v.debug_selector(|| "Pseudonymize".into()))
-                .on_click(cx.listener(|this, _, window, cx| this.toggle_pii_review(window, cx)))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    // Pseudonymize opens the panel (ADR 0048 decision 22).
+                    this.toggle_pii_review(window, cx);
+                    if !this.replacements_open() {
+                        this.toggle_replacements_panel(window, cx);
+                    }
+                }))
                 .into_any_element(),
             Primary::Apply(n) => ui::filled_button(
                 "primary-apply",

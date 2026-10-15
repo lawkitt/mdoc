@@ -218,6 +218,33 @@ impl DocumentView {
         }
     }
 
+    /// Space (or ⌫ to only untick) on the keyboard row: an entity's or a
+    /// mention's checkbox (ADR 0048). The cursor stays on the row.
+    fn panel_toggle(&mut self, keep_only: bool, window: &mut Window, cx: &mut Context<Self>) {
+        match self.pii.mapping.cursor {
+            Some(PanelCursor::Header(id)) => {
+                if !keep_only || self.entity_tick(id) != super::checklist::Tick::Off {
+                    if keep_only {
+                        self.untick(id, None, cx);
+                    } else {
+                        self.toggle_entity(id, cx);
+                    }
+                }
+            }
+            Some(PanelCursor::Mention(annotation)) => {
+                let entity = self.selected_entity();
+                self.toggle_mention(annotation, cx);
+                if let Some(id) = entity {
+                    self.pii.mapping.cursor = Some(PanelCursor::Header(id));
+                    self.pii.mapping.panel_selected = false;
+                }
+            }
+            None => {}
+        }
+        window.focus(&self.pii.mapping.focus, cx);
+        cx.notify();
+    }
+
     /// The panel list's keyboard and the shared decision keys.
     pub(super) fn panel_actions(
         &self,
@@ -271,27 +298,39 @@ impl DocumentView {
                 }
                 cx.stop_propagation();
             }))
-            .on_action(cx.listener(|this, _: &crate::ApplyThis, window, cx| {
-                if let Some(PanelCursor::Header(id)) = this.pii.mapping.cursor {
-                    this.toggle_group(id, cx);
-                } else {
-                    this.panel_decide(Scope::Mention, false, window, cx);
+            .on_action(cx.listener(|this, _: &crate::PanelToggle, window, cx| {
+                this.panel_toggle(false, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &crate::PanelKeep, window, cx| {
+                this.panel_toggle(true, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &crate::PanelOpen, _, cx| {
+                if let Some(PanelCursor::Header(id)) = this.pii.mapping.cursor
+                    && let Some((annotation, _)) = this.identity_occurrences(id).into_iter().next()
+                {
+                    this.panel_select_mention(annotation, cx);
+                    this.pii.mapping.cursor = Some(PanelCursor::Header(id));
+                    cx.notify();
                 }
             }))
-            .on_action(cx.listener(|this, _: &crate::ApplySame, window, cx| {
-                this.panel_decide(Scope::Wording, false, window, cx)
+            .on_action(cx.listener(|this, _: &crate::PanelExpand, _, cx| {
+                if let Some(PanelCursor::Header(id)) = this.pii.mapping.cursor {
+                    this.pii.mapping.expanded.insert(id);
+                    cx.notify();
+                }
             }))
-            .on_action(cx.listener(|this, _: &crate::ApplyAll, window, cx| {
-                this.panel_decide(Scope::Entity, false, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &crate::KeepThis, window, cx| {
-                this.panel_decide(Scope::Mention, true, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &crate::KeepSame, window, cx| {
-                this.panel_decide(Scope::Wording, true, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &crate::KeepAll, window, cx| {
-                this.panel_decide(Scope::Entity, true, window, cx)
+            .on_action(cx.listener(|this, _: &crate::PanelCollapse, _, cx| {
+                let id = match this.pii.mapping.cursor {
+                    Some(PanelCursor::Header(id)) => Some(id),
+                    Some(PanelCursor::Mention(_)) => this.selected_entity(),
+                    None => None,
+                };
+                if let Some(id) = id {
+                    this.pii.mapping.expanded.remove(&id);
+                    this.pii.mapping.cursor = Some(PanelCursor::Header(id));
+                    this.pii.mapping.panel_selected = false;
+                    cx.notify();
+                }
             }))
     }
 

@@ -234,6 +234,7 @@ impl DocumentView {
                 active_color: Hsla { a: 0.3, ..red },
                 border: Hsla { a: 0.6, ..red },
                 text_color: Some(red),
+                underline: None,
             })
             .collect()
     }
