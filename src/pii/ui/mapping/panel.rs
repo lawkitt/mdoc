@@ -29,8 +29,6 @@ pub(super) enum PanelItem {
     },
     Header,
     Mention(u64, Range<usize>),
-    /// Inline controls under the mention selected in the panel (ADR 0033).
-    Controls(u64),
 }
 impl PanelItem {
     pub(super) fn mention(&self) -> Option<u64> {
@@ -42,31 +40,6 @@ impl PanelItem {
 }
 
 impl DocumentView {
-    /// The panel's close button, the Original viewer's (ADR 0044).
-    pub(super) fn replacement_close(
-        &self,
-        id: impl Into<gpui::ElementId>,
-        cx: &App,
-    ) -> gpui::Stateful<gpui::Div> {
-        let id = id.into();
-        let debug = id.to_string();
-        let focus = self
-            .pii
-            .mapping
-            .controls
-            .borrow_mut()
-            .entry(id.clone())
-            .or_insert_with(|| cx.focus_handle().tab_stop(true))
-            .clone();
-        ui::reveal_focus(
-            ui::close_control(id, self.theme.get())
-                .when(cfg!(test), |v| v.debug_selector(move || debug.clone()))
-                .track_focus(&focus),
-            focus,
-            self.pii.mapping.scroll.clone(),
-        )
-    }
-
     fn replacement_rows(&self, cx: &App) -> Arc<[ReplacementRow]> {
         let review = &self.pii.review;
         let query = self
@@ -109,7 +82,11 @@ impl DocumentView {
             }
         }
         for a in review.applied() {
-            add(a.step.identity, a.step.original_shared().clone(), Some(true));
+            add(
+                a.step.identity,
+                a.step.original_shared().clone(),
+                Some(true),
+            );
         }
         for (_, original, identity) in review.kept_mentions() {
             if let Some(id) = identity {
@@ -394,35 +371,6 @@ impl DocumentView {
         self.editor.update(cx, |e, cx| e.redo_step(window, cx));
     }
 
-    /// One button: expand every visible group, or collapse them all once
-    /// none is collapsed (ADR 0033).
-    fn expand_all_control(&self, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
-        let ids: Vec<u64> = self.replacement_rows(cx).iter().map(|r| r.id).collect();
-        let expand = ids.iter().any(|id| !self.pii.mapping.expanded.contains(id));
-        let (label, icon) = if expand {
-            ("Expand all", ui::Icon::Expand)
-        } else {
-            ("Collapse all", ui::Icon::Collapse)
-        };
-        ui::icon_control(
-            "replacement-expand-all",
-            label,
-            icon,
-            self.theme.get(),
-            !ids.is_empty(),
-        )
-        .on_click(cx.listener(move |this, _, _, cx| {
-            let expanded = &mut this.pii.mapping.expanded;
-            for id in &ids {
-                if expand {
-                    expanded.insert(*id);
-                } else {
-                    expanded.remove(id);
-                }
-            }
-            cx.notify();
-        }))
-    }
     /// The panel-only filter; a dot marks anything but All (ADR 0033).
     fn filter_control(&self, cx: &mut Context<Self>) -> gpui::Div {
         let theme = self.theme.get();
@@ -434,7 +382,9 @@ impl DocumentView {
             theme,
             filter != PanelFilter::All,
         )
-        .when(cfg!(test), |v| v.debug_selector(|| "replacement-filter".into()))
+        .when(cfg!(test), |v| {
+            v.debug_selector(|| "replacement-filter".into())
+        })
         .relative()
         .when(filter != PanelFilter::All, |v| {
             v.child(
@@ -506,10 +456,6 @@ impl DocumentView {
         let busy = self.pii.scanning();
         let pending = self.pii.review.remaining();
         let history = self.editor.read(cx).history_id();
-        let (can_undo, can_redo) = {
-            let editor = self.editor.read(cx);
-            (editor.can_undo(), editor.can_redo())
-        };
         // The latest step's after-action notice, newest kind first (ADR 0033).
         let notice = mapping
             .notice_visible()
@@ -650,30 +596,26 @@ impl DocumentView {
                     ),
             )
             .child(
-                div()
-                    .flex_shrink_0()
-                    .px_3()
-                    .pb_2()
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .h(px(30.))
-                            .pl_2()
-                            .rounded_md()
-                            .border_1()
-                            .border_color(palette.border)
-                            .child(
-                                gpui::svg()
-                                    .data(ui::Icon::Search.data())
-                                    .size(px(13.))
-                                    .flex_shrink_0()
-                                    .text_color(palette.header_muted),
-                            )
-                            .child(div().flex_1().min_w_0().child(mapping.search.clone()))
-                            .child(self.filter_control(cx)),
-                    ),
+                div().flex_shrink_0().px_3().pb_2().child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .h(px(30.))
+                        .pl_2()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(palette.border)
+                        .child(
+                            gpui::svg()
+                                .data(ui::Icon::Search.data())
+                                .size(px(13.))
+                                .flex_shrink_0()
+                                .text_color(palette.header_muted),
+                        )
+                        .child(div().flex_1().min_w_0().child(mapping.search.clone()))
+                        .child(self.filter_control(cx)),
+                ),
             )
             .child(div().h(px(1.)).flex_shrink_0().bg(palette.border))
             .child(
@@ -770,29 +712,39 @@ impl DocumentView {
                 // scan ends (ADR 0048 decision 22).
                 let body = if busy && !searching {
                     div()
-                        .when(cfg!(test), |v| v.debug_selector(|| "replacement-skeleton".into()))
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "replacement-skeleton".into())
+                        })
                         .flex()
                         .flex_col()
                         .px_3()
                         .pt_3()
                         .gap(px(14.))
-                        .children([0.62, 0.48, 0.7, 0.4, 0.56, 0.66].into_iter().enumerate().map(
-                            |(i, width)| {
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_2()
-                                    .when(i == 0 || i == 4, |v| v.mt_1())
-                                    .child(div().size(px(14.)).rounded(px(4.)).bg(palette.placeholder_bg))
-                                    .child(
-                                        div()
-                                            .h(px(9.))
-                                            .w(gpui::relative(width))
-                                            .rounded_full()
-                                            .bg(palette.placeholder_bg),
-                                    )
-                            },
-                        ))
+                        .children(
+                            [0.62, 0.48, 0.7, 0.4, 0.56, 0.66]
+                                .into_iter()
+                                .enumerate()
+                                .map(|(i, width)| {
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .when(i == 0 || i == 4, |v| v.mt_1())
+                                        .child(
+                                            div()
+                                                .size(px(14.))
+                                                .rounded(px(4.))
+                                                .bg(palette.placeholder_bg),
+                                        )
+                                        .child(
+                                            div()
+                                                .h(px(9.))
+                                                .w(gpui::relative(width))
+                                                .rounded_full()
+                                                .bg(palette.placeholder_bg),
+                                        )
+                                }),
+                        )
                         .into_any_element()
                 } else {
                     div()
@@ -829,7 +781,9 @@ impl DocumentView {
                             .gap_2()
                             .child(
                                 div()
-                                    .when(cfg!(test), |v| v.debug_selector(|| "replacement-summary".into()))
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "replacement-summary".into())
+                                    })
                                     .flex_1()
                                     .text_size(px(12.))
                                     .text_color(palette.header_fg)
@@ -853,7 +807,9 @@ impl DocumentView {
                             })
                             .child(
                                 ui::link_button("review-rescan", "↻ Rescan", theme, !busy)
-                                    .when(cfg!(test), |v| v.debug_selector(|| "review-rescan".into()))
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "review-rescan".into())
+                                    })
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         if !this.pii.scanning() {
                                             this.start_pii_scan(cx);

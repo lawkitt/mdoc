@@ -21,6 +21,8 @@ pub enum Event {
     Finished(Model, Result<Option<ocr::Installed>, String>),
     /// Restart now: quit through the workspace, then relaunch (ADR 0040).
     RestartToUpdate,
+    /// Forget the recent files Home lists (ADR 0048).
+    ClearRecents,
 }
 #[derive(Clone, Debug)]
 pub enum Status {
@@ -410,14 +412,6 @@ impl Panel {
         self.error = None;
         self.persist(cx);
     }
-    /// Save spelling choices made outside the dialog (the toolbar's Turn off).
-    pub fn set_spelling(&mut self, spelling: SpellingConfig, cx: &mut Context<Self>) {
-        if self.applying || self.draft.spelling == spelling {
-            return;
-        }
-        self.draft.spelling = spelling;
-        self.persist(cx);
-    }
     /// Atomically save `draft`. A failure restores the previous choices.
     fn persist(&mut self, cx: &mut Context<Self>) {
         let prefs = self.draft.clone();
@@ -622,6 +616,21 @@ impl Panel {
                             this.persist(cx);
                         }
                     })),
+            ))
+            .into_any_element()
+    }
+    /// Settings → Recent files (ADR 0048): paths only; clearing forgets them.
+    fn recents_section(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme.pdf_style();
+        div().flex().flex_col().gap_2().mt_4()
+            .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Recent files"))
+            .child(div().text_size(px(11.)).text_color(p.header_muted).child(
+                "Home and the command palette list files you opened recently: their names and folders, never their contents.",
+            ))
+            .child(div().flex().flex_wrap().items_center().gap_2().child(
+                self.scrolled_quiet("recents-clear", "Clear recent files", theme, true, cx)
+                    .when(cfg!(test), |v| v.debug_selector(|| "recents-clear".into()))
+                    .on_click(cx.listener(|_, _, _, cx| cx.emit(Event::ClearRecents))),
             ))
             .into_any_element()
     }
@@ -956,6 +965,7 @@ impl Render for Panel {
                                 .on_click(cx.listener(move |this, _, _, cx| { if changed && !this.applying { this.apply(cx); } }))))))
                     .child(self.spelling_section(theme, cx))
                     .child(self.cases_section(theme, cx))
+                    .child(self.recents_section(theme, cx))
                     .child(self.updates_section(theme, cx))))
                 .when_some(self.error.clone(), |v, e| v.child(div().px_4().pb_3().text_size(px(12.)).text_color(style::markdown_style(theme).alert_warning).child(e)))
                 // Another app job (a scan or comparison) holds the model slot.

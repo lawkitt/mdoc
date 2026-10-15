@@ -218,13 +218,21 @@ fn decision_bindings(modifier: &str) -> Vec<KeyBinding> {
     bindings.extend([
         KeyBinding::new("enter", crate::ApplyThis, Some(POPUP)),
         KeyBinding::new(&format!("{modifier}-enter"), crate::ApplySame, Some(POPUP)),
-        KeyBinding::new(&format!("{modifier}-shift-enter"), crate::ApplyAll, Some(POPUP)),
+        KeyBinding::new(
+            &format!("{modifier}-shift-enter"),
+            crate::ApplyAll,
+            Some(POPUP),
+        ),
     ]);
     for key in ["backspace", "delete"] {
         bindings.extend([
             KeyBinding::new(key, crate::KeepThis, Some(POPUP)),
             KeyBinding::new(&format!("{modifier}-{key}"), crate::KeepSame, Some(POPUP)),
-            KeyBinding::new(&format!("{modifier}-shift-{key}"), crate::KeepAll, Some(POPUP)),
+            KeyBinding::new(
+                &format!("{modifier}-shift-{key}"),
+                crate::KeepAll,
+                Some(POPUP),
+            ),
         ]);
     }
     bindings
@@ -353,18 +361,6 @@ impl DocumentView {
     /// Whether the replacements panel is open (ADR 0048 header toggle).
     pub(crate) fn replacements_open(&self) -> bool {
         self.pii.mapping.open
-    }
-    pub(crate) fn toggle_pii_review(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let review = &self.pii.review;
-        if self.pii.mapping.open
-            || self.pii.reviewing
-            || !review.variants().is_empty()
-            || !review.applied().is_empty()
-        {
-            self.toggle_replacements_panel(window, cx);
-        } else {
-            self.start_pii_scan(cx);
-        }
     }
     /// Download the selected model, then scan this document once if it is
     /// still the same document. Settings stays closed.

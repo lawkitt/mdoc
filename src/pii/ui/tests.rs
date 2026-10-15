@@ -251,9 +251,18 @@ fn failed_cancelled_stale_and_superseded_scans_do_not_edit(cx: &mut gpui::TestAp
     }
 }
 #[gpui::test]
-fn toolbar_icon_scans_once_then_toggles_the_review(cx: &mut gpui::TestAppContext) {
+fn header_pseudonymize_scans_once_and_the_panel_toggle_hides_the_review(
+    cx: &mut gpui::TestAppContext,
+) {
     let (app, cx) = crate::document_view_tests::boot(cx);
-    cx.simulate_resize(gpui::size(px(640.), px(480.)));
+    cx.simulate_resize(gpui::size(px(720.), px(480.)));
+    // An empty document has nothing to pseudonymize (ADR 0048).
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("Pseudonymize").is_none());
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("Notes", cx))
+    });
     let click = |cx: &mut gpui::VisualTestContext, id: &'static str| {
         cx.update(|window, cx| {
             window.refresh();
@@ -287,7 +296,7 @@ fn toolbar_icon_scans_once_then_toggles_the_review(cx: &mut gpui::TestAppContext
         assert!(app.pii.reviewing);
         assert!(app.pii.mapping.open);
     });
-    click(cx, "Pseudonymize");
+    click(cx, "header-panel");
     assert!(app.read_with(cx, |app, _| !app.pii.mapping.open));
     click(cx, "Pseudonymize");
     app.update(cx, |app, _| {
@@ -362,7 +371,7 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
     });
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
-    let bounds = cx.debug_bounds("apply-identity-map").unwrap();
+    let bounds = cx.debug_bounds("primary-apply").unwrap();
     cx.simulate_click(bounds.center(), gpui::Modifiers::none());
     cx.run_until_parked();
     app.update(cx, |app, cx| {
@@ -378,7 +387,7 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
     // With no pending suggestions, another click must not add an undo step.
     let revision = app.read_with(cx, |app, cx| app.editor.read(cx).revision());
     cx.update(|window, cx| window.draw(cx).clear(cx));
-    assert!(cx.debug_bounds("apply-identity-map").is_none());
+    assert!(cx.debug_bounds("primary-apply").is_none());
     app.update_in(cx, |app, window, cx| {
         assert_eq!(app.editor.read(cx).revision(), revision);
         window.focus(&app.editor.read(cx).focus_handle(cx), cx);
@@ -722,12 +731,7 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
             cx.run_until_parked();
             cx.update(|window, cx| window.draw(cx).clear(cx));
             let panel = cx.debug_bounds("pseudonym-popup").unwrap();
-            for id in [
-                "pseudonym-original",
-                "direct-alias",
-                "direct-undo",
-                "direct-keep",
-            ] {
+            for id in ["pseudonym-original", "direct-alias", "direct-keep"] {
                 let control = cx
                     .debug_bounds(id)
                     .unwrap_or_else(|| panic!("missing {id}"));
@@ -762,7 +766,6 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
             cx.run_until_parked();
             cx.update(|window, cx| window.draw(cx).clear(cx));
             assert!(cx.debug_bounds("direct-applied").is_some());
-            assert!(cx.debug_bounds("direct-undo").is_some());
             cx.simulate_keystrokes("escape");
             cx.run_until_parked();
             app.update_in(cx, |app, window, cx| {
@@ -825,7 +828,7 @@ fn long_original_enter_applies_this_one_and_alias_enter_only_confirms(
             original
         );
         cx.update(|window, cx| window.draw(cx).clear(cx));
-        let apply = cx.debug_bounds("apply-identity-map").unwrap();
+        let apply = cx.debug_bounds("primary-apply").unwrap();
         cx.simulate_click(apply.center(), Default::default());
         cx.run_until_parked();
         app.update_in(cx, |app, window, cx| {
@@ -1202,7 +1205,7 @@ fn decision_card_fits_the_mention_and_apply_settles_in(cx: &mut gpui::TestAppCon
         assert!(app.editor.read(cx).is_rolling_text());
     });
     cx.update(|window, cx| window.draw(cx).clear(cx));
-    assert!(cx.debug_bounds("direct-undo").is_some());
+    assert!(cx.debug_bounds("direct-applied").is_some());
     assert!(cx.debug_bounds("direct-cancel-addition").is_some());
     // Undo eases the restored proposal back to amber.
     app.update(cx, |app, cx| {
@@ -1475,7 +1478,7 @@ fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("review-rescan").is_some());
-    let apply = cx.debug_bounds("apply-identity-map").unwrap().center();
+    let apply = cx.debug_bounds("primary-apply").unwrap().center();
     cx.simulate_click(apply, Default::default());
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -1756,9 +1759,12 @@ fn view_switcher_picks_edit_original_pseudonymized_or_side_by_side(cx: &mut gpui
     cx.simulate_resize(gpui::size(px(1200.), px(800.)));
     let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
     draw(cx);
+    // The pill always offers zoom; the views join once aliases are applied
+    // (ADR 0048).
+    assert!(cx.debug_bounds("zoom-reset").is_some());
     assert!(
-        cx.debug_bounds("view-switcher").is_none(),
-        "only with applied replacements"
+        cx.debug_bounds("view-edit").is_none(),
+        "views only with applied replacements"
     );
     app.update(cx, |app, cx| prepare_applied(app, "Anna Bob Anna", cx));
     cx.run_until_parked();

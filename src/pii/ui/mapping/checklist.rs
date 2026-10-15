@@ -53,7 +53,12 @@ impl DocumentView {
     }
 
     /// Untick an entity (or one of its mentions): keep its originals.
-    pub(in crate::pii::ui) fn untick(&mut self, id: u64, only: Option<u64>, cx: &mut Context<Self>) {
+    pub(in crate::pii::ui) fn untick(
+        &mut self,
+        id: u64,
+        only: Option<u64>,
+        cx: &mut Context<Self>,
+    ) {
         let (pending, applied) = self.entity_mentions(id, only);
         self.keep_mentions_now(pending, applied, cx);
     }
@@ -73,7 +78,8 @@ impl DocumentView {
             .kept_of(id)
             .into_iter()
             .filter(|(range, original)| {
-                source.get(range.clone()) == Some(original.as_ref()) && seen.insert(original.clone())
+                source.get(range.clone()) == Some(original.as_ref())
+                    && seen.insert(original.clone())
             })
             .map(|(range, _)| range)
             .collect();
@@ -83,7 +89,11 @@ impl DocumentView {
         let added = self.checkpoint_review(cx, |review| {
             ranges
                 .iter()
-                .filter(|range| review.add_manual(&source, (*range).clone(), category).is_ok())
+                .filter(|range| {
+                    review
+                        .add_manual(&source, (*range).clone(), category)
+                        .is_ok()
+                })
                 .count()
         });
         if added.unwrap_or(0) == 0 {

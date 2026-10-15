@@ -31,66 +31,6 @@ impl ReviewUi {
 }
 
 impl DocumentView {
-    pub(crate) fn pii_toolbar_control(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = self.theme.get();
-        let enabled = self.can_copy_markdown();
-        div()
-            .id("pii-toolbar")
-            .flex()
-            .items_center()
-            .child(
-                ui::icon_control(
-                    "Pseudonymize",
-                    "Pseudonymize",
-                    ui::Icon::Anonymous,
-                    theme,
-                    enabled,
-                )
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    if enabled {
-                        this.toggle_pii_review(window, cx);
-                    }
-                })),
-            )
-            .children(self.scan_status(cx))
-            .when(enabled && self.has_applied_aliases(), |v| {
-                v.child(
-                    ui::icon_control(
-                        "Paste AI Response",
-                        "Paste AI response — restore the original names",
-                        ui::Icon::PasteReply,
-                        theme,
-                        true,
-                    )
-                    .on_click(|_, window, cx| {
-                        window.dispatch_action(Box::new(crate::PasteAiResponse), cx)
-                    }),
-                )
-                .child(
-                    ui::toggle_icon_control(
-                        "Compare",
-                        format!(
-                            "{} ({})",
-                            if self.compare.is_some() {
-                                "Back to editing"
-                            } else {
-                                "Before / after"
-                            },
-                            if cfg!(target_os = "macos") {
-                                "⌘\\"
-                            } else {
-                                "Ctrl+\\"
-                            }
-                        ),
-                        ui::Icon::Compare,
-                        theme,
-                        self.compare.is_some(),
-                    )
-                    .on_click(cx.listener(|this, _, window, cx| this.toggle_compare(window, cx))),
-                )
-            })
-            .into_any_element()
-    }
     /// While a scan runs: a spinner and a stage label beside Pseudonymize that
     /// crossfades through the scan's stages (ADR 0032). The scan reports no
     /// progress, so stages advance on a timer and settle on the last ones.

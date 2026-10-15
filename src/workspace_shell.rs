@@ -95,7 +95,11 @@ struct Row {
 }
 
 fn shortcut(mac: &'static str, other: &'static str) -> &'static str {
-    if cfg!(target_os = "macos") { mac } else { other }
+    if cfg!(target_os = "macos") {
+        mac
+    } else {
+        other
+    }
 }
 
 impl Workspace {
@@ -253,11 +257,7 @@ impl Workspace {
                             .text_color(p.header_muted),
                     )
                     .child(div().flex_1().child("Search…"))
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .child(shortcut("⌘K", "Ctrl+K")),
-                    )
+                    .child(div().text_size(px(11.)).child(shortcut("⌘K", "Ctrl+K")))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenPalette), cx)),
             )
             .child(
@@ -346,7 +346,12 @@ impl Workspace {
                             }),
                     ),
             )
-            .child(div().h(px(1.)).bg(gpui::transparent_black()).text_color(p.header_muted))
+            .child(
+                div()
+                    .h(px(1.))
+                    .bg(gpui::transparent_black())
+                    .text_color(p.header_muted),
+            )
             .into_any_element()
     }
 
@@ -363,12 +368,18 @@ impl Workspace {
         let accent = theme.search_accent();
         let version = banner.version.clone();
         let (title, detail) = match banner.kind {
-            BannerKind::Available => ("Update available".to_string(), format!("v{version} · update")),
+            BannerKind::Available => (
+                "Update available".to_string(),
+                format!("v{version} · update"),
+            ),
             BannerKind::Downloading => (
                 "Downloading update".to_string(),
                 format!("v{version} · {}%", state.percent().unwrap_or(0)),
             ),
-            BannerKind::Ready => ("Installed, next launch".to_string(), format!("v{version} · relaunch")),
+            BannerKind::Ready => (
+                "Installed, next launch".to_string(),
+                format!("v{version} · relaunch"),
+            ),
             BannerKind::Failed => ("Update failed".to_string(), format!("v{version} · details")),
             BannerKind::Updated => unreachable!(),
         };
@@ -427,7 +438,11 @@ impl Workspace {
                         .size(px(8.))
                         .flex_shrink_0()
                         .rounded_full()
-                        .bg(if ready { accent } else { style::markdown_style(theme).alert_warning }),
+                        .bg(if ready {
+                            accent
+                        } else {
+                            style::markdown_style(theme).alert_warning
+                        }),
                 )
                 .child(
                     div()
@@ -526,7 +541,9 @@ impl Workspace {
                                                 div()
                                                     .text_size(px(14.))
                                                     .text_color(p.header_muted)
-                                                    .child("What would you like to prepare for AI?"),
+                                                    .child(
+                                                        "What would you like to prepare for AI?",
+                                                    ),
                                             ),
                                     )
                                     .child(self.drop_zone(cx))
@@ -558,7 +575,11 @@ impl Workspace {
                 .py_2()
                 .bg(p.placeholder_bg)
                 .text_size(px(13.))
-                .child(div().flex_1().child(format!("mdoc {version} is installed.")))
+                .child(
+                    div()
+                        .flex_1()
+                        .child(format!("mdoc {version} is installed.")),
+                )
                 .child(
                     ui::link_button("whats-new", "What's new", theme, true).on_click(
                         move |_, _, cx| cx.open_url(&crate::updater::release_url(&version)),
@@ -595,9 +616,19 @@ impl Workspace {
             .child(layer(include_bytes!("../resources/ui/drop-page.svg"), ink))
             .child(layer(
                 include_bytes!("../resources/ui/drop-bars.svg"),
-                if active { accent } else { Hsla { a: 0.35, ..p.header_muted } },
+                if active {
+                    accent
+                } else {
+                    Hsla {
+                        a: 0.35,
+                        ..p.header_muted
+                    }
+                },
             ))
-            .child(layer(include_bytes!("../resources/ui/drop-disc.svg"), if active { accent } else { p.header_fg }))
+            .child(layer(
+                include_bytes!("../resources/ui/drop-disc.svg"),
+                if active { accent } else { p.header_fg },
+            ))
             .child(layer(include_bytes!("../resources/ui/drop-lock.svg"), p.bg));
         let illustration = if active {
             illustration
@@ -628,13 +659,18 @@ impl Workspace {
             .rounded_xl()
             .border_1()
             .border_dashed()
-            .border_color(p.border)
+            .border_color(Hsla {
+                a: 0.45,
+                ..p.header_muted
+            })
             .when(active, |v| {
                 v.border_2()
                     .border_color(accent)
                     .bg(Hsla { a: 0.05, ..accent })
             })
-            .when(refused, |v| v.border_color(style::markdown_style(theme).alert_caution))
+            .when(refused, |v| {
+                v.border_color(style::markdown_style(theme).alert_caution)
+            })
             .child(illustration)
             .child(
                 div()
@@ -681,8 +717,9 @@ impl Workspace {
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
             )
             .child(
-                ui::primary_button("home-restore", "Restore AI reply", theme, true)
-                    .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAiResponse), cx)),
+                ui::primary_button("home-restore", "Restore AI reply", theme, true).on_click(
+                    |_, window, cx| window.dispatch_action(Box::new(PasteAiResponse), cx),
+                ),
             )
             .child(
                 ui::primary_button("home-clipboard", "Pseudonymize clipboard", theme, true)
@@ -694,7 +731,9 @@ impl Workspace {
             .child(
                 div()
                     .id("empty-page-local")
-                    .when(cfg!(test), |v| v.debug_selector(|| "empty-page-local".into()))
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "empty-page-local".into())
+                    })
                     .flex()
                     .items_center()
                     .gap_1()
@@ -727,8 +766,9 @@ impl Workspace {
                     .child(home_label("Cases", theme))
                     .child(div().flex_1())
                     .child(
-                        ui::link_button("home-open-case", "Open a case…", theme, true)
-                            .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenCase), cx)),
+                        ui::link_button("home-open-case", "Open a case…", theme, true).on_click(
+                            |_, window, cx| window.dispatch_action(Box::new(OpenCase), cx),
+                        ),
                     )
                     .into_any_element(),
             );
@@ -739,7 +779,13 @@ impl Workspace {
             let documents = case.members.len();
             list = list.child(
                 home_row(SharedString::from(format!("home-case-{}", case.id)), theme)
-                    .child(div().size(px(8.)).rounded_full().bg(link.color()).flex_shrink_0())
+                    .child(
+                        div()
+                            .size(px(8.))
+                            .rounded_full()
+                            .bg(link.color())
+                            .flex_shrink_0(),
+                    )
                     .child(div().flex_1().min_w_0().truncate().child(case.name.clone()))
                     .child(
                         div()
@@ -747,10 +793,16 @@ impl Workspace {
                             .text_color(p.header_muted)
                             .child(format!(
                                 "{documents} {}",
-                                if documents == 1 { "document" } else { "documents" }
+                                if documents == 1 {
+                                    "document"
+                                } else {
+                                    "documents"
+                                }
                             )),
                     )
-                    .on_click(cx.listener(move |this, _, window, cx| this.open_case(&id, window, cx))),
+                    .on_click(
+                        cx.listener(move |this, _, window, cx| this.open_case(&id, window, cx)),
+                    ),
             );
         }
         Some(
@@ -770,61 +822,70 @@ impl Workspace {
         if self.shell.recents.files.is_empty() {
             return None;
         }
-        let rows = self.shell.recents.files.iter().take(8).enumerate().map(|(i, recent)| {
-            let path = recent.path.clone();
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let folder = path
-                .parent()
-                .and_then(|p| p.file_name())
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            home_row(("home-recent", i), theme)
-                .when(cfg!(test), |v| v.debug_selector(move || format!("home-recent-{i}")))
-                .tooltip(style::tooltip(path.to_string_lossy().into_owned(), theme))
-                .child(
-                    gpui::svg()
-                        .data(ui::Icon::Source.data())
-                        .size(px(14.))
-                        .flex_shrink_0()
-                        .text_color(p.header_muted),
-                )
-                .child(div().min_w_0().truncate().child(name))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_size(px(12.))
-                        .text_color(p.header_muted)
-                        .child(folder),
-                )
-                .when(recent.pseudonymized, |v| {
-                    v.child(
-                        div()
-                            .px(px(6.))
-                            .rounded_sm()
-                            .bg(p.placeholder_bg)
-                            .text_size(px(11.))
-                            .text_color(p.header_muted)
-                            .child("pseudonymized"),
+        let rows = self
+            .shell
+            .recents
+            .files
+            .iter()
+            .take(8)
+            .enumerate()
+            .map(|(i, recent)| {
+                let path = recent.path.clone();
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let folder = path
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                home_row(("home-recent", i), theme)
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(move || format!("home-recent-{i}"))
+                    })
+                    .tooltip(style::tooltip(path.to_string_lossy().into_owned(), theme))
+                    .child(
+                        gpui::svg()
+                            .data(ui::Icon::Source.data())
+                            .size(px(14.))
+                            .flex_shrink_0()
+                            .text_color(p.header_muted),
                     )
-                })
-                .child(
-                    div()
-                        .w(px(84.))
-                        .flex_shrink_0()
-                        .text_right()
-                        .text_size(px(12.))
-                        .text_color(p.header_muted)
-                        .child(recents::when(recent.opened)),
-                )
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.open_paths(vec![path.clone()], window, cx)
-                }))
-        });
+                    .child(div().min_w_0().truncate().child(name))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(12.))
+                            .text_color(p.header_muted)
+                            .child(folder),
+                    )
+                    .when(recent.pseudonymized, |v| {
+                        v.child(
+                            div()
+                                .px(px(6.))
+                                .rounded_sm()
+                                .bg(p.placeholder_bg)
+                                .text_size(px(11.))
+                                .text_color(p.header_muted)
+                                .child("pseudonymized"),
+                        )
+                    })
+                    .child(
+                        div()
+                            .w(px(84.))
+                            .flex_shrink_0()
+                            .text_right()
+                            .text_size(px(12.))
+                            .text_color(p.header_muted)
+                            .child(recents::when(recent.opened)),
+                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.open_paths(vec![path.clone()], window, cx)
+                    }))
+            });
         Some(
             div()
                 .flex()
@@ -938,25 +999,109 @@ impl Workspace {
             .unwrap_or_default();
         let has_document = !self.showing_home(cx);
         let mut rows = vec![
-            Row { section: "Actions", label: "New tab".into(), detail: None, shortcut: Some(shortcut("⌘N", "Ctrl+N")), command: Command::NewTab },
-            Row { section: "Actions", label: "Open files…".into(), detail: None, shortcut: Some(shortcut("⌘O", "Ctrl+O")), command: Command::OpenFiles },
-            Row { section: "Actions", label: "Paste text as new tab".into(), detail: None, shortcut: None, command: Command::PasteText },
+            Row {
+                section: "Actions",
+                label: "New tab".into(),
+                detail: None,
+                shortcut: Some(shortcut("⌘N", "Ctrl+N")),
+                command: Command::NewTab,
+            },
+            Row {
+                section: "Actions",
+                label: "Open files…".into(),
+                detail: None,
+                shortcut: Some(shortcut("⌘O", "Ctrl+O")),
+                command: Command::OpenFiles,
+            },
+            Row {
+                section: "Actions",
+                label: "Paste text as new tab".into(),
+                detail: None,
+                shortcut: None,
+                command: Command::PasteText,
+            },
         ];
         if has_document {
             rows.extend([
-                Row { section: "Actions", label: "Pseudonymize".into(), detail: None, shortcut: None, command: Command::Pseudonymize },
-                Row { section: "Actions", label: "Copy for AI".into(), detail: None, shortcut: None, command: Command::CopyForAi },
-                Row { section: "Actions", label: "Copy Markdown".into(), detail: None, shortcut: None, command: Command::CopyMarkdown },
-                Row { section: "Actions", label: "Save".into(), detail: None, shortcut: Some(shortcut("⌘S", "Ctrl+S")), command: Command::Save },
+                Row {
+                    section: "Actions",
+                    label: "Pseudonymize".into(),
+                    detail: None,
+                    shortcut: None,
+                    command: Command::Pseudonymize,
+                },
+                Row {
+                    section: "Actions",
+                    label: "Copy for AI".into(),
+                    detail: None,
+                    shortcut: None,
+                    command: Command::CopyForAi,
+                },
+                Row {
+                    section: "Actions",
+                    label: "Copy Markdown".into(),
+                    detail: None,
+                    shortcut: None,
+                    command: Command::CopyMarkdown,
+                },
+                Row {
+                    section: "Actions",
+                    label: "Save".into(),
+                    detail: None,
+                    shortcut: Some(shortcut("⌘S", "Ctrl+S")),
+                    command: Command::Save,
+                },
             ]);
         }
         rows.extend([
-            Row { section: "Actions", label: "Restore AI reply".into(), detail: None, shortcut: Some(shortcut("⌥⇧⌘V", "Ctrl+Alt+Shift+V")), command: Command::RestoreReply },
-            Row { section: "Actions", label: "Pseudonymize clipboard".into(), detail: None, shortcut: Some(shortcut("⌥⇧⌘C", "Ctrl+Alt+Shift+C")), command: Command::PseudonymizeClipboard },
-            Row { section: "Actions", label: "Open a case…".into(), detail: None, shortcut: None, command: Command::OpenCase },
-            Row { section: "Actions", label: format!("Switch theme ({})", self.theme_choice.next().label().trim_start_matches("Theme: ")), detail: None, shortcut: None, command: Command::Theme },
-            Row { section: "Go to", label: "Home".into(), detail: None, shortcut: Some(shortcut("⇧⌘H", "Ctrl+Shift+H")), command: Command::Home },
-            Row { section: "Go to", label: "Settings".into(), detail: None, shortcut: Some(shortcut("⌘,", "Ctrl+,")), command: Command::Settings },
+            Row {
+                section: "Actions",
+                label: "Restore AI reply".into(),
+                detail: None,
+                shortcut: Some(shortcut("⌥⇧⌘V", "Ctrl+Alt+Shift+V")),
+                command: Command::RestoreReply,
+            },
+            Row {
+                section: "Actions",
+                label: "Pseudonymize clipboard".into(),
+                detail: None,
+                shortcut: Some(shortcut("⌥⇧⌘C", "Ctrl+Alt+Shift+C")),
+                command: Command::PseudonymizeClipboard,
+            },
+            Row {
+                section: "Actions",
+                label: "Open a case…".into(),
+                detail: None,
+                shortcut: None,
+                command: Command::OpenCase,
+            },
+            Row {
+                section: "Actions",
+                label: format!(
+                    "Switch theme ({})",
+                    self.theme_choice
+                        .next()
+                        .label()
+                        .trim_start_matches("Theme: ")
+                ),
+                detail: None,
+                shortcut: None,
+                command: Command::Theme,
+            },
+            Row {
+                section: "Go to",
+                label: "Home".into(),
+                detail: None,
+                shortcut: Some(shortcut("⇧⌘H", "Ctrl+Shift+H")),
+                command: Command::Home,
+            },
+            Row {
+                section: "Go to",
+                label: "Settings".into(),
+                detail: None,
+                shortcut: Some(shortcut("⌘,", "Ctrl+,")),
+                command: Command::Settings,
+            },
         ]);
         for tab in &self.tabs {
             if self.is_placeholder(tab, cx) {
@@ -975,7 +1120,13 @@ impl Workspace {
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_else(|| "Untitled.md".into())
                 });
-            rows.push(Row { section: "Open tabs", label: name, detail: None, shortcut: None, command: Command::Tab(tab.id) });
+            rows.push(Row {
+                section: "Open tabs",
+                label: name,
+                detail: None,
+                shortcut: None,
+                command: Command::Tab(tab.id),
+            });
         }
         for case in &self.cases.cases {
             rows.push(Row {
@@ -997,7 +1148,13 @@ impl Workspace {
                 .extension()
                 .map(|e| e.to_string_lossy().to_uppercase())
                 .unwrap_or_default();
-            rows.push(Row { section: "Recent", label: name, detail: Some(kind), shortcut: None, command: Command::Recent(recent.path.clone()) });
+            rows.push(Row {
+                section: "Recent",
+                label: name,
+                detail: Some(kind),
+                shortcut: None,
+                command: Command::Recent(recent.path.clone()),
+            });
         }
         if query.is_empty() {
             return rows;
@@ -1015,21 +1172,28 @@ impl Workspace {
         if let Some(palette) = &mut self.shell.palette
             && count > 0
         {
-            palette.selected = (palette.selected as isize + delta).rem_euclid(count as isize) as usize;
+            palette.selected =
+                (palette.selected as isize + delta).rem_euclid(count as isize) as usize;
             cx.notify();
         }
     }
 
-    pub(super) fn palette_confirm(&mut self, index: Option<usize>, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn palette_confirm(
+        &mut self,
+        index: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let rows = self.palette_rows(cx);
         let index = index.or(self.shell.palette.as_ref().map(|p| p.selected));
         let Some(row) = index.and_then(|i| rows.into_iter().nth(i)) else {
             return;
         };
         self.close_palette(window, cx);
-        let dispatch = |window: &mut Window, cx: &mut Context<Self>, action: Box<dyn gpui::Action>| {
-            window.dispatch_action(action, cx)
-        };
+        let dispatch =
+            |window: &mut Window, cx: &mut Context<Self>, action: Box<dyn gpui::Action>| {
+                window.dispatch_action(action, cx)
+            };
         match row.command {
             Command::NewTab => dispatch(window, cx, Box::new(New)),
             Command::OpenFiles => dispatch(window, cx, Box::new(Open)),
@@ -1087,7 +1251,9 @@ impl Workspace {
             list = list.child(
                 div()
                     .id(("palette-row", i))
-                    .when(cfg!(test), |v| v.debug_selector(move || format!("palette-row-{i}")))
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(move || format!("palette-row-{i}"))
+                    })
                     .role(gpui::Role::MenuItem)
                     .aria_label(row.label.clone())
                     .flex()
@@ -1099,7 +1265,12 @@ impl Workspace {
                     .cursor_pointer()
                     .when(i == selected, |v| v.bg(p.placeholder_bg))
                     .hover(move |s| s.bg(p.placeholder_bg))
-                    .child(gpui::svg().data(icon.data()).size(px(15.)).text_color(p.header_muted))
+                    .child(
+                        gpui::svg()
+                            .data(icon.data())
+                            .size(px(15.))
+                            .text_color(p.header_muted),
+                    )
                     .child(div().flex_1().min_w_0().truncate().child(row.label.clone()))
                     .when_some(row.detail.clone(), |v, d| {
                         v.child(div().text_size(px(11.)).text_color(p.header_muted).child(d))
@@ -1137,11 +1308,21 @@ impl Workspace {
                     )
                     .child(
                         ui::panel("command-palette", theme)
-                            .when(cfg!(test), |v| v.debug_selector(|| "command-palette".into()))
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "command-palette".into())
+                            })
                             .key_context(PALETTE)
-                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .on_action(cx.listener(|this, _: &PaletteUp, _, cx| this.palette_step(-1, cx)))
-                            .on_action(cx.listener(|this, _: &PaletteDown, _, cx| this.palette_step(1, cx)))
+                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                cx.stop_propagation()
+                            })
+                            .on_action(
+                                cx.listener(|this, _: &PaletteUp, _, cx| this.palette_step(-1, cx)),
+                            )
+                            .on_action(
+                                cx.listener(|this, _: &PaletteDown, _, cx| {
+                                    this.palette_step(1, cx)
+                                }),
+                            )
                             .on_action(cx.listener(|this, _: &PaletteConfirm, window, cx| {
                                 this.palette_confirm(None, window, cx)
                             }))
@@ -1171,7 +1352,12 @@ impl Workspace {
                                             .size(px(15.))
                                             .text_color(p.header_muted),
                                     )
-                                    .child(div().flex_1().text_size(px(14.)).child(palette.input.clone())),
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .text_size(px(14.))
+                                            .child(palette.input.clone()),
+                                    ),
                             )
                             .child(
                                 div()
@@ -1219,7 +1405,11 @@ fn nav_row(
                 .data(icon.data())
                 .size(px(15.))
                 .flex_shrink_0()
-                .text_color(if selected { p.header_fg } else { p.header_muted }),
+                .text_color(if selected {
+                    p.header_fg
+                } else {
+                    p.header_muted
+                }),
         )
         .child(div().flex_1().child(label))
 }

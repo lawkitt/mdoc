@@ -69,13 +69,6 @@ impl ThemeChoice {
 }
 
 impl Theme {
-    pub fn toggle(self) -> Self {
-        match self {
-            Self::Dark => Self::Light,
-            Self::Light => Self::Dark,
-        }
-    }
-
     /// The icon names the theme the button will switch to.
     pub fn pdf_style(self) -> PdfStyle {
         match self {
@@ -180,10 +173,11 @@ impl Theme {
         }
     }
 
+    /// The selected sidebar row: neutral, a step above the ground (ADR 0048).
     pub fn sidebar_selected(self) -> Hsla {
         match self {
-            Self::Dark => rgb(0x293630),
-            Self::Light => rgb(0xe2ece7),
+            Self::Dark => rgb(0x2a2a30),
+            Self::Light => rgb(0xdfdfdc),
         }
         .into()
     }

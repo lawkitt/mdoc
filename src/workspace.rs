@@ -322,10 +322,12 @@ impl Workspace {
             _appearance: None,
             _checkpoint: None,
         };
-        this._appearance = Some(cx.observe_window_appearance(window, |this, window, cx| {
-            this.apply_theme(window, cx)
-        }));
-        this.theme.set(this.theme_choice.resolve(window.appearance()));
+        this._appearance =
+            Some(cx.observe_window_appearance(window, |this, window, cx| {
+                this.apply_theme(window, cx)
+            }));
+        this.theme
+            .set(this.theme_choice.resolve(window.appearance()));
         this.settings_subscription =
             Some(
                 cx.subscribe_in(&panel, window, |this, _, event, window, cx| match event {
@@ -358,6 +360,10 @@ impl Workspace {
                         this.open_comparison(*model, window, cx);
                     }
                     settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
+                    settings_ui::Event::ClearRecents => {
+                        this.shell.recents.clear();
+                        cx.notify();
+                    }
                 }),
             );
         this
@@ -2008,7 +2014,9 @@ impl Workspace {
                         .justify_center()
                         .text_size(px(9.))
                         .mb(px(2.))
-                        .when(self.active == id && !home, |v| v.bg(theme.sidebar_selected()))
+                        .when(self.active == id && !home, |v| {
+                            v.bg(theme.sidebar_selected())
+                        })
                         .when(!revealed, |v| {
                             v.tooltip(style::tooltip(tooltip.clone(), theme))
                         })
@@ -2054,144 +2062,150 @@ impl Workspace {
                             }),
                         ),
                 );
-                Some(div()
-                    .id(("tab", id))
-                    .map(|v| {
-                        ui::reveal_focus(v.track_focus(&focus), focus, self.sidebar_scroll.clone())
-                    })
-                    .key_context("UiControl")
-                    .tab_index(0)
-                    .role(gpui::Role::Button)
-                    .aria_label(if duplicate {
-                        format!("{name} · {parent_label}")
-                    } else {
-                        name.clone()
-                    })
-                    .when(cfg!(test), |v| {
-                        v.debug_selector(move || format!("tab-{id}"))
-                    })
-                    .flex()
-                    .items_center()
-                    .min_w_0()
-                    .gap_1()
-                    .px_2()
-                    .min_h(px(32.))
-                    .mb(px(2.))
-                    .rounded_md()
-                    .when(self.active == id && !home, |v| v.bg(theme.sidebar_selected()))
-                    .hover(move |v| v.bg(palette.placeholder_bg))
-                    .focus_visible(move |v| v.bg(palette.placeholder_bg))
-                    .tooltip(style::tooltip(tooltip, theme))
-                    .cursor_pointer()
-                    .child(
-                        div()
-                            .text_size(px(9.))
-                            .text_color(palette.header_muted)
-                            .flex_shrink_0()
-                            .child(format),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .flex_col()
-                            .child(div().truncate().child(name.clone()))
-                            .when(duplicate, |v| {
-                                v.child(
-                                    div()
-                                        .truncate()
-                                        .text_size(px(10.))
-                                        .text_color(palette.header_muted)
-                                        .child(parent_label),
-                                )
-                            }),
-                    )
-                    .when(recognized, |v| {
-                        v.child(tab_badge(ui::Icon::Ocr, palette.header_muted))
-                    })
-                    .when(pseudonymized, |v| {
-                        v.child(tab_badge(ui::Icon::Anonymous, palette.header_muted))
-                    })
-                    .when(dirty || busy || error, |v| {
-                        v.child(
+                Some(
+                    div()
+                        .id(("tab", id))
+                        .map(|v| {
+                            ui::reveal_focus(
+                                v.track_focus(&focus),
+                                focus,
+                                self.sidebar_scroll.clone(),
+                            )
+                        })
+                        .key_context("UiControl")
+                        .tab_index(0)
+                        .role(gpui::Role::Button)
+                        .aria_label(if duplicate {
+                            format!("{name} · {parent_label}")
+                        } else {
+                            name.clone()
+                        })
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(move || format!("tab-{id}"))
+                        })
+                        .flex()
+                        .items_center()
+                        .min_w_0()
+                        .gap_1()
+                        .px_2()
+                        .min_h(px(32.))
+                        .mb(px(2.))
+                        .rounded_md()
+                        .when(self.active == id && !home, |v| {
+                            v.bg(theme.sidebar_selected())
+                        })
+                        .hover(move |v| v.bg(palette.placeholder_bg))
+                        .focus_visible(move |v| v.bg(palette.placeholder_bg))
+                        .tooltip(style::tooltip(tooltip, theme))
+                        .cursor_pointer()
+                        .child(
                             div()
-                                .text_color(if error {
-                                    style::markdown_style(theme).alert_warning
-                                } else {
-                                    palette.header_muted
-                                })
-                                .child(if running && !error {
-                                    ui::spinner(("tab-activity", id), theme)
-                                } else {
-                                    div()
-                                        .child(if error {
-                                            "!"
-                                        } else if busy {
-                                            "…"
-                                        } else {
-                                            "•"
-                                        })
-                                        .into_any_element()
+                                .text_size(px(9.))
+                                .text_color(palette.header_muted)
+                                .flex_shrink_0()
+                                .child(format),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .flex()
+                                .flex_col()
+                                .child(div().truncate().child(name.clone()))
+                                .when(duplicate, |v| {
+                                    v.child(
+                                        div()
+                                            .truncate()
+                                            .text_size(px(10.))
+                                            .text_color(palette.header_muted)
+                                            .child(parent_label),
+                                    )
                                 }),
                         )
-                    })
-                    .child(
-                        ui::control(("close-tab", id), "×", theme, true)
-                            .aria_label("Close tab")
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                cx.stop_propagation();
-                                this.close_tab(id, window, cx);
-                            })),
-                    )
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        if this.quitting.is_none() {
-                            this.activate(id, window, cx);
-                        }
-                    }))
-                    .on_mouse_down(
-                        gpui::MouseButton::Right,
-                        cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
-                            this.menu_return = window.focused(cx);
-                            window.focus(&this.menu_focus, cx);
-                            this.tab_menu = Some((id, event.position));
-                            cx.notify();
-                        }),
-                    )
-                    .on_drag(TabDrag { id, label: name }, |drag, _, _, cx| {
-                        cx.stop_propagation();
-                        cx.new(|_| drag.clone())
-                    })
-                    .drag_over::<TabDrag>(move |v, _, _, _| {
-                        v.border_t_2().border_color(theme.search_accent())
-                    })
-                    // The same line marks where dropped OS files open.
-                    .when(drop_index == Some(index), |v| {
-                        v.border_t_2().border_color(accent)
-                    })
-                    .on_drag_move(cx.listener(
-                        move |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
-                            let position = event.event.position;
-                            let row = event.bounds.contains(&position).then(|| {
-                                let lower = position.y > event.bounds.center().y;
-                                (id, index + usize::from(lower))
-                            });
-                            if row.is_some() && this.file_drop_row != row {
-                                this.file_drop_row = row;
-                                cx.notify();
-                            } else if row.is_none()
-                                && this.file_drop_row.is_some_and(|(row, _)| row == id)
-                            {
-                                this.file_drop_row = None;
-                                cx.notify();
+                        .when(recognized, |v| {
+                            v.child(tab_badge(ui::Icon::Ocr, palette.header_muted))
+                        })
+                        .when(pseudonymized, |v| {
+                            v.child(tab_badge(ui::Icon::Anonymous, palette.header_muted))
+                        })
+                        .when(dirty || busy || error, |v| {
+                            v.child(
+                                div()
+                                    .text_color(if error {
+                                        style::markdown_style(theme).alert_warning
+                                    } else {
+                                        palette.header_muted
+                                    })
+                                    .child(if running && !error {
+                                        ui::spinner(("tab-activity", id), theme)
+                                    } else {
+                                        div()
+                                            .child(if error {
+                                                "!"
+                                            } else if busy {
+                                                "…"
+                                            } else {
+                                                "•"
+                                            })
+                                            .into_any_element()
+                                    }),
+                            )
+                        })
+                        .child(
+                            ui::control(("close-tab", id), "×", theme, true)
+                                .aria_label("Close tab")
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    cx.stop_propagation();
+                                    this.close_tab(id, window, cx);
+                                })),
+                        )
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            if this.quitting.is_none() {
+                                this.activate(id, window, cx);
                             }
-                        },
-                    ))
-                    .on_drop(
-                        cx.listener(move |this, drag: &TabDrag, _, cx| {
+                        }))
+                        .on_mouse_down(
+                            gpui::MouseButton::Right,
+                            cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
+                                this.menu_return = window.focused(cx);
+                                window.focus(&this.menu_focus, cx);
+                                this.tab_menu = Some((id, event.position));
+                                cx.notify();
+                            }),
+                        )
+                        .on_drag(TabDrag { id, label: name }, |drag, _, _, cx| {
+                            cx.stop_propagation();
+                            cx.new(|_| drag.clone())
+                        })
+                        .drag_over::<TabDrag>(move |v, _, _, _| {
+                            v.border_t_2().border_color(theme.search_accent())
+                        })
+                        // The same line marks where dropped OS files open.
+                        .when(drop_index == Some(index), |v| {
+                            v.border_t_2().border_color(accent)
+                        })
+                        .on_drag_move(cx.listener(
+                            move |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                                let position = event.event.position;
+                                let row = event.bounds.contains(&position).then(|| {
+                                    let lower = position.y > event.bounds.center().y;
+                                    (id, index + usize::from(lower))
+                                });
+                                if row.is_some() && this.file_drop_row != row {
+                                    this.file_drop_row = row;
+                                    cx.notify();
+                                } else if row.is_none()
+                                    && this.file_drop_row.is_some_and(|(row, _)| row == id)
+                                {
+                                    this.file_drop_row = None;
+                                    cx.notify();
+                                }
+                            },
+                        ))
+                        .on_drop(cx.listener(move |this, drag: &TabDrag, _, cx| {
                             this.reorder(drag.id, id, cx)
-                        }),
-                    ))
+                        })),
+                )
             })
             .collect::<Vec<_>>();
         // A case's header sits above its first member in each run of tabs.
@@ -2244,7 +2258,12 @@ impl Workspace {
             .mt_1()
             .min_h(px(30.))
             .text_color(palette.header_muted)
-            .child(gpui::svg().data(ui::Icon::Plus.data()).size(px(14.)).text_color(palette.header_muted))
+            .child(
+                gpui::svg()
+                    .data(ui::Icon::Plus.data())
+                    .size(px(14.))
+                    .text_color(palette.header_muted),
+            )
             .child("New tab")
             .when(drop_index == Some(self.tabs.len()), |v| {
                 v.border_t_2().border_color(accent)
@@ -2316,16 +2335,22 @@ impl Workspace {
                         .pb_2()
                         .flex_shrink_0()
                         .child(
-                            ui::header_icon("rail-search", "Search or run an action", ui::Icon::Search, theme, false)
-                                .on_click(|_, window, cx| {
-                                    window.dispatch_action(Box::new(shell::OpenPalette), cx)
-                                }),
+                            ui::header_icon(
+                                "rail-search",
+                                "Search or run an action",
+                                ui::Icon::Search,
+                                theme,
+                                false,
+                            )
+                            .on_click(|_, window, cx| {
+                                window.dispatch_action(Box::new(shell::OpenPalette), cx)
+                            }),
                         )
                         .child(
                             ui::header_icon("rail-home", "Home", ui::Icon::Home, theme, home)
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.show_home(window, cx)
-                                })),
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| this.show_home(window, cx)),
+                                ),
                         ),
                 )
                 .child(
@@ -2540,16 +2565,20 @@ impl Render for Workspace {
             .flex_col()
             .bg(theme.sidebar_bg())
             .text_color(palette.header_fg)
-            .on_action(cx.listener(|this, _: &shell::OpenPalette, window, cx| {
-                this.open_palette(window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &shell::ShowHome, window, cx| {
-                this.show_home(window, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &shell::OpenPalette, window, cx| {
+                    this.open_palette(window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &shell::ShowHome, window, cx| this.show_home(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &shell::PasteAsNewTab, window, cx| {
                 this.paste_as_new_tab(window, cx)
             }))
-            .on_action(cx.listener(|this, _: &ToggleTheme, window, cx| this.cycle_theme(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &ToggleTheme, window, cx| this.cycle_theme(window, cx)),
+            )
             .on_action(cx.listener(|this, action: &PiiApplyAll, window, cx| {
                 if let Some(view) = this.active_view().filter(|_| !this.showing_home(cx)) {
                     view.update(cx, |view, cx| view.apply_all_pii(action, window, cx));
@@ -2711,7 +2740,10 @@ impl Render for Workspace {
                         .left(px(style::TRAFFIC_LIGHT_INSET))
                         .top(px(style::CARD_MARGIN + (style::HEADER_HEIGHT - 32.) / 2.))
                         .child(sidebar_toggle(
-                            &self.rail_toggle_focus.clone().tab_stop(self.reveal == Reveal::Hidden),
+                            &self
+                                .rail_toggle_focus
+                                .clone()
+                                .tab_stop(self.reveal == Reveal::Hidden),
                             false,
                             theme,
                         )),
@@ -2759,10 +2791,12 @@ impl Workspace {
                     .border_color(theme.card_border())
                     .shadow_sm()
                     .when(home, |v| {
-                        v.on_drop(cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
-                            this.shell.drop = None;
-                            this.open_paths(paths.paths().to_vec(), window, cx);
-                        }))
+                        v.on_drop(
+                            cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
+                                this.shell.drop = None;
+                                this.open_paths(paths.paths().to_vec(), window, cx);
+                            }),
+                        )
                     })
                     .children(self.case_key_bar(cx))
                     .children(self.crash_bar(cx))
@@ -2774,49 +2808,49 @@ impl Workspace {
 
     fn notice_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         self.notice.clone().map(|notice| {
-                let palette = self.theme.get().pdf_style();
-                let accent = style::markdown_style(self.theme.get()).alert_warning;
+            let palette = self.theme.get().pdf_style();
+            let accent = style::markdown_style(self.theme.get()).alert_warning;
+            div()
+                .flex()
+                .flex_col()
+                .text_size(px(12.))
+                .bg(gpui::Hsla { a: 0.07, ..accent })
+                .border_b_1()
+                .border_color(palette.border)
+                .child(
                     div()
                         .flex()
-                        .flex_col()
-                        .text_size(px(12.))
-                        .bg(gpui::Hsla { a: 0.07, ..accent })
-                        .border_b_1()
-                        .border_color(palette.border)
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .py_1()
+                        .child(div().text_color(accent).child("ⓘ"))
+                        .child(div().flex_1().min_w_0().child(notice))
                         .child(
                             div()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .px_3()
+                                .id("dismiss-session-notice")
+                                .flex_shrink_0()
+                                .role(gpui::Role::Button)
+                                .aria_label("Dismiss notice")
+                                .key_context("UiControl")
+                                .tab_index(0)
+                                .focus_visible(|s| {
+                                    s.bg(self.theme.get().pdf_style().placeholder_bg)
+                                })
+                                .aria_label("Dismiss notice")
+                                .px_2()
                                 .py_1()
-                                .child(div().text_color(accent).child("ⓘ"))
-                                .child(div().flex_1().min_w_0().child(notice))
-                                .child(
-                                    div()
-                                        .id("dismiss-session-notice")
-                                        .flex_shrink_0()
-                                        .role(gpui::Role::Button)
-                                        .aria_label("Dismiss notice")
-                                        .key_context("UiControl")
-                                        .tab_index(0)
-                                        .focus_visible(|s| {
-                                            s.bg(self.theme.get().pdf_style().placeholder_bg)
-                                        })
-                                        .aria_label("Dismiss notice")
-                                        .px_2()
-                                        .py_1()
-                                        .rounded_md()
-                                        .cursor_pointer()
-                                        .hover(|v| v.bg(palette.placeholder_bg))
-                                        .child("×")
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            this.notice = None;
-                                            cx.notify();
-                                        })),
-                                ),
-                        )
-                        .into_any_element()
+                                .rounded_md()
+                                .cursor_pointer()
+                                .hover(|v| v.bg(palette.placeholder_bg))
+                                .child("×")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.notice = None;
+                                    cx.notify();
+                                })),
+                        ),
+                )
+                .into_any_element()
         })
     }
 }
