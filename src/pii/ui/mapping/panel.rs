@@ -527,8 +527,11 @@ impl DocumentView {
                     }
                 },
             ))
-            .rounded_none()
+            // A card inset in the document, like the content card (ADR 0048).
+            .m_2()
+            .rounded_lg()
             .shadow_none()
+            .overflow_hidden()
             .key_context("IdentityPanel UiPanel UiMenu")
             .tab_group()
             .tab_stop(false)
@@ -538,8 +541,7 @@ impl DocumentView {
             .flex()
             .flex_col()
             .text_size(px(13.))
-            .w(self.replacements_panel_width(window))
-            .h_full()
+            .w(self.replacements_panel_width(window) - px(16.))
             .relative()
             .child(
                 gpui::canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})
