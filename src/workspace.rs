@@ -2559,6 +2559,29 @@ impl Render for Workspace {
             self.shell.drop = None;
         }
         self.remember_recents(cx);
+        // A crash report says what the window showed (no text, no names).
+        crate::crash::note_state(format!(
+            "{}, {} tabs, sidebar {}, {:?} theme{}",
+            if home {
+                "Home".to_string()
+            } else {
+                self.active_view()
+                    .map(|v| v.read(cx).crash_state(cx))
+                    .unwrap_or_default()
+            },
+            self.tabs.len(),
+            if self.sidebar_choice.unwrap_or(true) {
+                "expanded"
+            } else {
+                "collapsed"
+            },
+            theme,
+            if self.shell.palette.is_some() {
+                ", palette open"
+            } else {
+                ""
+            },
+        ));
         self.title.inset.set(if self.sidebar_visible {
             0.
         } else {
