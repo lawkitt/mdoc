@@ -296,23 +296,6 @@ impl DocumentView {
             .items_center()
             .gap_1()
             .flex_shrink_0()
-            .when(has_preview && self.compare.is_none(), |v| {
-                v.child(
-                    ui::header_icon(
-                        "header-source",
-                        if self.preview.visible {
-                            "Hide the original file"
-                        } else {
-                            "Show the original file"
-                        },
-                        ui::Icon::Source,
-                        theme,
-                        self.preview.visible,
-                    )
-                    .when(cfg!(test), |v| v.debug_selector(|| "header-source".into()))
-                    .on_click(|_, window, cx| window.dispatch_action(Box::new(TogglePreview), cx)),
-                )
-            })
             .when(reviewable, |v| {
                 v.child(
                     ui::header_icon(
@@ -332,6 +315,23 @@ impl DocumentView {
                             this.toggle_replacements_panel(window, cx)
                         }),
                     ),
+                )
+            })
+            .when(has_preview && self.compare.is_none(), |v| {
+                v.child(
+                    ui::header_icon(
+                        "header-source",
+                        if self.preview.visible {
+                            "Hide the original file"
+                        } else {
+                            "Show the original file"
+                        },
+                        ui::Icon::Source,
+                        theme,
+                        self.preview.visible,
+                    )
+                    .when(cfg!(test), |v| v.debug_selector(|| "header-source".into()))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(TogglePreview), cx)),
                 )
             })
             .child(self.more_button(cx))

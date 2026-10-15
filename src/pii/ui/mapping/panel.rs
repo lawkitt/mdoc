@@ -88,10 +88,30 @@ impl DocumentView {
                 Some(true),
             );
         }
-        for (_, original, identity) in review.kept_mentions() {
-            if let Some(id) = identity {
-                add(id, original, None);
+        let mut orphans = Vec::new();
+        for (_, original, identity) in self.kept_entries() {
+            match identity {
+                Some(id) if review.identity(id).is_some() => add(id, original, None),
+                Some(id) => orphans.push((id, original)),
+                None => {}
             }
+        }
+        // An entity the review dropped once every mention was kept still
+        // shows, unticked, from its record (ADR 0048).
+        for (id, original) in orphans {
+            let Some(name) = self.pii.mapping.kept_names.get(&original) else {
+                continue;
+            };
+            let row = rows.entry(id).or_insert_with(|| ReplacementRow {
+                id,
+                original: original.clone(),
+                alias: name.alias.clone(),
+                category: name.category,
+                mentions: 0,
+                applied: 0,
+                kept: 0,
+            });
+            row.kept += 1;
         }
         rows.into_values()
             .filter(|row| match filter {

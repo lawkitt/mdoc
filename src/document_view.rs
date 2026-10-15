@@ -169,6 +169,8 @@ impl DocumentView {
                 EditorEvent::SelectionAction => {
                     this.add_pii_candidate(&PiiAddCandidate, window, cx)
                 }
+                // A hovered replacement shows its tooltip (ADR 0048).
+                EditorEvent::HoverAnnotation(_) => cx.notify(),
                 EditorEvent::OpenLink(src) => {
                     if src.starts_with("https://")
                         || src.starts_with("http://")
@@ -327,9 +329,9 @@ impl DocumentView {
         self.session.ocr_configuration.is_some()
     }
 
-    /// Zoom the Markdown text between 50% and 200% in 10% steps.
+    /// Zoom the Markdown text between 50% and 200% in 5% steps.
     pub(crate) fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
-        let zoom = ((zoom * 10.).round() / 10.).clamp(0.5, 2.);
+        let zoom = ((zoom * 20.).round() / 20.).clamp(0.5, 2.);
         if zoom != self.zoom {
             self.zoom = zoom;
             cx.notify();
@@ -1303,6 +1305,11 @@ pub(crate) fn bind_markdown_search_keys(cx: &mut App) {
     ]);
 }
 
+/// One zoom step (ADR 0048).
+pub(crate) const ZOOM_STEP: f32 = 0.05;
+/// The widest the Markdown reading column gets at 100% (ADR 0048).
+const READING_WIDTH: f32 = 760.;
+
 impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The before/after view follows the applied replacements (ADR 0042).
@@ -1605,8 +1612,8 @@ impl Render for DocumentView {
             .on_action(cx.listener(Self::find_previous_markdown))
             .on_action(cx.listener(Self::close_markdown_search))
             .on_action(cx.listener(Self::retry_preview))
-            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.set_zoom(this.zoom + 0.1, cx)))
-            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.set_zoom(this.zoom - 0.1, cx)))
+            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.set_zoom(this.zoom + ZOOM_STEP, cx)))
+            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.set_zoom(this.zoom - ZOOM_STEP, cx)))
             .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_zoom(1., cx)))
             .child(self.header(window, cx))
             .when(!self.source_only && self.job.busy(), |v| v.child(
@@ -1625,7 +1632,9 @@ impl Render for DocumentView {
                         compare
                     } else { div().relative().flex_1().min_w_0().min_h_0()
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().pb(px(72.))
-                            .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))
+                            .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
+                            // A centred reading column (ADR 0048, from variant B).
+                            .child(div().w_full().max_w(px(READING_WIDTH * self.zoom)).mx_auto().child(self.editor.clone())))
                         .child(markdown_scrollbar).children((empty_page && self.file_drag.is_some()).then(|| self.empty_page(cx))).into_any_element() })
                     .children(self.view_switcher(cx).filter(|_| !self.loading && !self.unavailable))))
                 // Replacements sit beside the text they describe, before Original.
@@ -1645,5 +1654,6 @@ impl Render for DocumentView {
             .children(setup_notice.filter(|_| !(show_markdown && self.source_only && self.ocr_required.is_some()))).children(error_notice)
             // The word popup anchors to the editor, hidden under before/after.
             .children(self.pii_popup(window, cx).filter(|_| self.compare.is_none()))
+            .children(self.replacement_tip(cx).filter(|_| self.compare.is_none()))
     }
 }

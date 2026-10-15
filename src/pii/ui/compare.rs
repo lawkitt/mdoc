@@ -266,7 +266,7 @@ impl DocumentView {
                                 ))
                                 .child(div().w(px(1.)).h(px(16.)).mx_1().bg(palette.border))
                         })
-                        .child(zoom_step("zoom-out", "−", -0.1))
+                        .child(zoom_step("zoom-out", "−", -crate::document_view::ZOOM_STEP))
                         .child(
                             ui::control("zoom-reset", percent, theme, true)
                                 .when(cfg!(test), |v| v.debug_selector(|| "zoom-reset".into()))
@@ -277,7 +277,7 @@ impl DocumentView {
                                 .text_size(px(12.))
                                 .on_click(cx.listener(|this, _, _, cx| this.set_zoom(1., cx))),
                         )
-                        .child(zoom_step("zoom-in", "+", 0.1)),
+                        .child(zoom_step("zoom-in", "+", crate::document_view::ZOOM_STEP)),
                 )
                 .into_any_element(),
         )

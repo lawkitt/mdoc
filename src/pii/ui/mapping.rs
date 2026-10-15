@@ -111,6 +111,14 @@ impl PanelFilter {
     }
 }
 
+/// The entity a kept wording belonged to, recorded when it was unticked
+/// (ADR 0048), for when the review no longer links the two.
+#[derive(Clone, Debug)]
+pub(super) struct KeptName {
+    pub identity: u64,
+    pub alias: String,
+    pub category: Category,
+}
 /// The keyboard row in the panel list: a group header or a mention.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum PanelCursor {
@@ -171,6 +179,8 @@ pub(super) struct MappingUi {
     applied: Option<(usize, u64)>,
     /// Groups expanded in the panel, independent of selection (ADR 0033).
     pub(super) expanded: std::collections::HashSet<u64>,
+    /// Kept wordings and their entity, recorded at untick (ADR 0048).
+    pub(super) kept_names: std::collections::HashMap<Arc<str>, KeptName>,
     pub(super) filter: PanelFilter,
     pub(super) cursor: Option<PanelCursor>,
     /// A ⌥↑/↓ move is held: `dragging`/`drop_target` describe it.
@@ -397,6 +407,7 @@ impl MappingUi {
             target: input("Find an identity"),
             applied: None,
             expanded: Default::default(),
+            kept_names: Default::default(),
             filter: PanelFilter::All,
             cursor: None,
             key_moving: false,

@@ -3,7 +3,7 @@
 use super::*;
 use crate::ui;
 use crate::{CopyForAi, CopyMarkdown, PasteAiResponse, SaveAs};
-use gpui::{AnyElement, div, prelude::*};
+use gpui::{AnyElement, App, div, prelude::*};
 
 impl DocumentView {
     /// Review | Share, the Inspector's two tabs.
@@ -210,5 +210,83 @@ impl DocumentView {
                     }),
             )
             .into_any_element()
+    }
+}
+
+impl DocumentView {
+    /// Hovering a replacement shows what it is; a click opens the mention
+    /// bar (ADR 0048).
+    pub(crate) fn replacement_tip(&self, cx: &App) -> Option<AnyElement> {
+        let annotation = self.editor.read(cx).hovered_annotation()?;
+        if self.pii.popup.is_some() && self.active_annotation() == Some(annotation) {
+            return None;
+        }
+        let review = &self.pii.review;
+        let (identity, applied) = if annotation & APPLIED_ID != 0 {
+            (
+                review
+                    .applied_occurrence(annotation & !APPLIED_ID)?
+                    .step
+                    .identity,
+                true,
+            )
+        } else {
+            let candidate = review.candidate(annotation)?;
+            (
+                review.occurrence_identity(candidate.variant, &candidate.range)?,
+                false,
+            )
+        };
+        let identity = review.identity(identity)?;
+        let bounds = self.editor.read(cx).annotation_bounds(annotation)?;
+        let theme = self.theme.get();
+        let tip = gpui::hsla(0., 0., 0.18, 0.96);
+        Some(
+            gpui::deferred(
+                gpui::anchored()
+                    .position(gpui::point(bounds.left(), bounds.top() - px(6.)))
+                    .anchor(gpui::Anchor::BottomLeft)
+                    .snap_to_window_with_margin(px(8.))
+                    .child(
+                        div()
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "replacement-tip".into())
+                            })
+                            .px_2()
+                            .py_1()
+                            .rounded_md()
+                            .bg(tip)
+                            .text_color(gpui::hsla(0., 0., 0.96, 1.))
+                            .text_size(px(12.))
+                            .flex()
+                            .flex_col()
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(6.))
+                                    .child(
+                                        div()
+                                            .size(px(7.))
+                                            .rounded_full()
+                                            .bg(theme.category(identity.category)),
+                                    )
+                                    .child(
+                                        div()
+                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                            .child(identity.alias.clone()),
+                                    )
+                                    .child(div().opacity(0.7).child(format!(
+                                        "· {}{}",
+                                        identity.category.label(),
+                                        if applied { " · applied" } else { "" }
+                                    ))),
+                            )
+                            .child(div().opacity(0.7).child("Click to edit")),
+                    ),
+            )
+            .with_priority(1)
+            .into_any_element(),
+        )
     }
 }

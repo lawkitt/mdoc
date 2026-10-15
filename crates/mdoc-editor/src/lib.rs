@@ -531,6 +531,8 @@ pub enum EditorEvent {
     SelectionAction,
     /// Explicit activation of a host annotation; no text or selection change.
     ActivateAnnotation(u64),
+    /// The pointer moved onto (or off) a host annotation, e.g. for a tooltip.
+    HoverAnnotation(Option<u64>),
     /// A middle click on a host annotation, with the modifiers held.
     MiddleClickAnnotation(u64, gpui::Modifiers),
     /// Several hidden fields share a gutter indicator; the host offers a chooser.
@@ -1126,6 +1128,11 @@ impl EditorState {
     }
 
     /// Whether the painted annotation represents hidden source in the gutter.
+    /// The host annotation under the pointer, if any.
+    pub fn hovered_annotation(&self) -> Option<u64> {
+        self.annotation_hover
+    }
+
     pub fn annotation_is_hidden(&self, id: u64) -> bool {
         self.annotation_revision == self.content_gen && self.hidden_annotation_ids.contains(&id)
     }
@@ -1922,6 +1929,7 @@ impl EditorState {
         };
         if annotation != self.annotation_hover {
             self.annotation_hover = annotation;
+            cx.emit(EditorEvent::HoverAnnotation(annotation));
             cx.notify();
         }
 

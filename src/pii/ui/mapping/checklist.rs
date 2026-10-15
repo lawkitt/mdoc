@@ -30,11 +30,25 @@ impl DocumentView {
         (pending, applied)
     }
 
-    /// Kept mentions of an entity: (range, wording).
-    pub(in crate::pii::ui) fn kept_of(&self, id: u64) -> Vec<(Range<usize>, Arc<str>)> {
+    /// Every kept mention with the entity it belongs to. When the review no
+    /// longer links a wording to an entity (all its mentions kept), the
+    /// record taken at untick time does, so the row never disappears.
+    pub(in crate::pii::ui) fn kept_entries(&self) -> Vec<(Range<usize>, Arc<str>, Option<u64>)> {
+        let names = &self.pii.mapping.kept_names;
         self.pii
             .review
             .kept_mentions()
+            .into_iter()
+            .map(|(range, original, identity)| {
+                let identity = identity.or_else(|| names.get(&original).map(|k| k.identity));
+                (range, original, identity)
+            })
+            .collect()
+    }
+
+    /// Kept mentions of an entity: (range, wording).
+    pub(in crate::pii::ui) fn kept_of(&self, id: u64) -> Vec<(Range<usize>, Arc<str>)> {
+        self.kept_entries()
             .into_iter()
             .filter(|(_, _, identity)| *identity == Some(id))
             .map(|(range, original, _)| (range, original))
@@ -60,6 +74,29 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         let (pending, applied) = self.entity_mentions(id, only);
+        // Remember which entity each kept wording belongs to.
+        if let Some(identity) = self.pii.review.identity(id).cloned() {
+            let review = &self.pii.review;
+            let wordings: Vec<Arc<str>> = pending
+                .iter()
+                .filter_map(|(variant, _)| review.variant(*variant).map(|v| v.original.clone()))
+                .chain(applied.iter().filter_map(|a| {
+                    review
+                        .applied_occurrence(*a)
+                        .map(|a| a.step.original_shared().clone())
+                }))
+                .collect();
+            for original in wordings {
+                self.pii.mapping.kept_names.insert(
+                    original,
+                    KeptName {
+                        identity: id,
+                        alias: identity.alias.clone(),
+                        category: identity.category,
+                    },
+                );
+            }
+        }
         self.keep_mentions_now(pending, applied, cx);
     }
 
@@ -69,7 +106,20 @@ impl DocumentView {
         if self.pii.scanning() || !self.can_copy_markdown() {
             return;
         }
-        let Some(category) = self.pii.review.identity(id).map(|i| i.category) else {
+        let Some(category) = self
+            .pii
+            .review
+            .identity(id)
+            .map(|i| i.category)
+            .or_else(|| {
+                self.pii
+                    .mapping
+                    .kept_names
+                    .values()
+                    .find(|k| k.identity == id)
+                    .map(|k| k.category)
+            })
+        else {
             return;
         };
         let source = self.editor.read(cx).text().to_owned();

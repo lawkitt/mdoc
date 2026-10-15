@@ -558,13 +558,11 @@ fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
                 .unwrap();
             cx.simulate_click(mention.center(), Default::default());
             cx.run_until_parked();
-            // A panel selection reveals the word without a popup; the editor
-            // path then opens the popup beside the panel.
-            app.update_in(cx, |app, window, cx| {
-                assert!(app.pii.popup.is_none());
+            // A mention row opens the popup on that word, beside the panel
+            // (ADR 0048).
+            app.update_in(cx, |app, _, _| {
+                assert!(app.pii.popup.is_some());
                 assert_eq!(app.active_annotation(), Some(first));
-                let start = app.active_replacement_range().unwrap().start;
-                app.navigate_identity_mention(first, start, window, cx);
             });
             cx.run_until_parked();
             for _ in 0..3 {
@@ -1017,20 +1015,22 @@ fn entity_rows_jump_chevrons_expand_and_selection_survives_collapse(cx: &mut gpu
     let outlines = |cx: &mut gpui::VisualTestContext| {
         app.read_with(cx, |app, cx| app.editor.read(cx).outlines().len())
     };
-    // An entity row click jumps to its first mention, revealing its row
-    // (ADR 0048).
+    // An entity row click opens its group and the popup on its first
+    // mention (ADR 0048).
     click(cx, format!("identity-{identity}"));
     let first = app.read_with(cx, |app, _| app.identity_occurrences(identity)[0].0);
     app.read_with(cx, |app, _| {
         assert!(app.pii.mapping.expanded.contains(&identity));
         assert_eq!(app.active_annotation(), Some(first));
+        assert!(app.pii.popup.is_some());
+    });
+    // A second click on the open group folds it and closes the popup.
+    click(cx, format!("identity-{identity}"));
+    app.read_with(cx, |app, _| {
+        assert!(!app.pii.mapping.expanded.contains(&identity));
         assert!(app.pii.popup.is_none());
     });
-    // The chevron hides and shows the mentions.
-    click(cx, format!("entity-expand-{identity}"));
-    app.read_with(cx, |app, _| {
-        assert!(!app.pii.mapping.expanded.contains(&identity))
-    });
+    // The chevron shows the mentions; a mention row opens the popup there.
     click(cx, format!("entity-expand-{identity}"));
     app.read_with(cx, |app, _| {
         assert!(app.pii.mapping.expanded.contains(&identity))
@@ -1038,10 +1038,9 @@ fn entity_rows_jump_chevrons_expand_and_selection_survives_collapse(cx: &mut gpu
     click(cx, format!("mention-{first}"));
     app.read_with(cx, |app, _| {
         assert_eq!(app.selected_entity(), Some(identity));
-        assert!(app.pii.popup.is_none());
-        assert!(app.pii.mapping.panel_selected);
+        assert_eq!(app.active_annotation(), Some(first));
+        assert!(app.pii.popup.is_some());
     });
-    assert_eq!(outlines(cx), 1);
     // Collapsing leaves the selection alone.
     click(cx, format!("entity-expand-{identity}"));
     app.read_with(cx, |app, _| {
