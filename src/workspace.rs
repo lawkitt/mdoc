@@ -2524,6 +2524,11 @@ impl Render for Workspace {
                 this.paste_as_new_tab(window, cx)
             }))
             .on_action(cx.listener(|this, _: &ToggleTheme, window, cx| this.cycle_theme(window, cx)))
+            .on_action(cx.listener(|this, action: &PiiApplyAll, window, cx| {
+                if let Some(view) = this.active_view().filter(|_| !this.showing_home(cx)) {
+                    view.update(cx, |view, cx| view.apply_all_pii(action, window, cx));
+                }
+            }))
             // Home's clipboard actions need a document; documents handle them first.
             .on_action(cx.listener(|this, _: &PasteAiResponse, _, cx| {
                 this.needs_document("Restore AI reply", cx);

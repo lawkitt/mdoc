@@ -1,5 +1,6 @@
 //! Replacements panel rows: group headers and mention rows (ADR 0033).
-use super::panel::{PanelEntry, PanelItem, ReplacementRow};
+use super::checklist::Tick;
+use super::panel::{PanelEntry, PanelItem, ROW_HEIGHT, ReplacementRow};
 use super::*;
 use crate::ui;
 use gpui::{AnyElement, HighlightStyle, SharedString, StyledText, div, prelude::*};
@@ -77,7 +78,7 @@ impl RowColors {
 /// The header text's left edge; the guide sits on it and mention content
 /// starts [`MENTION_INSET`] after (one indent level, ADR 0044).
 const ROW_INSET: f32 = 12.;
-const MENTION_INSET: f32 = ROW_INSET + 2. + 10.;
+const MENTION_INSET: f32 = ROW_INSET + 22.;
 
 /// The vertical line left of a group's mention rows.
 fn guide(color: Hsla) -> gpui::Div {
@@ -100,8 +101,6 @@ impl DocumentView {
         let id = row.id;
         let muted = self.theme.get().pdf_style().header_muted;
         let hover = RowColors::new(self.theme.get()).hover;
-        // The selected mention keeps its fill under the pointer, one surface
-        // with its inline controls.
         let selected = matches!(mention, PanelItem::Mention(annotation, _)
             if self.mention_selected(annotation));
         // Flat, full-width rows: the list cursor drives the keyboard.
@@ -111,14 +110,12 @@ impl DocumentView {
             .cursor_pointer()
             .when(!selected, |v| v.hover(move |s| s.bg(hover)))
             .w_full()
-            .h(px(48.))
-            .line_height(px(17.))
+            .h(px(ROW_HEIGHT))
             .overflow_hidden()
             .relative()
-            .flex_col()
-            .items_start()
-            .justify_center()
-            .gap_1()
+            .flex()
+            .items_center()
+            .gap_2()
             // Every row of a group accepts drops for that group.
             .drag_over::<PanelDrag>(move |s, drag, _, _| {
                 if drag.identity() == id {
@@ -137,21 +134,20 @@ impl DocumentView {
             .on_drop(
                 cx.listener(move |this, drag: &PanelDrag, _, cx| this.drop_on_entity(drag, id, cx)),
             );
-        if let PanelItem::Category { entities, mentions } = mention {
-            return self.category_row(index, row.category, entities, mentions);
-        }
         match mention {
-            PanelItem::Category { .. } => unreachable!(),
+            PanelItem::Category { entities, mentions } => {
+                self.category_row(index, row.category, entities, mentions)
+            }
             PanelItem::Mention(annotation, range) => {
                 self.mention_row(base, &row, annotation, range, cx)
             }
             PanelItem::Header => self.header_row(base, &row, cx),
-            PanelItem::Controls(annotation) => self.inline_controls(index, annotation, cx),
+            PanelItem::Controls(_) => div().into_any_element(),
         }
     }
 
-    /// A category label over its groups, "Person 3 (7)": entities, then
-    /// mentions. Inert: no hover, focus or drop (ADR 0046).
+    /// A category label over its entities, "● Person 3 (7)": entities, then
+    /// mentions. Inert: no hover, focus or drop (ADR 0046, ADR 0048).
     fn category_row(
         &self,
         index: usize,
@@ -159,7 +155,8 @@ impl DocumentView {
         entities: usize,
         mentions: usize,
     ) -> AnyElement {
-        let palette = self.theme.get().pdf_style();
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
         div()
             .id(SharedString::from(format!("replacement-entry-{index}")))
             .when(cfg!(test), |v| {
@@ -173,25 +170,79 @@ impl DocumentView {
                 if mentions == 1 { "mention" } else { "mentions" },
             ))
             .w_full()
-            .h(px(48.))
-            .px_3()
-            .pb_1()
+            .h(px(ROW_HEIGHT))
+            .px(px(ROW_INSET))
+            .pb(px(6.))
             .flex()
             .items_end()
-            .gap_1()
+            .gap(px(6.))
             .text_size(px(11.))
             .text_color(palette.header_muted)
             .child(
                 div()
+                    .mb(px(4.))
+                    .size(px(7.))
+                    .flex_shrink_0()
+                    .rounded_full()
+                    .bg(theme.category(category)),
+            )
+            .child(
+                div()
                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child(category.label()),
+                    .text_color(palette.header_fg)
+                    .child(category.label().to_uppercase()),
             )
             .child(format!("{entities} ({mentions})"))
             .into_any_element()
     }
 
-    /// A group header: original, category, alias and count. A click toggles
-    /// only this group; the alias and category edit the whole entity.
+    /// A checkbox: ticked will be replaced, unticked keeps the original,
+    /// dashed means some mentions are kept (ADR 0048).
+    fn tick_box(
+        &self,
+        id: impl Into<gpui::ElementId>,
+        tick: Tick,
+        cx: &mut Context<Self>,
+        toggle: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+    ) -> gpui::Stateful<gpui::Div> {
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let filled = tick != Tick::Off;
+        div()
+            .id(id)
+            .role(gpui::Role::CheckBox)
+            .aria_label(match tick {
+                Tick::On => "Will be replaced",
+                Tick::Off => "Original kept",
+                Tick::Mixed => "Some originals kept",
+            })
+            .flex_shrink_0()
+            .size(px(15.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(px(4.))
+            .border_1()
+            .border_color(if filled { palette.header_fg } else { palette.header_muted })
+            .when(filled, |v| v.bg(palette.header_fg))
+            .text_color(palette.bg)
+            .text_size(px(11.))
+            .when(tick == Tick::On, |v| {
+                v.child(gpui::svg().data(ui::Icon::Check.data()).size(px(11.)).text_color(palette.bg))
+            })
+            .when(tick == Tick::Mixed, |v| {
+                v.child(div().w(px(7.)).h(px(1.5)).bg(palette.bg))
+            })
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |this, _, window, cx| {
+                cx.stop_propagation();
+                window.focus(&this.pii.mapping.focus, cx);
+                toggle(this, cx);
+            }))
+    }
+
+    /// An entity row: checkbox, original, alias. A click jumps to its first
+    /// mention; the chevron shows its mentions; the alias edits in place.
     fn header_row(
         &self,
         base: gpui::Stateful<gpui::Div>,
@@ -203,6 +254,8 @@ impl DocumentView {
         let palette = theme.pdf_style();
         let mapping = &self.pii.mapping;
         let expanded = mapping.expanded.contains(&id);
+        let tick = self.entity_tick(id);
+        let kept_only = tick == Tick::Off;
         // "Link to ALIAS" while another group's row is dragged here.
         let link_hint = (cx.has_active_drag() || mapping.key_moving)
             && mapping.drop_target == Some(DropTarget::Entity(id))
@@ -212,30 +265,19 @@ impl DocumentView {
                 .is_some_and(|d| d.identity() != id);
         let menu = (mapping.panel_menu == Some(PanelMenu::Category(id)))
             .then(|| self.entity_category_menu(id, row.category, cx));
+        // Right-click changes the entity's category; the menu hangs here.
         let category = div()
             .id(SharedString::from(format!("header-category-{id}")))
             .when(cfg!(test), |v| {
                 v.debug_selector(move || format!("header-category-{id}"))
             })
-            .flex_shrink_0()
-            .px_1()
-            .rounded_sm()
-            .text_size(px(11.))
-            .text_color(palette.header_muted)
-            .cursor_pointer()
-            .hover(move |s| s.bg(palette.placeholder_bg))
-            .child(format!("{} ▾", row.category.label()))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                cx.stop_propagation();
-                let menu = &mut this.pii.mapping.panel_menu;
-                *menu = (*menu != Some(PanelMenu::Category(id))).then_some(PanelMenu::Category(id));
-                cx.notify();
-            }));
+            .w(px(0.))
+            .h_full();
         let alias = if mapping.header_edit == Some(id) {
             div()
                 .id(SharedString::from(format!("header-alias-edit-{id}")))
-                .flex_1()
-                .min_w_0()
+                .w(px(112.))
+                .flex_shrink_0()
                 .text_color(theme.applied())
                 .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(|_, _, cx| cx.stop_propagation())
@@ -251,104 +293,145 @@ impl DocumentView {
                 )
                 .child(mapping.header_alias.clone())
                 .into_any_element()
+        } else if link_hint {
+            div()
+                .flex_shrink_0()
+                .text_size(px(12.))
+                .text_color(theme.applied())
+                .child(format!("Link to {}", row.alias))
+                .into_any_element()
+        } else if kept_only {
+            div()
+                .flex_shrink_0()
+                .text_size(px(12.))
+                .text_color(palette.header_muted)
+                .child("kept")
+                .into_any_element()
         } else {
             let alias = row.alias.clone();
+            let applied = row.applied > 0;
             div()
                 .id(SharedString::from(format!("header-alias-{id}")))
                 .when(cfg!(test), |v| {
                     v.debug_selector(move || format!("header-alias-{id}"))
                 })
-                .min_w_0()
-                .flex_shrink(1.)
-                .text_ellipsis()
-                .text_color(theme.applied())
+                .flex_shrink_0()
+                .max_w(px(140.))
+                .truncate()
+                .px(px(5.))
+                .rounded_sm()
+                .font_family(style::markdown_style(theme).mono.family.clone())
+                .text_size(px(11.))
+                .text_color(if applied { theme.applied() } else { palette.header_muted })
+                .when(applied, |v| v.bg(Hsla { a: 0.14, ..theme.applied() }))
                 .cursor(gpui::CursorStyle::IBeam)
-                .child(format!("→ {}", row.alias))
+                .child(row.alias.clone())
+                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .on_click(cx.listener(move |this, _, window, cx| {
                     cx.stop_propagation();
                     this.edit_header_alias(id, alias.clone(), window, cx);
                 }))
                 .into_any_element()
         };
-        // A check marks applied mentions; the bare count is still proposed.
-        let (count, checked) = match row.applied {
-            _ if link_hint => (format!("Link to {}", row.alias), false),
-            0 => (row.mentions.to_string(), false),
-            n if n == row.mentions => (n.to_string(), true),
-            n => (format!("{n}/{}", row.mentions), true),
-        };
-        base.aria_label(format!(
-            "{} to {}, {} mentions, {} applied, {}",
-            row.original,
-            row.alias,
-            row.mentions,
-            row.applied,
-            if expanded { "expanded" } else { "collapsed" }
-        ))
-        .when(cfg!(test), |v| {
-            v.debug_selector(move || format!("identity-{id}"))
-        })
-        .px(px(ROW_INSET))
-        .border_t_1()
-        .border_color(RowColors::new(theme).separator)
-        .when(expanded, |v| v.bg(RowColors::new(theme).band))
-        // The keyboard row is outlined, so it never reads as selected.
-        .when(mapping.cursor == Some(PanelCursor::Header(id)), |v| {
-            v.border_1().border_color(palette.header_muted)
-        })
-        // The keyboard move's target group (ADR 0033).
-        .when(mapping.key_moving && link_hint, |v| {
-            v.border_1().border_color(palette.header_muted)
-        })
-        .child(
-            div()
-                .w_full()
-                .flex()
-                .items_center()
-                .gap_1()
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex_1()
-                        .text_ellipsis()
-                        .font_weight(gpui::FontWeight::MEDIUM)
-                        .child(row.original.to_string()),
+        let total = row.mentions + row.kept;
+        let chevron = div()
+            .id(SharedString::from(format!("entity-expand-{id}")))
+            .when(cfg!(test), |v| v.debug_selector(move || format!("entity-expand-{id}")))
+            .aria_label(if expanded { "Hide mentions" } else { "Show mentions" })
+            .flex_shrink_0()
+            .w(px(28.))
+            .h(px(20.))
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap(px(2.))
+            .rounded_sm()
+            .text_size(px(11.))
+            .text_color(palette.header_muted)
+            .hover(move |s| s.bg(palette.placeholder_bg))
+            .when(total > 1, |v| v.child(total.to_string()))
+            .when(row.mentions > 0, |v| {
+                v.child(
+                    gpui::svg()
+                        .data(if expanded {
+                            ui::Icon::ChevronDown.data()
+                        } else {
+                            ui::Icon::ChevronRight.data()
+                        })
+                        .size(px(12.))
+                        .text_color(palette.header_muted),
                 )
-                .child(self.with_dropdown(category, menu)),
-        )
-        .child(
-            div()
-                .w_full()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(alias)
-                .child(div().flex_1())
-                .child(
-                    div()
-                        .flex_shrink_0()
-                        .flex()
-                        .items_center()
-                        .gap(px(2.))
-                        .text_size(px(11.))
-                        .text_color(palette.header_muted)
-                        .child(count)
-                        .when(checked, |v| v.child(applied_check(theme))),
-                ),
-        )
-        .on_click(cx.listener(move |this, _, window, cx| {
-            window.focus(&this.pii.mapping.focus, cx);
-            this.pii.mapping.cursor = Some(PanelCursor::Header(id));
-            this.toggle_group(id, cx);
-        }))
-        .on_drag(
-            PanelDrag::Entity {
-                identity: id,
-                original: row.original.clone(),
-            },
-            start_drag(cx.entity().downgrade(), theme),
-        )
-        .into_any_element()
+            })
+            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.toggle_group(id, cx);
+            }));
+        base.aria_label(format!(
+                "{} to {}, {} mentions, {} applied, {} kept, {}",
+                row.original,
+                row.alias,
+                row.mentions,
+                row.applied,
+                row.kept,
+                if expanded { "expanded" } else { "collapsed" }
+            ))
+            .when(cfg!(test), |v| {
+                v.debug_selector(move || format!("identity-{id}"))
+            })
+            .px(px(ROW_INSET))
+            // The keyboard row is outlined, so it never reads as selected.
+            .when(mapping.cursor == Some(PanelCursor::Header(id)), |v| {
+                v.border_1().border_color(palette.header_muted).rounded_md()
+            })
+            .when(mapping.key_moving && link_hint, |v| {
+                v.border_1().border_color(palette.header_muted)
+            })
+            .child(self.tick_box(
+                SharedString::from(format!("entity-tick-{id}")),
+                tick,
+                cx,
+                move |this, cx| this.toggle_entity(id, cx),
+            )
+            .when(cfg!(test), |v| v.debug_selector(move || format!("entity-tick-{id}"))))
+            .child(
+                div()
+                    .min_w_0()
+                    .flex_1()
+                    .truncate()
+                    .when(kept_only, |v| v.text_color(palette.header_muted))
+                    .child(row.original.to_string()),
+            )
+            .child(self.with_dropdown(category, menu))
+            .child(alias)
+            .child(chevron)
+            .on_mouse_down(
+                gpui::MouseButton::Right,
+                cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    let menu = &mut this.pii.mapping.panel_menu;
+                    *menu = (*menu != Some(PanelMenu::Category(id)))
+                        .then_some(PanelMenu::Category(id));
+                    cx.notify();
+                }),
+            )
+            .on_click(cx.listener(move |this, _, window, cx| {
+                window.focus(&this.pii.mapping.focus, cx);
+                this.pii.mapping.cursor = Some(PanelCursor::Header(id));
+                if let Some((annotation, _)) = this.identity_occurrences(id).into_iter().next() {
+                    this.panel_select_mention(annotation, cx);
+                    this.pii.mapping.cursor = Some(PanelCursor::Header(id));
+                }
+                cx.notify();
+            }))
+            .on_drag(
+                PanelDrag::Entity {
+                    identity: id,
+                    original: row.original.clone(),
+                },
+                start_drag(cx.entity().downgrade(), theme),
+            )
+            .into_any_element()
     }
 
     fn mention_selected(&self, annotation: u64) -> bool {
@@ -356,7 +439,8 @@ impl DocumentView {
             && (self.pii.popup.is_some() || self.pii.mapping.panel_selected)
     }
 
-    /// One mention under an expanded header: indented, with its snippet.
+    /// One mention under an expanded entity: indented, its checkbox and its
+    /// snippet on one line.
     fn mention_row(
         &self,
         base: gpui::Stateful<gpui::Div>,
@@ -366,7 +450,6 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = self.theme.get();
-        let palette = theme.pdf_style();
         let applied = annotation & APPLIED_ID != 0;
         let current = self.mention_selected(annotation);
         let original = if applied {
@@ -387,15 +470,11 @@ impl DocumentView {
                 .clone()
         };
         let (before, word, after) = self.readable_mention(&range, cx);
-        // The header names the wording; only a variant repeats it (ADR 0044).
-        let variant = *original != *row.original;
-        // Selected rows undo from their inline controls instead.
-        let undo = applied && !current && self.pii.mapping.hovered == Some(annotation);
         let colors = RowColors::new(theme);
         let state = if applied {
             theme.applied()
         } else {
-            theme.proposed()
+            theme.category(row.category)
         };
         base.aria_label(format!(
             "{original}: {before}{word}{after}{}",
@@ -406,8 +485,7 @@ impl DocumentView {
         })
         .pl(px(MENTION_INSET))
         .pr_3()
-        // The selected mention keeps its fill under the pointer so it stays
-        // one surface with its inline controls.
+        .text_size(px(12.))
         .when(current, |v| v.bg(colors.selected))
         .child(guide(colors.guide_for(applied, current)))
         .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
@@ -415,67 +493,25 @@ impl DocumentView {
                 cx.notify();
             }
         }))
-        .when(undo, |v| v.pr(px(36.)))
-        .when(variant, |v| {
-            v.child(
-                div()
-                    .w_full()
-                    .flex()
-                    .items_center()
-                    .gap_1()
-                    .text_size(px(11.))
-                    .text_color(palette.header_muted)
-                    .child(
-                        div()
-                            .min_w_0()
-                            .flex_1()
-                            .text_ellipsis()
-                            .child(original.to_string()),
-                    )
-                    .when(applied, |v| v.child(applied_check(theme))),
-            )
-        })
-        .when(undo, |v| {
-            let id = annotation & !APPLIED_ID;
-            v.child(
-                ui::icon_button(
-                    SharedString::from(format!("mention-undo-{annotation}")),
-                    "Undo this replacement (back to proposed)",
-                    ui::Icon::Undo,
-                    theme,
-                    !self.pii.scanning(),
-                )
-                .when(cfg!(test), |v| {
-                    v.debug_selector(move || format!("mention-undo-{annotation}"))
-                })
-                .absolute()
-                .right(px(4.))
-                .top(px(8.))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    cx.stop_propagation();
-                    this.undo_replacements([id].into(), cx);
-                })),
-            )
-        })
         .child(
-            div()
-                .w_full()
-                .flex()
-                .items_center()
-                .gap_1()
-                .child(div().min_w_0().flex_1().text_ellipsis().child(
-                    StyledText::new(format!("{before}{word}{after}")).with_highlights([(
-                        before.len()..before.len() + word.len(),
-                        HighlightStyle {
-                            color: Some(state),
-                            ..Default::default()
-                        },
-                    )]),
-                ))
-                .when(applied && !variant && !undo, |v| {
-                    v.child(applied_check(theme))
-                }),
+            self.tick_box(
+                SharedString::from(format!("mention-tick-{annotation}")),
+                Tick::On,
+                cx,
+                move |this, cx| this.toggle_mention(annotation, cx),
+            )
+            .when(cfg!(test), |v| v.debug_selector(move || format!("mention-tick-{annotation}"))),
         )
+        .child(div().min_w_0().flex_1().text_ellipsis().child(
+            StyledText::new(format!("{before}{word}{after}")).with_highlights([(
+                before.len()..before.len() + word.len(),
+                HighlightStyle {
+                    color: Some(state),
+                    font_weight: Some(gpui::FontWeight::MEDIUM),
+                    ..Default::default()
+                },
+            )]),
+        ))
         .on_click(cx.listener(move |this, _, window, cx| {
             window.focus(&this.pii.mapping.focus, cx);
             this.panel_select_mention(annotation, cx);
@@ -497,162 +533,6 @@ impl DocumentView {
             start_drag(cx.entity().downgrade(), theme),
         )
         .into_any_element()
-    }
-
-    /// One line under the panel-selected mention: Apply to · Apply · Keep
-    /// (Undo for an applied mention). Buttons follow the scope selector; the
-    /// keys use fixed scopes (ADR 0033).
-    fn inline_controls(&self, index: usize, annotation: u64, cx: &mut Context<Self>) -> AnyElement {
-        let theme = self.theme.get();
-        let palette = theme.pdf_style();
-        let applied = annotation & APPLIED_ID != 0;
-        let enabled = !self.pii.scanning();
-        let scope = self.pii.mapping.scope;
-        let mentions = self
-            .selected_entity()
-            .map_or(0, |id| self.identity_occurrences(id).len());
-        let colors = RowColors::new(theme);
-        let accent = theme.applied();
-        let raised = Hsla {
-            a: 0.12,
-            ..palette.header_fg
-        };
-        let segment = |id: &'static str,
-                       label: &'static str,
-                       count: Option<usize>,
-                       value: Scope,
-                       cx: &mut Context<Self>| {
-            div()
-                .id(id)
-                .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
-                .flex()
-                .items_center()
-                .gap_1()
-                .px(px(6.))
-                .py(px(2.))
-                .rounded_sm()
-                .cursor_pointer()
-                .text_color(if scope == value {
-                    palette.header_fg
-                } else {
-                    palette.header_muted
-                })
-                .when(scope == value, |v| v.bg(raised))
-                .child(label)
-                .when_some(count, |v, n| {
-                    v.child(div().text_size(px(11.)).opacity(0.7).child(n.to_string()))
-                })
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    cx.stop_propagation();
-                    this.pii.mapping.set_scope(value);
-                    this.sync_scope_outlines(cx);
-                    cx.notify();
-                }))
-        };
-        let action = |id: &'static str,
-                      label: &'static str,
-                      key: &'static str,
-                      keep: bool,
-                      cx: &mut Context<Self>| {
-            let hint = super::popup_render::scope_keys(scope, key);
-            div()
-                .id(id)
-                .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
-                .flex()
-                .items_center()
-                .gap_1()
-                .px(px(6.))
-                .py(px(2.))
-                .rounded_md()
-                .border_1()
-                .cursor_pointer()
-                .map(|v| {
-                    if keep {
-                        // Secondary: outlined, neutral.
-                        v.border_color(palette.header_muted)
-                            .text_color(palette.header_fg)
-                            .hover(move |s| s.bg(raised))
-                    } else {
-                        // Primary, like the popup's Apply.
-                        v.border_color(Hsla { a: 0.6, ..accent })
-                            .bg(Hsla { a: 0.18, ..accent })
-                            .text_color(accent)
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .hover(move |s| s.bg(Hsla { a: 0.28, ..accent }))
-                    }
-                })
-                .when(!enabled, |v| v.opacity(0.5))
-                .child(label)
-                .child(div().text_size(px(11.)).opacity(0.7).child(hint))
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    cx.stop_propagation();
-                    if enabled {
-                        let scope = this.pii.mapping.scope;
-                        this.panel_decide(scope, keep, window, cx);
-                    }
-                }))
-        };
-        div()
-            .id(SharedString::from(format!("replacement-entry-{index}")))
-            .when(cfg!(test), |v| {
-                v.debug_selector(|| "inline-controls".into())
-            })
-            .w_full()
-            .h(px(48.))
-            .pl(px(MENTION_INSET))
-            .pr_2()
-            .flex()
-            .items_center()
-            .gap_1()
-            .relative()
-            .text_size(px(12.))
-            // Continues the selected mention's surface and guide.
-            .bg(colors.selected)
-            .child(guide(colors.guide_for(applied, true)))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .flex_shrink_0()
-                    .p(px(2.))
-                    .rounded_md()
-                    .border_1()
-                    .border_color(Hsla {
-                        a: 0.5,
-                        ..palette.header_muted
-                    })
-                    .child(segment(
-                        "inline-scope-this",
-                        "This",
-                        None,
-                        Scope::Mention,
-                        cx,
-                    ))
-                    .child(segment(
-                        "inline-scope-same",
-                        "Same",
-                        None,
-                        Scope::Wording,
-                        cx,
-                    ))
-                    .child(segment(
-                        "inline-scope-all",
-                        "All",
-                        Some(mentions),
-                        Scope::Entity,
-                        cx,
-                    )),
-            )
-            .child(div().flex_1())
-            .map(|v| {
-                if applied {
-                    v.child(action("inline-undo", "Undo", "⌫", true, cx))
-                } else {
-                    v.child(action("inline-apply", "Apply", "↵", false, cx))
-                        .child(action("inline-keep", "Keep", "⌫", true, cx))
-                }
-            })
-            .into_any_element()
     }
 
     fn entity_category_menu(

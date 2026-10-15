@@ -11,7 +11,12 @@ pub(super) struct ReplacementRow {
     pub category: Category,
     pub mentions: usize,
     pub applied: usize,
+    /// Mentions kept as originals (unticked, ADR 0048).
+    pub kept: usize,
 }
+
+/// Every panel row is this tall, so the list stays a uniform list.
+pub(super) const ROW_HEIGHT: f32 = 34.;
 /// One panel line: an entity row, or one of the expanded entity's mentions.
 pub(super) type PanelEntry = (Arc<ReplacementRow>, PanelItem);
 #[derive(Clone)]
@@ -73,21 +78,11 @@ impl DocumentView {
             .trim()
             .to_lowercase();
         let mut rows = std::collections::BTreeMap::<u64, ReplacementRow>::new();
-        let mut matches = std::collections::HashSet::new();
         let filter = self.pii.mapping.filter;
-        let mut add = |id, original: Arc<str>, applied: bool| {
+        let mut add = |id, original: Arc<str>, applied: Option<bool>| {
             let Some(identity) = review.identity(id) else {
                 return;
             };
-            if !filter.shows(applied) {
-                return;
-            }
-            if query.is_empty()
-                || original.to_lowercase().contains(&query)
-                || identity.alias.to_lowercase().contains(&query)
-            {
-                matches.insert(id);
-            }
             let row = rows.entry(id).or_insert_with(|| ReplacementRow {
                 id,
                 original,
@@ -95,29 +90,50 @@ impl DocumentView {
                 category: identity.category,
                 mentions: 0,
                 applied: 0,
+                kept: 0,
             });
-            row.mentions += 1;
-            row.applied += applied as usize;
+            match applied {
+                Some(applied) => {
+                    row.mentions += 1;
+                    row.applied += applied as usize;
+                }
+                None => row.kept += 1,
+            }
         };
         for c in review.candidates() {
             if let (Some(id), Some(group)) = (
                 review.occurrence_identity(c.variant, &c.range),
                 review.variant(c.variant),
             ) {
-                add(id, group.original.clone(), false);
+                add(id, group.original.clone(), Some(false));
             }
         }
         for a in review.applied() {
-            add(a.step.identity, a.step.original_shared().clone(), true);
+            add(a.step.identity, a.step.original_shared().clone(), Some(true));
+        }
+        for (_, original, identity) in review.kept_mentions() {
+            if let Some(id) = identity {
+                add(id, original, None);
+            }
         }
         rows.into_values()
-            .filter(|row| matches.contains(&row.id))
+            .filter(|row| match filter {
+                PanelFilter::All => true,
+                PanelFilter::Proposed => row.mentions > row.applied,
+                PanelFilter::Applied => row.applied > 0,
+                PanelFilter::Kept => row.kept > 0,
+            })
+            .filter(|row| {
+                query.is_empty()
+                    || row.original.to_lowercase().contains(&query)
+                    || row.alias.to_lowercase().contains(&query)
+            })
             .collect::<Vec<_>>()
             .into()
     }
 
     /// Entity rows in order, each followed by its filtered mentions while it
-    /// is expanded (ADR 0033).
+    /// is expanded (ADR 0033, ADR 0048).
     pub(super) fn replacement_entries(&self, cx: &App) -> Vec<PanelEntry> {
         let mapping = &self.pii.mapping;
         let mut entries = Vec::new();
@@ -130,17 +146,17 @@ impl DocumentView {
             let row = Arc::new(row.clone());
             if i == 0 || rows[i - 1].category != row.category {
                 let group = rows[i..].iter().take_while(|r| r.category == row.category);
-                let (entities, mentions) = group.fold((0, 0), |(e, m), r| (e + 1, m + r.mentions));
+                let (entities, mentions) =
+                    group.fold((0, 0), |(e, m), r| (e + 1, m + r.mentions + r.kept));
                 entries.push((row.clone(), PanelItem::Category { entities, mentions }));
             }
             entries.push((row.clone(), PanelItem::Header));
             if mapping.expanded.contains(&row.id) {
                 for (annotation, range) in self.identity_occurrences(row.id) {
-                    if mapping.filter.shows(annotation & APPLIED_ID != 0) {
+                    if mapping.filter.shows(annotation & APPLIED_ID != 0)
+                        || mapping.filter == PanelFilter::Kept
+                    {
                         entries.push((row.clone(), PanelItem::Mention(annotation, range)));
-                        if self.inline_controls_for() == Some(annotation) {
-                            entries.push((row.clone(), PanelItem::Controls(annotation)));
-                        }
                     }
                 }
             }
@@ -279,8 +295,11 @@ impl DocumentView {
         };
         ui::panel("identity-panel", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "identity-panel".into()))
-            .rounded_none()
+            // A card inset in the document, like the content card (ADR 0048).
+            .m_2()
+            .rounded_lg()
             .shadow_none()
+            .overflow_hidden()
             .key_context("IdentityPanel UiPanel UiMenu")
             .tab_group()
             .tab_stop(false)
@@ -292,8 +311,7 @@ impl DocumentView {
             .flex_shrink_0()
             .flex()
             .flex_col()
-            .w(self.replacements_panel_width(window))
-            .h_full()
+            .w(self.replacements_panel_width(window) - px(16.))
             .p_3()
             .child(card.child(ui::card_note(note, theme)))
             .into_any_element()
@@ -409,13 +427,14 @@ impl DocumentView {
     fn filter_control(&self, cx: &mut Context<Self>) -> gpui::Div {
         let theme = self.theme.get();
         let filter = self.pii.mapping.filter;
-        let button = ui::icon_control(
+        let button = ui::header_icon(
             "replacement-filter",
-            "Filter",
+            format!("Show: {}", filter.label()),
             ui::Icon::Filter,
             theme,
-            true,
+            filter != PanelFilter::All,
         )
+        .when(cfg!(test), |v| v.debug_selector(|| "replacement-filter".into()))
         .relative()
         .when(filter != PanelFilter::All, |v| {
             v.child(
@@ -517,7 +536,30 @@ impl DocumentView {
             })
             .and_then(|d| self.pii.review.identity(d.identity()))
             .map(|identity| self.pii.review.next_alias(identity.category));
-        let rows_height = px(48. * count as f32);
+        let rows_height = px(ROW_HEIGHT * count as f32);
+        let total_entities = entries
+            .iter()
+            .filter(|(_, item)| matches!(item, PanelItem::Header))
+            .count();
+        let kept: usize = self.pii.review.kept_mentions().len();
+        let applied = self.pii.review.applied().len();
+        let summary = {
+            let mut parts = Vec::new();
+            if pending > 0 {
+                parts.push(format!("{pending} to replace"));
+            }
+            if applied > 0 {
+                parts.push(format!("{applied} applied"));
+            }
+            if kept > 0 {
+                parts.push(format!("{kept} kept"));
+            }
+            if parts.is_empty() {
+                "Nothing to replace yet".to_string()
+            } else {
+                parts.join(" · ")
+            }
+        };
         let upgrade = self.pii.review.applied().iter().any(|a| {
             self.pii
                 .review
@@ -588,64 +630,52 @@ impl DocumentView {
                 div()
                     .flex_shrink_0()
                     .flex()
-                    .items_center()
+                    .items_baseline()
                     .gap_2()
                     .px_3()
-                    .py_1()
-                    .gap_1()
-                    .child(div().flex_1().min_w_0().child("Replacements"))
+                    .pt_3()
+                    .pb_2()
                     .child(
-                        ui::icon_control(
-                            "replacement-undo",
-                            "Undo",
-                            ui::Icon::Undo,
-                            theme,
-                            can_undo,
-                        )
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.undo_last_step(window, cx)),
-                        ),
+                        div()
+                            .text_size(px(12.))
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(palette.header_muted)
+                            .child("Replacements"),
                     )
                     .child(
-                        ui::icon_control(
-                            "replacement-redo",
-                            "Redo",
-                            ui::Icon::Redo,
-                            theme,
-                            can_redo,
-                        )
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.redo_last_step(window, cx)),
-                        ),
-                    )
-                    .child(
-                        ui::icon_control("review-rescan", "Rescan", ui::Icon::Rescan, theme, !busy)
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                if !this.pii.scanning() {
-                                    this.start_pii_scan(cx);
-                                }
-                            })),
-                    )
-                    .child(
-                        self.replacement_close("close-replacements", cx)
-                            .aria_label("Close replacements workspace")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.close_replacements(window, cx)
-                            })),
+                        div()
+                            .text_size(px(12.))
+                            .text_color(palette.header_muted)
+                            .child(total_entities.to_string()),
                     ),
             )
             .child(
                 div()
                     .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .gap_1()
                     .px_3()
                     .pb_2()
-                    .child(div().flex_1().min_w_0().child(mapping.search.clone()))
-                    .child(self.expand_all_control(cx))
-                    .child(self.filter_control(cx)),
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .h(px(30.))
+                            .pl_2()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(palette.border)
+                            .child(
+                                gpui::svg()
+                                    .data(ui::Icon::Search.data())
+                                    .size(px(13.))
+                                    .flex_shrink_0()
+                                    .text_color(palette.header_muted),
+                            )
+                            .child(div().flex_1().min_w_0().child(mapping.search.clone()))
+                            .child(self.filter_control(cx)),
+                    ),
             )
+            .child(div().h(px(1.)).flex_shrink_0().bg(palette.border))
             .child(
                 div()
                     .relative()
@@ -661,6 +691,7 @@ impl DocumentView {
                         }
                     })
                     .min_h_0()
+                    .when(count == 0, |v| v.flex_grow(0.).flex_basis(px(0.)))
                     .child(
                         uniform_list(
                             "replacement-list",
@@ -735,19 +766,51 @@ impl DocumentView {
             })
             .when(count == 0, |v| {
                 let searching = !mapping.search.read(cx).value().trim().is_empty();
-                v.child(
+                // While scanning: quiet skeleton rows; rows arrive when the
+                // scan ends (ADR 0048 decision 22).
+                let body = if busy && !searching {
+                    div()
+                        .when(cfg!(test), |v| v.debug_selector(|| "replacement-skeleton".into()))
+                        .flex()
+                        .flex_col()
+                        .px_3()
+                        .pt_3()
+                        .gap(px(14.))
+                        .children([0.62, 0.48, 0.7, 0.4, 0.56, 0.66].into_iter().enumerate().map(
+                            |(i, width)| {
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .when(i == 0 || i == 4, |v| v.mt_1())
+                                    .child(div().size(px(14.)).rounded(px(4.)).bg(palette.placeholder_bg))
+                                    .child(
+                                        div()
+                                            .h(px(9.))
+                                            .w(gpui::relative(width))
+                                            .rounded_full()
+                                            .bg(palette.placeholder_bg),
+                                    )
+                            },
+                        ))
+                        .into_any_element()
+                } else {
                     div()
                         .px_3()
+                        .py_3()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
                         .text_size(px(12.))
                         .text_color(palette.header_muted)
                         .child(if searching {
                             "No matching replacements."
-                        } else if busy {
-                            "Looking for names and identifiers…"
                         } else {
-                            "Nothing found. Select text and choose Replace to add one."
-                        }),
-                )
+                            "Nothing found. Select text to add it by hand."
+                        })
+                        .into_any_element()
+                };
+                v.child(body).child(div().flex_1())
             })
             .child(
                 div()
@@ -755,48 +818,48 @@ impl DocumentView {
                     .border_t_1()
                     .border_color(palette.border)
                     .px_3()
-                    .py_1()
+                    .py_2()
                     .flex()
                     .flex_col()
                     .gap_1()
                     .child(
                         div()
                             .flex()
-                            .flex_wrap()
                             .items_center()
                             .gap_2()
                             .child(
                                 div()
+                                    .when(cfg!(test), |v| v.debug_selector(|| "replacement-summary".into()))
                                     .flex_1()
                                     .text_size(px(12.))
-                                    .text_color(palette.header_muted)
-                                    .child(if pending > 0 {
-                                        format!("{pending} mentions to apply")
-                                    } else {
-                                        format!(
-                                            "{} applied mentions",
-                                            self.pii.review.applied().len()
-                                        )
-                                    }),
+                                    .text_color(palette.header_fg)
+                                    .child(summary),
                             )
-                            .when(pending > 0 || upgrade, |v| {
+                            .when(upgrade && pending == 0, |v| {
                                 v.child(
-                                    ui::action_control(
+                                    ui::link_button(
                                         "apply-identity-map",
-                                        "Apply replacements",
+                                        "Update aliases",
                                         theme,
                                         !busy,
-                                        true,
                                     )
                                     .when(cfg!(test), |v| {
                                         v.debug_selector(|| "apply-identity-map".into())
                                     })
-                                    .aria_label("Apply remaining replacements as one undo step")
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.apply_replacements(cx)),
                                     ),
                                 )
-                            }),
+                            })
+                            .child(
+                                ui::link_button("review-rescan", "↻ Rescan", theme, !busy)
+                                    .when(cfg!(test), |v| v.debug_selector(|| "review-rescan".into()))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        if !this.pii.scanning() {
+                                            this.start_pii_scan(cx);
+                                        }
+                                    })),
+                            ),
                     )
                     .when_some(notice, |v, (text, action, addition)| {
                         v.child(

@@ -430,6 +430,8 @@ pub struct SourceAnnotation {
     pub border: Hsla,
     /// Glyph colour over the range; `None` keeps the syntax colour.
     pub text_color: Option<Hsla>,
+    /// An underline under an unbordered fill, e.g. a category's colour.
+    pub underline: Option<Hsla>,
 }
 
 /// A transient colour change on annotations, e.g. a replacement settling in.
@@ -5453,6 +5455,7 @@ mod annotation_tests {
                         active_color: rgba(0xffaa0055).into(),
                         border: gpui::transparent_black(),
                         text_color: None,
+                        underline: None,
                     })
                     .collect(),
                 cx,
@@ -5545,6 +5548,7 @@ mod annotation_tests {
                         active_color: rgba(0xffaa0055).into(),
                         border: gpui::transparent_black(),
                         text_color: None,
+                        underline: None,
                     },
                     SourceAnnotation {
                         id: 8,
@@ -5553,6 +5557,7 @@ mod annotation_tests {
                         active_color: rgba(0xffaa0055).into(),
                         border: gpui::transparent_black(),
                         text_color: None,
+                        underline: None,
                     },
                 ],
                 cx,

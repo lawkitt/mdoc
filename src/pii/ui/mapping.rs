@@ -1,5 +1,6 @@
 //! Identity review and direct correction. All mutation uses editor history.
 use super::*;
+mod checklist;
 mod panel;
 mod panel_keys;
 mod panel_rows;
@@ -86,14 +87,17 @@ pub(super) enum PanelFilter {
     All,
     Proposed,
     Applied,
+    /// Entities unticked in this session: their originals stay (ADR 0048).
+    Kept,
 }
 impl PanelFilter {
-    pub(super) const ALL: [Self; 3] = [Self::All, Self::Proposed, Self::Applied];
+    pub(super) const ALL: [Self; 4] = [Self::All, Self::Proposed, Self::Applied, Self::Kept];
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::All => "All",
-            Self::Proposed => "Proposed",
+            Self::Proposed => "To replace",
             Self::Applied => "Applied",
+            Self::Kept => "Kept",
         }
     }
     pub(super) fn shows(self, applied: bool) -> bool {
@@ -101,9 +105,14 @@ impl PanelFilter {
             Self::All => true,
             Self::Proposed => !applied,
             Self::Applied => applied,
+            Self::Kept => false,
         }
     }
+    pub(super) fn shows_kept(self) -> bool {
+        matches!(self, Self::All | Self::Kept)
+    }
 }
+
 /// The keyboard row in the panel list: a group header or a mention.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum PanelCursor {

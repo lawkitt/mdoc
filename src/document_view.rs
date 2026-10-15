@@ -64,6 +64,8 @@ pub(crate) struct DocumentView {
     pub(crate) copy_feedback: Option<gpui::Task<()>>,
     /// The header's ⋯ menu (ADR 0048).
     pub(crate) more_open: bool,
+    /// Text zoom of this document's Markdown, not saved (ADR 0048).
+    pub(crate) zoom: f32,
     /// The running copy feedback belongs to Copy for AI, not Copy Markdown.
     pub(crate) copied_for_ai: bool,
     /// The saved case this tab's mapping belongs to (ADR 0041).
@@ -221,6 +223,7 @@ impl DocumentView {
             error: None,
             copy_feedback: None,
             more_open: false,
+            zoom: 1.,
             copied_for_ai: false,
             case: None,
             case_save: None,
@@ -321,6 +324,15 @@ impl DocumentView {
     /// The Markdown came from OCR.
     pub(crate) fn recognized(&self) -> bool {
         self.session.ocr_configuration.is_some()
+    }
+
+    /// Zoom the Markdown text between 50% and 200% in 10% steps.
+    pub(crate) fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
+        let zoom = ((zoom * 10.).round() / 10.).clamp(0.5, 2.);
+        if zoom != self.zoom {
+            self.zoom = zoom;
+            cx.notify();
+        }
     }
 
     pub(crate) fn display_name(&self) -> String {
@@ -1592,6 +1604,9 @@ impl Render for DocumentView {
             .on_action(cx.listener(Self::find_previous_markdown))
             .on_action(cx.listener(Self::close_markdown_search))
             .on_action(cx.listener(Self::retry_preview))
+            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.set_zoom(this.zoom + 0.1, cx)))
+            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.set_zoom(this.zoom - 0.1, cx)))
+            .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_zoom(1., cx)))
             .child(self.header(window, cx))
             .when(!self.source_only && self.job.busy(), |v| v.child(
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
@@ -1600,7 +1615,7 @@ impl Render for DocumentView {
             .children(import_notice).children(clipboard_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx)))
             .child(div().flex().flex_1().min_h_0()
-                .when(!self.source_only && show_markdown, |row| row.child(div().relative().flex().flex_1().min_w_0().h_full().flex().flex_col()
+                .when(!self.source_only && show_markdown, |row| row.child(div().relative().flex().flex_1().min_w_0().h_full().flex().flex_col().text_size(px(16. * self.zoom))
                     .when(self.search.open, |column| column.child(search_bar))
                     .child(if self.loading || self.unavailable {
                         div().p_6().child(if self.loading { ui::activity("markdown-loading", "Loading Markdown…", theme).into_any_element() } else { div().child("Markdown unavailable").into_any_element() })
@@ -1608,7 +1623,7 @@ impl Render for DocumentView {
                     } else if let Some(compare) = self.compare_view(content_width, cx) {
                         compare
                     } else { div().relative().flex_1().min_w_0().min_h_0()
-                        .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().when(self.has_applied_aliases(), |v| v.pb(px(72.)))
+                        .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().pb(px(72.))
                             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify())).child(self.editor.clone()))
                         .child(markdown_scrollbar).children(empty_page.then(|| self.empty_page(cx))).into_any_element() })
                     .children(self.view_switcher(cx).filter(|_| !self.loading && !self.unavailable))))

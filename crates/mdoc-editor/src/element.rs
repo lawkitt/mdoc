@@ -1379,6 +1379,21 @@ impl Element for EditorElement {
                             quad.border_widths = Edges::all(px(1.));
                             quad.border_color = border;
                         }
+                    } else if let Some(underline) = annotation.underline {
+                        // A tinted band with a 2 px underline at the glyphs' foot.
+                        for quad in &mut quads {
+                            let b = quad.bounds;
+                            let inset = (b.size.height * 0.12).min(px(3.));
+                            quad.bounds = Bounds::from_corners(
+                                point(b.left(), b.top() + inset),
+                                point(b.right(), b.bottom() - inset),
+                            );
+                            quad.border_widths = Edges {
+                                bottom: px(2.),
+                                ..Edges::all(px(0.))
+                            };
+                            quad.border_color = underline;
+                        }
                     }
                     if let [chip] = quads.as_slice() {
                         chips.push((annotation.range.clone(), chip.clone()));

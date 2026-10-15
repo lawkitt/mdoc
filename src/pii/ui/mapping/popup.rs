@@ -597,13 +597,25 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.pii.scanning() || !self.can_copy_markdown() {
-            return;
-        }
         let (candidates, applied) = self.scoped_mentions();
+        if self.keep_mentions_now(candidates, applied, cx) {
+            window.focus(&self.editor.read(cx).focus_handle(cx), cx);
+        }
+    }
+    /// Keep exactly these mentions (pending by variant and range, applied by
+    /// id) as one undo step. Returns whether anything was kept.
+    pub(in crate::pii::ui) fn keep_mentions_now(
+        &mut self,
+        candidates: Vec<(u64, Range<usize>)>,
+        applied: Vec<u64>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.pii.scanning() || !self.can_copy_markdown() {
+            return false;
+        }
         let count = candidates.len() + applied.len();
         if count == 0 {
-            return;
+            return false;
         }
         let mut faded: Vec<(Range<usize>, bool)> = Vec::new();
         if applied.is_empty() {
@@ -612,11 +624,11 @@ impl DocumentView {
                 .checkpoint_review(cx, |review| review.keep_mentions(candidates))
                 .is_none()
             {
-                return;
+                return false;
             }
         } else {
             let Some(edits) = self.revert_applied(&applied.into_iter().collect(), true, cx) else {
-                return;
+                return false;
             };
             faded.extend(Self::edited_ranges(&edits).into_iter().map(|r| (r, true)));
             let shifted: Vec<_> = candidates
@@ -645,8 +657,8 @@ impl DocumentView {
         self.fade_out_kept(faded, cx);
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(None, cx));
-        window.focus(&self.editor.read(cx).focus_handle(cx), cx);
         cx.notify();
+        true
     }
     pub(in crate::pii::ui) fn apply_replacements(&mut self, cx: &mut Context<Self>) {
         if self.pii.scanning() || !self.can_copy_markdown() {

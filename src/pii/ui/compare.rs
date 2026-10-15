@@ -185,10 +185,14 @@ impl DocumentView {
     }
     /// Edit · Original · Pseudonymized · Side by side, floating at the bottom
     /// of the document while replacements are applied (ADR 0046).
+    /// The floating pill at the bottom of the document (ADR 0048): zoom
+    /// always; Edit · Original · Pseudonymized · Side by side once aliases are
+    /// applied (ADR 0046).
     pub(crate) fn view_switcher(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if !self.has_applied_aliases() {
+        if self.source_only {
             return None;
         }
+        let views = self.has_applied_aliases();
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let current = self.compare.as_ref().map(|state| state.mode);
@@ -204,13 +208,22 @@ impl DocumentView {
                 .px_3()
                 .text_size(px(12.))
                 .when(selected, |v| {
-                    v.bg(theme.sidebar_selected())
-                        .text_color(theme.search_accent())
+                    v.bg(palette.placeholder_bg).text_color(palette.header_fg)
                 })
+                .when(!selected, |v| v.text_color(palette.header_muted))
                 .on_click(
                     cx.listener(move |this, _, window, cx| this.set_view_mode(mode, window, cx)),
                 )
         };
+        let zoom_step = |id: &'static str, label: &'static str, delta: f32| {
+            ui::control(id, label, theme, true)
+                .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
+                .px_2()
+                .text_size(px(13.))
+                .text_color(palette.header_muted)
+                .on_click(cx.listener(move |this, _, _, cx| this.set_zoom(this.zoom + delta, cx)))
+        };
+        let percent = format!("{}%", (self.zoom * 100.).round() as i32);
         Some(
             div()
                 .absolute()
@@ -226,29 +239,45 @@ impl DocumentView {
                         .role(gpui::Role::Group)
                         .aria_label("View")
                         .flex()
+                        .items_center()
                         .gap_1()
                         .p_1()
-                        .rounded_lg()
+                        .rounded_xl()
                         .bg(palette.bg)
                         .border_1()
                         .border_color(palette.border)
                         .shadow_md()
-                        .child(segment("view-edit", "Edit", None))
-                        .child(segment(
-                            "view-original",
-                            "Original",
-                            Some(CompareMode::Original),
-                        ))
-                        .child(segment(
-                            "view-pseudonymized",
-                            "Pseudonymized",
-                            Some(CompareMode::Pseudonymized),
-                        ))
-                        .child(segment(
-                            "view-side",
-                            "Side by side",
-                            Some(CompareMode::Side),
-                        )),
+                        .when(views, |v| {
+                            v.child(segment("view-edit", "Edit", None))
+                                .child(segment(
+                                    "view-original",
+                                    "Original",
+                                    Some(CompareMode::Original),
+                                ))
+                                .child(segment(
+                                    "view-pseudonymized",
+                                    "Pseudonymized",
+                                    Some(CompareMode::Pseudonymized),
+                                ))
+                                .child(segment(
+                                    "view-side",
+                                    "Side by side",
+                                    Some(CompareMode::Side),
+                                ))
+                                .child(div().w(px(1.)).h(px(16.)).mx_1().bg(palette.border))
+                        })
+                        .child(zoom_step("zoom-out", "−", -0.1))
+                        .child(
+                            ui::control("zoom-reset", percent, theme, true)
+                                .when(cfg!(test), |v| v.debug_selector(|| "zoom-reset".into()))
+                                .aria_label("Reset zoom")
+                                .min_w(px(48.))
+                                .flex()
+                                .justify_center()
+                                .text_size(px(12.))
+                                .on_click(cx.listener(|this, _, _, cx| this.set_zoom(1., cx))),
+                        )
+                        .child(zoom_step("zoom-in", "+", 0.1)),
                 )
                 .into_any_element(),
         )
@@ -321,6 +350,7 @@ impl DocumentView {
             active_color: Hsla { a: 0.34, ..accent },
             border: Hsla { a: 0.5, ..accent },
             text_color: Some(accent),
+            underline: None,
         };
         let mut shown = HashMap::with_capacity(marks.len());
         let (mut left_marks, mut right_marks) = (Vec::new(), Vec::new());
