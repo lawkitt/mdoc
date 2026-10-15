@@ -1330,7 +1330,6 @@ impl Workspace {
                                 this.close_palette(window, cx)
                             }))
                             .w(px(560.))
-                            .max_h(px(520.))
                             .flex()
                             .flex_col()
                             .rounded_xl()
@@ -1362,8 +1361,7 @@ impl Workspace {
                             .child(
                                 div()
                                     .id("palette-list")
-                                    .flex_1()
-                                    .min_h_0()
+                                    .max_h(px(470.))
                                     .overflow_y_scroll()
                                     .child(list),
                             ),

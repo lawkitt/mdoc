@@ -78,3 +78,31 @@ actions move to the header, ⋯, the palette and the menu bar. Tests that drive
 toolbar buttons and popup scopes are rewritten. Two variations are built on
 branches for comparison (design doc, decision 18); the chosen one amends this
 ADR.
+
+## As implemented
+
+- **Home over a placeholder.** The workspace keeps its one-tab invariant: with
+  nothing to restore, a hidden blank placeholder tab is active and Home covers
+  it. New tab (⌘N) turns that placeholder into the Untitled tab; opening files
+  replaces it. While Home shows, keyboard focus sits on the workspace, not the
+  hidden editor, or shortcuts such as ⌘O would reach nothing.
+- **Blank tabs** are plain editors ("Type here…"). The old start page shows
+  only as drop feedback while files are dragged over an empty tab.
+- **Kept rows** come from the review's Keep decisions (`Review::kept_mentions`),
+  not from panel state, so undo and redo bring ticks back. Ticking a kept
+  entity proposes its wordings again through the manual-addition path, keeping
+  the entity's alias.
+- **Category menu** opens with a right-click on an entity row; a hover control
+  would cover the alias. The mention bar also carries the category.
+- **Mention bar** keeps the popup's keyboard (Enter applies this mention, ⌘↩ in
+  the bar the same wording, ⌫ keeps). Its ☑ Replace unticks in the selected
+  scope. The applied-mention "Undo (back to proposed)" button is gone; ⌘Z does
+  it.
+- **Proposed highlights** are a light category tint with a 2 px category
+  underline (`SourceAnnotation::underline`); applied ones keep the blue chip.
+- **Zoom** scales the Markdown column's text size, 50–200% in 10% steps,
+  ⌘= / ⌘− / ⌘0.
+- **Theme choice** is saved in the session; System follows the window's
+  appearance live.
+- **Not verified on Windows or Linux:** drawn caption buttons and client-side
+  decorations compile but were not run there.
