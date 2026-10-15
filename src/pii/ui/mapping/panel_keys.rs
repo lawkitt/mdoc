@@ -348,6 +348,11 @@ impl DocumentView {
                 this.decide(Scope::Entity, true, window, cx);
                 cx.stop_propagation();
             }))
+            // Space unticks the bar's ☑ Replace, in the selected scope.
+            .on_action(cx.listener(|this, _: &crate::PanelKeep, window, cx| {
+                this.keep_originals(window, cx);
+                cx.stop_propagation();
+            }))
     }
 
     /// What a keyboard move of the current row carries: a mention, or the
