@@ -135,6 +135,7 @@ impl DocumentView {
                 self.mention_row(base, &row, annotation, range, cx)
             }
             PanelItem::Header => self.header_row(base, &row, cx),
+            PanelItem::Kept(range) => self.kept_row(base, &row, range, cx),
         }
     }
 
@@ -368,7 +369,7 @@ impl DocumentView {
             .text_color(palette.header_muted)
             .hover(move |s| s.bg(palette.placeholder_bg))
             .when(total > 1, |v| v.child(total.to_string()))
-            .when(row.mentions > 0, |v| {
+            .when(total > 0, |v| {
                 v.child(
                     gpui::svg()
                         .data(if expanded {
@@ -474,6 +475,56 @@ impl DocumentView {
         self.original_selected = false;
         self.panel_select_mention(annotation, cx);
         self.activate_annotation(annotation, window, cx);
+    }
+
+    /// A kept mention under its entity: unticked, muted; ticking proposes it
+    /// again, a click shows it in the text (ADR 0048).
+    fn kept_row(
+        &self,
+        base: gpui::Stateful<gpui::Div>,
+        row: &ReplacementRow,
+        range: Range<usize>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let id = row.id;
+        let theme = self.theme.get();
+        let palette = theme.pdf_style();
+        let colors = RowColors::new(theme);
+        let (before, word, after) = self.readable_mention(&range, cx);
+        let start = range.start;
+        let tick_range = range.clone();
+        base.aria_label(format!("{word}: original kept"))
+            .when(cfg!(test), |v| {
+                v.debug_selector(move || format!("kept-{start}"))
+            })
+            .pl(px(MENTION_INSET))
+            .pr_3()
+            .text_size(px(12.))
+            .text_color(palette.header_muted)
+            .child(guide(colors.guide_for(false, false)))
+            .child(
+                self.tick_box(
+                    SharedString::from(format!("kept-tick-{start}")),
+                    Tick::Off,
+                    cx,
+                    move |this, cx| this.retick_mention(id, tick_range.clone(), cx),
+                )
+                .when(cfg!(test), |v| {
+                    v.debug_selector(move || format!("kept-tick-{start}"))
+                }),
+            )
+            .child(
+                div()
+                    .min_w_0()
+                    .flex_1()
+                    .text_ellipsis()
+                    .child(format!("{before}{word}{after}")),
+            )
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.reveal_replacement_offset(start, cx);
+                cx.notify();
+            }))
+            .into_any_element()
     }
 
     fn mention_selected(&self, annotation: u64) -> bool {

@@ -58,7 +58,7 @@ impl DocumentView {
         match item {
             PanelItem::Header => Some(PanelCursor::Header(row.id)),
             PanelItem::Mention(annotation, _) => Some(PanelCursor::Mention(*annotation)),
-            PanelItem::Category { .. } => None,
+            PanelItem::Category { .. } | PanelItem::Kept(_) => None,
         }
     }
 

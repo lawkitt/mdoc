@@ -2485,6 +2485,12 @@ impl Workspace {
 }
 
 const RAIL_WIDTH: f32 = 40.;
+
+/// Collapsed on macOS: the traffic lights are wider than the rail, so they
+/// and the toggle sit in a strip of window ground above the card (ADR 0048).
+fn collapsed_strip(sidebar_visible: bool) -> bool {
+    !sidebar_visible && cfg!(target_os = "macos")
+}
 const PANEL_WIDTH: f32 = 240.;
 const REVEAL_DELAY: Duration = Duration::from_millis(200);
 const REVEAL_GRACE: Duration = Duration::from_millis(300);
@@ -2582,12 +2588,10 @@ impl Render for Workspace {
                 ""
             },
         ));
-        self.title.inset.set(if self.sidebar_visible {
-            0.
-        } else {
-            // Room for the floating toggle: its 28 px and a 12 px gap.
-            (style::TRAFFIC_LIGHT_INSET + 28. + 12. - RAIL_WIDTH - style::CARD_MARGIN - 16.).max(0.)
-        });
+        // Collapsed on macOS, the traffic lights and the toggle get their own
+        // strip above the card, so the header needs no room for them; on
+        // other systems the toggle sits on the rail (ADR 0048).
+        self.title.inset.set(0.);
         div()
             .track_focus(&self.focus)
             .relative()
@@ -2764,6 +2768,18 @@ impl Render for Workspace {
             )
             // Collapsed: the expand toggle sits right of the traffic lights,
             // over the card's header, which leaves it room (ADR 0048).
+            // The collapsed strip moves the window like a title bar.
+            .when(collapsed_strip(self.sidebar_visible), |v| {
+                v.child(ui::title_drag(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .right_0()
+                        .h(px(style::CARD_MARGIN + style::HEADER_HEIGHT)),
+                    self.title.armed.clone(),
+                ))
+            })
             .when(!self.sidebar_visible, |v| {
                 v.child(
                     div()
@@ -2809,6 +2825,9 @@ impl Workspace {
             .pr(px(style::CARD_MARGIN))
             .pb(px(style::CARD_MARGIN))
             .when(!self.sidebar_visible, |v| v.pl(px(style::CARD_MARGIN)))
+            .when(collapsed_strip(self.sidebar_visible), |v| {
+                v.pt(px(style::CARD_MARGIN + style::HEADER_HEIGHT))
+            })
             .child(
                 div()
                     .id("content-card")

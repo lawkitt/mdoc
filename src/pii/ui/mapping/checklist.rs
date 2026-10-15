@@ -157,6 +157,62 @@ impl DocumentView {
         cx.notify();
     }
 
+    /// Tick one kept mention: propose it again, as one undo step; other kept
+    /// mentions of the same wording stay kept.
+    pub(in crate::pii::ui) fn retick_mention(
+        &mut self,
+        id: u64,
+        range: Range<usize>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pii.scanning() || !self.can_copy_markdown() {
+            return;
+        }
+        let Some(category) = self
+            .pii
+            .review
+            .identity(id)
+            .map(|i| i.category)
+            .or_else(|| {
+                self.pii
+                    .mapping
+                    .kept_names
+                    .values()
+                    .find(|k| k.identity == id)
+                    .map(|k| k.category)
+            })
+        else {
+            return;
+        };
+        let source = self.editor.read(cx).text().to_owned();
+        let Some(original) = source.get(range.clone()).map(Arc::<str>::from) else {
+            return;
+        };
+        // Re-proposing a wording lifts all its Keep decisions; the other kept
+        // mentions of that wording are kept again in the same undo step.
+        let others: Vec<Range<usize>> = self
+            .kept_of(id)
+            .into_iter()
+            .filter(|(r, o)| *o == original && *r != range)
+            .map(|(r, _)| r)
+            .collect();
+        let added = self.checkpoint_review(cx, |review| {
+            let Ok(variant) = review.add_manual(&source, range, category) else {
+                return false;
+            };
+            review.keep_mentions(others.into_iter().map(|r| (variant, r)));
+            true
+        });
+        if added != Some(true) {
+            self.pii.error = Some("Couldn't propose it again; select the text to add it.".into());
+        } else {
+            self.pii.reviewing = true;
+            self.pii.error = None;
+            self.sync_annotations(cx);
+        }
+        cx.notify();
+    }
+
     /// A click or Space on an entity row's checkbox.
     pub(in crate::pii::ui) fn toggle_entity(&mut self, id: u64, cx: &mut Context<Self>) {
         match self.entity_tick(id) {
