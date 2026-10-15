@@ -258,7 +258,7 @@ impl DocumentView {
         let palette = theme.pdf_style();
         let mapping = &self.pii.mapping;
         let expanded = mapping.expanded.contains(&id);
-        let tick = self.entity_tick(id);
+        let tick = row.tick();
         let kept_only = tick == Tick::Off;
         // "Link to ALIAS" while another group's row is dragged here.
         let link_hint = (cx.has_active_drag() || mapping.key_moving)

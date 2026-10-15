@@ -1697,3 +1697,116 @@ fn click_tab(cx: &mut gpui::VisualTestContext, id: &'static str) {
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
 }
+
+#[gpui::test]
+fn panel_projection_reuses_rows_and_invalidates_on_keep_history_filter_and_query(
+    cx: &mut gpui::TestAppContext,
+) {
+    use super::panel::PanelItem;
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let identity = app.update(cx, |app, cx| {
+        let (full, _) = seed(app, source, cx);
+        let ids = app.pii.review.active_identities();
+        app.pii.mapping.expanded.extend(ids);
+        app.pii.review.variant_identity(full).unwrap()
+    });
+    cx.run_until_parked();
+    let initial = app.read_with(cx, |app, cx| app.replacement_entries(cx));
+    app.update(cx, |app, cx| {
+        assert!(Arc::ptr_eq(&initial, &app.replacement_entries(cx)));
+        assert_eq!(app.replacement_entity_count(cx), 3);
+        assert_eq!(app.kept_mention_count(cx), 0);
+        let alias = app.pii.review.identity(identity).unwrap().alias.clone();
+        assert!(app.case_alias_is_present(&alias, cx));
+        app.sync_pii_theme(cx);
+        assert!(
+            Arc::ptr_eq(&initial, &app.replacement_entries(cx)),
+            "presentation reuses data"
+        );
+        app.untick(identity, None, cx);
+        let kept = app.replacement_entries(cx);
+        assert!(!Arc::ptr_eq(&initial, &kept));
+        assert_eq!(app.kept_mention_count(cx), 1);
+        assert!(!app.case_alias_is_present(&alias, cx));
+        assert!(
+            kept.iter()
+                .any(|(row, item)| row.id == identity && matches!(item, PanelItem::Kept(_)))
+        );
+    });
+    app.update_in(cx, |app, window, cx| {
+        app.editor.update(cx, |e, cx| e.undo_step(window, cx))
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        let undone = app.replacement_entries(cx);
+        assert_eq!(app.kept_mention_count(cx), 0);
+        assert_eq!(undone.len(), initial.len());
+        app.pii.mapping.expanded.clear();
+        let collapsed = app.replacement_entries(cx);
+        assert!(!Arc::ptr_eq(&undone, &collapsed));
+        app.pii
+            .mapping
+            .search
+            .update(cx, |input, cx| input.set_value("EMAIL".into(), cx));
+        let searched = app.replacement_entries(cx);
+        assert_eq!(app.replacement_entity_count(cx), 1);
+        assert!(
+            searched
+                .iter()
+                .all(|(row, _)| row.category == Category::Email)
+        );
+        app.pii.mapping.filter = PanelFilter::Applied;
+        assert!(app.replacement_entries(cx).is_empty());
+    });
+}
+
+#[gpui::test]
+#[ignore = "expanded 2 MiB / 20,000 mention panel projection; run serially"]
+fn expanded_panel_projection_performance(cx: &mut gpui::TestAppContext) {
+    use std::time::Instant;
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let names: Vec<_> = (0..64).map(|i| format!("Client{i:04}")).collect();
+    let mut source: String = (0..20_000)
+        .map(|i| format!("{} agrees to the terms.\n", names[i % names.len()]))
+        .collect();
+    source.push_str(&" ".repeat(2_097_152 - source.len()));
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |e, cx| e.set_text(source.clone(), cx));
+        let detections = names
+            .iter()
+            .map(|name| {
+                let at = source.find(name).unwrap();
+                pii::Detection {
+                    range: at..at + name.len(),
+                    category: Category::Person,
+                    score: 0.9,
+                    recognizer: pii::Recognizer::Model,
+                }
+            })
+            .collect();
+        app.pii.review.ingest(&source, detections).unwrap();
+        app.pii
+            .mapping
+            .expanded
+            .extend(app.pii.review.active_identities());
+        app.review_changed(cx);
+        let start = Instant::now();
+        let entries = app.replacement_entries(cx);
+        let cold = start.elapsed().as_secs_f64() * 1000.;
+        assert_eq!(entries.len(), 20_000 + 64 + 1);
+        let mut warm = Vec::new();
+        for _ in 0..100 {
+            let start = Instant::now();
+            assert!(Arc::ptr_eq(&entries, &app.replacement_entries(cx)));
+            warm.push(start.elapsed().as_secs_f64() * 1000.);
+        }
+        warm.sort_by(f64::total_cmp);
+        eprintln!(
+            "PANEL_PERF bytes={} mentions=20000 entities=64 cold_ms={cold:.3} warm_median_ms={:.6}",
+            source.len(),
+            warm[50]
+        );
+    });
+}

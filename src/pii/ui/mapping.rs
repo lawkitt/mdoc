@@ -143,6 +143,8 @@ mod tests;
 /// Replacements panel and word-popup state. Every transition is a method here.
 pub(super) struct MappingUi {
     pub open: bool,
+    projection: std::cell::RefCell<Option<Arc<panel::PanelProjection>>>,
+    entries_cache: std::cell::RefCell<Option<panel::EntriesCache>>,
     scope: Scope,
     pub(super) pickers: Pickers,
     pub(super) target_index: Option<usize>,
@@ -382,6 +384,8 @@ impl MappingUi {
         };
         Self {
             open: false,
+            projection: Default::default(),
+            entries_cache: Default::default(),
             scope: Scope::Wording,
             pickers: Pickers::default(),
             target_index: None,
