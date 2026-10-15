@@ -310,7 +310,8 @@ impl Workspace {
                     .items_center()
                     .gap_1()
                     .child(
-                        nav_row("sidebar-settings", ui::Icon::Settings, "Settings", theme, false)
+                        nav_row("Settings", ui::Icon::Settings, "Settings", theme, false)
+                            .track_focus(&self.settings_focus)
                             .flex_1()
                             .when(crate::updater::state(cx).available.is_some(), |v| {
                                 v.child(

@@ -169,6 +169,8 @@ pub(super) struct Workspace {
     /// Shared with document headers: title-bar inset and drag state.
     title: style::TitleBar,
     shell: shell::ShellState,
+    /// The sidebar's Settings row; Settings returns focus here (ADR 0048).
+    settings_focus: gpui::FocusHandle,
     _appearance: Option<Subscription>,
     _checkpoint: Option<gpui::Task<()>>,
 }
@@ -316,6 +318,7 @@ impl Workspace {
             home: false,
             title: style::TitleBar::default(),
             shell: shell::ShellState::new(cx),
+            settings_focus: cx.focus_handle().tab_stop(true),
             _appearance: None,
             _checkpoint: None,
         };
@@ -721,9 +724,9 @@ impl Workspace {
             self.push(record);
         }
         self.ready = true;
-        // Nothing to restore: Home, over a hidden placeholder tab (ADR 0048).
-        let home = self.tabs.is_empty();
-        if home {
+        // Nothing to restore: Home shows over a hidden placeholder tab until
+        // it gets content (ADR 0048).
+        if self.tabs.is_empty() {
             self.push(TabRecord {
                 blank: true,
                 blank_disposable: true,
@@ -732,7 +735,6 @@ impl Workspace {
         }
         let active = self.tabs[selected.min(self.tabs.len() - 1)].id;
         self.activate(active, window, cx);
-        self.home = home;
         let pending = std::mem::take(&mut self.pending_open);
         if !pending.is_empty() {
             self.open_paths(pending, window, cx);
@@ -942,10 +944,31 @@ impl Workspace {
                 }
             });
         }
+        // Home covers a placeholder's editor; keys go to the workspace, or
+        // they would reach nothing (ADR 0048).
+        if self.showing_home(cx) {
+            window.focus(&self.focus, cx);
+        }
         cx.notify();
     }
 
-    fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> u64 {
+    pub(super) fn new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) -> u64 {
+        // From Home, the hidden placeholder becomes the new tab (ADR 0048).
+        if let Some(id) = self
+            .tabs
+            .iter()
+            .find(|tab| self.is_placeholder(tab, cx))
+            .map(|tab| tab.id)
+        {
+            if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) {
+                tab.record.blank_disposable = false;
+                if let Some(view) = &tab.view {
+                    view.update(cx, |view, _| view.blank_disposable = false);
+                }
+            }
+            self.activate(id, window, cx);
+            return id;
+        }
         for tab in &mut self.tabs {
             tab.record.blank_disposable = false;
             if let Some(view) = &tab.view {
@@ -1377,7 +1400,6 @@ impl Workspace {
                 ..TabRecord::default()
             });
             self.activate(id, window, cx);
-            self.home = true;
         } else if self.active == id {
             self.activate(self.tabs[index.min(self.tabs.len() - 1)].id, window, cx);
         } else if closed_reveal {
@@ -1603,6 +1625,10 @@ impl Workspace {
         let Some(view) = self.active_view() else {
             return;
         };
+        if self.showing_home(cx) {
+            window.focus(&self.focus, cx);
+            return;
+        }
         let view = view.read(cx);
         let focus = if view.source_only {
             view.focus.clone()

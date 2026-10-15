@@ -12,6 +12,8 @@ pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut Visua
     let (tabs, cx) = cx.add_window_view(|window, cx| {
         let mut tabs = workspace::Workspace::empty(window, cx);
         tabs.restore(session_store::Session::default(), window, cx);
+        // Start from an Untitled tab rather than Home (ADR 0048).
+        tabs.new_tab(window, cx);
         tabs
     });
     cx.run_until_parked();

@@ -1,7 +1,25 @@
 use super::*;
 use gpui::{TestAppContext, VisualTestContext};
 
+/// Boot with `session`; an empty session starts from an Untitled tab rather
+/// than Home (ADR 0048), as most tests type into it. See [`boot_home`].
 fn boot(cx: &mut TestAppContext, session: Session) -> (Entity<Workspace>, &mut VisualTestContext) {
+    let untitled = session.tabs.is_empty();
+    let (tabs, cx) = boot_home(cx, session);
+    if untitled {
+        tabs.update_in(cx, |tabs, window, cx| {
+            tabs.new_tab(window, cx);
+        });
+        cx.run_until_parked();
+    }
+    (tabs, cx)
+}
+
+/// Boot exactly as launch does: an empty session shows Home.
+fn boot_home(
+    cx: &mut TestAppContext,
+    session: Session,
+) -> (Entity<Workspace>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
     // Sidebar animations settle at once; timers still need the clock.
@@ -31,6 +49,12 @@ fn click_toolbar(cx: &mut VisualTestContext, label: &'static str) {
         .expect("toolbar button must be rendered");
     cx.simulate_click(bounds.center(), gpui::Modifiers::none());
     cx.run_until_parked();
+}
+
+/// Choose `item` from the document header's ⋯ menu (ADR 0048).
+fn more(cx: &mut VisualTestContext, item: &'static str) {
+    click_toolbar(cx, "header-more");
+    click_toolbar(cx, item);
 }
 
 fn draw(cx: &mut VisualTestContext) {
@@ -406,7 +430,7 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/import/handmade-partly-scanned.pdf");
     let original = std::fs::read(&source).unwrap();
-    let (tabs, cx) = boot(cx, Session::default());
+    let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_path(source.clone(), window, cx)
     });
@@ -465,7 +489,7 @@ fn copy_markdown_button_is_inert_while_markdown_is_empty(cx: &mut TestAppContext
     cx.simulate_resize(size(px(1400.), px(850.)));
     let view = active(&tabs, cx);
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("kept".into()));
-    click_toolbar(cx, "Copy Markdown");
+    more(cx, "more-copy-markdown");
     cx.update(|_, cx| {
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().as_deref(),
@@ -486,7 +510,7 @@ fn copy_markdown_button_uses_active_tab_without_editor_focus(cx: &mut TestAppCon
     let second = active(&tabs, cx);
     cx.simulate_input("second tab");
     cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
-    click_toolbar(cx, "Copy Markdown");
+    more(cx, "more-copy-markdown");
     cx.update(|_, cx| {
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().as_deref(),
@@ -498,7 +522,7 @@ fn copy_markdown_button_uses_active_tab_without_editor_focus(cx: &mut TestAppCon
     tabs.update_in(cx, |tabs, window, cx| tabs.cycle(-1, window, cx));
     cx.run_until_parked();
     cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
-    click_toolbar(cx, "Copy Markdown");
+    more(cx, "more-copy-markdown");
     cx.update(|_, cx| {
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().as_deref(),
@@ -556,12 +580,20 @@ fn toolbar_settings_opens_and_closes_without_editor_focus(cx: &mut TestAppContex
 fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
-    let original = cx.update(|_, cx| tabs.read(cx).theme.get());
+    // The sidebar's theme control cycles System → Light → Dark (ADR 0048).
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).theme_choice, style::ThemeChoice::System));
     click_toolbar(cx, "theme-toggle");
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).theme.get(), original.toggle()));
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).theme_choice, style::ThemeChoice::Light);
+        assert_eq!(tabs.read(cx).theme.get(), Theme::Light);
+    });
     cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
     click_toolbar(cx, "theme-toggle");
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).theme.get(), original));
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).theme_choice, style::ThemeChoice::Dark);
+        assert_eq!(tabs.read(cx).theme.get(), Theme::Dark);
+        assert_eq!(tabs.read(cx).snapshot(cx).theme_choice, style::ThemeChoice::Dark);
+    });
 }
 
 #[gpui::test]
@@ -640,7 +672,7 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let view = active(&tabs, cx);
     let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
-    click_toolbar(cx, "Hide original");
+    click_toolbar(cx, "header-source");
     cx.update(|window, cx| {
         assert!(!view.read(cx).preview.visible);
         assert!(
@@ -651,13 +683,13 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
                 .is_focused(window)
         );
     });
-    click_toolbar(cx, "Show original");
+    click_toolbar(cx, "header-source");
     cx.update(|_, cx| {
         assert!(view.read(cx).preview.visible);
         assert_eq!(view.read(cx).preview.pdf.as_ref(), Some(&pdf));
     });
     cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
-    click_toolbar(cx, "Hide original");
+    click_toolbar(cx, "header-source");
     cx.update(|_, cx| {
         assert!(!view.read(cx).preview.visible);
         assert_eq!(view.read(cx).preview.attachment.as_ref(), Some(&path));
@@ -1397,7 +1429,7 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("note.md");
     std::fs::write(&file, "note").unwrap();
-    let (tabs, cx) = boot(cx, Session::default());
+    let (tabs, cx) = boot_home(cx, Session::default());
     let placeholder = cx.update(|_, cx| tabs.read(cx).active);
     // Rejected selections and canceled pickers cannot consume the placeholder.
     tabs.update_in(cx, |tabs, window, cx| {
@@ -1421,7 +1453,10 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
     });
     cx.run_until_parked();
     let fallback = cx.update(|_, cx| tabs.read(cx).active);
+    // From Home, New turns the placeholder into the tab (ADR 0048); a second
+    // New adds another.
     tabs.update_in(cx, |tabs, window, cx| {
+        assert_eq!(tabs.new_tab(window, cx), fallback);
         tabs.new_tab(window, cx);
     });
     cx.run_until_parked();
@@ -1480,7 +1515,7 @@ fn edited_then_emptied_placeholder_is_not_disposable(cx: &mut TestAppContext) {
 
 #[gpui::test]
 fn automatic_conversion_is_disposable_until_edited_but_can_be_saved(cx: &mut TestAppContext) {
-    let (tabs, cx) = boot(cx, Session::default());
+    let (tabs, cx) = boot_home(cx, Session::default());
     let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/text.docx");
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_path(source.clone(), window, cx)
@@ -1529,7 +1564,7 @@ fn automatic_conversion_is_disposable_until_edited_but_can_be_saved(cx: &mut Tes
 fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
     cx: &mut TestAppContext,
 ) {
-    let (tabs, cx) = boot(cx, Session::default());
+    let (tabs, cx) = boot_home(cx, Session::default());
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import");
     let permit = cx
         .update(|_, cx| import_session::ImportPermit::acquire(&tabs.read(cx).import_busy).unwrap());
@@ -1704,7 +1739,7 @@ fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut Test
 
     reveal_by_hover(&tabs, cx);
     let overlay = cx.debug_bounds("sidebar-reveal").unwrap();
-    assert_eq!(overlay.size.width, px(200.));
+    assert_eq!(overlay.size.width, px(PANEL_WIDTH));
     let editor_left = cx.update(|_, cx| tabs.read(cx).sidebar_scroll.bounds().left());
     assert!(
         editor_left < px(40.),
@@ -1743,7 +1778,7 @@ fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut Test
 }
 
 #[gpui::test]
-fn file_icons_route_save_save_as_and_open_to_the_active_document(cx: &mut TestAppContext) {
+fn menu_routes_save_save_as_and_open_to_the_active_document(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let first_path = dir.path().join("first.md");
     let copy_path = dir.path().join("copy.md");
@@ -1755,7 +1790,7 @@ fn file_icons_route_save_save_as_and_open_to_the_active_document(cx: &mut TestAp
         v.editor.update(cx, |e, cx| e.set_text("first version", cx))
     });
     cx.run_until_parked();
-    click_toolbar(cx, "Save");
+    more(cx, "more-save");
     cx.simulate_new_path_selection(|_| Some(first_path.clone()));
     cx.run_until_parked();
     assert_eq!(
@@ -1767,12 +1802,12 @@ fn file_icons_route_save_save_as_and_open_to_the_active_document(cx: &mut TestAp
             .update(cx, |e, cx| e.set_text("updated version", cx))
     });
     cx.run_until_parked();
-    click_toolbar(cx, "Save");
+    more(cx, "more-save");
     assert_eq!(
         std::fs::read_to_string(&first_path).unwrap(),
         "updated version"
     );
-    click_toolbar(cx, "Save As…");
+    more(cx, "more-save-as");
     cx.simulate_new_path_selection(|_| Some(copy_path.clone()));
     cx.run_until_parked();
     assert_eq!(
@@ -1785,7 +1820,9 @@ fn file_icons_route_save_save_as_and_open_to_the_active_document(cx: &mut TestAp
             Some(&dunce::canonicalize(&copy_path).unwrap())
         )
     });
-    click_toolbar(cx, "Open…");
+    // Open has no header button: ⌘O, Home and the palette (ADR 0048).
+    cx.dispatch_action(Open);
+    cx.run_until_parked();
     cx.simulate_path_prompt_response(|_| Some(vec![other_path]));
     cx.run_until_parked();
     cx.update(|_, cx| {
@@ -1796,10 +1833,13 @@ fn file_icons_route_save_save_as_and_open_to_the_active_document(cx: &mut TestAp
 }
 
 #[gpui::test]
-fn main_toolbar_wraps_without_hiding_actions_in_both_themes(cx: &mut TestAppContext) {
+fn document_header_keeps_its_actions_in_a_narrow_window_in_both_themes(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     let view = active(&tabs, cx);
-    cx.simulate_resize(size(px(640.), px(480.)));
+    view.update(cx, |view, cx| {
+        view.editor.update(cx, |e, cx| e.set_text("Anna Petrova signed.", cx))
+    });
+    cx.simulate_resize(size(px(720.), px(480.)));
     for theme in [Theme::Dark, Theme::Light] {
         for expanded in [false, true] {
             for source_only in [false, true] {
@@ -1813,47 +1853,28 @@ fn main_toolbar_wraps_without_hiding_actions_in_both_themes(cx: &mut TestAppCont
                     cx.notify();
                 });
                 for _ in 0..3 {
-                    cx.update(|window, cx| {
-                        window.refresh();
-                        window.draw(cx).clear(cx);
-                    });
+                    draw(cx);
                     cx.run_until_parked();
                 }
-                let toolbar = cx.debug_bounds("document-toolbar").unwrap();
-                for selector in ["Open…", "Settings", "theme-toggle"] {
+                // One header row (ADR 0048): ⋯ and the primary action inside it.
+                let header = cx.debug_bounds("document-toolbar").unwrap();
+                assert_eq!(header.size.height, px(style::HEADER_HEIGHT));
+                let primary = if source_only { "primary-convert" } else { "Pseudonymize" };
+                for selector in ["header-more", primary] {
                     let bounds = cx.debug_bounds(selector).unwrap();
                     assert!(
-                        toolbar.contains(&bounds.origin)
-                            && toolbar.contains(&bounds.bottom_right())
+                        header.contains(&bounds.origin) && header.contains(&bounds.bottom_right()),
+                        "{selector} {bounds:?} outside {header:?}"
                     );
+                    assert!(bounds.right() <= px(720.));
                 }
-                // Copy Markdown floats over the editor, below the toolbar.
-                let copy = cx.debug_bounds("Copy Markdown");
-                assert_eq!(copy.is_some(), !source_only);
-                if let Some(copy) = copy {
-                    assert!(copy.top() >= toolbar.bottom() && copy.right() <= px(640.));
-                }
-                for selector in ["Save", "Save As…", "Pseudonymize"] {
-                    let bounds = cx.debug_bounds(selector);
-                    assert_eq!(bounds.is_some(), !source_only);
-                    if let Some(bounds) = bounds {
-                        assert!(
-                            toolbar.contains(&bounds.origin)
-                                && toolbar.contains(&bounds.bottom_right())
-                        );
-                    }
-                }
-                if source_only {
-                    assert!(cx.debug_bounds("Convert to Markdown").is_some());
-                }
-                assert!(cx.debug_bounds("workspace-menu").is_none());
-                assert!(cx.debug_bounds("New").is_none());
-                assert!(toolbar.bottom() < px(160.));
+                // Settings and the theme control sit at the sidebar's foot.
+                assert_eq!(cx.debug_bounds("theme-toggle").is_some(), expanded);
+                assert!(cx.debug_bounds("Copy Markdown").is_none());
             }
         }
     }
 }
-
 #[gpui::test]
 fn new_follows_the_last_document_and_context_close_holds_the_reveal(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
@@ -1962,13 +1983,7 @@ fn settings_keyboard_traversal_does_not_expand_and_restores_opener(cx: &mut Test
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(640.), px(480.)));
     let opener = cx.update(|window, cx| {
-        let opener = tabs
-            .read(cx)
-            .active_view()
-            .unwrap()
-            .read(cx)
-            .settings_focus
-            .clone();
+        let opener = tabs.read(cx).settings_focus.clone();
         window.focus(&opener, cx);
         opener
     });
@@ -2049,15 +2064,13 @@ fn narrow_original_switch_and_divider_preserve_source_and_session(cx: &mut TestA
             window.draw(cx).clear(cx);
         });
         for selector in [
-            "Open…",
-            "Copy Markdown",
-            "Settings",
-            "Save",
-            "Save As…",
+            "header-more",
+            "header-source",
             "Pseudonymize",
+            "Settings",
             "theme-toggle",
             "Markdown",
-            "Original",
+            "Source",
         ] {
             let bounds = cx.debug_bounds(selector).unwrap();
             assert!(bounds.left() >= px(0.) && bounds.right() <= px(640.));
@@ -2065,7 +2078,7 @@ fn narrow_original_switch_and_divider_preserve_source_and_session(cx: &mut TestA
         }
     }
     assert!(cx.debug_bounds("preview-divider").is_none());
-    click_toolbar(cx, "Original");
+    click_toolbar(cx, "Source");
     cx.update(|_, cx| assert!(view.read(cx).original_selected));
     click_toolbar(cx, "Markdown");
     cx.simulate_resize(size(px(1100.), px(760.)));
@@ -2230,63 +2243,68 @@ fn tab_names(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String
 }
 
 #[gpui::test]
-fn empty_page_opens_several_files_and_yields_to_typing(cx: &mut TestAppContext) {
+fn home_opens_several_files_and_new_tab_is_a_plain_editor(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
     std::fs::write(&a, "a").unwrap();
     std::fs::write(&b, "b").unwrap();
-    let (tabs, cx) = boot(cx, Session::default());
+    let (tabs, cx) = boot_home(cx, Session::default());
     draw(cx);
-    assert!(cx.debug_bounds("empty-page").is_some());
+    // Launch with nothing to restore shows Home (ADR 0048).
+    assert!(cx.debug_bounds("home").is_some());
     assert!(
         cx.debug_bounds("empty-page-local").is_some(),
         "the local note shows"
     );
-    click_toolbar(cx, "empty-page-open");
+    click_toolbar(cx, "home-open");
     cx.simulate_path_prompt_response(|_| Some(vec![a.clone(), b.clone()]));
     cx.run_until_parked();
     draw(cx);
-    // The untouched blank tab gives way to the opened files.
+    // The hidden placeholder gives way to the opened files.
     assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
-    assert!(cx.debug_bounds("empty-page").is_none());
+    assert!(cx.debug_bounds("home").is_none());
 
+    // A new tab is a plain editor: no Home, no start page.
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.new_tab(window, cx);
     });
     cx.run_until_parked();
     draw(cx);
-    assert!(cx.debug_bounds("empty-page").is_some());
-    cx.simulate_input("x");
-    draw(cx);
+    assert!(cx.debug_bounds("home").is_none());
     assert!(cx.debug_bounds("empty-page").is_none());
-    cx.simulate_keystrokes("backspace");
-    draw(cx);
-    assert!(cx.debug_bounds("empty-page").is_some());
+    cx.simulate_input("x");
+    let typed = active(&tabs, cx);
+    cx.update(|_, cx| assert_eq!(typed.read(cx).editor.read(cx).text(), "x"));
+
+    // Home stays one click away and leaves the tabs alone.
+    click_toolbar(cx, "sidebar-home");
+    assert!(cx.debug_bounds("home").is_some());
+    assert_eq!(tab_names(&tabs, cx).len(), 3);
 }
 
 #[gpui::test]
-fn empty_page_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
+fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
     let unknown = dir.path().join("unknown.bin");
     for path in [&a, &b, &unknown] {
         std::fs::write(path, "x").unwrap();
     }
-    let (tabs, cx) = boot(cx, Session::default());
+    let (tabs, cx) = boot_home(cx, Session::default());
     draw(cx);
-    let center = cx.debug_bounds("empty-page").unwrap().center();
-    let view = active(&tabs, cx);
+    let center = cx.debug_bounds("home-drop").unwrap().center();
 
+    // A drag anywhere over Home lights the drop zone and counts the files.
     drag_files(cx, std::slice::from_ref(&unknown), center);
-    cx.update(|_, cx| assert_eq!(view.read(cx).file_drag, Some(false)));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, Some(0)));
     drop_files(cx, center);
     cx.update(|_, cx| {
-        assert_eq!(view.read(cx).file_drag, None);
+        assert_eq!(tabs.read(cx).shell.drop, None);
         assert_eq!(tabs.read(cx).tabs.len(), 1);
     });
 
     drag_files(cx, &[a.clone(), b.clone(), unknown.clone()], center);
-    cx.update(|_, cx| assert_eq!(view.read(cx).file_drag, Some(true)));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, Some(2)));
     drop_files(cx, center);
     assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
     cx.update(|_, cx| {
@@ -2299,11 +2317,10 @@ fn empty_page_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppCont
         );
     });
 
-    // A non-empty document is no drop target.
-    assert!(cx.debug_bounds("empty-page").is_none());
+    // A document is no Home drop target.
+    assert!(cx.debug_bounds("home-drop").is_none());
     drag_files(cx, std::slice::from_ref(&b), center);
-    let view = active(&tabs, cx);
-    cx.update(|_, cx| assert_eq!(view.read(cx).file_drag, None));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).shell.drop, None));
     drop_files(cx, center);
     assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
 }
@@ -2315,7 +2332,7 @@ fn sidebar_drop_opens_files_at_the_insertion_line(cx: &mut TestAppContext) {
     for path in [&a, &b, &c, &d] {
         std::fs::write(path, "x").unwrap();
     }
-    let (tabs, cx) = boot(cx, Session::default());
+    let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_paths(vec![a.clone(), b.clone()], window, cx)
     });
@@ -2348,7 +2365,7 @@ fn file_drag_over_collapsed_rail_reveals_the_list(cx: &mut TestAppContext) {
     let (a, b) = (dir.path().join("a.md"), dir.path().join("b.md"));
     std::fs::write(&a, "a").unwrap();
     std::fs::write(&b, "b").unwrap();
-    let (tabs, cx) = boot(cx, Session::default());
+    let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_paths(vec![a.clone()], window, cx)
     });
@@ -2375,7 +2392,7 @@ fn file_drag_over_collapsed_rail_reveals_the_list(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn spelling_icon_badge_menu_switches_document_and_turns_off(cx: &mut TestAppContext) {
+fn spelling_menu_item_switches_the_document(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     let view = active(&tabs, cx);
@@ -2386,53 +2403,22 @@ fn spelling_icon_badge_menu_switches_document_and_turns_off(cx: &mut TestAppCont
     });
     cx.run_until_parked();
     draw(cx);
-    assert!(
-        cx.debug_bounds("spelling-badge").is_some(),
-        "badge counts flags"
-    );
+    cx.update(|_, cx| assert!(!view.read(cx).editor.read(cx).diagnostics().is_empty()));
 
-    click_toolbar(cx, "spelling-indicator");
-    cx.update(|_, cx| assert!(view.read(cx).spelling.menu_open));
-    click_toolbar(cx, "spelling-document");
+    // Spelling lives in the header's ⋯ menu (ADR 0048).
+    more(cx, "more-spelling");
     cx.update(|_, cx| {
         assert!(view.read(cx).spelling.off_here);
-        assert!(!view.read(cx).spelling.menu_open);
+        assert!(!view.read(cx).more_open);
         assert!(view.read(cx).editor.read(cx).diagnostics().is_empty());
     });
-    draw(cx);
-    assert!(cx.debug_bounds("spelling-badge").is_none());
-
-    // A second click on the icon closes an open menu.
-    click_toolbar(cx, "spelling-indicator");
-    click_toolbar(cx, "spelling-indicator");
-    cx.update(|_, cx| assert!(!view.read(cx).spelling.menu_open));
-
-    // Turn off saves the global switch; the icon stays, faded, without a badge.
-    click_toolbar(cx, "spelling-indicator");
-    click_toolbar(cx, "spelling-document");
-    click_toolbar(cx, "spelling-indicator");
-    click_toolbar(cx, "spelling-off");
-    cx.update(|_, cx| {
-        let prefs = view.read(cx).preferences.borrow().snapshot().unwrap();
-        assert!(!prefs.spelling.enabled);
-        assert!(view.read(cx).editor.read(cx).diagnostics().is_empty());
-    });
-    draw(cx);
-    assert!(cx.debug_bounds("spelling-indicator").is_some());
-    assert!(cx.debug_bounds("spelling-badge").is_none());
-
-    // Turn on restores checking and the badge.
-    click_toolbar(cx, "spelling-indicator");
-    click_toolbar(cx, "spelling-on");
+    more(cx, "more-spelling");
     cx.run_until_parked();
     cx.update(|_, cx| {
-        let prefs = view.read(cx).preferences.borrow().snapshot().unwrap();
-        assert!(prefs.spelling.enabled);
+        assert!(!view.read(cx).spelling.off_here);
+        assert!(!view.read(cx).editor.read(cx).diagnostics().is_empty());
     });
-    draw(cx);
-    assert!(cx.debug_bounds("spelling-badge").is_some());
 }
-
 #[gpui::test]
 fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mut TestAppContext) {
     cx.update(settings_ui::bind_keys);
@@ -2502,7 +2488,7 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
     let path = dir.path().join("contract.md");
     let source = "Anna Petrova met Northwind Traders Ltd.";
     std::fs::write(&path, source).unwrap();
-    let (tabs, cx) = boot(cx, Session::default());
+    let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_paths(vec![path], window, cx)
@@ -2536,7 +2522,7 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
 
     let reply = "**PERSON_1** owes ORG_1; person 1 and PERSON_7 disagree.";
     cx.write_to_clipboard(gpui::ClipboardItem::new_string(reply.into()));
-    click_toolbar(cx, "Paste AI Response");
+    more(cx, "more-paste-reply");
     let restored = active(&tabs, cx);
     cx.update(|_, cx| {
         assert_ne!(tabs.read(cx).active, first_id);
@@ -2623,7 +2609,7 @@ fn applied_document<'a>(
     let path = dir.join("contract.md");
     let source = "Anna Petrova met Northwind Traders Ltd.";
     std::fs::write(&path, source).unwrap();
-    let (tabs, cx) = boot(cx, session);
+    let (tabs, cx) = boot_home(cx, session);
     cx.simulate_resize(size(px(1400.), px(850.)));
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.use_case_store(crate::cases::Store::with_key(dir.join("cases"), &[3; 32]));
@@ -3067,7 +3053,7 @@ fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
     std::fs::write(folder.join("a.md"), "First").unwrap();
     std::fs::write(folder.join("notes.bin"), [0u8, 1, 2]).unwrap();
     std::fs::write(folder.join(".draft.md"), "Hidden").unwrap();
-    let (tabs, cx) = boot(cx, Session::default());
+    let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.use_case_store(crate::cases::Store::with_key(
             dir.path().join("cases"),
@@ -3496,3 +3482,4 @@ fn a_crash_report_is_previewed_before_it_is_copied(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("crash-bar").is_none());
     tabs.read_with(cx, |tabs, _| assert!(tabs.crash.is_none()));
 }
+
