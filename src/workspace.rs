@@ -163,6 +163,8 @@ pub(super) struct Workspace {
     quit_active: Option<u64>,
     closing_tab: Option<u64>,
     finishing: bool,
+    /// Histories whose save/discard decisions have already been resolved.
+    quit_checked: Vec<(u64, u64)>,
     session_path: Option<PathBuf>,
     persisted: Option<Session>,
     writing: bool,
@@ -316,6 +318,7 @@ impl Workspace {
             quit_active: None,
             closing_tab: None,
             finishing: false,
+            quit_checked: Vec::new(),
             session_path: None,
             persisted: None,
             writing: false,
@@ -1470,6 +1473,16 @@ impl Workspace {
             if let Some(active) = self.quit_active.take() {
                 self.activate(active, window, cx);
             }
+            self.quit_checked = self
+                .tabs
+                .iter()
+                .filter_map(|tab| {
+                    Some((
+                        tab.id,
+                        tab.view.as_ref()?.read(cx).editor.read(cx).history_id(),
+                    ))
+                })
+                .collect();
             self.finishing = true;
             self.checkpoint(window, cx);
             if !self.writing {
@@ -1479,7 +1492,34 @@ impl Workspace {
     }
 
     fn finish_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.flush_cases(cx);
+        let changed: VecDeque<_> = self
+            .tabs
+            .iter()
+            .filter_map(|tab| {
+                let view = tab.view.as_ref()?.read(cx);
+                (view.dirty(cx)
+                    && self
+                        .quit_checked
+                        .iter()
+                        .find(|(id, _)| *id == tab.id)
+                        .is_none_or(|(_, history)| *history != view.editor.read(cx).history_id()))
+                .then_some(tab.id)
+            })
+            .collect();
+        if !changed.is_empty() {
+            self.finishing = false;
+            self.quitting = Some(changed);
+            self.cancel_case_quit();
+            self.continue_quit(window, cx);
+            return;
+        }
+        self.finishing = true;
+        if self.flush_cases(window, cx) {
+            self.close_window(window, cx);
+        }
+    }
+
+    fn close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         for tab in &self.tabs {
             if let Some(view) = &tab.view {
                 Self::release(view, window, cx);

@@ -3774,3 +3774,167 @@ fn review_host_performance(cx: &mut TestAppContext) {
         }
     });
 }
+
+fn case_quit_fixture<'a>(
+    cx: &'a mut TestAppContext,
+    dir: &std::path::Path,
+) -> (Entity<Workspace>, &'a mut VisualTestContext, String) {
+    let (tabs, cx, path) = applied_document(cx, dir, Session::default());
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| view.write(path, None, window, cx));
+    let id = tabs
+        .update_in(cx, |tabs, window, cx| {
+            tabs.create_case(tabs.active, window, cx)
+        })
+        .unwrap();
+    cx.run_until_parked();
+    // A regular file at the store directory gives a real, portable IO failure.
+    let blocked = dir.join("blocked-store");
+    std::fs::write(&blocked, "keep this file").unwrap();
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(crate::cases::Store::with_key(blocked, &[3; 32]));
+    });
+    (tabs, cx, id)
+}
+
+#[gpui::test]
+fn case_quit_failure_can_cancel_without_losing_mappings(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx)
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    tabs.read_with(cx, |tabs, cx| {
+        assert!(!tabs.finishing && tabs.quitting.is_none());
+        assert_eq!(tabs.cases.cases[0].id, case);
+        assert_eq!(
+            tabs.active_view()
+                .unwrap()
+                .read(cx)
+                .pii
+                .review
+                .applied()
+                .len(),
+            2
+        );
+    });
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("blocked-store")).unwrap(),
+        "keep this file"
+    );
+    // Cancelling retains the pending write; the next quit persists it.
+    std::fs::remove_file(dir.path().join("blocked-store")).unwrap();
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    let store = crate::cases::Store::with_key(dir.path().join("blocked-store"), &[3; 32]);
+    assert!(!store.load(&case).unwrap().skip.is_empty());
+}
+
+#[gpui::test]
+fn case_quit_retry_saves_the_latest_pending_revision(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx)
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    // A newer mapping policy queued while recovery is open must win.
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, crate::pii::Category::Organization, cx)
+    });
+    std::fs::remove_file(dir.path().join("blocked-store")).unwrap();
+    cx.simulate_prompt_answer("Retry");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    let saved = crate::cases::Store::with_key(dir.path().join("blocked-store"), &[3; 32])
+        .load(&case)
+        .unwrap();
+    assert_eq!(saved.skip.len(), 2);
+}
+
+#[gpui::test]
+fn case_quit_can_explicitly_discard_a_failed_final_save(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx)
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Quit without saving mappings");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("blocked-store")).unwrap(),
+        "keep this file"
+    );
+}
+
+#[gpui::test]
+fn case_quit_store_open_failure_retains_work_for_retry(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.stage_case_key(Err("fixture key unavailable".into()));
+        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx);
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(crate::cases::Store::with_key(
+            dir.path().join("retry-store"),
+            &[3; 32],
+        ))
+    });
+    cx.simulate_prompt_answer("Retry");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    let saved = crate::cases::Store::with_key(dir.path().join("retry-store"), &[3; 32])
+        .load(&case)
+        .unwrap();
+    assert_eq!(saved.skip.len(), 1);
+}
+
+#[gpui::test]
+fn case_quit_checks_edits_made_while_final_saves_are_pending(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx)
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            let end = editor.text().len();
+            editor.replace_range(end..end, " New edit.", cx);
+        });
+    });
+    cx.run_until_parked();
+    std::fs::remove_file(dir.path().join("blocked-store")).unwrap();
+    cx.simulate_prompt_answer("Retry");
+    cx.run_until_parked();
+    assert!(
+        cx.has_pending_prompt(),
+        "the new Markdown edit needs its own save decision"
+    );
+    cx.simulate_prompt_answer("Save");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    assert!(
+        std::fs::read_to_string(dir.path().join("contract.md"))
+            .unwrap()
+            .ends_with(" New edit.")
+    );
+}
