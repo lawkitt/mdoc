@@ -568,41 +568,6 @@ impl Icon {
     }
 }
 
-/// A 32 px icon control whose label is its tooltip and accessible name.
-pub fn icon_button(
-    id: impl Into<gpui::ElementId>,
-    label: impl Into<gpui::SharedString>,
-    icon: Icon,
-    theme: Theme,
-    enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
-    let label = label.into();
-    untipped_icon_button(id, label.clone(), icon, theme, enabled)
-        .tooltip(crate::style::tooltip(label.to_string(), theme))
-}
-/// [`icon_button`] without its tooltip, for controls that sometimes hide it
-/// (e.g. while their own menu is open). `label` is the accessible name.
-pub fn untipped_icon_button(
-    id: impl Into<gpui::ElementId>,
-    label: impl Into<gpui::SharedString>,
-    icon: Icon,
-    theme: Theme,
-    enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
-    control_base(id, label, theme, enabled)
-        .p_0()
-        .size(px(32.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(
-            gpui::svg()
-                .data(icon.data())
-                .size(px(18.))
-                .text_color(theme.pdf_style().header_fg),
-        )
-}
-
 /// An outlined icon-and-text control that floats over content; `label` is its
 /// tooltip and accessible name, `text` what it shows.
 pub fn floating_button(

@@ -2002,7 +2002,7 @@ impl Workspace {
                     .clone()
                     .tab_stop(!revealed);
                 compact_rows.push(
-                    ui::control(("compact-tab", id), format.clone(), theme, true)
+                    ui::control(("compact-tab", id), "", theme, true)
                         .map(|v| {
                             ui::reveal_focus(
                                 v.track_focus(&compact_focus),
@@ -2014,45 +2014,50 @@ impl Workspace {
                         .when(cfg!(test), |v| {
                             v.debug_selector(move || format!("compact-tab-{id}"))
                         })
+                        // A document glyph, as Anoni's rail draws its items: the
+                        // active tab gets a soft fill; status is a small dot.
                         .p_0()
                         .size(px(32.))
                         .flex()
                         .items_center()
                         .justify_center()
-                        .text_size(px(9.))
-                        .mb(px(2.))
                         .when(self.active == id && !home, |v| {
                             v.bg(theme.sidebar_selected())
                         })
+                        .child(
+                            gpui::svg()
+                                .data(ui::Icon::Source.data())
+                                .size(px(16.))
+                                .text_color(if self.active == id && !home {
+                                    palette.header_fg
+                                } else {
+                                    palette.header_muted
+                                }),
+                        )
                         .when(!revealed, |v| {
-                            v.tooltip(style::tooltip(tooltip.clone(), theme))
+                            v.tooltip(style::tooltip(format!("{tooltip}\n{format}"), theme))
                         })
                         .when(dirty || busy || error, |v| {
-                            v.child(
+                            v.child(if running && !error {
                                 div()
                                     .absolute()
-                                    .top(px(-2.))
-                                    .right(px(2.))
-                                    .text_size(px(10.))
-                                    .text_color(if error {
+                                    .top(px(1.))
+                                    .right(px(1.))
+                                    .size(px(10.))
+                                    .child(ui::spinner(("compact-tab-activity", id), theme))
+                            } else {
+                                div()
+                                    .absolute()
+                                    .top(px(5.))
+                                    .right(px(5.))
+                                    .size(px(6.))
+                                    .rounded_full()
+                                    .bg(if error {
                                         style::markdown_style(theme).alert_warning
                                     } else {
                                         palette.header_muted
                                     })
-                                    .child(if running && !error {
-                                        ui::spinner(("compact-tab-activity", id), theme)
-                                    } else {
-                                        div()
-                                            .child(if error {
-                                                "!"
-                                            } else if busy {
-                                                "…"
-                                            } else {
-                                                "•"
-                                            })
-                                            .into_any_element()
-                                    }),
-                            )
+                            })
                         })
                         .on_click(cx.listener(move |this, _, window, cx| {
                             if this.quitting.is_none() {
@@ -2360,10 +2365,20 @@ impl Workspace {
                         )
                         .child(
                             ui::header_icon("rail-home", "Home", ui::Icon::Home, theme, home)
+                                .when(cfg!(test), |v| v.debug_selector(|| "rail-home".into()))
                                 .on_click(
                                     cx.listener(|this, _, window, cx| this.show_home(window, cx)),
                                 ),
                         ),
+                )
+                // A hairline between the app's places and the open tabs.
+                .child(
+                    div()
+                        .flex()
+                        .justify_center()
+                        .py_2()
+                        .flex_shrink_0()
+                        .child(div().w(px(18.)).h(px(1.)).bg(palette.border)),
                 )
                 .child(
                     div()
@@ -2372,36 +2387,30 @@ impl Workspace {
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()
-                        // Tab tiles share the icons' centre line (ADR 0048).
+                        // Tabs share the icons' centre line (ADR 0048).
                         .flex()
                         .flex_col()
                         .items_center()
-                        .px_1()
+                        .gap(px(2.))
                         .pb_1()
                         .children(compact_rows)
                         .child(
-                            ui::control("sidebar-new-collapsed", "+", theme, true)
-                                .track_focus(&self.rail_new_focus.clone().tab_stop(!revealed))
-                                .aria_label("New Markdown tab")
-                                .when(!revealed, |v| {
-                                    v.tooltip(style::tooltip("New Markdown tab".into(), theme))
-                                })
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "sidebar-new-collapsed".into())
-                                })
-                                .p_0()
-                                .size(px(32.))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .text_size(px(16.))
-                                .border_1()
-                                .border_color(palette.border)
-                                .on_click(|_, window, cx| {
-                                    window.dispatch_action(Box::new(New), cx)
-                                }),
+                            ui::header_icon(
+                                "sidebar-new-collapsed",
+                                "New Markdown tab",
+                                ui::Icon::Plus,
+                                theme,
+                                false,
+                            )
+                            .track_focus(&self.rail_new_focus.clone().tab_stop(!revealed))
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "sidebar-new-collapsed".into())
+                            })
+                            .size(px(32.))
+                            .on_click(|_, window, cx| window.dispatch_action(Box::new(New), cx)),
                         ),
                 )
+                .child(self.rail_foot(cx))
                 .into_any_element()
         };
         let width = |open: bool| if open { PANEL_WIDTH } else { RAIL_WIDTH };
@@ -2529,7 +2538,9 @@ fn sidebar_toggle(
     } else {
         "Expand sidebar"
     };
-    ui::icon_button("sidebar-toggle", label, ui::Icon::Sidebar, theme, true)
+    // Quiet, like every other rail and title-bar icon (ADR 0048).
+    ui::header_icon("sidebar-toggle", label, ui::Icon::Sidebar, theme, false)
+        .size(px(32.))
         .track_focus(focus)
         .when(cfg!(test), |v| v.debug_selector(|| "sidebar-toggle".into()))
         .on_click(|_, window, cx| window.dispatch_action(Box::new(ToggleSidebar), cx))

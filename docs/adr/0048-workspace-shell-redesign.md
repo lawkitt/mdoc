@@ -135,6 +135,11 @@ Variant B's floating panel and folding sidebar are not adopted.
   toggle leads the rail below them. The card keeps its full height and one
   margin all round in both states, so collapsing animates only the sidebar's
   width (an earlier strip above the card shrank it and made the card jump).
+- **Collapsed rail, in Anoni's manner:** quiet 16 px icons (toggle, Search,
+  Home), a hairline, the open tabs as document glyphs (the active one on a
+  soft fill, status as a small dot, name and format in the tooltip), a plain
+  +, and Settings · theme · Help pinned to the foot, an update shown as a
+  dot on Settings. No boxed tiles or format captions.
 - **Kept mentions stay listed** under their entity as unticked rows, in
   document order. Ticking one proposes that mention again, alone: other kept
   mentions of the same wording stay kept, in the same undo step.
