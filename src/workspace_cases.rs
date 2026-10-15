@@ -71,6 +71,10 @@ pub(super) struct CaseState {
     pending: HashMap<String, Case>,
     /// The case being written now.
     writing: Option<Case>,
+    /// The window waiting for its last case revisions before closing.
+    quit_window: Option<gpui::AnyWindowHandle>,
+    quit_error: Option<String>,
+    quit_prompting: bool,
     /// Cases whose last write failed; kept pending for the next attempt.
     failed: HashSet<String>,
     /// Tabs to close once their new case is safely written.
@@ -833,7 +837,7 @@ impl Workspace {
         self.pump_cases(cx);
     }
     fn pump_cases(&mut self, cx: &mut Context<Self>) {
-        if self.cases.writing.is_some() {
+        if self.cases.writing.is_some() || self.cases.quit_error.is_some() {
             return;
         }
         let Some(id) = self.cases.pending.keys().next().cloned() else {
@@ -843,7 +847,7 @@ impl Workspace {
         let store = match self.case_store() {
             Ok(store) => store,
             Err(error) => {
-                self.notice = Some(error);
+                self.case_write_failed(case, error, cx);
                 return;
             }
         };
@@ -860,25 +864,53 @@ impl Workspace {
                 match result {
                     Ok(()) => {
                         this.cases.failed.remove(&case.id);
-                        if let Some(tab) = this.cases.close_after.remove(&case.id) {
+                        if !this.cases.pending.contains_key(&case.id)
+                            && let Some(tab) = this.cases.close_after.remove(&case.id)
+                        {
                             this.close_after_save(tab, cx);
                         }
                         this.pump_cases(cx);
                     }
                     Err(error) => {
-                        // Keep it for the next change, close or quit; no busy retry.
-                        this.notice = Some(format!("Could not save the case: {error}"));
-                        this.cases.failed.insert(case.id.clone());
-                        if let Some(tab) = this.cases.close_after.remove(&case.id) {
-                            this.cases.asked.remove(&tab);
-                        }
-                        this.cases.pending.entry(case.id.clone()).or_insert(case);
+                        this.case_write_failed(case, error.to_string(), cx);
                     }
                 }
+                this.resume_case_quit(cx);
                 cx.notify();
             });
         })
         .detach();
+    }
+    fn case_write_failed(&mut self, case: Case, error: String, cx: &mut Context<Self>) {
+        if !self.cases.cases.iter().any(|current| current.id == case.id) {
+            return;
+        }
+        self.notice = Some(format!("Could not save the case: {error}"));
+        self.cases.failed.insert(case.id.clone());
+        if let Some(tab) = self.cases.close_after.remove(&case.id) {
+            self.cases.asked.remove(&tab);
+        }
+        // A later revision already queued must win over the failed one.
+        self.cases.pending.entry(case.id.clone()).or_insert(case);
+        if self.cases.quit_window.is_some() {
+            self.cases.quit_error = Some(error);
+            self.resume_case_quit(cx);
+        }
+    }
+    fn resume_case_quit(&self, cx: &mut Context<Self>) {
+        let Some(window) = self.cases.quit_window else {
+            return;
+        };
+        let entity = cx.entity().downgrade();
+        cx.defer(move |cx| {
+            let _ = window.update(cx, |_, window, cx| {
+                let _ = entity.update(cx, |this, cx| {
+                    if this.finishing && this.cases.quit_window.is_some() {
+                        this.finish_quit(window, cx);
+                    }
+                });
+            });
+        });
     }
     fn close_after_save(&mut self, tab: u64, cx: &mut Context<Self>) {
         let Some(window) = cx.windows().into_iter().next() else {
@@ -892,27 +924,63 @@ impl Workspace {
             });
         });
     }
-    /// At quit: fold every member tab's mapping in and write it now.
-    pub(super) fn flush_cases(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn cancel_case_quit(&mut self) {
+        self.cases.quit_window = None;
+        self.cases.quit_error = None;
+        self.cases.quit_prompting = false;
+    }
+    /// Final saves use the normal async queue. Re-read members on completion
+    /// too: edits made while a write ran must reach their latest revision.
+    pub(super) fn flush_cases(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.cases.quit_prompting {
+            return false;
+        }
+        self.cases.quit_window = Some(window.window_handle());
+        if let Some(error) = self.cases.quit_error.clone() {
+            self.cases.quit_prompting = true;
+            let answer = window.prompt(
+                PromptLevel::Warning,
+                "Could not save replacement mappings",
+                Some(&format!("{error}\nYour mappings are still available in this window. Retry saving, cancel quitting, or quit without the latest mappings.")),
+                &["Retry", "Cancel", "Quit without saving mappings"], cx,
+            );
+            cx.spawn_in(window, async move |this, cx| {
+                let answer = answer.await.ok();
+                let _ = this.update_in(cx, |this, window, cx| {
+                    this.cases.quit_prompting = false;
+                    this.cases.quit_error = None;
+                    match answer {
+                        Some(0) => {
+                            this.pump_cases(cx);
+                            this.finish_quit(window, cx);
+                        }
+                        Some(2) => {
+                            this.cases.quit_window = None;
+                            this.close_window(window, cx);
+                        }
+                        _ => {
+                            this.cancel_case_quit();
+                            this.finishing = false;
+                            this.quitting = None;
+                            crate::updater::cancel_restart(cx);
+                            cx.notify();
+                        }
+                    }
+                });
+            })
+            .detach();
+            return false;
+        }
         let ids: Vec<_> = self.tabs.iter().map(|t| t.id).collect();
         for id in ids {
             self.case_changed(id, cx);
         }
-        // The store serializes writes, so this waits for one in flight and
-        // never lets it overwrite the newer state.
-        let mut cases: Vec<_> = self.cases.writing.clone().into_iter().collect();
-        for (_, case) in self.cases.pending.drain() {
-            cases.retain(|c| c.id != case.id);
-            cases.push(case);
+        self.pump_cases(cx);
+        if self.cases.writing.is_some() || !self.cases.pending.is_empty() {
+            return false;
         }
-        if cases.is_empty() {
-            return;
-        }
-        if let Ok(store) = self.case_store() {
-            for case in cases {
-                let _ = store.save(&case);
-            }
-        }
+        self.cases.quit_window = None;
+        true
     }
     /// Leave the case: the tab keeps its live mapping, the case keeps its
     /// identities (ADR 0041 #25).
