@@ -334,6 +334,7 @@ impl DocumentView {
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(TogglePreview), cx)),
                 )
             })
+            .children(ui::notice_bell(&self.title, theme))
             .child(self.more_button(cx))
             .children(self.primary_button(cx).map(|b| div().ml_1().child(b)));
         ui::title_drag(

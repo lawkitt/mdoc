@@ -39,6 +39,8 @@ pub(crate) fn bind_keys(cx: &mut App) {
 
 pub(super) struct ShellState {
     pub recents: Recents,
+    /// Notices counted last frame: a new one opens the popover once.
+    pub notice_count: usize,
     pub palette: Option<Palette>,
     /// Files dragged over the window while Home shows: how many are droppable.
     pub drop: Option<usize>,
@@ -50,6 +52,7 @@ impl ShellState {
     pub fn new(_cx: &mut App) -> Self {
         Self {
             recents: Recents::load(),
+            notice_count: 0,
             palette: None,
             drop: None,
             drop_generation: 0,
@@ -355,6 +358,80 @@ impl Workspace {
             .into_any_element()
     }
 
+    /// The notices popover under the title row's right end (ADR 0048):
+    /// locked cases, a crash report and session messages, with their actions.
+    pub(super) fn notices_view(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if !self.title.notices_open.get() {
+            return None;
+        }
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let cards: Vec<AnyElement> = [
+            self.case_key_bar(cx),
+            self.crash_bar(cx),
+            self.notice_bar(cx),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|bar| {
+            div()
+                .rounded_md()
+                .overflow_hidden()
+                .border_1()
+                .border_color(p.border)
+                .child(bar)
+                .into_any_element()
+        })
+        .collect();
+        if cards.is_empty() {
+            return None;
+        }
+        let right = window.viewport_size().width - px(style::CARD_MARGIN + 8.);
+        Some(
+            gpui::deferred(
+                gpui::anchored()
+                    .position(gpui::point(
+                        right,
+                        px(style::CARD_MARGIN + style::HEADER_HEIGHT),
+                    ))
+                    .anchor(gpui::Anchor::TopRight)
+                    .snap_to_window_with_margin(px(8.))
+                    .child(
+                        ui::panel("notices-popover", theme)
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "notices-popover".into())
+                            })
+                            .w(px(400.))
+                            .p_2()
+                            .rounded_lg()
+                            .shadow_lg()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                                this.title.notices_open.set(false);
+                                cx.notify();
+                            }))
+                            .child(
+                                div()
+                                    .px_1()
+                                    .text_size(px(11.))
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .text_color(p.header_muted)
+                                    .child("NOTICES"),
+                            )
+                            .children(cards),
+                    ),
+            )
+            .with_priority(2)
+            .into_any_element(),
+        )
+    }
+
     /// The collapsed rail's foot: Settings only, an update shown as a dot on
     /// it (ADR 0048). Theme and Help live in the open sidebar.
     pub(super) fn rail_foot(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -545,6 +622,7 @@ impl Workspace {
         )
         .child(div().font_weight(gpui::FontWeight::MEDIUM).child("Home"))
         .child(div().flex_1())
+        .children(ui::notice_bell(&self.title, theme).map(|bell| ui::no_drag(div().child(bell))))
         .children(ui::caption_buttons(window, theme));
         let banner = self.whats_new(cx);
         let body = div()

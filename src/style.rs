@@ -21,6 +21,11 @@ pub struct TitleBar {
     /// Sidebar collapsed: headers sit in the window's title row, beside the
     /// traffic lights, and the content gets its own card below (ADR 0048).
     pub detached: std::rc::Rc<std::cell::Cell<bool>>,
+    /// Workspace notices waiting (locked cases, a crash report, messages):
+    /// headers show a bell with this count (ADR 0048).
+    pub notices: std::rc::Rc<std::cell::Cell<usize>>,
+    /// The notices popover is open.
+    pub notices_open: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]

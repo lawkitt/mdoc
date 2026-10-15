@@ -2614,6 +2614,17 @@ impl Render for Workspace {
             self.shell.drop = None;
         }
         self.remember_recents(cx);
+        // Notices wait behind the header's bell; a new one opens it (ADR 0048).
+        let notices = usize::from(self.case_key_banner().is_some())
+            + usize::from(self.crash.is_some())
+            + usize::from(self.notice.is_some());
+        if notices > self.shell.notice_count {
+            self.title.notices_open.set(true);
+        } else if notices == 0 {
+            self.title.notices_open.set(false);
+        }
+        self.shell.notice_count = notices;
+        self.title.notices.set(notices);
         // A crash report says what the window showed (no text, no names).
         crate::crash::note_state(format!(
             "{}, {} tabs, sidebar {}, {:?} theme{}",
@@ -2667,6 +2678,10 @@ impl Render for Workspace {
             .on_action(
                 cx.listener(|this, _: &ToggleTheme, window, cx| this.cycle_theme(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &ToggleNotices, _, cx| {
+                this.title.notices_open.set(!this.title.notices_open.get());
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, action: &PiiApplyAll, window, cx| {
                 if let Some(view) = this.active_view().filter(|_| !this.showing_home(cx)) {
                     view.update(cx, |view, cx| view.apply_all_pii(action, window, cx));
@@ -2846,6 +2861,7 @@ impl Render for Workspace {
                         )),
                 )
             })
+            .children(self.notices_view(window, cx))
             .children(self.palette_view(cx))
             .when(self.settings.read(cx).open, |v| {
                 v.child(self.settings.clone())
@@ -2891,47 +2907,7 @@ impl Workspace {
                             }),
                         )
                     })
-                    .relative()
-                    .child(div().flex_1().min_h_0().child(content))
-                    // Workspace notices float over the card's bottom-left as
-                    // toasts: they never move the header out of the title row,
-                    // in either sidebar state (ADR 0048).
-                    .child({
-                        let notices: Vec<AnyElement> = [
-                            self.case_key_bar(cx),
-                            self.crash_bar(cx),
-                            self.notice_bar(cx),
-                        ]
-                        .into_iter()
-                        .flatten()
-                        .map(|bar| {
-                            div()
-                                .rounded_lg()
-                                .overflow_hidden()
-                                .border_1()
-                                .border_color(theme.pdf_style().border)
-                                .bg(theme.pdf_style().bg)
-                                .shadow_lg()
-                                .child(bar)
-                                .into_any_element()
-                        })
-                        .collect();
-                        div()
-                            .absolute()
-                            .left(px(if self.sidebar_visible {
-                                16.
-                            } else {
-                                16. + style::CARD_MARGIN
-                            }))
-                            // Above the view pill's row at the bottom centre.
-                            .bottom(px(68.))
-                            .w(px(460.))
-                            .max_w(gpui::relative(0.6))
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .children(notices)
-                    }),
+                    .child(div().flex_1().min_h_0().child(content)),
             )
             .into_any_element()
     }
@@ -2959,6 +2935,9 @@ impl Workspace {
                         .child(
                             div()
                                 .id("dismiss-session-notice")
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "dismiss-session-notice".into())
+                                })
                                 .flex_shrink_0()
                                 .role(gpui::Role::Button)
                                 .aria_label("Dismiss notice")
