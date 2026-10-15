@@ -143,6 +143,15 @@ impl Theme {
         .into()
     }
 
+    /// A ticked checkbox (ADR 0048): a soft, slightly warm grey rather than
+    /// ink, still clearly filled in both themes; and the tick drawn on it.
+    pub fn checkbox(self) -> (Hsla, Hsla) {
+        match self {
+            Self::Dark => (hsla(0.08, 0.06, 0.74, 1.), hsla(0., 0., 0.13, 1.)),
+            Self::Light => (hsla(0.08, 0.05, 0.36, 1.), hsla(0., 0., 1., 1.)),
+        }
+    }
+
     /// The content card's hairline edge on the ground.
     pub fn card_border(self) -> Hsla {
         match self {

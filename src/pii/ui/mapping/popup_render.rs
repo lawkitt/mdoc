@@ -143,7 +143,8 @@ impl DocumentView {
             self.pii.popup_anchor.set(anchor);
         }
         let hidden = self.editor.read(cx).annotation_is_hidden(annotation);
-        let width = px(640.).min((available.size.width - px(8.)).max(px(120.)));
+        // One width for every mention, so the bar never jumps (ADR 0048).
+        let width = px(600.).min((available.size.width - px(8.)).max(px(120.)));
         // Shortcut hints only where they fit: in a narrow popup, Windows'
         // "⇧Ctrl+⌫" pushes Keep original past the edge. The keys still work.
         let hints = width >= px(240.);
@@ -159,12 +160,13 @@ impl DocumentView {
         let below = (available.bottom() - bounds.bottom() - px(8.)).max(px(0.));
         let above = (bounds.top() - available.top() - px(8.)).max(px(0.));
         let height = desired.min(below.max(above).max(px(100.)));
-        // The bar sits above its mention when there is room (ADR 0048).
-        let bar = px(46.);
-        let y = if above >= bar || above >= below {
-            bounds.top() - bar - px(6.)
-        } else {
+        // The bar sits just below its mention, never over it; above only
+        // when the view has no room below (ADR 0048).
+        let bar = px(48.);
+        let y = if below >= bar || below >= above {
             bounds.bottom() + px(6.)
+        } else {
+            bounds.top() - bar - px(6.)
         };
         let position = gpui::point(
             bounds.left().clamp(
@@ -188,7 +190,7 @@ impl DocumentView {
             .tab_stop(false)
             .track_focus(&self.pii.focus)
             .map(|v| self.popup_decision_actions(v, cx))
-            .max_w(width)
+            .w(width)
             .max_h(height)
             .overflow_y_scroll()
             .track_scroll(&self.pii.popup_scroll)
@@ -301,12 +303,12 @@ impl DocumentView {
                                     .items_center()
                                     .justify_center()
                                     .rounded(px(4.))
-                                    .bg(palette.header_fg)
+                                    .bg(theme.checkbox().0)
                                     .child(
                                         gpui::svg()
                                             .data(crate::ui::Icon::Check.data())
                                             .size(px(11.))
-                                            .text_color(palette.bg),
+                                            .text_color(theme.checkbox().1),
                                     ),
                             )
                             .child("Replace")
@@ -439,45 +441,53 @@ impl DocumentView {
                             cx,
                         ))
                     })
-                    .child(div().flex_1())
-                    // One mention needs no navigation (ADR 0032).
-                    .when(mentions.len() > 1, |v| {
-                        v.child(
-                            self.popup_control("direct-prev", "‹", true, cx)
-                                .aria_label("Previous mention")
-                                .tooltip(crate::style::tooltip(
-                                    format!("Previous mention of {}", identity.alias),
-                                    theme,
-                                ))
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.step_identity_occurrence(true, window, cx)
-                                })),
-                        )
-                        .child(
-                            div()
-                                .flex_shrink_0()
-                                .text_size(px(11.))
-                                .text_color(palette.header_muted)
-                                .child(format!("{} of {}", index + 1, mentions.len())),
-                        )
-                        .child(
-                            self.popup_control("direct-next", "›", true, cx)
-                                .aria_label("Next mention")
-                                .tooltip(crate::style::tooltip(
-                                    format!("Next mention of {}", identity.alias),
-                                    theme,
-                                ))
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.step_identity_occurrence(false, window, cx)
-                                })),
-                        )
-                    })
+                    // ‹ n of N › and × stay together at the row's end, so the
+                    // bar keeps one layout from mention to mention (ADR 0048).
                     .child(
-                        self.popup_control("direct-close", "×", true, cx)
-                            .aria_label("Close replacement popup")
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.close_pii_popup(&PiiClosePopup, window, cx)
-                            })),
+                        div()
+                            .ml_auto()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .flex_shrink_0()
+                            .when(mentions.len() > 1, |v| {
+                                v.child(
+                                    self.popup_control("direct-prev", "‹", true, cx)
+                                        .aria_label("Previous mention")
+                                        .tooltip(crate::style::tooltip(
+                                            format!("Previous mention of {}", identity.alias),
+                                            theme,
+                                        ))
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.step_identity_occurrence(true, window, cx)
+                                        })),
+                                )
+                                .child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .text_size(px(11.))
+                                        .text_color(palette.header_muted)
+                                        .child(format!("{} of {}", index + 1, mentions.len())),
+                                )
+                                .child(
+                                    self.popup_control("direct-next", "›", true, cx)
+                                        .aria_label("Next mention")
+                                        .tooltip(crate::style::tooltip(
+                                            format!("Next mention of {}", identity.alias),
+                                            theme,
+                                        ))
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.step_identity_occurrence(false, window, cx)
+                                        })),
+                                )
+                            })
+                            .child(
+                                self.popup_control("direct-close", "×", true, cx)
+                                    .aria_label("Close replacement popup")
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.close_pii_popup(&PiiClosePopup, window, cx)
+                                    })),
+                            ),
                     ),
             )
             .when(hidden, |v| {
@@ -976,12 +986,6 @@ impl DocumentView {
             .items_center()
             .gap_x_2()
             .gap_y_1()
-            .child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(palette.header_muted)
-                    .child("For"),
-            )
             .child(
                 div()
                     .flex()

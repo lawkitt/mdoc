@@ -200,6 +200,7 @@ impl DocumentView {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let filled = tick != Tick::Off;
+        let (fill, mark) = theme.checkbox();
         div()
             .id(id)
             .role(gpui::Role::CheckBox)
@@ -216,23 +217,24 @@ impl DocumentView {
             .rounded(px(4.))
             .border_1()
             .border_color(if filled {
-                palette.header_fg
+                fill
             } else {
-                palette.header_muted
+                Hsla {
+                    a: 0.7,
+                    ..palette.header_muted
+                }
             })
-            .when(filled, |v| v.bg(palette.header_fg))
-            .text_color(palette.bg)
-            .text_size(px(11.))
+            .when(filled, |v| v.bg(fill))
             .when(tick == Tick::On, |v| {
                 v.child(
                     gpui::svg()
                         .data(ui::Icon::Check.data())
                         .size(px(11.))
-                        .text_color(palette.bg),
+                        .text_color(mark),
                 )
             })
             .when(tick == Tick::Mixed, |v| {
-                v.child(div().w(px(7.)).h(px(1.5)).bg(palette.bg))
+                v.child(div().w(px(7.)).h(px(1.5)).bg(mark))
             })
             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |this, _, window, cx| {
@@ -434,12 +436,24 @@ impl DocumentView {
                 cx.notify();
             }),
         )
+        // A click toggles the group: opening shows its mentions and the popup
+        // on the first one; closing folds it away (ADR 0048).
         .on_click(cx.listener(move |this, _, window, cx| {
-            window.focus(&this.pii.mapping.focus, cx);
             this.pii.mapping.cursor = Some(PanelCursor::Header(id));
-            if let Some((annotation, _)) = this.identity_occurrences(id).into_iter().next() {
-                this.panel_select_mention(annotation, cx);
-                this.pii.mapping.cursor = Some(PanelCursor::Header(id));
+            if this.pii.mapping.expanded.remove(&id) {
+                this.pii.dismiss_popup();
+                this.pii.mapping.panel_selected = false;
+                window.focus(&this.pii.mapping.focus, cx);
+                cx.notify();
+                return;
+            }
+            this.pii.mapping.expanded.insert(id);
+            match this.identity_occurrences(id).into_iter().next() {
+                Some((annotation, range)) => {
+                    this.navigate_identity_mention(annotation, range.start, window, cx);
+                    this.pii.mapping.cursor = Some(PanelCursor::Header(id));
+                }
+                None => window.focus(&this.pii.mapping.focus, cx),
             }
             cx.notify();
         }))
@@ -533,9 +547,10 @@ impl DocumentView {
                 },
             )]),
         ))
+        // A mention row opens the popup on that mention (ADR 0048).
         .on_click(cx.listener(move |this, _, window, cx| {
-            window.focus(&this.pii.mapping.focus, cx);
-            this.panel_select_mention(annotation, cx);
+            this.pii.mapping.cursor = Some(PanelCursor::Mention(annotation));
+            this.navigate_identity_mention(annotation, range.start, window, cx);
         }))
         // Middle click keeps this original; ⌘ same text, ⇧⌘ all (ADR 0033).
         .on_mouse_down(

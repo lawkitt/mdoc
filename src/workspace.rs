@@ -497,7 +497,7 @@ impl Workspace {
                 .py_1()
                 .text_size(px(12.))
                 .bg(gpui::Hsla { a: 0.07, ..accent })
-                .border_b_1()
+                .border_t_1()
                 .border_color(palette.border)
                 .child(
                     div()
@@ -2562,7 +2562,8 @@ impl Render for Workspace {
         self.title.inset.set(if self.sidebar_visible {
             0.
         } else {
-            (style::TRAFFIC_LIGHT_INSET + 40. - RAIL_WIDTH - style::CARD_MARGIN).max(0.)
+            // Room for the floating toggle: its 28 px and a 12 px gap.
+            (style::TRAFFIC_LIGHT_INSET + 28. + 12. - RAIL_WIDTH - style::CARD_MARGIN - 16.).max(0.)
         });
         div()
             .track_focus(&self.focus)
@@ -2805,10 +2806,12 @@ impl Workspace {
                             }),
                         )
                     })
+                    // The header stays in the title-bar row; workspace notices
+                    // sit at the card's foot (ADR 0048).
+                    .child(div().flex_1().min_h_0().child(content))
                     .children(self.case_key_bar(cx))
                     .children(self.crash_bar(cx))
-                    .children(self.notice_bar(cx))
-                    .child(div().flex_1().min_h_0().child(content)),
+                    .children(self.notice_bar(cx)),
             )
             .into_any_element()
     }
@@ -2822,7 +2825,7 @@ impl Workspace {
                 .flex_col()
                 .text_size(px(12.))
                 .bg(gpui::Hsla { a: 0.07, ..accent })
-                .border_b_1()
+                .border_t_1()
                 .border_color(palette.border)
                 .child(
                     div()

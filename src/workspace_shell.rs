@@ -1299,6 +1299,8 @@ impl Workspace {
                     .inset_0()
                     .flex()
                     .justify_center()
+                    // The palette hugs its rows instead of stretching down.
+                    .items_start()
                     .pt(px(72.))
                     .bg(gpui::hsla(0., 0., 0., 0.18))
                     .occlude()
