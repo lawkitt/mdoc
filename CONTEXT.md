@@ -10,7 +10,8 @@ Behavior and rationale live in [ADRs](docs/adr/); this file defines shared terms
 **Converted Markdown**: editable Markdown extracted from a source document.
 
 **Source preview**: visual reference to the retained original, before Markdown
-edits. DOCX rendering is approximate. UI label: **Original**.
+edits. DOCX rendering is approximate. UI label: **Source** (was "Original"
+until ADR 0048; "Original" now names the pill's pre-pseudonymization view).
 
 **Page tone**: how Original pages are painted: *original* paper or *themed*
 (paper and ink remapped to the dark theme). Follows the app theme unless
@@ -42,6 +43,23 @@ identity (e.g. an invented `PERSON_9`); highlighted, never guessed.
 
 **Batch conversion**: process an explicitly selected group without opening each
 file individually. This workflow remains deferred; avoid calling multi-file opening batch conversion.
+
+**Home**: the page shown with no tab open: drop zone, quick actions, cases and
+recent files ([ADR 0048](docs/adr/0048-workspace-shell-redesign.md)).
+
+**Recent files**: paths (never content) of recently opened files, stored
+locally and clearable in Settings.
+
+**Command palette**: ⌘K search over actions, open tabs, cases and recent files.
+
+**Document header**: the title-bar row above a document: breadcrumb, Source,
+panel toggle, ⋯ and the primary action.
+
+**Primary action**: the header's one filled button, which follows the
+document's state: Pseudonymize, scanning + Cancel, Apply N, Copy for AI.
+
+**Case section**: a collapsible sidebar group of the tabs of one case; tabs
+without a case sit under "Open".
 
 ## Models and processing
 
@@ -171,7 +189,15 @@ category; exact repeats are proposed together. UI label: **Replace** ([ADR 0024]
 **Other category**: manual-only neutral category with a `REDACTED_n` alias;
 the detector never emits it.
 
-**Replacement chip**: rounded mention highlight: gold proposed, blue applied.
+**Replacement chip**: mention highlight with a category-tinted underline;
+light tint while proposed, alias chip once applied (ADR 0048).
+
+**Entity checkbox**: the panel's tick per entity: ticked = will be replaced,
+unticked = Keep original, – = mixed mentions. Ticking records intent; text
+changes only on Apply.
+
+**Mention bar**: slim bar above a clicked mention: Replace checkbox, alias,
+category, scope. Replaced the replacement popup (ADR 0048).
 Motion and scoped popup presentation follow [ADR 0032](docs/adr/0032-replacement-popup-redesign.md).
 
 **Scope outline**: display-only ring around mentions affected by the selected scope.
