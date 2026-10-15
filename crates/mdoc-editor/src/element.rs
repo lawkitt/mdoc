@@ -3018,6 +3018,50 @@ fn shape_inline_images(
     (nd, nr, nm, inline)
 }
 
+/// The layout needs only diagnostic coverage, not individual spelling words.
+/// Merge it once so even overlapping input ranges have monotonic ends; each
+/// line can then find its intersecting ranges without scanning the document.
+struct DiagnosticRanges(Vec<Range<usize>>);
+impl DiagnosticRanges {
+    fn new(diagnostics: &[Diagnostic]) -> Self {
+        let mut ranges: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| !d.range.is_empty())
+            .map(|d| d.range.clone())
+            .collect();
+        if !ranges.is_sorted_by_key(|r| (r.start, r.end)) {
+            ranges.sort_unstable_by_key(|r| (r.start, r.end));
+        }
+        let mut merged: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
+        for range in ranges {
+            if let Some(last) = merged.last_mut()
+                && range.start <= last.end
+            {
+                last.end = last.end.max(range.end);
+            } else {
+                merged.push(range);
+            }
+        }
+        Self(merged)
+    }
+    fn intersecting(&self, within: Range<usize>) -> &[Range<usize>] {
+        if within.is_empty() {
+            return &[];
+        }
+        let first = self.0.partition_point(|r| r.end <= within.start);
+        let count = self.0[first..].partition_point(|r| r.start < within.end);
+        &self.0[first..first + count]
+    }
+    fn for_line(&self, start: usize, end: usize) -> Vec<Diagnostic> {
+        self.intersecting(start..end)
+            .iter()
+            .map(|range| Diagnostic {
+                range: range.start.max(start) - start..range.end.min(end) - start,
+            })
+            .collect()
+    }
+}
+
 /// The WYSIWYG layout pass: shape `content` line-by-line so each logical line
 /// can use its own font size (headings are larger — W2) and a standalone image
 /// line can render as the image (W4). Returns, per logical line: the shaped
@@ -3067,6 +3111,7 @@ fn shape_document(
     folded_headings: &std::collections::HashSet<String>,
 ) -> ShapedDoc {
     let mut out = ShapedDoc::default();
+    let diagnostics = DiagnosticRanges::new(diagnostics);
     let lines: Vec<&str> = content.split('\n').collect();
     // Ordered items paint their computed CommonMark position, not their
     // literal source digits (the reader renumbers the same way).
@@ -3446,16 +3491,7 @@ fn shape_document(
         // This line's diagnostics, clipped + shifted to line-local byte offsets —
         // used as spell-check squiggles whether the line shows source or hides its
         // markers.
-        let line_diags: Vec<Diagnostic> = diagnostics
-            .iter()
-            .filter_map(|d| {
-                let s = d.range.start.max(line_start);
-                let e = d.range.end.min(line_end);
-                (s < e).then(|| Diagnostic {
-                    range: (s - line_start)..(e - line_start),
-                })
-            })
-            .collect();
+        let line_diags = diagnostics.for_line(line_start, line_end);
         // Gutter decoration (blockquote / list): a non-code/widget/table line with
         // a `>` or list marker. The decoration (border / bullet, marker hidden,
         // body inset) shows only while the caret is OFF the line; on the line it
@@ -4491,4 +4527,46 @@ fn paint_roll(roll: Roll, window: &mut Window, cx: &mut App) {
             );
         }
     });
+}
+
+#[cfg(test)]
+mod diagnostic_range_tests {
+    use super::*;
+    #[test]
+    fn clips_unsorted_overlapping_diagnostics_without_changing_word_records() {
+        let diagnostics: Vec<_> = [8..16, 2..9, 30..30, 40..44, 45..50]
+            .into_iter()
+            .map(|range| Diagnostic { range })
+            .collect();
+        let ranges = DiagnosticRanges::new(&diagnostics);
+        assert_eq!(ranges.0, vec![2..16, 40..44, 45..50]);
+        let clipped: Vec<_> = ranges
+            .for_line(10, 42)
+            .into_iter()
+            .map(|d| d.range)
+            .collect();
+        assert_eq!(clipped, vec![0..6, 30..32]);
+        assert!(ranges.for_line(16, 40).is_empty());
+        assert!(ranges.for_line(12, 12).is_empty());
+        assert_eq!(
+            diagnostics[0].range,
+            8..16,
+            "navigation retains original word spans"
+        );
+    }
+    #[test]
+    fn dense_document_lines_visit_only_intersecting_diagnostics() {
+        let diagnostics: Vec<_> = (0..20_000)
+            .map(|i| Diagnostic {
+                range: i * 20..i * 20 + 5,
+            })
+            .collect();
+        let ranges = DiagnosticRanges::new(&diagnostics);
+        let visits: usize = (0..20_000)
+            .map(|i| ranges.intersecting(i * 20..i * 20 + 19).len())
+            .sum();
+        assert_eq!(visits, 20_000, "not 400 million candidate visits");
+        let spanning = DiagnosticRanges::new(&[Diagnostic { range: 0..400_000 }]);
+        assert_eq!(spanning.for_line(20, 39)[0].range, 0..19);
+    }
 }
