@@ -447,6 +447,10 @@ impl DocumentView {
         if self.pii.setup {
             return Some(self.pii_setup_panel(window, cx));
         }
+        // Inspector (ADR 0048 variant C): Review | Share.
+        if self.inspector_share {
+            return Some(self.share_panel(window, cx));
+        }
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let mapping = &self.pii.mapping;
@@ -574,29 +578,7 @@ impl DocumentView {
                     this.finish_key_move(cx);
                 }
             }))
-            .child(
-                div()
-                    .flex_shrink_0()
-                    .flex()
-                    .items_baseline()
-                    .gap_2()
-                    .px_3()
-                    .pt_3()
-                    .pb_2()
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .font_weight(gpui::FontWeight::MEDIUM)
-                            .text_color(palette.header_muted)
-                            .child("Replacements"),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(palette.header_muted)
-                            .child(total_entities.to_string()),
-                    ),
-            )
+            .child(self.inspector_tabs(total_entities, cx))
             .child(
                 div().flex_shrink_0().px_3().pb_2().child(
                     div()

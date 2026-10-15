@@ -65,6 +65,8 @@ pub(crate) struct DocumentView {
     pub(crate) more_open: bool,
     /// Text zoom of this document's Markdown, not saved (ADR 0048).
     pub(crate) zoom: f32,
+    /// Inspector (ADR 0048 variant C): the Share tab is showing.
+    pub(crate) inspector_share: bool,
     /// The running copy feedback belongs to Copy for AI, not Copy Markdown.
     pub(crate) copied_for_ai: bool,
     /// The saved case this tab's mapping belongs to (ADR 0041).
@@ -222,6 +224,7 @@ impl DocumentView {
             copy_feedback: None,
             more_open: false,
             zoom: 1.,
+            inspector_share: false,
             copied_for_ai: false,
             case: None,
             case_save: None,

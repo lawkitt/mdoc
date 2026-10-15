@@ -1483,8 +1483,12 @@ fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
     cx.run_until_parked();
     cx.update(|window, cx| window.draw(cx).clear(cx));
     app.update(cx, |app, cx| {
-        assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1")
+        assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1");
+        // Inspector (ADR 0048, C): back to Review for the notice.
+        app.inspector_share = false;
+        cx.notify();
     });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
     // The notice offers Undo, then times out.
     let notice = cx.debug_bounds("replacement-notice-undo").unwrap().center();
     cx.simulate_click(notice, Default::default());
@@ -1832,4 +1836,37 @@ fn switching_single_column_views_keeps_the_reading_position(cx: &mut gpui::TestA
             "the pseudonymized column opens where the original was: {fraction}"
         );
     });
+}
+
+#[gpui::test]
+fn inspector_share_tab_copies_for_ai_after_apply(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1200.), px(800.)));
+    app.update(cx, |app, cx| prepare_applied(app, "Anna Bob Anna", cx));
+    cx.run_until_parked();
+    let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
+    let click = |cx: &mut gpui::VisualTestContext, id: &'static str| {
+        draw(cx);
+        let at = cx
+            .debug_bounds(id)
+            .unwrap_or_else(|| panic!("missing {id}"))
+            .center();
+        cx.simulate_click(at, Default::default());
+        cx.run_until_parked();
+        draw(cx);
+    };
+    // Applied: the header offers Share, which opens the Inspector's Share tab
+    // (ADR 0048 variant C).
+    click(cx, "primary-share");
+    app.read_with(cx, |app, _| {
+        assert!(app.inspector_share);
+        assert!(app.replacements_open());
+    });
+    assert!(cx.debug_bounds("share-status").is_some());
+    click(cx, "share-copy-for-ai");
+    let copied = cx.update(|_, cx| cx.read_from_clipboard().unwrap().text().unwrap());
+    assert!(copied.contains("PERSON_1"));
+    // Review is one click back.
+    click(cx, "inspector-review");
+    assert!(cx.debug_bounds("replacement-filter").is_some());
 }

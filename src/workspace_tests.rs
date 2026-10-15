@@ -2519,7 +2519,9 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
     });
     cx.run_until_parked();
 
-    click_toolbar(cx, "Copy for AI");
+    // Inspector (ADR 0048, C): Share in the header, Copy for AI in the tab.
+    click_toolbar(cx, "primary-share");
+    click_toolbar(cx, "share-copy-for-ai");
     cx.update(|_, cx| {
         let copied = cx.read_from_clipboard().unwrap().text().unwrap();
         assert!(copied.starts_with("Note: names and other identifying details"));
