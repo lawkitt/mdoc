@@ -598,6 +598,17 @@ pub fn floating_button(
         .tooltip(crate::style::tooltip(label.to_string(), theme))
 }
 
+/// The content card's surface (ADR 0048): rounded, on the window ground.
+pub fn card_surface<E: Styled>(surface: E, theme: Theme) -> E {
+    surface
+        .rounded_lg()
+        .overflow_hidden()
+        .bg(theme.pdf_style().bg)
+        .border_1()
+        .border_color(theme.card_border())
+        .shadow_sm()
+}
+
 /// Make `area` move the window like a title bar (ADR 0048): a press that
 /// moves drags the window, a double click zooms. Controls inside stop the
 /// press first ([`no_drag`]), so clicking them never moves the window.

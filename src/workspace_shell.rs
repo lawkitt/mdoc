@@ -546,6 +546,7 @@ impl Workspace {
     pub(super) fn home_view(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
+        let detached = self.title.detached.get();
         let header = ui::title_drag(
             div()
                 .flex()
@@ -555,8 +556,11 @@ impl Workspace {
                 .pl(px(16. + self.title.inset.get()))
                 .pr_2()
                 .gap_2()
-                .border_b_1()
-                .border_color(p.border)
+                .when(detached, |v| {
+                    v.h(px(style::CARD_MARGIN + style::HEADER_HEIGHT))
+                        .pt(px(style::CARD_MARGIN))
+                })
+                .when(!detached, |v| v.border_b_1().border_color(p.border))
                 .text_size(px(13.)),
             self.title.armed.clone(),
         )
@@ -564,13 +568,11 @@ impl Workspace {
         .child(div().flex_1())
         .children(ui::caption_buttons(window, theme));
         let banner = self.whats_new(cx);
-        div()
-            .id("home")
-            .when(cfg!(test), |v| v.debug_selector(|| "home".into()))
-            .size_full()
+        let body = div()
+            .flex_1()
+            .min_h_0()
             .flex()
             .flex_col()
-            .child(header)
             .children(banner)
             .child(
                 div()
@@ -620,7 +622,23 @@ impl Workspace {
                                     .children(self.home_recents(cx)),
                             ),
                     ),
-            )
+            );
+        // Collapsed sidebar: the header sits in the title row and Home in its
+        // own card below (ADR 0048).
+        div()
+            .id("home")
+            .when(cfg!(test), |v| v.debug_selector(|| "home".into()))
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(header)
+            .map(|v| {
+                if detached {
+                    v.child(ui::card_surface(body.ml(px(style::CARD_MARGIN)), theme))
+                } else {
+                    v.child(body)
+                }
+            })
             .into_any_element()
     }
 

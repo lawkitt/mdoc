@@ -130,11 +130,17 @@ Variant B's floating panel and folding sidebar are not adopted.
 - **Workspace notices** (case key, crash, session notices) sit at the card's
   foot, so the document header stays in the title-bar row.
 - **Header order:** panel toggle, Source, ⋯, primary.
-- **Collapsed sidebar on macOS:** the rail is 76 px (40 px elsewhere), wide
-  enough for the traffic lights, which sit in its title-bar row; the expand
-  toggle leads the rail below them. The card keeps its full height and one
-  margin all round in both states, so collapsing animates only the sidebar's
-  width (an earlier strip above the card shrank it and made the card jump).
+- **Collapsed sidebar: the header joins the title row.** As native Mac apps
+  move their toolbar into the title bar when the sidebar hides, the document
+  (or Home) header sits on the window ground beside the traffic lights and
+  the expand toggle, and the content gets its own card below it. The rail
+  narrows to 44 px under the title row. The content is exactly as tall as
+  with the sidebar open, since the header only moves out of the card.
+- **Sliding without reflow.** A toggle resizes the content once, at the
+  start; only a clipped sidebar layer animates: expanding reveals the list
+  inside its final width, collapsing narrows it over the content in a layer
+  drawn above the card. Nothing reflows during the 150 ms slide, so it stays
+  smooth in debug builds and with long documents.
 - **Collapsed rail, in Anoni's manner:** quiet 16 px icons (toggle, Search,
   Home), a hairline, the open tabs as document glyphs (the active one on a
   soft fill, status as a small dot, name and format in the tooltip), a plain
