@@ -246,18 +246,12 @@ impl Review {
         &self.tracking.applied
     }
     /// Mentions kept as their originals (Keep decisions): range, wording, and
-    /// the identity that wording belongs to, if it still has one (ADR 0048).
+    /// the occurrence's identity when it was kept (ADR 0048).
     pub fn kept_mentions(&self) -> Vec<(Range<usize>, Arc<str>, Option<u64>)> {
         self.tracking
             .exclusions
             .iter()
-            .map(|e| {
-                let identity = self
-                    .candidates
-                    .by_original(&e.original)
-                    .and_then(|variant| self.variant_identity(variant));
-                (e.range.clone(), e.original.clone(), identity)
-            })
+            .map(|e| (e.range.clone(), e.original.clone(), e.identity))
             .collect()
     }
     pub fn applied_occurrence(&self, id: u64) -> Option<&Applied> {
@@ -618,16 +612,34 @@ impl Review {
         }
         Ok(plans)
     }
+    /// Propose exactly these kept occurrences again without lifting other Keep
+    /// decisions for the same wording or changing their assigned identities.
+    pub fn propose_kept_mentions(&mut self, source: &str, ranges: &[Range<usize>]) -> usize {
+        self.refresh(source);
+        let ranges: HashSet<_> = ranges.iter().map(|r| (r.start, r.end)).collect();
+        let mentions = self.tracking.propose_kept(&ranges);
+        for mention in &mentions {
+            let category = mention
+                .identity
+                .and_then(|id| self.identity(id))
+                .map_or(Category::Other, |i| i.category);
+            let variant = self.add_seed(&mention.original, category);
+            self.set_kept(variant, false);
+        }
+        self.refresh(source);
+        mentions.len()
+    }
+
     /// Keep these pending mentions as one metadata change, refreshing once.
     pub fn keep_mentions(&mut self, mentions: impl IntoIterator<Item = (u64, Range<usize>)>) {
         let mentions: Vec<_> = mentions
             .into_iter()
             .filter_map(|(id, range)| {
                 let group = self.variant(id)?;
-                group
-                    .mentions
-                    .contains(&range)
-                    .then(|| (range, group.original.clone()))
+                group.mentions.contains(&range).then(|| {
+                    let identity = self.occurrence_identity(id, &range);
+                    (range, group.original.clone(), identity)
+                })
             })
             .collect();
         self.tracking.keep_many(mentions);
@@ -639,7 +651,8 @@ impl Review {
             if let Some(range) = single {
                 if group.mentions.contains(&range) {
                     let original = group.original.clone();
-                    self.tracking.keep(range, original);
+                    let identity = self.occurrence_identity(id, &range);
+                    self.tracking.keep(range, original, identity);
                 }
             } else {
                 self.set_kept(id, true);

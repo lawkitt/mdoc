@@ -76,6 +76,8 @@ struct Tab {
     record: TabRecord,
     identity: Option<PathBuf>,
     view: Option<Entity<DocumentView>>,
+    /// Last opened/saved path observed, independent of the capped recent list.
+    recent_path: Option<PathBuf>,
     subscriptions: Vec<Subscription>,
 }
 struct DocxJob {
@@ -762,6 +764,7 @@ impl Workspace {
             record,
             identity,
             view: None,
+            recent_path: None,
             subscriptions: Vec::new(),
         });
         id
@@ -823,7 +826,8 @@ impl Workspace {
             this.event(id, event, window, cx);
         });
         let mut status = SidebarStatus::of(view.read(cx));
-        let changes = cx.observe(&view, move |_, view, cx| {
+        let changes = cx.observe(&view, move |this, view, cx| {
+            this.remember_recent(id, cx);
             let next = SidebarStatus::of(view.read(cx));
             if next != status {
                 status = next;
@@ -2613,7 +2617,6 @@ impl Render for Workspace {
         if !cx.has_active_drag() && self.shell.drop.is_some() {
             self.shell.drop = None;
         }
-        self.remember_recents(cx);
         // Notices wait behind the header's bell; a new one opens it (ADR 0048).
         let notices = usize::from(self.case_key_banner().is_some())
             + usize::from(self.crash.is_some())
@@ -2688,12 +2691,22 @@ impl Render for Workspace {
                 }
             }))
             // Home's clipboard actions need a document; documents handle them first.
-            .on_action(cx.listener(|this, _: &PasteAiResponse, _, cx| {
-                this.needs_document("Restore AI reply", cx);
+            .on_action(cx.listener(|this, action: &PasteAiResponse, window, cx| {
+                if let Some(view) = this.clipboard_document("Restore AI reply", window, cx) {
+                    view.update(cx, |view, cx| view.paste_ai_response(action, window, cx));
+                }
             }))
-            .on_action(cx.listener(|this, _: &PseudonymizeClipboard, _, cx| {
-                this.needs_document("Pseudonymize clipboard", cx);
-            }))
+            .on_action(
+                cx.listener(|this, action: &PseudonymizeClipboard, window, cx| {
+                    if let Some(view) =
+                        this.clipboard_document("Pseudonymize clipboard", window, cx)
+                    {
+                        view.update(cx, |view, cx| {
+                            view.pseudonymize_clipboard(action, window, cx)
+                        });
+                    }
+                }),
+            )
             .on_drag_move(cx.listener(
                 |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
                     this.home_drag(event, cx)

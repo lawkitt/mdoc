@@ -1552,8 +1552,6 @@ impl Render for DocumentView {
         let detached = self.title.detached.get();
         let body = div().relative().size_full().flex().flex_col().bg(palette.bg).text_color(palette.header_fg).text_size(px(16.))
             .child(gpui::canvas(move |bounds, _, cx| { if measured_bounds.replace(bounds) != bounds { let _ = measured_owner.update(cx, |_, cx| cx.notify()); } }, |_, _, _, _| {}).absolute().inset_0())
-            .on_action(cx.listener(|_, _: &ui::NextControl, window, cx| ui::cycle(window, cx, None, false)))
-            .on_action(cx.listener(|_, _: &ui::PreviousControl, window, cx| ui::cycle(window, cx, None, true)))
             .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, window, cx| {
                 // Repaint so a replacement tooltip goes when the pointer leaves it.
                 if this.editor.read(cx).hovered_annotation().is_some() { cx.notify(); }
@@ -1581,43 +1579,6 @@ impl Render for DocumentView {
                     cx.emit(workspace::TabEvent::Open(drag.paths().to_vec()));
                     cx.notify();
                 })))
-            // Toolbar clicks must dispatch inside this document view, not the outer workspace.
-            .track_focus(&self.focus)
-            .on_action(cx.listener(Self::toggle_theme))
-            .on_action(cx.listener(|this, _: &TogglePreview, window, cx| if this.compare.is_none() { this.toggle_preview(window, cx) }))
-            .on_action(cx.listener(Self::open))
-            .on_action(cx.listener(Self::import))
-            .on_action(cx.listener(Self::copy_markdown))
-            .on_action(cx.listener(Self::copy_for_ai))
-            .on_action(cx.listener(Self::paste_ai_response))
-            .on_action(cx.listener(|this, _: &crate::ToggleCompare, window, cx| this.toggle_compare(window, cx)))
-            .on_action(cx.listener(Self::pseudonymize_clipboard))
-            .on_action(cx.listener(Self::pseudonymize))
-            .on_action(cx.listener(Self::add_pii_candidate))
-            .on_action(cx.listener(Self::apply_all_pii))
-            .on_action(cx.listener(|this, _: &PiiReviewCandidate, window, cx| this.step_pii_highlight(false, true, window, cx)))
-            .on_action(cx.listener(|this, _: &PiiNextCandidate, window, cx| this.step_pii_highlight(false, false, window, cx)))
-            .on_action(cx.listener(|this, _: &PiiPreviousCandidate, window, cx| this.step_pii_highlight(true, false, window, cx)))
-            .on_action(cx.listener(Self::setup_ocr))
-            .on_action(cx.listener(|this, _: &RunOcr, window, cx| this.ocr_action(false, window, cx)))
-            .on_action(cx.listener(|this, _: &ExtractNative, window, cx| this.ocr_action(true, window, cx)))
-            .on_action(cx.listener(|this, _: &DismissImportWarning, _, cx| { this.session.warning = None; cx.notify(); }))
-            .on_action(cx.listener(|_, _: &New, _, cx| cx.emit(workspace::TabEvent::New)))
-            .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
-            .on_action(cx.listener(|this, _: &SaveAs, window, cx| this.save(true, None, window, cx)))
-            .on_action(cx.listener(|_, _: &Close, _, cx| cx.emit(workspace::TabEvent::CloseRequested)))
-            .on_action(cx.listener(|this, _: &ClosePdf, window, cx| { this.toggle_preview(window, cx); if this.source_only { window.focus(&this.focus, cx); } else { window.focus(&this.editor.read(cx).focus_handle(cx), cx); } cx.notify(); }))
-            .on_action(cx.listener(Self::find_markdown))
-            .on_action(cx.listener(Self::next_misspelling))
-            .on_action(cx.listener(Self::previous_misspelling))
-            .on_action(cx.listener(Self::toggle_document_spelling))
-            .on_action(cx.listener(Self::find_next_markdown))
-            .on_action(cx.listener(Self::find_previous_markdown))
-            .on_action(cx.listener(Self::close_markdown_search))
-            .on_action(cx.listener(Self::retry_preview))
-            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.set_zoom(this.zoom + ZOOM_STEP, cx)))
-            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.set_zoom(this.zoom - ZOOM_STEP, cx)))
-            .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_zoom(1., cx)))
             .when(!detached, |v| v.child(self.header(window, cx)))
             .when(!self.source_only && self.job.busy(), |v| v.child(
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
@@ -1660,7 +1621,7 @@ impl Render for DocumentView {
             .children(self.replacement_tip(window, cx).filter(|_| self.compare.is_none()));
         // Sidebar collapsed: the header joins the title row and the document
         // sits in its own card below it (ADR 0048).
-        if detached {
+        let content = if detached {
             div()
                 .size_full()
                 .flex()
@@ -1674,6 +1635,93 @@ impl Render for DocumentView {
                 .into_any_element()
         } else {
             body.into_any_element()
-        }
+        };
+        // Both header layouts share the document's focus and action scope.
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .on_action(
+                cx.listener(|_, _: &ui::NextControl, window, cx| {
+                    ui::cycle(window, cx, None, false)
+                }),
+            )
+            .on_action(cx.listener(|_, _: &ui::PreviousControl, window, cx| {
+                ui::cycle(window, cx, None, true)
+            }))
+            .track_focus(&self.focus)
+            .on_action(cx.listener(Self::toggle_theme))
+            .on_action(cx.listener(|this, _: &TogglePreview, window, cx| {
+                if this.compare.is_none() {
+                    this.toggle_preview(window, cx)
+                }
+            }))
+            .on_action(cx.listener(Self::open))
+            .on_action(cx.listener(Self::import))
+            .on_action(cx.listener(Self::copy_markdown))
+            .on_action(cx.listener(Self::copy_for_ai))
+            .on_action(cx.listener(Self::paste_ai_response))
+            .on_action(cx.listener(|this, _: &crate::ToggleCompare, window, cx| {
+                this.toggle_compare(window, cx)
+            }))
+            .on_action(cx.listener(Self::pseudonymize_clipboard))
+            .on_action(cx.listener(Self::pseudonymize))
+            .on_action(cx.listener(Self::add_pii_candidate))
+            .on_action(cx.listener(Self::apply_all_pii))
+            .on_action(cx.listener(|this, _: &PiiReviewCandidate, window, cx| {
+                this.step_pii_highlight(false, true, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &PiiNextCandidate, window, cx| {
+                this.step_pii_highlight(false, false, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &PiiPreviousCandidate, window, cx| {
+                this.step_pii_highlight(true, false, window, cx)
+            }))
+            .on_action(cx.listener(Self::setup_ocr))
+            .on_action(
+                cx.listener(|this, _: &RunOcr, window, cx| this.ocr_action(false, window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ExtractNative, window, cx| {
+                    this.ocr_action(true, window, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &DismissImportWarning, _, cx| {
+                this.session.warning = None;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|_, _: &New, _, cx| cx.emit(workspace::TabEvent::New)))
+            .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
+            .on_action(
+                cx.listener(|this, _: &SaveAs, window, cx| this.save(true, None, window, cx)),
+            )
+            .on_action(
+                cx.listener(|_, _: &Close, _, cx| cx.emit(workspace::TabEvent::CloseRequested)),
+            )
+            .on_action(cx.listener(|this, _: &ClosePdf, window, cx| {
+                this.toggle_preview(window, cx);
+                if this.source_only {
+                    window.focus(&this.focus, cx);
+                } else {
+                    window.focus(&this.editor.read(cx).focus_handle(cx), cx);
+                }
+                cx.notify();
+            }))
+            .on_action(cx.listener(Self::find_markdown))
+            .on_action(cx.listener(Self::next_misspelling))
+            .on_action(cx.listener(Self::previous_misspelling))
+            .on_action(cx.listener(Self::toggle_document_spelling))
+            .on_action(cx.listener(Self::find_next_markdown))
+            .on_action(cx.listener(Self::find_previous_markdown))
+            .on_action(cx.listener(Self::close_markdown_search))
+            .on_action(cx.listener(Self::retry_preview))
+            .on_action(
+                cx.listener(|this, _: &ZoomIn, _, cx| this.set_zoom(this.zoom + ZOOM_STEP, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ZoomOut, _, cx| this.set_zoom(this.zoom - ZOOM_STEP, cx)),
+            )
+            .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.set_zoom(1., cx)))
+            .child(content)
     }
 }

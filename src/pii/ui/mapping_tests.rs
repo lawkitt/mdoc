@@ -951,6 +951,87 @@ fn undo_replacement_keeps_a_separated_homonym_on_its_identity(cx: &mut gpui::Tes
 }
 
 #[gpui::test]
+fn kept_homonyms_stay_with_their_entity_before_and_after_apply(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С.";
+    let (first, second) = app.update(cx, |app, cx| {
+        let (_, variant) = seed(app, source, cx);
+        let first = app.pii.review.variant_identity(variant).unwrap();
+        let range = app.pii.review.variant(variant).unwrap().mentions[1].clone();
+        app.drop_as_new_entity(
+            &PanelDrag::Mention {
+                identity: first,
+                range: range.clone(),
+                original: "Павлова М.С.".into(),
+            },
+            cx,
+        );
+        let second = app.pii.review.occurrence_identity(variant, &range).unwrap();
+        app.untick(second, None, cx);
+        assert!(app.kept_of(first).is_empty());
+        assert_eq!(app.kept_of(second)[0].0, range);
+        (first, second)
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert!(app.kept_entries().is_empty());
+        app.apply_aliases(cx);
+        app.untick(second, None, cx);
+        assert!(app.kept_of(first).is_empty());
+        assert_eq!(app.kept_of(second).len(), 1);
+        assert_eq!(app.editor.read(cx).text(), "ORG_1 · Павлова М.С.");
+        app.untick(first, None, cx);
+        assert_eq!(app.kept_of(first).len(), 1);
+        assert_eq!(app.kept_of(second).len(), 1);
+        assert_eq!(app.editor.read(cx).text(), source);
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.read_with(cx, |app, _| {
+        assert!(app.kept_of(first).is_empty());
+        assert_eq!(app.kept_of(second).len(), 1);
+    });
+    cx.dispatch_action(mdoc_editor::Redo);
+    cx.run_until_parked();
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.kept_of(first).len(), 1);
+        assert_eq!(app.kept_of(second).len(), 1);
+    });
+    app.update(cx, |app, cx| {
+        let range = app.kept_of(second)[0].0.clone();
+        app.retick_mention(second, range, cx);
+        assert_eq!(app.kept_of(first).len(), 1);
+        assert!(app.kept_of(second).is_empty());
+        let plans = app
+            .pii
+            .review
+            .pending_plans(source, &Default::default())
+            .unwrap();
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].identity, second);
+        app.apply_aliases(cx);
+        assert_eq!(app.editor.read(cx).text(), "Павлова М.С. · ORG_2");
+        app.retick(first, cx);
+        assert!(app.kept_entries().is_empty());
+        let plans = app
+            .pii
+            .review
+            .pending_plans(app.editor.read(cx).text(), &Default::default())
+            .unwrap();
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0].identity, first);
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.kept_of(first).len(), 1);
+        assert!(app.kept_of(second).is_empty());
+        assert_eq!(app.editor.read(cx).text(), "Павлова М.С. · ORG_2");
+    });
+}
+
+#[gpui::test]
 fn unticking_an_applied_mention_restores_only_its_original(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     for theme in [crate::Theme::Dark, crate::Theme::Light] {

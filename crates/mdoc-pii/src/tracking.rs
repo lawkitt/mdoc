@@ -52,6 +52,7 @@ pub struct Applied {
 pub(super) struct Exclusion {
     pub range: Range<usize>,
     pub original: Arc<str>,
+    pub identity: Option<u64>,
     pub id: u64,
 }
 #[derive(Default)]
@@ -161,19 +162,20 @@ impl Tracking {
             .partition_point(|o| o.range.start < range.start);
         self.applied.get(i).filter(|o| o.range == *range)
     }
-    pub fn keep(&mut self, range: Range<usize>, original: Arc<str>) {
-        self.keep_many([(range, original)]);
+    pub fn keep(&mut self, range: Range<usize>, original: Arc<str>, identity: Option<u64>) {
+        self.keep_many([(range, original, identity)]);
     }
     pub(crate) fn keep_many(
         &mut self,
-        mentions: impl IntoIterator<Item = (Range<usize>, Arc<str>)>,
+        mentions: impl IntoIterator<Item = (Range<usize>, Arc<str>, Option<u64>)>,
     ) {
         let mut exclusions: Vec<_> = mentions
             .into_iter()
-            .map(|(range, original)| Exclusion {
+            .map(|(range, original, identity)| Exclusion {
                 id: self.id(),
                 range,
                 original,
+                identity,
             })
             .collect();
         exclusions.sort_by_key(|e| e.range.start);
@@ -196,6 +198,28 @@ impl Tracking {
         if let Some(delta) = self.current.and_then(|id| self.journal.get_mut(&id)) {
             delta.removed_keeps.extend(removed);
         }
+    }
+    /// Lift exactly these Keep decisions, retaining homonym assignments even
+    /// when replacing/restoring their text invalidated the original assignment.
+    pub(crate) fn propose_kept(&mut self, ranges: &HashSet<(usize, usize)>) -> Vec<Exclusion> {
+        let mut removed = Vec::new();
+        self.exclusions.retain(|e| {
+            if ranges.contains(&(e.range.start, e.range.end)) {
+                removed.push(e.clone());
+                false
+            } else {
+                true
+            }
+        });
+        if let Some(delta) = self.current.and_then(|id| self.journal.get_mut(&id)) {
+            delta.removed_keeps.extend(removed.iter().cloned());
+        }
+        for mention in &removed {
+            if let Some(identity) = mention.identity {
+                self.commit_assignment(self.current.unwrap_or(0), mention.range.clone(), identity);
+            }
+        }
+        removed
     }
     pub fn on_transaction(&mut self, transaction: &EditorTransaction) -> bool {
         if transaction.revision <= self.revision {
@@ -530,6 +554,7 @@ impl Tracking {
                     id,
                     range: range.clone(),
                     original: old.step.before.clone(),
+                    identity: (old.step.identity != 0).then_some(old.step.identity),
                 });
             }
             if let Some(step) = old.step.predecessor.clone() {
