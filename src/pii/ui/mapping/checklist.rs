@@ -135,7 +135,7 @@ impl DocumentView {
         } else {
             self.pii.reviewing = true;
             self.pii.error = None;
-            self.sync_annotations(cx);
+            self.review_changed(cx);
         }
         cx.notify();
     }

@@ -77,7 +77,7 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
         app.session.warning = Some("Review extraction".into());
         app.pii.reviewing = true;
         app.pii.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9, recognizer: crate::pii::Recognizer::Model }]).unwrap();
-        app.sync_pii_theme(cx);
+        app.review_changed(cx);
         let id = app.pii.review.variants()[0].id;
         let range=app.pii.review.variant(id).unwrap().mentions[0].clone();
         let annotation=app.pii.review.annotation_id(id,&range).unwrap();
@@ -1592,7 +1592,7 @@ fn spellcheck_flags_prose_and_skips_markdown_and_entities(cx: &mut TestAppContex
             .review
             .ingest(source, vec![person("Kowalczyk"), person("Ivanоv")])
             .unwrap();
-        app.sync_pii_theme(cx);
+        app.review_changed(cx);
     });
     cx.run_until_parked();
     // Entities skip the dictionary; the Cyrillic о in "Ivanоv" still shows.

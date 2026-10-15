@@ -42,6 +42,8 @@ pub(crate) enum Popup {
 const APPLIED_ID: u64 = 1 << 63;
 pub(crate) struct ReviewUi {
     pub review: Review,
+    /// Revision of derived review data, independent of presentation changes.
+    pub(crate) version: u64,
     /// Candidate highlights are shown; Close review hides them.
     pub reviewing: bool,
     pub popup: Option<Popup>,
@@ -82,6 +84,7 @@ impl ReviewUi {
     pub fn new(cx: &mut Context<DocumentView>) -> Self {
         Self {
             review: Review::default(),
+            version: 0,
             reviewing: false,
             popup: None,
             enter_applies: false,
@@ -244,7 +247,7 @@ impl DocumentView {
         self.pii.error = None;
         self.pii.mapping = mapping::MappingUi::new(cx);
         self.pii.restore = None;
-        self.sync_annotations(cx);
+        self.review_changed(cx);
     }
     pub(crate) fn pii_edited(&mut self, cx: &mut Context<Self>) {
         if !self.pii.reviewing && self.pii.review.variants().is_empty() && !self.pii.scanning() {
@@ -262,11 +265,21 @@ impl DocumentView {
             self.pii.error = Some("Document changed; scan cancelled. Rescan when ready.".into());
         }
         self.schedule_pii_discovery(cx);
-        self.sync_annotations(cx);
     }
     pub(crate) fn sync_pii_theme(&mut self, cx: &mut Context<Self>) {
         self.sync_annotations(cx);
     }
+    /// Domain changes invalidate derived review data and its consumers.
+    pub(crate) fn review_changed(&mut self, cx: &mut Context<Self>) {
+        self.refresh_review_exclusions(cx);
+        self.schedule_case_save(cx);
+    }
+    fn refresh_review_exclusions(&mut self, cx: &mut Context<Self>) {
+        self.pii.version = self.pii.version.wrapping_add(1);
+        self.sync_annotations(cx);
+        self.schedule_spellcheck(false, cx);
+    }
+    /// Paint only: opening a panel or changing theme must not schedule work.
     fn sync_annotations(&mut self, cx: &mut Context<Self>) {
         // Proposals take their category's colour; applied replacements share
         // the alias blue (ADR 0032, ADR 0048).
@@ -342,9 +355,6 @@ impl DocumentView {
             editor.set_annotations(editor.revision(), annotations, cx)
         });
         self.sync_selection_action(cx);
-        // Entity and alias spans feed spelling exclusions.
-        self.schedule_spellcheck(false, cx);
-        self.schedule_case_save(cx);
     }
     pub(crate) fn pseudonymize(
         &mut self,
@@ -634,7 +644,7 @@ impl DocumentView {
             .record_added(source[range.clone()].into(), history);
         self.flash_notice(cx);
         self.pii.error = None;
-        self.sync_annotations(cx);
+        self.review_changed(cx);
         self.editor
             .update(cx, |editor, cx| editor.set_cursor(range.start, cx));
         if let Some(annotation) = self.pii.review.annotation_id(id, &range) {
@@ -875,7 +885,19 @@ impl DocumentView {
         {
             self.sync_identity_selection_after_history(cx);
         }
+        self.pii.version = self.pii.version.wrapping_add(1);
         self.sync_annotations(cx);
+        // Text changes emit Changed next and get its one debounced request.
+        if transaction.changes.iter().all(|change| {
+            change.edits.is_empty()
+                || change
+                    .edits
+                    .iter()
+                    .all(|edit| edit.range.is_empty() && edit.new_len == 0)
+        }) {
+            self.schedule_spellcheck(false, cx);
+            self.schedule_case_save(cx);
+        }
         cx.notify();
     }
     pub(crate) fn close_pii_popup(

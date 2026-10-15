@@ -311,7 +311,7 @@ fn header_pseudonymize_scans_once_and_the_panel_toggle_hides_the_review(
             .review
             .add_manual("Alice", 0..5, Category::Person)
             .unwrap();
-        app.sync_annotations(cx);
+        app.review_changed(cx);
         let range = app.pii.review.variant(id).unwrap().mentions[0].clone();
         let annotation = app.pii.review.annotation_id(id, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
@@ -358,7 +358,7 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
             .unwrap();
         review.keep(anna, Some(2..10));
         review.keep(kept, None);
-        app.sync_annotations(cx);
+        app.review_changed(cx);
         let range = app.pii.review.variant(anna).unwrap().mentions[0].clone();
         let annotation = app.pii.review.annotation_id(anna, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
@@ -427,7 +427,7 @@ fn keyboard_search_and_navigation_reach_virtualized_alias_targets(cx: &mut gpui:
                 .add_manual(&source, i * 7..i * 7 + 6, Category::Person)
                 .unwrap();
         }
-        app.sync_annotations(cx);
+        app.review_changed(cx);
         let annotation = app.pii.review.candidates()[0].id;
         app.activate_annotation(annotation, window, cx);
         app.pii.mapping.show_alias_choices();
@@ -649,7 +649,7 @@ fn prepare_applied(app: &mut DocumentView, source: &str, cx: &mut Context<Docume
     app.pii.review.ingest(source, detections).unwrap();
     app.apply_replacements(cx);
     assert_eq!(app.pii.review.remaining(), 0);
-    app.sync_annotations(cx);
+    app.review_changed(cx);
 }
 #[gpui::test]
 fn applied_highlights_restore_one_or_matching_originals_and_keep_survives_rescan(
@@ -793,7 +793,7 @@ fn long_original_enter_applies_this_one_and_alias_enter_only_confirms(
                 .review
                 .add_manual(&original, 0..original.len(), Category::Person)
                 .unwrap();
-            app.sync_annotations(cx);
+            app.review_changed(cx);
             app.activate_annotation(app.pii.review.candidates()[0].id, window, cx);
         });
         cx.run_until_parked();
@@ -1536,7 +1536,7 @@ fn popup_delete_keeps_but_alias_field_backspace_edits(cx: &mut gpui::TestAppCont
                 }],
             )
             .unwrap();
-        app.sync_annotations(cx);
+        app.review_changed(cx);
         app.activate_annotation(app.pii.review.candidates()[0].id, window, cx);
         window.focus(&app.pii.mapping.alias.read(cx).focus_handle(cx), cx);
     });

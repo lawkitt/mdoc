@@ -5,7 +5,7 @@
 use super::*;
 use mdoc_editor::Diagnostic;
 use mdoc_spell::{Accepted, Exclusions, LineCache, Options, Speller};
-use std::{collections::HashSet, ops::Range, sync::Mutex, time::Duration};
+use std::{collections::HashSet, ops::Range, time::Duration};
 
 /// Pause after an edit before rechecking, so a word being typed isn't
 /// flagged halfway through.
@@ -22,12 +22,18 @@ pub(crate) struct SpellState {
     /// Words ignored in this document ("Ignore in this document"). Session-only.
     ignored: HashSet<String>,
     ignored_generation: u64,
-    /// (editor revision, options, accepted-words generation) of the last
+    /// (editor revision, options, accepted words, review revision) of the last
     /// scheduled check.
-    scheduled: Option<(u64, Option<Options>, u64)>,
+    scheduled: Option<(u64, Option<Options>, u64, u64)>,
     generation: u64,
-    cache: Arc<Mutex<LineCache>>,
-    task: Option<gpui::Task<()>>,
+    cache: LineCache,
+    /// One worker owns the cache until it returns; only the latest request waits.
+    running: bool,
+    ready: bool,
+    delay: Option<gpui::Task<()>>,
+    worker: Option<gpui::Task<()>>,
+    #[cfg(test)]
+    snapshots: usize,
 }
 
 /// Spelling choices from Settings, or `None` when spellcheck is off there.
@@ -117,15 +123,27 @@ impl DocumentView {
         cx.notify();
     }
 
-    /// Check the current text in the background, after [`EDIT_DELAY`] when
-    /// `after_edit`. A newer call supersedes a pending one.
+    fn spellcheck_key(&self, cx: &App) -> (u64, Option<Options>, u64, u64) {
+        (
+            self.editor.read(cx).revision(),
+            self.spelling_options(),
+            self.accepted_generation(),
+            self.pii.version,
+        )
+    }
+
+    /// Debounce the request, not the copied document. One running check retains
+    /// its worker/cache; superseding input replaces only the latest request.
     pub(crate) fn schedule_spellcheck(&mut self, after_edit: bool, cx: &mut Context<Self>) {
-        let options = self.spelling_options();
-        let revision = self.editor.read(cx).revision();
-        self.spelling.scheduled = Some((revision, options, self.accepted_generation()));
-        self.spelling.generation += 1;
-        let Some(options) = options else {
-            self.spelling.task = None;
+        let key = self.spellcheck_key(cx);
+        if self.spelling.scheduled == Some(key) {
+            return;
+        }
+        self.spelling.scheduled = Some(key);
+        self.spelling.generation = self.spelling.generation.wrapping_add(1);
+        self.spelling.delay = None;
+        self.spelling.ready = false;
+        let Some(options) = key.1 else {
             self.spelling.loading = false;
             if !self.editor.read(cx).diagnostics().is_empty() {
                 self.editor
@@ -133,47 +151,83 @@ impl DocumentView {
             }
             return;
         };
+        self.spelling.loading = !Speller::is_loaded(options);
+        let generation = self.spelling.generation;
+        if after_edit {
+            self.spelling.delay = Some(cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(EDIT_DELAY).await;
+                let _ = this.update(cx, |this, cx| {
+                    if this.spelling.generation == generation {
+                        this.spelling.delay = None;
+                        this.spelling.ready = true;
+                        this.start_spellcheck(cx);
+                    }
+                });
+            }));
+        } else {
+            self.spelling.ready = true;
+            // All transactions/metadata edits in this effect cycle settle
+            // before taking a snapshot, including deferred editor events.
+            let weak = cx.entity().downgrade();
+            cx.defer(move |cx| {
+                let _ = weak.update(cx, |this, cx| {
+                    if this.spelling.generation == generation {
+                        this.start_spellcheck(cx);
+                    }
+                });
+            });
+        }
+    }
+
+    fn start_spellcheck(&mut self, cx: &mut Context<Self>) {
+        if self.spelling.running || !self.spelling.ready {
+            return;
+        }
+        if self.spelling.scheduled != Some(self.spellcheck_key(cx)) {
+            self.schedule_spellcheck(false, cx);
+            return;
+        }
+        let Some((revision, Some(options), _, _)) = self.spelling.scheduled else {
+            return;
+        };
+        self.spelling.ready = false;
+        self.spelling.running = true;
         let text = self.editor.read(cx).text().to_owned();
         let review = &self.pii.review;
-        // Proposed entities keep only the mixed-script check; applied aliases
-        // are never checked.
         let entities: Vec<Range<usize>> = review
             .candidates()
             .iter()
             .map(|o| o.range.clone())
             .collect();
         let aliases: Vec<Range<usize>> = review.applied().iter().map(|o| o.range.clone()).collect();
-        self.spelling.loading = !Speller::is_loaded(options);
         let accepted = self.accepted_words();
-        let cache = self.spelling.cache.clone();
+        let mut cache = std::mem::take(&mut self.spelling.cache);
         let generation = self.spelling.generation;
-        self.spelling.task = Some(cx.spawn(async move |this, cx| {
-            if after_edit {
-                cx.background_executor().timer(EDIT_DELAY).await;
-            }
-            let found = cx
-                .background_executor()
-                .spawn(async move {
-                    let speller = Speller::load(options).with_accepted(accepted);
-                    let mut structural = mdoc_editor::spell_exclusions(&text);
-                    structural.extend(aliases);
-                    let mut cache = cache.lock().unwrap_or_else(|e| e.into_inner());
-                    let exclusions = Exclusions {
-                        structural: &structural,
-                        entities: &entities,
-                    };
-                    speller.check_cached(&text, exclusions, &mut cache)
-                })
-                .await;
+        #[cfg(test)]
+        {
+            self.spelling.snapshots += 1;
+        }
+        let task = cx.background_executor().spawn(async move {
+            let speller = Speller::load(options).with_accepted(accepted);
+            let mut structural = mdoc_editor::spell_exclusions(&text);
+            structural.extend(aliases);
+            let exclusions = Exclusions {
+                structural: &structural,
+                entities: &entities,
+            };
+            let found = speller.check_cached(&text, exclusions, &mut cache);
+            (found, cache)
+        });
+        self.spelling.worker = Some(cx.spawn(async move |this, cx| {
+            let (found, cache) = task.await;
             let _ = this.update(cx, |this, cx| {
-                if this.spelling.generation != generation {
-                    return;
-                }
-                this.spelling.loading = false;
-                this.spelling.task = None;
-                // The text moved on without a reschedule (a load): render
-                // notices the stale revision and checks again.
-                if this.editor.read(cx).revision() == revision {
+                this.spelling.cache = cache;
+                this.spelling.running = false;
+                this.spelling.worker = None;
+                if this.spelling.generation == generation
+                    && this.editor.read(cx).revision() == revision
+                {
+                    this.spelling.loading = false;
                     let diagnostics = found
                         .into_iter()
                         .map(|range| Diagnostic { range })
@@ -181,20 +235,17 @@ impl DocumentView {
                     this.editor
                         .update(cx, |editor, cx| editor.set_diagnostics(diagnostics, cx));
                 }
+                // A newer request whose debounce elapsed gets the sole slot.
+                this.start_spellcheck(cx);
                 cx.notify();
             });
         }));
     }
 
-    /// Catch text loads and Settings changes that bypassed an explicit
-    /// schedule. Called from render; schedules at most once per change.
+    /// Catch text loads and Settings changes once; ordinary edits schedule their
+    /// own debounce. The key includes PII exclusions independently of text.
     pub(crate) fn ensure_spellcheck(&mut self, cx: &mut Context<Self>) {
-        let key = (
-            self.editor.read(cx).revision(),
-            self.spelling_options(),
-            self.accepted_generation(),
-        );
-        if self.spelling.scheduled != Some(key) {
+        if self.spelling.scheduled != Some(self.spellcheck_key(cx)) {
             self.schedule_spellcheck(false, cx);
         }
     }
@@ -273,5 +324,113 @@ impl DocumentView {
 
     pub(crate) fn spelling_control_off(&self) -> bool {
         configured_options(&self.preferences).is_none()
+    }
+}
+
+#[cfg(test)]
+mod scheduling_tests {
+    use super::*;
+    use crate::document_view_tests::boot;
+
+    #[gpui::test]
+    fn typing_captures_only_one_snapshot_after_the_debounce(cx: &mut gpui::TestAppContext) {
+        let (app, cx) = boot(cx);
+        let before = app.read_with(cx, |app, _| app.spelling.snapshots);
+        for word in ["The ", "parties ", "agree "] {
+            cx.simulate_input(word);
+        }
+        assert_eq!(app.read_with(cx, |app, _| app.spelling.snapshots), before);
+        cx.executor().advance_clock(EDIT_DELAY);
+        cx.run_until_parked();
+        app.read_with(cx, |app, cx| {
+            assert_eq!(app.spelling.snapshots, before + 1);
+            assert_eq!(app.editor.read(cx).text(), "The parties agree ");
+            assert!(app.editor.read(cx).diagnostics().is_empty());
+        });
+    }
+
+    #[gpui::test]
+    fn a_running_check_keeps_one_latest_request_and_rejects_stale_results(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (app, cx) = boot(cx);
+        let before = app.read_with(cx, |app, _| app.spelling.snapshots);
+        app.update(cx, |app, cx| {
+            app.editor
+                .update(cx, |editor, cx| editor.set_text("partys", cx));
+            app.schedule_spellcheck(false, cx);
+            app.start_spellcheck(cx);
+            assert!(app.spelling.running);
+            for text in ["agre", "The parties agree."] {
+                app.editor
+                    .update(cx, |editor, cx| editor.set_text(text, cx));
+                app.schedule_spellcheck(false, cx);
+                app.start_spellcheck(cx);
+            }
+            assert_eq!(app.spelling.snapshots, before + 1);
+        });
+        cx.run_until_parked();
+        app.read_with(cx, |app, cx| {
+            assert_eq!(
+                app.spelling.snapshots,
+                before + 2,
+                "only the final waiting request runs"
+            );
+            assert!(!app.spelling.running);
+            assert!(app.editor.read(cx).diagnostics().is_empty());
+        });
+    }
+
+    #[gpui::test]
+    fn theme_refresh_does_not_schedule_spelling_or_case_saves(cx: &mut gpui::TestAppContext) {
+        let (app, cx) = boot(cx);
+        app.update(cx, |app, cx| {
+            let case = cases::Case::new("Fixture".into(), &[], None);
+            app.case = Some(cases::CaseLink::of(&case));
+            let key = app.spelling.scheduled;
+            let snapshots = app.spelling.snapshots;
+            app.theme.set(Theme::Light);
+            app.sync_pii_theme(cx);
+            assert_eq!(app.spelling.scheduled, key);
+            assert_eq!(app.spelling.snapshots, snapshots);
+            assert!(app.case_save.is_none());
+        });
+    }
+
+    #[gpui::test]
+    fn entity_exclusions_refresh_without_editing_source_and_disable_rejects_work(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (app, cx) = boot(cx);
+        app.update(cx, |app, cx| {
+            app.editor.update(cx, |e, cx| e.set_text("partys", cx));
+        });
+        cx.run_until_parked();
+        app.read_with(cx, |app, cx| {
+            assert_eq!(app.editor.read(cx).diagnostics().len(), 1)
+        });
+        app.update(cx, |app, cx| {
+            app.pii
+                .review
+                .add_manual("partys", 0..6, pii::Category::Person)
+                .unwrap();
+            app.review_changed(cx);
+        });
+        cx.run_until_parked();
+        app.read_with(cx, |app, cx| {
+            assert!(app.editor.read(cx).diagnostics().is_empty())
+        });
+        app.update(cx, |app, cx| {
+            app.editor.update(cx, |e, cx| e.set_text("agre", cx));
+            app.schedule_spellcheck(false, cx);
+            app.start_spellcheck(cx);
+            app.spelling.off_here = true;
+            app.schedule_spellcheck(false, cx);
+        });
+        cx.run_until_parked();
+        app.read_with(cx, |app, cx| {
+            assert!(!app.spelling.running);
+            assert!(app.editor.read(cx).diagnostics().is_empty());
+        });
     }
 }

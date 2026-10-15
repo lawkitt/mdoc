@@ -101,7 +101,7 @@ impl DocumentView {
                     cx.notify();
                 });
                 self.pii.scans.push(config);
-                self.sync_annotations(cx);
+                self.review_changed(cx);
                 self.fade_in_candidates(cx);
             }
             Err(error) => {

@@ -473,7 +473,7 @@ impl DocumentView {
         self.pii.mapping.record_apply(before, after);
         self.pii.review.refresh(self.editor.read(cx).text());
         self.pii.error = None;
-        self.sync_annotations(cx);
+        self.review_changed(cx);
         self.restore_active_replacement(active, &edits, cx);
         cx.notify();
     }
@@ -569,7 +569,7 @@ impl DocumentView {
         let Some(edits) = self.revert_applied(&ids, false, cx) else {
             return;
         };
-        self.sync_annotations(cx);
+        self.review_changed(cx);
         let restored: std::collections::HashSet<_> = Self::edited_ranges(&edits)
             .into_iter()
             .map(|r| (r.start, r.end))
@@ -653,7 +653,7 @@ impl DocumentView {
         self.pii.mapping.record_kept(count, history);
         self.flash_notice(cx);
         self.pii.dismiss_popup();
-        self.sync_annotations(cx);
+        self.review_changed(cx);
         self.fade_out_kept(faded, cx);
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(None, cx));
