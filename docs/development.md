@@ -89,6 +89,13 @@ establish them. Do not distribute local user-provided fixtures.
 Measure runtime hotspots separately from the routine gate with `just perf`,
 which runs every ignored performance test serially (set `MDOC_PERF_PREVIEW` to
 a local PDF or DOCX to include preview timing). Run it on an idle machine.
+`MDOC_PERF_PROFILE=release just perf` uses the release profile, serial builds
+and unchanged ceilings. The runner attempts every check before returning failure.
+The scroll workload defaults to the public `coverage.docx`; `MD_PERF_FILE` can
+select another DOCX under `tests/fixtures/docx-preview`. Logs include actual editor
+widths; outer window dimensions alone are insufficient for comparisons.
+`review_host_performance` covers diagnostic density, proposed/applied review,
+before/after views and three-member case synchronization without a detector download.
 
 Use a fixed viewport, representative legal/OCR Markdown, and actual scroll/search
 positions; report profile, machine, latency, peak memory, and lifecycle results.

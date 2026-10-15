@@ -1356,12 +1356,11 @@ fn close_and_newer_request_discard_pending_completions(cx: &mut TestAppContext) 
 #[ignore]
 fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let file = std::env::var("MD_PERF_FILE")
-        .unwrap_or_else(|_| "adcourt-legal-opinion-meruna-trading-tax-and-14-pages.docx".into());
+    let file = std::env::var("MD_PERF_FILE").unwrap_or_else(|_| "coverage.docx".into());
     let source = base.join("tests/fixtures/docx-preview").join(file);
     let imported = import::convert(&source).unwrap();
     let (app, cx) = boot(cx);
-    // Preserve the original 1100px document viewport beside the 232px tab sidebar.
+    // Fixed outer window; the public coverage DOCX is the default workload.
     cx.simulate_resize(gpui::size(px(1332.), px(750.)));
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("large.md");
@@ -1406,10 +1405,11 @@ fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
         times.sort_by(f64::total_cmp);
         let p95 = times[times.len() * 95 / 100];
         eprintln!(
-            "MD_PERF state={state} bytes={} lines={} median_ms={:.2} p95_ms={p95:.2}",
+            "MD_PERF state={state} bytes={} lines={} median_ms={:.2} p95_ms={p95:.2} editor_width={:?}",
             imported.markdown.len(),
             imported.markdown.lines().count(),
-            times[times.len() / 2]
+            times[times.len() / 2],
+            app.read_with(cx, |v, cx| v.editor.read(cx).layout_width().map(f32::from)),
         );
         if p95 > 16.667 {
             failures.push(state);
