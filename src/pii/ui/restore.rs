@@ -205,7 +205,7 @@ impl DocumentView {
                 }
             }
         }
-        self.sync_annotations(cx);
+        self.review_changed(cx);
         self.update_title(window, cx);
         window.focus(&self.editor.read(cx).focus_handle(cx), cx);
         cx.notify();

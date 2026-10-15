@@ -44,7 +44,7 @@ impl DocumentView {
                     && let Some(result) = result
                 {
                     this.pii.review.apply_discovery(result);
-                    this.sync_annotations(cx);
+                    this.refresh_review_exclusions(cx);
                     cx.notify();
                 }
                 if this.pii.discovery_pending {

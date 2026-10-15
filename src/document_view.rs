@@ -148,6 +148,7 @@ impl DocumentView {
                     this.copy_feedback = None;
                     this.pii_edited(cx);
                     this.schedule_spellcheck(true, cx);
+                    this.schedule_case_save(cx);
                     this.generated_unedited = false;
                     this.blank_disposable = false;
                     this.dirty_cached = this.dirty(cx);

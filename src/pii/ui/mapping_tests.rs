@@ -47,7 +47,7 @@ fn seed(app: &mut DocumentView, source: &str, cx: &mut Context<DocumentView>) ->
         .unwrap()
         .id;
     app.pii.mapping.begin_review();
-    app.sync_annotations(cx);
+    app.review_changed(cx);
     (full, initials)
 }
 

@@ -688,7 +688,7 @@ impl DocumentView {
         if let Some(id) = selected_after {
             self.select_occurrence(Selection::Entity(id), cx);
         }
-        self.sync_annotations(cx);
+        self.review_changed(cx);
         self.restore_active_replacement(active, &edits, cx);
         cx.notify();
     }
@@ -883,7 +883,7 @@ impl DocumentView {
         self.pii.reviewing = true;
         self.pii.review.refresh(self.editor.read(cx).text());
         self.pii.dismiss_popup();
-        self.sync_annotations(cx);
+        self.review_changed(cx);
         cx.notify();
     }
     fn assign_selected_identity(&mut self, target: u64, cx: &mut Context<Self>) {

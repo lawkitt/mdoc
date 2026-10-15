@@ -67,7 +67,7 @@ impl DocumentView {
         if summary.proposed > 0 {
             self.pii.reviewing = true;
         }
-        self.sync_annotations(cx);
+        self.review_changed(cx);
         cx.notify();
         Ok(summary)
     }
@@ -101,7 +101,7 @@ impl DocumentView {
         if !missing.is_empty() {
             let text = self.editor.read(cx).text().to_owned();
             self.pii.review.seed(&missing, &text);
-            self.sync_annotations(cx);
+            self.review_changed(cx);
         }
         cx.notify();
     }

@@ -35,7 +35,7 @@ impl DocumentView {
         let linked = review.relink(&text, identities, &ids, history);
         self.case = Some(link);
         self.case_names = identities.to_vec();
-        self.sync_pii_theme(cx);
+        self.review_changed(cx);
         cx.notify();
         linked
     }

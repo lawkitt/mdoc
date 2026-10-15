@@ -134,7 +134,7 @@ fn pseudonymization_mappings_survive_switches_and_end_with_the_tab(cx: &mut Test
             .add_manual("Alice Alice", 0..5, Category::Person)
             .unwrap();
         view.pii.review.keep(id, None);
-        view.sync_pii_theme(cx);
+        view.review_changed(cx);
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
     cx.run_until_parked();
@@ -2776,7 +2776,7 @@ fn a_saved_case_is_encrypted_named_and_listed_in_the_sidebar(cx: &mut TestAppCon
     view.update(cx, |view, cx| {
         let anna = view.pii.review.applied()[0].step.identity;
         view.pii.review.rename_identity(anna, "BUYER").unwrap();
-        view.sync_pii_theme(cx);
+        view.review_changed(cx);
     });
     cx.executor()
         .advance_clock(std::time::Duration::from_secs(1));
