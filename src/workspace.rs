@@ -2325,8 +2325,8 @@ impl Workspace {
                 .h_full()
                 .flex()
                 .flex_col()
-                // The expand toggle floats right of the traffic lights; the
-                // rail starts below the title-bar row (ADR 0048).
+                // The title-bar row holds the traffic lights; the expand
+                // toggle leads the rail below them (ADR 0048).
                 .child(ui::title_drag(
                     div()
                         .flex_shrink_0()
@@ -2341,6 +2341,11 @@ impl Workspace {
                         .gap(px(2.))
                         .pb_2()
                         .flex_shrink_0()
+                        .child(sidebar_toggle(
+                            &self.rail_toggle_focus.clone().tab_stop(!revealed),
+                            false,
+                            theme,
+                        ))
                         .child(
                             ui::header_icon(
                                 "rail-search",
@@ -2484,13 +2489,9 @@ impl Workspace {
     }
 }
 
-const RAIL_WIDTH: f32 = 40.;
-
-/// Collapsed on macOS: the traffic lights are wider than the rail, so they
-/// and the toggle sit in a strip of window ground above the card (ADR 0048).
-fn collapsed_strip(sidebar_visible: bool) -> bool {
-    !sidebar_visible && cfg!(target_os = "macos")
-}
+/// The collapsed rail: on macOS wide enough for the traffic lights, so they
+/// never sit over the card and the card keeps its full height (ADR 0048).
+const RAIL_WIDTH: f32 = if cfg!(target_os = "macos") { 76. } else { 40. };
 const PANEL_WIDTH: f32 = 240.;
 const REVEAL_DELAY: Duration = Duration::from_millis(200);
 const REVEAL_GRACE: Duration = Duration::from_millis(300);
@@ -2766,36 +2767,6 @@ impl Render for Workspace {
                     .child(self.sidebar(cx))
                     .child(self.card(home, window, cx)),
             )
-            // Collapsed: the expand toggle sits right of the traffic lights,
-            // over the card's header, which leaves it room (ADR 0048).
-            // The collapsed strip moves the window like a title bar.
-            .when(collapsed_strip(self.sidebar_visible), |v| {
-                v.child(ui::title_drag(
-                    div()
-                        .absolute()
-                        .top_0()
-                        .left_0()
-                        .right_0()
-                        .h(px(style::CARD_MARGIN + style::HEADER_HEIGHT)),
-                    self.title.armed.clone(),
-                ))
-            })
-            .when(!self.sidebar_visible, |v| {
-                v.child(
-                    div()
-                        .absolute()
-                        .left(px(style::TRAFFIC_LIGHT_INSET))
-                        .top(px(style::CARD_MARGIN + (style::HEADER_HEIGHT - 32.) / 2.))
-                        .child(sidebar_toggle(
-                            &self
-                                .rail_toggle_focus
-                                .clone()
-                                .tab_stop(self.reveal == Reveal::Hidden),
-                            false,
-                            theme,
-                        )),
-                )
-            })
             .children(self.palette_view(cx))
             .when(self.settings.read(cx).open, |v| {
                 v.child(self.settings.clone())
@@ -2821,13 +2792,9 @@ impl Workspace {
             .flex_1()
             .min_w_0()
             .h_full()
-            .pt(px(style::CARD_MARGIN))
-            .pr(px(style::CARD_MARGIN))
-            .pb(px(style::CARD_MARGIN))
-            .when(!self.sidebar_visible, |v| v.pl(px(style::CARD_MARGIN)))
-            .when(collapsed_strip(self.sidebar_visible), |v| {
-                v.pt(px(style::CARD_MARGIN + style::HEADER_HEIGHT))
-            })
+            // One margin all round in both sidebar states: collapsing animates
+            // only the sidebar's width, nothing else moves (ADR 0048).
+            .p(px(style::CARD_MARGIN))
             .child(
                 div()
                     .id("content-card")
