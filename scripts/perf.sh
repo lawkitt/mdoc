@@ -24,6 +24,7 @@ run() {
 run mdoc host_performance_matrix
 run mdoc tabs_host_performance
 run mdoc review_host_performance
+run mdoc expanded_panel_projection_performance
 run mdoc pii_annotation_geometry_matrix
 run mdoc large_markdown_scroll_budget
 [ -n "${MDOC_PERF_PREVIEW:-}" ] && run mdoc local_preview_performance

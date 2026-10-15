@@ -6,7 +6,6 @@ use super::*;
 use crate::ui;
 use gpui::{AnyElement, Entity, Pixels, SharedString, Subscription, div, prelude::*};
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 
 /// Below this width the view shows one column at a time.
 const NARROW: f32 = 720.;
@@ -29,8 +28,8 @@ pub(crate) struct CompareState {
     /// Scroll offsets at the last render, to tell which pane moved.
     last: std::cell::Cell<(Pixels, Pixels)>,
     focus: FocusHandle,
-    /// Fingerprint of the editor revision and applied replacements shown.
-    key: u64,
+    /// Editor/review revisions and theme shown; warm renders do no content scan.
+    key: Option<(u64, u64, style::Theme)>,
     /// Per shown annotation id: its alias and its span in the original text.
     shown: HashMap<u64, (String, Range<usize>)>,
     /// The original text shown, and each mark's (original, pseudonymized) span.
@@ -70,21 +69,33 @@ pub(crate) fn compare_texts(after: &str, applied: &[(Range<usize>, &str)]) -> (S
 /// Map an offset in the original text to the pseudonymized text, given each
 /// mark's (original, pseudonymized) span; inside a mark it lands on its start.
 fn to_after(offset: usize, marks: &[(Range<usize>, Range<usize>)]) -> usize {
-    let mut shift = 0isize;
-    for (before, after) in marks {
-        if before.end <= offset {
-            shift += after.len() as isize - before.len() as isize;
-        } else if before.start < offset {
-            return after.start;
-        }
-    }
-    offset.saturating_add_signed(shift)
+    mapped_offset(offset, marks, false)
 }
 
-/// [`to_after`] the other way round.
 fn to_before(offset: usize, marks: &[(Range<usize>, Range<usize>)]) -> usize {
-    let swapped: Vec<_> = marks.iter().map(|(b, a)| (a.clone(), b.clone())).collect();
-    to_after(offset, &swapped)
+    mapped_offset(offset, marks, true)
+}
+
+fn mapped_offset(offset: usize, marks: &[(Range<usize>, Range<usize>)], reverse: bool) -> usize {
+    let pair = |(before, after): &(Range<usize>, Range<usize>)| {
+        if reverse {
+            (after.clone(), before.clone())
+        } else {
+            (before.clone(), after.clone())
+        }
+    };
+    let next = marks.partition_point(|mark| pair(mark).0.end <= offset);
+    if let Some(mark) = marks.get(next) {
+        let (from, to) = pair(mark);
+        if from.start < offset {
+            return to.start;
+        }
+    }
+    let shift = next.checked_sub(1).map_or(0, |previous| {
+        let (from, to) = pair(&marks[previous]);
+        to.end as isize - from.end as isize
+    });
+    offset.saturating_add_signed(shift)
 }
 
 #[cfg(test)]
@@ -147,7 +158,7 @@ impl DocumentView {
             right: gpui::ScrollHandle::new(),
             last: Default::default(),
             focus,
-            key: 0,
+            key: None,
             shown: HashMap::new(),
             before: String::new(),
             marks: Vec::new(),
@@ -306,6 +317,10 @@ impl DocumentView {
             window.focus(&state.focus, cx);
         }
         let editor = self.editor.read(cx);
+        let key = Some((editor.revision(), self.pii.version, self.theme.get()));
+        if key == state.key {
+            return;
+        }
         let text = editor.text();
         let applied: Vec<_> = self
             .pii
@@ -314,21 +329,6 @@ impl DocumentView {
             .iter()
             .filter(|a| text.get(a.range.clone()) == Some(a.step.after.as_ref()))
             .collect();
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        editor.revision().hash(&mut hasher);
-        for a in &applied {
-            (
-                a.id,
-                a.range.start,
-                a.step.after.as_ref(),
-                a.step.original(),
-            )
-                .hash(&mut hasher);
-        }
-        let key = hasher.finish() | 1;
-        if key == state.key {
-            return;
-        }
         if applied.is_empty() {
             self.close_compare(window, cx);
             return;
@@ -389,7 +389,7 @@ impl DocumentView {
                 rolls.push((right, alias.clone().into()));
             }
         }
-        let animate = state.key != 0 && !cx.reduce_motion();
+        let animate = state.key.is_some() && !cx.reduce_motion();
         let surface = theme.pdf_style().bg;
         let fill =
             |range: Range<usize>, c: Hsla| (range, Hsla { a: 0.22, ..c }, Hsla { a: 0.7, ..c });
@@ -405,6 +405,7 @@ impl DocumentView {
         let right_ghosts: Vec<_> = ghosts.into_iter().map(|(_, r)| fill(r, blue)).collect();
         let (original, current) = (state.original.clone(), state.current.clone());
         original.update(cx, |editor, cx| {
+            editor.set_markdown_style(crate::style::markdown_style(theme), cx);
             if editor.text() != before {
                 editor.set_text(before.clone(), cx);
             }
@@ -423,6 +424,7 @@ impl DocumentView {
             }
         });
         current.update(cx, |editor, cx| {
+            editor.set_markdown_style(crate::style::markdown_style(theme), cx);
             if editor.text() != text {
                 editor.set_text(text, cx);
             }

@@ -114,15 +114,10 @@ impl DocumentView {
         let link = self.case.as_ref()?;
         let theme = self.theme.get();
         let palette = theme.pdf_style();
-        let review = &self.pii.review;
         let absent: Vec<_> = self
             .case_names
             .iter()
-            .filter(|c| {
-                review
-                    .identity_by_alias(&c.alias)
-                    .is_none_or(|id| review.identity_count(id) == 0)
-            })
+            .filter(|c| !self.case_alias_is_present(&c.alias, cx))
             .collect();
         let open = self.case_names_open;
         Some(

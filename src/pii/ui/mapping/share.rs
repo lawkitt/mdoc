@@ -69,12 +69,8 @@ impl DocumentView {
         let copied = self.copy_feedback.is_some();
         let pending = self.pii.review.remaining();
         let applied = self.pii.review.applied().len();
-        let kept = self.pii.review.kept_mentions().len();
-        let entities = self
-            .replacement_entries(cx)
-            .iter()
-            .filter(|(_, i)| matches!(i, super::panel::PanelItem::Header))
-            .count();
+        let kept = self.kept_mention_count(cx);
+        let entities = self.replacement_entity_count(cx);
         let section = |title: &'static str| {
             div()
                 .pt_3()

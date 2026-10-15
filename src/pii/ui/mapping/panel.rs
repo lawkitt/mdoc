@@ -1,7 +1,9 @@
 //! Searchable replacement overview with inline occurrence context.
+use super::checklist::Tick;
 use super::*;
 use crate::ui;
 use gpui::{AnyElement, SharedString, div, prelude::*, uniform_list};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Clone)]
 pub(super) struct ReplacementRow {
@@ -13,6 +15,47 @@ pub(super) struct ReplacementRow {
     pub applied: usize,
     /// Mentions kept as originals (unticked, ADR 0048).
     pub kept: usize,
+    search_original: String,
+    search_alias: String,
+}
+
+impl ReplacementRow {
+    pub(super) fn tick(&self) -> Tick {
+        match (self.mentions > 0, self.kept > 0) {
+            (true, false) => Tick::On,
+            (true, true) => Tick::Mixed,
+            _ => Tick::Off,
+        }
+    }
+    fn visible(&self, query: &str, filter: PanelFilter) -> bool {
+        let shown = match filter {
+            PanelFilter::All => true,
+            PanelFilter::Proposed => self.mentions > self.applied,
+            PanelFilter::Applied => self.applied > 0,
+            PanelFilter::Kept => self.kept > 0,
+        };
+        shown
+            && (query.is_empty()
+                || self.search_original.contains(query)
+                || self.search_alias.contains(query))
+    }
+}
+
+/// Immutable derived data. A review/text revision rebuilds it once; expansion,
+/// filtering, selection and hover do not rescan document occurrences.
+pub(super) struct PanelProjection {
+    revision: (u64, u64),
+    rows: Vec<Arc<ReplacementRow>>,
+    members: HashMap<u64, Vec<PanelItem>>,
+    active_aliases: HashSet<String>,
+    kept: usize,
+}
+pub(super) struct EntriesCache {
+    revision: (u64, u64),
+    filter: PanelFilter,
+    query: String,
+    expanded: HashSet<u64>,
+    entries: Arc<[PanelEntry]>,
 }
 
 /// Every panel row is this tall, so the list stays a uniform list.
@@ -42,18 +85,17 @@ impl PanelItem {
 }
 
 impl DocumentView {
-    fn replacement_rows(&self, cx: &App) -> Arc<[ReplacementRow]> {
+    fn replacement_projection(&self, cx: &App) -> Arc<PanelProjection> {
+        let mapping = &self.pii.mapping;
+        let revision = (self.pii.version, self.editor.read(cx).revision());
+        if let Some(cached) = mapping.projection.borrow().as_ref()
+            && cached.revision == revision
+        {
+            return cached.clone();
+        }
         let review = &self.pii.review;
-        let query = self
-            .pii
-            .mapping
-            .search
-            .read(cx)
-            .value()
-            .trim()
-            .to_lowercase();
-        let mut rows = std::collections::BTreeMap::<u64, ReplacementRow>::new();
-        let filter = self.pii.mapping.filter;
+        let mut rows = BTreeMap::<u64, ReplacementRow>::new();
+        let mut members = HashMap::<u64, Vec<PanelItem>>::new();
         let mut add = |id, original: Arc<str>, applied: Option<bool>| {
             let Some(identity) = review.identity(id) else {
                 return;
@@ -66,6 +108,8 @@ impl DocumentView {
                 mentions: 0,
                 applied: 0,
                 kept: 0,
+                search_original: String::new(),
+                search_alias: String::new(),
             });
             match applied {
                 Some(applied) => {
@@ -81,6 +125,10 @@ impl DocumentView {
                 review.variant(c.variant),
             ) {
                 add(id, group.original.clone(), Some(false));
+                members
+                    .entry(id)
+                    .or_default()
+                    .push(PanelItem::Mention(c.id, c.range.clone()));
             }
         }
         for a in review.applied() {
@@ -89,19 +137,26 @@ impl DocumentView {
                 a.step.original_shared().clone(),
                 Some(true),
             );
+            members
+                .entry(a.step.identity)
+                .or_default()
+                .push(PanelItem::Mention(APPLIED_ID | a.id, a.range.clone()));
         }
+        let kept = self.kept_entries();
+        let kept_count = kept.len();
         let mut orphans = Vec::new();
-        for (_, original, identity) in self.kept_entries() {
-            match identity {
-                Some(id) if review.identity(id).is_some() => add(id, original, None),
-                Some(id) => orphans.push((id, original)),
-                None => {}
+        for (range, original, identity) in kept {
+            if let Some(id) = identity {
+                members.entry(id).or_default().push(PanelItem::Kept(range));
+                if review.identity(id).is_some() {
+                    add(id, original, None);
+                } else {
+                    orphans.push((id, original));
+                }
             }
         }
-        // An entity the review dropped once every mention was kept still
-        // shows, unticked, from its record (ADR 0048).
         for (id, original) in orphans {
-            let Some(name) = self.pii.mapping.kept_names.get(&original) else {
+            let Some(name) = mapping.kept_names.get(&original) else {
                 continue;
             };
             let row = rows.entry(id).or_insert_with(|| ReplacementRow {
@@ -112,67 +167,125 @@ impl DocumentView {
                 mentions: 0,
                 applied: 0,
                 kept: 0,
+                search_original: String::new(),
+                search_alias: String::new(),
             });
             row.kept += 1;
         }
-        rows.into_values()
-            .filter(|row| match filter {
-                PanelFilter::All => true,
-                PanelFilter::Proposed => row.mentions > row.applied,
-                PanelFilter::Applied => row.applied > 0,
-                PanelFilter::Kept => row.kept > 0,
+        for items in members.values_mut() {
+            items.sort_by_key(|item| match item {
+                PanelItem::Mention(_, range) | PanelItem::Kept(range) => range.start,
+                _ => 0,
+            });
+        }
+        let mut rows: Vec<_> = rows
+            .into_values()
+            .map(|mut row| {
+                row.search_original = row.original.to_lowercase();
+                row.search_alias = row.alias.to_lowercase();
+                Arc::new(row)
             })
-            .filter(|row| {
-                query.is_empty()
-                    || row.original.to_lowercase().contains(&query)
-                    || row.alias.to_lowercase().contains(&query)
-            })
-            .collect::<Vec<_>>()
-            .into()
+            .collect();
+        rows.sort_by_key(|row| Category::ALL.iter().position(|c| *c == row.category));
+        let active_aliases = rows
+            .iter()
+            .filter(|row| row.mentions > 0)
+            .map(|row| row.alias.clone())
+            .collect();
+        let projection = Arc::new(PanelProjection {
+            revision,
+            rows,
+            members,
+            active_aliases,
+            kept: kept_count,
+        });
+        *mapping.projection.borrow_mut() = Some(projection.clone());
+        projection
     }
 
-    /// Entity rows in order, each followed by its filtered mentions while it
-    /// is expanded (ADR 0033, ADR 0048).
-    pub(super) fn replacement_entries(&self, cx: &App) -> Vec<PanelEntry> {
+    fn replacement_query(&self, cx: &App) -> String {
+        self.pii
+            .mapping
+            .search
+            .read(cx)
+            .value()
+            .trim()
+            .to_lowercase()
+    }
+    pub(super) fn replacement_entity_count(&self, cx: &App) -> usize {
+        let query = self.replacement_query(cx);
+        self.replacement_projection(cx)
+            .rows
+            .iter()
+            .filter(|row| row.visible(&query, self.pii.mapping.filter))
+            .count()
+    }
+    pub(super) fn kept_mention_count(&self, cx: &App) -> usize {
+        self.replacement_projection(cx).kept
+    }
+    pub(in crate::pii::ui) fn case_alias_is_present(&self, alias: &str, cx: &App) -> bool {
+        self.replacement_projection(cx)
+            .active_aliases
+            .contains(alias)
+    }
+
+    /// Cached flat presentation over the immutable grouped projection. The
+    /// virtual list and keyboard navigation use the exact same row ordering.
+    pub(super) fn replacement_entries(&self, cx: &App) -> Arc<[PanelEntry]> {
         let mapping = &self.pii.mapping;
+        let query = self.replacement_query(cx);
+        let revision = (self.pii.version, self.editor.read(cx).revision());
+        if let Some(cached) = mapping.entries_cache.borrow().as_ref()
+            && cached.revision == revision
+            && cached.filter == mapping.filter
+            && cached.query == query
+            && cached.expanded == mapping.expanded
+        {
+            return cached.entries.clone();
+        }
+        let projection = self.replacement_projection(cx);
+        let rows: Vec<_> = projection
+            .rows
+            .iter()
+            .filter(|row| row.visible(&query, mapping.filter))
+            .collect();
         let mut entries = Vec::new();
-        // Grouped by category in the category menu's order; entities keep
-        // their order inside a group (ADR 0046).
-        let rank = |c: Category| Category::ALL.iter().position(|a| *a == c);
-        let mut rows = self.replacement_rows(cx).to_vec();
-        rows.sort_by_key(|row| rank(row.category));
         for (i, row) in rows.iter().enumerate() {
-            let row = Arc::new(row.clone());
             if i == 0 || rows[i - 1].category != row.category {
                 let group = rows[i..].iter().take_while(|r| r.category == row.category);
                 let (entities, mentions) =
                     group.fold((0, 0), |(e, m), r| (e + 1, m + r.mentions + r.kept));
-                entries.push((row.clone(), PanelItem::Category { entities, mentions }));
+                entries.push(((*row).clone(), PanelItem::Category { entities, mentions }));
             }
-            entries.push((row.clone(), PanelItem::Header));
-            if mapping.expanded.contains(&row.id) {
-                // Live and kept mentions together, in document order: an
-                // unticked mention stays where it was (ADR 0048).
-                let mut items: Vec<(usize, PanelItem)> = self
-                    .identity_occurrences(row.id)
-                    .into_iter()
-                    .filter(|(annotation, _)| {
-                        mapping.filter.shows(annotation & APPLIED_ID != 0)
-                            || mapping.filter == PanelFilter::Kept
-                    })
-                    .map(|(annotation, range)| (range.start, PanelItem::Mention(annotation, range)))
-                    .collect();
-                if !matches!(mapping.filter, PanelFilter::Proposed | PanelFilter::Applied) {
-                    items.extend(
-                        self.kept_of(row.id)
-                            .into_iter()
-                            .map(|(range, _)| (range.start, PanelItem::Kept(range))),
-                    );
+            entries.push(((*row).clone(), PanelItem::Header));
+            if mapping.expanded.contains(&row.id)
+                && let Some(items) = projection.members.get(&row.id)
+            {
+                for item in items {
+                    let shown = match item {
+                        PanelItem::Mention(annotation, _) => {
+                            mapping.filter.shows(annotation & APPLIED_ID != 0)
+                                || mapping.filter == PanelFilter::Kept
+                        }
+                        PanelItem::Kept(_) => {
+                            !matches!(mapping.filter, PanelFilter::Proposed | PanelFilter::Applied)
+                        }
+                        _ => false,
+                    };
+                    if shown {
+                        entries.push(((*row).clone(), item.clone()));
+                    }
                 }
-                items.sort_by_key(|(start, _)| *start);
-                entries.extend(items.into_iter().map(|(_, item)| (row.clone(), item)));
             }
         }
+        let entries: Arc<[PanelEntry]> = entries.into();
+        *mapping.entries_cache.borrow_mut() = Some(EntriesCache {
+            revision,
+            query,
+            filter: mapping.filter,
+            expanded: mapping.expanded.clone(),
+            entries: entries.clone(),
+        });
         entries
     }
 
@@ -489,7 +602,7 @@ impl DocumentView {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let mapping = &self.pii.mapping;
-        let entries = Arc::new(self.replacement_entries(cx));
+        let entries = self.replacement_entries(cx);
         let count = entries.len();
         let bounds = mapping.bounds.clone();
         let busy = self.pii.scanning();
@@ -526,7 +639,7 @@ impl DocumentView {
             .iter()
             .filter(|(_, item)| matches!(item, PanelItem::Header))
             .count();
-        let kept: usize = self.pii.review.kept_mentions().len();
+        let kept = self.kept_mention_count(cx);
         let applied = self.pii.review.applied().len();
         let summary = {
             let mut parts = Vec::new();
