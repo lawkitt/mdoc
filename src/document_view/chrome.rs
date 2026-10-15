@@ -116,7 +116,8 @@ impl DocumentView {
     /// The header's state-driven primary action (ADR 0048).
     fn primary(&self, cx: &App) -> Primary {
         if self.source_only {
-            return if self.ocr_required.is_none() && !self.auto_convert_pending && !self.job.busy() {
+            return if self.ocr_required.is_none() && !self.auto_convert_pending && !self.job.busy()
+            {
                 Primary::Convert
             } else {
                 Primary::None
@@ -147,37 +148,53 @@ impl DocumentView {
     fn primary_button(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let theme = self.theme.get();
         let copied = self.copy_feedback.is_some();
-        let modifier = if cfg!(target_os = "macos") { "⌘" } else { "Ctrl+" };
+        let modifier = if cfg!(target_os = "macos") {
+            "⌘"
+        } else {
+            "Ctrl+"
+        };
         Some(match self.primary(cx) {
             Primary::None => return None,
             Primary::Scanning => self.scan_status(cx)?,
-            Primary::Convert => ui::filled_button("primary-convert", "Convert to Markdown", theme, true)
-                .when(cfg!(test), |v| v.debug_selector(|| "primary-convert".into()))
-                .on_click(|_, window, cx| window.dispatch_action(Box::new(Import), cx))
-                .into_any_element(),
+            Primary::Convert => {
+                ui::filled_button("primary-convert", "Convert to Markdown", theme, true)
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "primary-convert".into())
+                    })
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(Import), cx))
+                    .into_any_element()
+            }
             Primary::Pseudonymize => ui::filled_button("Pseudonymize", "Pseudonymize", theme, true)
                 .when(cfg!(test), |v| v.debug_selector(|| "Pseudonymize".into()))
                 .on_click(cx.listener(|this, _, window, cx| {
-                    // Pseudonymize opens the panel (ADR 0048 decision 22).
-                    this.toggle_pii_review(window, cx);
+                    // Pseudonymize scans once and opens the panel; it never
+                    // closes it (ADR 0048 decision 22).
+                    let review = &this.pii.review;
+                    let fresh = !this.pii.reviewing
+                        && review.variants().is_empty()
+                        && review.applied().is_empty();
+                    if fresh {
+                        this.start_pii_scan(cx);
+                    }
                     if !this.replacements_open() {
                         this.toggle_replacements_panel(window, cx);
                     }
                 }))
                 .into_any_element(),
-            Primary::Apply(n) => ui::filled_button(
-                "primary-apply",
-                format!("Apply {n}"),
-                theme,
-                true,
-            )
-            .when(cfg!(test), |v| v.debug_selector(|| "primary-apply".into()))
-            .child(ui::key_hint(format!("{modifier}↩")))
-            .on_click(|_, window, cx| window.dispatch_action(Box::new(PiiApplyAll), cx))
-            .into_any_element(),
+            Primary::Apply(n) => {
+                ui::filled_button("primary-apply", format!("Apply {n}"), theme, true)
+                    .when(cfg!(test), |v| v.debug_selector(|| "primary-apply".into()))
+                    .child(ui::key_hint(format!("{modifier}↩")))
+                    .on_click(|_, window, cx| window.dispatch_action(Box::new(PiiApplyAll), cx))
+                    .into_any_element()
+            }
             Primary::CopyForAi => ui::filled_button(
                 "Copy for AI",
-                if copied && self.copied_for_ai { "Copied" } else { "Copy for AI" },
+                if copied && self.copied_for_ai {
+                    "Copied"
+                } else {
+                    "Copy for AI"
+                },
                 theme,
                 true,
             )
@@ -193,14 +210,20 @@ impl DocumentView {
             )
             .when(cfg!(test), |v| v.debug_selector(|| "primary-copy".into()))
             .min_w(px(72.))
-            .on_click(cx.listener(|this, _, window, cx| this.copy_markdown(&CopyMarkdown, window, cx)))
+            .on_click(
+                cx.listener(|this, _, window, cx| this.copy_markdown(&CopyMarkdown, window, cx)),
+            )
             .into_any_element(),
         })
     }
 
     /// The title-bar row above the document (ADR 0048): breadcrumb left;
     /// Source, panel toggle, ⋯ and the primary action right.
-    pub(super) fn header(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+    pub(super) fn header(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let has_preview = self.preview.pdf.is_some() || self.preview.source.is_some();
@@ -220,22 +243,28 @@ impl DocumentView {
             .flex_shrink(1.)
             .text_size(px(13.))
             .when_some(self.case.clone(), |v, link| {
-                v.child(div().size(px(7.)).rounded_full().flex_shrink_0().bg(link.color()))
-                    .child(
-                        div()
-                            .flex_shrink(1.)
-                            .min_w(px(24.))
-                            .truncate()
-                            .text_color(p.header_muted)
-                            .child(link.name.clone()),
-                    )
-                    .child(
-                        gpui::svg()
-                            .data(ui::Icon::ChevronRight.data())
-                            .size(px(12.))
-                            .flex_shrink_0()
-                            .text_color(p.header_muted),
-                    )
+                v.child(
+                    div()
+                        .size(px(7.))
+                        .rounded_full()
+                        .flex_shrink_0()
+                        .bg(link.color()),
+                )
+                .child(
+                    div()
+                        .flex_shrink(1.)
+                        .min_w(px(24.))
+                        .truncate()
+                        .text_color(p.header_muted)
+                        .child(link.name.clone()),
+                )
+                .child(
+                    gpui::svg()
+                        .data(ui::Icon::ChevronRight.data())
+                        .size(px(12.))
+                        .flex_shrink_0()
+                        .text_color(p.header_muted),
+                )
             })
             .when(self.pii.restore.is_some(), |v| {
                 v.child(
@@ -272,7 +301,11 @@ impl DocumentView {
                 v.child(
                     ui::header_icon(
                         "header-source",
-                        if self.preview.visible { "Hide the original file" } else { "Show the original file" },
+                        if self.preview.visible {
+                            "Hide the original file"
+                        } else {
+                            "Show the original file"
+                        },
                         ui::Icon::Source,
                         theme,
                         self.preview.visible,
@@ -285,20 +318,30 @@ impl DocumentView {
                 v.child(
                     ui::header_icon(
                         "header-panel",
-                        if self.replacements_open() { "Hide replacements" } else { "Show replacements" },
+                        if self.replacements_open() {
+                            "Hide replacements"
+                        } else {
+                            "Show replacements"
+                        },
                         ui::Icon::PanelRight,
                         theme,
                         self.replacements_open(),
                     )
                     .when(cfg!(test), |v| v.debug_selector(|| "header-panel".into()))
-                    .on_click(cx.listener(|this, _, window, cx| this.toggle_replacements_panel(window, cx))),
+                    .on_click(
+                        cx.listener(|this, _, window, cx| {
+                            this.toggle_replacements_panel(window, cx)
+                        }),
+                    ),
                 )
             })
             .child(self.more_button(cx))
             .children(self.primary_button(cx).map(|b| div().ml_1().child(b)));
         ui::title_drag(
             div()
-                .when(cfg!(test), |v| v.debug_selector(|| "document-toolbar".into()))
+                .when(cfg!(test), |v| {
+                    v.debug_selector(|| "document-toolbar".into())
+                })
                 .flex()
                 .items_center()
                 .gap_2()
@@ -337,7 +380,13 @@ impl DocumentView {
 
     fn more_menu(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
-        let modifier = |mac: &'static str, other: &'static str| if cfg!(target_os = "macos") { mac } else { other };
+        let modifier = |mac: &'static str, other: &'static str| {
+            if cfg!(target_os = "macos") {
+                mac
+            } else {
+                other
+            }
+        };
         let copy = self.can_copy_markdown() && !self.source_only;
         let has_text = copy && !self.editor.read(cx).text().is_empty();
         let aliases = copy && self.has_applied_aliases();
@@ -345,7 +394,10 @@ impl DocumentView {
         let misspelled = self.editor.read(cx).diagnostics().len();
         // A menu choice hands focus back to the document first, so the action
         // and the keys after it land there.
-        let run = |this: &mut Self, window: &mut Window, cx: &mut Context<Self>, action: Box<dyn gpui::Action>| {
+        let run = |this: &mut Self,
+                   window: &mut Window,
+                   cx: &mut Context<Self>,
+                   action: Box<dyn gpui::Action>| {
             this.more_open = false;
             if this.source_only {
                 window.focus(&this.focus, cx);
@@ -357,13 +409,20 @@ impl DocumentView {
         };
         // Disabled rows stay visible but do nothing.
         let guard = |enabled: bool, action: fn() -> Box<dyn gpui::Action>| {
-            move |this: &mut Self, _: &gpui::ClickEvent, window: &mut Window, cx: &mut Context<Self>| {
+            move |this: &mut Self,
+                  _: &gpui::ClickEvent,
+                  window: &mut Window,
+                  cx: &mut Context<Self>| {
                 if enabled {
                     run(this, window, cx, action());
                 }
             }
         };
-        let row = |id: &'static str, label: String, shortcut: Option<&'static str>, checked: Option<bool>, enabled: bool| {
+        let row = |id: &'static str,
+                   label: String,
+                   shortcut: Option<&'static str>,
+                   checked: Option<bool>,
+                   enabled: bool| {
             ui::menu_row(id, label, shortcut, checked, theme, enabled)
                 .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
         };
@@ -381,97 +440,107 @@ impl DocumentView {
                             this.more_open = false;
                             cx.notify();
                         }))
-                        .child(row("more-save", "Save".into(), Some(modifier("⌘S", "Ctrl+S")), None, copy)
-                            .on_click(cx.listener(guard(copy, || Box::new(Save)))))
-                        .child(row("more-save-as", "Save as…".into(), Some(modifier("⇧⌘S", "Ctrl+Shift+S")), None, copy)
-                            .on_click(cx.listener(guard(copy, || Box::new(SaveAs)))))
-                        .child(ui::menu_divider(theme))
-                        .child(row("more-copy-markdown", "Copy Markdown".into(), None, None, has_text)
-                            .on_click(cx.listener(guard(has_text, || Box::new(CopyMarkdown)))))
-                        .child(row("more-copy-for-ai", "Copy for AI".into(), None, None, aliases)
-                            .on_click(cx.listener(guard(aliases, || Box::new(CopyForAi)))))
-                        .child(row("more-paste-reply", "Paste AI reply…".into(), Some(modifier("⌥⇧⌘V", "Ctrl+Alt+Shift+V")), None, aliases)
-                            .on_click(cx.listener(guard(aliases, || Box::new(PasteAiResponse)))))
-                        .child(ui::menu_divider(theme))
-                        .child(row(
-                            "more-spelling",
-                            if spelling_on && misspelled > 0 { format!("Spelling · {misspelled}") } else { "Spelling".into() },
-                            None,
-                            Some(spelling_on),
-                            !self.spelling_control_off(),
+                        .child(
+                            row(
+                                "more-save",
+                                "Save".into(),
+                                Some(modifier("⌘S", "Ctrl+S")),
+                                None,
+                                copy,
+                            )
+                            .on_click(cx.listener(guard(copy, || Box::new(Save)))),
                         )
-                        .on_click(cx.listener(guard(!self.spelling_control_off(), || Box::new(ToggleDocumentSpelling)))))
-                        .child(row("more-rescan", "Rescan".into(), None, None, copy && !self.pii.scanning())
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.more_open = false;
-                                this.start_pii_scan(cx);
-                                window.refresh();
-                            })))
+                        .child(
+                            row(
+                                "more-save-as",
+                                "Save as…".into(),
+                                Some(modifier("⇧⌘S", "Ctrl+Shift+S")),
+                                None,
+                                copy,
+                            )
+                            .on_click(cx.listener(guard(copy, || Box::new(SaveAs)))),
+                        )
                         .child(ui::menu_divider(theme))
-                        .child(row("more-close", "Close tab".into(), Some(modifier("⌘W", "Ctrl+W")), None, true)
-                            .on_click(cx.listener(guard(true, || Box::new(Close))))),
+                        .child(
+                            row(
+                                "more-copy-markdown",
+                                "Copy Markdown".into(),
+                                None,
+                                None,
+                                has_text,
+                            )
+                            .on_click(cx.listener(guard(has_text, || Box::new(CopyMarkdown)))),
+                        )
+                        .child(
+                            row(
+                                "more-copy-for-ai",
+                                "Copy for AI".into(),
+                                None,
+                                None,
+                                aliases,
+                            )
+                            .on_click(cx.listener(guard(aliases, || Box::new(CopyForAi)))),
+                        )
+                        .child(
+                            row(
+                                "more-paste-reply",
+                                "Paste AI reply…".into(),
+                                Some(modifier("⌥⇧⌘V", "Ctrl+Alt+Shift+V")),
+                                None,
+                                aliases,
+                            )
+                            .on_click(cx.listener(guard(aliases, || Box::new(PasteAiResponse)))),
+                        )
+                        .child(ui::menu_divider(theme))
+                        .child(
+                            row(
+                                "more-spelling",
+                                if spelling_on && misspelled > 0 {
+                                    format!("Spelling · {misspelled}")
+                                } else {
+                                    "Spelling".into()
+                                },
+                                None,
+                                Some(spelling_on),
+                                !self.spelling_control_off(),
+                            )
+                            .on_click(
+                                cx.listener(guard(!self.spelling_control_off(), || {
+                                    Box::new(ToggleDocumentSpelling)
+                                })),
+                            ),
+                        )
+                        .child(
+                            row(
+                                "more-rescan",
+                                "Rescan".into(),
+                                None,
+                                None,
+                                copy && !self.pii.scanning(),
+                            )
+                            .on_click(cx.listener(
+                                |this, _, window, cx| {
+                                    this.more_open = false;
+                                    this.start_pii_scan(cx);
+                                    window.refresh();
+                                },
+                            )),
+                        )
+                        .child(ui::menu_divider(theme))
+                        .child(
+                            row(
+                                "more-close",
+                                "Close tab".into(),
+                                Some(modifier("⌘W", "Ctrl+W")),
+                                None,
+                                true,
+                            )
+                            .on_click(cx.listener(guard(true, || Box::new(Close)))),
+                        ),
                 ),
         )
         .with_priority(1)
         .into_any_element()
-    }
-
-    /// Copy Markdown floats in the editor's top-right corner, beside the text it
-    /// copies; it fades while there is no Markdown to copy.
-    pub(super) fn copy_button(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let theme = self.theme.get();
-        let enabled = self.can_copy_markdown() && !self.editor.read(cx).text().is_empty();
-        let copied = self.copy_feedback.is_some();
-        let (icon, text) = if copied && !self.copied_for_ai {
-            (ui::Icon::Check, "Copied")
-        } else {
-            (ui::Icon::Copy, "Copy")
-        };
-        // With aliases in the text, Copy for AI adds the placeholder notice (ADR 0041).
-        let for_ai = enabled && self.has_applied_aliases();
-        div()
-            .absolute()
-            .top(px(12.))
-            .right(px(20.))
-            .flex()
-            .gap_2()
-            .when(for_ai, |v| {
-                v.child(
-                    ui::floating_button(
-                        "Copy for AI",
-                        "Copy with a note asking the AI to keep placeholders",
-                        if copied && self.copied_for_ai {
-                            ui::Icon::Check
-                        } else {
-                            ui::Icon::Copy
-                        },
-                        if copied && self.copied_for_ai {
-                            "Copied"
-                        } else {
-                            "Copy for AI"
-                        },
-                        theme,
-                        true,
-                    )
-                    .min_w(px(122.))
-                    .when(cfg!(test), |v| v.debug_selector(|| "Copy for AI".into()))
-                    .on_click(
-                        cx.listener(|this, _, window, cx| this.copy_for_ai(&CopyForAi, window, cx)),
-                    ),
-                )
-            })
-            .child(
-                ui::floating_button("Copy Markdown", "Copy Markdown", icon, text, theme, enabled)
-                    // Wide enough for "Copied" so feedback does not resize the button.
-                    .min_w(px(92.))
-                    .when(cfg!(test), |v| v.debug_selector(|| "Copy Markdown".into()))
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        if enabled {
-                            this.copy_markdown(&CopyMarkdown, window, cx)
-                        }
-                    })),
-            )
-            .into_any_element()
     }
 
     pub(super) fn pane_switch(&self, cx: &mut Context<Self>) -> gpui::AnyElement {

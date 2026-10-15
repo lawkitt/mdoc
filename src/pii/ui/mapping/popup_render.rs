@@ -143,7 +143,7 @@ impl DocumentView {
             self.pii.popup_anchor.set(anchor);
         }
         let hidden = self.editor.read(cx).annotation_is_hidden(annotation);
-        let width = px(640.).min((available.size.width - px(16.)).max(px(200.)));
+        let width = px(640.).min((available.size.width - px(8.)).max(px(120.)));
         // Shortcut hints only where they fit: in a narrow popup, Windows'
         // "⇧Ctrl+⌫" pushes Keep original past the edge. The keys still work.
         let hints = width >= px(240.);
@@ -278,7 +278,9 @@ impl DocumentView {
                             v.debug_selector(|| "direct-cancel-addition".into())
                         })
                         .aria_label("Cancel addition")
-                        .on_click(cx.listener(|this, _, window, cx| this.cancel_addition(window, cx)))
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.cancel_addition(window, cx)),
+                        )
                         .into_any_element()
                     } else {
                         // Ticked: replaced. Unticking keeps the originals in scope.
@@ -309,20 +311,28 @@ impl DocumentView {
                             )
                             .child("Replace")
                             .tooltip(crate::style::tooltip(
-                                format!("Untick to keep the original ({})", scope_keys(mapping.scope, "⌫")),
+                                format!(
+                                    "Untick to keep the original ({})",
+                                    scope_keys(mapping.scope, "⌫")
+                                ),
                                 theme,
                             ))
-                            .on_click(cx.listener(|this, _, window, cx| this.keep_originals(window, cx)))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.keep_originals(window, cx)),
+                            )
                             .into_any_element()
                     })
                     .child(div().w(px(1.)).h(px(18.)).bg(palette.border))
                     .child(
+                        // The original → alias pair may wrap in a narrow bar.
                         self.with_dropdown(
                             div()
-                                .flex_shrink_0()
+                                .min_w_0()
                                 .flex()
+                                .flex_wrap()
                                 .items_center()
-                                .gap_2()
+                                .gap_x_2()
+                                .gap_y_1()
                                 .child(
                                     div()
                                         .id("direct-original")
@@ -334,7 +344,10 @@ impl DocumentView {
                                         .truncate()
                                         .text_color(palette.header_muted)
                                         .child(original.to_string())
-                                        .tooltip(crate::style::tooltip(original.to_string(), theme)),
+                                        .tooltip(crate::style::tooltip(
+                                            original.to_string(),
+                                            theme,
+                                        )),
                                 )
                                 .child(
                                     div()
@@ -354,44 +367,43 @@ impl DocumentView {
                                     cx,
                                 )
                             }),
-                        ),
+                        )
+                        .flex_shrink(1.)
+                        .min_w_0(),
                     )
                     .child(
                         self.with_dropdown(
-                            self.popup_control(
-                                "direct-category",
-                                "",
-                                enabled,
-                                cx,
-                            )
-                            .flex()
-                            .items_center()
-                            .gap(px(6.))
-                            .child(
-                                div()
-                                    .size(px(7.))
-                                    .rounded_full()
-                                    .bg(theme.category(identity.category)),
-                            )
-                            .child(format!("{} ▾", identity.category.label()))
-                            .aria_label("Correct category for selected scope")
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.pii.mapping.toggle_category_picker();
-                                cx.notify();
-                            }))
-                            .map(|v| match mapping.cue {
-                                Some((generation, true)) => {
-                                    let accent = theme.applied();
-                                    v.with_animation(
-                                        SharedString::from(format!("category-cue-{generation}")),
-                                        Animation::new(Duration::from_millis(850))
-                                            .with_easing(gpui::ease_in_out),
-                                        move |v, delta| v.bg(cue_glow(delta, 150., accent)),
-                                    )
-                                    .into_any_element()
-                                }
-                                _ => v.into_any_element(),
-                            }),
+                            self.popup_control("direct-category", "", enabled, cx)
+                                .flex()
+                                .items_center()
+                                .gap(px(6.))
+                                .child(
+                                    div()
+                                        .size(px(7.))
+                                        .rounded_full()
+                                        .bg(theme.category(identity.category)),
+                                )
+                                .child(format!("{} ▾", identity.category.label()))
+                                .aria_label("Correct category for selected scope")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.pii.mapping.toggle_category_picker();
+                                    cx.notify();
+                                }))
+                                .map(|v| match mapping.cue {
+                                    Some((generation, true)) => {
+                                        let accent = theme.applied();
+                                        v.with_animation(
+                                            SharedString::from(format!(
+                                                "category-cue-{generation}"
+                                            )),
+                                            Animation::new(Duration::from_millis(850))
+                                                .with_easing(gpui::ease_in_out),
+                                            move |v, delta| v.bg(cue_glow(delta, 150., accent)),
+                                        )
+                                        .into_any_element()
+                                    }
+                                    _ => v.into_any_element(),
+                                }),
                             mapping.pickers.category.then(|| {
                                 self.category_menu(
                                     identity,

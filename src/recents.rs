@@ -59,8 +59,7 @@ impl Recents {
             return false;
         }
         let previous = self.files.iter().position(|r| r.path == path);
-        let pseudonymized = pseudonymized
-            || previous.is_some_and(|i| self.files[i].pseudonymized);
+        let pseudonymized = pseudonymized || previous.is_some_and(|i| self.files[i].pseudonymized);
         if previous == Some(0) && self.files[0].pseudonymized == pseudonymized {
             return false;
         }

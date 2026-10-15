@@ -255,14 +255,21 @@ pub fn menu_row(
         .rounded_md()
         .text_size(px(13.))
         .focus_visible(move |s| s.bg(p.placeholder_bg))
-        .when(enabled, |v| v.cursor_pointer().hover(move |s| s.bg(p.placeholder_bg)))
+        .when(enabled, |v| {
+            v.cursor_pointer().hover(move |s| s.bg(p.placeholder_bg))
+        })
         .when(!enabled, |v| v.opacity(0.45))
         .child(
             div()
                 .w(px(14.))
                 .flex_shrink_0()
                 .when(checked == Some(true), |v| {
-                    v.child(gpui::svg().data(Icon::Check.data()).size(px(14.)).text_color(p.header_fg))
+                    v.child(
+                        gpui::svg()
+                            .data(Icon::Check.data())
+                            .size(px(14.))
+                            .text_color(p.header_fg),
+                    )
                 }),
         )
         .child(div().flex_1().min_w_0().truncate().child(label))
@@ -506,24 +513,15 @@ pub fn close_control(id: impl Into<gpui::ElementId>, theme: Theme) -> gpui::Stat
 pub enum Icon {
     Open,
     Save,
-    SaveAs,
     Sun,
     Moon,
     Settings,
     Anonymous,
-    Undo,
-    Redo,
-    Rescan,
-    Expand,
-    Collapse,
     Filter,
     Sidebar,
     Copy,
     Check,
     Ocr,
-    Spelling,
-    PasteReply,
-    Compare,
     Close,
     Home,
     Search,
@@ -536,9 +534,7 @@ pub enum Icon {
     Plus,
     Reply,
     ThemeSystem,
-    External,
     Download,
-    Stop,
 }
 
 impl Icon {
@@ -546,24 +542,15 @@ impl Icon {
         match self {
             Self::Open => include_bytes!("../resources/ui/open.svg"),
             Self::Save => include_bytes!("../resources/ui/save.svg"),
-            Self::SaveAs => include_bytes!("../resources/ui/save-as.svg"),
             Self::Sun => include_bytes!("../resources/ui/sun.svg"),
             Self::Moon => include_bytes!("../resources/ui/moon.svg"),
             Self::Settings => include_bytes!("../resources/ui/settings.svg"),
             Self::Anonymous => include_bytes!("../resources/ui/anonymous.svg"),
-            Self::Undo => include_bytes!("../resources/ui/undo.svg"),
-            Self::Redo => include_bytes!("../resources/ui/redo.svg"),
-            Self::Rescan => include_bytes!("../resources/ui/rescan.svg"),
-            Self::Expand => include_bytes!("../resources/ui/expand.svg"),
-            Self::Collapse => include_bytes!("../resources/ui/collapse.svg"),
             Self::Filter => include_bytes!("../resources/ui/filter.svg"),
             Self::Sidebar => include_bytes!("../resources/ui/sidebar.svg"),
             Self::Copy => include_bytes!("../resources/ui/copy.svg"),
             Self::Check => include_bytes!("../resources/ui/check.svg"),
             Self::Ocr => include_bytes!("../resources/ui/ocr.svg"),
-            Self::Spelling => include_bytes!("../resources/ui/spelling.svg"),
-            Self::PasteReply => include_bytes!("../resources/ui/paste-reply.svg"),
-            Self::Compare => include_bytes!("../resources/ui/compare.svg"),
             Self::Close => include_bytes!("../resources/ui/close.svg"),
             Self::Home => include_bytes!("../resources/ui/home.svg"),
             Self::Search => include_bytes!("../resources/ui/search.svg"),
@@ -576,50 +563,11 @@ impl Icon {
             Self::Plus => include_bytes!("../resources/ui/plus.svg"),
             Self::Reply => include_bytes!("../resources/ui/reply.svg"),
             Self::ThemeSystem => include_bytes!("../resources/ui/theme-system.svg"),
-            Self::External => include_bytes!("../resources/ui/external.svg"),
             Self::Download => include_bytes!("../resources/ui/download.svg"),
-            Self::Stop => include_bytes!("../resources/ui/stop.svg"),
         }
     }
 }
 
-pub fn icon_control(
-    id: &'static str,
-    label: &'static str,
-    icon: Icon,
-    theme: Theme,
-    enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
-    icon_button(id, label, icon, theme, enabled)
-        .when(cfg!(test), |v| v.debug_selector(move || id.into()))
-}
-/// [`icon_control`] for a mode: while `on` it stays pressed, with a tinted
-/// fill and the accent colour on its icon.
-pub fn toggle_icon_control(
-    id: &'static str,
-    label: impl Into<gpui::SharedString>,
-    icon: Icon,
-    theme: Theme,
-    on: bool,
-) -> gpui::Stateful<gpui::Div> {
-    let p = theme.pdf_style();
-    let label = label.into();
-    control_base(id, label.clone(), theme, true)
-        .p_0()
-        .size(px(32.))
-        .flex()
-        .items_center()
-        .justify_center()
-        .when(on, |v| v.bg(p.placeholder_bg))
-        .child(
-            gpui::svg()
-                .data(icon.data())
-                .size(px(18.))
-                .text_color(if on { theme.applied() } else { p.header_fg }),
-        )
-        .tooltip(crate::style::tooltip(label.to_string(), theme))
-        .when(cfg!(test), |v| v.debug_selector(move || id.into()))
-}
 /// A 32 px icon control whose label is its tooltip and accessible name.
 pub fn icon_button(
     id: impl Into<gpui::ElementId>,
@@ -724,8 +672,7 @@ pub fn caption_buttons(window: &Window, theme: Theme) -> Option<AnyElement> {
     if cfg!(target_os = "macos") || cfg!(test) {
         return None;
     }
-    if cfg!(target_os = "linux")
-        && matches!(window.window_decorations(), gpui::Decorations::Server)
+    if cfg!(target_os = "linux") && matches!(window.window_decorations(), gpui::Decorations::Server)
     {
         return None;
     }

@@ -27,8 +27,8 @@ mod ocr;
 #[cfg(test)]
 mod perf_tests;
 mod pii;
-mod recents;
 mod preview;
+mod recents;
 mod session_store;
 mod settings;
 mod settings_ui;

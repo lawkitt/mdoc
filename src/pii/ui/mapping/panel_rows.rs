@@ -31,13 +31,11 @@ fn start_drag(
 /// guide is blue only for applied mentions, dimmed unless selected (ADR 0044).
 struct RowColors {
     hover: Hsla,
-    band: Hsla,
     selected: Hsla,
     guide: Hsla,
     guide_selected: Hsla,
     guide_applied: Hsla,
     guide_applied_selected: Hsla,
-    separator: Hsla,
 }
 impl RowColors {
     fn new(theme: crate::style::Theme) -> Self {
@@ -45,10 +43,6 @@ impl RowColors {
         Self {
             hover: Hsla {
                 a: 0.35,
-                ..p.placeholder_bg
-            },
-            band: Hsla {
-                a: 0.55,
                 ..p.placeholder_bg
             },
             selected: p.placeholder_bg,
@@ -62,7 +56,6 @@ impl RowColors {
                 ..theme.applied()
             },
             guide_applied_selected: theme.applied(),
-            separator: p.border,
         }
     }
     fn guide_for(&self, applied: bool, selected: bool) -> Hsla {
@@ -142,7 +135,6 @@ impl DocumentView {
                 self.mention_row(base, &row, annotation, range, cx)
             }
             PanelItem::Header => self.header_row(base, &row, cx),
-            PanelItem::Controls(_) => div().into_any_element(),
         }
     }
 
@@ -223,12 +215,21 @@ impl DocumentView {
             .justify_center()
             .rounded(px(4.))
             .border_1()
-            .border_color(if filled { palette.header_fg } else { palette.header_muted })
+            .border_color(if filled {
+                palette.header_fg
+            } else {
+                palette.header_muted
+            })
             .when(filled, |v| v.bg(palette.header_fg))
             .text_color(palette.bg)
             .text_size(px(11.))
             .when(tick == Tick::On, |v| {
-                v.child(gpui::svg().data(ui::Icon::Check.data()).size(px(11.)).text_color(palette.bg))
+                v.child(
+                    gpui::svg()
+                        .data(ui::Icon::Check.data())
+                        .size(px(11.))
+                        .text_color(palette.bg),
+                )
             })
             .when(tick == Tick::Mixed, |v| {
                 v.child(div().w(px(7.)).h(px(1.5)).bg(palette.bg))
@@ -322,8 +323,17 @@ impl DocumentView {
                 .rounded_sm()
                 .font_family(style::markdown_style(theme).mono.family.clone())
                 .text_size(px(11.))
-                .text_color(if applied { theme.applied() } else { palette.header_muted })
-                .when(applied, |v| v.bg(Hsla { a: 0.14, ..theme.applied() }))
+                .text_color(if applied {
+                    theme.applied()
+                } else {
+                    palette.header_muted
+                })
+                .when(applied, |v| {
+                    v.bg(Hsla {
+                        a: 0.14,
+                        ..theme.applied()
+                    })
+                })
                 .cursor(gpui::CursorStyle::IBeam)
                 .child(row.alias.clone())
                 .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -336,8 +346,14 @@ impl DocumentView {
         let total = row.mentions + row.kept;
         let chevron = div()
             .id(SharedString::from(format!("entity-expand-{id}")))
-            .when(cfg!(test), |v| v.debug_selector(move || format!("entity-expand-{id}")))
-            .aria_label(if expanded { "Hide mentions" } else { "Show mentions" })
+            .when(cfg!(test), |v| {
+                v.debug_selector(move || format!("entity-expand-{id}"))
+            })
+            .aria_label(if expanded {
+                "Hide mentions"
+            } else {
+                "Show mentions"
+            })
             .flex_shrink_0()
             .w(px(28.))
             .h(px(20.))
@@ -368,70 +384,73 @@ impl DocumentView {
                 this.toggle_group(id, cx);
             }));
         base.aria_label(format!(
-                "{} to {}, {} mentions, {} applied, {} kept, {}",
-                row.original,
-                row.alias,
-                row.mentions,
-                row.applied,
-                row.kept,
-                if expanded { "expanded" } else { "collapsed" }
-            ))
-            .when(cfg!(test), |v| {
-                v.debug_selector(move || format!("identity-{id}"))
-            })
-            .px(px(ROW_INSET))
-            // The keyboard row is outlined, so it never reads as selected.
-            .when(mapping.cursor == Some(PanelCursor::Header(id)), |v| {
-                v.border_1().border_color(palette.header_muted).rounded_md()
-            })
-            .when(mapping.key_moving && link_hint, |v| {
-                v.border_1().border_color(palette.header_muted)
-            })
-            .child(self.tick_box(
+            "{} to {}, {} mentions, {} applied, {} kept, {}",
+            row.original,
+            row.alias,
+            row.mentions,
+            row.applied,
+            row.kept,
+            if expanded { "expanded" } else { "collapsed" }
+        ))
+        .when(cfg!(test), |v| {
+            v.debug_selector(move || format!("identity-{id}"))
+        })
+        .px(px(ROW_INSET))
+        // The keyboard row is outlined, so it never reads as selected.
+        .when(mapping.cursor == Some(PanelCursor::Header(id)), |v| {
+            v.border_1().border_color(palette.header_muted).rounded_md()
+        })
+        .when(mapping.key_moving && link_hint, |v| {
+            v.border_1().border_color(palette.header_muted)
+        })
+        .child(
+            self.tick_box(
                 SharedString::from(format!("entity-tick-{id}")),
                 tick,
                 cx,
                 move |this, cx| this.toggle_entity(id, cx),
             )
-            .when(cfg!(test), |v| v.debug_selector(move || format!("entity-tick-{id}"))))
-            .child(
-                div()
-                    .min_w_0()
-                    .flex_1()
-                    .truncate()
-                    .when(kept_only, |v| v.text_color(palette.header_muted))
-                    .child(row.original.to_string()),
-            )
-            .child(self.with_dropdown(category, menu))
-            .child(alias)
-            .child(chevron)
-            .on_mouse_down(
-                gpui::MouseButton::Right,
-                cx.listener(move |this, _, _, cx| {
-                    cx.stop_propagation();
-                    let menu = &mut this.pii.mapping.panel_menu;
-                    *menu = (*menu != Some(PanelMenu::Category(id)))
-                        .then_some(PanelMenu::Category(id));
-                    cx.notify();
-                }),
-            )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                window.focus(&this.pii.mapping.focus, cx);
-                this.pii.mapping.cursor = Some(PanelCursor::Header(id));
-                if let Some((annotation, _)) = this.identity_occurrences(id).into_iter().next() {
-                    this.panel_select_mention(annotation, cx);
-                    this.pii.mapping.cursor = Some(PanelCursor::Header(id));
-                }
+            .when(cfg!(test), |v| {
+                v.debug_selector(move || format!("entity-tick-{id}"))
+            }),
+        )
+        .child(
+            div()
+                .min_w_0()
+                .flex_1()
+                .truncate()
+                .when(kept_only, |v| v.text_color(palette.header_muted))
+                .child(row.original.to_string()),
+        )
+        .child(self.with_dropdown(category, menu))
+        .child(alias)
+        .child(chevron)
+        .on_mouse_down(
+            gpui::MouseButton::Right,
+            cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                let menu = &mut this.pii.mapping.panel_menu;
+                *menu = (*menu != Some(PanelMenu::Category(id))).then_some(PanelMenu::Category(id));
                 cx.notify();
-            }))
-            .on_drag(
-                PanelDrag::Entity {
-                    identity: id,
-                    original: row.original.clone(),
-                },
-                start_drag(cx.entity().downgrade(), theme),
-            )
-            .into_any_element()
+            }),
+        )
+        .on_click(cx.listener(move |this, _, window, cx| {
+            window.focus(&this.pii.mapping.focus, cx);
+            this.pii.mapping.cursor = Some(PanelCursor::Header(id));
+            if let Some((annotation, _)) = this.identity_occurrences(id).into_iter().next() {
+                this.panel_select_mention(annotation, cx);
+                this.pii.mapping.cursor = Some(PanelCursor::Header(id));
+            }
+            cx.notify();
+        }))
+        .on_drag(
+            PanelDrag::Entity {
+                identity: id,
+                original: row.original.clone(),
+            },
+            start_drag(cx.entity().downgrade(), theme),
+        )
+        .into_any_element()
     }
 
     fn mention_selected(&self, annotation: u64) -> bool {
@@ -500,7 +519,9 @@ impl DocumentView {
                 cx,
                 move |this, cx| this.toggle_mention(annotation, cx),
             )
-            .when(cfg!(test), |v| v.debug_selector(move || format!("mention-tick-{annotation}"))),
+            .when(cfg!(test), |v| {
+                v.debug_selector(move || format!("mention-tick-{annotation}"))
+            }),
         )
         .child(div().min_w_0().flex_1().text_ellipsis().child(
             StyledText::new(format!("{before}{word}{after}")).with_highlights([(
@@ -621,13 +642,4 @@ impl DocumentView {
         window.focus(&self.pii.mapping.focus, cx);
         cx.notify();
     }
-}
-
-/// The compact applied marker in panel rows, in the applied-alias blue.
-fn applied_check(theme: crate::style::Theme) -> gpui::Svg {
-    gpui::svg()
-        .data(ui::Icon::Check.data())
-        .size(px(12.))
-        .flex_shrink_0()
-        .text_color(theme.applied())
 }

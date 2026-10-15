@@ -592,7 +592,10 @@ fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).theme_choice, style::ThemeChoice::Dark);
         assert_eq!(tabs.read(cx).theme.get(), Theme::Dark);
-        assert_eq!(tabs.read(cx).snapshot(cx).theme_choice, style::ThemeChoice::Dark);
+        assert_eq!(
+            tabs.read(cx).snapshot(cx).theme_choice,
+            style::ThemeChoice::Dark
+        );
     });
 }
 
@@ -1837,7 +1840,8 @@ fn document_header_keeps_its_actions_in_a_narrow_window_in_both_themes(cx: &mut 
     let (tabs, cx) = boot(cx, Session::default());
     let view = active(&tabs, cx);
     view.update(cx, |view, cx| {
-        view.editor.update(cx, |e, cx| e.set_text("Anna Petrova signed.", cx))
+        view.editor
+            .update(cx, |e, cx| e.set_text("Anna Petrova signed.", cx))
     });
     cx.simulate_resize(size(px(720.), px(480.)));
     for theme in [Theme::Dark, Theme::Light] {
@@ -1859,7 +1863,11 @@ fn document_header_keeps_its_actions_in_a_narrow_window_in_both_themes(cx: &mut 
                 // One header row (ADR 0048): ⋯ and the primary action inside it.
                 let header = cx.debug_bounds("document-toolbar").unwrap();
                 assert_eq!(header.size.height, px(style::HEADER_HEIGHT));
-                let primary = if source_only { "primary-convert" } else { "Pseudonymize" };
+                let primary = if source_only {
+                    "primary-convert"
+                } else {
+                    "Pseudonymize"
+                };
                 for selector in ["header-more", primary] {
                     let bounds = cx.debug_bounds(selector).unwrap();
                     assert!(
@@ -3482,4 +3490,3 @@ fn a_crash_report_is_previewed_before_it_is_copied(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("crash-bar").is_none());
     tabs.read_with(cx, |tabs, _| assert!(tabs.crash.is_none()));
 }
-

@@ -108,9 +108,6 @@ impl PanelFilter {
             Self::Kept => false,
         }
     }
-    pub(super) fn shows_kept(self) -> bool {
-        matches!(self, Self::All | Self::Kept)
-    }
 }
 
 /// The keyboard row in the panel list: a group header or a mention.
@@ -177,7 +174,7 @@ pub(super) struct MappingUi {
     pub(super) cursor: Option<PanelCursor>,
     /// A ⌥↑/↓ move is held: `dragging`/`drop_target` describe it.
     pub(super) key_moving: bool,
-    /// The selection came from the panel: inline controls, no popup.
+    /// The selection came from the panel: no popup.
     pub(super) panel_selected: bool,
     pub(super) panel_menu: Option<PanelMenu>,
     /// The group whose alias is being renamed in place, and its draft.
@@ -186,7 +183,6 @@ pub(super) struct MappingUi {
     /// Hides the footer's after-action notice once it times out (ADR 0033).
     notice: Option<gpui::Task<()>>,
     previous_focus: Option<FocusHandle>,
-    controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
     scroll: gpui::ScrollHandle,
     list_scroll: gpui::UniformListScrollHandle,
     pub(super) focus: FocusHandle,
@@ -409,7 +405,6 @@ impl MappingUi {
             header_alias: input("New alias"),
             notice: None,
             previous_focus: None,
-            controls: Default::default(),
             scroll: gpui::ScrollHandle::new(),
             list_scroll: gpui::UniformListScrollHandle::new(),
             focus: cx.focus_handle(),

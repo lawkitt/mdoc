@@ -5,23 +5,6 @@ use super::*;
 use gpui::prelude::*;
 
 impl DocumentView {
-    /// The mention whose inline controls show: selected from the panel, under
-    /// the keyboard row, with no popup open.
-    pub(super) fn inline_controls_for(&self) -> Option<u64> {
-        let mapping = &self.pii.mapping;
-        if !mapping.panel_selected || self.pii.popup.is_some() {
-            return None;
-        }
-        match mapping.cursor {
-            Some(PanelCursor::Mention(annotation))
-                if self.active_annotation() == Some(annotation) =>
-            {
-                Some(annotation)
-            }
-            _ => None,
-        }
-    }
-
     /// Select a mention from the panel: the editor scrolls to and outlines it,
     /// inline controls replace the popup.
     pub(in crate::pii::ui) fn panel_select_mention(
@@ -75,7 +58,7 @@ impl DocumentView {
         match item {
             PanelItem::Header => Some(PanelCursor::Header(row.id)),
             PanelItem::Mention(annotation, _) => Some(PanelCursor::Mention(*annotation)),
-            PanelItem::Controls(_) | PanelItem::Category { .. } => None,
+            PanelItem::Category { .. } => None,
         }
     }
 

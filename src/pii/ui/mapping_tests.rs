@@ -221,7 +221,7 @@ fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpu
                     && panel.bottom() <= px(height),
                 "panel {panel:?}"
             );
-            for control in ["close-replacements", "apply-identity-map"] {
+            for control in ["replacement-filter", "review-rescan"] {
                 let bounds = cx.debug_bounds(control).unwrap();
                 assert!(
                     bounds.left() >= panel.left()
@@ -233,7 +233,7 @@ fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpu
             }
             assert!(cx.debug_bounds("copy-for-ai").is_none());
             assert!(cx.debug_bounds("pseudonym-review-bar").is_none());
-            let apply = cx.debug_bounds("apply-identity-map").unwrap().center();
+            let apply = cx.debug_bounds("primary-apply").unwrap().center();
             cx.simulate_click(apply, Default::default());
             cx.run_until_parked();
             app.update(cx, |app, cx| {
@@ -630,7 +630,7 @@ fn visible_alias_draft_and_apply_share_one_undo_step(cx: &mut gpui::TestAppConte
             cx.run_until_parked();
             cx.update(|window, cx| window.draw(cx).clear(cx));
             assert!(cx.debug_bounds("rename-identity").is_none());
-            let apply = cx.debug_bounds("apply-identity-map").unwrap();
+            let apply = cx.debug_bounds("primary-apply").unwrap();
             cx.simulate_click(apply.center(), Default::default());
             cx.run_until_parked();
             app.update_in(cx, |app, window, cx| {
@@ -951,7 +951,7 @@ fn undo_replacement_keeps_a_separated_homonym_on_its_identity(cx: &mut gpui::Tes
 }
 
 #[gpui::test]
-fn panel_mention_undo_icon_reverts_only_that_mention(cx: &mut gpui::TestAppContext) {
+fn unticking_an_applied_mention_restores_only_its_original(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     for theme in [crate::Theme::Dark, crate::Theme::Light] {
         let source = "Павлова М.С. · Павлова М.С.";
@@ -964,42 +964,37 @@ fn panel_mention_undo_icon_reverts_only_that_mention(cx: &mut gpui::TestAppConte
             app.apply_scope(cx);
             assert_eq!(app.editor.read(cx).text(), "ORG_1 · ORG_1");
         });
-        // Selected from the panel, the row's inline Undo is the only undo.
-        let annotation = app.update(cx, |app, cx| {
+        // The mention row's checkbox keeps this original (ADR 0048).
+        let (annotation, identity) = app.update(cx, |app, cx| {
             let annotation = app.active_annotation().unwrap();
             app.panel_select_mention(annotation, cx);
-            annotation
+            (annotation, app.selected_entity().unwrap())
         });
-        cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear(cx));
-        let selector = Box::leak(format!("mention-undo-{annotation}").into_boxed_str());
-        assert!(cx.debug_bounds(selector).is_none());
-        assert!(cx.debug_bounds("inline-undo").is_some());
-        // Unselected, a hovered applied row offers its undo icon.
         app.update(cx, |app, cx| {
-            app.pii.dismiss_popup();
-            app.pii.mapping.panel_selected = false;
-            app.pii.mapping.hovered = Some(annotation);
+            app.pii.mapping.expanded.insert(identity);
             cx.notify();
         });
         cx.run_until_parked();
         cx.update(|window, cx| window.draw(cx).clear(cx));
-        let undo = cx
-            .debug_bounds(selector)
-            .expect("a hovered applied mention row offers undo");
+        let tick = cx
+            .debug_bounds(Box::leak(
+                format!("mention-tick-{annotation}").into_boxed_str(),
+            ))
+            .expect("an applied mention row has a checkbox");
         let panel = cx.debug_bounds("identity-panel").unwrap();
-        assert!(undo.left() >= panel.left() && undo.right() <= panel.right());
-        cx.simulate_click(undo.center(), Default::default());
+        assert!(tick.left() >= panel.left() && tick.right() <= panel.right());
+        cx.simulate_click(tick.center(), Default::default());
         cx.run_until_parked();
         app.update(cx, |app, cx| {
             assert_eq!(app.editor.read(cx).text(), "Павлова М.С. · ORG_1");
             assert_eq!(app.pii.review.applied().len(), 1);
+            assert_eq!(app.entity_tick(identity), super::checklist::Tick::Mixed);
         });
     }
 }
 
 #[gpui::test]
-fn group_rows_toggle_and_scope_outlines_follow_group_chip_and_hover(cx: &mut gpui::TestAppContext) {
+fn entity_rows_jump_chevrons_expand_and_selection_survives_collapse(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let identity = app.update(cx, |app, cx| {
@@ -1007,52 +1002,111 @@ fn group_rows_toggle_and_scope_outlines_follow_group_chip_and_hover(cx: &mut gpu
         app.pii.review.variant_identity(initials).unwrap()
     });
     cx.run_until_parked();
-    let selector = Box::leak(format!("identity-{identity}").into_boxed_str());
-    let click_row = |cx: &mut gpui::VisualTestContext| {
-        cx.update(|window, cx| window.draw(cx).clear(cx));
-        let row = cx.debug_bounds(selector).unwrap();
-        cx.simulate_click(row.center(), Default::default());
+    let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
+    let click = |cx: &mut gpui::VisualTestContext, selector: String| {
+        draw(cx);
+        let bounds = cx
+            .debug_bounds(Box::leak(selector.into_boxed_str()))
+            .unwrap();
+        cx.simulate_click(bounds.center(), Default::default());
         cx.run_until_parked();
-        cx.update(|window, cx| window.draw(cx).clear(cx));
+        draw(cx);
     };
     let outlines = |cx: &mut gpui::VisualTestContext| {
         app.read_with(cx, |app, cx| app.editor.read(cx).outlines().len())
     };
-    // A header click only expands: nothing is selected (ADR 0033).
-    click_row(cx);
+    // An entity row click jumps to its first mention, revealing its row
+    // (ADR 0048).
+    click(cx, format!("identity-{identity}"));
+    let first = app.read_with(cx, |app, _| app.identity_occurrences(identity)[0].0);
     app.read_with(cx, |app, _| {
         assert!(app.pii.mapping.expanded.contains(&identity));
-        assert_eq!(app.selected_entity(), None);
+        assert_eq!(app.active_annotation(), Some(first));
         assert!(app.pii.popup.is_none());
     });
-    let first = app.read_with(cx, |app, _| app.identity_occurrences(identity)[0].0);
-    let mention = cx
-        .debug_bounds(Box::leak(format!("mention-{first}").into_boxed_str()))
-        .unwrap();
-    cx.simulate_click(mention.center(), Default::default());
-    cx.run_until_parked();
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-    // A panel selection shows inline controls instead of the popup; its
-    // scope starts at this mention and the selector widens the outline.
+    // The chevron hides and shows the mentions.
+    click(cx, format!("entity-expand-{identity}"));
+    app.read_with(cx, |app, _| {
+        assert!(!app.pii.mapping.expanded.contains(&identity))
+    });
+    click(cx, format!("entity-expand-{identity}"));
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.expanded.contains(&identity))
+    });
+    click(cx, format!("mention-{first}"));
     app.read_with(cx, |app, _| {
         assert_eq!(app.selected_entity(), Some(identity));
         assert!(app.pii.popup.is_none());
         assert!(app.pii.mapping.panel_selected);
     });
-    assert!(cx.debug_bounds("inline-controls").is_some());
     assert_eq!(outlines(cx), 1);
-    let same = cx.debug_bounds("inline-scope-same").unwrap().center();
-    cx.simulate_click(same, Default::default());
-    cx.run_until_parked();
-    cx.update(|window, cx| window.draw(cx).clear(cx));
-    // Same wording: both initials.
-    assert_eq!(outlines(cx), 2);
     // Collapsing leaves the selection alone.
-    click_row(cx);
+    click(cx, format!("entity-expand-{identity}"));
     app.read_with(cx, |app, _| {
         assert!(!app.pii.mapping.expanded.contains(&identity));
         assert_eq!(app.selected_entity(), Some(identity));
     });
+}
+
+#[gpui::test]
+fn entity_and_mention_checkboxes_keep_originals_and_tick_again(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let identity = app.update(cx, |app, cx| {
+        let (_, initials) = seed(app, source, cx);
+        app.pii.review.variant_identity(initials).unwrap()
+    });
+    cx.run_until_parked();
+    let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
+    let click = |cx: &mut gpui::VisualTestContext, selector: String| {
+        draw(cx);
+        let bounds = cx
+            .debug_bounds(Box::leak(selector.into_boxed_str()))
+            .unwrap();
+        cx.simulate_click(bounds.center(), Default::default());
+        cx.run_until_parked();
+        draw(cx);
+    };
+    let live = |cx: &mut gpui::VisualTestContext| {
+        app.read_with(cx, |app, _| app.identity_occurrences(identity).len())
+    };
+    let before = live(cx);
+    assert!(before > 1);
+    // Unticking keeps every original; the row stays, unticked; text is unchanged.
+    click(cx, format!("entity-tick-{identity}"));
+    assert_eq!(live(cx), 0);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.entity_tick(identity), super::checklist::Tick::Off);
+        assert_eq!(app.editor.read(cx).text(), source);
+    });
+    assert!(
+        cx.debug_bounds(Box::leak(format!("identity-{identity}").into_boxed_str()))
+            .is_some()
+    );
+    // Undo brings the tick back; ticking again does the same.
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.editor.read(cx).focus_handle(cx), cx);
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    assert_eq!(live(cx), before);
+    click(cx, format!("entity-tick-{identity}"));
+    click(cx, format!("entity-tick-{identity}"));
+    assert_eq!(live(cx), before);
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.entity_tick(identity), super::checklist::Tick::On)
+    });
+    // A mention's checkbox keeps only that mention: the entity is mixed.
+    click(cx, format!("entity-expand-{identity}"));
+    let first = app.read_with(cx, |app, _| app.identity_occurrences(identity)[0].0);
+    click(cx, format!("mention-tick-{first}"));
+    assert_eq!(live(cx), before - 1);
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.entity_tick(identity), super::checklist::Tick::Mixed)
+    });
+    // Ticking a mixed entity proposes the kept mention again.
+    click(cx, format!("entity-tick-{identity}"));
+    assert_eq!(live(cx), before);
 }
 
 #[gpui::test]
@@ -1185,7 +1239,7 @@ fn dragging_a_mention_over_free_panel_space_offers_the_next_alias(cx: &mut gpui:
 }
 
 #[gpui::test]
-fn panel_groups_expand_independently_filter_and_edit_from_headers(cx: &mut gpui::TestAppContext) {
+fn panel_groups_expand_independently_filter_and_edit_from_rows(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (full, initials) = app.update(cx, |app, cx| {
@@ -1206,21 +1260,23 @@ fn panel_groups_expand_independently_filter_and_edit_from_headers(cx: &mut gpui:
         cx.simulate_click(at, Default::default());
         cx.run_until_parked();
     };
-    // Two groups stay open together.
-    click(cx, format!("identity-{full}"));
-    click(cx, format!("identity-{initials}"));
+    // Groups open independently from their chevrons (ADR 0048).
+    click(cx, format!("entity-expand-{full}"));
+    click(cx, format!("entity-expand-{initials}"));
     app.read_with(cx, |app, _| {
         assert!(app.pii.mapping.expanded.contains(&full));
         assert!(app.pii.mapping.expanded.contains(&initials));
         assert_eq!(app.selected_entity(), None);
     });
-    // The e-mail group is still collapsed, so the button expands all; then
-    // nothing is collapsed and it collapses every group.
-    click(cx, "replacement-expand-all".into());
-    app.read_with(cx, |app, _| assert_eq!(app.pii.mapping.expanded.len(), 3));
-    click(cx, "replacement-expand-all".into());
-    app.read_with(cx, |app, _| assert!(app.pii.mapping.expanded.is_empty()));
-    click(cx, "replacement-expand-all".into());
+    let email = app.read_with(cx, |app, _| {
+        app.pii
+            .review
+            .active_identities()
+            .into_iter()
+            .find(|id| *id != full && *id != initials)
+            .unwrap()
+    });
+    click(cx, format!("entity-expand-{email}"));
     app.read_with(cx, |app, cx| {
         assert_eq!(app.pii.mapping.expanded.len(), 3);
         let entries = app.replacement_entries(cx);
@@ -1273,8 +1329,15 @@ fn panel_groups_expand_independently_filter_and_edit_from_headers(cx: &mut gpui:
         assert_eq!(app.pii.review.identity(initials).unwrap().alias, "CLIENT");
         assert_eq!(app.pii.mapping.header_edit, None);
     });
-    // Header category: the dropdown recategorizes the entity.
-    click(cx, format!("header-category-{initials}"));
+    // Right-clicking an entity row offers its category (ADR 0048).
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let row = cx
+        .debug_bounds(Box::leak(format!("identity-{initials}").into_boxed_str()))
+        .unwrap()
+        .center();
+    cx.simulate_mouse_down(row, gpui::MouseButton::Right, Default::default());
+    cx.simulate_mouse_up(row, gpui::MouseButton::Right, Default::default());
+    cx.run_until_parked();
     click(cx, "panel-category-PERSON".into());
     app.read_with(cx, |app, _| {
         assert_eq!(
@@ -1285,7 +1348,7 @@ fn panel_groups_expand_independently_filter_and_edit_from_headers(cx: &mut gpui:
 }
 
 #[gpui::test]
-fn panel_keyboard_moves_and_decides_in_place(cx: &mut gpui::TestAppContext) {
+fn panel_keyboard_ticks_jumps_expands_and_applies(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (full, initials) = app.update(cx, |app, cx| {
@@ -1305,7 +1368,7 @@ fn panel_keyboard_moves_and_decides_in_place(cx: &mut gpui::TestAppContext) {
         cx.run_until_parked();
         cx.update(|window, cx| window.draw(cx).clear(cx));
     };
-    // ↓ from search enters the list on the first header; Enter opens it.
+    // ↓ from search enters the list on the first entity (ADR 0048).
     app.update_in(cx, |app, window, cx| {
         window.focus(&app.pii.mapping.search.read(cx).focus_handle(cx), cx);
     });
@@ -1313,64 +1376,48 @@ fn panel_keyboard_moves_and_decides_in_place(cx: &mut gpui::TestAppContext) {
     app.read_with(cx, |app, _| {
         assert_eq!(app.pii.mapping.cursor, Some(PanelCursor::Header(full)));
     });
-    key(cx, "enter");
+    // Space unticks (keeps the original) and ticks again; the cursor stays.
+    key(cx, "space");
     app.read_with(cx, |app, _| {
-        assert!(app.pii.mapping.expanded.contains(&full))
+        assert_eq!(app.pii.review.identity_count(full), 0);
+        assert_eq!(app.pii.mapping.cursor, Some(PanelCursor::Header(full)));
     });
-    // ↓ selects the mention: inline controls, no popup.
-    key(cx, "down");
+    assert_eq!(text(cx), source);
+    key(cx, "space");
     app.read_with(cx, |app, _| {
-        assert!(matches!(
-            app.pii.mapping.cursor,
-            Some(PanelCursor::Mention(_))
-        ));
-        assert!(app.pii.popup.is_none());
+        assert_eq!(app.pii.review.identity_count(full), 1)
     });
-    assert!(cx.debug_bounds("inline-controls").is_some());
-    // Enter applies this mention and the selection stays on it (ADR 0044).
-    key(cx, "enter");
-    assert!(text(cx).starts_with("PERSON_1 ·"));
-    app.read_with(cx, |app, _| {
-        let Some(PanelCursor::Mention(annotation)) = app.pii.mapping.cursor else {
-            panic!("the applied mention keeps the cursor");
-        };
-        assert_ne!(annotation & APPLIED_ID, 0);
-        assert_eq!(app.selected_entity(), Some(full));
-        assert!(!app.pii.mapping.expanded.contains(&initials));
-    });
-    assert!(cx.debug_bounds("inline-undo").is_some());
-    // ↓ reaches the initials header; Enter opens it, ↓ selects a mention.
-    key(cx, "down");
-    app.read_with(cx, |app, _| {
-        assert_eq!(app.pii.mapping.cursor, Some(PanelCursor::Header(initials)));
-    });
-    key(cx, "enter");
-    key(cx, "down");
-    app.read_with(cx, |app, _| {
-        assert_eq!(app.selected_entity(), Some(initials));
-    });
-    // Keep on one initial: it leaves the list, so its header takes the cursor.
+    // ⌫ only unticks; ⌘Z in the panel undoes it.
     key(cx, "backspace");
     app.read_with(cx, |app, _| {
-        assert_eq!(app.pii.review.identity_count(initials), 1);
-        assert_eq!(app.pii.mapping.cursor, Some(PanelCursor::Header(initials)));
-        assert!(app.pii.mapping.expanded.contains(&initials));
-    });
-    // ↓ to the remaining initial; ⌘⌫ keeps it, and the emptied group is gone.
-    key(cx, "down");
-    key(cx, "secondary-backspace");
-    app.read_with(cx, |app, cx| {
-        assert_eq!(app.pii.review.identity_count(initials), 0);
-        assert_eq!(app.pii.mapping.cursor, None);
-        assert_eq!(app.editor.read(cx).text(), text_of(source));
-    });
-    // ⌘Z in the panel undoes the keep.
-    app.update_in(cx, |app, window, cx| {
-        window.focus(&app.pii.mapping.focus, cx)
+        assert_eq!(app.pii.review.identity_count(full), 0)
     });
     key(cx, "secondary-z");
     app.read_with(cx, |app, _| {
-        assert_eq!(app.pii.review.identity_count(initials), 1)
+        assert_eq!(app.pii.review.identity_count(full), 1)
+    });
+    // Enter jumps to the mention; ← hides the mentions, → shows them.
+    key(cx, "enter");
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.selected_entity(), Some(full));
+        assert!(app.pii.mapping.expanded.contains(&full));
+        assert!(app.pii.popup.is_none());
+    });
+    key(cx, "left");
+    app.read_with(cx, |app, _| {
+        assert!(!app.pii.mapping.expanded.contains(&full));
+        assert_eq!(app.pii.mapping.cursor, Some(PanelCursor::Header(full)));
+    });
+    key(cx, "right");
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.expanded.contains(&full))
+    });
+    // ⌘↩ applies everything ticked as one step.
+    key(cx, "secondary-enter");
+    assert!(text(cx).starts_with("PERSON_1 ·"));
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.review.remaining(), 0);
+        assert_eq!(app.pii.review.identity_count(initials), 2);
     });
     // ↑ to the top, then ↑ again returns to search; Esc there closes.
     key(cx, "secondary-up");
@@ -1387,11 +1434,6 @@ fn panel_keyboard_moves_and_decides_in_place(cx: &mut gpui::TestAppContext) {
     });
     key(cx, "escape");
     app.read_with(cx, |app, _| assert!(!app.pii.mapping.open));
-}
-
-/// The source after the first full-name mention became `PERSON_1`.
-fn text_of(source: &str) -> String {
-    source.replacen("Павлова Марина Сергеевна", "PERSON_1", 1)
 }
 
 #[gpui::test]
