@@ -127,8 +127,9 @@ Variant B's floating panel and folding sidebar are not adopted.
 - **Checkbox fill** is a soft warm grey (`Theme::checkbox`), clearly filled in
   both themes.
 - **Zoom** steps by 5%.
-- **Workspace notices** (case key, crash, session notices) sit at the card's
-  foot, so the document header stays in the title-bar row.
+- **Workspace notices** (case key, crash, session notices) float as toasts
+  over the card's bottom-left, above the view pill, in both sidebar states:
+  they never push the header out of the title row or sit off the card.
 - **Header order:** panel toggle, Source, ⋯, primary.
 - **Collapsed sidebar: the header joins the title row.** As native Mac apps
   move their toolbar into the title bar when the sidebar hides, the document
@@ -144,8 +145,8 @@ Variant B's floating panel and folding sidebar are not adopted.
 - **Collapsed rail, in Anoni's manner:** quiet 16 px icons (toggle, Search,
   Home), a hairline, the open tabs as document glyphs (the active one on a
   soft fill, status as a small dot, name and format in the tooltip), a plain
-  +, and Settings · theme · Help pinned to the foot, an update shown as a
-  dot on Settings. No boxed tiles or format captions.
+  +, and only Settings pinned to the foot (an update shown as a dot on it);
+  theme and Help live in the open sidebar. No boxed tiles or format captions.
 - **Kept mentions stay listed** under their entity as unticked rows, in
   document order. Ticking one proposes that mention again, alone: other kept
   mentions of the same wording stay kept, in the same undo step.

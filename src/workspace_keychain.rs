@@ -496,7 +496,7 @@ impl Workspace {
                 .py_1()
                 .text_size(px(12.))
                 .bg(gpui::Hsla { a: 0.07, ..accent })
-                .border_t_1()
+                .border_b_0()
                 .border_color(palette.border)
                 .child(div().text_color(accent).child("ⓘ"))
                 .child(div().flex_1().min_w_0().child(text))
