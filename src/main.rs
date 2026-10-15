@@ -97,6 +97,7 @@ actions!(
         PanelEscape,
         PanelMoveUp,
         PanelMoveDown,
+        ToggleNotices,
         ZoomIn,
         ZoomOut,
         ZoomReset,

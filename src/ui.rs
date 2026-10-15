@@ -535,6 +535,7 @@ pub enum Icon {
     Reply,
     ThemeSystem,
     Download,
+    Bell,
 }
 
 impl Icon {
@@ -564,6 +565,7 @@ impl Icon {
             Self::Reply => include_bytes!("../resources/ui/reply.svg"),
             Self::ThemeSystem => include_bytes!("../resources/ui/theme-system.svg"),
             Self::Download => include_bytes!("../resources/ui/download.svg"),
+            Self::Bell => include_bytes!("../resources/ui/bell.svg"),
         }
     }
 }
@@ -596,6 +598,57 @@ pub fn floating_button(
         )
         .child(text.into())
         .tooltip(crate::style::tooltip(label.to_string(), theme))
+}
+
+/// The header's bell while workspace notices wait (ADR 0048): an amber dot
+/// with the count; a click opens or closes the notices popover.
+pub fn notice_bell(title: &crate::style::TitleBar, theme: Theme) -> Option<AnyElement> {
+    let count = title.notices.get();
+    if count == 0 {
+        return None;
+    }
+    let open = title.notices_open.get();
+    let amber = crate::style::markdown_style(theme).alert_warning;
+    Some(
+        div()
+            .relative()
+            .child(
+                header_icon(
+                    "header-notices",
+                    if count == 1 {
+                        "1 notice".to_string()
+                    } else {
+                        format!("{count} notices")
+                    },
+                    Icon::Bell,
+                    theme,
+                    open,
+                )
+                .when(cfg!(test), |v| v.debug_selector(|| "header-notices".into()))
+                .on_click(|_, window, cx| {
+                    window.dispatch_action(Box::new(crate::ToggleNotices), cx)
+                }),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(3.))
+                    .right(px(2.))
+                    .min_w(px(14.))
+                    .h(px(14.))
+                    .px(px(3.))
+                    .rounded_full()
+                    .bg(amber)
+                    .text_color(gpui::white())
+                    .text_size(px(9.))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(count.to_string()),
+            )
+            .into_any_element(),
+    )
 }
 
 /// The content card's surface (ADR 0048): rounded, on the window ground.

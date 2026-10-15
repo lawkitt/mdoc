@@ -3276,6 +3276,8 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
             &[3; 32],
         )));
     });
+    // The notices popover closed with the dialog; the header's bell reopens it.
+    click_toolbar(cx, "header-notices");
     let unlock = cx.debug_bounds("unlock-cases").unwrap();
     cx.simulate_click(unlock.center(), Default::default());
     draw(cx);
@@ -3523,4 +3525,34 @@ fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
     draw(cx);
     assert!(cx.debug_bounds("command-palette").is_none());
     cx.update(|_, cx| assert!(tabs.read(cx).shell.palette.is_none()));
+}
+
+#[gpui::test]
+fn notices_wait_behind_the_header_bell(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    draw(cx);
+    assert!(cx.debug_bounds("header-notices").is_none());
+    // A new notice opens the popover once (ADR 0048).
+    tabs.update(cx, |tabs, cx| {
+        tabs.notice = Some("Could not restore one tab.".into());
+        cx.notify();
+    });
+    draw(cx);
+    draw(cx);
+    assert!(cx.debug_bounds("header-notices").is_some());
+    assert!(cx.debug_bounds("notices-popover").is_some());
+    // A click elsewhere closes it; the bell stays and reopens it.
+    cx.simulate_click(gpui::point(px(500.), px(500.)), Default::default());
+    draw(cx);
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    assert!(cx.debug_bounds("header-notices").is_some());
+    click_toolbar(cx, "header-notices");
+    draw(cx);
+    assert!(cx.debug_bounds("notices-popover").is_some());
+    // Dismissing the last notice removes the bell.
+    click_toolbar(cx, "dismiss-session-notice");
+    draw(cx);
+    assert!(cx.debug_bounds("header-notices").is_none());
+    assert!(cx.debug_bounds("notices-popover").is_none());
 }
