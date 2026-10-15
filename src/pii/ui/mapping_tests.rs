@@ -205,6 +205,8 @@ fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpu
                     cx,
                 );
                 app.pii.mapping.open = false;
+                // Inspector (ADR 0048, C): the Review tab.
+                app.inspector_share = false;
                 app.toggle_replacements_panel(window, cx);
             });
             cx.run_until_parked();
@@ -1418,7 +1420,10 @@ fn panel_keyboard_ticks_jumps_expands_and_applies(cx: &mut gpui::TestAppContext)
     app.read_with(cx, |app, _| {
         assert_eq!(app.pii.review.remaining(), 0);
         assert_eq!(app.pii.review.identity_count(initials), 2);
+        // Inspector (ADR 0048, C): applying everything turns to Share.
+        assert!(app.inspector_share);
     });
+    click_tab(cx, "inspector-review");
     // ↑ to the top, then ↑ again returns to search; Esc there closes.
     key(cx, "secondary-up");
     key(cx, "up");
@@ -1576,4 +1581,13 @@ fn applying_under_the_proposed_filter_keeps_the_cursor_on_a_shown_row(
         assert_eq!(app.pii.review.applied().len(), 2);
         assert_eq!(app.pii.mapping.cursor, None);
     });
+}
+
+/// Click an Inspector tab (ADR 0048 variant C).
+fn click_tab(cx: &mut gpui::VisualTestContext, id: &'static str) {
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let at = cx.debug_bounds(id).unwrap().center();
+    cx.simulate_click(at, Default::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
 }

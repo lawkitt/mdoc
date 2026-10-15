@@ -182,3 +182,16 @@ all be redesigned.
 
 **Delivery:** after the interview, implement the agreed design on one branch
 plus 1–2 variations (Claude's choice of axis), three branches in all.
+
+## Variant C "Inspector" (branch `ui/redesign-inspector`)
+
+Built on the agreed design (branch `ui/redesign`), changing one axis:
+
+- The panel is a two-tab Inspector, **Review · N | Share**. Review is the
+  agreed checklist. Share holds the handoff: a status line, **Copy for AI**
+  (filled), Copy Markdown, Save…, **Paste AI reply** with a one-line
+  explanation, and the case (its name, or **Save as case**).
+- The header's filled button is only Pseudonymize or Apply N. Once everything
+  is applied, a quiet outlined **Share** takes its place and opens the Share
+  tab (a deviation from "nothing": without it, the next step was invisible).
+- Applying everything (⌘↩ or Apply) turns the Inspector to Share.

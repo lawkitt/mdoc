@@ -7,7 +7,8 @@ enum Primary {
     Pseudonymize,
     Scanning,
     Apply(usize),
-    CopyForAi,
+    /// Applied: the header opens the Inspector's Share tab.
+    Share,
     Copy,
 }
 
@@ -136,8 +137,9 @@ impl DocumentView {
         if self.pii.reviewing && remaining > 0 {
             return Primary::Apply(remaining);
         }
+        // Inspector (ADR 0048 variant C): sharing lives in the Share tab.
         if self.has_applied_aliases() {
-            return Primary::CopyForAi;
+            return Primary::Share;
         }
         if self.editor.read(cx).text().trim().is_empty() {
             return Primary::None;
@@ -188,20 +190,17 @@ impl DocumentView {
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(PiiApplyAll), cx))
                     .into_any_element()
             }
-            Primary::CopyForAi => ui::filled_button(
-                "Copy for AI",
-                if copied && self.copied_for_ai {
-                    "Copied"
-                } else {
-                    "Copy for AI"
-                },
-                theme,
-                true,
-            )
-            .when(cfg!(test), |v| v.debug_selector(|| "Copy for AI".into()))
-            .min_w(px(104.))
-            .on_click(cx.listener(|this, _, window, cx| this.copy_for_ai(&CopyForAi, window, cx)))
-            .into_any_element(),
+            Primary::Share => ui::primary_button("primary-share", "Share", theme, true)
+                .when(cfg!(test), |v| v.debug_selector(|| "primary-share".into()))
+                .h(px(28.))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.inspector_share = true;
+                    if !this.replacements_open() {
+                        this.toggle_replacements_panel(window, cx);
+                    }
+                    cx.notify();
+                }))
+                .into_any_element(),
             Primary::Copy => ui::filled_button(
                 "primary-copy",
                 if copied { "Copied" } else { "Copy" },
