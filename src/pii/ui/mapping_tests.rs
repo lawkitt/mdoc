@@ -1105,6 +1105,35 @@ fn entity_and_mention_checkboxes_keep_originals_and_tick_again(cx: &mut gpui::Te
     // Ticking a mixed entity proposes the kept mention again.
     click(cx, format!("entity-tick-{identity}"));
     assert_eq!(live(cx), before);
+    // Unticked mentions stay listed under their entity, unticked; ticking
+    // one brings back that mention only, though its wording is shared.
+    let mentions = app.read_with(cx, |app, _| app.identity_occurrences(identity));
+    for (annotation, _) in &mentions[..2] {
+        click(cx, format!("mention-tick-{annotation}"));
+    }
+    assert_eq!(live(cx), before - 2);
+    let kept = mentions[1].1.start;
+    let first_kept = mentions[0].1.start;
+    draw(cx);
+    assert!(
+        cx.debug_bounds(Box::leak(format!("kept-{first_kept}").into_boxed_str()))
+            .is_some()
+    );
+    assert!(
+        cx.debug_bounds(Box::leak(format!("kept-{kept}").into_boxed_str()))
+            .is_some()
+    );
+    click(cx, format!("kept-tick-{kept}"));
+    assert_eq!(live(cx), before - 1);
+    draw(cx);
+    assert!(
+        cx.debug_bounds(Box::leak(format!("kept-{first_kept}").into_boxed_str()))
+            .is_some()
+    );
+    assert!(
+        cx.debug_bounds(Box::leak(format!("kept-{kept}").into_boxed_str()))
+            .is_none()
+    );
 }
 
 #[gpui::test]

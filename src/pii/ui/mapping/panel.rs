@@ -29,6 +29,8 @@ pub(super) enum PanelItem {
     },
     Header,
     Mention(u64, Range<usize>),
+    /// A mention whose original is kept: listed, unticked (ADR 0048).
+    Kept(Range<usize>),
 }
 impl PanelItem {
     pub(super) fn mention(&self) -> Option<u64> {
@@ -149,13 +151,26 @@ impl DocumentView {
             }
             entries.push((row.clone(), PanelItem::Header));
             if mapping.expanded.contains(&row.id) {
-                for (annotation, range) in self.identity_occurrences(row.id) {
-                    if mapping.filter.shows(annotation & APPLIED_ID != 0)
-                        || mapping.filter == PanelFilter::Kept
-                    {
-                        entries.push((row.clone(), PanelItem::Mention(annotation, range)));
-                    }
+                // Live and kept mentions together, in document order: an
+                // unticked mention stays where it was (ADR 0048).
+                let mut items: Vec<(usize, PanelItem)> = self
+                    .identity_occurrences(row.id)
+                    .into_iter()
+                    .filter(|(annotation, _)| {
+                        mapping.filter.shows(annotation & APPLIED_ID != 0)
+                            || mapping.filter == PanelFilter::Kept
+                    })
+                    .map(|(annotation, range)| (range.start, PanelItem::Mention(annotation, range)))
+                    .collect();
+                if !matches!(mapping.filter, PanelFilter::Proposed | PanelFilter::Applied) {
+                    items.extend(
+                        self.kept_of(row.id)
+                            .into_iter()
+                            .map(|(range, _)| (range.start, PanelItem::Kept(range))),
+                    );
                 }
+                items.sort_by_key(|(start, _)| *start);
+                entries.extend(items.into_iter().map(|(_, item)| (row.clone(), item)));
             }
         }
         entries

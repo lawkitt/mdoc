@@ -130,3 +130,10 @@ Variant B's floating panel and folding sidebar are not adopted.
 - **Workspace notices** (case key, crash, session notices) sit at the card's
   foot, so the document header stays in the title-bar row.
 - **Header order:** panel toggle, Source, ⋯, primary.
+- **Collapsed sidebar on macOS:** the traffic lights are wider than the 40 px
+  rail, so they and the toggle sit in a strip of window ground above the card
+  (as Anoni does); the card and the rail start below it. Other systems keep
+  the toggle on the rail.
+- **Kept mentions stay listed** under their entity as unticked rows, in
+  document order. Ticking one proposes that mention again, alone: other kept
+  mentions of the same wording stay kept, in the same undo step.
