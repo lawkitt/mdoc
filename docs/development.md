@@ -153,9 +153,10 @@ Either one invalidates artifacts and leaves duplicate copies behind.
 
 Each worktree has its own `target/`, and nothing removes it automatically.
 `just disk` reports their sizes. When a worktree's branch is merged or
-abandoned, `just retire-worktree <path>` deletes its `target/` and then the
-worktree, keeping the branch; it refuses a worktree with uncommitted or untracked
-changes.
+abandoned, `just retire-worktree <path>` deletes its `target/` directories and
+then the worktree, keeping the branch. It refuses a worktree with uncommitted,
+untracked or other ignored files (such as `dist/` or `.qualification/`), which
+`git worktree remove` would otherwise delete silently.
 
 Cargo never deletes superseded artifacts. A toolchain bump, a large dependency
 update or a changed flag builds a complete new copy beside the old one, so run

@@ -68,8 +68,9 @@ tables preserve.
   the dev cache untouched. Rejected: overriding the dev profile through
   `CARGO_PROFILE_DEV_DEBUG`, which rebuilds the dev cache in both directions.
 - **Recipes.** `just retire-worktree <path>` removes the worktree's `target/`
-  and then the worktree; it refuses a worktree with uncommitted changes and
-  never forces. `just disk` reports each worktree's `target/` size. A manual
+  and then the worktree; it refuses a worktree with uncommitted, untracked or
+  other ignored files (`git worktree remove` deletes ignored files such as
+  `dist/` without `--force`) and never forces. `just disk` reports each worktree's `target/` size. A manual
   reset of the main cache is documented as `cargo clean --profile dev` rather
   than wrapped in a recipe.
 - **Documentation.** Guidance lives in `docs/development.md` only; the project

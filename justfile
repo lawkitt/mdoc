@@ -83,6 +83,6 @@ doctor:
 disk:
     scripts/disk.sh
 
-# Remove a retired worktree and its target/; refuses uncommitted changes
+# Remove a retired worktree and its target/; refuses any other local files
 retire-worktree path:
     scripts/retire-worktree.sh "{{path}}"
