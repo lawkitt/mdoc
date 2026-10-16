@@ -66,8 +66,25 @@ impl DiscoveryInput {
             }
             hits.push((hit.pattern().as_usize(), hit.start()..hit.end()));
         }
-        // Higher-priority (manual) originals claim overlaps first, so a manual
-        // "Ivan Petrov" supersedes a pending "Ivan" inside it.
+        hits.retain(|(index, range)| {
+            self.enabled[*index]
+                && !self.excluded.contains(&(range.start, range.end))
+                && exact_boundary(source, range, &self.originals[*index])
+                && !intersects(&protected, range)
+                && plain_text_span(source, range.clone())
+        });
+        // A hit inside a longer one never splits it, whatever its priority: a
+        // manual "Raman" leaves "Priya Raman" whole (Same as… may link them).
+        // Sorted by start then longest first, an earlier hit reaching as far
+        // contains it; distinct originals never share a range.
+        hits.sort_by_key(|(_, range)| (range.start, std::cmp::Reverse(range.end)));
+        let mut reach = 0;
+        hits.retain(|(_, range)| {
+            let contained = reach >= range.end;
+            reach = reach.max(range.end);
+            !contained
+        });
+        // Higher-priority (manual) originals claim partial overlaps first.
         hits.sort_by_key(|(group, range)| {
             (
                 std::cmp::Reverse(self.priority[*group]),
@@ -79,17 +96,12 @@ impl DiscoveryInput {
         let mut last_end = 0;
         let single = self.originals.len() == 1;
         for (index, range) in hits {
-            if !self.enabled[index]
-                || self.excluded.contains(&(range.start, range.end))
-                || !exact_boundary(source, &range, &self.originals[index])
-                || intersects(&protected, &range)
-                || !plain_text_span(source, range.clone())
-                || (if single {
-                    range.start < last_end
-                } else {
-                    interval_conflict(&occupied, &range)
-                })
-            {
+            let conflict = if single {
+                range.start < last_end
+            } else {
+                interval_conflict(&occupied, &range)
+            };
+            if conflict {
                 continue;
             }
             if !single {

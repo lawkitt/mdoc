@@ -23,23 +23,14 @@ priority order.
 
 ### Must-fix
 
-1. **[PII] A partial-name Replace must not split an existing identity.**
-   *Found in beta.11 (known issue 3).* Selecting "Raman" and choosing Replace
-   (⌘⌥P) creates a new person alias for every occurrence, including the one
-   inside "Priya Raman", whose alias is then broken up; "Same as…" no longer
-   offers the original identity.
-   *Done when:* the existing mention stays intact, standalone occurrences get a
-   *proposed* link to the containing identity confirmed through Same as…, and
-   nothing links automatically. Covered by a test on the
-   [settlement agreement](docs/product-media/Settlement%20agreement.md).
-2. **[PII] Propose shorter and inflected forms of a known identity.**
+1. **[PII] Propose shorter and inflected forms of a known identity.**
    *Found in beta.11 (known issue 4).* "Ms Raman" or "Ms Bennett" is not proposed
    as a mention of the detected full name and stays in the text after Apply.
    *Done when:* title + surname, possessives, surname alone and RU inflections
    are proposed as [variants](CONTEXT.md) for review; a first name alone is not.
    Record the change to [ADR 0018](docs/adr/0018-document-local-identity-review.md)
-   in a new ADR. Do this right after item 1, in the same code area.
-3. **[Perf] Ordinary legal documents are responsive.** Separate editor layout cost
+   in a new ADR.
+2. **[Perf] Ordinary legal documents are responsive.** Separate editor layout cost
    from PII overhead using fixed viewports. The [October 16 stabilization](docs/evidence/stabilization/2026-10-16/results.md)
    fixed case saves, refresh scheduling, spelling, diagnostic/link geometry and
    panel preparation; whole-document layout cost (including
@@ -51,14 +42,14 @@ priority order.
    typing and navigation workloads and the public DOCX/PDF preview workloads reach
    p95 frame ≤ 16.7 ms, confirmed by a native spot-check on a real ~30-page
    contract. Debug ceilings stay regression guards.
-4. **[Cases] Captured AI-reply fixtures for Restore.** Cases and restoration
+3. **[Cases] Captured AI-reply fixtures for Restore.** Cases and restoration
    ([saved mappings](docs/design/saved-mappings.md)) are implemented in all four
    phases, including the Linux Secret Service key.
    *Done when:* four replies to the settlement-agreement demo (ChatGPT and Claude,
    each EN and RU) live under `tests/fixtures/`, at least one with Markdown tables
    and paraphrased or inflected aliases, and Restore leaves no alias unrestored
    in any of them.
-5. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
+4. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
    Windows x64; keep Linux buildable. Done last, because it checks the finished UI.
    *Done when:* one checklist per platform at `docs/evidence/platform/<date>/README.md`
    covers both themes, IME (RU plus a CJK smoke test), clipboard,

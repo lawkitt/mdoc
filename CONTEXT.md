@@ -189,7 +189,8 @@ matching originals assigned to the selected entity; Entire entity includes its
 other variants. One scope governs alias, category, Apply, Undo and Keep actions.
 
 **Manual addition**: selected missed text becomes a proposal with a correctable
-category; exact repeats are proposed together. UI label: **Replace** ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
+category; exact repeats are proposed together, except inside a longer
+mention, which stays whole. UI label: **Replace** ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
 
 **Other category**: manual-only neutral category with a `REDACTED_n` alias;
 the detector never emits it.
