@@ -3632,6 +3632,32 @@ fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_docx_source_notes_its_approximate_preview_without_a_notice(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(800.)));
+    let docx =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(docx, window, cx));
+    cx.run_until_parked();
+    draw(cx);
+    draw(cx);
+    // The expected limitation sits by the Source name; the bell stays for
+    // real notices (README media decision 9; ADR 0048 names the pane Source).
+    cx.update(|_, cx| {
+        let view = tabs.read(cx).active_view().unwrap();
+        let pdf = view.read(cx).preview.pdf.clone().unwrap();
+        let pdf = pdf.read(cx);
+        assert_eq!(pdf.display_name(), Some("Source · comments.docx"));
+        assert_eq!(
+            pdf.source_note().map(|note| note.as_ref()),
+            Some(crate::preview::DOCX_NOTE)
+        );
+    });
+    assert!(cx.debug_bounds("header-notices").is_none());
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).title.notices.get(), 0));
+}
+
+#[gpui::test]
 fn notices_wait_behind_the_header_bell(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));

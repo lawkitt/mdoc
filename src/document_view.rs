@@ -80,6 +80,8 @@ pub(crate) struct DocumentView {
     pub(crate) clipboard_notice: Option<String>,
     /// The before/after view replaces the editor while open.
     pub(crate) compare: Option<pii::ui::CompareState>,
+    /// The floating view pill fades when idle (README media decision 9).
+    pub(crate) switcher: pii::ui::SwitcherRest,
     /// Categories this tab's case does not detect.
     pub(crate) case_skip: std::collections::HashSet<pii::Category>,
     pub(crate) view_bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
@@ -236,6 +238,7 @@ impl DocumentView {
             case_term: None,
             clipboard_notice: None,
             compare: None,
+            switcher: Default::default(),
             case_skip: Default::default(),
             view_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
             split_dragging: false,
@@ -333,6 +336,8 @@ impl DocumentView {
     /// Zoom the Markdown text between 50% and 200% in 5% steps.
     pub(crate) fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
         let zoom = ((zoom * 20.).round() / 20.).clamp(0.5, 2.);
+        // Show the pill so keyboard zoom reports its level.
+        self.wake_switcher(cx);
         if zoom != self.zoom {
             self.zoom = zoom;
             cx.notify();
@@ -1589,6 +1594,8 @@ impl Render for DocumentView {
             .when(narrow_preview, |v| v.child(self.pane_switch(cx)))
             .child(div().flex().flex_1().min_h_0()
                 .when(!self.source_only && show_markdown, |row| row.child(div().relative().flex().flex_1().min_w_0().h_full().flex().flex_col().text_size(px(16. * self.zoom))
+                    .child({ let column = self.switcher.column.clone(); gpui::canvas(move |bounds, _, _| column.set(bounds), |_, _, _, _| {}).absolute().inset_0() })
+                    .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| this.switcher_pointer(event.position, cx)))
                     .when(self.search.open, |column| column.child(search_bar))
                     .child(if self.loading || self.unavailable {
                         div().p_6().child(if self.loading { ui::activity("markdown-loading", "Loading Markdown…", theme).into_any_element() } else { div().child("Markdown unavailable").into_any_element() })
@@ -1597,11 +1604,11 @@ impl Render for DocumentView {
                         compare
                     } else { div().relative().flex_1().min_w_0().min_h_0()
                         .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().pb(px(72.))
-                            .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
+                            .on_scroll_wheel(cx.listener(|this, _, _, cx| { this.wake_switcher(cx); cx.notify(); }))
                             // A centred reading column (ADR 0048, from variant B).
                             .child(div().w_full().max_w(px(READING_WIDTH * self.zoom)).mx_auto().child(self.editor.clone())))
                         .child(markdown_scrollbar).children((empty_page && self.file_drag.is_some()).then(|| self.empty_page(cx))).into_any_element() })
-                    .children(self.view_switcher(cx).filter(|_| !self.loading && !self.unavailable))))
+                    .children(self.view_switcher(window, cx).filter(|_| !self.loading && !self.unavailable))))
                 // Replacements sit beside the text they describe, before Original.
                 .children(self.replacements_panel(window, cx))
                 .when(self.source_only && show_markdown, |row| row.child(div().id("conversion-pane").flex_1().min_w_0().p_6().flex().items_center().justify_center().overflow_y_scroll()

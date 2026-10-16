@@ -114,6 +114,38 @@ impl CompareState {
     }
 }
 
+/// How long the view pill stays after the last pointer, scroll, zoom or view
+/// change before it fades, so it does not rest over the text.
+pub(crate) const SWITCHER_IDLE: std::time::Duration = std::time::Duration::from_millis(1500);
+const SWITCHER_FADE: std::time::Duration = std::time::Duration::from_millis(200);
+/// The pointer this close to the bottom of the text column wakes the pill.
+const SWITCHER_REACH: f32 = 96.;
+
+/// Whether the floating view pill shows. It rests hidden but still takes
+/// clicks; the pointer reaches it only through the bottom band that wakes it.
+#[derive(Default)]
+pub(crate) struct SwitcherRest {
+    pub(crate) awake: bool,
+    pub(crate) hovered: bool,
+    /// When it last appeared or began to fade; `None` before the first change.
+    changed_at: Option<std::time::Instant>,
+    idle: Option<gpui::Task<()>>,
+    /// The Markdown column, measured while drawing.
+    pub(crate) column: std::rc::Rc<std::cell::Cell<gpui::Bounds<Pixels>>>,
+}
+
+impl SwitcherRest {
+    pub(crate) fn shown(&self) -> bool {
+        self.awake || self.hovered
+    }
+    fn settle(&mut self, was_shown: bool, cx: &mut Context<DocumentView>) {
+        if self.shown() != was_shown {
+            self.changed_at = Some(std::time::Instant::now());
+            cx.notify();
+        }
+    }
+}
+
 impl DocumentView {
     pub(crate) fn toggle_compare(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.compare.is_some() || !self.has_applied_aliases() {
@@ -177,6 +209,7 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.wake_switcher(cx);
         match mode {
             None => {
                 if self.compare.is_some() {
@@ -194,12 +227,42 @@ impl DocumentView {
             }
         }
     }
-    /// Edit · Original · Pseudonymized · Side by side, floating at the bottom
-    /// of the document while replacements are applied (ADR 0046).
+    /// Show the view pill, then let it fade after [`SWITCHER_IDLE`] unless
+    /// the pointer stays on it. Pointer, scroll, zoom and view changes call
+    /// this; repeated calls only restart the idle timer.
+    pub(crate) fn wake_switcher(&mut self, cx: &mut Context<Self>) {
+        let shown = self.switcher.shown();
+        self.switcher.awake = true;
+        self.switcher.settle(shown, cx);
+        self.switcher.idle = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(SWITCHER_IDLE).await;
+            let _ = this.update(cx, |this, cx| {
+                let shown = this.switcher.shown();
+                this.switcher.awake = false;
+                this.switcher.idle = None;
+                this.switcher.settle(shown, cx);
+            });
+        }));
+    }
+    /// The pointer near the bottom of the text wakes the pill.
+    pub(crate) fn switcher_pointer(
+        &mut self,
+        position: gpui::Point<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        let column = self.switcher.column.get();
+        if column.contains(&position) && position.y > column.bottom() - px(SWITCHER_REACH) {
+            self.wake_switcher(cx);
+        }
+    }
     /// The floating pill at the bottom of the document (ADR 0048): zoom
     /// always; Edit · Original · Pseudonymized · Side by side once aliases are
     /// applied (ADR 0046).
-    pub(crate) fn view_switcher(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn view_switcher(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         if self.source_only {
             return None;
         }
@@ -235,6 +298,24 @@ impl DocumentView {
                 .on_click(cx.listener(move |this, _, _, cx| this.set_zoom(this.zoom + delta, cx)))
         };
         let percent = format!("{}%", (self.zoom * 100.).round() as i32);
+        // Fade only on a change of visibility; the first frame and Reduce
+        // Motion jump straight to the resting state. Opacity is computed here
+        // rather than with a keyed animation so the pill's element ids, and a
+        // click in progress, survive the change.
+        let progress = match self.switcher.changed_at {
+            Some(at) if !cx.reduce_motion() => {
+                (at.elapsed().as_secs_f32() / SWITCHER_FADE.as_secs_f32()).min(1.)
+            }
+            _ => 1.,
+        };
+        if progress < 1. {
+            window.request_animation_frame();
+        }
+        let opacity = if self.switcher.shown() {
+            progress
+        } else {
+            1. - progress
+        };
         Some(
             div()
                 .absolute()
@@ -258,6 +339,14 @@ impl DocumentView {
                         .border_1()
                         .border_color(palette.border)
                         .shadow_md()
+                        .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                            let shown = this.switcher.shown();
+                            this.switcher.hovered = *hovered;
+                            this.switcher.settle(shown, cx);
+                            if !*hovered {
+                                this.wake_switcher(cx);
+                            }
+                        }))
                         .when(views, |v| {
                             v.child(segment("view-edit", "Edit", None))
                                 .child(segment(
@@ -288,7 +377,8 @@ impl DocumentView {
                                 .text_size(px(12.))
                                 .on_click(cx.listener(|this, _, _, cx| this.set_zoom(1., cx))),
                         )
-                        .child(zoom_step("zoom-in", "+", crate::document_view::ZOOM_STEP)),
+                        .child(zoom_step("zoom-in", "+", crate::document_view::ZOOM_STEP))
+                        .opacity(opacity),
                 )
                 .into_any_element(),
         )
@@ -616,7 +706,10 @@ impl DocumentView {
                         .pt(px(44.))
                         // Room for the view switcher over the last lines.
                         .pb(px(72.))
-                        .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
+                        .on_scroll_wheel(cx.listener(|this, _, _, cx| {
+                            this.wake_switcher(cx);
+                            cx.notify();
+                        }))
                         .child(editor.clone()),
                 )
                 .child(label)

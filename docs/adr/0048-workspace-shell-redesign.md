@@ -150,3 +150,20 @@ Variant B's floating panel and folding sidebar are not adopted.
 - **Kept mentions stay listed** under their entity as unticked rows, in
   document order. Ticking one proposes that mention again, alone: other kept
   mentions of the same wording stay kept, in the same undo step.
+
+## Amendment, 2026-10-16: nothing rests over the text
+
+From the README media review
+([decisions 9 and 15](../design/readme-media-v2.md)): users see these too.
+
+- **The view pill rests hidden.** Decision 9's "always shown" pill covered
+  body text. It now fades 1.5 s after the last pointer move near the bottom of
+  the text, scroll, zoom (⌘= / ⌘− included) or view change, and stays while
+  the pointer is on it. Under Reduce Motion it appears and goes without a
+  fade.
+- **Expected limitations are not notices.** The bell counts only notices that
+  need attention (case key, crash report, session errors). A DOCX preview's
+  standing "approximate" caveat (ADR 0005) is an ⓘ beside the Source name.
+  Worker warnings about omitted content stay in the preview pane.
+- **The Source preview header reads "Source · name"**, as the glossary says;
+  its close button is "Close source".

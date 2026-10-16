@@ -3,6 +3,10 @@
 //! before deleting its temporary DOCX backing file.
 use super::*;
 
+/// DOCX previews are rendered locally and only approximate Word's layout
+/// (ADR 0005); the Markdown is converted from the file itself.
+pub(crate) const DOCX_NOTE: &str = "Approximate preview: the layout may differ from Word. The Markdown is converted from the file itself.";
+
 struct PendingPreview {
     pdf: Entity<PdfView>,
     docx: Option<docx_preview::DocxPreview>,
@@ -109,8 +113,11 @@ impl PreviewState {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned();
+            let note = self.docx.is_some().then_some(DOCX_NOTE.into());
             pending.pdf.update(cx, |pdf, cx| {
-                pdf.set_display_name(format!("Original · {name}"), cx)
+                pdf.set_display_name(format!("Source · {name}"), cx);
+                // An expected limitation, not a notice (README media decision 9).
+                pdf.set_source_note(note, cx);
             });
         }
         self.subscription = Some(cx.observe(&pending.pdf, |_, _, cx| cx.notify()));
