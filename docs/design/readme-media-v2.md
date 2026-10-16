@@ -95,6 +95,23 @@ fictional services agreement (light and dark). Review found:
     after the app fixes. Fully scripted CI capture is out of scope (GPU window
     on CI runners).
 
+## Amendment (2026-10-16, beta.11 capture pass)
+
+- **Demo document:** the README uses the fictional *letter before claim* shared
+  with lawkitt.com (decision 13, one source for site and README) instead of the
+  settlement agreement (decision 10). In beta.11 the settlement's hard cases
+  expose [known issues](../../ROADMAP.md#known-issues) 3 and 4 (surname-only
+  mentions are not linked; adding "Mia" by hand would split an identity). It
+  returns once those are fixed. The deliberate miss is now the letter's
+  Southampton address, added by hand on camera.
+- **Hero:** theme-aware animated WebP as decided (decision 11), 1.2 MB each,
+  rendered from the website's scene library.
+- **Stills:** OCR (*Brown v. Board*), Review and Restore as decided (decision 12).
+  The OCR still shows one line promoted to a heading (known issue 1).
+- **Repeatability (decision 17):** met without a demo launch mode, by an isolated
+  capture profile seeded through `session.json` and scripted input
+  (lawkitt/web `videos/mdoc/capture/`).
+
 ## Terms
 
 Product terms follow [CONTEXT.md](../../CONTEXT.md): *Copy for AI*, *Restore*

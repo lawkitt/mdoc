@@ -76,6 +76,35 @@ improvements ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)). Conversion
 and OCR algorithm changes belong in the AnyDoc/pdf-inspector forks, backed by
 source/output comparisons. Numerical budgets require measured baselines.
 
+## Known issues
+
+Found in 0.1.0-beta.11 while recording product media (2026-10-16) on a fictional
+letter before claim (lawkitt/web `videos/mdoc/fixture/`). The
+[settlement agreement](docs/product-media/Settlement%20agreement.md) reproduces 3
+and 4.
+
+1. **OCR loses page structure.** On a clean one-column scan (A4, PP-OCRv6 Small,
+   150 DPI) separate paragraphs and headings are merged into one paragraph, and
+   table rows split or shift (a cell is promoted to a heading, two rows merge into
+   one cell). Rendering the scan at 300 DPI does not help. On the *Brown v. Board*
+   page a body line ("even though the physical facilities…") becomes a heading. Layout recovery belongs
+   in the AnyDoc/pdf-inspector forks; add the scan to the OCR qualification set.
+2. **Highlights stretch across a line wrap.** When a proposed or applied mention
+   wraps, its underline or chip box extends to the end of the first line and the
+   continuation starts with a stub. Visible in the editor and in Side by side.
+3. **Adding part of a detected name splits the identity.** Selecting "Raman" and
+   choosing Replace (⌘⌥P) creates a new person alias for every occurrence,
+   including the one inside "Priya Raman", whose existing alias is then broken up;
+   "Same as…" no longer offers the original identity. A manual addition inside an
+   existing mention should leave it intact and offer to link to it.
+4. **Surname-only mentions are not linked.** "Ms Raman" (or "Ms Bennett") is not
+   proposed as a mention of the detected full name, so it stays in the text after
+   Apply. Propose title + surname, possessives and first names as variants of a
+   known identity (ADR 0018 review still applies).
+5. **Floating controls cover the text being edited.** The "Replace ⌘⌥P" chip sits
+   over the line above the selection and the mention bar covers the next lines.
+   Place them clear of the selection or the active mention.
+
 ## Deferred
 
 - An optional case passphrase on top of the OS keyring
