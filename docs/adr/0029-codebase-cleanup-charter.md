@@ -1,9 +1,9 @@
 # Codebase cleanup charter
 
-Status: accepted and implemented, 2026-10-09. See the
-[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/codebase-cleanup.md). Supersedes the "preserve
-reusable crates/features" scope of [ADR 0010](0010-workspace-construction-and-test-parity.md)
-and the deferral of API/feature removal in [ADR 0011](0011-editor-input-module.md).
+Status: Accepted, 2026-10-09. Supersedes the "keep reusable crates and
+features" scope of [ADR 0010](0010-workspace-construction-and-test-parity.md)
+and the API/feature-removal deferral of [ADR 0011](0011-editor-input-module.md).
+Its `os-spellcheck` exception is superseded by [ADR 0036](0036-bundled-spellcheck.md).
 
 ## Decision
 
@@ -19,14 +19,12 @@ and the deferral of API/feature removal in [ADR 0011](0011-editor-input-module.m
 - File size alone does not justify a split.
 - `tools/pseudonymization` is out of scope.
 
-## Consequences settled so far
+## Consequences
 
 - `mdoc-markdown`: the unused `view` reader is deleted; `syntax` moves into
   `mdoc-editor` and the crate is removed.
 - Editor host hooks the app never sets are deleted with their set-only code
   paths; the unset path renders identically.
-- `os-spellcheck` is retained as groundwork for a deferred spell-check
-  experiment (ROADMAP) — the one named exception to the dead-code rule.
 - `gpui-pdf` features become unconditional; its examples are deleted.
 - Crates are internal: no `API.md`, short READMEs, `publish = false`,
   LICENSE files kept.
@@ -38,3 +36,5 @@ and the deferral of API/feature removal in [ADR 0011](0011-editor-input-module.m
 All invariants of ADRs 0010, 0011 and 0021 hold. Every commit passes
 `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`
 and `cargo test --workspace`.
+
+References: [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/codebase-cleanup.md).

@@ -1,57 +1,31 @@
 # Select three narrow AnyDoc fidelity fixes
 
-Status: accepted, 2026-10-04. The user confirmed the design and authorized
-implementation with "design confirmed, implement".
+Status: Accepted, 2026-10-04.
 
 ## Decision
 
-For the lightweight PDF/Office-to-Markdown utility, select only upstream AnyDoc
-PRs [#17](https://github.com/firecrawl/anydoc/pull/17),
-[#177](https://github.com/firecrawl/anydoc/pull/177), and
-[#174](https://github.com/firecrawl/anydoc/pull/174).
+Port only upstream AnyDoc PRs
+[#17](https://github.com/firecrawl/anydoc/pull/17),
+[#177](https://github.com/firecrawl/anydoc/pull/177) and
+[#174](https://github.com/firecrawl/anydoc/pull/174):
 
-- Preserve readable tables in Word forms by unwrapping single-cell containers
-  around nested tables; do not broadly rewrite genuine nested grids.
+- Unwrap single-cell containers around nested tables in Word forms; genuine
+  nested grids are not rewritten.
 - Preserve supported DOCX checkbox states, styling and text order.
-- Produce final text from legacy DOC revisions: omit deleted revision content,
-  retain insertions and ordinary strikethrough, and preserve structural delimiters.
+- Produce final text from legacy DOC revisions: omit deleted content, keep
+  insertions and ordinary strikethrough, preserve structural delimiters.
 
-Every other upstream PR and issue is outside this update. Preserve the existing
-fork behavior and document lifecycle contracts.
+Every other upstream PR and issue is out of scope. Ports keep attribution and
+only necessary mechanical changes; any material deviation is reviewed first.
+Ordinary tables, unknown-symbol behavior, revision semantics and the partial-PDF
+API are preserved, and existing corpus changes must be explained.
 
 ## Rationale
 
-These changes recover structure or meaning in already supported Office formats
-without expanding the utility into new formats, asset management or OCR providers.
-mdoc handles PDFs through its separate pdf-inspector integration.
+These recover structure or meaning in formats mdoc already supports without
+expanding into new formats, assets or OCR providers. PDFs go through
+pdf-inspector (ADR 0007).
 
-## Delivery and validation
-
-Port the selected behavior and tests with only necessary mechanical adjustments.
-Review any material deviation before adopting it. Deliver a fork review PR and an
-mdoc review PR with the exact tested fork revision and lockfile.
-
-Require fork formatting, lint and tests, focused mdoc import regression coverage,
-and before/after fixtures demonstrating each improvement. Existing corpus changes
-must be explained; preserve ordinary tables, unknown-symbol behavior, revision
-semantics and the existing partial-PDF API. Automated converter tests establish
-conversion behavior, not native or cross-platform UI acceptance.
-
-See [the historical decision record and full inventory](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/anydoc-upstream-triage.md).
-
-## Implementation evidence
-
-All selected upstream commits were ported with attribution, without conflicts or
-functional changes. The new #17 snapshot was adapted to the base's existing
-header inference. mdoc pins tested fork
-`97d21d1f46086d84478da072ba1fdfa210461c80`.
-
-The [verification record](../../tests/fixtures/import/anydoc-fidelity-verification.md)
-reports 318 passing fork tests, 461 passing mdoc tests, lint/format/source-policy
-checks and before/after output evidence. All 75 pre-existing fork fixture outputs
-and all existing mdoc expectations were unchanged. Three added synthetic import
-fixtures exercise the selected improvements and source preservation.
-
-Review delivery: [AnyDoc fork PR](https://github.com/lawkitt/anydoc/pull/1) and
-[mdoc PR](https://github.com/lawkitt/mdoc/pull/9). No main branch was merged
-during this implementation.
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0008-selected-anydoc-fidelity-fixes.md),
+[inventory](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/anydoc-upstream-triage.md),
+[verification](../../tests/fixtures/import/anydoc-fidelity-verification.md).

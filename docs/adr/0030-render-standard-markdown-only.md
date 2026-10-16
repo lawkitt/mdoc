@@ -1,7 +1,7 @@
 # Render standard Markdown only
 
-Status: accepted and implemented, 2026-10-09. See the
-[historical codebase cleanup interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/codebase-cleanup.md), round 2.
+Status: Accepted, 2026-10-09. Amended by
+[ADR 0046](0046-workspace-polish-from-anoni-review.md) (`<br>` in table cells).
 
 ## Problem
 
@@ -25,3 +25,5 @@ and `<mark>`/`<span>` styled tags are unaffected.
 Saved bytes and Copy Markdown output are unchanged: this affects display only.
 Search, pseudonymization syntax protection and caret mapping treat the former
 constructs as plain text. Record the change in CHANGELOG.
+
+References: [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/codebase-cleanup.md), round 2.

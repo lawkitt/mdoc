@@ -1,8 +1,8 @@
 # In-app updates on macOS
 
-Status: Accepted and implemented, 2026-10-11. See the
-[design interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/auto-update.md). Supersedes the "detection only"
-decision of [ADR 0038](0038-update-check.md) on macOS.
+Status: Accepted, 2026-10-11. Supersedes the "detection only" decision of
+[ADR 0038](0038-update-check.md) on macOS. Banner and dot placement amended by
+[ADR 0048](0048-workspace-shell-redesign.md) (sidebar update card).
 
 ## Problem
 
@@ -48,14 +48,14 @@ against an identity that the release feed cannot fake.
   is signed by `F33DLM8K53`, not translocated, not on a mounted disk image, and
   whose parent directory is writable. Otherwise the update stays visible, with
   **View release** and a one-line reason (no admin prompt).
-- **UI**: the toolbar dot and **Settings → Updates** (with **Download and
-  install**, progress, and **Restart now**), plus an **update banner**. The
-  banner is a slim accent-tinted strip at the top of the workspace that opens
-  Settings → Updates. It shows *available*, *downloading* with a percentage,
-  *ready* with an inline **Restart**, and *failed*. × hides *available* for
+- **UI**: a dot on Settings and **Settings → Updates** (with **Download and
+  install**, progress, and **Restart now**), plus an **update card** in the
+  sidebar foot (ADR 0048) that opens Settings → Updates. It shows *available*,
+  *downloading* with a percentage, *ready* with an inline **Restart**, and
+  *failed*. × hides *available* for
   that version across launches, and *ready* or *failed* for the session.
   *Available* appears only from automatic checks. After a successful update,
-  the banner shows "mdoc was updated to x.y.z" once, linking to the release.
+  mdoc shows "mdoc was updated to x.y.z" once, linking to the release.
   The dismissed version and the last quit's outcome live in
   `<data dir>/mdoc/update.json`, not in Settings, so a Settings draft never
   overwrites them.
@@ -89,3 +89,5 @@ against an identity that the release feed cannot fake.
 - Windows in-app updates remain future work. They need a signature scheme of
   their own (Authenticode or a minisign key) and a handoff after exit for the
   NSIS installer.
+
+References: [interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/auto-update.md).

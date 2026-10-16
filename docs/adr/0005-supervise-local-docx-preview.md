@@ -1,6 +1,6 @@
 # Supervise DOCX preview in a bounded local worker
 
-Status: accepted current behavior, consolidated 2026-10-01.
+Status: Accepted, 2026-10-01.
 
 Render DOCX locally to a temporary PDF using the same executable's
 `--mdoc-docx-worker` mode. A supervised process bounds conversion time and can

@@ -1,107 +1,50 @@
 # Deferred Keychain access with an explainer
 
 Status: Accepted, 2026-10-13. Amends the storage section of
-[ADR 0041](0041-cases-and-ai-response-restoration.md).
+[ADR 0041](0041-cases-and-ai-response-restoration.md). Amended by
+[ADR 0045](0045-prompt-free-case-key.md) (what counts as "may ask"; data
+protection keychain).
 
 ## Problem
 
-Users see one or two macOS password dialogs ("mdoc wants to use your
-confidential information stored in “io.github.lawkitt.mdoc”…", then "mdoc wants
-to access key…") with no context. They look suspicious in an app whose pitch is
-privacy. Two causes:
-
-- **Timing.** Once `mdoc/cases/` exists, *any* document load at launch reads the
-  case key (`attach_case` → `load_cases` → `case_store`), even when no open tab
-  belongs to a case.
-- **Signature.** A login-keychain item's access list trusts the code signature
-  of the app that created it. Developer ID builds share a stable designated
-  requirement; ad-hoc builds (dev, unsigned test builds) do not, so an item
-  created or touched by one prompts every other build. Likely, but not yet
-  reproduced on a clean account (see Verification).
+Users saw one or two unexplained macOS password dialogs ("mdoc wants to use
+your confidential information stored in “io.github.lawkitt.mdoc”…"), which look
+suspicious in a privacy app. Any document load at launch read the case key once
+`mdoc/cases/` existed, and a login-keychain item trusts only the code signature
+that created it, so ad-hoc and dev builds prompt each other.
 
 ## Decision
 
-1. **Touch the key only for an action that needs it**: Save mapping as case,
-   Move to case, File → Open Case…, and restoring a tab that is a case member.
-   Never at launch otherwise. Sidebar case names come from the session manifest,
-   which needs no key.
-2. **Explainer before the system dialog**, shown before the first key access
-   and again only after the user denied or cancelled the macOS dialog (not
-   before every access). A setting remembers the first successful access.
-   - Modal in the standard dialog style (ADR 0015). Title: "mdoc will ask for
-     Keychain access". Lines: saved cases are encrypted and the key lives in
-     your Mac's Keychain; macOS will ask for your Mac login password, which mdoc
-     never sees; choose **Always Allow** so it isn't asked again.
-   - **Continue** (default) proceeds to the key access. **Not now** cancels the
-     action that needed it.
-3. **Animated preview** of the upcoming dialog, drawn in GPUI as vectors, not a
-   screenshot: the padlock with the mdoc badge, the real wording with
-   `io.github.lawkitt.mdoc`, the password field filling with dots, a pointer
-   moving to **Always Allow** which highlights on press. Only the
-   "confidential information" dialog is shown. Loops about every 4 s; settles
-   on a still frame under Reduce Motion; follows system light/dark dialog
-   colours.
-4. **Nothing asks at launch.** Restored case members open *locked*: no case
-   mapping yet, a notice "Case ‘X’ is locked" with **Unlock**, and a dimmed
-   case dot. Unlock (or any case action above) is what shows the explainer.
-5. **Denial** (user cancelled / auth failed) shows a notice "Saved cases need
-   Keychain access" with **Try again**, which shows the explainer again.
+1. **Touch the key only for an action that needs it**: Save mapping as case
+   (including the save-on-close question), folder drop as a case, File → Open
+   Case…, and Unlock. Moving a tab into a case needs a loaded case, so the key
+   is already open. Sidebar case names come from the session manifest.
+2. **Ask the Keychain whether it may ask.** The key is read with user
+   interaction disabled (`SecKeychainSetUserInteractionAllowed`). Success, or a
+   new key created without a dialog, opens the store silently. Any quiet refusal
+   means "may ask" (ADR 0045). Windows and Linux never see the explainer.
+3. **Nothing asks at launch.** Launch reads the key only when it will not ask.
+   Otherwise cases stay locked: members keep their case link, and a bar says
+   "Saved cases are locked. Unlock them to restore replacements in their
+   documents." with **Unlock…**. The bar shows whenever cases are locked,
+   because a document opened by hand is matched to its case by path.
+4. **Explainer before the system dialog** (`src/workspace_keychain.rs`), in the
+   standard dialog style (ADR 0015). Title "mdoc will ask for Keychain access":
+   saved cases are encrypted with a key in the Mac's Keychain; macOS will ask for
+   the login password, which mdoc never sees; choose **Always Allow**.
+   **Continue** (focused, Enter) proceeds; **Not now** (Esc) cancels the action.
+   Tab stays inside the dialog; window shortcuts and clicks behind it are
+   stopped; closing returns focus.
+5. **Animated preview** of the dialog, drawn as GPUI vectors: padlock with the
+   mdoc badge, the real wording, the password field filling, a pointer pressing
+   **Always Allow**. Loops every 4.2 s at up to 30 fps; under Reduce Motion a
+   single frame (password typed, Always Allow pressed); follows system
+   light/dark.
+6. **Denial** (`errSecUserCanceled`, `errSecAuthFailed` after a real dialog)
+   keeps members locked and keeps the requested action; the bar offers
+   **Try again…**, which finishes it once the key opens. A failed read never
+   drops members' case links.
+7. **Waiting actions queue**: another gated action while one waits runs after
+   it; a repeated Save as case for a saved tab does nothing.
 
-## Later
-
-Move the key to the data protection keychain (`kSecUseDataProtectionKeychain`),
-which never asks for the login password and survives updates. It needs a
-Developer ID provisioning profile with `keychain-access-groups`, so it changes
-signing (ADR 0039) and gets its own ADR. Ad-hoc builds cannot use it.
-
-## Verification
-
-Before shipping, on a clean macOS user account: install the signed release,
-save a case, relaunch, update in-app, and count prompts. Expected: one prompt
-at most, none after **Always Allow**. If signed builds prompt again, the cause
-is not only the signature and the "Later" step moves forward.
-
-## As implemented
-
-- **"May ask"** is decided by asking the Keychain itself: the key is read
-  with user interaction disabled (`SecKeychainSetUserInteractionAllowed`).
-  If that read succeeds, or the key is new (created without a dialog), the
-  store opens and nothing is shown. If it returns `errSecInteractionNotAllowed`,
-  the real read would show the dialog, so the explainer comes first. This
-  covers a new build, **Allow Once** (which asks again next time) and a
-  changed signature; a remembered "allowed once" flag would not (Codex
-  review). Creating a first key in a locked keychain also needs the dialog,
-  so a refused quiet creation counts as "may ask" too. Windows and Linux never see the explainer.
-- **Launch** reads the key only when it may not ask. While it may, cases stay
-  locked: members keep their case link, and a bar says "Saved cases are
-  locked. Unlock them to restore replacements in their documents." with
-  **Unlock…**. The bar shows whenever cases are locked, not only for tabs the
-  session tagged, because a document opened by hand is matched to its case by
-  path, which needs the cases loaded. The session manifest has no case names, so
-  the bar does not name the case and there is no dimmed dot.
-- **Gated actions:** Save mapping as case (including the save-on-close
-  question), folder drop as a case, and File → Open Case…. Moving a tab into a
-  case needs a loaded case, so the key is already open.
-- **Denial** (`errSecUserCanceled`, `errSecAuthFailed`) keeps members locked and keeps the action the user asked for; the bar offers
-  **Try again…**, which finishes it once the key opens. Before this change,
-  a failed key read at launch marked cases as loaded and dropped members'
-  case links ("could not be found"); now they stay linked.
-- **Waiting actions queue:** another gated action while one waits (explainer
-  open or declined) runs after it, not instead of it; a repeated Save as case
-  for an already-saved tab does nothing.
-- **Explainer:** `src/workspace_keychain.rs`. Esc means Not now; Continue has
-  focus, so Enter continues. Tab stays within the dialog, window shortcuts
-  (close tab, new tab, open, Settings…) and clicks behind it are stopped while
-  it shows, and closing
-  it returns focus to where it was. The preview loops every 4.2 s at up to 30 fps and,
-  under Reduce Motion, shows a single frame: password typed, Always Allow
-  pressed.
-
-## Amended by ADR 0045
-
-The quiet read returns `errSecAuthFailed`, not `errSecInteractionNotAllowed`,
-for a key whose access list does not trust the running build. It was treated as
-a denial, and launch then read the key loudly: two dialogs in beta.7. Quiet
-refusals now always mean "may ask", launch never reads loudly, and builds with
-a provisioning profile use the data protection keychain
-([ADR 0045](0045-prompt-free-case-key.md)).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0043-deferred-keychain-access.md).

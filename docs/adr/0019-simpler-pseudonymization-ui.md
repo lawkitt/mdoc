@@ -1,70 +1,30 @@
 # Simplify pseudonymization around review, application and one copy action
 
-Status: accepted and implemented, 2026-10-08, following the user's "implement".
-The single copy action is superseded by [ADR 0041](0041-cases-and-ai-response-restoration.md),
-which adds Copy for AI with a placeholder notice; Copy Markdown stays exact.
-See the
-[historical design tree](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-ui-simplification.md).
+Status: Accepted, 2026-10-08. Superseded in part by
+[ADR 0020](0020-direct-replacement-workspace.md) (selected-item editor),
+[ADR 0041](0041-cases-and-ai-response-restoration.md) (Copy for AI returns) and
+[ADR 0048](0048-workspace-shell-redesign.md) (panel layout).
 
-## Problem
+## Decision
 
-The supplied screenshot distributes pseudonymization across review controls,
-identity management and competing copy actions. Routine review exposes detailed
-correction tools and repeated status/caution text, consuming document space and
-obscuring the main task.
+- **One Replacements panel** replaces the review bar and Identities surface. It
+  opens after scanning, keeps the document visible, and shows one
+  original → alias row per identity with a mention count. Closing it keeps
+  applied highlights clickable.
+- **Explicit Apply**: one prominent action applies all remaining proposals as
+  one undo step, with no mandatory per-row approval. Keep original on an
+  identity excludes its pending mentions; single-mention Keep stays available.
+- **Corrections stay** (rename, category, linking/separation, owner) but are
+  contextual to the selected item, not routine.
+- **Copy Markdown** copies the current text exactly. Pending proposals never
+  block copying, and copying never applies them. Owner assignments stay local.
+- **One concise caution** and pending status; never a safe-to-share claim.
 
-## Confirmed direction
+## Invariants
 
-The user agreed to Q1/Q2, chose one copy action for Q3, and agreed to Q4–Q10:
+Stable aliases, occurrence provenance, Keep, undo/redo, syntax protection and
+stale-result guards are unchanged.
 
-- Review compact original-to-alias proposals before explicitly applying them.
-  Provide one prominent batch application action.
-- Retain rename, category correction, identity linking/separation and owner
-  assignment. Expose them contextually for a selected item.
-- Replace the parallel review bar/Identities surface with one compact, simple,
-  elegant Replacements panel. Open it after scanning and keep the document
-  visible. Closing the panel retains clickable applied highlights.
-- Show one original-to-alias row per identity with a mention count. Selection
-  exposes variants/occurrences and connects to document highlights.
-- Use one Copy Markdown action for now, copying current text exactly. Remove
-  the second copy action and automatic relationship appendix option; owner
-  assignments remain local. Pending proposals do not block ordinary copying;
-  copying never implicitly applies them.
-- Apply all remaining proposals as one undo step without mandatory per-row
-  approvals. Keep original on an identity row excludes its pending mentions;
-  single-mention Keep remains available during occurrence inspection.
-- Open selected-item inspection within the same panel, with Back preserving
-  list position. Center the transition, editable alias and mention navigation;
-  expose detailed correction tools through item-specific actions. Applied
-  document popups retain scoped Restore and a route to replacement editing.
-- Dock beside the document when readable; use a dismissible overlay drawer
-  at narrow widths, preserving document selection/scroll and reachable Apply.
-- Use one concise experimental review caution, pending status and no safe-to-share
-  claim. Preserve predictable raw clipboard behavior.
-
-The rationale is a clearer routine workflow while retaining correction power.
-This direction revises ADR 0018's review surfaces and two-copy-action design.
-The existing raw-source clipboard behavior is retained.
-
-## Invariants and final confirmation
-
-The linked interview contains the complete visual, state and acceptance contract.
-The design frontier is empty; the user's "implement" confirms the final scope.
-
-Existing experimental status, stable aliases, occurrence provenance, local-only
-originals, Keep, undo/redo, syntax protection and stale-result guards remain in
-force. No detector changes or quality qualification are selected by this decision.
-
-## Implementation and verification
-
-The Replacements list and selected-item view now share one workspace, with
-contextual correction commands, explicit Apply and responsive docking/drawer
-presentation. Copy Markdown retains its exact current-source behavior.
-Identity-level Keep uses occurrence assignments and batched exclusions; applied
-originals share existing provenance strings rather than copying them per render.
-
-The workspace suite passes 435 tests (16 existing ignored checks). Build, strict
-Clippy, formatting and diff checks pass. Native macOS interaction covers the
-editable alias, application, scoped restoration, both themes and a 640×480
-drawer. See the [verification record](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/pseudonymization/2026-10-08-ui/README.md)
-for evidence and remaining platform/interaction boundaries.
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0019-simpler-pseudonymization-ui.md),
+[design tree](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-ui-simplification.md),
+[verification](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/pseudonymization/2026-10-08-ui/README.md).

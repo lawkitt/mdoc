@@ -1,49 +1,37 @@
 # Behavior-preserving pseudonymization refactoring
 
-Status: accepted and implemented, 2026-10-08. The user confirmed the interview and requested full implementation; see the
-[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-refactoring.md).
+Status: Accepted, 2026-10-08.
 
 ## Problem
 
-ADRs 0013, 0014, 0018, 0019 and 0020 were implemented in rapid iterations without
-consolidation. About 10k lines now live in three crate-root trees. All UI logic is
-`impl Workspace`, state resets are copied by hand, `Review` mixes candidates,
-identities, tracking and mode, Anonymize/Pseudonymize interplay is spread through
-a `conversion` flag, and identifiers use several vocabularies.
+ADRs 0013, 0014, 0018, 0019 and 0020 were built in rapid iterations: about 10k
+lines in three crate-root trees, all UI logic in `impl Workspace`, hand-copied
+state resets, a `Review` mixing candidates, identities, tracking and mode, and
+several vocabularies for the same things.
 
 ## Decision
 
-Refactor without changing behavior. The existing suite and strict Clippy gate
-every commit; any behavior change requires its own ADR.
+Refactor without changing behavior; any behavior change needs its own ADR (the
+one exception was [ADR 0022](0022-remove-anonymization-mode.md)).
 
 - Delete code of superseded interaction designs once verified unreachable.
-- Keep `Workspace` as gpui glue; move UI state and transitions into plain structs.
-- Move the domain model into `crates/mdoc-pii`; the detector stays for now.
-- Treat Anonymize mode as permanent: a rendering policy over the same identities.
-- Replace plan/target tuples with named structs; centralize identity-history
-  transactions in one helper.
-- Use `pii` as the umbrella module/action vocabulary with CONTEXT.md glossary
-  terms inside.
-- Move run evidence out of `tests/fixtures` to `docs/evidence/pseudonymization/`,
-  retaining per-run READMEs.
-- Deliver as incremental green commits, renames last.
+- `Workspace` is GPUI glue; UI state and transitions live in plain structs
+  (`MappingUi`, `ReviewUi` own every panel and popup transition).
+- `crates/mdoc-pii` holds the GUI-free review model (`Review` over `Candidates`,
+  `IdentityStore`, `Tracking`), depending only on `aho-corasick`, `regex` and
+  `crates/mdoc-history`. `crates/mdoc-history` holds dependency-free edit
+  transactions, re-exported by `mdoc-editor`. Detection and the review UI live
+  in `src/pii/`.
+- Named structs replace plan/target tuples; identity-history transactions go
+  through one helper.
+- `pii` is the umbrella module and action vocabulary, with CONTEXT.md terms.
+- Work lands as incremental green commits, renames last.
 
 ## Invariants
 
-Stable aliases, occurrence provenance, live-tab-only originals, Keep/Restore
-scopes, undo/redo travel, syntax protection, stale-result guards, exact Copy
-Markdown and experimental status remain unchanged.
+Stable aliases, occurrence provenance, Keep/revert scopes, undo/redo, syntax
+protection, stale-result guards and exact Copy Markdown are unchanged; the suite
+and strict Clippy pass at every commit.
 
-## Implementation
-
-Implemented in six green commits; see the design interview's implementation
-section for the per-step record, decisions taken during implementation and
-verification. Notable structure:
-
-- `crates/mdoc-pii`: GUI-free review model (`Review` façade over `Candidates`,
-  `IdentityStore`, `Tracking`); depends only on `aho-corasick`, `regex` and
-  `crates/mdoc-history`.
-- `crates/mdoc-history`: dependency-free edit transactions, re-exported by
-  `mdoc-editor` at their existing paths.
-- `src/pii/detector*` and `src/pii/ui*`: detection and the review workspace;
-  `MappingUi`/`ReviewUi` own every panel and popup state transition.
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0021-pseudonymization-refactoring.md),
+[interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-refactoring.md).

@@ -1,7 +1,6 @@
 # CI and release pipeline
 
-Status: Accepted and implemented, 2026-10-10; first release v0.1.0-beta.2, 2026-10-11. See the
-[historical design interview](https://github.com/lawkitt/mdoc/blob/01ab890db29febc5d9920de64aa494480a5d5407/docs/design/ci-release-pipeline.md).
+Status: Accepted, 2026-10-10. Signing amended by [ADR 0039](0039-macos-signing-and-notarization.md).
 
 ## Problem
 
@@ -38,9 +37,9 @@ than the repository. Nothing lets local development run the same checks as CI.
   bumps `Cargo.toml`, `Cargo.lock` and `resources/Info.plist`. `-beta.N` /
   `-rc.N` tags are pre-releases; highlights come only from a matching
   `## [x.y.z]` CHANGELOG section. The first tag is `v0.1.0-beta.1`.
-- **Signing**: `0.x` pre-releases ship unsigned. The owner obtains an
-  individual Apple Developer ID; notarized macOS and signed Windows builds are
-  required for `1.0`. Signing steps land only once the certificate exists.
+- **Signing**: macOS builds are Developer ID signed and notarized
+  ([ADR 0039](0039-macos-signing-and-notarization.md)); signed Windows builds
+  are required for `1.0`.
 - **VC++ Redistributable**: the NSIS `.exe` bundles `vc_redist.x64.exe` and
   runs it (elevated) only when the runtime is missing; CI checks its Microsoft
   Authenticode signature instead of a hash. The `.msi` refuses to install with
@@ -81,10 +80,10 @@ than the repository. Nothing lets local development run the same checks as CI.
 ## Consequences
 
 - Linux, Intel and Windows arm64 users must build from source.
-- Unsigned betas need System Settings → Privacy & Security → Open Anyway on
-  macOS (right-click → Open no longer works from macOS 15) and "Run anyway" on
-  Windows.
+- Unsigned Windows betas need SmartScreen's "Run anyway".
 - The Windows installer grows by about 25 MB.
-- v0.1.0-beta.1 was withdrawn unpublished: its hardened-runtime signature
-  refused the downloaded runtimes, which only a packaged build shows; that
-  gap is why `smoke-package` exists.
+- `smoke-package` exists because only a packaged build shows a
+  hardened-runtime signature refusing the downloaded runtimes (v0.1.0-beta.1 was
+  withdrawn for this).
+
+References: [interview](https://github.com/lawkitt/mdoc/blob/01ab890db29febc5d9920de64aa494480a5d5407/docs/design/ci-release-pipeline.md).

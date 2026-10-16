@@ -1,7 +1,6 @@
 # macOS signing and notarization
 
-Status: Accepted, 2026-10-11. Implemented in the pipeline; first used by the
-first release tagged after the signing secrets are in place.
+Status: Accepted, 2026-10-11.
 
 ## Problem
 
@@ -46,13 +45,10 @@ individual Apple Developer Program membership (team `F33DLM8K53`) and a
 
 ## Consequences
 
-- The README and website drop the Open Anyway instructions for macOS once a
-  signed release is published; release notes already describe the macOS app
-  as signed.
 - The certificate expires on 2027-02-01: create a new Developer ID Application
   certificate before then and replace the two certificate secrets. The
   membership renews yearly (next 2026-11-30). Expiry or a lapsed membership
   blocks new builds, not published ones: their timestamps and stapled
   tickets stay valid.
-- Signed builds allow reconsidering automatic updates
-  ([ADR 0038](0038-update-check.md)) on macOS.
+- Signed builds enable in-app updates on macOS
+  ([ADR 0040](0040-in-app-updates-on-macos.md)).

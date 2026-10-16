@@ -1,70 +1,33 @@
 # Select narrow Zorite correctness and rendering changes
 
-Status: accepted, 2026-10-05. The user confirmed shared understanding and authorized
-implementation with "agree, implement".
+Status: Accepted, 2026-10-05. Linux packaging is moot since
+[ADR 0037](0037-ci-and-release-pipeline.md) dropped Linux release jobs.
 
 ## Decision
 
-Reuse selected Zorite mainline changes integrated since 2026-09-18, through
-reviewed upstream head `4aad847f57a5ac3e8ec0b6220e25d9db7e5264b4`:
+Reuse selected Zorite mainline changes through upstream head
+`4aad847f57a5ac3e8ec0b6220e25d9db7e5264b4`:
 
-- Correct Linux shaped glyph positions by applying combining-mark offsets.
-  Temporarily vendor the affected `gpui-pre-wgpu` source, preserve its license,
-  exclude it from workspace checks, and document removal once an adopted GPUI
-  release includes the correction.
-- Ensure the repacked AppImage launcher is executable by every user and fail
-  packaging when an executable remains owner-only. Do not claim firejail success.
-- Replace the existing heading/list marker golden-ratio literal with the standard
-  constant for Clippy compatibility.
-- Render existing `==highlights==`, supported colored `<mark>` and `<span>` syntax
-  consistently in the editor and Markdown renderer. Preserve source bytes and
-  complete raw-source Markdown handoff. Add no formatting action, swatch menu,
-  picker or UI toolkit migration.
+- Correct Linux shaped glyph positions by applying combining-mark offsets, in a
+  temporarily vendored `gpui-pre-wgpu` source (license kept, excluded from
+  workspace checks) until an adopted GPUI release includes the fix.
+- Make the repacked AppImage launcher executable by every user.
+- Use the standard golden-ratio constant for heading/list markers.
+- Render existing `==highlights==` and supported coloured `<mark>`/`<span>`
+  consistently in the editor and renderer. No formatting action, swatch menu or
+  picker.
 
-Port only relevant patches, retaining upstream attribution and mdoc's current
-source/lifecycle behavior. General dependency updates, GitHub Action updates and
-Winget diagnostics are deferred. Journal/property/template/game/import/export
-features removed from mdoc remain outside scope.
+Port only relevant patches with upstream attribution. Journal, property,
+template and import/export features removed from mdoc stay out.
 
-## Rationale and invariants
-
-These ports repair retained code or display formatting already present in input
-documents without expanding mdoc's product workflow. A full merge would mix
-unrelated journal features and release machinery into the simplified app.
+## Invariants
 
 Preserve caret/selection, undo, source offsets, search geometry, diagnostic
-remapping and pseudonymization protections. Syntax recognition must preserve
-literal comparisons, escaping, code and table behavior. Unsupported styling must
-retain the source rather than rewrite it. Rendering does not normalize, strip or
-translate formatting on save or Copy Markdown.
+remapping and pseudonymization protections. Syntax recognition keeps literal
+comparisons, escaping, code and tables. Unsupported styling keeps its source.
+Rendering never normalizes, strips or translates formatting on save or Copy
+Markdown.
 
-## Delivery and acceptance
-
-Deliver a review branch and PR, relevant rendering/source regressions, repository
-gate and available native checks. Unavailable Linux visual
-or actual AppImage launch checks remain explicitly pending, without inferring
-platform acceptance from headless tests. No release or main merge is authorized
-by this decision.
-
-See [the historical upstream inventory and decision tree](https://github.com/lawkitt/mdoc/blob/dd22e6e98b6635f1e51ced6baf6c47428dd50806/docs/design/zorite-upstream-triage.md).
-
-## Implementation evidence
-
-The fixes and rendering support are implemented with upstream attribution.
-mdoc-specific regressions required source-aware marker offsets after escaped or
-entity-decoded text, visible reader search/table measurement, restoration of nested
-HTML styles, and literal handling of unsupported tags and code-span contents.
-No formatting action or color picker was added.
-
-The [verification record](../../tests/fixtures/zorite-upstream/README.md) reports
-374 passing workspace tests, 11 ignored tests, formatting/strict Clippy,
-dependency/license/source checks, workflow lint and permission fixtures.
-A native macOS standalone-editor smoke check confirmed the new formats paint;
-Linux glyph placement and actual AppImage launch remain pending.
-
-Review delivery: [mdoc PR #10](https://github.com/lawkitt/mdoc/pull/10).
-The initial implementation commit is
-`7a895e3b8580e6604881d869ebe56f1d21a6b59c`; later documentation records delivery.
-No main branch merge or release was performed.
-Remote CI did not run: GitHub reports repository Actions disabled. Linux/Windows
-compilation and tests remain unverified alongside the native acceptance limits.
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0009-selected-zorite-upstream-fixes.md),
+[inventory](https://github.com/lawkitt/mdoc/blob/dd22e6e98b6635f1e51ced6baf6c47428dd50806/docs/design/zorite-upstream-triage.md),
+[verification](../../tests/fixtures/zorite-upstream/README.md).

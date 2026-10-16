@@ -1,41 +1,28 @@
 # Review upstream converter updates against preserved fork behavior
 
-Status: accepted, 2026-10-04, including the public corpus and final
-shared-understanding confirmation. Implementation authorized.
+Status: Accepted, 2026-10-04.
 
 ## Decision
 
-For this pdf-inspector update, merge the complete upstream revision
-`ef52f77850b29189048797a48b24862251f54fe7` (1.25.2) into the fork while preserving
-its history and the two local OCR extensions. Deliver the fork update and mdoc's
-exact tested dependency pin through review branches/PRs.
+Take upstream pdf-inspector updates as complete merges into the fork, keeping
+its history and the local OCR extensions: pinned Cyrillic manifests, explicit
+runtime paths, offline recognition, explicit app consent and optional
+recognition output before fusion. mdoc pins the exact tested fork revision.
 
-Preserve pinned Cyrillic model manifests, explicit runtime paths, offline
-recognition, explicit app consent, and optional recognition output before fusion.
-Existing document-lifecycle and source-preservation contracts remain invariants.
-
-Require fork checks with OCR enabled, mdoc checks, and before/after output
-comparisons on controlled EN/RU fixtures and publicly sourced representative
-documents. Unexplained text loss, reading-order errors or invariant regressions
-block adoption. Structural improvements need evidence and individual review.
-macOS and Windows OCR smoke checks must pass before adoption; unavailable
-platform checks remain explicit blockers rather than inferred acceptance.
+An update is adopted only after fork checks with OCR enabled, mdoc checks, and
+before/after output comparison on controlled EN/RU fixtures and the
+[public corpus](../../tests/fixtures/ocr-upstream/README.md). Unexplained text
+loss, reading-order errors or invariant regressions block adoption; structural
+changes need evidence and individual review. macOS and Windows OCR smoke checks
+must pass; an unavailable platform check is a stated blocker, not inferred
+acceptance.
 
 ## Rationale
 
-A full merge keeps the fork maintainable while retaining its small OCR extension.
-Build success alone cannot validate extraction changes; upstream modifies scan
-classification, decoding, reading order and the OCR renderer's input. Public
-fixtures make useful regression evidence reproducible without user documents.
+A full merge keeps the fork maintainable. Build success cannot validate
+extraction changes, and public fixtures make regressions reproducible without
+user documents. This is a regression gate, not general OCR qualification.
 
-See [the historical decision tree and corpus proposal](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pdf-inspector-upstream-sync.md).
-
-## Implementation evidence
-
-The merge preserved the fork's local OCR extensions; mdoc adopted tested fork
-`1baba87892a929e64d08069cb223b4a312f755cf`. The [public corpus](../../tests/fixtures/ocr-upstream/README.md)
-contains 12 public pages, plus native originals and synthetic EN/RU fixtures.
-All 54 prepared/raw/provenance artifacts were byte-identical to baseline.
-See [verification](../../tests/fixtures/ocr-upstream/verification.md) for checks
-and pending Windows, remote-CI and external-suite acceptance. This is a regression
-gate, not general OCR qualification.
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0007-review-upstream-converter-updates.md),
+[decision tree](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pdf-inspector-upstream-sync.md),
+[verification](../../tests/fixtures/ocr-upstream/verification.md).

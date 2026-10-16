@@ -1,145 +1,55 @@
 # Inspect and select local model settings
 
-Status: implemented, 2026-10-02; defaults and Settings controls amended by [ADR 0026](0026-first-use-model-setup.md). The user authorized implementation after the
-completed design interview. [Verification](../../tests/fixtures/model-settings/README.md)
-records offline operation of all four bundles on Apple Silicon macOS and the
-remaining human/native and Windows checks.
+Status: Accepted, 2026-10-02. Amended by
+[ADR 0026](0026-first-use-model-setup.md) (defaults, first-use setup, Settings
+rows and footer).
+
+## Problem
 
 Users need to inspect the current OCR and pseudonymization configuration and
-compare model quality during QA. Current runtime integration pins one bundle
-for each feature and exposes setup through feature-specific controls.
+compare models during QA. Each feature pinned one bundle with feature-specific
+setup controls.
 
-Provide one application-wide **Settings** dialog with OCR and Pseudonymization
-sections, available without an open document. The action and contextual links
-are named **Settings**, without an ellipsis. Application defaults apply to future
-runs; results identify the actual configuration used rather than merely showing
-the latest default.
+## Decision
 
-Offer a curated list of supported, pinned model bundles with verified explicit
-downloads. Keep installation state, language support and qualification status
-separate. An installed or compatible model is not automatically qualified.
-Arbitrary local-model loading is outside the first version.
+- **One Settings dialog** with OCR and Pseudonymization sections, available
+  without an open document. Defaults apply to future runs; each result records
+  the configuration it actually used. Running jobs and existing results keep
+  their configuration; changing settings never reruns a document.
+- **Curated catalog** of pinned bundles with verified downloads: OCR English
+  PP-OCRv6 Small and Cyrillic; pseudonymization GLiNER2 FP16 and FP32. No
+  arbitrary local models. Installation state, language support and
+  qualification status are shown separately; installed does not mean qualified.
+  Known language failures stay visible.
+- **Advanced settings**: OCR resolution 150/200/300 DPI (default 150), minimum
+  recognition confidence 0–1 (default 0), pseudonymization threshold 0–1
+  (default 0.5). Higher thresholds discard predictions; they are not accuracy
+  scores. CPU execution and resource limits are read-only. Reset to defaults.
+- **OCR routing is Force**: explicit OCR recognizes every selected page. Opening
+  a document still never starts recognition.
+- **Model compare** runs sequentially on one captured snapshot (PDF bytes or the
+  full current Markdown), never on the working document and never changing
+  defaults. Results show recognition output (separate from prepared Markdown) or
+  detected spans, configuration, warnings and elapsed time, kept in memory until
+  the view closes. Closing cancels queued work and rejects late results. Export
+  report includes configuration, input hash, timings and outputs, never mappings.
+  Accuracy scoring stays in the developer tooling.
+- **Artifacts**: selecting a model changes only the preference; downloading is
+  separate. Repair and Remove keep shared runtimes and refuse a model in use.
+  Cancel keeps verified files and discards partial ones. Progress is byte-based,
+  then Verifying / Checking runtime; no invented percentages.
+- **Admission**: one model job at a time; QA never overlaps document inference;
+  conflicts show busy/retry without queues. Cancellation frees the slot only
+  when the call stops.
+- **Persistence**: applied settings persist atomically; a failed save keeps the
+  previous defaults. Invalid or obsolete stored settings show a notice and need
+  an explicit reset; a removed model is never silently substituted.
 
-Support isolated, sequential QA comparisons on identical unchanged input,
-retaining separate results with configuration provenance and timing. This keeps
-the comparison independent of edits or replacements accepted during another
-run. Automated annotated-corpus scoring remains in existing developer tooling
-initially.
+## Consequences
 
-Existing offline inference, explicit setup/OCR consent, source preservation,
-reviewable pseudonymization and experimental-model limitations continue to apply.
-OCR algorithms remain in dependency forks, with settings and QA orchestration
-owned by the app.
+OCR algorithms stay in the forks (ADR 0001); settings and QA orchestration are
+the app's. Distinct detector engines, category editing and GPU selection are
+deferred.
 
-## Initial catalog and controls
-
-Use the existing Cyrillic OCR bundle and original PP-OCRv6 Small, with the
-latter's known Russian failure visible. For pseudonymization, retain GLiNER2
-FP16 and add the pinned FP32 export only after actual compatibility and resource
-checks. Both remain experimental; FP32 is another precision of the same detector.
-Keep current model defaults. Distinct detector engines are deferred.
-
-### GLiNER-only catalog — 2026-10-04
-
-The user requested cleanup to retain only GLiNER models for pseudonymization.
-The supported app catalog is GLiNER2 FP16 and FP32. Other detector adapters,
-manifests, dedicated probe artifacts and classifier-only review categories are
-removed. Keep explicit setup, experimental status, model information and
-same-input comparisons. FP16 remains the default; both OCR bundles remain.
-
-Existing FP16/FP32 preferences and model cache identities stay compatible.
-Stored preferences selecting a removed model are obsolete and require a visible
-notice and explicit reset/supported selection, without silent substitution.
-
-Settings exposes language scope directly and model description, license,
-revision, storage and source/pinned-export links under Details. Comparison
-controls scroll within a bounded area as the catalog grows.
-
-Advanced settings expose OCR resolution/minimum recognition confidence and
-pseudonymization threshold. OCR routing is fixed to Force, with no user mode
-selector: explicit OCR recognizes every selected page. This changes the app's
-current Auto routing; it does not remove explicit OCR consent or make document
-opening invoke recognition. CPU execution and resource limits are read-only.
-Provide Reset to defaults. Category/schema editing and GPU selection are deferred.
-
-OCR resolution is 150/200/300 DPI (default 150). Minimum recognition confidence
-is a finite value in 0-1 (default 0); pseudonymization threshold is a finite value
-in 0-1 (default 0.5). Reset restores these values and the Cyrillic/FP16 model
-defaults. Higher thresholds discard predictions; they are not accuracy scores.
-
-## Change and result lifecycle
-
-Use a compact dialog with two sections, a menu item, standard settings shortcut,
-contextual links, Apply and Close. Persist applied defaults across restarts.
-Capture configuration at the start of each job; running jobs and existing
-results retain that configuration. Settings changes never rerun a document.
-
-Compare models opens a separate view for a suitable active document. Capture PDF
-bytes for OCR or the complete current Markdown for pseudonymization once. Run
-configurations sequentially on that snapshot. Start with two runs and allow
-another run against the same snapshot. Switchable read-only outputs show text or
-detected spans, configuration, warnings and elapsed time. QA overrides change
-neither application defaults nor the working document.
-
-OCR comparison defaults to All pages, with an optional QA page range; scan full
-Markdown for pseudonymization. Freeze page selection with the input. New comparison
-captures fresh input. Switching documents does not change the snapshot. Closing
-the comparison cancels queued/pending work and releases retained results/input;
-an active native call may retain its input until the next checkpoint. Reject late
-completions without reopening the view.
-
-Expose Recognition output separately from Prepared Markdown because native/OCR
-fusion can conceal recognition differences. Raw OCR output support belongs in
-the converter fork, with page warnings/timings. Pseudonymization results expose
-detected text/category/source location/confidence. Keep accuracy scoring in the
-annotated-fixture harness; counts and elapsed time are the app's measurements.
-
-Retain comparison results in memory until close. Explicit Export report includes
-revisions/configuration, input hash, timings, warnings and recognition output or
-predictions, without replacement mappings. No restart restoration or automatic
-report saving. Allow separate Markdown export of OCR output.
-
-Close/Escape discards unapplied preferences and restores focus. Apply persists
-atomically; a save failure leaves previous active defaults and reports the error.
-Missing settings use defaults. Invalid/obsolete settings require a notice and
-explicit reset/supported selection instead of an unnoticed model substitution.
-
-## Artifact management
-
-Model selection changes preference only. Download is an explicit separate action.
-Missing preferred models offer setup rather than silent fallback. Show model
-name, language evidence, qualification status, installation state and download
-size. Details reveals revision, precision, runtime, licenses and storage location.
-Offer Repair and Remove for model files, preserving shared runtimes and preventing
-removal while a model is in use.
-
-Setup continues independently of Settings visibility; reopening shows its state.
-Cancel download preserves completed verified files and discards incomplete files.
-Use measurable byte progress, followed by Verifying/Checking runtime states rather
-than invented percentages. Setup from Settings never initiates document processing.
-
-## Admission and model availability
-
-One comparison job executes at a time. QA inference does not overlap document
-OCR or pseudonymization inference. Conflicting requests show busy/retry without
-automatic queues; explicitly requested comparison runs execute sequentially.
-Editing, viewing and saving stay available. Cancellation releases the execution
-slot only once the underlying call stops.
-
-An alternative failing runtime loading or existing execution limits remains
-visible but disabled on the affected platform, with the measured reason. Complete
-the infrastructure and working alternatives without silently changing the selected
-model or relaxing limits. Runtime availability and experimental/quality status
-remain distinct; known language failures stay visible.
-
-## Acceptance
-
-Require the full repository gate, focused settings/lifecycle tests, converter
-tests for raw recognition output and actual offline runs of every enabled model.
-Record model/runtime revisions, configuration, timings and peak memory with
-machine/build details. Separately check native macOS layout, focus, shortcuts and
-numeric input. Explicitly record outstanding Windows/native checks; headless
-results do not establish native acceptance or platform runtime qualification.
-
-The [historical complete design record](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/local-model-settings.md) contains the
-confirmed decision tree, defaults, implementation guidance and explicit deferrals.
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0006-local-model-settings.md),
+[verification](../../tests/fixtures/model-settings/README.md).

@@ -1,7 +1,6 @@
 # Remove inert host interactions
 
-Status: accepted and implemented, 2026-10-09. See the
-[historical codebase cleanup interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/codebase-cleanup.md), checkpoint.
+Status: Accepted, 2026-10-09.
 
 ## Problem
 
@@ -31,3 +30,5 @@ new feature and need their own design.
 Saved bytes and Copy Markdown are unchanged. `$$` block detection used by
 search, drag ranges, "Turn into" and alignment-marker hiding is unaffected.
 PDF search, zoom, navigation, links and form-appearance rendering are unchanged.
+
+References: [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/codebase-cleanup.md), checkpoint.

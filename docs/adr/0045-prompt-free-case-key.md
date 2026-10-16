@@ -28,7 +28,7 @@ key made under another signature are affected.
 
 ## Decision
 
-1. **Quiet means quiet (beta.8).** With dialogs off, -25308, -25293 and -128
+1. **Quiet means quiet.** With dialogs off, -25308, -25293 and -128
    all mean "may ask", never "denied". Launch never falls back to a read with
    dialogs allowed: any quiet error leaves cases locked, and an unsure answer
    shows the explainer before a gated action. ADR 0043's process-wide switch
@@ -64,13 +64,16 @@ key made under another signature are affected.
    large downloaded models stay shared. A dev build that restores a session
    with case members finds no such case in `cases-dev/` and treats them as
    missing, not locked. No plaintext key file, not even for dev.
-7. **Rollout.** Fix 1 ships in beta.8. Signing embeds the profile only when
+7. **Rollout.** Signing embeds the profile only when
    `APPLE_PROVISIONING_PROFILE` is set (CI: secret
    `APPLE_PROVISIONING_PROFILE_BASE64`) and then adds
    `com.apple.application-identifier`, `com.apple.developer.team-identifier`
    and `keychain-access-groups`. Without it, nothing changes. The owner
    registers the App ID with Keychain Sharing and creates the profile;
    Protected turns on with the first release signed with it.
+8. **No plaintext key file**, not even as an opt-in default (as Anoni does): it
+   avoids prompts only by giving up the protection. An optional case passphrase
+   and case sharing stay deferred (ROADMAP).
 
 ## Verification
 
@@ -83,11 +86,4 @@ the locked bar. It removes the seeded key and folder afterwards. CI cannot see
 system dialogs. With a profile build, also check: Unlock → one dialog →
 relaunch → no locked bar.
 
-## Amended 2026-10-14
-
-A plaintext key file beside the cases, as Anoni does, was considered as the
-default with the Keychain as an opt-in, and rejected: it avoids prompts only by
-giving up the protection. The data protection keychain (decision 3) is a
-release blocker for beta.9; the owner's Apple setup is listed in the
-[Anoni comparison](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/anoni-comparison.md#owner-checklist-data-protection-keychain).
-An optional case passphrase and case sharing stay deferred (ROADMAP).
+References: [owner checklist for the data protection keychain](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/anoni-comparison.md#owner-checklist-data-protection-keychain).

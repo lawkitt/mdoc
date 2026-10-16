@@ -1,29 +1,24 @@
 # Empty page and external file drop
 
-Status: Accepted and implemented, 2026-10-09; native file-drag and Windows/Linux checks outstanding. See the [historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/empty-page.md).
+Status: Accepted, 2026-10-09. The empty page is superseded by Home in
+[ADR 0048](0048-workspace-shell-redesign.md); file drop stands.
 
 ## Problem
 
-A blank Markdown tab shows only a one-line placeholder at top-left. It does not
-make opening files obvious, hide that several files can be opened at once, and
-mdoc accepts no files dragged from the OS.
+mdoc accepted no files dragged from the OS.
 
 ## Decision
 
-- An **empty page** — centered icon, **Open files…** primary button, supported
-  formats and multi-select hint, ⌘O hint, "or just start typing" — replaces the
-  placeholder whenever a Markdown tab's content is empty. It is a non-blocking
-  overlay: the editor keeps focus.
-- **External file drop** opens files via the existing open path on the whole
-  window while the empty page shows, and on the document sidebar (Chrome-like).
-- Sidebar drops show an insertion line and open new tabs at that position;
-  a drop never replaces a document. Dragging over the collapsed rail reveals
-  it. The empty page shows "Drop to open", or "No supported files" when nothing
-  dragged is supported.
-- Recent files and folder drops are out of scope; folders are skipped with the
-  existing notice. Tab groups (Chrome-style) are a roadmap item.
+- **External file drop** opens files through the existing open path: anywhere
+  on the window while Home or an empty tab shows, and on the document sidebar
+  (Chrome-like).
+- Sidebar drops show an insertion line and open new tabs at that position; a
+  drop never replaces a document. Dragging over the collapsed rail reveals it.
+- Drag-over feedback reads "Drop to open", or "No supported files" when nothing
+  dragged is supported. Folder drops open as a case (ADR 0041).
 
 ## Consequences
 
-Adds an external-path drop target and drag-over feedback; all opening still
-flows through `Tabs::open_paths`, which gains an optional insertion index.
+All opening flows through `Tabs::open_paths`, which gains an optional insertion index.
+
+References: [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/empty-page.md).

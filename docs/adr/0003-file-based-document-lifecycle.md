@@ -1,7 +1,7 @@
 # Retain file-based document sessions and lazy paired tabs
 
-Status: accepted current behavior, consolidated 2026-10-01 from the earlier
-sidebar, bulk-opening, and opening-UI contracts.
+Status: Accepted, 2026-10-01. Launch and blank tabs amended by
+[ADR 0048](0048-workspace-shell-redesign.md) (Home covers a hidden placeholder).
 
 Keep documents as ordinary UTF-8 files and retain one live editor/source-preview
 pair per tab. Lazy admission and initialization bound multi-file opening without

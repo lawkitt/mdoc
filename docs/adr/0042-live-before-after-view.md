@@ -1,8 +1,10 @@
 # Live before / after view
 
-Status: Accepted, 2026-10-13; implemented the same day. Supersedes the
-"snapshot taken when opened" sentence of
-[ADR 0041](0041-cases-and-ai-response-restoration.md) for the before / after view.
+Status: Accepted, 2026-10-13. Supersedes the "snapshot taken when opened"
+rule of [ADR 0041](0041-cases-and-ai-response-restoration.md). Amended by
+[ADR 0046](0046-workspace-polish-from-anoni-review.md) (single-column views) and
+[ADR 0048](0048-workspace-shell-redesign.md) (the view pill replaces the toolbar
+icon).
 
 ## Problem
 
@@ -10,9 +12,8 @@ The before / after view copied the text into two read-only editors once, when
 opened. The Replacements panel stays usable beside it, so applying, undoing or
 reverting a replacement left the view stale (reported against 0.1.0-beta.5).
 A full-width header row ("Original", "Pseudonymized", Close) cost vertical
-space and did not match the editor's floating chrome. The toolbar's text
-button flipped its label between "Before / after" and "Edit", naming the next
-mode rather than the current one, and was the only text control among icons.
+space and did not match the editor's floating chrome. A toolbar text
+button named the next mode rather than the current one.
 
 ## Decision
 
@@ -25,11 +26,9 @@ mode rather than the current one, and was the only text control among icons.
    scrolling and restored on hover.
 3. **Floating Close** in the right column's top-right corner, styled like
    `ui::floating_button` (Copy). Esc also closes.
-4. **Toolbar toggle is an icon** (two columns) beside Paste AI response, with
-   an active (pressed) state while the view is open, a tooltip and a keyboard
-   shortcut. No label swap.
-5. **Opening the view hides the PDF preview** ("Show original") and closing
-   it restores the previous state; "Show original" is unavailable meanwhile.
+4. **Toggle** through the view pill (ADR 0048) and ⌘\\; no label swap.
+5. **Opening the view hides the Source preview** and closing
+   it restores the previous state; Source is unavailable meanwhile.
    The Replacements panel stays.
 6. **Gold originals, blue aliases.** The original column marks the original
    wording in gold and the pseudonymized column marks aliases in blue, the
