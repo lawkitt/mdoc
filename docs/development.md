@@ -30,6 +30,22 @@ The full list is under [Recipes](#recipes).
 - [Evidence](evidence/): measurements that current work still compares against.
 - [Privacy and limitations](privacy.md).
 
+### Writing ADRs
+
+ADRs state the rules in force ([ADR 0052](adr/0052-adrs-are-current-rules.md));
+history lives in git.
+
+- Sections: Problem, Decision, Invariants (if any), Consequences, then an
+  optional `References:` line for interview records and evidence.
+- Status line: `Status: Accepted, YYYY-MM-DD. Amended by ADR X; superseded in
+  part by ADR Y.` No conversation narration.
+- A later decision edits the older ADR to show only what still holds, with a
+  one-line pointer. An ADR with no surviving rule becomes a stub: title,
+  `Superseded by ADR NNNN`, and a commit permalink to its full text.
+- Never renumber: code cites ADRs by number.
+- Design interviews and dated evidence leave the tree once nothing live reads
+  them; link them by commit permalink.
+
 ## Code layout
 
 Run the [repository gate](#build-from-source) before delivering code changes.
