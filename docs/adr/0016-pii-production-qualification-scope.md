@@ -29,5 +29,5 @@ Detection quality, source integrity, relationship fidelity and runtime/native
 acceptance need separate evidence; success in one does not establish the
 others. The open qualification gates are ROADMAP work.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0016-pii-production-qualification-scope.md),
-[last gate review](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/pseudonymization-production-readiness.md).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0016-pii-production-qualification-scope.md),
+[last gate review](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/pseudonymization-production-readiness.md).

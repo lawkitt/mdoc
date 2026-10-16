@@ -28,6 +28,6 @@ comparisons, escaping, code and tables. Unsupported styling keeps its source.
 Rendering never normalizes, strips or translates formatting on save or Copy
 Markdown.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0009-selected-zorite-upstream-fixes.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0009-selected-zorite-upstream-fixes.md),
 [inventory](https://github.com/lawkitt/mdoc/blob/dd22e6e98b6635f1e51ced6baf6c47428dd50806/docs/design/zorite-upstream-triage.md),
 [verification](../../tests/fixtures/zorite-upstream/README.md).

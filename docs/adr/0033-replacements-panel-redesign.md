@@ -35,5 +35,5 @@ menu hid Rescan, and decisions needed the popup or the mouse.
 Expansion is per-group panel state. Keyboard move and middle click reuse the
 existing mapping actions and add no new undo semantics.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0033-replacements-panel-redesign.md),
-[interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/replacement-panel-polish.md).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0033-replacements-panel-redesign.md),
+[interview](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/replacement-panel-polish.md).

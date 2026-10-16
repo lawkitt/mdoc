@@ -25,4 +25,4 @@ Preserve source bytes, caret/selection, notification order, content revisions,
 stale-replacement rejection, diagnostic remapping, undo grouping and limits,
 redo branching, clipboard routing, auto-replacement and IME conversion.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0011-editor-input-module.md).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0011-editor-input-module.md).

@@ -27,5 +27,5 @@ behavior, so app policy stays explicit; INN has no upstream recognizer. The
 package's phone-library dependency is retained and attributed, though unused.
 Frozen corpus predictions and Unicode/context/dense-source checks gate changes.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0017-selected-rust-presidio-reuse.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0017-selected-rust-presidio-reuse.md),
 [source research](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/rust-presidio-reuse.md).

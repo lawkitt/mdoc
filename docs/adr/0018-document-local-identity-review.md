@@ -47,5 +47,5 @@ Realistic fake names are not offered: they are harder to restore and collide
 with real names. Recognition and relationship resolution are not qualified for
 production by this workflow.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0018-document-local-identity-review.md),
-[verification](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/pseudonymization/2026-10-08-identities/README.md).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0018-document-local-identity-review.md),
+[verification](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-08-identities/README.md).

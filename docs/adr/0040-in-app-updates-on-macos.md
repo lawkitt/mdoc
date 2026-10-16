@@ -90,4 +90,4 @@ against an identity that the release feed cannot fake.
   their own (Authenticode or a minisign key) and a handoff after exit for the
   NSIS installer.
 
-References: [interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/auto-update.md).
+References: [interview](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/auto-update.md).

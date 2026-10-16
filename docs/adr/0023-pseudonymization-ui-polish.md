@@ -19,5 +19,5 @@ popup had two scope systems.
   replacement back to proposed (same alias) is undo (⌘Z).
 - **Applied and proposed are distinct colours** in the editor and the panel.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0023-pseudonymization-ui-polish.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0023-pseudonymization-ui-polish.md),
 [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-ui-polish.md).

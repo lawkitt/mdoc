@@ -48,6 +48,6 @@ synchronization edits each member's own history; no other undo owner. Do not
 raise failing ceilings to make the tree pass. No feature redesign, service
 framework or text-storage replacement follows from this decision.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0049-measured-stabilization-and-architecture-review.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0049-measured-stabilization-and-architecture-review.md),
 [audit](../evidence/stabilization/2026-10-16/README.md),
 [results](../evidence/stabilization/2026-10-16/results.md).

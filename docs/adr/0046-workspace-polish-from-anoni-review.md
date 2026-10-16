@@ -56,4 +56,4 @@ and Anoni's plaintext key file (ADR 0045).
 - `<br>` handling is display-only: saved bytes, Copy Markdown and search are
   unchanged.
 
-References: [interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/anoni-comparison.md).
+References: [interview](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/anoni-comparison.md).

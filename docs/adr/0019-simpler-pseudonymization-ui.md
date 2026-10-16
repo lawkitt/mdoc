@@ -25,6 +25,6 @@ Status: Accepted, 2026-10-08. Superseded in part by
 Stable aliases, occurrence provenance, Keep, undo/redo, syntax protection and
 stale-result guards are unchanged.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0019-simpler-pseudonymization-ui.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0019-simpler-pseudonymization-ui.md),
 [design tree](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-ui-simplification.md),
-[verification](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/pseudonymization/2026-10-08-ui/README.md).
+[verification](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-08-ui/README.md).
