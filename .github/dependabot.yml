@@ -15,10 +15,9 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
-    # A bump the requirement does not allow raises it in Cargo.toml, so it fails
-    # CI when code must change instead of landing as a lockfile-only update that
-    # cargo silently undoes (ADR 0053; `just lint` checks the lock).
-    versioning-strategy: increase-if-necessary
+    # Cargo accepts only `auto` or `lockfile-only` here, so a bump the manifest
+    # does not allow can still arrive as a lockfile-only PR: `just lint` runs
+    # `cargo metadata --locked` and fails it (ADR 0053).
     # gpui pins these internally (resvg via gpui itself, sha2 via its
     # http_client); bumping our copy past gpui's compiles TWO versions into
     # the binary. They move only in lockstep with a gpui upgrade — and the
