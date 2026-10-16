@@ -14,9 +14,13 @@ path=$(cd "$1" && pwd -P)
 
 main=$(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }')
 [ "$path" != "$(cd "$main" && pwd -P)" ] || die "refusing to retire the main worktree"
-git worktree list --porcelain | awk '/^worktree / { print substr($0, 10) }' |
-  while read -r tree; do [ "$(cd "$tree" 2>/dev/null && pwd -P)" = "$path" ] && echo yes; done |
-  grep -q yes || die "$path is not a worktree of this repository"
+# No `| grep -q`: it exits on the first match and, under pipefail, the
+# loop's SIGPIPE on a later worktree would fail the whole check.
+found=
+while read -r tree; do
+  [ "$(cd "$tree" 2>/dev/null && pwd -P)" = "$path" ] && found=1
+done < <(git worktree list --porcelain | awk '/^worktree / { print substr($0, 10) }')
+[ -n "$found" ] || die "$path is not a worktree of this repository"
 
 targets=() kept=()
 while IFS= read -r -d '' entry; do
