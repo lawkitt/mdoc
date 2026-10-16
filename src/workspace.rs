@@ -1256,6 +1256,7 @@ impl Workspace {
             TabEvent::CloseCancelled => {
                 crate::updater::cancel_restart(cx);
                 self.quitting = None;
+                self.cancel_case_quit();
                 self.quit_active = None;
                 self.closing_tab = None;
                 let views: Vec<_> = self
@@ -1637,6 +1638,7 @@ impl Workspace {
                         let was_quitting = this.finishing;
                         this.finishing = false;
                         this.quitting = None;
+                        this.cancel_case_quit();
                         this.pending_write = None;
                         if was_quitting {
                             let answer = window.prompt(PromptLevel::Warning,

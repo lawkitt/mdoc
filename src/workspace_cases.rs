@@ -892,7 +892,9 @@ impl Workspace {
         }
         // A later revision already queued must win over the failed one.
         self.cases.pending.entry(case.id.clone()).or_insert(case);
-        if self.cases.quit_window.is_some() {
+        // Only a quit still in progress owns the failure; an abandoned one
+        // must not block ordinary saves behind an unanswered prompt.
+        if self.finishing && self.cases.quit_window.is_some() {
             self.cases.quit_error = Some(error);
             self.resume_case_quit(cx);
         }
@@ -923,6 +925,14 @@ impl Workspace {
                 let _ = entity.update(cx, |this, cx| this.close_tab(tab, window, cx));
             });
         });
+    }
+    #[cfg(test)]
+    pub(super) fn set_case_quit_window(&mut self, window: Option<gpui::AnyWindowHandle>) {
+        self.cases.quit_window = window;
+    }
+    #[cfg(test)]
+    pub(super) fn case_quit_pending(&self) -> bool {
+        self.cases.quit_window.is_some() || self.cases.quit_error.is_some()
     }
     pub(super) fn cancel_case_quit(&mut self) {
         self.cases.quit_window = None;

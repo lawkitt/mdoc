@@ -3926,6 +3926,56 @@ fn case_quit_store_open_failure_retains_work_for_retry(cx: &mut TestAppContext) 
 }
 
 #[gpui::test]
+fn abandoned_quit_does_not_block_later_case_saves(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    let blocked = dir.path().join("blocked-store");
+    std::fs::remove_file(&blocked).unwrap();
+    let parent_file = dir.path().join("not-a-directory");
+    std::fs::write(&parent_file, "preserve").unwrap();
+    // Waiting on final case saves when the tab-list write fails; Cancel
+    // abandons the quit.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.session_path = Some(parent_file.join("session.json"));
+        tabs.finishing = true;
+        tabs.set_case_quit_window(Some(window.window_handle()));
+        tabs.checkpoint(window, cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    tabs.read_with(cx, |tabs, _| {
+        assert!(!tabs.finishing);
+        assert!(!tabs.case_quit_pending());
+    });
+    // An ordinary failure afterwards is a notice, not a quit prompt.
+    std::fs::write(&blocked, "keep this file").unwrap();
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx)
+    });
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    tabs.read_with(cx, |tabs, _| {
+        assert!(
+            tabs.notice
+                .as_deref()
+                .is_some_and(|n| n.contains("Could not save the case"))
+        );
+        assert!(!tabs.case_quit_pending());
+    });
+    // The queue still drains once the store is writable again.
+    std::fs::remove_file(&blocked).unwrap();
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, crate::pii::Category::Organization, cx)
+    });
+    cx.run_until_parked();
+    let saved = crate::cases::Store::with_key(blocked, &[3; 32])
+        .load(&case)
+        .unwrap();
+    assert_eq!(saved.skip.len(), 2);
+}
+
+#[gpui::test]
 fn case_quit_checks_edits_made_while_final_saves_are_pending(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
