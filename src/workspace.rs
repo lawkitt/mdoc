@@ -163,8 +163,8 @@ pub(super) struct Workspace {
     quit_active: Option<u64>,
     closing_tab: Option<u64>,
     finishing: bool,
-    /// Histories whose save/discard decisions have already been resolved.
-    quit_checked: Vec<(u64, u64)>,
+    /// Histories whose save/discard decisions have already been resolved, by tab.
+    quit_checked: std::collections::HashMap<u64, u64>,
     session_path: Option<PathBuf>,
     persisted: Option<Session>,
     writing: bool,
@@ -318,7 +318,7 @@ impl Workspace {
             quit_active: None,
             closing_tab: None,
             finishing: false,
-            quit_checked: Vec::new(),
+            quit_checked: std::collections::HashMap::new(),
             session_path: None,
             persisted: None,
             writing: false,
@@ -1501,9 +1501,8 @@ impl Workspace {
                 (view.dirty(cx)
                     && self
                         .quit_checked
-                        .iter()
-                        .find(|(id, _)| *id == tab.id)
-                        .is_none_or(|(_, history)| *history != view.editor.read(cx).history_id()))
+                        .get(&tab.id)
+                        .is_none_or(|history| *history != view.editor.read(cx).history_id()))
                 .then_some(tab.id)
             })
             .collect();
