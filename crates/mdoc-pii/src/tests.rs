@@ -621,3 +621,24 @@ fn partial_name_replace_keeps_the_containing_identity_whole() {
         );
     }
 }
+
+#[test]
+fn containment_suggests_only_name_identities() {
+    let source = "Write to Alice@example.com. Alice agreed.";
+    let mut review = Review::default();
+    let email = source.find("Alice@").unwrap();
+    review
+        .ingest(
+            source,
+            vec![detection(
+                email..email + "Alice@example.com".len(),
+                Category::Email,
+            )],
+        )
+        .unwrap();
+    let start = source.rfind("Alice").unwrap();
+    let alice = review
+        .add_manual(source, start..start + "Alice".len(), Category::Person)
+        .unwrap();
+    assert!(review.suggestions(alice).is_empty());
+}

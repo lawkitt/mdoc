@@ -122,6 +122,11 @@ fn related_name(a: &str, b: &str) -> bool {
 }
 /// Whether `part` occurs as whole words inside the longer `whole` ("Raman" in
 /// "Priya Raman"): a proposed link, never an automatic one.
+/// Containment suggests only names: "Alice" inside `Alice@example.com` is not
+/// that email's identity.
+fn is_name(category: Category) -> bool {
+    matches!(category, Category::Person | Category::Organization)
+}
 fn contained_name(whole: &str, part: &str) -> bool {
     whole.len() > part.len()
         && whole
@@ -508,7 +513,9 @@ impl Review {
                 g.id != group
                     && ((g.category == Category::Person
                         && related_name(&g.original, &variant.original))
-                        || contained_name(&g.original, &variant.original))
+                        || (is_name(g.category)
+                            && is_name(variant.category)
+                            && contained_name(&g.original, &variant.original)))
             })
             .filter_map(|g| self.variant_identity(g.id))
             .filter(|id| Some(*id) != current)
