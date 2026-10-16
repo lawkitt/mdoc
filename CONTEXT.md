@@ -110,6 +110,11 @@ needs it ([ADR 0043](docs/adr/0043-deferred-keychain-access.md)). Signed
 macOS builds move it to the data protection keychain, which never asks
 ([ADR 0045](docs/adr/0045-prompt-free-case-key.md)).
 
+**Variant proposal**: a suggested link between a shorter or inflected form
+("Ms Raman", "Raman's", "Рамана") and a known identity. Always reviewed, never
+linked automatically; a first name alone is not proposed
+([ADR 0051](docs/adr/0051-roadmap-structure-and-stable-scope.md)).
+
 **Quiet probe**: the launch read of the case key with per-query "no UI"; it
 either opens cases or leaves them locked, and never shows a system dialog.
 
@@ -270,3 +275,12 @@ newest GitHub Release; shows Settings → Updates and never installs ([ADR 0038]
 **Release gate**: checks a release must pass on every shipped target: the OCR
 smoke test before packaging, and the packaged-app self-test (`just
 smoke-package`) on the built artifact itself.
+
+**Must-fix / should-fix**: roadmap tiers for a milestone. Stable waits only on
+must-fix items; unfinished should-fix items move to the next milestone. Distinct
+from a release gate, which is an automated check on every release
+([ADR 0051](docs/adr/0051-roadmap-structure-and-stable-scope.md)).
+
+**Ordinary legal document**: the interactive performance target, about 30 pages
+or 135 KB of Markdown. The 2 MiB / 20,000-mention workload is the separate
+*stress tier* ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).

@@ -1,183 +1,160 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap tracks work remaining as of 2026-10-16; accepted behavior lives in
-[ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
+This roadmap tracks work remaining as of 2026-10-16 (latest: 0.1.0-beta.11);
+accepted behavior lives in [ADRs](docs/adr/), with terminology in
+[CONTEXT.md](CONTEXT.md). Structure and stable scope:
+[ADR 0051](docs/adr/0051-roadmap-structure-and-stable-scope.md).
 
 ## Current status
 
-- Local conversion, editable Markdown, PDF/DOCX source previews, multi-file
-  opening and full-source Copy Markdown are implemented.
-- Explicit offline OCR setup, model Settings and isolated QA comparisons are
-  implemented. See [OCR qualification](tests/fixtures/ocr-qualification/README.md)
-  and [Settings verification](tests/fixtures/model-settings/README.md) for limitations.
-- Document-local pseudonymization includes stable aliases, variant/occurrence
-  correction, reviewed ownership, explicit batch Apply, inspectable replacements
-  and metadata-aware undo/redo. Pseudonymization is the only PII replacement mode
-  ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)). It is a supported,
-  assistive feature ([ADR 0034](docs/adr/0034-pseudonymization-supported-feature.md));
-  no model passed the [initial qualification](tests/fixtures/pseudonymization/README.md).
-- Offline EN/RU spellcheck with bundled dictionaries is implemented
-  ([ADR 0036](docs/adr/0036-bundled-spellcheck.md), [baseline](docs/evidence/spellcheck/README.md));
-  its layout cost belongs in step 1's measurements.
-- Sidebar, first-use setup, empty-page/file-drop and replacement-popup revisions
-  are implemented under ADRs 0026–0028 and 0032. Native/platform acceptance remains
-  partial; implementation does not establish qualification.
+Local conversion with PDF/DOCX previews, offline OCR, assistive pseudonymization
+([ADR 0034](docs/adr/0034-pseudonymization-supported-feature.md)), encrypted
+cases with AI-reply restoration ([ADR 0041](docs/adr/0041-cases-and-ai-response-restoration.md)),
+EN/RU spellcheck and the redesigned workspace shell ([ADR 0048](docs/adr/0048-workspace-shell-redesign.md))
+ship in betas. Implementation does not establish qualification: native/platform
+acceptance is partial and no PII model passed the [initial qualification](tests/fixtures/pseudonymization/README.md).
 
-## Next steps
+## 0.1.0 stable
 
-1. **Measure and resolve responsiveness/resource blockers.** Separate editor
-   layout cost from PII overhead using fixed viewports and representative
-   workloads. The [October 16 stabilization](docs/evidence/stabilization/2026-10-16/results.md)
-   addresses case-save failures, refresh/scheduling, spelling, diagnostic/link
-   geometry and panel preparation. Whole-document layout cost remains to qualify.
-   Ordinary legal documents are the hard interactive target; 2 MiB / 20,000
-   mentions form a measured stress tier with bounded work and memory. Set
-   numerical budgets after release/native baselines
+Stable waits only on **must-fix** items. Should-fix items ship if ready;
+otherwise they move to the top of [After 0.1.0](#after-010). Items are in
+priority order.
+
+### Must-fix
+
+1. **[PII] A partial-name Replace must not split an existing identity.**
+   *Found in beta.11 (known issue 3).* Selecting "Raman" and choosing Replace
+   (⌘⌥P) creates a new person alias for every occurrence, including the one
+   inside "Priya Raman", whose alias is then broken up; "Same as…" no longer
+   offers the original identity.
+   *Done when:* the existing mention stays intact, standalone occurrences get a
+   *proposed* link to the containing identity confirmed through Same as…, and
+   nothing links automatically. Covered by a test on the
+   [settlement agreement](docs/product-media/Settlement%20agreement.md).
+2. **[PII] Propose shorter and inflected forms of a known identity.**
+   *Found in beta.11 (known issue 4).* "Ms Raman" or "Ms Bennett" is not proposed
+   as a mention of the detected full name and stays in the text after Apply.
+   *Done when:* title + surname, possessives, surname alone and RU inflections
+   are proposed as [variants](CONTEXT.md) for review; a first name alone is not.
+   Record the change to [ADR 0018](docs/adr/0018-document-local-identity-review.md)
+   in a new ADR. Do this right after item 1, in the same code area.
+3. **[Perf] Ordinary legal documents are responsive.** Separate editor layout cost
+   from PII overhead using fixed viewports. The [October 16 stabilization](docs/evidence/stabilization/2026-10-16/results.md)
+   fixed case saves, refresh scheduling, spelling, diagnostic/link geometry and
+   panel preparation; whole-document layout cost (including
+   [spellcheck](docs/evidence/spellcheck/README.md) layout), case-update fan-out and process
+   memory remain. Debug `just perf` still fails ordinary host scroll and DOCX
+   preview p95 (16.76 vs 16.667 ms). Profile before choosing migrations
    ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
-   Release measurements still expose long-document layout, large case-update
-   fan-out and process memory costs; profile these before selecting migrations.
-   Existing [restoration measurements](docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
-   expose a dense-document layout bottleneck; historical timings are not current
-   performance guarantees.
-2. **Qualify the outgoing AI-analysis journey.** Agree release targets and test
-   EN/RU legal/native/OCR text, hidden source, identity joins/splits, ownership and
-   correction time on a larger holdout. See [open gates](docs/design/pseudonymization-production-readiness.md).
-   These are ongoing quality gates, not a precondition for the supported label.
-3. **Complete native and platform acceptance.** Check both themes, keyboard/IME,
-   clipboard, accessibility and affected popup, setup and file-drop flows.
-   Apple Silicon macOS and Windows x64 are the first qualification targets;
-   keep macOS, Windows and Linux buildable. Record unavailable checks explicitly.
-4. **Cases and the AI return journey** (accepted design:
-   [saved mappings](docs/design/saved-mappings.md), [ADR 0041](docs/adr/0041-cases-and-ai-response-restoration.md)). Save a document's mapping
-   as an encrypted local case, group tabs that share one case, and restore AI
-   responses into a new tab with reviewable restored values. All four phases are
-   implemented, including the Linux Secret Service key, and ship in betas;
-   captured ChatGPT/Claude reply fixtures (required before stable 0.1.0) and
-   Windows/Linux native checks are still needed.
-5. **Preparation conveniences** from the [Anoni review](docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11):
-   in-app Pseudonymize Clipboard, the before/after view and per-case category
-   switches are implemented; a system-wide clipboard hotkey (macOS
-   `RegisterEventHotKey`, Windows `RegisterHotKey`) remains. Cases are already
-   listed on Home (ADR 0048).
-6. **TODO: Broader architectural refactoring**
-   ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
-   After focused stabilization, deliver case coordination and document lifecycle
-   as separate, incremental projects: explicit owners for case persistence and
-   synchronization, and explicit document transitions across the shell/view.
-   GPUI keeps presentation, prompts and scheduling; existing editor/history,
-   import and preview owners retain their contracts. Define each migration's
-   boundary before implementation. Investigate retained editor layout only if
-   remaining release-build costs justify it after local fixes; that replacement
-   is not committed work. Preserve behavior and lifecycle invariants throughout.
-7. **Rust build-cache follow-ups**
-   ([ADR 0050](docs/adr/0050-rust-build-cache-growth.md)). The lean dev profile,
-   `--profile debugging`, `just disk` and `just retire-worktree` are in place;
-   [measurements](docs/evidence/build-cache/2026-10-16/README.md) show ~45 %
-   smaller builds and trace the old 150 GiB `target/` mainly to stale copies
-   from artifact-hash churn. Check with `just disk` whether `target/` stays under
-   about 30 GiB through a week of development. Evaluate `sccache` separately for
-   shared dependency builds, accounting for its own disk use and
-   incremental/linking limitations. Keep release settings; no automatic
-   eviction or arbitrary cache caps.
+   *Done when:* on a release build on the M4 reference Mac, the ordinary scroll,
+   typing and navigation workloads and the public DOCX/PDF preview workloads reach
+   p95 frame ≤ 16.7 ms, confirmed by a native spot-check on a real ~30-page
+   contract. Debug ceilings stay regression guards.
+4. **[Cases] Captured AI-reply fixtures for Restore.** Cases and restoration
+   ([saved mappings](docs/design/saved-mappings.md)) are implemented in all four
+   phases, including the Linux Secret Service key.
+   *Done when:* four replies to the settlement-agreement demo (ChatGPT and Claude,
+   each EN and RU) live under `tests/fixtures/`, at least one with Markdown tables
+   and paraphrased or inflected aliases, and Restore leaves no alias unrestored
+   in any of them.
+5. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
+   Windows x64; keep Linux buildable. Done last, because it checks the finished UI.
+   *Done when:* one checklist per platform at `docs/evidence/platform/<date>/README.md`
+   covers both themes, IME (RU plus a CJK smoke test), clipboard,
+   VoiceOver/Narrator basics, and the popup, setup and file-drop flows, and lists
+   unavailable checks explicitly. The maintainer runs the Windows checks.
 
-Keep the app and internal crates maintainable through concrete ownership/test
-improvements ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)). Conversion
-and OCR algorithm changes belong in the AnyDoc/pdf-inspector forks, backed by
-source/output comparisons. Numerical budgets require measured baselines.
+### Should-fix
 
-## Known issues
+1. **[UI] Mention popup: stable, compact, reversible, bordered and clear of the
+   text.** *From beta.11 known issue 5 and the 2026-10-16 UI backlog.*
+   - One stable popup anchored to the active mention while selecting entities,
+     stepping through mentions or scrolling: no transient dismissal, duplicates
+     or frames at a wrong position.
+   - Less width, padding and spacing; original, alias, category, Replace and scope
+     controls stay readable. Default scope is the whole entity group, with a clear
+     "this mention only" toggle.
+   - Unchecking Replace keeps the popup open. After dismissal, kept mentions keep
+     a subtle underline and reopen the controls on click. Occurrence identity and
+     chosen scope are preserved, and explicit Apply is unchanged.
+   - A restrained border that stays distinct over real text in both themes.
+   - The "Replace ⌘⌥P" chip and the mention bar no longer cover the selection or
+     the lines around it.
 
-Found in 0.1.0-beta.11 while recording product media (2026-10-16) on a fictional
-letter before claim (lawkitt/web `videos/mdoc/fixture/`). The
-[settlement agreement](docs/product-media/Settlement%20agreement.md) reproduces 3
-and 4.
+   *Done when:* verified in the live editor in both themes on a long document
+   with wrapped and kept mentions and rapid panel selection.
+2. **[UI] Highlights follow line wraps.** *Known issue 2.* A wrapped proposed or
+   applied mention extends its underline or chip box to the end of the first line,
+   and the continuation starts with a stub.
+   *Done when:* each wrapped segment is boxed separately, in the editor and in
+   Side by side.
+3. **[UI] Small shell fixes.**
+   - Cmd + + (macOS) and Ctrl + + (Windows/Linux) increase Markdown text size
+     through the zoom button's action, accepting the plus key (with Shift where the
+     layout requires) alongside Cmd + = from ADR 0048; steps and limits unchanged.
+   - Clicking the bell while its popup is open closes it; the popup has a close
+     button styled like other dismissible UI. Notices keep their attention state.
+   - Clicking outside Settings closes it, like other overlays; clicks inside do not.
 
-1. **OCR loses page structure.** On a clean one-column scan (A4, PP-OCRv6 Small,
-   150 DPI) separate paragraphs and headings are merged into one paragraph, and
-   table rows split or shift (a cell is promoted to a heading, two rows merge into
-   one cell). Rendering the scan at 300 DPI does not help. On the *Brown v. Board*
-   page a body line ("even though the physical facilities…") becomes a heading. Layout recovery belongs
-   in the AnyDoc/pdf-inspector forks; add the scan to the OCR qualification set.
-2. **Highlights stretch across a line wrap.** When a proposed or applied mention
-   wraps, its underline or chip box extends to the end of the first line and the
-   continuation starts with a stub. Visible in the editor and in Side by side.
-3. **Adding part of a detected name splits the identity.** Selecting "Raman" and
-   choosing Replace (⌘⌥P) creates a new person alias for every occurrence,
-   including the one inside "Priya Raman", whose existing alias is then broken up;
-   "Same as…" no longer offers the original identity. A manual addition inside an
-   existing mention should leave it intact and offer to link to it.
-4. **Surname-only mentions are not linked.** "Ms Raman" (or "Ms Bennett") is not
-   proposed as a mention of the detected full name, so it stays in the text after
-   Apply. Propose title + surname, possessives and first names as variants of a
-   known identity (ADR 0018 review still applies).
-5. **Floating controls cover the text being edited.** The "Replace ⌘⌥P" chip sits
-   over the line above the selection and the mention bar covers the next lines.
-   Place them clear of the selection or the active mention.
+   *Done when:* each works with the keyboard and mouse on macOS and Windows.
 
-## UI/UX backlog (2026-10-16)
+## After 0.1.0
 
-Future work from the entity-review and workspace screenshots; these items are
-pending fixes and refinements, not completed behavior.
+In priority order, after any carried-over should-fix items.
 
-1. **Center mentions selected in the Replacements panel.** Clicking an entity
-   or mention row should reveal, highlight and focus the corresponding mention
-   near the vertical center of the Markdown editor's visible viewport. Currently
-   it can remain against the top edge, requiring manual scrolling. Account for
-   the mention popup and clamp scrolling at document boundaries so the selected
-   text stays readable and clear of floating controls.
-2. **Make panel-to-editor navigation smooth and prompt.** Animate the scroll to
-   the selected mention with a short transition. Rapid successive selections
-   should move toward the latest target without queued animations or jumps to
-   stale targets; manual scrolling should interrupt the transition. Respect
-   Reduce Motion with immediate positioning.
-3. **Eliminate mention-popup flicker.** Selecting entities or stepping through
-   their mentions in the panel should show one stable popup anchored to the
-   active mention, including while the editor scrolls. Avoid transient dismissal,
-   duplicate popups and intermediate frames at an incorrect position.
-4. **Make the mention popup compact and reversible.** Reduce excess width,
-   padding and spacing while keeping the original, alias, category, Replace
-   checkbox and scope controls readable. Default to the entire selected entity
-   group, with a clear toggle for this mention only. Unchecking Replace must keep
-   the popup open so it can be checked again immediately. After dismissal, kept
-   mentions should retain a subtle underline and remain clickable to reopen the
-   controls and re-enable replacement. Preserve occurrence identity and the chosen
-   scope so re-enabling one mention leaves other kept mentions unchanged; marking
-   intent must retain the existing explicit Apply behavior.
-5. **Separate the mention popup visually from the editor.** Give it a restrained
-   but sufficiently contrasting border in both light and dark themes. Verify the
-   open popup over real document text in each theme so its edge remains distinct
-   without a heavy outline.
-6. **Support the editor font-increase shortcut reliably.** Make Cmd + + on macOS
-   and Ctrl + + on Windows/Linux increase Markdown text size through the same
-   action as the existing zoom button. ADR 0048 already documents Cmd + = / − / 0;
-   verify action routing and accept the plus key, including Shift where required
-   by the keyboard layout, alongside the existing equals-key binding. Retain the
-   current zoom steps and limits.
-7. **Add expand/collapse-all controls to the Replacements panel.** Provide a
-   compact icon control to expand all entity groups or collapse them together,
-   with a clear tooltip and accessible label for the available action. Expanding
-   or collapsing groups must preserve the current selection and replacement
-   decisions.
-8. **Make the notification popup easy to dismiss.** Clicking the bell while its
-   popup is open should close it. Add a close button inside the popup using the
-   same cross icon, size and button styling as other dismissible UI. Closing the
-   popup should preserve notices and their attention state.
-9. **Dismiss Settings by clicking outside.** Clicking the surrounding area
-   outside the Settings window should close it consistently with other overlays;
-   clicks inside Settings must continue to work without dismissing it.
-10. **Add workspace Back and Forward navigation.** Place left-arrow and
-    right-arrow icon buttons immediately to the right of the sidebar
-    expand/collapse button, before the Home label or document title. Keep them
-    available with the sidebar expanded or collapsed. Navigate through visited
-    documents and Home, restore the destination's existing view state, disable
-    unavailable directions, skip closed documents and clear forward history when
-    a new destination is opened after going back. Use consistent icon sizes,
-    tooltips and accessible labels.
+1. **[Perf] Stress tier and numerical budgets.** The 2 MiB / 20,000-mention tier
+   has bounded work and memory; set numerical budgets from release/native
+   baselines. [Restoration measurements](docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
+   are historical, not guarantees.
+2. **[UI] Center and smoothly scroll to the selected mention.** Clicking an
+   entity or mention row in the Replacements panel reveals, highlights and focuses
+   the mention near the vertical center of the editor, clear of the popup and
+   clamped at document edges. Animate briefly; rapid selections head for the
+   latest target without queued animations; manual scrolling interrupts; Reduce
+   Motion positions immediately.
+3. **[UI] Expand/collapse all in the Replacements panel.** A compact icon
+   control with tooltip and accessible label, preserving selection and
+   replacement decisions.
+4. **[UI] Workspace Back/Forward.** Arrow buttons right of the sidebar toggle,
+   available with the sidebar expanded or collapsed. Navigate visited documents
+   and Home, restore view state, disable unavailable directions, skip closed
+   documents, clear forward history on new navigation.
+5. **[OCR] Recover page structure.** *Known issue 1.* On a clean one-column A4
+   scan (PP-OCRv6 Small, 150 DPI; 300 DPI does not help) paragraphs and headings
+   merge, and table rows split or shift; on the *Brown v. Board* page a body line
+   becomes a heading. Fix in the AnyDoc/pdf-inspector forks. Add the scan to the
+   [OCR qualification set](tests/fixtures/ocr-qualification/README.md) now.
+6. **[Cases] System-wide Pseudonymize Clipboard hotkey** (macOS
+   `RegisterEventHotKey`, Windows `RegisterHotKey`). The in-app action, before/after
+   view and per-case category switches from the [Anoni review](docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11)
+   are done.
 
-Validate these interactions in the live editable UI in both themes, including
-long documents, wrapped mentions, rapid panel selection, kept mentions and
-keyboard navigation; static previews alone do not establish acceptance.
+## Ongoing tracks
+
+- **Outgoing AI-analysis qualification.** Agree release targets and test EN/RU
+  legal/native/OCR text, hidden source, identity joins/splits, ownership and
+  correction time on a larger holdout ([open gates](docs/design/pseudonymization-production-readiness.md)).
+  A continuous quality gate, not a release blocker.
+
+## Engineering
+
+- **Architecture refactoring** ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
+  Gated on must-fix item 3's profiling. Deliver case coordination and document
+  lifecycle as separate, incremental projects: explicit owners for case
+  persistence and synchronization, and explicit document transitions across the
+  shell/view. GPUI keeps presentation, prompts and scheduling; editor/history,
+  import and preview owners keep their contracts. Define each boundary before
+  implementation. Retained editor layout is investigated only if release-build
+  costs justify it; it is not committed work.
+- **Build-cache check** ([ADR 0050](docs/adr/0050-rust-build-cache-growth.md),
+  [measurements](docs/evidence/build-cache/2026-10-16/README.md)). Re-measure
+  with `just disk` around 2026-10-23. Evaluate `sccache` only if `target/`
+  exceeds about 30 GiB, accounting for its own disk use. Keep release settings;
+  no automatic eviction or cache caps.
+- **Cleanup charter** ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)).
+  Concrete ownership/test improvements. Conversion and OCR algorithm changes
+  belong in the AnyDoc/pdf-inspector forks, backed by source/output comparisons.
 
 ## Deferred
 
@@ -185,15 +162,17 @@ keyboard navigation; static previews alone do not establish acceptance.
   ([ADR 0045](docs/adr/0045-prompt-free-case-key.md)).
 - Exporting or sharing a case key (encrypted file plus passphrase), a
   cross-case dictionary, deliberate forgetting of originals, and stronger
-  anonymization claims. Saved cases and restoration moved to step 4.
+  anonymization claims.
 - Format-preserving pseudonymized DOCX/PDF export; an audit journal and
   compliance report of replacements; a re-identification risk hint.
 - Bulk conversion beyond current lazy multi-file opening; design separately.
 - Online formatting/OCR repair; provider, credentials, trust and review need decisions.
-
-Not planned: realistic fake-name pseudonyms (harder to restore, may collide with
-real names; [ADR 0018](docs/adr/0018-document-local-identity-review.md)),
-an irreversible redaction mode ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)),
-watermarking and watched folders (outside AI preparation).
 - Extra recognizers/full PII engines and optional source/page references; qualify
   a concrete workflow before expanding scope.
+
+## Not planned
+
+- Realistic fake-name pseudonyms: harder to restore and may collide with real
+  names ([ADR 0018](docs/adr/0018-document-local-identity-review.md)).
+- An irreversible redaction mode ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)).
+- Watermarking and watched folders (outside AI preparation).
