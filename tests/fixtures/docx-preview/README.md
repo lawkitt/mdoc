@@ -33,8 +33,10 @@ structure, styles, numbering, sections and run formatting are unchanged, and
 each run keeps its character count. Every word of three or more letters
 except function words is replaced by a dictionary word of the same length chosen
 by position, not derived from the original, so the text cannot be
-reconstructed; digits likewise. Images are blank PNGs of the same size; author,
-Grammarly and alt-text metadata and external link targets are neutralized. Its
+reconstructed; digits likewise. Comment text and tracked deletions are scrubbed
+the same way. Images are blank PNGs of the same size; document, revision and
+comment authors, Grammarly and alt-text metadata, field arguments and external
+link targets are neutralized. Its
 imported Markdown has the same line count and Markdown structure as the
 original's (115,662 versus 115,967 bytes). Reading the text is meaningless; it
 is a layout workload, not a conversion or PII fixture.
