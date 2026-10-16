@@ -41,9 +41,9 @@ pub(crate) enum Popup {
 }
 const APPLIED_ID: u64 = 1 << 63;
 pub(crate) struct ReviewUi {
+    /// Derived data (panel projection, before/after view, spelling
+    /// exclusions) is keyed on `review.revision()`, which its mutators advance.
     pub review: Review,
-    /// Revision of derived review data, independent of presentation changes.
-    pub(crate) version: u64,
     /// Candidate highlights are shown; Close review hides them.
     pub reviewing: bool,
     pub popup: Option<Popup>,
@@ -84,7 +84,6 @@ impl ReviewUi {
     pub fn new(cx: &mut Context<DocumentView>) -> Self {
         Self {
             review: Review::default(),
-            version: 0,
             reviewing: false,
             popup: None,
             enter_applies: false,
@@ -269,13 +268,13 @@ impl DocumentView {
     pub(crate) fn sync_pii_theme(&mut self, cx: &mut Context<Self>) {
         self.sync_annotations(cx);
     }
-    /// Domain changes invalidate derived review data and its consumers.
+    /// Domain changes schedule spellcheck and a case save. Derived review data
+    /// needs no bump here: it follows `Review::revision`.
     pub(crate) fn review_changed(&mut self, cx: &mut Context<Self>) {
         self.refresh_review_exclusions(cx);
         self.schedule_case_save(cx);
     }
     fn refresh_review_exclusions(&mut self, cx: &mut Context<Self>) {
-        self.pii.version = self.pii.version.wrapping_add(1);
         self.sync_annotations(cx);
         self.schedule_spellcheck(false, cx);
     }
@@ -885,7 +884,6 @@ impl DocumentView {
         {
             self.sync_identity_selection_after_history(cx);
         }
-        self.pii.version = self.pii.version.wrapping_add(1);
         self.sync_annotations(cx);
         // Text changes emit Changed next and get its one debounced request.
         if transaction.changes.iter().all(|change| {

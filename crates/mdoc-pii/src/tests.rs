@@ -23,6 +23,31 @@ fn detection(range: Range<usize>, category: Category) -> Detection {
     }
 }
 #[test]
+fn mutations_advance_the_revision_and_a_new_review_never_repeats_one() {
+    let source = "Ann met Bob";
+    let mut review = Review::default();
+    let mut seen = vec![review.revision()];
+    let ann = review.add_manual(source, 0..3, Category::Person).unwrap();
+    seen.push(review.revision());
+    review.keep(ann, None);
+    seen.push(review.revision());
+    let identity = review.variant_identity(ann).unwrap();
+    review.rename_identity(identity, "CLIENT").unwrap();
+    seen.push(review.revision());
+    let unchanged = review.revision();
+    let _ = review.variants();
+    assert_eq!(
+        review.revision(),
+        unchanged,
+        "reads leave the revision alone"
+    );
+    seen.push(Review::default().revision());
+    let mut sorted = seen.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), seen.len(), "{seen:?}");
+}
+#[test]
 fn kept_homonyms_retain_each_occurrences_assigned_identity() {
     let source = "Ann Ann Ann";
     let mut review = Review::default();

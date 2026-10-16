@@ -87,7 +87,7 @@ impl PanelItem {
 impl DocumentView {
     fn replacement_projection(&self, cx: &App) -> Arc<PanelProjection> {
         let mapping = &self.pii.mapping;
-        let revision = (self.pii.version, self.editor.read(cx).revision());
+        let revision = (self.pii.review.revision(), self.editor.read(cx).revision());
         if let Some(cached) = mapping.projection.borrow().as_ref()
             && cached.revision == revision
         {
@@ -234,7 +234,7 @@ impl DocumentView {
     pub(super) fn replacement_entries(&self, cx: &App) -> Arc<[PanelEntry]> {
         let mapping = &self.pii.mapping;
         let query = self.replacement_query(cx);
-        let revision = (self.pii.version, self.editor.read(cx).revision());
+        let revision = (self.pii.review.revision(), self.editor.read(cx).revision());
         if let Some(cached) = mapping.entries_cache.borrow().as_ref()
             && cached.revision == revision
             && cached.filter == mapping.filter
