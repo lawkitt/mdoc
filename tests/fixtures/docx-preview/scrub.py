@@ -7,8 +7,10 @@ header/footer and every run's formatting and character count. Every word of
 three or more letters that is not a function word becomes a dictionary word of
 the same length, chosen by its position (part, paragraph, word) rather than
 derived from the original, so the text cannot be reconstructed. Digits are
-replaced the same way. Images become blank PNGs of the same size; author,
-Grammarly and alt-text metadata and external link targets are neutralized.
+replaced the same way. This covers body, header, footer, note and comment text
+and tracked deletions. Images become blank PNGs of the same size; document,
+revision and comment authors, Grammarly and alt-text metadata, field arguments
+and external link targets are neutralized.
 """
 import hashlib
 import html
@@ -60,7 +62,8 @@ for word in VOCAB:
 
 WORD = re.compile(r'[A-Za-zÀ-ɏЀ-ӿ]+|[0-9]')
 PARAGRAPH = re.compile(r'<w:p[ >].*?</w:p>', re.S)
-TEXT = re.compile(r'(<w:t(?: [^>]*)?>)([^<]*)(</w:t>)')
+# Visible text and tracked deletions; both are document content.
+TEXT = re.compile(r'(<w:(?:t|delText)(?: [^>]*)?>)([^<]*)(</w:(?:t|delText)>)')
 
 
 def pick(key, choices):
@@ -73,11 +76,12 @@ def replace_word(word, key):
         return pick(key, '0123456789')
     if len(word) < 3 or word.lower() in KEEP:
         return word
-    longest = max(BY_LENGTH)
-    choices = BY_LENGTH.get(min(len(word), longest))
-    new = pick(key, choices)
-    while len(new) < len(word):  # Longer than any vocabulary word.
-        new += pick(key + new, BY_LENGTH[min(len(word) - len(new), longest)])
+    longest, new = max(BY_LENGTH), ''
+    while len(new) < len(word):  # Longer words take several vocabulary words.
+        rest = len(word) - len(new)
+        # Never leave a remainder of one or two letters: none are in VOCAB.
+        size = rest if rest <= longest else min(longest, rest - 3)
+        new += pick(key + new, BY_LENGTH[size])
     if word.isupper():
         return new.upper()
     return new.capitalize() if word[0].isupper() else new
@@ -144,10 +148,20 @@ def scrub(source, target):
         if not name.endswith(('.xml', '.rels')):
             continue
         xml = data.decode('utf-8')
-        if re.fullmatch(r'word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml', name):
+        if re.fullmatch(r'word/(document|header\d*|footer\d*|footnotes|endnotes|comments)\.xml', name):
             xml = scrub_text(name, xml)
             xml = re.sub(r' descr="[^"]*"', ' descr="Placeholder image"', xml)
             xml = re.sub(r'(<pic:cNvPr [^>]*name=")[^"]*"', r'\1Placeholder.png"', xml)
+        if name.startswith('word/'):
+            # Revision and comment authors; field arguments such as HYPERLINK URLs.
+            xml = re.sub(r'( w:author=")[^"]*"', r'\1Author"', xml)
+            xml = re.sub(r'( w:initials=")[^"]*"', r'\1A"', xml)
+            xml = re.sub(r'( w15:author=")[^"]*"', r'\1Author"', xml)
+            xml = re.sub(r'<w15:presenceInfo [^>]*/>', '', xml)
+            xml = re.sub(r'(<w:instrText(?: [^>]*)?>)([^<]*)',
+                         lambda m: m.group(1) + re.sub(r'"[^"]*"', '"https://example.com/"', m.group(2)), xml)
+        if name == '[Content_Types].xml' and renamed and 'Extension="png"' not in xml:
+            xml = xml.replace('<Default ', '<Default Extension="png" ContentType="image/png"/><Default ', 1)
         if name.endswith('.rels'):
             for old, new in renamed.items():
                 xml = xml.replace(f'media/{old}"', f'media/{new}"')
