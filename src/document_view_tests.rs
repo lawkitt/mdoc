@@ -484,6 +484,48 @@ fn wrapped_table_search_uses_painted_cell_geometry(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn offscreen_table_match_is_revealed_with_painted_geometry(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, _, cx| {
+        // Offscreen matches get only a row box; the reveal must still land on
+        // the cell glyphs once the row is painted.
+        let source = format!(
+            "{}<!-- table:grid cols=200,100 -->\n| heading | other |\n| --- | --- |\n| {}**needle** | end |",
+            "A paragraph that pushes the table below the viewport.\n\n".repeat(200),
+            "long cell ".repeat(40)
+        );
+        app.editor
+            .update(cx, |editor, cx| editor.set_text(source, cx));
+    });
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("needle");
+    cx.run_until_parked();
+    for _ in 0..3 {
+        cx.update(|window, cx| {
+            window.simulate_next_frame(cx);
+        });
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        let editor = app.editor.read(cx);
+        let bounds = editor.search_match_bounds(0).expect("table glyph bounds");
+        assert!(app.scroll.offset().y < px(0.), "must scroll to the match");
+        assert!(bounds.top() >= app.scroll.bounds().top(), "{bounds:?}");
+        assert!(
+            bounds.bottom() <= app.scroll.bounds().bottom(),
+            "{bounds:?}"
+        );
+        let width = editor.layout_width().unwrap();
+        assert!(
+            bounds.size.width > px(0.) && bounds.size.width < width / 2.,
+            "painted glyph quad, not the row box: {bounds:?}"
+        );
+    });
+}
+
+#[gpui::test]
 fn search_preserves_selection_undo_and_save_as_state(cx: &mut TestAppContext) {
     use gpui::EntityInputHandler;
     let dir = tempfile::tempdir().unwrap();
@@ -1375,15 +1417,6 @@ fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
         std::fs::write(&path, &imported.markdown).unwrap();
         app = open_document(&app, path, cx);
         cx.run_until_parked();
-        // Release keeps the 16.7 ms frame target for every file. The 116 KB
-        // legal opinion's debug limits are regression guards: the recorded p95
-        // plus about 20% (docs/evidence/editor-layout/2026-10-16-legal-opinion).
-        let (scroll_limit, typing_limit) = if cfg!(debug_assertions) && file == "legal-opinion.docx"
-        {
-            (34., 64.)
-        } else {
-            (16.667, 50.)
-        };
         for state in ["markdown_only", "preview_open", "preview_closed"] {
             if state == "preview_open" {
                 app.update_in(cx, |app, window, cx| {
@@ -1428,7 +1461,7 @@ fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
                 times[times.len() / 2],
                 app.read_with(cx, |v, cx| v.editor.read(cx).layout_width().map(f32::from)),
             );
-            if p95 > scroll_limit {
+            if p95 > 16.667 {
                 failures.push(format!("{file} {state} scroll"));
             }
             // Measure actual text input followed by layout/paint, not just idle redraw.
@@ -1449,7 +1482,7 @@ fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
             typing.sort_by(f64::total_cmp);
             let typing_p95 = typing[typing.len() * 95 / 100];
             eprintln!("MD_PERF file={file} state={state} typing_p95_ms={typing_p95:.2}");
-            if typing_p95 > typing_limit {
+            if typing_p95 > 50. {
                 failures.push(format!("{file} {state} typing"));
             }
         }

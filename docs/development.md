@@ -116,7 +116,10 @@ profiling one of them.
 The DOCX scroll workload runs the public `coverage.docx` and `legal-opinion.docx`;
 `MD_PERF_FILE` selects one DOCX under `tests/fixtures/docx-preview` instead.
 Scrub a private DOCX into a distributable layout fixture with
-`tests/fixtures/docx-preview/scrub.py`; never commit the original. The PDF check defaults
+`tests/fixtures/docx-preview/scrub.py`; never commit the original.
+Each host-matrix workload also steps through a common word (`the`); headless
+text shaping is not Core Text, so confirm shaping-heavy changes natively with
+the [native check](evidence/editor-layout/2026-10-17-native/README.md) tools. The PDF check defaults
 to public `reference.pdf` plus a generated 64-page PDF; `PDF_PERF_DIR` selects
 an explicit local corpus.
 Logs include actual editor widths; outer window dimensions alone are insufficient

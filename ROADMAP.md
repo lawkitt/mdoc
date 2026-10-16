@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap tracks work remaining as of 2026-10-16 (latest: 0.1.0-beta.11);
+This roadmap tracks work remaining as of 2026-10-17 (latest: 0.1.0-beta.11);
 accepted behavior lives in [ADRs](docs/adr/), with terminology in
 [CONTEXT.md](CONTEXT.md). Structure and stable scope:
 [ADR 0051](docs/adr/0051-roadmap-structure-and-stable-scope.md).
@@ -23,30 +23,14 @@ priority order.
 
 ### Must-fix
 
-1. **[Perf] Ordinary legal documents are responsive.** Only the native
-   spot-check remains. [Profiled layout fixes](docs/evidence/editor-layout/2026-10-16/README.md)
-   bring a synthetic ~30-page contract to 3.1 ms release scroll p95 (from 6.2).
-   A [scrubbed real 37-page legal opinion](docs/evidence/editor-layout/2026-10-16-legal-opinion/README.md)
-   (116 KB Markdown) is now a `just perf` workload: 5.0 / 4.2 / 2.0 ms release
-   scroll/typing/navigation p95, and 3.2 ms scroll with its DOCX preview open.
-   Every ordinary and public DOCX/PDF preview workload is under 16.7 ms, and
-   debug `just perf` passes all checks. The review matrix separates layout from
-   PII overhead at a fixed width (+0.45–0.80 ms release). Image/code-heavy
-   documents (27–31 ms at 63–74 KB), the legal opinion's 184 ms search burst,
-   case fan-out and process memory stay with the stress tier.
-   *Done when:* on a release build on the M4 reference Mac, the ordinary scroll,
-   typing and navigation workloads and the public DOCX/PDF preview workloads reach
-   p95 frame ≤ 16.7 ms, confirmed by a native spot-check on a real ~30-page
-   contract ([procedure](docs/evidence/editor-layout/2026-10-16-legal-opinion/README.md#native-spot-check)).
-   Debug ceilings stay regression guards.
-2. **[Cases] Captured AI-reply fixtures for Restore.** Cases and restoration
+1. **[Cases] Captured AI-reply fixtures for Restore.** Cases and restoration
    ([saved mappings](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/saved-mappings.md)) are implemented in all four
    phases, including the Linux Secret Service key.
    *Done when:* four replies to the settlement-agreement demo (ChatGPT and Claude,
    each EN and RU) live under `tests/fixtures/`, at least one with Markdown tables
    and paraphrased or inflected aliases, and Restore leaves no alias unrestored
    in any of them.
-3. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
+2. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
    Windows x64; keep Linux buildable. Done last, because it checks the finished UI.
    *Done when:* one checklist per platform at `docs/evidence/platform/<date>/README.md`
    covers both themes, IME (RU plus a CJK smoke test), clipboard,
@@ -93,7 +77,9 @@ In priority order, after any carried-over should-fix items.
 
 1. **[Perf] Stress tier and numerical budgets.** The 2 MiB / 20,000-mention tier
    has bounded work and memory; set numerical budgets from release/native
-   baselines. [Restoration measurements](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
+   baselines. Ordinary documents are done ([native check](docs/evidence/editor-layout/2026-10-17-native/README.md)):
+   left for this tier are case fan-out, process memory, the legal opinion's
+   25 ms search burst and two ~20 ms typing passes seen natively. [Restoration measurements](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
    are historical, not guarantees.
 2. **[UI] Center and smoothly scroll to the selected mention.** Clicking an
    entity or mention row in the Replacements panel reveals, highlights and focuses
@@ -138,15 +124,17 @@ In priority order, after any carried-over should-fix items.
     results, edits/undo, tab switching, copy/save and provenance lifetime are
     verified.
 
-  Responsiveness and native acceptance are tracked under must-fix items 1 and 3.
+  Native acceptance is tracked under must-fix item 2; ordinary-document
+  [responsiveness](docs/evidence/editor-layout/2026-10-17-native/README.md) is done.
   Historical results: [initial qualification](tests/fixtures/pseudonymization/README.md)
   (no model passed) and the [last gate review](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/pseudonymization-production-readiness.md).
 
 ## Engineering
 
 - **Architecture refactoring** ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
-  The [layout profiling](docs/evidence/editor-layout/2026-10-16/README.md) found
-  local whole-document costs, now fixed; it does not call for a migration.
+  The [layout profiling](docs/evidence/editor-layout/2026-10-16/README.md) and
+  [native check](docs/evidence/editor-layout/2026-10-17-native/README.md) found
+  local whole-document costs, now fixed; they do not call for a migration.
   Deliver case coordination and document lifecycle as separate, incremental
   projects: explicit owners for case persistence and synchronization, and
   explicit document transitions across the shell/view. GPUI keeps

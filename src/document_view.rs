@@ -1603,7 +1603,10 @@ impl Render for DocumentView {
                     } else if let Some(compare) = self.compare_view(content_width, cx) {
                         compare
                     } else { div().relative().flex_1().min_w_0().min_h_0()
-                        .child(div().id("document-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).p_6().pb(px(72.))
+                        // Absolute, so the column's intrinsic sizing never measures the
+                        // editor: each probe width (search-bar min-content, max content,
+                        // 0 px) shaped it again, and a changing one missed every cache.
+                        .child(div().id("document-scroll").absolute().inset_0().overflow_y_scroll().track_scroll(&self.scroll).p_6().pb(px(72.))
                             .on_scroll_wheel(cx.listener(|this, _, _, cx| { this.wake_switcher(cx); cx.notify(); }))
                             // A centred reading column (ADR 0048, from variant B).
                             .child(div().w_full().max_w(px(READING_WIDTH * self.zoom)).mx_auto().child(self.editor.clone())))
