@@ -5,7 +5,10 @@
 </h1>
 <p align="center">Prepare legal documents for AI, privately, on your own computer.</p>
 <p align="center">
-  <img alt="mdoc showing a scanned page of Brown v. Board of Education beside the Markdown recognized from it" width="100%" src="docs/images/pdf-scan-light.png">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/source-dark.jpg">
+    <img alt="mdoc showing a fictional Word services agreement as editable Markdown beside its original document" width="100%" src="docs/images/source-light.jpg">
+  </picture>
 </p>
 
 mdoc turns PDFs (including scans), Word and other office documents into
@@ -14,14 +17,22 @@ with consistent aliases before you paste the text into ChatGPT or Claude.
 Your documents never leave your computer. [Learn more](https://lawkitt.com/mdoc/).
 
 <p align="center">
-  <img alt="Animation: mdoc recognizes a scanned page, then proposes aliases for names, an email and a phone number in a services agreement and applies them" width="100%" src="docs/images/demo.webp">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/review-dark.jpg">
+    <img alt="mdoc reviewing proposed names and aliases in a fictional services agreement" width="100%" src="docs/images/review-light.jpg">
+  </picture>
 </p>
 <p align="center">
-  <img alt="mdoc in the dark theme showing a Word contract as Markdown beside a preview of the original" width="100%" src="docs/images/docx-dark.png">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/compare-dark.jpg">
+    <img alt="mdoc comparing original names with consistent ORG_1 and PERSON_1 aliases, side by side" width="100%" src="docs/images/compare-light.jpg">
+  </picture>
   <br>
-  <sub>UK Model Services Contract, Crown copyright, licensed under the
-  <a href="https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/">Open Government Licence v3.0</a>.</sub>
+  <sub>Original wording and applied aliases, side by side. Fictional demonstration document.</sub>
 </p>
+
+[Watch the product walkthrough](https://lawkitt.com/mdoc/#demo-title) ·
+[Light and dark screenshots](docs/product-media/README.md)
 
 ## Installation
 
