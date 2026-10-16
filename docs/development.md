@@ -128,9 +128,39 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just smoke-update [dmg]` | An older Developer ID signed `.dmg` updates itself to the latest release through `--mdoc-self-update` (manual, before releases that change the updater) |
 | `just release <version>` | Release commit and tag (below) |
 | `just icon`, `just actionlint` | Icon assets; workflow lint |
+| `just disk` | Size of each worktree's `target/` |
+| `just retire-worktree <path>` | Remove a finished worktree and its `target/` |
 
 Heavy, download and machine-dependent tests run only through these recipes, on
 the Apple Silicon Mac and the Windows x64 PC.
+
+## Build cache and disk use
+
+The dev and test profiles keep line tables for workspace crates and no debug
+information for dependencies ([ADR 0050](adr/0050-rust-build-cache-growth.md)).
+Backtraces (`RUST_BACKTRACE=1`) still show file and line, but a debugger cannot
+inspect variables. For lldb or CodeLLDB, build with full debug information in a
+separate `target/debugging/`, leaving the everyday cache untouched:
+
+```sh
+cargo run --profile debugging
+cargo test --profile debugging -p mdoc-editor --no-run
+```
+
+Keep one build configuration: don't override profiles or `RUSTFLAGS` through
+environment variables, and don't share a `CARGO_TARGET_DIR` between worktrees.
+Either one invalidates artifacts and leaves duplicate copies behind.
+
+Each worktree has its own `target/`, and nothing removes it automatically.
+`just disk` reports their sizes. When a worktree's branch is merged or
+abandoned, `just retire-worktree <path>` deletes its `target/` and then the
+worktree, keeping the branch; it refuses a worktree with uncommitted or untracked
+changes.
+
+Cargo never deletes superseded artifacts. A toolchain bump, a large dependency
+update or a changed flag builds a complete new copy beside the old one, so run
+`cargo clean --profile dev` after one (the next build is cold, about two
+minutes for `just test`). Edits alone grow the cache only slowly.
 
 ## Releasing
 

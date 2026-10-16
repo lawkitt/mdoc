@@ -73,6 +73,26 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 [build-dependencies]
 embed-resource = "3"
 
+# Lean debug information (ADR 0050): workspace crates keep line tables, so
+# backtraces still show file and line; dependencies keep none. The test profile
+# inherits this. For a debugger, build with `--profile debugging`.
+# split-debuginfo stays at the platform default: on macOS, "packed" stops object
+# files accumulating but costs ~2.6 s per warm rebuild.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = 0
+
+# Full debug information for lldb/CodeLLDB, in its own target/debugging/.
+[profile.debugging]
+inherits = "dev"
+debug = "full"
+split-debuginfo = "packed"
+
+[profile.debugging.package."*"]
+debug = "full"
+
 [profile.release]
 panic = "abort"
 codegen-units = 1
