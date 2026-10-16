@@ -872,12 +872,15 @@ impl EditorState {
     /// The caret's table position as `(row, cell_index, offset_within_cell)`, or
     /// `None` outside a table. Lets structural edits keep the caret put.
     pub(crate) fn caret_table_cell_pos(&self) -> Option<(usize, usize, usize)> {
-        let (row, _) = self.row_col(self.cursor_offset());
+        // Prepaint asks on every frame; stay off the whole-document line table.
+        let offset = self.cursor_offset().min(self.content.len());
+        let (row, line_col) = self.row_col(offset);
         self.caret_table_block()?;
-        let starts = self.line_starts();
-        let row_start = starts[row];
-        let line = &self.content[row_start..self.line_end(row)];
-        let line_col = self.cursor_offset() - row_start;
+        let row_start = offset - line_col;
+        let row_end = self.content[row_start..]
+            .find('\n')
+            .map_or(self.content.len(), |i| row_start + i);
+        let line = &self.content[row_start..row_end];
         let ranges = markdown_syntax::table_cell_ranges(line);
         let cell = ranges
             .iter()

@@ -610,7 +610,7 @@ pub struct EditorState {
     /// Last paint's wrapped lines (one per logical line) and each line's top
     /// offset relative to the editor's top — both used for hit-testing and
     /// cursor/IME positioning.
-    wrapped: Vec<WrappedLine>,
+    wrapped: Vec<ShapedLine>,
     line_tops: Vec<Pixels>,
     /// Per-logical-line wrap-row count (from the last paint). Geometry reads
     /// this, not `wrapped[i].wrap_boundaries()` — a windowed-out line's entry
@@ -2837,9 +2837,15 @@ impl EditorState {
 
     /// The `(row, byte-column)` of a byte offset.
     fn row_col(&self, offset: usize) -> (usize, usize) {
-        let starts = self.line_starts();
-        let row = starts.partition_point(|&s| s <= offset).saturating_sub(1);
-        (row, offset - starts[row])
+        // Counts newlines before `offset` without building the whole-document
+        // `line_starts` table: layout asks for the caret row on every frame.
+        let before = &self.content.as_bytes()[..offset.min(self.content.len())];
+        let row = before.iter().filter(|&&b| b == b'\n').count();
+        let start = before
+            .iter()
+            .rposition(|&b| b == b'\n')
+            .map_or(0, |i| i + 1);
+        (row, offset - start)
     }
 
     /// Byte offset of the end of a row's text (before its `\n`, or the document
@@ -4189,6 +4195,10 @@ fn shape_runs(
         .unwrap_or_default()
 }
 
+/// One logical line's shaped layout. Shared, so offscreen placeholder rows
+/// can reuse a single empty layout.
+type ShapedLine = std::rc::Rc<WrappedLine>;
+
 /// A line currently rendered as an inline image (W4) instead of its source text:
 /// the decoded image plus its fit-to-width display size (logical px).
 #[derive(Clone)]
@@ -4384,7 +4394,7 @@ impl LineMark {
 /// the only writers, so the lockstep invariant lives here.
 #[derive(Default)]
 struct ShapedDoc {
-    wrapped: Vec<WrappedLine>,
+    wrapped: Vec<ShapedLine>,
     heights: Vec<Pixels>,
     widgets: Vec<Option<Block>>,
     backgrounds: Vec<Option<CodeBg>>,
@@ -4406,6 +4416,10 @@ struct ShapedDoc {
     /// which keep gpui's own wrapping. Drives that line's paint, caret,
     /// selection and hit-testing.
     rtl_rows: Vec<Option<(bool, Vec<gpui_bidi::Row>)>>,
+    /// The empty line every placeholder shares: one document has a single
+    /// base size and wrap width, so it is shaped once per pass rather than
+    /// once per offscreen line.
+    blank: Option<ShapedLine>,
 }
 
 impl ShapedDoc {
@@ -4423,16 +4437,23 @@ impl ShapedDoc {
         mark: Option<LineMark>,
         rows: usize,
     ) {
-        let wl = shape_runs(
-            window,
-            &SharedString::default(),
-            base_font_size,
-            &[],
-            wrap_width,
-        )
-        .into_iter()
-        .next()
-        .expect("a line always shapes to one wrapped line");
+        let wl = self
+            .blank
+            .get_or_insert_with(|| {
+                std::rc::Rc::new(
+                    shape_runs(
+                        window,
+                        &SharedString::default(),
+                        base_font_size,
+                        &[],
+                        wrap_width,
+                    )
+                    .into_iter()
+                    .next()
+                    .expect("a line always shapes to one wrapped line"),
+                )
+            })
+            .clone();
         self.wrapped.push(wl);
         self.heights.push(h);
         self.widgets.push(widget);

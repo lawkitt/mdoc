@@ -23,14 +23,14 @@ priority order.
 
 ### Must-fix
 
-1. **[Perf] Ordinary legal documents are responsive.** Separate editor layout cost
-   from PII overhead using fixed viewports. The [October 16 stabilization](docs/evidence/stabilization/2026-10-16/results.md)
-   fixed case saves, refresh scheduling, spelling, diagnostic/link geometry and
-   panel preparation; whole-document layout cost (including
-   [spellcheck](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/spellcheck/README.md) layout), case-update fan-out and process
-   memory remain. Debug `just perf` still fails ordinary host scroll and DOCX
-   preview p95 (16.76 vs 16.667 ms). Profile before choosing migrations
-   ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
+1. **[Perf] Ordinary legal documents are responsive.** Only the native
+   spot-check remains. [Profiled layout fixes](docs/evidence/editor-layout/2026-10-16/README.md)
+   bring a synthetic ~30-page contract to 3.1 ms release scroll p95 (from 6.2);
+   every ordinary and public DOCX/PDF preview workload is under 16.7 ms, and
+   debug `just perf` passes all checks. The review matrix separates layout from
+   PII overhead at a fixed width (+0.45–0.80 ms release). Image/code-heavy
+   documents (27–31 ms at 63–74 KB), case fan-out and process memory stay with
+   the stress tier.
    *Done when:* on a release build on the M4 reference Mac, the ordinary scroll,
    typing and navigation workloads and the public DOCX/PDF preview workloads reach
    p95 frame ≤ 16.7 ms, confirmed by a native spot-check on a real ~30-page
@@ -141,13 +141,16 @@ In priority order, after any carried-over should-fix items.
 ## Engineering
 
 - **Architecture refactoring** ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
-  Gated on must-fix item 1's profiling. Deliver case coordination and document
-  lifecycle as separate, incremental projects: explicit owners for case
-  persistence and synchronization, and explicit document transitions across the
-  shell/view. GPUI keeps presentation, prompts and scheduling; editor/history,
-  import and preview owners keep their contracts. Define each boundary before
-  implementation. Retained editor layout is investigated only if release-build
-  costs justify it; it is not committed work.
+  The [layout profiling](docs/evidence/editor-layout/2026-10-16/README.md) found
+  local whole-document costs, now fixed; it does not call for a migration.
+  Deliver case coordination and document lifecycle as separate, incremental
+  projects: explicit owners for case persistence and synchronization, and
+  explicit document transitions across the shell/view. GPUI keeps
+  presentation, prompts and scheduling; editor/history, import and preview
+  owners keep their contracts. Define each boundary before implementation.
+  Retained editor layout is not committed work: ordinary
+  documents meet the release target without it; reconsider only for the stress
+  tier.
 - **Build-cache check** ([ADR 0050](docs/adr/0050-rust-build-cache-growth.md),
   [measurements](docs/evidence/build-cache/2026-10-16/README.md)). Re-measure
   with `just disk` around 2026-10-23. Evaluate `sccache` only if `target/`

@@ -105,6 +105,9 @@ which runs every ignored performance test serially (set `MDOC_PERF_PREVIEW` to
 a local PDF or DOCX to include preview timing). Run it on an idle machine.
 `MDOC_PERF_PROFILE=release just perf` uses the release profile, serial builds
 and unchanged ceilings. The runner attempts every check before returning failure.
+The host matrix includes a synthetic ~30-page agreement (`contract`), the
+ordinary legal-document workload; `MDOC_PERF_WORKLOADS=contract,tables` limits
+the matrix to named workloads when profiling one of them.
 The scroll workload defaults to the public `coverage.docx`; `MD_PERF_FILE` can
 select another DOCX under `tests/fixtures/docx-preview`. The PDF check defaults
 to public `reference.pdf` plus a generated 64-page PDF; `PDF_PERF_DIR` selects
@@ -113,6 +116,8 @@ Logs include actual editor widths; outer window dimensions alone are insufficien
 for comparisons.
 `review_host_performance` covers diagnostic density, proposed/applied review,
 before/after views and three-member case synchronization without a detector download.
+Its `plain_layout` phase draws the same text without review state at the same
+editor width, so each review phase's excess over it is the PII overhead.
 `MDOC_PERF_STRESS=1` makes that review matrix use 2 MiB / 20,000 mentions;
 run it explicitly in release mode on an idle host for stress measurements.
 

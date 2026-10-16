@@ -26,6 +26,7 @@ pub(crate) fn report(label: &str, values: &mut [f64]) -> f64 {
 fn budget(name: &str) -> Option<[f64; 4]> {
     match name {
         "ordinary" => Some([12., 12., 140., 13.]),
+        "contract" => Some([31., 30., 540., 30.]),
         "large" => Some([320., 320., 3400., 310.]),
         "background" => Some([380., 380., 5700., 370.]),
         "long_paragraph" => Some([50., 65., 800., 62.]),
@@ -33,6 +34,45 @@ fn budget(name: &str) -> Option<[f64; 4]> {
         "dense_matches" => Some([50., 60., 1400., 110.]),
         _ => None,
     }
+}
+
+/// A synthetic ~30-page agreement shaped like converted legal documents:
+/// numbered articles, nested clauses, defined terms, a schedule table and long
+/// wrapped paragraphs. No real names; parties are generic.
+pub(crate) fn contract_markdown() -> String {
+    let paragraph = "The Parties acknowledge that the **Confidential Information** \
+        disclosed under this Agreement remains the property of the Disclosing Party, \
+        and that nothing in this Agreement grants the Receiving Party any licence, \
+        right or interest in it, except the limited right to use it for the \
+        *Purpose* during the Term and in accordance with Clause 7.2 and Schedule 1.";
+    let mut out = String::from("# Settlement and Services Agreement\n\n");
+    out.push_str("This Agreement is made between **Alpha Holdings Ltd** (the \"Company\") and **Beta Services LLC** (the \"Contractor\").\n\n");
+    for article in 1..=24 {
+        out.push_str(&format!("## {article}. Article {article}\n\n"));
+        out.push_str(paragraph);
+        out.push_str("\n\n");
+        for clause in 1..=6 {
+            out.push_str(&format!("{clause}. {paragraph}\n"));
+            if clause % 3 == 0 {
+                for sub in ["first", "second", "third"] {
+                    out.push_str(&format!(
+                        "   - the {sub} condition in Clause {article}.{clause} is satisfied;\n"
+                    ));
+                }
+            }
+        }
+        out.push('\n');
+        if article % 8 == 0 {
+            out.push_str("| Milestone | Amount | Due date |\n| --- | --- | --- |\n");
+            for row in 1..=6 {
+                out.push_str(&format!(
+                    "| Payment {row} | USD {row}0,000 | 2026-0{row}-15 |\n"
+                ));
+            }
+            out.push('\n');
+        }
+    }
+    out
 }
 
 pub(super) fn rss_kib() -> Option<u64> {
@@ -67,6 +107,7 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
     let mixed = "# Heading\n\nalpha **beta** Русский 😀 [link](https://example.com)\n\n![local](pixel.png)\n\n```rust\nlet alpha = 1;\n```\n\n";
     let mut workloads = vec![
         ("ordinary", mixed.repeat(16)),
+        ("contract", contract_markdown()),
         ("large", mixed.repeat(512)),
         ("background", mixed.repeat(600)),
         ("long_paragraph", "alpha beta words ".repeat(3000)),
@@ -85,6 +126,10 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
     // Optional local corpus; only labels and measurements are logged.
     if let Some(path) = std::env::var_os("MDOC_PERF_MARKDOWN") {
         workloads.push(("local", std::fs::read_to_string(path).unwrap()));
+    }
+    // Optional comma-separated subset, for profiling one workload.
+    if let Ok(only) = std::env::var("MDOC_PERF_WORKLOADS") {
+        workloads.retain(|(name, _)| only.split(',').any(|w| w.trim() == *name));
     }
     let mut failures = Vec::new();
     for (name, source) in workloads {
@@ -194,7 +239,9 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
     }
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let large = dir.path().join("large.md");
-    for cycle in 0..12 {
+    // A filtered run without `large` skips the preview switch cycles.
+    let cycles = if large.exists() { 12 } else { 0 };
+    for cycle in 0..cycles {
         let started = Instant::now();
         app = open_document(&app, large.clone(), cx);
         app.update_in(cx, |app, window, cx| {
