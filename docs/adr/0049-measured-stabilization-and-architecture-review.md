@@ -70,3 +70,36 @@ and correct derived-data invalidation through edits, undo/redo and case updates.
 Run the repository gate and affected performance checks with public fixtures and
 recorded effective viewports. Measure the release/native baseline before setting
 numerical targets; report unavailable native/platform checks explicitly.
+
+## Pre-merge review follow-up (2026-10-16)
+
+A pre-merge review of the stabilization branch found defects that block merge.
+They are fixed on this branch, one commit per finding:
+
+- An abandoned quit must clear all case-quit state. Every path that ends
+  `finishing` (a session-write failure, a cancelled close or a cancelled
+  mapping prompt) must also clear the pending quit window, error and prompt.
+  Otherwise a later ordinary case-save failure is treated as a quit failure and
+  blocks every later case save without a prompt. This fix includes a
+  regression test.
+- A failed write for a case that was removed during the write still clears its
+  close-after state and continues writing the other queued cases.
+- `MDOC_PERF_STRESS` enables the stress tier only when it is set to `1`, as
+  documented.
+
+The review also suspected that spelling could stay marked as running if its
+worker ended without returning. It cannot: release builds abort on panic, and
+the worker handle is replaced only when no check is running. Keep that
+invariant if either changes.
+
+Known gaps, deferred to a follow-up session after merge:
+
+- Derived review data (panel projection, before/after view, spelling exclusions)
+  is invalidated by manual `pii.version` bumps through `review_changed`. A
+  revision counter owned by `Review` and advanced by its mutators should replace
+  this, so that a mutation cannot leave derived views stale.
+- Case write completion during quit schedules the final quit check twice; the
+  quit check scans the list of checked tabs once per tab. Both are cleanup only.
+
+Before merge: run `cargo test` and the debug `just perf`. Repeat the release
+measurements only if a fix touches a measured hot path.
