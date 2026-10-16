@@ -25,6 +25,7 @@ gpui_platform = { package = "gpui-pre-platform", version = "0.3", features = ["f
 
 [dependencies]
 regex = "1"
+# Exact: structured-rule predictions are frozen against the corpus (ADR 0017).
 presidio-analyzer = { version = "=0.1.11", default-features = false }
 anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "97d21d1f46086d84478da072ba1fdfa210461c80" }
 pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "1baba87892a929e64d08069cb223b4a312f755cf", features = ["ocr"] }
@@ -33,6 +34,7 @@ sha2 = "0.11"
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
 tar = "0.4"
 flate2 = "1"
+# Exact: DOCX preview rendering changes between releases; bump by hand (ADR 0053).
 docxide-pdf = { version = "=0.17.1", default-features = false }
 zip = { version = "8.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 thiserror = "2"
@@ -53,7 +55,9 @@ tempfile = "3"
 url = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 unicode-segmentation = "1"
+# Exact: the pinned GLiNER2 export must load unchanged (ADR 0002).
 gliner2-rs = { version = "=0.9.6", default-features = false }
+# Exact: pre-release API, matched to the downloaded ONNX Runtime 1.27.0 (src/ocr.rs).
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
 # Probe the ONNX Runtime before ort sees it (ocr::load_onnx_runtime); ort's own version.
 libloading = "0.9"

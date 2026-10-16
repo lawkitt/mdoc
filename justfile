@@ -24,8 +24,9 @@ fmt-check:
 deny:
     cargo deny check
 
-# Clippy with warnings as errors
+# Cargo.lock must match Cargo.toml (ADR 0053); then clippy with warnings as errors
 lint:
+    cargo metadata --locked --format-version 1 > /dev/null
     cargo clippy --workspace --all-targets -- -D warnings
 
 # Workspace tests
