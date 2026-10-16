@@ -113,7 +113,7 @@ macOS builds move it to the data protection keychain, which never asks
 **Variant proposal**: a suggested link between a shorter or inflected form
 ("Ms Raman", "Raman's", "Рамана") and a known identity. Always reviewed, never
 linked automatically; a first name alone is not proposed
-([ADR 0051](docs/adr/0051-roadmap-structure-and-stable-scope.md)).
+([ADR 0053](docs/adr/0053-short-and-inflected-name-variants.md)).
 
 **Quiet probe**: the launch read of the case key with per-query "no UI"; it
 either opens cases or leaves them locked, and never shows a system dialog.

@@ -401,13 +401,16 @@ fn initials_discovery_keeps_ambiguous_links_as_suggestions() {
         .find(|g| g.original.as_ref() == "Павлова М.С.")
         .unwrap();
     assert_eq!(review.suggestions(initials.id).len(), 2);
-    assert_eq!(review.active_identities().len(), 3);
-    assert!(
-        review
-            .variants()
-            .iter()
-            .all(|g| g.original.as_ref() != "Павлова")
-    );
+    // The bare surname is proposed on its own, offering both namesakes.
+    let surname = review
+        .variants()
+        .iter()
+        .find(|g| g.original.as_ref() == "Павлова")
+        .unwrap();
+    assert_eq!(surname.mentions.len(), 1);
+    // Both namesakes, and "Павлова М.С.", which contains it.
+    assert_eq!(review.suggestions(surname.id).len(), 3);
+    assert_eq!(review.active_identities().len(), 4);
 }
 #[test]
 fn manual_selections_trim_edges_but_keep_balanced_pairs_and_initials() {
@@ -569,13 +572,13 @@ fn date_and_other_have_their_own_tokens_and_existing_tokens_stay_reserved() {
 fn partial_name_replace_keeps_the_containing_identity_whole() {
     let source = include_str!("../../../docs/product-media/Settlement agreement.md");
     let mut review = Review::default();
-    let detections = ["Maya Bennett", "Daniel Bennett"]
-        .map(|value| {
-            let start = source.find(value).unwrap();
-            detection(start..start + value.len(), Category::Person)
-        })
-        .to_vec();
-    review.ingest(source, detections).unwrap();
+    // Added by hand: a scan would already propose "Ms Bennett".
+    for value in ["Maya Bennett", "Daniel Bennett"] {
+        let start = source.find(value).unwrap();
+        review
+            .add_manual(source, start..start + value.len(), Category::Person)
+            .unwrap();
+    }
     let full: Vec<_> = review
         .variants()
         .iter()
@@ -641,4 +644,169 @@ fn containment_suggests_only_name_identities() {
         .add_manual(source, start..start + "Alice".len(), Category::Person)
         .unwrap();
     assert!(review.suggestions(alice).is_empty());
+}
+
+fn ingest_names(source: &str, names: &[&str]) -> Review {
+    let mut review = Review::default();
+    let detections = names
+        .iter()
+        .map(|value| {
+            let start = source.find(value).unwrap();
+            detection(start..start + value.len(), Category::Person)
+        })
+        .collect();
+    review.ingest(source, detections).unwrap();
+    review
+}
+fn proposed<'a>(review: &'a Review, original: &str) -> &'a Variant {
+    review
+        .variants()
+        .iter()
+        .find(|g| g.original.as_ref() == original)
+        .unwrap_or_else(|| panic!("{original} is not proposed"))
+}
+
+#[test]
+fn a_scan_proposes_title_surname_and_possessive_forms_of_a_full_name() {
+    let source = include_str!("../../../docs/product-media/Settlement agreement.md");
+    let review = ingest_names(source, &["Maya Bennett", "Daniel Bennett"]);
+    let full: Vec<_> = ["Maya Bennett", "Daniel Bennett"]
+        .map(|value| {
+            review
+                .variant_identity(proposed(&review, value).id)
+                .unwrap()
+        })
+        .to_vec();
+    let short = proposed(&review, "Ms Bennett");
+    // Five plain mentions and "Ms Bennett's"; "Ms Maya Bennett" stays whole.
+    assert_eq!(short.mentions.len(), 6);
+    assert!(
+        short
+            .mentions
+            .iter()
+            .any(|r| source[r.end..].starts_with("'s"))
+    );
+    // Its own identity until Same as… links it to one of the namesakes.
+    let own = review.variant_identity(short.id).unwrap();
+    assert!(!full.contains(&own));
+    let mut expected = full.clone();
+    expected.sort_unstable();
+    assert_eq!(review.suggestions(short.id), expected);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|g| g.original.as_ref() != "Maya")
+    );
+    let edits = plan_all(&review, source).unwrap();
+    assert_eq!(edits.len(), 8);
+    assert!(
+        edits
+            .iter()
+            .all(|(r, _)| !source[..r.start].ends_with("Ms Maya "))
+    );
+}
+
+#[test]
+fn a_scan_proposes_a_bare_surname_but_never_a_first_name_alone() {
+    let source = "Priya Raman and James Paul signed. Raman's counsel, Dr. Raman, \
+        Priya and Paul agreed with Ms Raman.";
+    let review = ingest_names(source, &["Priya Raman", "James Paul"]);
+    let raman = review.variant_identity(proposed(&review, "Priya Raman").id);
+    for short in ["Raman", "Dr. Raman", "Ms Raman"] {
+        let variant = proposed(&review, short);
+        // Bare "Raman" also offers the title forms that contain it.
+        assert!(
+            review.suggestions(variant.id).contains(&raman.unwrap()),
+            "{short}"
+        );
+        assert_ne!(review.variant_identity(variant.id), raman, "never linked");
+    }
+    assert_eq!(proposed(&review, "Raman").mentions.len(), 1, "Raman's");
+    assert_eq!(proposed(&review, "Paul").mentions.len(), 1);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|g| g.original.as_ref() != "Priya")
+    );
+    // A surname that is also another person's first name is not proposed.
+    let source = "Paul Smith met James Paul. Paul left.";
+    let review = ingest_names(source, &["Paul Smith", "James Paul"]);
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|g| g.original.as_ref() != "Paul")
+    );
+}
+
+#[test]
+fn a_kept_name_proposes_no_forms_inside_or_outside_its_mentions() {
+    let source = "Priya Raman signed. Priya Raman agreed.";
+    let mut review = ingest_names(source, &["Priya Raman"]);
+    let full = proposed(&review, "Priya Raman");
+    let (id, first) = (full.id, full.mentions[0].clone());
+    // One mention kept: "Raman" inside it is not proposed on a rescan.
+    review.keep(id, Some(first));
+    review.ingest(source, Vec::new()).unwrap();
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|g| g.original.as_ref() != "Raman")
+    );
+    assert_eq!(review.remaining(), 1);
+    // Kept everywhere: its bare surname elsewhere is not proposed either.
+    let source = "Priya Raman signed. Raman agreed.";
+    let mut review = Review::default();
+    let full = review.add_manual(source, 0..11, Category::Person).unwrap();
+    review.keep(full, None);
+    review.ingest(source, Vec::new()).unwrap();
+    assert!(
+        review
+            .variants()
+            .iter()
+            .all(|g| g.original.as_ref() != "Raman")
+    );
+    assert_eq!(review.remaining(), 0);
+}
+
+#[test]
+fn a_scan_proposes_russian_case_forms_of_a_surname() {
+    let source = "Истец: Павлова Марина Сергеевна. Ответчик: Иван Петрович Чайковский. \
+        Свидетель: Приянка Раман. Показания Рамана приобщены. Павловой направлено письмо; \
+        Павлову уведомили. Чайковского и Чайковскому не было; Раману ответили, \
+        Раманом подписано. Марине и Ивану сообщили.";
+    let names = [
+        "Павлова Марина Сергеевна",
+        "Иван Петрович Чайковский",
+        "Приянка Раман",
+    ];
+    let review = ingest_names(source, &names);
+    let identity = |name| review.variant_identity(proposed(&review, name).id).unwrap();
+    for (short, full) in [
+        ("Павловой", names[0]),
+        ("Павлову", names[0]),
+        ("Чайковского", names[1]),
+        ("Чайковскому", names[1]),
+        ("Рамана", names[2]),
+        ("Раману", names[2]),
+        ("Раманом", names[2]),
+    ] {
+        let variant = proposed(&review, short);
+        assert_eq!(
+            review.suggestions(variant.id),
+            vec![identity(full)],
+            "{short}"
+        );
+    }
+    for first in ["Марине", "Ивану", "Приянка"] {
+        assert!(
+            review
+                .variants()
+                .iter()
+                .all(|g| g.original.as_ref() != first)
+        );
+    }
 }
