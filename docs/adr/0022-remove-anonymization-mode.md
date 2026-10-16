@@ -1,36 +1,22 @@
 # Remove Anonymization mode; Pseudonymization is the default
 
-Status: accepted and implemented, 2026-10-08. The user decided "keep only Pseudonymization and make
-it default behavior" during the
-[historical refactoring interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-refactoring.md). The user confirmed the interview and requested full implementation.
+Status: Accepted, 2026-10-08. Supersedes
+[ADR 0013](0013-reviewable-anonymization.md). Toolbar placement superseded by
+[ADR 0048](0048-workspace-shell-redesign.md).
 
 ## Problem
 
-Two modes share one review model. Anonymize (toolbar default, Cmd/Ctrl+Shift+A)
-scans and applies shared category markers in one step; Pseudonymize proposes
-identity-linked aliases for explicit review and Apply. Their interplay requires
-`Mode` branches, marker-to-alias conversion groups, a split toolbar button with
-a mode menu, a second popup path and dedicated tests.
+Anonymize (shared category markers applied in one step) and Pseudonymize
+(identity-linked aliases, explicit Apply) shared one review model through
+`Mode` branches, marker-to-alias conversion, a split button and a second popup.
 
 ## Decision
 
-Remove Anonymization mode. Pseudonymization is the only PII replacement behavior
-and the toolbar default. This supersedes [ADR 0013](0013-reviewable-anonymization.md)
-and the marker-specific parts of [ADR 0014](0014-highlighted-pii-replacements.md).
+- Pseudonymization is the only PII replacement behavior and the default.
+- Pseudonymize scans and opens the Replacements panel with proposals; Apply is
+  explicit. With a review and the panel closed it reopens without rescanning.
+  ⌘⇧P (Ctrl+Shift+P) stays; the Anonymize action and ⌘⇧A are gone.
+- One popup path; marker→alias conversion is deleted, so leftover markers are
+  ordinary text.
 
-This is the one deliberate behavior change within the
-[ADR 0021](0021-pseudonymization-refactoring.md) refactoring.
-
-## Settled details
-
-- Toolbar: single icon. No review → scan and open the Replacements panel with
-  proposals (explicit Apply). Review with panel closed → reopen without rescan.
-  Panel open → close. Cmd/Ctrl+Shift+P remains; Cmd/Ctrl+Shift+A and the
-  Anonymize menu item are removed.
-- One popup: highlight clicks open the panel with the ADR 0020 direct popup;
-  legacy candidate/applied popups are removed; the overlap chooser remains.
-- Marker→alias conversion is deleted; leftover markers are ordinary text.
-- Mode-agnostic anonymization tests are ported to Pseudonymize; marker-specific
-  tests are deleted. These are the only assertion changes in ADR 0021's work.
-- ADR 0013 is superseded; ADR 0014 marker notes, CONTEXT.md, README and ROADMAP
-  are updated in the same change.
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0022-remove-anonymization-mode.md).

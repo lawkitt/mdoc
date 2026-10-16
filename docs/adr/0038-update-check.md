@@ -1,9 +1,8 @@
 # Update check
 
-Status: Accepted and implemented, 2026-10-10; "detection only" superseded by
-[ADR 0040](0040-in-app-updates-on-macos.md) on macOS. See the
-[historical design interview](https://github.com/lawkitt/mdoc/blob/01ab890db29febc5d9920de64aa494480a5d5407/docs/design/ci-release-pipeline.md). Ported from
-Zorite's `src/updater.rs`.
+Status: Accepted, 2026-10-10. On macOS, "detection only" is superseded by
+[ADR 0040](0040-in-app-updates-on-macos.md). Settings placement amended by
+[ADR 0048](0048-workspace-shell-redesign.md) (update dot on Settings in the sidebar).
 
 ## Problem
 
@@ -35,4 +34,6 @@ Automatic installation needs signed builds
 
 ## Consequences
 
-- Auto-install is reconsidered when signed `1.0` builds exist.
+- Windows auto-install is reconsidered when signed Windows builds exist.
+
+References: [interview](https://github.com/lawkitt/mdoc/blob/01ab890db29febc5d9920de64aa494480a5d5407/docs/design/ci-release-pipeline.md). Ported from Zorite's `src/updater.rs`.

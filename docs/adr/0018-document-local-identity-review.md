@@ -1,72 +1,51 @@
 # Document-local identity review for external AI analysis
 
-Status: authorized and implemented experimentally, 2026-10-08. The user's
-“Proceed implement everything else” selects the recommended first-journey product
-workflow from the preceding brainstorming, following the selected Presidio reuse.
-Production qualification remains open.
+Status: Accepted, 2026-10-08. Superseded in part by
+[ADR 0019](0019-simpler-pseudonymization-ui.md) and later UI ADRs (review
+surfaces, copy actions) and [ADR 0041](0041-cases-and-ai-response-restoration.md)
+(cases persist mappings across documents).
 
 ## Decision
 
-Prepare Markdown for analysis in an external AI app, without a return pipeline.
-Use stable document-local identities with neutral category aliases (PERSON_1,
-ORG_1, EMAIL_1, etc.). Alias names are independent of identity IDs. Every occurrence
-retains its exact original and its assignment. Merges and splits never renumber
-unrelated aliases, and alias-wide changes affect tracked occurrences only.
+- **Identities**: stable document-local identities with neutral category aliases
+  (`PERSON_1`, `ORG_1`, `EMAIL_1`). Alias names are independent of identity IDs.
+  Every occurrence keeps its exact original and its assignment. Merges and splits
+  never renumber unrelated aliases; alias-wide changes affect tracked
+  occurrences only.
+- **Automatic sharing**: exact values, or values equal after case, spacing and
+  typographic-quote normalization, of the same category share an identity,
+  preserving original bytes and company legal forms. This is a lexical default:
+  identical names can be split by occurrence.
+- **Suggestions, never automatic**: surname plus two initials discovers
+  candidates; initials and conservative Russian inflections suggest person links
+  that always need confirmation. A surname alone, OCR resemblance or proximity
+  establishes neither identity nor ownership. Organization shorthand, OCR
+  variants, affiliation and party-block ownership need evidence first.
+- **Corrections**: rename, category correction (also repairing applied
+  aliases), assignment, merge, and separating one occurrence or all matching
+  originals. Each correction and Keep is one step in the editor's undo history;
+  rescans keep confirmed assignments.
+- **Ownership**: contact details, addresses and identifiers can have a manually
+  confirmed person or organization owner, separate from identity equivalence.
+- **Structured identifiers**: labelled checksum-valid ОГРН and ОГРНИП are
+  identifiers, not bank numbers.
 
-Automatically share an identity for full exact or case/spacing/typographic-quote
-normalized values of the same category, preserving original bytes and company
-legal forms. This is a lexical default, not proof of sameness: repeated identical
-names can be split by occurrence. Matching surname plus two initials discovers
-additional candidates; initials and conservative Russian inflections suggest
-possible person links and always need confirmation. A matching surname alone,
-OCR resemblance, and proximity to a name do not establish identity or ownership.
-Defined organization shorthand, OCR variants, affiliation, and automatic party-
-block ownership need separate evidence before automatic association is added.
+## Safeguards
 
-An optional Identities panel offers search, variants, contextual occurrences,
-rename, category correction, assignment, whole-identity merge, and separation of
-one occurrence or all matching originals. Inline candidate and applied popups
-open these controls directly. Review proposed mappings before applying aliases;
-existing shared-marker anonymization can also be upgraded directly from tracked
-originals. Application is one undoable batch. Each subsequent correction and Keep
-shares the editor's undo/redo history; rescans preserve confirmed assignments.
+Without a case, mappings, originals and relationship policy live only in the tab
+and its undo history; saved Markdown and copied output carry none. Existing
+source tokens and aliases are reserved; custom alias collisions are rejected.
+Pasted lookalikes never gain provenance. A stale revision or invalid span
+refuses the operation. Policy-only staging creates a history checkpoint without
+a text-change event. Undo journals share immutable policy and originals; typing
+never clones the identity index; deliberate changes are copy-on-write. Lists are
+virtualized and context is built only for the selected identity.
 
-Contact details, addresses and identifiers can have a manually confirmed person
-or organization owner. Ownership is separate from identity equivalence. “Copy for
-AI” copies current full Markdown with an optional alias-only relationship legend,
-when detected pending mentions are resolved. Ordinary “Copy Markdown” retains its
-existing raw-source behavior. Neither action asserts that all sensitive values
-were found. The experimental notice and final full-source review remain visible.
+## Consequences
 
-## Lifetime and safeguards
+Realistic fake names are not offered: they are harder to restore and collide
+with real names. Recognition and relationship resolution are not qualified for
+production by this workflow.
 
-Mappings, originals and relationship policy live only in the current tab, including
-its editor undo history. Closing/reopening, saved Markdown and copied output do
-not persist mappings. Existing source tokens and aliases are reserved; custom
-alias collisions are rejected. Pasted lookalikes never acquire occurrence
-provenance. A stale revision or invalid span refuses the operation. Policy-only
-staging creates an editor history checkpoint without emitting a text-change event.
-
-Undo journals share immutable identity policy and occurrence originals; typing
-does not clone a complete identity index. Deliberate mapping changes use copy-on-
-write policy. Lists are virtualized and context is built only for the selected
-identity. This does not remove the existing dense-source editor layout bottleneck.
-
-## Consequences and qualification
-
-The screenshot's full name and misclassified initials can be assigned to one
-PERSON alias without restoring and rescanning the document. A category correction
-also repairs already-applied tracked markers. Labelled checksum-valid ОГРН and
-ОГРНИП now receive structured identifier evidence, rather than a bank category.
-This is a separately authorized expansion beyond ADR 0017's frozen three-rule reuse.
-
-This delivers the first-journey review workflow; it does not qualify automatic
-recognition or relationship resolution for production. Required next evidence:
-independently reviewed representative EN/RU legal/OCR holdout, false joins/splits,
-wrong owners, residual PII and category/boundary misses, correction time, explicit
-numerical release gates, accessibility/IME and Windows/Linux runtime acceptance,
-and realistic editor/resource budgets. The return journey, persistent matter maps
-and deliberate local erasure remain separate future decisions.
-
-Verification and native interaction evidence are recorded in
-[identity-review verification](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/pseudonymization/2026-10-08-identities/README.md).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0018-document-local-identity-review.md),
+[verification](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/pseudonymization/2026-10-08-identities/README.md).

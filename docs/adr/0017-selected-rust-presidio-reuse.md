@@ -1,39 +1,31 @@
 # Reuse selected Rust Presidio components through mdoc's detector adapter
 
-Status: accepted and implemented experimentally, 2026-10-08. The user approved
-the Rust Presidio research recommendation and requested implementation.
+Status: Accepted, 2026-10-08. Extended by
+[ADR 0018](0018-document-local-identity-review.md) (labelled ОГРН/ОГРНИП).
 
 ## Decision
 
-Pin the published MIT-licensed `presidio-analyzer` 0.1.11 package, with default
-features disabled. Configure only email and contextual checksum-valid INN/SNILS
-in `pseudonymization_detector::structured`; keep GLiNER2 and the shared ONNX Runtime.
+Pin MIT-licensed `presidio-analyzer` 0.1.11 with default features off.
+Configure only email and contextual checksum-valid INN/SNILS in
+`pseudonymization_detector::structured`; GLiNER2 and the shared ONNX Runtime
+stay.
 
-Reuse the library's pattern/validator configuration and SNILS checksum validator.
-Retain mdoc's Unicode email and identifier format patterns, strict same-line
-context/digit boundaries, zero rejection, local INN checksum, and heuristic evidence
-scores. Direct matches refer to exact immutable Markdown UTF-8 byte spans. Existing
-ingestion, syntax protection, source freshness, review decisions, editor commits
-and occurrence provenance remain the app-owned acceptance/replacement boundary.
+Reuse the library's pattern/validator configuration and SNILS checksum. Keep
+mdoc's Unicode email and identifier patterns, strict same-line context and digit
+boundaries, zero rejection, local INN checksum and heuristic scores. Matches are
+exact UTF-8 byte spans of the immutable Markdown; ingestion, syntax protection,
+freshness, review decisions, editor commits and provenance stay app-owned.
 
-Do not invoke the full analyzer, anonymizer or `PatternRecognizer::analyze`; the
-last uses quadratic containment removal in the pinned version, while mdoc already
-resolves overlaps. Do not enable gazetteers or optional ONNX/POS features, broaden
-entity categories or add a rules-only automatic fallback as part of this adoption.
+Do not call the full analyzer, anonymizer or `PatternRecognizer::analyze` (the
+latter removes containment quadratically; mdoc already resolves overlaps). No
+gazetteers, optional ONNX/POS features, extra categories or rules-only fallback.
 
-## Rationale and consequences
+## Consequences
 
-Selected reuse establishes a maintained dependency seam without replacing the
-reviewable document-editing contract. The upstream ASCII email pattern and permissive
-SNILS defaults would regress existing behavior, so app policy remains explicit.
-The absence of an upstream INN recognizer still requires the local checksum.
-The package's unconditional phone-library dependency is retained and attributed,
-although its recognizer is not invoked.
+The upstream ASCII email pattern and permissive SNILS defaults would regress
+behavior, so app policy stays explicit; INN has no upstream recognizer. The
+package's phone-library dependency is retained and attributed, though unused.
+Frozen corpus predictions and Unicode/context/dense-source checks gate changes.
 
-Frozen selected-rule corpus predictions and Unicode/context/dense-source checks
-gate this change. Production detector accuracy, semantic identity associations,
-the identity correction UI and platform qualification remain separate open work.
-This decision does not remove experimental status.
-
-See [historical source research, implementation boundary and verification](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/rust-presidio-reuse.md)
-and [production-scope ADR](0016-pii-production-qualification-scope.md).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0017-selected-rust-presidio-reuse.md),
+[source research](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/rust-presidio-reuse.md).

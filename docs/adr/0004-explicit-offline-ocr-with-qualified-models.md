@@ -1,8 +1,9 @@
 # Require explicit offline OCR with qualified pinned models
 
-Status: accepted, consolidated 2026-10-01. [ADR 0006](0006-local-model-settings.md)
-adds model selection and fixes explicit OCR to Force on every selected page;
-native opening and explicit recognition consent remain separate.
+Status: Accepted, 2026-10-01. Amended by [ADR 0006](0006-local-model-settings.md)
+(model selection; explicit OCR forces every selected page) and
+[ADR 0026](0026-first-use-model-setup.md) (English PP-OCRv6 Small is the default;
+Cyrillic recognition is optional).
 
 OCR recognition requires an explicit inline choice, including when a runtime is
 already installed. Only explicit setup downloads pinned, checksum-verified
@@ -10,10 +11,9 @@ components into app-local storage; recognition is offline and document contents
 stay local. This preserves user control while allowing automatic native-text
 conversion on opening.
 
-The original PP-OCRv6 Small recognizer ran successfully but failed Russian text
-despite high confidence. The qualified fork therefore uses the PP-OCRv6 Small
-detector with PP-OCRv5 Cyrillic recognition and its matching dictionary through
-one manifest. Language acceptance requires actual recognition, not confidence or
+PP-OCRv6 Small recognition fails Russian text despite high confidence, so the
+Cyrillic bundle pairs the PP-OCRv6 Small detector with PP-OCRv5 Cyrillic
+recognition and its matching dictionary through one manifest. Language acceptance requires actual recognition, not confidence or
 dictionary coverage alone. Manifest identity/digests participate in the fork's
 cache key; explicit runtime paths avoid process-wide environment mutation.
 

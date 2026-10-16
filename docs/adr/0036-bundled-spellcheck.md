@@ -1,8 +1,8 @@
 # Bundled spellcheck
 
-Status: Accepted and implemented, 2026-10-10. Interview record:
-[spellcheck design](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/spellcheck.md). Evidence:
-[spellcheck baseline](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/spellcheck/README.md).
+Status: Accepted, 2026-10-10. Supersedes the `os-spellcheck` exception of
+[ADR 0029](0029-codebase-cleanup-charter.md). Its toolbar icon became a ⋯ menu row
+([ADR 0048](0048-workspace-shell-redesign.md)).
 
 ## Problem
 
@@ -36,7 +36,7 @@ structure, and checks the whole document on the main thread on every edit.
   with digits (both skipped by default). The per-document
   switch lasts only for the session. There is no word-list import and no
   engine choice.
-- **User words** (added after the first version): a flagged word's right-click
+- **User words**: a flagged word's right-click
   menu offers **Ignore in this document** (every instance, session-only, never
   saved) and **Add to dictionary** (the **user dictionary**: exact spellings
   in `spelling-words.txt` beside `settings.json`, shared by all documents, at
@@ -61,14 +61,11 @@ structure, and checks the whole document on the main thread on every edit.
   `spell_exclusions` from its own Markdown scanner, and `on_suggest` returns a
   task so suggestions resolve after the menu opens.
 - **UI**: squiggles with right-click suggestions (the menu shows "Finding
-  suggestions…" until they arrive), plus a toolbar spelling icon (left of Pseudonymize) with a badge
-  counting misspellings (99+ at most; no badge at zero, while loading or when
-  the document isn't checked). Its menu has two items: "Check in this
-  document" (the session-only switch) and "Turn off" / "Turn on" (the saved
-  Settings master switch). When either is off the icon stays visible, faded
-  and without a badge. Next/previous misspelling are keyboard-only: ⌘; / ⇧⌘;
-  (Ctrl+; / Ctrl+Shift+;). The icon is hidden for source-only tabs and empty
-  documents. No sidebar list.
+  suggestions…" until they arrive). The document header's ⋯ menu has a
+  **Spelling** row, "Spelling · N" while misspellings exist, that toggles the
+  session-only per-document check; it is disabled while Settings turns spelling
+  off. Next/previous misspelling are keyboard-only: ⌘; / ⇧⌘; (Ctrl+; /
+  Ctrl+Shift+;). No sidebar list.
 
 ## Invariants
 
@@ -86,9 +83,9 @@ structure, and checks the whole document on the main thread on every edit.
   names are caught only when they are mixed-script.
 - Words split by hyphens across lines are flagged rather than repaired; repairs
   belong in the conversion forks ([ADR 0001](0001-conversion-and-ocr-in-dependency-forks.md)).
-- Qualification follows the usual platform acceptance. A false-positive count
-  on the fixtures is recorded in `docs/evidence/spellcheck/` as the regression
-  baseline, not as a gate.
+- Qualification follows the usual platform acceptance. The fixture
+  false-positive count (see References) is a baseline, not a gate.
 - Dictionary notices live beside the dictionaries and in NOTICE.md;
   THIRD-PARTY-LICENSES covers Rust crates only.
-- Supersedes the `os-spellcheck` exception in ADR 0029.
+
+References: [interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/spellcheck.md), [spellcheck baseline](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/spellcheck/README.md).

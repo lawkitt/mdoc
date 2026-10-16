@@ -1,8 +1,7 @@
 # First-use model setup and English-first defaults
 
-Status: Accepted and implemented, 2026-10-09; Windows native check outstanding. See the
-[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/model-setup-ux.md). Amends
-[ADR 0006](0006-local-model-settings.md) defaults and Settings controls.
+Status: Accepted, 2026-10-09. Amends [ADR 0006](0006-local-model-settings.md)
+(defaults and Settings controls).
 
 ## Problem
 
@@ -27,7 +26,6 @@ no longer a priority.
   Done.
 - **Defaults**: OCR PP-OCRv6 Small (English); pseudonymization GLiNER2 FP16.
   Cyrillic OCR and FP32 remain optional. Stored preferences are not migrated.
-
 - **Markdown pane**: every not-yet-converted state uses one centred state
   card with a single primary action, a quiet secondary and a link; it changes
   in place through download, verification, recognition and failure. Page
@@ -42,3 +40,5 @@ no longer a priority.
 Explicit network consent, offline inference, one model job at a time,
 generation-scoped continuations, Settings downloads never starting document
 processing, Repair/Remove, comparisons and advanced numeric settings.
+
+References: [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/model-setup-ux.md).

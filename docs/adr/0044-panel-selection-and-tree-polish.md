@@ -1,7 +1,8 @@
 # Replacements panel: stable selection and tree polish
 
-Status: Accepted, 2026-10-13. Supersedes ADR 0033's "After a decision, focus
-goes to the next undecided mention" and its group disclosure glyphs.
+Status: Accepted, 2026-10-13. Supersedes ADR 0033's "after a decision,
+focus goes to the next undecided mention" and its group disclosure glyphs. Row
+layout and checkboxes amended by [ADR 0048](0048-workspace-shell-redesign.md).
 
 ## Decision
 

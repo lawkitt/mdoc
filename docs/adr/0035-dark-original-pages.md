@@ -1,7 +1,6 @@
 # Dark Original pages
 
-Status: Accepted and implemented, 2026-10-10. Interview record:
-[original page tone](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/original-page-tone.md).
+Status: Accepted, 2026-10-10. Header placement amended by [ADR 0048](0048-workspace-shell-redesign.md).
 
 ## Problem
 
@@ -16,7 +15,7 @@ stay paper-white, producing glare beside the dark Markdown pane.
   (paper) and page text colour (ink); coloured pixels keep their hue. Applied to
   the whole bitmap, images included — same model as Zathura `recolor`.
 - **Control**: tone follows the app theme (Dark → themed, Light → original);
-  a header toggle in the Original viewer overrides it to original paper.
+  a header toggle in the Source viewer overrides it to original paper.
 - **Location**: `gpui-pdf` owns it. The host supplies themed colours through
   `PdfStyle::themed_pages`, already read at paint time via `PdfStyleFn`, so every
   viewer follows live theme changes. `render_page` takes a `PageTone`. Covers
@@ -36,3 +35,5 @@ No second bitmap is kept; a tone change re-renders only the visible window.
   restores fidelity when colour matters.
 - Selective (image-preserving) recolouring would need interpreter-level work in
   hayro and is out of scope.
+
+References: [interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/original-page-tone.md).

@@ -1,7 +1,8 @@
 # Replacement popup redesign and replacement motion
 
-Status: Accepted and implemented, 2026-10-10. See the
-[historical design interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/replacement-popup-polish.md).
+Status: Accepted, 2026-10-10. The popup layout is superseded by the mention
+bar of [ADR 0048](0048-workspace-shell-redesign.md); chips, colours and motion
+stand.
 
 ## Problem
 
@@ -13,28 +14,24 @@ feedback in the document itself.
 
 ## Decision
 
-- **Decision card.** Default rows: header (category ▾, `‹ n of N ›` hidden for
-  one mention, ×), `original → [alias]` with a boxed alias input, an optional
-  owner row (contact/identifier categories or when set), `Apply to` segmented
-  scope control (the only place counts appear), and actions: filled `Apply`
-  (↵ hint when Enter applies) plus ghost `Keep original`, or `Cancel` while a
-  manual addition is the latest step, or labelled `↶ Undo` when applied.
 - **Floating dropdowns** for category (name + resulting alias, ✓ current),
   alias ("Same as…" entities, `New alias`, `Rename to "X"` in the selected
   scope) and owner. The rename-all row and the header cancel icon are removed.
-- **Replacement chips** in the editor: rounded, bordered, padding-free, text tinted to match; gold
-  proposals, blue applied.
+- **Applied chips** in the editor: rounded, bordered, padding-free, blue, text
+  tinted to match. Proposed mentions are underlined (ADR 0048).
 - **Motion.** Apply: chip eases gold → soft blue glow → resting blue (700 ms,
   smoothstep) while the words roll inside the chip, for every apply path. Undo
   replacement eases blue → gold with the same roll; Keep original fades a
-  ghost of the chip away. No marks. Scan: a toolbar status beside Pseudonymize (spinner + timed stage
+  ghost of the chip away. No marks. Scan: a status beside the primary action (spinner + timed stage
   label crossfading Reading… → Analyzing… → Finding names… → Linking
   mentions…); proposals fade in when results land. Reduced motion disables
   the fades.
 
 ## Consequences
 
-`mdoc-editor` gains a transient per-range annotation effect (colour/alpha over
+`mdoc-editor` has a transient per-range annotation effect (colour/alpha over
 time with frame-driven redraw) and bordered annotation painting. Renaming every
-mention now requires choosing `All N` first. Scope, Keep/Undo and undo/redo
-semantics are unchanged.
+mention requires choosing the whole-entity scope first. Scope, Keep/Undo and
+undo/redo semantics are unchanged.
+
+References: [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/replacement-popup-polish.md).
