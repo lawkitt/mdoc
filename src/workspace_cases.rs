@@ -848,6 +848,7 @@ impl Workspace {
             Ok(store) => store,
             Err(error) => {
                 self.case_write_failed(case, error, cx);
+                self.resume_case_quit(cx);
                 return;
             }
         };
@@ -881,6 +882,7 @@ impl Workspace {
         })
         .detach();
     }
+    /// The caller resumes a quit in progress (`resume_case_quit`) once.
     fn case_write_failed(&mut self, case: Case, error: String, cx: &mut Context<Self>) {
         if !self.cases.cases.iter().any(|current| current.id == case.id) {
             // Removed while writing: nothing to retry, but release its close
@@ -903,7 +905,6 @@ impl Workspace {
         // must not block ordinary saves behind an unanswered prompt.
         if self.finishing && self.cases.quit_window.is_some() {
             self.cases.quit_error = Some(error);
-            self.resume_case_quit(cx);
         }
     }
     fn resume_case_quit(&self, cx: &mut Context<Self>) {
