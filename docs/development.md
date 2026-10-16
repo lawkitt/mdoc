@@ -108,11 +108,15 @@ which runs every ignored performance test serially (set `MDOC_PERF_PREVIEW` to
 a local PDF or DOCX to include preview timing). Run it on an idle machine.
 `MDOC_PERF_PROFILE=release just perf` uses the release profile, serial builds
 and unchanged ceilings. The runner attempts every check before returning failure.
-The host matrix includes a synthetic ~30-page agreement (`contract`), the
-ordinary legal-document workload; `MDOC_PERF_WORKLOADS=contract,tables` limits
-the matrix to named workloads when profiling one of them.
-The scroll workload defaults to the public `coverage.docx`; `MD_PERF_FILE` can
-select another DOCX under `tests/fixtures/docx-preview`. The PDF check defaults
+The host matrix includes the ordinary legal-document workloads: a synthetic
+~30-page agreement (`contract`) and a scrubbed real 37-page legal opinion
+(`legal_opinion`, from `tests/fixtures/docx-preview/legal-opinion.docx`);
+`MDOC_PERF_WORKLOADS=contract,tables` limits the matrix to named workloads when
+profiling one of them.
+The DOCX scroll workload runs the public `coverage.docx` and `legal-opinion.docx`;
+`MD_PERF_FILE` selects one DOCX under `tests/fixtures/docx-preview` instead.
+Scrub a private DOCX into a distributable layout fixture with
+`tests/fixtures/docx-preview/scrub.py`; never commit the original. The PDF check defaults
 to public `reference.pdf` plus a generated 64-page PDF; `PDF_PERF_DIR` selects
 an explicit local corpus.
 Logs include actual editor widths; outer window dimensions alone are insufficient

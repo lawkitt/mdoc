@@ -25,16 +25,20 @@ priority order.
 
 1. **[Perf] Ordinary legal documents are responsive.** Only the native
    spot-check remains. [Profiled layout fixes](docs/evidence/editor-layout/2026-10-16/README.md)
-   bring a synthetic ~30-page contract to 3.1 ms release scroll p95 (from 6.2);
-   every ordinary and public DOCX/PDF preview workload is under 16.7 ms, and
+   bring a synthetic ~30-page contract to 3.1 ms release scroll p95 (from 6.2).
+   A [scrubbed real 37-page legal opinion](docs/evidence/editor-layout/2026-10-16-legal-opinion/README.md)
+   (116 KB Markdown) is now a `just perf` workload: 5.0 / 4.2 / 2.0 ms release
+   scroll/typing/navigation p95, and 3.2 ms scroll with its DOCX preview open.
+   Every ordinary and public DOCX/PDF preview workload is under 16.7 ms, and
    debug `just perf` passes all checks. The review matrix separates layout from
    PII overhead at a fixed width (+0.45–0.80 ms release). Image/code-heavy
-   documents (27–31 ms at 63–74 KB), case fan-out and process memory stay with
-   the stress tier.
+   documents (27–31 ms at 63–74 KB), the legal opinion's 184 ms search burst,
+   case fan-out and process memory stay with the stress tier.
    *Done when:* on a release build on the M4 reference Mac, the ordinary scroll,
    typing and navigation workloads and the public DOCX/PDF preview workloads reach
    p95 frame ≤ 16.7 ms, confirmed by a native spot-check on a real ~30-page
-   contract. Debug ceilings stay regression guards.
+   contract ([procedure](docs/evidence/editor-layout/2026-10-16-legal-opinion/README.md#native-spot-check)).
+   Debug ceilings stay regression guards.
 2. **[Cases] Captured AI-reply fixtures for Restore.** Cases and restoration
    ([saved mappings](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/saved-mappings.md)) are implemented in all four
    phases, including the Linux Secret Service key.

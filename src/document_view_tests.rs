@@ -1356,92 +1356,111 @@ fn close_and_newer_request_discard_pending_completions(cx: &mut TestAppContext) 
 #[ignore]
 fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let file = std::env::var("MD_PERF_FILE").unwrap_or_else(|_| "coverage.docx".into());
-    let source = base.join("tests/fixtures/docx-preview").join(file);
-    let imported = import::convert(&source).unwrap();
-    let (app, cx) = boot(cx);
-    // Fixed outer window; the public coverage DOCX is the default workload.
+    // The public coverage DOCX and the scrubbed 37-page legal opinion.
+    let files = std::env::var("MD_PERF_FILE").map_or_else(
+        |_| vec!["coverage.docx".to_owned(), "legal-opinion.docx".to_owned()],
+        |file| vec![file],
+    );
+    let (mut app, cx) = boot(cx);
+    // Fixed outer window.
     cx.simulate_resize(gpui::size(px(1332.), px(750.)));
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("large.md");
-    std::fs::write(&path, &imported.markdown).unwrap();
-    let app = open_document(&app, path, cx);
-    cx.run_until_parked();
     let mut failures = Vec::new();
-    for state in ["markdown_only", "preview_open", "preview_closed"] {
-        if state == "preview_open" {
-            app.update_in(cx, |app, window, cx| {
-                app.open_docx(source.clone(), window, cx)
-            });
-        } else if state == "preview_closed" {
-            app.update_in(cx, |app, window, cx| app.close_preview(window, cx));
-        }
+    for file in files {
+        let source = base.join("tests/fixtures/docx-preview").join(&file);
+        let imported = import::convert(&source).unwrap();
+        let path = dir
+            .path()
+            .join(std::path::Path::new(&file).with_extension("md"));
+        std::fs::write(&path, &imported.markdown).unwrap();
+        app = open_document(&app, path, cx);
         cx.run_until_parked();
-        cx.update(|_, cx| {
-            assert_eq!(app.read(cx).preview.pdf.is_some(), state == "preview_open");
-        });
-        let mut times = Vec::new();
-        let mut furthest = 0.0_f32;
-        for frame in 0..60 {
-            let started = std::time::Instant::now();
-            cx.update(|window, cx| {
-                app.update(cx, |app, cx| {
-                    let step = if frame < 30 { frame } else { 59 - frame };
-                    let offset = app.scroll.max_offset().y.abs() * (step as f32 / 29.);
-                    app.scroll.set_offset(gpui::point(px(0.), -offset));
-                    cx.notify();
+        // Release keeps the 16.7 ms frame target for every file. The 116 KB
+        // legal opinion's debug limits are regression guards: the recorded p95
+        // plus about 20% (docs/evidence/editor-layout/2026-10-16-legal-opinion).
+        let (scroll_limit, typing_limit) = if cfg!(debug_assertions) && file == "legal-opinion.docx"
+        {
+            (34., 64.)
+        } else {
+            (16.667, 50.)
+        };
+        for state in ["markdown_only", "preview_open", "preview_closed"] {
+            if state == "preview_open" {
+                app.update_in(cx, |app, window, cx| {
+                    app.open_docx(source.clone(), window, cx)
                 });
-                window.refresh();
-                window.draw(cx).clear(cx);
-            });
-            let ms = started.elapsed().as_secs_f64() * 1000.;
-            furthest = furthest.max(cx.update(|_, cx| -f32::from(app.read(cx).scroll.offset().y)));
+            } else if state == "preview_closed" {
+                app.update_in(cx, |app, window, cx| app.close_preview(window, cx));
+            }
             cx.run_until_parked();
-            if frame >= 5 {
-                times.push(ms);
+            cx.update(|_, cx| {
+                assert_eq!(app.read(cx).preview.pdf.is_some(), state == "preview_open");
+            });
+            let mut times = Vec::new();
+            let mut furthest = 0.0_f32;
+            for frame in 0..60 {
+                let started = std::time::Instant::now();
+                cx.update(|window, cx| {
+                    app.update(cx, |app, cx| {
+                        let step = if frame < 30 { frame } else { 59 - frame };
+                        let offset = app.scroll.max_offset().y.abs() * (step as f32 / 29.);
+                        app.scroll.set_offset(gpui::point(px(0.), -offset));
+                        cx.notify();
+                    });
+                    window.refresh();
+                    window.draw(cx).clear(cx);
+                });
+                let ms = started.elapsed().as_secs_f64() * 1000.;
+                furthest =
+                    furthest.max(cx.update(|_, cx| -f32::from(app.read(cx).scroll.offset().y)));
+                cx.run_until_parked();
+                if frame >= 5 {
+                    times.push(ms);
+                }
+            }
+            assert!(furthest > 100., "viewport must actually scroll");
+            times.sort_by(f64::total_cmp);
+            let p95 = times[times.len() * 95 / 100];
+            eprintln!(
+                "MD_PERF file={file} state={state} bytes={} lines={} median_ms={:.2} p95_ms={p95:.2} editor_width={:?}",
+                imported.markdown.len(),
+                imported.markdown.lines().count(),
+                times[times.len() / 2],
+                app.read_with(cx, |v, cx| v.editor.read(cx).layout_width().map(f32::from)),
+            );
+            if p95 > scroll_limit {
+                failures.push(format!("{file} {state} scroll"));
+            }
+            // Measure actual text input followed by layout/paint, not just idle redraw.
+            app.update(cx, |app, cx| {
+                app.editor.update(cx, |e, cx| e.set_cursor(0, cx))
+            });
+            let mut typing = Vec::new();
+            for _ in 0..12 {
+                let started = std::time::Instant::now();
+                cx.simulate_input("x");
+                cx.update(|window, cx| {
+                    window.refresh();
+                    window.draw(cx).clear(cx);
+                });
+                typing.push(started.elapsed().as_secs_f64() * 1000.);
+                cx.run_until_parked();
+            }
+            typing.sort_by(f64::total_cmp);
+            let typing_p95 = typing[typing.len() * 95 / 100];
+            eprintln!("MD_PERF file={file} state={state} typing_p95_ms={typing_p95:.2}");
+            if typing_p95 > typing_limit {
+                failures.push(format!("{file} {state} typing"));
             }
         }
-        assert!(furthest > 100., "viewport must actually scroll");
-        times.sort_by(f64::total_cmp);
-        let p95 = times[times.len() * 95 / 100];
-        eprintln!(
-            "MD_PERF state={state} bytes={} lines={} median_ms={:.2} p95_ms={p95:.2} editor_width={:?}",
-            imported.markdown.len(),
-            imported.markdown.lines().count(),
-            times[times.len() / 2],
-            app.read_with(cx, |v, cx| v.editor.read(cx).layout_width().map(f32::from)),
-        );
-        if p95 > 16.667 {
-            failures.push(state);
-        }
-        // Measure actual text input followed by layout/paint, not just idle redraw.
-        app.update(cx, |app, cx| {
-            app.editor.update(cx, |e, cx| e.set_cursor(0, cx))
+        cx.update(|_, cx| {
+            assert_eq!(
+                app.read(cx).editor.read(cx).text(),
+                format!("{}{}", "x".repeat(36), imported.markdown)
+            );
         });
-        let mut typing = Vec::new();
-        for _ in 0..12 {
-            let started = std::time::Instant::now();
-            cx.simulate_input("x");
-            cx.update(|window, cx| {
-                window.refresh();
-                window.draw(cx).clear(cx);
-            });
-            typing.push(started.elapsed().as_secs_f64() * 1000.);
-            cx.run_until_parked();
-        }
-        typing.sort_by(f64::total_cmp);
-        let typing_p95 = typing[typing.len() * 95 / 100];
-        eprintln!("MD_PERF state={state} typing_p95_ms={typing_p95:.2}");
-        if typing_p95 > 50. {
-            failures.push(state);
-        }
+        app = close_document(&app, cx);
     }
-    cx.update(|_, cx| {
-        assert_eq!(
-            app.read(cx).editor.read(cx).text(),
-            format!("{}{}", "x".repeat(36), imported.markdown)
-        );
-    });
     assert!(
         failures.is_empty(),
         "editor CPU budget exceeded: {failures:?}"
