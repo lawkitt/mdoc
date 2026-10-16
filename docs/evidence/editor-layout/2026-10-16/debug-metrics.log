@@ -1,0 +1,180 @@
+# debug profile, Apple M4 Mac16,13 / 24 GiB, macOS 15.7.7 (24G720).
+# Filtered metric lines and outcomes; serial run, ordinary desktop session.
+# Command: just perf (exit 0; all 12 checks passed).
+=== mdoc :: host_performance_matrix
+HOST_PERF ordinary bytes=1984 open_ms=844.628 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF ordinary scroll median_ms=11.058 p95_ms=11.134
+HOST_PERF ordinary typing median_ms=11.329 p95_ms=17.164
+HOST_PERF ordinary search_burst_and_paint_ms=135.694
+HOST_PERF ordinary highlight_navigation median_ms=12.147 p95_ms=12.200
+HOST_PERF contract bytes=69871 open_ms=75.514 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF contract scroll median_ms=25.320 p95_ms=29.336
+HOST_PERF contract typing median_ms=24.615 p95_ms=25.701
+HOST_PERF contract search_burst_and_paint_ms=443.508
+HOST_PERF contract highlight_navigation median_ms=25.011 p95_ms=25.082
+HOST_PERF large bytes=63488 open_ms=1282.383 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF large scroll median_ms=191.775 p95_ms=200.103
+HOST_PERF large typing median_ms=194.389 p95_ms=199.505
+HOST_PERF large search_burst_and_paint_ms=2162.026
+HOST_PERF large highlight_navigation median_ms=192.807 p95_ms=195.315
+HOST_PERF background bytes=74400 open_ms=1361.795 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF background scroll median_ms=224.617 p95_ms=236.156
+HOST_PERF background typing median_ms=224.631 p95_ms=227.639
+HOST_PERF background search_burst_and_paint_ms=3494.450
+HOST_PERF background highlight_navigation median_ms=223.678 p95_ms=229.704
+HOST_PERF long_paragraph bytes=51000 open_ms=81.155 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF long_paragraph scroll median_ms=25.811 p95_ms=30.149
+HOST_PERF long_paragraph typing median_ms=33.250 p95_ms=33.441
+HOST_PERF long_paragraph search_burst_and_paint_ms=477.437
+HOST_PERF long_paragraph highlight_navigation median_ms=33.590 p95_ms=34.341
+HOST_PERF tables bytes=12096 open_ms=57.612 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF tables scroll median_ms=29.269 p95_ms=31.180
+HOST_PERF tables typing median_ms=27.041 p95_ms=27.862
+HOST_PERF tables search_burst_and_paint_ms=371.596
+HOST_PERF tables highlight_navigation median_ms=31.079 p95_ms=31.375
+HOST_PERF dense_matches bytes=60008 open_ms=63.279 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF dense_matches scroll median_ms=28.136 p95_ms=29.026
+HOST_PERF dense_matches typing median_ms=23.824 p95_ms=34.682
+HOST_PERF dense_matches search_burst_and_paint_ms=857.375
+HOST_PERF dense_matches highlight_navigation median_ms=62.438 p95_ms=62.727
+HOST_PERF switch_cycle=0 open_preview_ms=1647.700
+HOST_PERF switch_cycle=0 rss_kib=Some(232448)
+HOST_PERF switch_cycle=1 open_preview_ms=1767.122
+HOST_PERF switch_cycle=1 rss_kib=Some(244912)
+HOST_PERF switch_cycle=2 open_preview_ms=1648.269
+HOST_PERF switch_cycle=2 rss_kib=Some(255344)
+HOST_PERF switch_cycle=3 open_preview_ms=1746.620
+HOST_PERF switch_cycle=3 rss_kib=Some(261104)
+HOST_PERF switch_cycle=4 open_preview_ms=1640.938
+HOST_PERF switch_cycle=4 rss_kib=Some(261760)
+HOST_PERF switch_cycle=5 open_preview_ms=1770.432
+HOST_PERF switch_cycle=5 rss_kib=Some(255360)
+HOST_PERF switch_cycle=6 open_preview_ms=1658.514
+HOST_PERF switch_cycle=6 rss_kib=Some(255872)
+HOST_PERF switch_cycle=7 open_preview_ms=1763.693
+HOST_PERF switch_cycle=7 rss_kib=Some(264112)
+HOST_PERF switch_cycle=8 open_preview_ms=1637.038
+HOST_PERF switch_cycle=8 rss_kib=Some(270224)
+HOST_PERF switch_cycle=9 open_preview_ms=1788.650
+HOST_PERF switch_cycle=9 rss_kib=Some(272912)
+HOST_PERF switch_cycle=10 open_preview_ms=1652.682
+HOST_PERF switch_cycle=10 rss_kib=Some(272912)
+HOST_PERF switch_cycle=11 open_preview_ms=1740.978
+HOST_PERF switch_cycle=11 rss_kib=Some(278368)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 325 filtered out; finished in 60.65s
+=== mdoc :: tabs_host_performance
+TABS_PERF restore_24_tabs_ms=1153.927
+TABS_PERF switch_handler median_ms=0.006 p95_ms=0.014
+TABS_PERF switch_with_implicit_test_frame median_ms=12.422 p95_ms=113.392
+TABS_PERF switch_frame median_ms=12.318 p95_ms=113.310
+TABS_PERF long_markdown_frame median_ms=113.023 p95_ms=115.696
+TABS_PERF short_markdown_with_preview_frame median_ms=12.282 p95_ms=12.522
+TABS_PERF unchanged_long_markdown_frame median_ms=113.634 p95_ms=120.008
+TABS_PERF unchanged_long_editor_width=Some(760.0)
+TABS_PERF metadata_snapshot_24_tabs median_ms=0.009 p95_ms=0.010
+TABS_PERF before_close_cycles_rss_kib=Some(256640)
+TABS_PERF close_cycle=0 rss_kib=Some(259136)
+TABS_PERF close_cycle=1 rss_kib=Some(288384)
+TABS_PERF close_cycle=2 rss_kib=Some(316432)
+TABS_PERF close_cycle=3 rss_kib=Some(323040)
+TABS_PERF close_cycle=4 rss_kib=Some(338592)
+TABS_PERF close_cycles=5 all_viewers_and_docx_files_released=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 325 filtered out; finished in 7.88s
+=== mdoc :: review_host_performance
+REVIEW_PERF phase=plain_layout bytes=12000 editor_width=Some(714.0)
+HOST_PERF review_plain_layout median_ms=9.722 p95_ms=10.281
+REVIEW_PERF phase=proposed_panel bytes=12000 entities=16 mentions=160 editor_width=Some(714.0)
+HOST_PERF review_proposed_panel median_ms=15.272 p95_ms=15.593
+REVIEW_PERF phase=applied_panel bytes=12000 entities=16 mentions=160 editor_width=Some(714.0)
+HOST_PERF review_applied_panel median_ms=17.863 p95_ms=17.932
+REVIEW_PERF phase=before_after bytes=12000 entities=16 mentions=160 editor_width=Some(714.0)
+HOST_PERF review_before_after median_ms=21.331 p95_ms=37.552
+REVIEW_PERF case_fanout_3_members_ms=194.387 rss_kib=Some(83776)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 325 filtered out; finished in 1.84s
+=== mdoc :: expanded_panel_projection_performance
+PANEL_PERF bytes=2097152 mentions=20000 entities=64 cold_ms=13.685 warm_median_ms=0.008375
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 325 filtered out; finished in 3.84s
+=== mdoc :: pii_annotation_geometry_matrix
+PII_GEOMETRY workload=prose bytes=2097152 occurrences=20000 cold_ms=1148.017 visible_bounds=32 rss_kib=Some(293216)
+HOST_PERF pii_prose_unannotated median_ms=1139.442 p95_ms=1160.656
+HOST_PERF pii_prose_annotated median_ms=1164.064 p95_ms=1179.470
+PII_GEOMETRY workload=prose added_median_ms=24.621 middle_visible_bounds=0
+PII_GEOMETRY workload=long_line bytes=2097152 occurrences=20000 cold_ms=1023.642 visible_bounds=107 rss_kib=Some(416832)
+HOST_PERF pii_long_line_unannotated median_ms=1029.457 p95_ms=1125.795
+HOST_PERF pii_long_line_annotated median_ms=1023.020 p95_ms=1047.867
+PII_GEOMETRY workload=long_line added_median_ms=-6.437 middle_visible_bounds=0
+PII_GEOMETRY workload=hidden bytes=2097152 occurrences=20000 cold_ms=1003.012 visible_bounds=32 rss_kib=Some(479872)
+HOST_PERF pii_hidden_unannotated median_ms=1010.989 p95_ms=1039.852
+HOST_PERF pii_hidden_annotated median_ms=1044.900 p95_ms=1071.611
+PII_GEOMETRY workload=hidden added_median_ms=33.911 middle_visible_bounds=36
+PII_GEOMETRY workload=utf8_table bytes=2097152 occurrences=20000 cold_ms=1756.617 visible_bounds=19 rss_kib=Some(515744)
+HOST_PERF pii_utf8_table_unannotated median_ms=1340.520 p95_ms=1388.473
+HOST_PERF pii_utf8_table_annotated median_ms=1323.141 p95_ms=1357.064
+PII_GEOMETRY workload=utf8_table added_median_ms=-17.379 middle_visible_bounds=24
+PII_GEOMETRY workload=dense_hidden_wrapped bytes=2097152 occurrences=20000 cold_ms=1015.999 visible_bounds=117 rss_kib=Some(534352)
+HOST_PERF pii_dense_hidden_wrapped_unannotated median_ms=1000.352 p95_ms=1008.796
+HOST_PERF pii_dense_hidden_wrapped_annotated median_ms=1003.806 p95_ms=1030.445
+PII_GEOMETRY workload=dense_hidden_wrapped added_median_ms=3.454 middle_visible_bounds=0
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 325 filtered out; finished in 136.21s
+=== mdoc :: large_markdown_scroll_budget
+MD_PERF state=markdown_only bytes=15780 lines=323 median_ms=8.79 p95_ms=9.37 editor_width=Some(760.0)
+MD_PERF state=markdown_only typing_p95_ms=23.72
+MD_PERF state=preview_open bytes=15780 lines=323 median_ms=10.90 p95_ms=12.26 editor_width=Some(483.0)
+MD_PERF state=preview_open typing_p95_ms=20.66
+MD_PERF state=preview_closed bytes=15780 lines=323 median_ms=8.85 p95_ms=9.45 editor_width=Some(760.0)
+MD_PERF state=preview_closed typing_p95_ms=16.47
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 325 filtered out; finished in 2.99s
+=== mdoc-spell :: spelling_cache_performance
+SPELL_PERF repeated=true bytes=490000 cold_ms=4.799 warm_median_ms=4.715
+SPELL_PERF repeated=false bytes=538890 cold_ms=186.449 warm_median_ms=8.375
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.73s
+=== mdoc-editor :: search_performance_matrix
+    2256 bytes empty                    median=42ns p95=83ns
+    2256 bytes absent                   median=8.583µs p95=9.708µs
+    2256 bytes case sensitive           median=12.625µs p95=14.084µs
+    2256 bytes cached folded            median=14.417µs p95=15.583µs
+    2256 bytes Unicode expansion        median=10.042µs p95=10.792µs
+    2256 bytes Cyrillic                 median=14.042µs p95=14.917µs
+    2256 bytes emoji                    median=7.334µs p95=8.291µs
+    2256 bytes across formatting        median=9.416µs p95=10.459µs
+    2256 bytes incremental typing       median=106.75µs p95=110.75µs
+    2256 bytes edit rebuild + query     median=637.25µs p95=672.334µs
+   72192 bytes cold build + fold        median=19.830125ms p95=20.186167ms
+   72192 bytes empty                    median=41ns p95=42ns
+   72192 bytes absent                   median=271.083µs p95=272.709µs
+   72192 bytes case sensitive           median=444.458µs p95=447.792µs
+   72192 bytes cached folded            median=470.166µs p95=476.583µs
+   72192 bytes Unicode expansion        median=319µs p95=326.708µs
+   72192 bytes Cyrillic                 median=421.167µs p95=425.041µs
+   72192 bytes emoji                    median=225.084µs p95=230.166µs
+   72192 bytes across formatting        median=293.458µs p95=300.625µs
+   72192 bytes incremental typing       median=3.090666ms p95=3.132625ms
+   72192 bytes edit rebuild + query     median=20.06275ms p95=20.274708ms
+ 2310144 bytes cold build + fold        median=657.158458ms p95=680.404083ms
+ 2310144 bytes empty                    median=41ns p95=375ns
+ 2310144 bytes absent                   median=8.920709ms p95=11.905584ms
+ 2310144 bytes case sensitive           median=17.302958ms p95=19.807458ms
+ 2310144 bytes cached folded            median=18.0495ms p95=19.040333ms
+ 2310144 bytes Unicode expansion        median=11.200875ms p95=11.37775ms
+ 2310144 bytes Cyrillic                 median=15.028208ms p95=15.824583ms
+ 2310144 bytes emoji                    median=9.218333ms p95=10.02075ms
+ 2310144 bytes across formatting        median=11.362792ms p95=11.718542ms
+ 2310144 bytes incremental typing       median=119.10175ms p95=133.69175ms
+ 2310144 bytes edit rebuild + query     median=679.664375ms p95=685.451042ms
+  200008 bytes dense single segment     median=23.00925ms p95=23.706ms
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 126 filtered out; finished in 12.08s
+=== gpui-pdf :: long_document_scroll_budget
+PDF_PERF file=reference.pdf pages=1 initial_ms=22.66 page_h=1171.67 frame_median_ms=1.47 frame_p95_ms=1.47 settle_p95_ms=2.95 raster_requests=1
+PDF_PERF file=synthetic-64-pages.pdf pages=64 initial_ms=40.55 page_h=1071.18 frame_median_ms=3.47 frame_p95_ms=3.54 settle_p95_ms=12.26 raster_requests=126
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 32 filtered out; finished in 1.56s
+=== mdoc-pii :: identity_policy_history_shares_indices_and_prunes_states
+IDENTITY_STORAGE identities=20000 retained_states=256 shared_policy_during_typing=true edited_overrides=1 immutable_definitions=20000 (excludes editor snapshots/layout, allocator and matcher costs)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.32s
+=== mdoc-pii :: utf8_matcher_storage_matrix
+PII_STORAGE bytes=2097152 occurrences=20000 groups=1 matcher_bytes=409 candidate_bytes=640000 shared_source=true cached_matcher=true
+PII_STORAGE bytes=2097152 occurrences=20000 groups=1000 matcher_bytes=23184 candidate_bytes=640000 shared_source=true cached_matcher=true
+PII_STORAGE bytes=2097152 occurrences=20000 groups=20000 matcher_bytes=453840 candidate_bytes=640000 shared_source=true cached_matcher=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 1.15s
+=== mdoc-pii :: metadata_history_stress_retains_shared_originals_and_prunes_reversible_deltas
+PII_STORAGE occurrences=20000 shared_steps=1 retained_deltas=255 occurrence_capacity_bytes=640000 delta_capacity_bytes=51000 lookup_capacity=28672 (excludes hash buckets/allocator overhead)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.91s

@@ -3722,6 +3722,40 @@ fn review_host_performance(cx: &mut TestAppContext) {
             &[3; 32],
         ));
     });
+    // Layout-only baseline: the same text without review state, with the
+    // Replacements panel open so the editor width matches the review phases.
+    let plain = dir.path().join("plain.md");
+    std::fs::write(&plain, &text).unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![plain], window, cx)
+    });
+    cx.run_until_parked();
+    let plain_view = active(&tabs, cx);
+    plain_view.update_in(cx, |view, window, cx| {
+        view.inspector_share = false;
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    cx.run_until_parked();
+    draw(cx);
+    draw(cx);
+    let mut samples = Vec::new();
+    for _ in 0..7 {
+        let start = Instant::now();
+        draw(cx);
+        samples.push(start.elapsed().as_secs_f64() * 1000.);
+    }
+    let plain_width =
+        plain_view.read_with(cx, |v, cx| v.editor.read(cx).layout_width().map(f32::from));
+    eprintln!(
+        "REVIEW_PERF phase=plain_layout bytes={} editor_width={plain_width:?}",
+        text.len()
+    );
+    report("review_plain_layout", &mut samples);
+    plain_view.read_with(cx, |view, _| {
+        assert!(view.pii.review.candidates().is_empty() && view.pii.review.applied().is_empty());
+    });
     let first = open_applied(&tabs, cx, dir.path(), "first.md", &text, &wordings);
     let first_view = active(&tabs, cx);
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
@@ -3764,6 +3798,11 @@ fn review_host_performance(cx: &mut TestAppContext) {
             first_view.read_with(cx, |v, cx| v.editor.read(cx).layout_width().map(f32::from))
         );
         report(&format!("review_{phase}"), &mut samples);
+        assert_eq!(
+            first_view.read_with(cx, |v, cx| v.editor.read(cx).layout_width().map(f32::from)),
+            plain_width,
+            "review phases and the layout baseline share one editor width"
+        );
         first_view.read_with(cx, |view, _| {
             assert_eq!(
                 view.pii.review.candidates().len() + view.pii.review.applied().len(),

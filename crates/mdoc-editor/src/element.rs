@@ -13,7 +13,7 @@ pub(crate) struct EditorElement {
 pub(crate) struct PrepaintState {
     /// Text rolls to paint over the text (see [`paint_roll`]).
     rolls: Vec<Roll>,
-    wrapped: Vec<WrappedLine>,
+    wrapped: Vec<ShapedLine>,
     /// Per-line wrap-row count (see [`EditorState::wrap_rows`]).
     wrap_rows: Vec<usize>,
     /// The hovered line's gutter drag grip (line, rect) + its cursor hitbox.
@@ -306,6 +306,7 @@ impl Element for EditorElement {
             inline_images,
             wrap_rows,
             rtl_rows: rtl_layout,
+            ..
         } = if let Some(m) = memo {
             m.shaped
         } else if editor.content.is_empty() {
@@ -320,7 +321,7 @@ impl Element for EditorElement {
             let n = w.len();
             let rows: Vec<usize> = w.iter().map(|l| l.wrap_boundaries().len() + 1).collect();
             ShapedDoc {
-                wrapped: w,
+                wrapped: w.into_iter().map(std::rc::Rc::new).collect(),
                 heights: vec![base_lh; n],
                 widgets: vec![None; n],
                 backgrounds: vec![None; n],
@@ -331,6 +332,7 @@ impl Element for EditorElement {
                 wrap_rows: rows,
                 // The placeholder is the host's own string; no RTL layout.
                 rtl_rows: (0..n).map(|_| None).collect(),
+                blank: None,
             }
         } else {
             shape_document(
@@ -3306,7 +3308,6 @@ fn shape_document(
             }
         }
     };
-    let table_row_h = base_font_size * LINE_HEIGHT_RATIO + px(12.);
     // Fenced-code-block tracking: collect a block's line indices (so its box can
     // be sized to its widest line + the first/last line marked for rounding) and
     // the running max line width.
@@ -3321,6 +3322,9 @@ fn shape_document(
     // while blockquote lines continue, cleared by anything else — so every
     // line of the alert gets the kind's bar color.
     let mut alert_run: Option<Hsla> = None;
+    // List bullets/numbers and alert labels repeat on most lines of a legal
+    // document; measure each distinct marker once per pass.
+    let mut glyph_widths = GlyphWidths::default();
     let mut y_acc = px(0.);
     for (idx, &line) in lines.iter().enumerate() {
         let line_end = line_start + line.len();
@@ -3498,6 +3502,31 @@ fn shape_document(
                 }
             });
 
+        // Windowed table rows: a row wholly outside the shaping band keeps its
+        // grid data (prepaint walks every table for its bounds) and exact
+        // height, but skips styling and shaping its raw source, which only
+        // the painted rows and the caret's revealed row use.
+        if let (Some((lo, hi)), Some(t)) = (band, table.as_ref()) {
+            let h = if t.is_separator {
+                px(0.)
+            } else {
+                table_body_row_height(
+                    window,
+                    t,
+                    line,
+                    caches,
+                    run_epoch,
+                    base_font,
+                    base_font_size,
+                )
+            };
+            if y_acc > hi || y_acc + h < lo {
+                out.push_placeholder(window, base_font_size, wrap_width, h, None, None, 1);
+                *out.tables.last_mut().expect("placeholder pushed") = table;
+                line_start = line_end + 1;
+                continue;
+            }
+        }
         // A line shows full source while a non-empty selection touches it (so the
         // markers are visible to select) or styling is off. Otherwise its markers
         // are hidden — except, on the caret's own line, the single construct the
@@ -3544,12 +3573,13 @@ fn shape_document(
                         weight: FontWeight::BOLD,
                         ..base_font.clone()
                     };
-                    let label_w = measure_width(window, kind.label(), &label_font, base_font_size);
+                    let label_w =
+                        glyph_widths.width(window, kind.label(), &label_font, base_font_size);
                     // A foldable callout's chevron sits after the label and
                     // pushes any same-line body further right.
                     let chevron_x = px(QUOTE_INSET) + label_w + px(8.);
                     let chevron_w = if fold.is_some() {
-                        measure_width(window, "▾", base_font, base_font_size) + px(8.)
+                        glyph_widths.width(window, "▾", base_font, base_font_size) + px(8.)
                     } else {
                         px(0.)
                     };
@@ -3602,14 +3632,14 @@ fn shape_document(
                 } else {
                     "\u{2022}".to_string()
                 };
-                let glyph_w = measure_width(window, &glyph, base_font, base_font_size);
+                let glyph_w = glyph_widths.width(window, &glyph, base_font, base_font_size);
                 // The per-level step comes from a REPRESENTATIVE marker, not
                 // this line's own glyph: sub-pixel width differences between
                 // sibling numbers ("3." vs "4.") would nudge bullet_x apart
                 // and the nesting guides would mistake siblings for ancestors
                 // (drawing a guide through the numbers).
                 let marker_w = if ordered {
-                    measure_width(window, "9.", base_font, base_font_size)
+                    glyph_widths.width(window, "9.", base_font, base_font_size)
                 } else {
                     glyph_w
                 };
@@ -3978,36 +4008,15 @@ fn shape_document(
                     // A drag-narrowed column wraps its cells — the row grows to
                     // the tallest cell's wrap rows (memoized: this shaped every
                     // cell per row per frame).
-                    Some(t) => {
-                        let row_key = {
-                            use std::hash::{Hash, Hasher};
-                            let mut h = std::collections::hash_map::DefaultHasher::new();
-                            line.hash(&mut h);
-                            for w in &t.col_widths {
-                                f32::from(*w).to_bits().hash(&mut h);
-                            }
-                            t.is_header.hash(&mut h);
-                            run_epoch.hash(&mut h);
-                            h.finish()
-                        };
-                        let hit = caches.cell_rows.borrow().get(&row_key).copied();
-                        let rows = match hit {
-                            Some(r) => r,
-                            None => {
-                                let r = table_row_wrap_rows(
-                                    window,
-                                    &t.cells,
-                                    &t.col_widths,
-                                    t.is_header,
-                                    base_font,
-                                    base_font_size,
-                                );
-                                caches.cell_rows.borrow_mut().insert(row_key, r);
-                                r
-                            }
-                        };
-                        table_row_h + base_font_size * LINE_HEIGHT_RATIO * (rows - 1) as f32
-                    }
+                    Some(t) => table_body_row_height(
+                        window,
+                        t,
+                        line,
+                        caches,
+                        run_epoch,
+                        base_font,
+                        base_font_size,
+                    ),
                     None => match widget.as_ref() {
                         // Reserve a little space around an inline image so a list
                         // of photos doesn't stack edge-to-edge.
@@ -4094,7 +4103,7 @@ fn shape_document(
             }
             out.wrap_rows.push(span);
             out.rtl_rows.push(rtl_rows.map(|rows| (line_rtl, rows)));
-            out.wrapped.push(wl);
+            out.wrapped.push(std::rc::Rc::new(wl));
             out.heights.push(h);
             out.widgets.push(widget);
             out.backgrounds.push(bg);
@@ -4142,6 +4151,68 @@ fn shape_document(
         }
     }
     out
+}
+
+/// A non-separator table row's height: one grid row, grown by the tallest
+/// cell's extra wrap rows (memoized: measuring shapes every cell).
+#[allow(clippy::too_many_arguments)]
+fn table_body_row_height(
+    window: &mut Window,
+    t: &TableRow,
+    line: &str,
+    caches: &ShapeCaches,
+    run_epoch: u64,
+    base_font: &Font,
+    base_font_size: Pixels,
+) -> Pixels {
+    let row_key = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        line.hash(&mut h);
+        for w in &t.col_widths {
+            f32::from(*w).to_bits().hash(&mut h);
+        }
+        t.is_header.hash(&mut h);
+        run_epoch.hash(&mut h);
+        h.finish()
+    };
+    let hit = caches.cell_rows.borrow().get(&row_key).copied();
+    let rows = match hit {
+        Some(r) => r,
+        None => {
+            let r = table_row_wrap_rows(
+                window,
+                &t.cells,
+                &t.col_widths,
+                t.is_header,
+                base_font,
+                base_font_size,
+            );
+            caches.cell_rows.borrow_mut().insert(row_key, r);
+            r
+        }
+    };
+    let table_row_h = base_font_size * LINE_HEIGHT_RATIO + px(12.);
+    table_row_h + base_font_size * LINE_HEIGHT_RATIO * (rows - 1) as f32
+}
+
+/// Shaped widths of short marker strings, memoized for one shaping pass
+/// (fixed font family and size; keyed by weight and text).
+#[derive(Default)]
+struct GlyphWidths(
+    std::collections::HashMap<FontWeight, std::collections::HashMap<String, Pixels>>,
+);
+
+impl GlyphWidths {
+    fn width(&mut self, window: &mut Window, text: &str, font: &Font, size: Pixels) -> Pixels {
+        let by_text = self.0.entry(font.weight).or_default();
+        if let Some(w) = by_text.get(text) {
+            return *w;
+        }
+        let w = measure_width(window, text, font, size);
+        by_text.insert(text.to_string(), w);
+        w
+    }
 }
 
 /// Paint a file chip — a rounded, bordered button with a flat document icon +
@@ -4381,6 +4452,63 @@ mod tests {
         let below = viewport_h + px(64.) - top;
         draw_images(&editor, cx, below, &[0, 1]);
         draw_images(&editor, cx, below + px(1.), &[0]);
+    }
+
+    #[gpui::test]
+    fn windowed_table_rows_keep_exact_geometry(cx: &mut TestAppContext) {
+        // A wrapping cell makes row heights differ from the one-row default.
+        let rows: String = (0..240)
+            .map(|i| {
+                let cell = if i % 7 == 0 {
+                    "long words ".repeat(12)
+                } else {
+                    format!("r{i}")
+                };
+                format!("| {cell} | x |\n")
+            })
+            .collect();
+        let source = format!("intro\n\n| a | b |\n| --- | --- |\n{rows}\nafter\n");
+        let (editor, cx) = image_editor(cx, &source);
+        let draw = |cx: &mut VisualTestContext, y: Pixels| {
+            cx.draw(
+                point(px(0.), y),
+                size(
+                    AvailableSpace::Definite(px(320.)),
+                    AvailableSpace::MinContent,
+                ),
+                |_, _| EditorElement {
+                    editor: editor.clone(),
+                },
+            );
+        };
+        // The first frame has no shaping band yet, so every row is shaped.
+        draw(cx, px(0.));
+        let geometry = |cx: &mut VisualTestContext| {
+            editor.read_with(cx, |e, _| {
+                (
+                    e.line_tops.clone(),
+                    e.line_heights.clone(),
+                    e.wrap_rows.clone(),
+                )
+            })
+        };
+        let full = geometry(cx);
+        assert!(full.1.iter().any(|h| *h > full.1[5] * 1.5), "a row wraps");
+        let bottom = *full.0.last().unwrap();
+        for y in [px(0.), -bottom / 2., -bottom + px(300.)] {
+            // Twice: the band published by one frame shapes the next.
+            draw(cx, y);
+            draw(cx, y);
+            assert_eq!(geometry(cx), full, "geometry at scroll origin {y:?}");
+            editor.read_with(cx, |e, _| {
+                let skipped = (4..244).filter(|&i| e.wrapped[i].text.is_empty()).count();
+                assert!(skipped > 100, "offscreen table rows are windowed");
+                assert!(
+                    (4..244).all(|i| e.table_rows[i].is_some()),
+                    "windowed rows keep their grid data"
+                );
+            });
+        }
     }
 }
 
