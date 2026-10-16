@@ -74,7 +74,10 @@ was 18.87 ms (median 9.08 ms), a single outlier frame; the full run's value is
 
 ## Native spot-check
 
-**Not completed.** A first attempt recorded `xctrace` *Animation Hitches* with
+Performed on 2026-10-17 with this procedure; it found and fixed a search and
+typing cost the headless runs missed: [native check](../2026-10-17-native/README.md).
+
+**Not completed in this run.** A first attempt recorded `xctrace` *Animation Hitches* with
 `--launch target/release/mdoc`, but Instruments resolved the bundle identifier
 and launched the installed 0.1.0-beta.11 `/Applications/mdoc.app` instead,
 and the desktop was in use, so synthetic input could not be isolated. That trace

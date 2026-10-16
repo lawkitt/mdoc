@@ -22,17 +22,18 @@ pub(crate) fn report(label: &str, values: &mut [f64]) -> f64 {
 }
 
 // Debug-profile regression ceilings, rounded up from the recorded host runs
-// with at least 20% headroom. These are not interactive frame-time targets.
-fn budget(name: &str) -> Option<[f64; 4]> {
+// with at least 20% headroom: scroll, typing, search burst, navigation and
+// common-word navigation. These are not interactive frame-time targets.
+fn budget(name: &str) -> Option<[f64; 5]> {
     match name {
-        "ordinary" => Some([12., 12., 140., 13.]),
-        "contract" => Some([31., 30., 540., 30.]),
-        "legal_opinion" => Some([45., 44., 1730., 22.]),
-        "large" => Some([320., 320., 3400., 310.]),
-        "background" => Some([380., 380., 5700., 370.]),
-        "long_paragraph" => Some([50., 65., 800., 62.]),
-        "tables" => Some([62., 64., 780., 68.]),
-        "dense_matches" => Some([50., 60., 1400., 110.]),
+        "ordinary" => Some([7., 7., 89., 8., 4.]),
+        "contract" => Some([11., 12., 216., 12., 7.]),
+        "legal_opinion" => Some([13., 15., 259., 7., 8.]),
+        "large" => Some([31., 35., 393., 34., 17.]),
+        "background" => Some([36., 40., 606., 38., 19.]),
+        "long_paragraph" => Some([19., 25., 502., 36., 11.]),
+        "tables" => Some([11., 12., 140., 12., 6.]),
+        "dense_matches" => Some([19., 22., 1237., 78., 12.]),
         _ => None,
     }
 }
@@ -228,12 +229,32 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
             highlights.push(started.elapsed().as_secs_f64() * 1000.);
         }
         let navigation_ms = report(&format!("{name} highlight_navigation"), &mut highlights);
+        // A common word, as people search real documents: many matches, some in
+        // tables. Each step scrolls over up to three frames (search refinement).
+        cx.dispatch_action(FindMarkdown);
+        cx.simulate_input("the");
+        cx.run_until_parked();
+        draw(cx);
+        let common = cx.update(|_, cx| app.read(cx).search.matches.len());
+        let mut frames = Vec::new();
+        for _ in 0..12 {
+            let mut started = Instant::now();
+            cx.dispatch_action(FindNextMarkdown);
+            for _ in 0..3 {
+                draw(cx);
+                frames.push(started.elapsed().as_secs_f64() * 1000.);
+                started = Instant::now();
+            }
+        }
+        eprintln!("HOST_PERF {name} common_word_matches={common}");
+        let common_ms = report(&format!("{name} common_word_navigation_frame"), &mut frames);
         if let Some(limits) = budget(name) {
             for ((label, measured), limit) in [
                 ("scroll", scroll_ms),
                 ("typing", typing_ms),
                 ("burst", burst_ms),
                 ("navigation", navigation_ms),
+                ("common_word_navigation", common_ms),
             ]
             .into_iter()
             .zip(limits)

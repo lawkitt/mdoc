@@ -1267,12 +1267,34 @@ impl Element for EditorElement {
         let mut search = Vec::new();
         let mut search_bounds = Vec::new();
         if let Some((matches, active)) = editor.search.as_ref() {
+            // Offscreen matches paint nothing; their row box is enough for the
+            // host to scroll one into view, and the next frame refines it. Exact
+            // quads for every match shaped table cells across the whole document.
+            let mask = window.content_mask().bounds;
+            let (low, high) = (mask.top() - px(64.), mask.bottom() + px(64.));
+            let row_box = |row: usize| {
+                let top = bounds.top() + line_tops.get(row).copied().unwrap_or_default();
+                let height = line_heights.get(row).copied().unwrap_or(base_lh)
+                    * wrap_rows.get(row).copied().unwrap_or(1) as f32;
+                Bounds::new(point(bounds.left(), top), size(bounds.size.width, height))
+            };
             for (i, search_match) in matches.iter().enumerate() {
                 let color: Hsla = if Some(i) == *active {
                     rgba(0xFF9500DD).into()
                 } else {
                     rgba(0xFFD60055).into()
                 };
+                let span = search_match.source.first().zip(search_match.source.last());
+                if let Some((first, last)) = span {
+                    let (first, last) = (
+                        row_box(row_col(first.start).0),
+                        row_box(row_col(last.end).0),
+                    );
+                    if first.top() > high || last.bottom() < low {
+                        search_bounds.push(Some(first));
+                        continue;
+                    }
+                }
                 let mut first = None;
                 for range in &search_match.source {
                     let quads = range_quads(range.start, range.end, color, window);

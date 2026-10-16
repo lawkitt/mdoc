@@ -701,9 +701,12 @@ impl DocumentView {
                 .min_w_0()
                 .h_full()
                 .child(
+                    // Absolute, like the document scroll: intrinsic sizing must
+                    // not measure (shape) the editor at extra widths.
                     div()
                         .id(id)
-                        .size_full()
+                        .absolute()
+                        .inset_0()
                         .overflow_y_scroll()
                         .track_scroll(scroll)
                         .px_6()
