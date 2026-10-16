@@ -28,8 +28,8 @@ GitHub's light and dark backgrounds.
 - [Settlement agreement.md](Settlement%20agreement.md) and its
   [.docx](Settlement%20agreement.docx) (`python3 make-demo-docx.py`, needs
   `python-docx`) — a fictional UK settlement with hard cases ("Ms Bennett",
-  "Maya", "Mia", a second Bennett). It reproduces [known issues](../../ROADMAP.md#known-issues)
-  3 and 4 and returns to the README once those are fixed.
+  "Maya", "Mia", a second Bennett). It reproduces [known issue 4](../../ROADMAP.md#must-fix)
+  and returns to the README once that is fixed.
 
 All people, companies, addresses and numbers are invented; phone numbers are in
 Ofcom's drama range and emails use `.example` domains.

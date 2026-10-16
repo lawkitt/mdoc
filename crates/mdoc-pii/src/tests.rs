@@ -564,3 +564,60 @@ fn date_and_other_have_their_own_tokens_and_existing_tokens_stay_reserved() {
     assert_eq!(review.variant(o).unwrap().replacement, "REDACTED_2");
     assert_eq!(Category::ALL.last(), Some(&Category::Other));
 }
+
+#[test]
+fn partial_name_replace_keeps_the_containing_identity_whole() {
+    let source = include_str!("../../../docs/product-media/Settlement agreement.md");
+    let mut review = Review::default();
+    let detections = ["Maya Bennett", "Daniel Bennett"]
+        .map(|value| {
+            let start = source.find(value).unwrap();
+            detection(start..start + value.len(), Category::Person)
+        })
+        .to_vec();
+    review.ingest(source, detections).unwrap();
+    let full: Vec<_> = review
+        .variants()
+        .iter()
+        .map(|g| (g.id, review.variant_identity(g.id).unwrap()))
+        .collect();
+    // Replace "Bennett" selected in "Ms Bennett".
+    let start = source.find("Ms Bennett,").unwrap() + 3;
+    let selection = review
+        .manual_target(source, start..start + "Bennett".len())
+        .unwrap();
+    let bennett = review
+        .add_manual(source, selection, Category::Person)
+        .unwrap();
+    for (variant, _) in &full {
+        assert_eq!(review.variant(*variant).unwrap().mentions.len(), 1);
+    }
+    let standalone = &review.variant(bennett).unwrap().mentions;
+    assert_eq!(
+        standalone.len(),
+        6,
+        "every Ms Bennett, none inside a full name"
+    );
+    assert!(
+        standalone
+            .iter()
+            .all(|r| source[..r.start].ends_with("Ms "))
+    );
+    // Linking is proposed through Same as…, never made.
+    let own = review.variant_identity(bennett).unwrap();
+    assert!(full.iter().all(|(_, identity)| *identity != own));
+    let mut proposed: Vec<_> = full.iter().map(|(_, identity)| *identity).collect();
+    proposed.sort_unstable();
+    assert_eq!(review.suggestions(bennett), proposed);
+    assert_eq!(review.active_identities().len(), 3);
+    let edits = plan_all(&review, source).unwrap();
+    assert_eq!(edits.len(), 8);
+    for value in ["Maya Bennett", "Daniel Bennett"] {
+        let start = source.find(value).unwrap();
+        assert!(
+            edits
+                .iter()
+                .any(|(r, _)| *r == (start..start + value.len()))
+        );
+    }
+}

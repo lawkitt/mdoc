@@ -23,7 +23,10 @@ beforehand, and reports invalid selections only after the click.
   Enter applies only in a popup opened by a manual addition; elsewhere neutral
   Enter still never applies (ADR 0020).
 - **Scope and state**: all exact repeats become proposed (amber) mentions of one
-  variant; popup scope chips narrow it. One undo step.
+  variant; popup scope chips narrow it. One undo step. A repeat inside a longer
+  mention ("Raman" in "Priya Raman") stays part of it, and that mention's
+  identity is suggested first under Same as…; nothing links automatically
+  (amended 2026-10-16, [ADR 0051](0051-roadmap-structure-and-stable-scope.md)).
 - **Tidy selections**: trim edge whitespace, punctuation and unambiguous edge
   Markdown delimiters. A selection fully containing only proposed mentions
   supersedes them. Anything else invalid disables the pill/menu item with a

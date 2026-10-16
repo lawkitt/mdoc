@@ -120,6 +120,14 @@ fn related_name(a: &str, b: &str) -> bool {
     }
     a.iter().zip(&b).all(|(x, y)| surname_related(x, y))
 }
+/// Whether `part` occurs as whole words inside the longer `whole` ("Raman" in
+/// "Priya Raman"): a proposed link, never an automatic one.
+fn contained_name(whole: &str, part: &str) -> bool {
+    whole.len() > part.len()
+        && whole
+            .match_indices(part)
+            .any(|(start, _)| exact_boundary(whole, &(start..start + part.len()), part))
+}
 impl Review {
     pub fn identity(&self, id: u64) -> Option<&Identity> {
         self.identities.get(id)
@@ -497,9 +505,10 @@ impl Review {
             .variants()
             .iter()
             .filter(|g| {
-                g.category == Category::Person
-                    && g.id != group
-                    && related_name(&g.original, &variant.original)
+                g.id != group
+                    && ((g.category == Category::Person
+                        && related_name(&g.original, &variant.original))
+                        || contained_name(&g.original, &variant.original))
             })
             .filter_map(|g| self.variant_identity(g.id))
             .filter(|id| Some(*id) != current)
