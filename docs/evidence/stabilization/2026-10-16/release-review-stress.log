@@ -1,0 +1,35 @@
+# Release review/case stress, Apple M4 Mac16,13 / 24 GiB.
+# Timed already-built test binary; compilation excluded.
+# /usr/bin/time -l env MDOC_PERF_STRESS=1 target/release/deps/mdoc-d036b10a522e4c38 review_host_performance --ignored --nocapture --test-threads=1
+# Exit 0; state assertions passed. Darwin RSS and footprint values are bytes.
+
+running 1 test
+test workspace::tests::review_host_performance ... REVIEW_PERF phase=proposed_panel bytes=2097152 entities=64 mentions=20000 editor_width=Some(714.0)
+HOST_PERF review_proposed_panel median_ms=211.895 p95_ms=218.379
+REVIEW_PERF phase=applied_panel bytes=2097152 entities=64 mentions=20000 editor_width=Some(714.0)
+HOST_PERF review_applied_panel median_ms=223.153 p95_ms=234.546
+REVIEW_PERF phase=before_after bytes=2097152 entities=64 mentions=20000 editor_width=Some(714.0)
+HOST_PERF review_before_after median_ms=248.241 p95_ms=261.973
+REVIEW_PERF case_fanout_3_members_ms=2266.986 rss_kib=Some(1522752)
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 321 filtered out; finished in 24.09s
+
+       24.10 real        20.38 user         3.67 sys
+          1753088000  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+              720704  page reclaims
+                   3  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                  17  voluntary context switches
+                2251  involuntary context switches
+        479185004196  instructions retired
+         99715263954  cycles elapsed
+           448956048  peak memory footprint

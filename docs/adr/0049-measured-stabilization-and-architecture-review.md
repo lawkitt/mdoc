@@ -1,9 +1,12 @@
 # Measured stabilization and architectural review
 
-Status: accepted, 2026-10-16; focused implementation in progress. The user agreed
+Status: accepted and focused implementation completed, 2026-10-16. The user agreed
 to the focused scope and performance tiers, then to the architectural ownership,
 conditional layout investigation and quit-failure recommendations in the
-[review](../design/maintainability-review.md).
+[audit](../evidence/stabilization/2026-10-16/README.md).
+[Implementation and measurements](../evidence/stabilization/2026-10-16/results.md)
+record verification and remaining performance limits. The broader architectural
+projects below remain roadmap work.
 
 ## Problem
 
