@@ -407,7 +407,11 @@ impl DocumentView {
             window.focus(&state.focus, cx);
         }
         let editor = self.editor.read(cx);
-        let key = Some((editor.revision(), self.pii.version, self.theme.get()));
+        let key = Some((
+            editor.revision(),
+            self.pii.review.revision(),
+            self.theme.get(),
+        ));
         if key == state.key {
             return;
         }

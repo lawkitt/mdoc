@@ -13,7 +13,10 @@ pub use discovery::{DiscoveryInput, DiscoveryResult};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     ops::Range,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 use syntax::{plain_text_span, protected_syntax};
 use tracking::{Applied, Assignment, ReplacementPlan, Tracking};
@@ -116,6 +119,23 @@ pub struct Review {
     next_id: u64,
     /// Last manual-addition priority handed out; see `Variant::priority`.
     manual_priority: u64,
+    revision: Revision,
+}
+
+/// Advanced by every `&mut` method, so data derived from a review can be keyed
+/// on it. Values are unique across reviews: a replaced review never repeats a
+/// revision its predecessor handed out.
+struct Revision(u64);
+static REVISIONS: AtomicU64 = AtomicU64::new(1);
+impl Revision {
+    fn advance(&mut self) {
+        self.0 = REVISIONS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+impl Default for Revision {
+    fn default() -> Self {
+        Self(REVISIONS.fetch_add(1, Ordering::Relaxed))
+    }
 }
 
 /// `PERSON_3`-shaped text: a category token, `_`, then digits.
@@ -206,6 +226,7 @@ fn overlaps(a: &Range<usize>, b: &Range<usize>) -> bool {
 
 impl Review {
     pub fn on_transaction(&mut self, transaction: &mdoc_history::EditorTransaction, source: &str) {
+        self.revision.advance();
         let unchanged_source = self.source.as_ref() == source;
         if self.tracking.on_transaction(transaction) {
             self.identities.on_transaction(transaction);
@@ -222,6 +243,10 @@ impl Review {
         }
     }
 
+    /// Changes whenever the review changes; see `Revision`.
+    pub fn revision(&self) -> u64 {
+        self.revision.0
+    }
     pub fn variants(&self) -> &[Variant] {
         &self.candidates.variants
     }
@@ -280,11 +305,13 @@ impl Review {
     }
     /// Record restorations committed as history state `history`; each becomes Keep.
     pub fn commit_restore(&mut self, history: u64, restored: Vec<(Applied, Range<usize>)>) {
+        self.revision.advance();
         self.tracking.commit_restore(history, restored, true);
     }
     /// Record reversions committed as `history` that become proposals again.
     /// A mention separated from its variant's identity stays pinned to it.
     pub fn commit_unapply(&mut self, history: u64, restored: Vec<(Applied, Range<usize>)>) {
+        self.revision.advance();
         for (old, range) in &restored {
             let separated = self
                 .candidates
@@ -300,17 +327,21 @@ impl Review {
     }
     /// Prepare provenance for plans before their text is committed.
     pub fn prepare_replacements(&mut self, plans: &[ReplacementPlan]) -> Vec<Applied> {
+        self.revision.advance();
         self.tracking.prepare_corrections(plans)
     }
     /// Record prepared replacements once the editor committed history state `history`.
     pub fn commit_replacements(&mut self, history: u64, added: Vec<Applied>) {
+        self.revision.advance();
         self.tracking.commit(history, added);
     }
     /// Pin one occurrence to an identity, separating homonyms within a variant.
     pub fn commit_assignment(&mut self, history: u64, range: Range<usize>, identity: u64) {
+        self.revision.advance();
         self.tracking.commit_assignment(history, range, identity);
     }
     pub fn refresh(&mut self, source: &str) {
+        self.revision.advance();
         // A conservative source diff revalidates single-occurrence exclusions.
         // Anything crossing an edited region is invalidated rather than shifted
         // speculatively. Variant seeds/mappings survive edits and undo.
@@ -378,6 +409,7 @@ impl Review {
         if result.version != self.discovery_version {
             return false;
         }
+        self.revision.advance();
         self.candidates.matcher = result.matcher;
         self.occupied_tokens = result.tokens;
         self.occupied_tokens.extend(
@@ -414,6 +446,7 @@ impl Review {
         self.refresh(source);
     }
     pub fn ingest(&mut self, source: &str, mut detections: Vec<Detection>) -> Result<(), String> {
+        self.revision.advance();
         if detections.iter().any(|detected| {
             detected.range.start >= detected.range.end
                 || source.get(detected.range.clone()).is_none()
@@ -530,6 +563,7 @@ impl Review {
         range: Range<usize>,
         category: Category,
     ) -> Result<u64, String> {
+        self.revision.advance();
         let original = Self::validate_manual(source, range.clone())?;
         self.refresh(source);
         let existed = self.candidates.by_original(original).is_some();
@@ -615,6 +649,7 @@ impl Review {
     /// Propose exactly these kept occurrences again without lifting other Keep
     /// decisions for the same wording or changing their assigned identities.
     pub fn propose_kept_mentions(&mut self, source: &str, ranges: &[Range<usize>]) -> usize {
+        self.revision.advance();
         self.refresh(source);
         let ranges: HashSet<_> = ranges.iter().map(|r| (r.start, r.end)).collect();
         let mentions = self.tracking.propose_kept(&ranges);
@@ -632,6 +667,7 @@ impl Review {
 
     /// Keep these pending mentions as one metadata change, refreshing once.
     pub fn keep_mentions(&mut self, mentions: impl IntoIterator<Item = (u64, Range<usize>)>) {
+        self.revision.advance();
         let mentions: Vec<_> = mentions
             .into_iter()
             .filter_map(|(id, range)| {
@@ -647,6 +683,7 @@ impl Review {
         self.refresh(&source);
     }
     pub fn keep(&mut self, id: u64, single: Option<Range<usize>>) {
+        self.revision.advance();
         if let Some(group) = self.variant(id) {
             if let Some(range) = single {
                 if group.mentions.contains(&range) {

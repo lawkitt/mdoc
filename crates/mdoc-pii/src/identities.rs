@@ -142,10 +142,12 @@ impl Review {
         self.identities.policy.clone()
     }
     pub fn restore_identity_snapshot(&mut self, snapshot: IdentitySnapshot) {
+        self.revision.advance();
         self.identities.policy = snapshot;
         self.sync_identity_variants();
     }
     pub fn commit_identity_snapshot(&mut self, before: u64, after: u64, old: IdentitySnapshot) {
+        self.revision.advance();
         self.identities.history.insert(before, old);
         self.identities
             .history
@@ -210,6 +212,7 @@ impl Review {
         self.sync_identity_variants();
     }
     pub fn rename_identity(&mut self, id: u64, alias: &str) -> Result<(), String> {
+        self.revision.advance();
         if !valid_replacement(alias) {
             return Err("Use an ASCII alias with letters, digits, underscores or hyphens (up to 128 characters).".into());
         }
@@ -265,6 +268,7 @@ impl Review {
         Ok(())
     }
     pub fn recategorize_identity(&mut self, id: u64, category: Category) -> Result<(), String> {
+        self.revision.advance();
         let mut identity = self
             .identity(id)
             .ok_or("Identity is no longer available.")?
@@ -308,6 +312,7 @@ impl Review {
         &mut self,
         changes: &[(u64, String, Category, bool)],
     ) -> Result<(), String> {
+        self.revision.advance();
         let mut aliases: HashMap<u64, String> = self
             .active_identities()
             .into_iter()
@@ -410,6 +415,7 @@ impl Review {
         }
     }
     pub fn new_identity(&mut self, category: Category) -> u64 {
+        self.revision.advance();
         let alias = self.allocate_alias(category);
         self.next_id += 1;
         let id = self.next_id;
@@ -423,6 +429,7 @@ impl Review {
         id
     }
     pub fn assign_variant(&mut self, group: u64, target: u64) -> Result<(), String> {
+        self.revision.advance();
         self.variant(group)
             .ok_or("Variant is no longer available.")?;
         self.identity(target)
@@ -434,6 +441,7 @@ impl Review {
         Ok(())
     }
     pub fn merge_identity(&mut self, from: u64, target: u64) -> Result<(), String> {
+        self.revision.advance();
         if from == target {
             return Ok(());
         }
@@ -459,6 +467,7 @@ impl Review {
         Ok(())
     }
     pub fn set_owner(&mut self, id: u64, owner: Option<u64>) -> Result<(), String> {
+        self.revision.advance();
         let mut identity = self
             .identity(id)
             .ok_or("Identity is no longer available.")?

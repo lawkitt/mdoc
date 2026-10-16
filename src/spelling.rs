@@ -128,7 +128,7 @@ impl DocumentView {
             self.editor.read(cx).revision(),
             self.spelling_options(),
             self.accepted_generation(),
-            self.pii.version,
+            self.pii.review.revision(),
         )
     }
 

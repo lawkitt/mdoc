@@ -404,6 +404,7 @@ impl Review {
     /// original becomes a known wording proposed with its existing alias.
     /// Returns the new identity ids, in the order of `identities`.
     pub fn seed(&mut self, identities: &[ExportedIdentity], source: &str) -> Vec<u64> {
+        self.revision.advance();
         let mut ids = Vec::with_capacity(identities.len());
         for exported in identities {
             self.next_id += 1;
@@ -457,6 +458,7 @@ impl Review {
         ids: &[u64],
         history: u64,
     ) -> usize {
+        self.revision.advance();
         let map = RestoreMap::new(identities.to_vec());
         let plans: Vec<_> = map
             .tokens(source)
