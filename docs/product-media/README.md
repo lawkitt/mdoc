@@ -1,42 +1,53 @@
-# Product captures · October 16, 2026
+# Product media
 
-Actual, unretouched window captures of the installed `/Applications/mdoc.app`,
-version **0.1.0-beta.10**, on macOS. Each screenshot is a 2200 × 1522 JPEG, preserving the capture tool’s original bytes. Both themes
-were selected inside mdoc; dark source pages use the app's themed paper mode.
-The window sidebar is collapsed. Only fictional demonstration material is visible.
+Screenshots and the README hero come from real window captures of a released
+mdoc build. Decisions and rationale: [README media v2](../design/readme-media-v2.md).
 
-| View | Light | Dark |
+> [!NOTE]
+> The captures in `docs/images/` still show the earlier services agreement and
+> beta.10. They are replaced in one pass after beta.11 ships the zoom pill,
+> notice and Source label fixes.
+
+## What each capture shows
+
+| Capture | Shows | In README |
 | --- | --- | --- |
-| Word conversion and source preview | [Light](../images/source-light.jpg) | [Dark](../images/source-dark.jpg) |
-| Proposed identities and aliases | [Light](../images/review-light.jpg) | [Dark](../images/review-dark.jpg) |
-| Original / pseudonymized comparison | [Light](../images/compare-light.jpg) | [Dark](../images/compare-dark.jpg) |
-| Copy for AI and reply restoration | [Light](../images/share-light.jpg) | [Dark](../images/share-dark.jpg) |
+| `ocr-{light,dark}` | *Brown v. Board of Education* scan beside its recognized Markdown | Yes |
+| `review-{light,dark}` | Review panel with the settlement agreement's proposed identities | Yes |
+| `restore-{light,dark}` | An AI reply pasted back, with the real names restored | Yes |
+| `compare-{light,dark}` | Original and pseudonymized text side by side | No |
+| `source-{light,dark}` | The settlement DOCX as Markdown beside its Source preview | No |
+| `hero-{light,dark}.webp` | The round trip as a looping animation | Yes |
 
-The README automatically chooses a theme through `<picture>`. It shows conversion,
-review and comparison. The website offers those three views and explicit theme
-controls, and three short films made from the review, comparison and Share captures.
+## Inputs
 
-## Reproduce the content
+- [Settlement agreement.md](Settlement%20agreement.md) — fictional UK employment
+  settlement, the review input. It contains deliberate hard cases: "Ms Bennett",
+  "Maya" and "Ms Bennett's" for one person; Daniel Bennett, who shares her
+  surname and must get a different alias; an address, a phone number, a claim
+  number, a date of birth and a National Insurance number. The nickname "Mia"
+  is the deliberate miss, added by hand during review.
+- [Settlement agreement.docx](Settlement%20agreement.docx) — the same text as a
+  Word file, for the conversion capture. Rebuild it from the Markdown with
+  `python3 make-demo-docx.py` (requires `python-docx`).
+- *Brown v. Board of Education*, 347 U.S. 483 (1954), first page of the public
+  domain slip opinion, for the OCR capture.
 
-[Services agreement.md](Services%20agreement.md) is the synthetic review input.
-[Services agreement.docx](Services%20agreement.docx) is the Word conversion input.
-Rebuild the DOCX with `python3 make-demo-docx.py` (requires `python-docx`).
-Names and organizations are fictional, and the email uses the reserved example.com
-domain. These are demonstrations, not detector-quality or performance benchmarks.
+All people, companies, addresses and numbers in the agreement are invented. The
+phone number is in Ofcom's drama range; the email uses `example.com`.
 
-Open the Markdown, run Pseudonymize, and review the three identities / seven mentions.
-Capture the Review panel at 95% document zoom; apply aliases to capture Side by side
-with the panel hidden, and the Share panel with the editor visible. Open the DOCX
-separately for its converted text and source preview, at 85% editor zoom and Fit width
-for the source. The DOCX preview is approximate; dismissing its notice for composition
-does not change that limitation. Keep the source at the top and move the pointer out
-of the content before capture. No UI or document text was composited or retouched.
+## Capture checklist
 
-## Website films
+1. Use the current release build, not a development build.
+2. Window at the same size for every capture, focused (traffic lights visible),
+   sidebar collapsed.
+3. Capture each view in light and dark, switching the theme inside mdoc.
+4. No notice badge, no unsaved-changes dot, no floating control over text, no
+   hover or caret marks; pointer outside the window content.
+5. Do not retouch or composite UI or document text.
+6. For the restore capture, use a short reply written with the aliases (for
+   example a summary of the agreement's key dates and obligations), pasted
+   with **Paste AI Response**.
 
-Editable Rust/fframes sources and capture copies live in the website repository at
-`videos/mdoc/`. Its `README.md` describes review, rendering and preview commands.
-The 21-second combined film and three seven-second clips are intentionally silent.
-Motion and theme changes are editorial transitions between still captures, not a
-recording of processing time or live interaction. Review the whole document before
-sharing: detection can miss identifiers.
+Detection can miss identifiers. These captures are demonstrations, not
+detector-quality benchmarks.

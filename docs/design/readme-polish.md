@@ -1,6 +1,7 @@
 # README cleanup and polish — design interview
 
-Status: complete (2026-10-11).
+Status: complete (2026-10-11). Decisions 3 and 10–14 superseded by
+[readme-media-v2.md](readme-media-v2.md) (2026-10-16).
 
 ## Baseline facts
 
