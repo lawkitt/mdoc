@@ -78,13 +78,134 @@ fn canonical(value: &str) -> String {
         .join(" ")
         .to_lowercase()
 }
+/// Lowercase courtesy titles that precede a name and never identify anyone.
+const TITLES: [&str; 7] = ["mr", "mrs", "ms", "miss", "mx", "dr", "prof"];
 fn name_parts(value: &str) -> Vec<String> {
     value
         .split(|c: char| !c.is_alphabetic())
         .filter(|v| !v.is_empty())
         .map(str::to_lowercase)
-        .filter(|v| !matches!(v.as_str(), "ип" | "mr" | "ms" | "mrs" | "dr"))
+        .filter(|v| v != "ип" && !TITLES.contains(&v.as_str()))
         .collect()
+}
+/// Whitespace-separated name words, lowercased, without titles or edge
+/// punctuation: "Ms. O'Neil," → `["o'neil"]`.
+fn name_words(value: &str) -> Vec<String> {
+    value
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase())
+        .filter(|w| !w.is_empty() && !TITLES.contains(&w.as_str()))
+        .collect()
+}
+fn cyrillic(word: &str) -> bool {
+    word.chars().all(|c| matches!(c, 'а'..='я' | 'ё' | '-'))
+}
+fn patronymic(word: &str) -> bool {
+    ["ович", "евич", "овна", "евна", "ична"]
+        .iter()
+        .any(|s| word.ends_with(s))
+}
+/// How surely a Russian word is a surname: 2 for endings first names almost
+/// never have, 1 for "-ина" (Петрова Ирина, Ирина Пушкина), 0 otherwise.
+fn russian_surname_score(word: &str) -> u8 {
+    const STRONG: [&str; 10] = [
+        "ов", "ев", "ёв", "ова", "ева", "ёва", "ский", "ская", "цкий", "цкая",
+    ];
+    if STRONG.iter().any(|s| word.ends_with(s)) {
+        2
+    } else if ["ин", "ын", "ина", "ына"].iter().any(|s| word.ends_with(s)) {
+        1
+    } else {
+        0
+    }
+}
+/// The surname and given names of a full person name, or `None` when the
+/// wording is not one (a single word, initials) or the surname is ambiguous.
+fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
+    let mut words = name_words(value);
+    let full = |w: &String| {
+        w.chars().filter(|c| c.is_alphabetic()).count() > 1
+            && w.chars()
+                .all(|c| c.is_alphabetic() || matches!(c, '-' | '\'' | '’'))
+    };
+    if !(2..=4).contains(&words.len()) || !words.iter().all(full) {
+        return None;
+    }
+    let last = words.len() - 1;
+    let surname = if !words.iter().all(|w| cyrillic(w)) {
+        last
+    } else if words.len() == 3 && patronymic(&words[2]) && !patronymic(&words[1]) {
+        0
+    } else if words.len() == 3 && patronymic(&words[1]) {
+        2
+    } else if words.len() == 2 {
+        // "Петров Иван" or "Иван Петров"; "Ирина Пушкина" is left unsplit.
+        match russian_surname_score(&words[0]).cmp(&russian_surname_score(&words[1])) {
+            std::cmp::Ordering::Greater => 0,
+            std::cmp::Ordering::Less => 1,
+            std::cmp::Ordering::Equal if russian_surname_score(&words[1]) == 0 => 1,
+            std::cmp::Ordering::Equal => return None,
+        }
+    } else {
+        last
+    };
+    let surname = words.remove(surname);
+    (surname.chars().count() >= 3).then_some((surname, words))
+}
+/// Lowercase wordings that stand for `surname` alone: itself and, for a
+/// Russian surname, its conservative case forms ("раман" → "рамана",
+/// "раману"). Some forms are shared with relatives ("петрова"), which is why
+/// they are proposed, never linked.
+fn surname_forms(surname: &str) -> Vec<String> {
+    let mut forms = vec![surname.to_owned()];
+    if cyrillic(surname) {
+        let mut decline = |stem: &str, endings: &[&str]| {
+            forms.extend(endings.iter().map(|e| format!("{stem}{e}")));
+        };
+        if let Some(stem) = surname
+            .strip_suffix("ий")
+            .filter(|s| s.ends_with("ск") || s.ends_with("цк"))
+        {
+            decline(stem, &["ого", "ому", "им", "ом"]);
+        } else if let Some(stem) = surname
+            .strip_suffix("ая")
+            .filter(|s| s.ends_with("ск") || s.ends_with("цк"))
+        {
+            decline(stem, &["ой", "ую"]);
+        } else if ["ова", "ева", "ёва", "ина", "ына"]
+            .iter()
+            .any(|s| surname.ends_with(s))
+        {
+            // A feminine nominative, or the genitive of "Петров".
+            let stem = surname.strip_suffix('а').unwrap();
+            decline(stem, &["ой", "у", "", "ым", "е"]);
+        } else if surname
+            .chars()
+            .next_back()
+            .is_some_and(|c| !"аеёиоуыэюяйь-".contains(c))
+        {
+            let instrumental = if ["ов", "ев", "ёв", "ин", "ын"]
+                .iter()
+                .any(|s| surname.ends_with(s))
+            {
+                "ым"
+            } else {
+                "ом"
+            };
+            decline(surname, &["а", "у", instrumental, "е"]);
+        }
+    }
+    forms.sort_unstable();
+    forms.dedup();
+    forms
+}
+/// Whether `short` is a title + surname or a bare surname, possibly in a
+/// Russian case form, of the full name `full`: "Ms Raman", "Рамана".
+fn short_form_of(short: &str, full: &str) -> bool {
+    let words = name_words(short);
+    words.len() == 1
+        && split_full_name(full)
+            .is_some_and(|(surname, _)| surname_forms(&surname).contains(&words[0]))
 }
 fn surname_related(a: &str, b: &str) -> bool {
     if a == b {
@@ -513,6 +634,9 @@ impl Review {
                 g.id != group
                     && ((g.category == Category::Person
                         && related_name(&g.original, &variant.original))
+                        || (g.category == Category::Person
+                            && variant.category == Category::Person
+                            && short_form_of(&variant.original, &g.original))
                         || (is_name(g.category)
                             && is_name(variant.category)
                             && contained_name(&g.original, &variant.original)))
@@ -569,6 +693,82 @@ impl Review {
             {
                 self.add_seed(m.as_str(), Category::Person);
             }
+        }
+    }
+    /// Propose title + surname, the bare surname and its Russian case forms of
+    /// each full person name outside existing mentions, as variants of their
+    /// own that Same as… offers to link (ADR 0053). A word that is also a
+    /// known first name is never proposed.
+    pub(super) fn discover_short_variants(&mut self, source: &str) {
+        static WORD: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let regex = WORD.get_or_init(|| {
+            regex::Regex::new(
+                r"\b(?:(?:Mr|Mrs|Ms|Miss|Mx|Dr|Prof)\.?[ \t]+)?\p{Lu}\p{L}*(?:['’-]\p{Lu}\p{L}*)*",
+            )
+            .expect("static surname regex")
+        });
+        // Mentions of the seeds so far, so a surname inside a full name or a
+        // longer wording stays part of it.
+        self.refresh(source);
+        // A name the user kept everywhere yields no forms; given names of every
+        // full name stay unproposed.
+        let applied: HashSet<&str> = self
+            .applied()
+            .iter()
+            .map(|a| a.step.original_shared().as_ref())
+            .collect();
+        let mut forms = HashSet::new();
+        let mut given = HashSet::new();
+        for group in self.variants() {
+            if group.category != Category::Person {
+                continue;
+            }
+            let Some((surname, names)) = split_full_name(&group.original) else {
+                continue;
+            };
+            if !group.kept
+                && (!group.mentions.is_empty() || applied.contains(group.original.as_ref()))
+            {
+                forms.extend(surname_forms(&surname));
+            }
+            given.extend(names);
+        }
+        forms.retain(|form| !given.contains(form));
+        if forms.is_empty() {
+            return;
+        }
+        // Pending, applied and kept mentions, merged so `intersects` can
+        // search them.
+        let mut spans: Vec<_> = self
+            .candidates()
+            .iter()
+            .map(|c| c.range.clone())
+            .chain(self.applied().iter().map(|a| a.range.clone()))
+            .chain(self.tracking.exclusions.iter().map(|e| e.range.clone()))
+            .collect();
+        spans.sort_by_key(|r| r.start);
+        let mut covered: Vec<Range<usize>> = Vec::with_capacity(spans.len());
+        for span in spans {
+            match covered.last_mut() {
+                Some(last) if span.start < last.end => last.end = last.end.max(span.end),
+                _ => covered.push(span),
+            }
+        }
+        let protected = protected_syntax(source);
+        let found: Vec<_> = regex
+            .find_iter(source)
+            .filter(|m| {
+                let word = m.as_str().rsplit([' ', '\t']).next().unwrap_or_default();
+                forms.contains(&word.to_lowercase())
+                    && safe_span(m.as_str())
+                    && !intersects(&protected, &m.range())
+                    && !intersects(&covered, &m.range())
+                    && exact_boundary(source, &m.range(), m.as_str())
+            })
+            .map(|m| m.as_str().to_owned())
+            .collect();
+        for wording in found {
+            self.add_seed(&wording, Category::Person);
         }
     }
 }
@@ -636,5 +836,25 @@ mod tests {
         eprintln!(
             "IDENTITY_STORAGE identities=20000 retained_states=256 shared_policy_during_typing=true edited_overrides=1 immutable_definitions=20000 (excludes editor snapshots/layout, allocator and matcher costs)"
         );
+    }
+
+    #[test]
+    fn surnames_follow_russian_name_order_and_skip_ambiguous_pairs() {
+        let surname = |name| split_full_name(name).map(|(surname, _)| surname);
+        assert_eq!(
+            surname("Павлова Марина Сергеевна").as_deref(),
+            Some("павлова")
+        );
+        assert_eq!(
+            surname("Марина Сергеевна Павлова").as_deref(),
+            Some("павлова")
+        );
+        assert_eq!(surname("Петров Иван").as_deref(), Some("петров"));
+        assert_eq!(surname("Иван Петров").as_deref(), Some("петров"));
+        assert_eq!(surname("Марина Павлова").as_deref(), Some("павлова"));
+        assert_eq!(surname("Ирина Пушкина"), None);
+        assert_eq!(surname("Ms Maya Bennett").as_deref(), Some("bennett"));
+        assert_eq!(surname("Павлова М.С."), None);
+        assert_eq!(surname("Bennett"), None);
     }
 }

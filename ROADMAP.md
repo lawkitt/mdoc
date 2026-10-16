@@ -23,14 +23,7 @@ priority order.
 
 ### Must-fix
 
-1. **[PII] Propose shorter and inflected forms of a known identity.**
-   *Found in beta.11 (known issue 4).* "Ms Raman" or "Ms Bennett" is not proposed
-   as a mention of the detected full name and stays in the text after Apply.
-   *Done when:* title + surname, possessives, surname alone and RU inflections
-   are proposed as [variants](CONTEXT.md) for review; a first name alone is not.
-   Record the change to [ADR 0018](docs/adr/0018-document-local-identity-review.md)
-   in a new ADR.
-2. **[Perf] Ordinary legal documents are responsive.** Separate editor layout cost
+1. **[Perf] Ordinary legal documents are responsive.** Separate editor layout cost
    from PII overhead using fixed viewports. The [October 16 stabilization](docs/evidence/stabilization/2026-10-16/results.md)
    fixed case saves, refresh scheduling, spelling, diagnostic/link geometry and
    panel preparation; whole-document layout cost (including
@@ -42,14 +35,14 @@ priority order.
    typing and navigation workloads and the public DOCX/PDF preview workloads reach
    p95 frame ≤ 16.7 ms, confirmed by a native spot-check on a real ~30-page
    contract. Debug ceilings stay regression guards.
-3. **[Cases] Captured AI-reply fixtures for Restore.** Cases and restoration
+2. **[Cases] Captured AI-reply fixtures for Restore.** Cases and restoration
    ([saved mappings](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/saved-mappings.md)) are implemented in all four
    phases, including the Linux Secret Service key.
    *Done when:* four replies to the settlement-agreement demo (ChatGPT and Claude,
    each EN and RU) live under `tests/fixtures/`, at least one with Markdown tables
    and paraphrased or inflected aliases, and Restore leaves no alias unrestored
    in any of them.
-4. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
+3. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
    Windows x64; keep Linux buildable. Done last, because it checks the finished UI.
    *Done when:* one checklist per platform at `docs/evidence/platform/<date>/README.md`
    covers both themes, IME (RU plus a CJK smoke test), clipboard,
@@ -141,14 +134,14 @@ In priority order, after any carried-over should-fix items.
     results, edits/undo, tab switching, copy/save and provenance lifetime are
     verified.
 
-  Responsiveness and native acceptance are tracked under must-fix items 2 and 4.
+  Responsiveness and native acceptance are tracked under must-fix items 1 and 3.
   Historical results: [initial qualification](tests/fixtures/pseudonymization/README.md)
   (no model passed) and the [last gate review](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/pseudonymization-production-readiness.md).
 
 ## Engineering
 
 - **Architecture refactoring** ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
-  Gated on must-fix item 3's profiling. Deliver case coordination and document
+  Gated on must-fix item 1's profiling. Deliver case coordination and document
   lifecycle as separate, incremental projects: explicit owners for case
   persistence and synchronization, and explicit document transitions across the
   shell/view. GPUI keeps presentation, prompts and scheduling; editor/history,

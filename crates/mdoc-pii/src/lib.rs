@@ -506,6 +506,7 @@ impl Review {
             self.add_seed(&source[detection.range], detection.category);
         }
         self.discover_initial_variants(source);
+        self.discover_short_variants(source);
         self.refresh(source);
         Ok(())
     }
