@@ -18,11 +18,11 @@ cargo run rewrote the lockfile, every checkout showed it modified, and
 - **Drift fails the gate.** The lint recipe runs
   `cargo metadata --locked --format-version 1`, so `just check` locally and CI
   on every runner reject a lockfile the manifest does not produce (ADR 0037).
-- **Dependabot changes the manifest when it must.** `versioning-strategy:
-  increase-if-necessary` on the cargo ecosystem: a bump the requirement does not
-  allow raises the requirement, and a bump that needs code changes fails CI
-  visibly instead of being re-resolved. `docxide-pdf` is ignored there and
-  bumped by hand.
+- **Dependabot keeps its default strategy.** For cargo it accepts only `auto`
+  or `lockfile-only` (`increase-if-necessary` is rejected as invalid config), so
+  a bump the manifest does not allow can still arrive lockfile-only; the
+  `--locked` check fails it, and someone raises `Cargo.toml` and fixes the code
+  in its place. `docxide-pdf` is ignored there and bumped by hand.
 - **Exact pins carry their reason** in a `Cargo.toml` comment.
 - **Sensitive bumps are deliberate work**, one PR per crate, each with its own
   check: `dirs` (the same case, key, update and crash-report paths on macOS,
@@ -31,6 +31,5 @@ cargo run rewrote the lockfile, every checkout showed it modified, and
 
 ## Consequences
 
-Dependabot PRs for breaking bumps arrive red until someone does the code work.
-If Dependabot's cargo support for `increase-if-necessary` falls short, the
-`--locked` check still stops lockfile-only bumps from merging green.
+Dependabot PRs for bumps the manifest does not allow arrive red; they are
+replaced by a deliberate PR that raises the requirement and does the code work.
