@@ -18,7 +18,8 @@ reached the external AI tool.
   two-word name the surname ending decides ("Петров Иван"). Ambiguous pairs
   ("Ирина Пушкина"), single words and initials yield none.
 - **Forms.** The surname, with an optional title (Mr, Mrs, Ms, Miss, Mx, Dr,
-  Prof, with or without a period), and for a Cyrillic surname its conservative
+  Prof in any case, with or without a period; Miss only capitalized,
+  since lowercase "miss" is a verb), and for a Cyrillic surname its conservative
   case forms: -ов/-ин/consonant (+а, +у, +ым/+ом, +е), -ова/-ина (+ой, +у,
   and the masculine forms), -ский/-ская (-ого, -ому, -им, -ом; -ой, -ую).
   A possessive ("Ms Bennett's") is a mention of the form before the

@@ -701,9 +701,11 @@ impl Review {
     /// known first name is never proposed.
     pub(super) fn discover_short_variants(&mut self, source: &str) {
         static WORD: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        // Abbreviated titles in any case ("MR SMITH", "mr Smith"); "miss" in
+        // lowercase is the verb ("did not miss Raman").
         let regex = WORD.get_or_init(|| {
             regex::Regex::new(
-                r"\b(?:(?:Mr|Mrs|Ms|Miss|Mx|Dr|Prof)\.?[ \t]+)?\p{Lu}\p{L}*(?:['’-]\p{Lu}\p{L}*)*",
+                r"\b(?:(?:(?i:Mr|Mrs|Ms|Mx|Dr|Prof)|Miss|MISS)\.?[ \t]+)?\p{Lu}\p{L}*(?:['’-]\p{Lu}\p{L}*)*",
             )
             .expect("static surname regex")
         });
