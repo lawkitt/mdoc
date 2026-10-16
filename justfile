@@ -20,9 +20,10 @@ fmt:
 fmt-check:
     cargo fmt --check
 
-# Dependency licences and advisories (cargo-deny)
+# Dependency licences and advisories (cargo-deny); --locked so it never repairs
+# a drifted Cargo.lock before `lint` checks it (ADR 0053)
 deny:
-    cargo deny check
+    cargo deny --locked check
 
 # Cargo.lock must match Cargo.toml (ADR 0053); then clippy with warnings as errors
 lint:
