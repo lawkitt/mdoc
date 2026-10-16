@@ -70,17 +70,16 @@ This roadmap tracks work remaining as of 2026-10-16; accepted behavior lives in
    boundary before implementation. Investigate retained editor layout only if
    remaining release-build costs justify it after local fixes; that replacement
    is not committed work. Preserve behavior and lifecycle invariants throughout.
-7. **Reduce Rust build-cache growth.** The main `target/` directory reached
-   approximately 187 GiB on 2026-10-16. Measure disk growth, cold builds and warm
-   rebuilds for representative development and test workflows before changing
-   settings. Evaluate `debug = "line-tables-only"` with incremental compilation
-   retained; document the loss of debugger variable inspection and how to request
-   full debug information. Keep the pinned toolchain, features and compiler flags
-   consistent across build entry points, and document cleanup of build output
-   when temporary worktrees are retired. Evaluate `sccache` separately for shared
-   dependency builds, accounting for its own disk use and incremental/linking
-   limitations. Record measured savings and rebuild-time tradeoffs; preserve
-   release settings and avoid automatic eviction or arbitrary cache caps.
+7. **Rust build-cache follow-ups**
+   ([ADR 0050](docs/adr/0050-rust-build-cache-growth.md)). The lean dev profile,
+   `--profile debugging`, `just disk` and `just retire-worktree` are in place;
+   [measurements](docs/evidence/build-cache/2026-10-16/README.md) show ~45 %
+   smaller builds and trace the old 150 GiB `target/` mainly to stale copies
+   from artifact-hash churn. Check with `just disk` whether `target/` stays under
+   about 30 GiB through a week of development. Evaluate `sccache` separately for
+   shared dependency builds, accounting for its own disk use and
+   incremental/linking limitations. Keep release settings; no automatic
+   eviction or arbitrary cache caps.
 
 Keep the app and internal crates maintainable through concrete ownership/test
 improvements ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)). Conversion

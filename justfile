@@ -78,3 +78,11 @@ setup:
 # Report missing or mismatched tools
 doctor:
     scripts/doctor.sh
+
+# Size of each worktree's target/ (ADR 0050)
+disk:
+    scripts/disk.sh
+
+# Remove a retired worktree and its target/; refuses uncommitted changes
+retire-worktree path:
+    scripts/retire-worktree.sh "{{path}}"
