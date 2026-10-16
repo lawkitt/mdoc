@@ -1,7 +1,7 @@
 # Cases and AI-response restoration
 
 Status: Accepted design, 2026-10-11; phases 1–2 implemented the same day and
-phase 3 on 2026-10-12, phase 4 on 2026-10-13. See the [design interview](../design/saved-mappings.md) for all 27 decisions and the
+phase 3 on 2026-10-12, phase 4 on 2026-10-13. See the [design interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/saved-mappings.md) for all 27 decisions and the
 prior-art review. From phase 2, supersedes the "mappings and originals are never
 serialized" rule of [ADR 0002](0002-reviewable-local-pseudonymization.md),
 [ADR 0014](0014-highlighted-pii-replacements.md) and

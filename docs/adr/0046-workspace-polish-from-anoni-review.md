@@ -1,7 +1,7 @@
 # Workspace polish from the Anoni review
 
 Status: Accepted, 2026-10-14. Interview record:
-[Anoni comparison](../design/anoni-comparison.md). Amends
+[Anoni comparison](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/anoni-comparison.md). Amends
 [ADR 0030](0030-render-standard-markdown-only.md),
 [ADR 0033](0033-replacements-panel-redesign.md),
 [ADR 0041](0041-cases-and-ai-response-restoration.md) and

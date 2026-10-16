@@ -34,7 +34,7 @@ priority order.
    from PII overhead using fixed viewports. The [October 16 stabilization](docs/evidence/stabilization/2026-10-16/results.md)
    fixed case saves, refresh scheduling, spelling, diagnostic/link geometry and
    panel preparation; whole-document layout cost (including
-   [spellcheck](docs/evidence/spellcheck/README.md) layout), case-update fan-out and process
+   [spellcheck](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/spellcheck/README.md) layout), case-update fan-out and process
    memory remain. Debug `just perf` still fails ordinary host scroll and DOCX
    preview p95 (16.76 vs 16.667 ms). Profile before choosing migrations
    ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
@@ -43,7 +43,7 @@ priority order.
    p95 frame ≤ 16.7 ms, confirmed by a native spot-check on a real ~30-page
    contract. Debug ceilings stay regression guards.
 3. **[Cases] Captured AI-reply fixtures for Restore.** Cases and restoration
-   ([saved mappings](docs/design/saved-mappings.md)) are implemented in all four
+   ([saved mappings](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/saved-mappings.md)) are implemented in all four
    phases, including the Linux Secret Service key.
    *Done when:* four replies to the settlement-agreement demo (ChatGPT and Claude,
    each EN and RU) live under `tests/fixtures/`, at least one with Markdown tables
@@ -96,7 +96,7 @@ In priority order, after any carried-over should-fix items.
 
 1. **[Perf] Stress tier and numerical budgets.** The 2 MiB / 20,000-mention tier
    has bounded work and memory; set numerical budgets from release/native
-   baselines. [Restoration measurements](docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
+   baselines. [Restoration measurements](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
    are historical, not guarantees.
 2. **[UI] Center and smoothly scroll to the selected mention.** Clicking an
    entity or mention row in the Replacements panel reveals, highlights and focuses
@@ -118,15 +118,32 @@ In priority order, after any carried-over should-fix items.
    [OCR qualification set](tests/fixtures/ocr-qualification/README.md) now.
 6. **[Cases] System-wide Pseudonymize Clipboard hotkey** (macOS
    `RegisterEventHotKey`, Windows `RegisterHotKey`). The in-app action, before/after
-   view and per-case category switches from the [Anoni review](docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11)
+   view and per-case category switches from the [Anoni review](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11)
    are done.
 
 ## Ongoing tracks
 
-- **Outgoing AI-analysis qualification.** Agree release targets and test EN/RU
-  legal/native/OCR text, hidden source, identity joins/splits, ownership and
-  correction time on a larger holdout ([open gates](docs/design/pseudonymization-production-readiness.md)).
-  A continuous quality gate, not a release blocker.
+- **Outgoing AI-analysis qualification.** A continuous quality gate, not a
+  release blocker. Scope: EN/RU legal text from native/OCR PDF, DOCX and opened
+  Markdown on Apple Silicon macOS and Windows x64; the handoff is the complete
+  current Markdown, including hidden source ([ADR 0016](docs/adr/0016-pii-production-qualification-scope.md)).
+  No scan count establishes complete coverage, and remaining context can still
+  identify subjects.
+  *Done when:*
+  - numerical release targets are agreed from measured baselines on a larger
+    holdout;
+  - category, boundary and hidden-source misses, false positives, mistaken
+    identity joins/splits, wrong ownership and correction time are measured
+    (detector precision/recall alone does not qualify relationship-preserving output);
+  - native/OCR EN/RU legal documents, ambiguous names/initials/inflections,
+    tables, links/code/HTML, damaged identifiers and long documents are covered;
+  - source integrity, explicit setup/offline operation, cancellation, stale
+    results, edits/undo, tab switching, copy/save and provenance lifetime are
+    verified.
+
+  Responsiveness and native acceptance are tracked under must-fix items 2 and 4.
+  Historical results: [initial qualification](tests/fixtures/pseudonymization/README.md)
+  (no model passed) and the [last gate review](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/pseudonymization-production-readiness.md).
 
 ## Engineering
 

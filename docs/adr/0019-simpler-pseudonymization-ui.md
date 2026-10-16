@@ -66,5 +66,5 @@ originals share existing provenance strings rather than copying them per render.
 The workspace suite passes 435 tests (16 existing ignored checks). Build, strict
 Clippy, formatting and diff checks pass. Native macOS interaction covers the
 editable alias, application, scoped restoration, both themes and a 640×480
-drawer. See the [verification record](../evidence/pseudonymization/2026-10-08-ui/README.md)
+drawer. See the [verification record](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/pseudonymization/2026-10-08-ui/README.md)
 for evidence and remaining platform/interaction boundaries.

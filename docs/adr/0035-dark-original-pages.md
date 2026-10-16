@@ -1,7 +1,7 @@
 # Dark Original pages
 
 Status: Accepted and implemented, 2026-10-10. Interview record:
-[original page tone](../design/original-page-tone.md).
+[original page tone](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/original-page-tone.md).
 
 ## Problem
 

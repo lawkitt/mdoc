@@ -27,7 +27,7 @@ and pending proposals; it does not apply replacements or add a relationship lege
 bringing the response back. This is the first qualification journey ([ADR 0016](docs/adr/0016-pii-production-qualification-scope.md)).
 
 **AI analysis return journey**: bring an external AI response back into mdoc
-and restore its aliases from a case ([design](docs/design/saved-mappings.md)).
+and restore its aliases from a case ([ADR 0041](docs/adr/0041-cases-and-ai-response-restoration.md)).
 
 **Copy for AI**: copy the full current Markdown with an alias-only note asking
 the AI to keep placeholders exactly; shown when aliases are applied.

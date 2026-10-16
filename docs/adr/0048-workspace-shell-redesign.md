@@ -1,7 +1,7 @@
 # Workspace shell redesign
 
 Status: Accepted, 2026-10-15. Interview record:
-[workspace redesign after Anoni](../design/anoni-ui-redesign.md). Supersedes the
+[workspace redesign after Anoni](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/anoni-ui-redesign.md). Supersedes the
 toolbar of [ADR 0012](0012-document-preparation-ui.md), the 200 px width of
 [ADR 0027](0027-chrome-style-vertical-sidebar.md), the popup of
 [ADR 0032](0032-replacement-popup-redesign.md), the panel chrome and scope keys
@@ -154,7 +154,7 @@ Variant B's floating panel and folding sidebar are not adopted.
 ## Amendment, 2026-10-16: nothing rests over the text
 
 From the README media review
-([decisions 9 and 15](../design/readme-media-v2.md)): users see these too.
+([decisions 9 and 15](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/readme-media-v2.md)): users see these too.
 
 - **The view pill rests hidden.** Decision 9's "always shown" pill covered
   body text. It now fades 1.5 s after the last pointer move near the bottom of

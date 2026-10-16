@@ -27,9 +27,7 @@ The full list is under [Recipes](#recipes).
 - [Roadmap](../ROADMAP.md): status, next steps and deferred work.
 - [Glossary](../CONTEXT.md): product and code terminology.
 - [Architecture decisions](adr/): accepted behavior and its rationale.
-- [Evidence](evidence/): measurements and verification records.
-- [Production readiness](design/pseudonymization-production-readiness.md):
-  open qualification gates.
+- [Evidence](evidence/): measurements that current work still compares against.
 - [Privacy and limitations](privacy.md).
 
 ## Code layout
