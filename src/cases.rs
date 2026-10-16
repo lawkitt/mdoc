@@ -741,6 +741,42 @@ mod tests {
         Store::with_key(dir.to_path_buf(), &[7; 32])
     }
 
+    /// The case stored in `tests/fixtures/cases/`, written by aes-gcm 0.10.
+    fn fixture_case() -> Case {
+        let mut case = Case::new(
+            "Petrova v Northwind".into(),
+            &[
+                identity(
+                    "PERSON_1",
+                    Category::Person,
+                    &["Anna Petrova", "A. Petrova"],
+                ),
+                identity("ORG_1", Category::Organization, &["Northwind Ltd"]),
+            ],
+            Some("/docs/contract.md".into()),
+        );
+        case.id = "0123456789abcdef0123456789abcdef".into();
+        case.created = 1_760_000_000;
+        case.revision = 3;
+        case
+    }
+
+    #[test]
+    fn a_case_written_by_aes_gcm_0_10_still_opens() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/cases");
+        let dir = tempfile::tempdir().unwrap();
+        let name = "0123456789abcdef0123456789abcdef.case";
+        std::fs::copy(fixture.join(name), dir.path().join(name)).unwrap();
+        let store = store(dir.path());
+        let expected = fixture_case();
+        assert_eq!(store.load(&expected.id).unwrap(), expected);
+        // Rewriting it keeps the format and still opens.
+        let mut next = expected.clone();
+        next.revision += 1;
+        store.save(&next).unwrap();
+        assert_eq!(store.load(&next.id).unwrap(), next);
+    }
+
     #[test]
     fn cases_round_trip_encrypted_and_never_in_plaintext() {
         let dir = tempfile::tempdir().unwrap();
