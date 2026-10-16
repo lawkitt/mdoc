@@ -90,9 +90,14 @@ impl DocumentView {
                 .h(px(24.))
                 .px(px(6.))
                 .rounded_md()
+                // The faint fill alone vanishes on a light header, so the
+                // revealed Cancel also gets an outline; the border is always
+                // there (transparent) so hovering does not shift the layout.
+                .border_1()
+                .border_color(gpui::transparent_black())
                 .cursor_pointer()
-                .hover(move |s| s.bg(palette.placeholder_bg))
-                .focus_visible(move |s| s.bg(palette.placeholder_bg))
+                .hover(move |s| s.bg(palette.placeholder_bg).border_color(palette.border))
+                .focus_visible(move |s| s.bg(palette.placeholder_bg).border_color(palette.border))
                 .on_click(cx.listener(|this, _, window, cx| this.stop_pii_scan(window, cx)))
                 .child(
                     div()
