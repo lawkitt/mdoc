@@ -92,14 +92,20 @@ worker ended without returning. It cannot: release builds abort on panic, and
 the worker handle is replaced only when no check is running. Keep that
 invariant if either changes.
 
-Known gaps, deferred to a follow-up session after merge:
+Known gaps, deferred to a follow-up after merge and closed there:
 
 - Derived review data (panel projection, before/after view, spelling exclusions)
-  is invalidated by manual `pii.version` bumps through `review_changed`. A
-  revision counter owned by `Review` and advanced by its mutators should replace
-  this, so that a mutation cannot leave derived views stale.
-- Case write completion during quit schedules the final quit check twice; the
-  quit check scans the list of checked tabs once per tab. Both are cleanup only.
+  was invalidated by manual `pii.version` bumps through `review_changed`.
+  Closed: `Review::revision()` is advanced by every `&mut` method of `Review`,
+  and the derived data is keyed on it. Revisions come from one process-wide
+  counter, so a review replaced by a new one never repeats an earlier value.
+  `review_changed` now only schedules spellcheck and the case save; paint-only
+  syncs (theme change, panel open) still schedule nothing.
+- Case write completion during quit scheduled the final quit check twice.
+  Closed: `case_write_failed` no longer resumes the quit, and each caller
+  resumes it once.
+- The quit check scanned the list of checked tabs once per tab. Closed:
+  `quit_checked` is a map keyed by tab id.
 
 Before merge: run `cargo test` and the debug `just perf`. Repeat the release
 measurements only if a fix touches a measured hot path.
