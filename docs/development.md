@@ -92,10 +92,15 @@ a local PDF or DOCX to include preview timing). Run it on an idle machine.
 `MDOC_PERF_PROFILE=release just perf` uses the release profile, serial builds
 and unchanged ceilings. The runner attempts every check before returning failure.
 The scroll workload defaults to the public `coverage.docx`; `MD_PERF_FILE` can
-select another DOCX under `tests/fixtures/docx-preview`. Logs include actual editor
-widths; outer window dimensions alone are insufficient for comparisons.
+select another DOCX under `tests/fixtures/docx-preview`. The PDF check defaults
+to public `reference.pdf` plus a generated 64-page PDF; `PDF_PERF_DIR` selects
+an explicit local corpus.
+Logs include actual editor widths; outer window dimensions alone are insufficient
+for comparisons.
 `review_host_performance` covers diagnostic density, proposed/applied review,
 before/after views and three-member case synchronization without a detector download.
+`MDOC_PERF_STRESS=1` makes that review matrix use 2 MiB / 20,000 mentions;
+run it explicitly in release mode on an idle host for stress measurements.
 
 Use a fixed viewport, representative legal/OCR Markdown, and actual scroll/search
 positions; report profile, machine, latency, peak memory, and lifecycle results.

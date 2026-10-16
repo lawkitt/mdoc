@@ -1258,6 +1258,15 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
         unchanged.push(start.elapsed().as_secs_f64() * 1000.);
     }
     report("unchanged_long_markdown_frame", &mut unchanged);
+    let view = active(&tabs, cx);
+    eprintln!(
+        "TABS_PERF unchanged_long_editor_width={:?}",
+        view.read_with(cx, |view, cx| view
+            .editor
+            .read(cx)
+            .layout_width()
+            .map(f32::from))
+    );
     assert!(
         handlers.iter().all(|ms| *ms < 16.7),
         "tab activation alone exceeded one CPU frame"
@@ -3709,6 +3718,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
                 "applied_panel" => view.apply_all_pii(&PiiApplyAll, window, cx),
                 _ => view.toggle_compare(window, cx),
             }
+            view.inspector_share = false;
             if !view.replacements_open() {
                 view.toggle_replacements_panel(window, cx);
             }
@@ -3732,6 +3742,16 @@ fn review_host_performance(cx: &mut TestAppContext) {
             assert_eq!(
                 view.pii.review.candidates().len() + view.pii.review.applied().len(),
                 mentions
+            );
+            if phase == "proposed_panel" {
+                assert_eq!(view.pii.review.candidates().len(), mentions);
+            } else {
+                assert_eq!(view.pii.review.applied().len(), mentions);
+            }
+            assert_eq!(view.compare.is_some(), phase == "before_after");
+            assert!(
+                !view.inspector_share,
+                "measure the Review tab, not the post-Apply Share tab"
             );
         });
     }

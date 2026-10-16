@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap tracks work remaining as of 2026-10-10; accepted behavior lives in
+This roadmap tracks work remaining as of 2026-10-16; accepted behavior lives in
 [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 
 ## Current status
@@ -28,12 +28,15 @@ This roadmap tracks work remaining as of 2026-10-10; accepted behavior lives in
 
 1. **Measure and resolve responsiveness/resource blockers.** Separate editor
    layout cost from PII overhead using fixed viewports and representative
-   workloads. The [October 16 review](docs/design/maintainability-review.md)
-   scopes a focused stabilization pass over case-save failures, refresh/scheduling,
-   spelling, layout and panel preparation. Ordinary legal documents are the hard
-   interactive target; 2 MiB / 20,000 mentions form a measured stress tier with
-   bounded work and memory. Set numerical budgets after release/native baselines
+   workloads. The [October 16 stabilization](docs/evidence/stabilization/2026-10-16/results.md)
+   addresses case-save failures, refresh/scheduling, spelling, diagnostic/link
+   geometry and panel preparation. Whole-document layout cost remains to qualify.
+   Ordinary legal documents are the hard interactive target; 2 MiB / 20,000
+   mentions form a measured stress tier with bounded work and memory. Set
+   numerical budgets after release/native baselines
    ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
+   Release measurements still expose long-document layout, large case-update
+   fan-out and process memory costs; profile these before selecting migrations.
    Existing [restoration measurements](docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
    expose a dense-document layout bottleneck; historical timings are not current
    performance guarantees.
@@ -55,8 +58,8 @@ This roadmap tracks work remaining as of 2026-10-10; accepted behavior lives in
 5. **Preparation conveniences** from the [Anoni review](docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11):
    in-app Pseudonymize Clipboard, the before/after view and per-case category
    switches are implemented; a system-wide clipboard hotkey (macOS
-   `RegisterEventHotKey`, Windows `RegisterHotKey`) and listing cases on the
-   empty page remain.
+   `RegisterEventHotKey`, Windows `RegisterHotKey`) remains. Cases are already
+   listed on Home (ADR 0048).
 6. **TODO: Broader architectural refactoring**
    ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
    After focused stabilization, deliver case coordination and document lifecycle
@@ -84,8 +87,6 @@ source/output comparisons. Numerical budgets require measured baselines.
   compliance report of replacements; a re-identification risk hint.
 - Bulk conversion beyond current lazy multi-file opening; design separately.
 - Online formatting/OCR repair; provider, credentials, trust and review need decisions.
-- Opening a dropped folder as a case; folders are currently skipped
-  ([ADR 0028](docs/adr/0028-empty-page-and-file-drop.md)). Tab groups are cases (step 4).
 
 Not planned: realistic fake-name pseudonyms (harder to restore, may collide with
 real names; [ADR 0018](docs/adr/0018-document-local-identity-review.md)),

@@ -3,7 +3,7 @@
 Review point: `fd3c685` (`v0.1.0-beta.10`), clean `main` before this note.
 Status: pre-change audit evidence. Decisions are recorded in
 [ADR 0049](../../../adr/0049-measured-stabilization-and-architecture-review.md);
-implementation results will be appended separately.
+[implementation results](results.md) record the fixes and remaining limits.
 
 ## Assessment
 
@@ -162,4 +162,3 @@ matrix and missing-fixture scroll test were not run.
 
 Raw logs and the spelling probe are saved in the task's artifact directory:
 `/Users/tebriz/.codex/visualizations/2026/10/15/01a14089-5423-7853-b157-0f52a60ddfbf/mdoc-codebase-review-2026-10-16/`.
-

@@ -1,16 +1,25 @@
-//! Explicit performance harness; supply locally converted fixtures with PDF_PERF_DIR.
+//! Public reference + synthetic 64-page PDF by default; PDF_PERF_DIR selects a corpus.
 //! Measures CPU work and raster availability, not display presentation latency.
 use super::*;
 
 #[gpui::test]
 #[ignore]
 fn long_document_scroll_budget(cx: &mut gpui::TestAppContext) {
-    let directory = std::env::var_os("PDF_PERF_DIR").expect("set PDF_PERF_DIR");
-    let mut paths = std::fs::read_dir(directory)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == "pdf"))
-        .collect::<Vec<_>>();
+    let directory = std::env::var_os("PDF_PERF_DIR");
+    let synthetic = directory.is_none().then(|| blank_document(64));
+    let mut paths = if let Some(directory) = directory {
+        std::fs::read_dir(directory)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|e| e == "pdf"))
+            .collect::<Vec<_>>()
+    } else {
+        vec![
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/reference.pdf"),
+            synthetic.as_ref().unwrap().path().to_path_buf(),
+        ]
+    };
     if let Ok(filter) = std::env::var("PDF_PERF_FILE") {
         paths.retain(|p| p.file_name().unwrap().to_string_lossy().contains(&filter));
     }
@@ -18,6 +27,11 @@ fn long_document_scroll_budget(cx: &mut gpui::TestAppContext) {
     assert!(!paths.is_empty());
     let mut failures = Vec::new();
     for path in paths {
+        let label = if synthetic.as_ref().is_some_and(|file| file.path() == path) {
+            "synthetic-64-pages.pdf".to_string()
+        } else {
+            path.file_name().unwrap().to_string_lossy().into_owned()
+        };
         let started = std::time::Instant::now();
         let (view, cx) = cx.add_window_view(|_, cx| {
             PdfView::new(
@@ -93,7 +107,7 @@ fn long_document_scroll_budget(cx: &mut gpui::TestAppContext) {
         let settle = settles[settles.len() * 95 / 100];
         eprintln!(
             "PDF_PERF file={} pages={pages} initial_ms={initial_ms:.2} page_h={page_h:.2} frame_median_ms={:.2} frame_p95_ms={p95:.2} settle_p95_ms={settle:.2} raster_requests={renders}",
-            path.file_name().unwrap().to_string_lossy(),
+            label,
             frames[frames.len() / 2]
         );
         if p95 > 16.667 || settle > 100. {
