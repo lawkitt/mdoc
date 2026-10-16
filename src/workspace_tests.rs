@@ -3669,7 +3669,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
     use crate::perf_tests::{draw, report};
     use crate::pii::Category;
     use std::time::Instant;
-    let stress = std::env::var_os("MDOC_PERF_STRESS").is_some();
+    let stress = std::env::var("MDOC_PERF_STRESS").is_ok_and(|v| v == "1");
     let (entities, mentions) = if stress { (64, 20_000) } else { (16, 160) };
     let names: Vec<_> = (0..entities).map(|i| format!("ClientName{i:04}")).collect();
     let wordings: Vec<_> = names
