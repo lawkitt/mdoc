@@ -1,7 +1,7 @@
 # Local crash reports the user sends
 
 Status: Accepted, 2026-10-14. Interview record:
-[Anoni comparison](../design/anoni-comparison.md), decision 10.
+[Anoni comparison](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/anoni-comparison.md), decision 10.
 
 ## Problem
 

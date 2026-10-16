@@ -1,7 +1,7 @@
 # In-app updates on macOS
 
 Status: Accepted and implemented, 2026-10-11. See the
-[design interview](../design/auto-update.md). Supersedes the "detection only"
+[design interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/auto-update.md). Supersedes the "detection only"
 decision of [ADR 0038](0038-update-check.md) on macOS.
 
 ## Problem

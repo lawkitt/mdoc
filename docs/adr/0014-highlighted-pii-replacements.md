@@ -91,7 +91,7 @@ on the small synthetic corpus; broader phone/bank additions show no incremental
 exact hits. Q15 selected this narrow subset for experimental production use;
 phone/bank expansion and full engines remain deferred. The
 [historical source review and proposal](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pii-oss-research.md) and
-[measurements](../evidence/pseudonymization/2026-10-07-hybrid/measurements.md)
+[measurements](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/pseudonymization/2026-10-07-hybrid/measurements.md)
 preserve this distinction; detector quality remains experimental.
 
 
@@ -103,5 +103,5 @@ source transactions/history identities and visible-row annotation geometry. Shar
 immutable before/after steps and reversible metadata deltas follow editor coalescence,
 undo/redo, branches and pruning. Originals are never serialized.
 
-See the [implementation report](../evidence/pseudonymization/2026-10-07-restoration/README.md)
+See the [implementation report](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
 for regressions, native macOS checks, CPU/storage measurements and remaining limits.

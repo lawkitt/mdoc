@@ -1,8 +1,8 @@
 # Bundled spellcheck
 
 Status: Accepted and implemented, 2026-10-10. Interview record:
-[spellcheck design](../design/spellcheck.md). Evidence:
-[spellcheck baseline](../evidence/spellcheck/README.md).
+[spellcheck design](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/spellcheck.md). Evidence:
+[spellcheck baseline](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/spellcheck/README.md).
 
 ## Problem
 

@@ -1,7 +1,7 @@
 # Replacements panel redesign
 
 Status: Accepted and implemented, 2026-10-10. Interview record:
-[replacements panel polish](../design/replacement-panel-polish.md). Builds on
+[replacements panel polish](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/replacement-panel-polish.md). Builds on
 [ADR 0032](0032-replacement-popup-redesign.md).
 
 ## Problem

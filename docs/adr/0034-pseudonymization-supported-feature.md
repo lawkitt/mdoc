@@ -12,7 +12,7 @@ proposes replacements the user reviews, never a guarantee of anonymization.
 The "Experimental" label leaves the UI and the README. A permanent line —
 "Review for missed identifiers before sharing." — stays beside Apply.
 
-The open gates in [production readiness](../design/pseudonymization-production-readiness.md)
+The open gates in [production readiness](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/pseudonymization-production-readiness.md)
 become ongoing quality work rather than release blockers. Measured caveats
 (languages, misses, platform availability) remain stated as facts in the README.
 

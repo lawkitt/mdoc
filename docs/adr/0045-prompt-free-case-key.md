@@ -89,5 +89,5 @@ A plaintext key file beside the cases, as Anoni does, was considered as the
 default with the Keychain as an opt-in, and rejected: it avoids prompts only by
 giving up the protection. The data protection keychain (decision 3) is a
 release blocker for beta.9; the owner's Apple setup is listed in the
-[Anoni comparison](../design/anoni-comparison.md#owner-checklist-data-protection-keychain).
+[Anoni comparison](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/anoni-comparison.md#owner-checklist-data-protection-keychain).
 An optional case passphrase and case sharing stay deferred (ROADMAP).

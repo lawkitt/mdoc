@@ -43,7 +43,7 @@ evidence; success in one does not establish the others.
 
 Numerical release targets, representative holdout quality, correction time,
 whole-editor responsiveness and native/platform qualification remain open. Track
-them in [production readiness](../design/pseudonymization-production-readiness.md).
+them in [production readiness](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/pseudonymization-production-readiness.md).
 The outgoing journey and document-local correction model are settled; AI-response
 import and deliberate forgetting of originals remain deferred. No restoration
 behavior is removed or newly approved by this ADR.
