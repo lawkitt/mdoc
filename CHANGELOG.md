@@ -4,6 +4,13 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **The zoom and view pill no longer covers text.** It fades after a moment
+  and comes back when you move the pointer near the bottom of the document,
+  scroll, zoom or switch views. It stays while the pointer is on it, and
+  ⌘= / ⌘− still zoom (ADR 0048).
+- **Word previews say they are approximate**, with an ⓘ beside the file name
+  instead of a notice. The preview header now reads **Source · name**
+  (ADR 0048).
 - **Crash reports you check first.** If mdoc hits an internal error, the next
   launch says so and offers **See what would be sent**: the report with folder
   names and quoted text masked, and never document text. **Send…** opens a

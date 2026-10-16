@@ -586,6 +586,8 @@ pub enum PdfEvent {
 /// free the atlas textures gpui won't free on plain drop.
 pub struct PdfView {
     display_name: Option<String>,
+    /// A standing remark about the source, shown as an info mark by its name.
+    source_note: Option<SharedString>,
     #[cfg(test)]
     render_requests: usize,
     path: PathBuf,
@@ -718,6 +720,7 @@ impl PdfView {
             #[cfg(test)]
             render_requests: 0,
             display_name: None,
+            source_note: None,
             path,
             style,
             quality,
@@ -1407,6 +1410,22 @@ impl PdfView {
     /// Host-facing source identity, independent of a temporary PDF backing path.
     pub fn set_display_name(&mut self, name: String, cx: &mut Context<Self>) {
         self.display_name = Some(name);
+        cx.notify();
+    }
+
+    pub fn display_name(&self) -> Option<&str> {
+        self.display_name.as_deref()
+    }
+
+    pub fn source_note(&self) -> Option<&SharedString> {
+        self.source_note.as_ref()
+    }
+
+    /// A known, permanent limitation of this source (for example an
+    /// approximate rendering), shown as an info mark beside its name rather
+    /// than as a notice.
+    pub fn set_source_note(&mut self, note: Option<SharedString>, cx: &mut Context<Self>) {
+        self.source_note = note;
         cx.notify();
     }
 
@@ -2161,17 +2180,32 @@ impl Render for PdfView {
                             v.debug_selector(|| "pdf-source-name".into())
                         })
                         .min_w_0()
-                        .flex_1()
                         .truncate()
                         .child(name.clone())
                         .tooltip(self.tip(name)),
                 )
+                .when_some(self.source_note.clone(), |row, note| {
+                    row.child(
+                        div()
+                            .id("pdf-source-note")
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "pdf-source-note".into())
+                            })
+                            .flex_shrink_0()
+                            .px_1()
+                            .cursor_default()
+                            .aria_label(note.clone())
+                            .child("ⓘ")
+                            .tooltip(self.tip(note)),
+                    )
+                })
+                .child(div().flex_1())
                 .when_some(on_close, |row, on_close| {
                     row.child(
                         close_control("pdf-close", &(self.style)())
                             .when(cfg!(test), |v| v.debug_selector(|| "pdf-close".into()))
-                            .aria_label("Close original")
-                            .tooltip(self.tip("Close original"))
+                            .aria_label("Close source")
+                            .tooltip(self.tip("Close source"))
                             .on_click(move |_, window, cx| on_close(window, cx)),
                     )
                 }),
@@ -2473,6 +2507,28 @@ mod scrolling_tests {
             cx.run_until_parked();
         }
     }
+    #[gpui::test]
+    fn a_source_note_shows_beside_the_name(cx: &mut gpui::TestAppContext) {
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/reference.pdf");
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            PdfView::new(path, Rc::new(PdfStyle::default), Rc::new(|| 1.), cx)
+        });
+        cx.run_until_parked();
+        cx.simulate_resize(gpui::size(px(900.), px(480.)));
+        draw(cx);
+        assert!(cx.debug_bounds("pdf-source-note").is_none());
+        view.update(cx, |view, cx| {
+            view.set_display_name("Source · a.docx".into(), cx);
+            view.set_source_note(Some("Approximate preview.".into()), cx);
+        });
+        draw(cx);
+        let name = cx.debug_bounds("pdf-source-name").unwrap();
+        let note = cx.debug_bounds("pdf-source-note").unwrap();
+        assert!(note.left() >= name.right());
+        assert!((note.center().y - name.center().y).abs() < px(2.));
+    }
+
     #[gpui::test]
     fn narrow_toolbar_exposes_and_wraps_pdf_tools(cx: &mut gpui::TestAppContext) {
         let path =

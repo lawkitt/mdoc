@@ -1804,6 +1804,51 @@ fn view_switcher_picks_edit_original_pseudonymized_or_side_by_side(cx: &mut gpui
 }
 
 #[gpui::test]
+fn the_view_pill_rests_hidden_until_pointer_scroll_or_zoom(cx: &mut gpui::TestAppContext) {
+    use crate::pii::ui::compare::SWITCHER_IDLE;
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1200.), px(800.)));
+    let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
+    let shown = |app: &Entity<DocumentView>, cx: &mut gpui::VisualTestContext| {
+        app.read_with(cx, |app, _| app.switcher.shown())
+    };
+    let idle = |cx: &mut gpui::VisualTestContext| {
+        cx.executor()
+            .advance_clock(SWITCHER_IDLE + std::time::Duration::from_millis(50));
+        cx.run_until_parked();
+        draw(cx);
+    };
+    draw(cx);
+    // At rest the pill does not sit over the text (README media decision 9).
+    assert!(!shown(&app, cx));
+    // Keyboard zoom shows it with the new level, then it fades.
+    cx.dispatch_action(crate::ZoomIn);
+    assert!(shown(&app, cx));
+    idle(cx);
+    assert!(!shown(&app, cx));
+    // The pointer near the bottom of the text wakes it; on the pill it stays.
+    let pill = cx.debug_bounds("zoom-reset").unwrap().center();
+    cx.simulate_mouse_move(pill, None, Default::default());
+    draw(cx);
+    assert!(shown(&app, cx));
+    idle(cx);
+    assert!(shown(&app, cx), "the pill stays under the pointer");
+    // Away from the bottom it fades after the idle delay.
+    cx.simulate_mouse_move(gpui::point(pill.x, px(200.)), None, Default::default());
+    draw(cx);
+    assert!(shown(&app, cx));
+    idle(cx);
+    assert!(!shown(&app, cx));
+    // Scrolling wakes it too.
+    cx.simulate_event(gpui::ScrollWheelEvent {
+        position: gpui::point(pill.x, px(300.)),
+        delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-40.))),
+        ..Default::default()
+    });
+    assert!(shown(&app, cx));
+}
+
+#[gpui::test]
 fn switching_single_column_views_keeps_the_reading_position(cx: &mut gpui::TestAppContext) {
     use crate::pii::ui::compare::CompareMode;
     let (app, cx) = crate::document_view_tests::boot(cx);
