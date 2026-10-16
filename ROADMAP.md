@@ -70,6 +70,17 @@ This roadmap tracks work remaining as of 2026-10-16; accepted behavior lives in
    boundary before implementation. Investigate retained editor layout only if
    remaining release-build costs justify it after local fixes; that replacement
    is not committed work. Preserve behavior and lifecycle invariants throughout.
+7. **Reduce Rust build-cache growth.** The main `target/` directory reached
+   approximately 187 GiB on 2026-10-16. Measure disk growth, cold builds and warm
+   rebuilds for representative development and test workflows before changing
+   settings. Evaluate `debug = "line-tables-only"` with incremental compilation
+   retained; document the loss of debugger variable inspection and how to request
+   full debug information. Keep the pinned toolchain, features and compiler flags
+   consistent across build entry points, and document cleanup of build output
+   when temporary worktrees are retired. Evaluate `sccache` separately for shared
+   dependency builds, accounting for its own disk use and incremental/linking
+   limitations. Record measured savings and rebuild-time tradeoffs; preserve
+   release settings and avoid automatic eviction or arbitrary cache caps.
 
 Keep the app and internal crates maintainable through concrete ownership/test
 improvements ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)). Conversion
@@ -104,6 +115,70 @@ and 4.
 5. **Floating controls cover the text being edited.** The "Replace ⌘⌥P" chip sits
    over the line above the selection and the mention bar covers the next lines.
    Place them clear of the selection or the active mention.
+
+## UI/UX backlog (2026-10-16)
+
+Future work from the entity-review and workspace screenshots; these items are
+pending fixes and refinements, not completed behavior.
+
+1. **Center mentions selected in the Replacements panel.** Clicking an entity
+   or mention row should reveal, highlight and focus the corresponding mention
+   near the vertical center of the Markdown editor's visible viewport. Currently
+   it can remain against the top edge, requiring manual scrolling. Account for
+   the mention popup and clamp scrolling at document boundaries so the selected
+   text stays readable and clear of floating controls.
+2. **Make panel-to-editor navigation smooth and prompt.** Animate the scroll to
+   the selected mention with a short transition. Rapid successive selections
+   should move toward the latest target without queued animations or jumps to
+   stale targets; manual scrolling should interrupt the transition. Respect
+   Reduce Motion with immediate positioning.
+3. **Eliminate mention-popup flicker.** Selecting entities or stepping through
+   their mentions in the panel should show one stable popup anchored to the
+   active mention, including while the editor scrolls. Avoid transient dismissal,
+   duplicate popups and intermediate frames at an incorrect position.
+4. **Make the mention popup compact and reversible.** Reduce excess width,
+   padding and spacing while keeping the original, alias, category, Replace
+   checkbox and scope controls readable. Default to the entire selected entity
+   group, with a clear toggle for this mention only. Unchecking Replace must keep
+   the popup open so it can be checked again immediately. After dismissal, kept
+   mentions should retain a subtle underline and remain clickable to reopen the
+   controls and re-enable replacement. Preserve occurrence identity and the chosen
+   scope so re-enabling one mention leaves other kept mentions unchanged; marking
+   intent must retain the existing explicit Apply behavior.
+5. **Separate the mention popup visually from the editor.** Give it a restrained
+   but sufficiently contrasting border in both light and dark themes. Verify the
+   open popup over real document text in each theme so its edge remains distinct
+   without a heavy outline.
+6. **Support the editor font-increase shortcut reliably.** Make Cmd + + on macOS
+   and Ctrl + + on Windows/Linux increase Markdown text size through the same
+   action as the existing zoom button. ADR 0048 already documents Cmd + = / − / 0;
+   verify action routing and accept the plus key, including Shift where required
+   by the keyboard layout, alongside the existing equals-key binding. Retain the
+   current zoom steps and limits.
+7. **Add expand/collapse-all controls to the Replacements panel.** Provide a
+   compact icon control to expand all entity groups or collapse them together,
+   with a clear tooltip and accessible label for the available action. Expanding
+   or collapsing groups must preserve the current selection and replacement
+   decisions.
+8. **Make the notification popup easy to dismiss.** Clicking the bell while its
+   popup is open should close it. Add a close button inside the popup using the
+   same cross icon, size and button styling as other dismissible UI. Closing the
+   popup should preserve notices and their attention state.
+9. **Dismiss Settings by clicking outside.** Clicking the surrounding area
+   outside the Settings window should close it consistently with other overlays;
+   clicks inside Settings must continue to work without dismissing it.
+10. **Add workspace Back and Forward navigation.** Place left-arrow and
+    right-arrow icon buttons immediately to the right of the sidebar
+    expand/collapse button, before the Home label or document title. Keep them
+    available with the sidebar expanded or collapsed. Navigate through visited
+    documents and Home, restore the destination's existing view state, disable
+    unavailable directions, skip closed documents and clear forward history when
+    a new destination is opened after going back. Use consistent icon sizes,
+    tooltips and accessible labels.
+
+Validate these interactions in the live editable UI in both themes, including
+long documents, wrapped mentions, rapid panel selection, kept mentions and
+keyboard navigation; static previews alone do not establish acceptance.
 
 ## Deferred
 
