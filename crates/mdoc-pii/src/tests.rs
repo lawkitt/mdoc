@@ -730,6 +730,13 @@ fn a_scan_proposes_a_bare_surname_but_never_a_first_name_alone() {
             .iter()
             .all(|g| g.original.as_ref() != "Priya")
     );
+    // Titles in any case stay part of the wording; the verb "miss" does not.
+    let source = "Priya Raman signed. MR RAMAN, mr Raman and DR. Raman \
+        did not miss Raman.";
+    let review = ingest_names(source, &["Priya Raman"]);
+    for short in ["MR RAMAN", "mr Raman", "DR. Raman", "Raman"] {
+        assert_eq!(proposed(&review, short).mentions.len(), 1, "{short}");
+    }
     // A surname that is also another person's first name is not proposed.
     let source = "Paul Smith met James Paul. Paul left.";
     let review = ingest_names(source, &["Paul Smith", "James Paul"]);
