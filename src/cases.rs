@@ -5,7 +5,7 @@
 use crate::pii::{Category, restore::ExportedIdentity};
 use aes_gcm::{
     Aes256Gcm, KeyInit,
-    aead::{Aead, AeadCore, OsRng, Payload, rand_core::RngCore},
+    aead::{Aead, Generate, Nonce, Payload},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -103,8 +103,7 @@ pub struct Case {
 }
 impl Case {
     pub fn new(name: String, identities: &[ExportedIdentity], member: Option<PathBuf>) -> Self {
-        let mut id = [0u8; 16];
-        OsRng.fill_bytes(&mut id);
+        let id = <[u8; 16]>::generate();
         let mut case = Self {
             id: id.iter().map(|b| format!("{b:02x}")).collect(),
             name,
@@ -248,7 +247,8 @@ impl Store {
         }
         std::fs::create_dir_all(&self.dir)?;
         let plain = serde_json::to_vec(case)?;
-        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let nonce = Nonce::<Aes256Gcm>::try_generate()
+            .map_err(|_| io::Error::other("Could not generate a nonce"))?;
         let sealed = self
             .cipher
             .encrypt(
@@ -261,7 +261,7 @@ impl Store {
             .map_err(|_| io::Error::other("Could not encrypt the case"))?;
         let mut file = tempfile::NamedTempFile::new_in(&self.dir)?;
         file.write_all(MAGIC)?;
-        file.write_all(&nonce)?;
+        file.write_all(nonce.as_slice())?;
         file.write_all(&sealed)?;
         file.flush()?;
         file.as_file().sync_all()?;
@@ -281,10 +281,12 @@ impl Store {
             .filter(|b| b.len() > NONCE)
             .ok_or("The case file is not a case or is damaged.")?;
         let (nonce, sealed) = body.split_at(NONCE);
+        let nonce = <&Nonce<Aes256Gcm>>::try_from(nonce)
+            .map_err(|_| "The case file is not a case or is damaged.")?;
         let plain = self
             .cipher
             .decrypt(
-                nonce.into(),
+                nonce,
                 Payload {
                     msg: sealed,
                     aad: &Self::aad(id),
@@ -657,9 +659,7 @@ mod key {
 
     #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
     fn fresh() -> [u8; 32] {
-        let mut key = [0u8; 32];
-        OsRng.fill_bytes(&mut key);
-        key
+        <[u8; 32]>::generate()
     }
 
     #[cfg(windows)]

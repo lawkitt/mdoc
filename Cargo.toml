@@ -64,7 +64,7 @@ ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dy
 # Probe the ONNX Runtime before ort sees it (ocr::load_onnx_runtime); ort's own version.
 libloading = "0.9"
 # Saved cases (ADR 0041): AES-256-GCM files, the key held by the OS.
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = { version = "3", features = ["OSX_10_15"] }
