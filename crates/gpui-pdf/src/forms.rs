@@ -2,13 +2,14 @@
 //! form-field appearances *before* hayro parses it, so form PDFs display the
 //! values they carry.
 //!
-//! hayro composites annotation appearance streams (`/AP /N`) but has two gaps
+//! hayro composites annotation appearance streams (`/AP /N`) but had two gaps
 //! this pass fills at the byte level (hayro reads; `lopdf` rewrites):
 //!
 //! 1. **State-dict appearances** — a checkbox/radio stores `/AP /N` as a
 //!    dictionary of states (`/Yes`, `/Off`, …) selected by the widget's `/AS`;
-//!    hayro only draws a *stream* `/N` and silently skips these. The pass
-//!    resolves `/N` to the `/AS`-selected stream.
+//!    hayro before 0.8 only drew a *stream* `/N` and silently skipped these.
+//!    The pass resolves `/N` to the `/AS`-selected stream. hayro 0.8 does
+//!    this itself, so the step is now redundant for rendering (kept as-is).
 //! 2. **Missing appearances** — a text field with a value but no `/AP` (the
 //!    `NeedAppearances` case: the producer left rendering to the viewer)
 //!    draws nothing. The pass synthesizes a simple appearance stream showing
@@ -643,8 +644,9 @@ mod tests {
             ink
         };
 
-        // Checkbox at (20,140)-(60,180) → pixmap rows 240..280.
-        assert_eq!(ink_in(&before, (20, 240, 60, 280)), 0, "checkbox before");
+        // Checkbox at (20,140)-(60,180) → pixmap rows 240..280. hayro ≥ 0.8
+        // resolves state-dict `/AP /N` by `/AS` itself, so it draws before too.
+        assert!(ink_in(&before, (20, 240, 60, 280)) > 50, "checkbox before");
         assert!(ink_in(&after, (20, 240, 60, 280)) > 50, "checkbox after");
         // Merged text field at (20,60)-(220,100) → rows 320..360.
         assert_eq!(ink_in(&before, (20, 320, 220, 360)), 0, "text before");
