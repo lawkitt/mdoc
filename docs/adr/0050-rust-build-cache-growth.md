@@ -46,5 +46,5 @@ Each complete build configuration is about 45 % smaller (cold build 5.0 →
 through manual cleaning. Linux and Windows keep their own `split-debuginfo`
 defaults; CI caches shrink too.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0050-rust-build-cache-growth.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0050-rust-build-cache-growth.md),
 [measurements](../evidence/build-cache/2026-10-16/README.md).

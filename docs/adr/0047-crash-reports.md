@@ -41,5 +41,5 @@ The only new network path is the user's browser opening a GitHub page they
 chose. Crashes without a panic (aborts, signals) are not recorded; that needs
 platform crash handlers.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0047-crash-reports.md),
-[interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/anoni-comparison.md), decision 10.
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0047-crash-reports.md),
+[interview](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/anoni-comparison.md), decision 10.

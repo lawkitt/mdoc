@@ -2,7 +2,7 @@
 
 The README images come from scripted window captures of the released mdoc
 0.1.0-beta.11 (2026-10-16), the same pass as the lawkitt.com/mdoc gallery and
-films. Decisions: [README media v2](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/readme-media-v2.md).
+films. Decisions: [README media v2](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/readme-media-v2.md).
 
 ## What each capture shows
 

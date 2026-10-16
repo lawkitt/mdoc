@@ -88,4 +88,4 @@ structure, and checks the whole document on the main thread on every edit.
 - Dictionary notices live beside the dictionaries and in NOTICE.md;
   THIRD-PARTY-LICENSES covers Rust crates only.
 
-References: [interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/spellcheck.md), [spellcheck baseline](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/spellcheck/README.md).
+References: [interview](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/spellcheck.md), [spellcheck baseline](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/spellcheck/README.md).

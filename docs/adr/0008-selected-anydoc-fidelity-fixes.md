@@ -26,6 +26,6 @@ These recover structure or meaning in formats mdoc already supports without
 expanding into new formats, assets or OCR providers. PDFs go through
 pdf-inspector (ADR 0007).
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0008-selected-anydoc-fidelity-fixes.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0008-selected-anydoc-fidelity-fixes.md),
 [inventory](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/anydoc-upstream-triage.md),
 [verification](../../tests/fixtures/import/anydoc-fidelity-verification.md).

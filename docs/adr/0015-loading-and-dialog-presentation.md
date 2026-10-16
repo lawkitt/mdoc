@@ -27,5 +27,5 @@ Presentation only: processing, explicit activation, cancellation and
 stale-result guards, replacement/Keep/undo semantics, source state and
 provenance are unchanged.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0015-loading-and-dialog-presentation.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0015-loading-and-dialog-presentation.md),
 [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/loading-and-dialogs.md).

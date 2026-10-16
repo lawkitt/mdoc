@@ -48,5 +48,5 @@ Stable aliases, occurrence provenance, tab-lifetime originals (without a case),
 undo/redo, Keep and revert scope, syntax protection, stale-result guards and
 exact Copy Markdown.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0020-direct-replacement-workspace.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0020-direct-replacement-workspace.md),
 [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-direct-interaction.md).

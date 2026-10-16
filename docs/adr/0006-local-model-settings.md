@@ -51,5 +51,5 @@ OCR algorithms stay in the forks (ADR 0001); settings and QA orchestration are
 the app's. Distinct detector engines, category editing and GPU selection are
 deferred.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0006-local-model-settings.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0006-local-model-settings.md),
 [verification](../../tests/fixtures/model-settings/README.md).

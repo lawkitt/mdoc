@@ -108,7 +108,7 @@ that distinction; production needs a tokenizer-aware bound before adoption.
 
 Generate the category/language and fixture tables from raw evidence. The 2026-10-01
 run was removed from the tree (ADR 0052); restore it first with
-`git checkout 5cad017e5a38efe1f009d47f54d1f0d9e2995547 -- docs/evidence/pseudonymization/2026-10-01`:
+`git checkout f368e436cd2d3e70789d51879b9f54f379900e1e -- docs/evidence/pseudonymization/2026-10-01`:
 
 ```sh
 tools/pseudonymization/target/release/mdoc-pseudonymization-qualification summarize \
@@ -154,5 +154,5 @@ policy from pinned commit `68960389525c8f7ae4eb7fc62eb7a242dd9b648c` and compile
 that baseline plus the current app policy in isolated optimized harnesses. It
 uses cached dependencies only and writes raw timings/source hashes under
 `.qualification/restoration/reproduced`. No GPUI/model load occurs in this matrix.
-See the [full report](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
+See the [full report](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
 for geometry/history/storage commands and evidence limits.

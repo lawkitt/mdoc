@@ -19,4 +19,4 @@ Anonymize (shared category markers applied in one step) and Pseudonymize
 - One popup path; marker→alias conversion is deleted, so leftover markers are
   ordinary text.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0022-remove-anonymization-mode.md).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0022-remove-anonymization-mode.md).

@@ -86,4 +86,4 @@ the locked bar. It removes the seeded key and folder afterwards. CI cannot see
 system dialogs. With a profile build, also check: Unlock → one dialog →
 relaunch → no locked bar.
 
-References: [owner checklist for the data protection keychain](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/anoni-comparison.md#owner-checklist-data-protection-keychain).
+References: [owner checklist for the data protection keychain](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/anoni-comparison.md#owner-checklist-data-protection-keychain).

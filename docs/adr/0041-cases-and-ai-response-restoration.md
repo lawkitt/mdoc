@@ -87,5 +87,5 @@ against other people and casual inspection, not against malware running as the
 same user. Pseudonymized text remains personal data (GDPR); the UI never calls a
 case or its output anonymous.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0041-cases-and-ai-response-restoration.md),
-[interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/saved-mappings.md).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0041-cases-and-ai-response-restoration.md),
+[interview](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/saved-mappings.md).

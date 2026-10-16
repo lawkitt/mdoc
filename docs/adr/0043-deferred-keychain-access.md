@@ -47,4 +47,4 @@ that created it, so ad-hoc and dev builds prompt each other.
 7. **Waiting actions queue**: another gated action while one waits runs after
    it; a repeated Save as case for a saved tab does nothing.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0043-deferred-keychain-access.md).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0043-deferred-keychain-access.md).

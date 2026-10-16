@@ -61,5 +61,5 @@ No candidate passed the [initial qualification](../../tests/fixtures/pseudonymiz
 GLiNER2 ships as review assistance, not as a qualified detector. Open
 qualification work is tracked in the ROADMAP.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0002-reviewable-local-pseudonymization.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0002-reviewable-local-pseudonymization.md),
 [inline verification](../../tests/fixtures/pseudonymization/inline-review.md).

@@ -33,5 +33,5 @@ Stable aliases, occurrence provenance, Keep/revert scopes, undo/redo, syntax
 protection, stale-result guards and exact Copy Markdown are unchanged; the suite
 and strict Clippy pass at every commit.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0021-pseudonymization-refactoring.md),
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0021-pseudonymization-refactoring.md),
 [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/pseudonymization-refactoring.md).

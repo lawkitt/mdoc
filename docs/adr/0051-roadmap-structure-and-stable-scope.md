@@ -31,4 +31,4 @@ the ADRs.
   name alone is not proposed. Implementing this amends ADR 0018 in a new ADR.
 - The status recap stays a few lines with links.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0051-roadmap-structure-and-stable-scope.md).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0051-roadmap-structure-and-stable-scope.md).

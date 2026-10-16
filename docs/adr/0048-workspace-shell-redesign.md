@@ -107,6 +107,6 @@ The toolbar and the native title bar are gone; their actions live in the
 header, ⋯, the palette and the menu bar. Drawn caption buttons and client-side
 decorations compile on Windows and Linux but were not run there.
 
-References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/adr/0048-workspace-shell-redesign.md),
-[interview](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/anoni-ui-redesign.md),
-[README media review](https://github.com/lawkitt/mdoc/blob/5cad017e5a38efe1f009d47f54d1f0d9e2995547/docs/design/readme-media-v2.md) (decisions 9 and 15).
+References: [full text before ADR 0052](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/adr/0048-workspace-shell-redesign.md),
+[interview](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/anoni-ui-redesign.md),
+[README media review](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/readme-media-v2.md) (decisions 9 and 15).
