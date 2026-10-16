@@ -1,0 +1,131 @@
+# debug profile, Apple M4 Mac16,13 / 24 GiB, macOS 15.7.7 (24G720).
+# Filtered metric lines and outcomes; serial run, ordinary desktop session.
+# Command: just perf (exit 0; all 12 checks passed).
+=== mdoc :: host_performance_matrix
+test perf_tests::host_performance_matrix ... HOST_PERF ordinary bytes=1984 open_ms=880.146 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF ordinary scroll median_ms=11.217 p95_ms=11.566
+HOST_PERF ordinary typing median_ms=11.512 p95_ms=17.322
+HOST_PERF ordinary search_burst_and_paint_ms=137.816
+HOST_PERF ordinary highlight_navigation median_ms=12.307 p95_ms=12.325
+HOST_PERF contract bytes=69871 open_ms=75.916 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF contract scroll median_ms=26.347 p95_ms=29.629
+HOST_PERF contract typing median_ms=24.905 p95_ms=25.044
+HOST_PERF contract search_burst_and_paint_ms=447.589
+HOST_PERF contract highlight_navigation median_ms=25.275 p95_ms=25.352
+HOST_PERF legal_opinion bytes=115662 open_ms=183.948 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF legal_opinion scroll median_ms=36.633 p95_ms=44.543
+HOST_PERF legal_opinion typing median_ms=36.402 p95_ms=36.928
+HOST_PERF legal_opinion search_burst_and_paint_ms=1435.916
+HOST_PERF legal_opinion highlight_navigation median_ms=17.586 p95_ms=17.805
+HOST_PERF large bytes=63488 open_ms=1267.503 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF large scroll median_ms=186.753 p95_ms=193.832
+HOST_PERF large typing median_ms=185.025 p95_ms=189.772
+HOST_PERF large search_burst_and_paint_ms=2064.894
+HOST_PERF large highlight_navigation median_ms=184.629 p95_ms=187.268
+HOST_PERF background bytes=74400 open_ms=1327.281 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF background scroll median_ms=212.995 p95_ms=217.358
+HOST_PERF background typing median_ms=214.419 p95_ms=218.646
+HOST_PERF background search_burst_and_paint_ms=3350.731
+HOST_PERF background highlight_navigation median_ms=214.946 p95_ms=218.274
+HOST_PERF long_paragraph bytes=51000 open_ms=83.776 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF long_paragraph scroll median_ms=25.455 p95_ms=30.149
+HOST_PERF long_paragraph typing median_ms=32.696 p95_ms=32.960
+HOST_PERF long_paragraph search_burst_and_paint_ms=470.891
+HOST_PERF long_paragraph highlight_navigation median_ms=32.963 p95_ms=33.078
+HOST_PERF tables bytes=12096 open_ms=56.443 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF tables scroll median_ms=29.352 p95_ms=31.377
+HOST_PERF tables typing median_ms=27.264 p95_ms=29.184
+HOST_PERF tables search_burst_and_paint_ms=367.897
+HOST_PERF tables highlight_navigation median_ms=31.726 p95_ms=32.184
+HOST_PERF dense_matches bytes=60008 open_ms=62.724 profile=debug pane_width=1074 editor_width=Some(760.0)
+HOST_PERF dense_matches scroll median_ms=28.105 p95_ms=28.306
+HOST_PERF dense_matches typing median_ms=23.591 p95_ms=34.718
+HOST_PERF dense_matches search_burst_and_paint_ms=859.311
+HOST_PERF dense_matches highlight_navigation median_ms=62.226 p95_ms=77.669
+HOST_PERF switch_cycle=0 open_preview_ms=1630.524
+HOST_PERF switch_cycle=0 rss_kib=Some(241760)
+HOST_PERF switch_cycle=1 open_preview_ms=1743.231
+HOST_PERF switch_cycle=1 rss_kib=Some(252240)
+HOST_PERF switch_cycle=2 open_preview_ms=1648.591
+HOST_PERF switch_cycle=2 rss_kib=Some(254256)
+HOST_PERF switch_cycle=3 open_preview_ms=1763.343
+HOST_PERF switch_cycle=3 rss_kib=Some(256000)
+HOST_PERF switch_cycle=4 open_preview_ms=1637.234
+HOST_PERF switch_cycle=4 rss_kib=Some(258048)
+HOST_PERF switch_cycle=5 open_preview_ms=1759.165
+HOST_PERF switch_cycle=5 rss_kib=Some(259040)
+HOST_PERF switch_cycle=6 open_preview_ms=1660.356
+HOST_PERF switch_cycle=6 rss_kib=Some(259040)
+HOST_PERF switch_cycle=7 open_preview_ms=1728.854
+HOST_PERF switch_cycle=7 rss_kib=Some(260624)
+HOST_PERF switch_cycle=8 open_preview_ms=1632.099
+HOST_PERF switch_cycle=8 rss_kib=Some(262416)
+HOST_PERF switch_cycle=9 open_preview_ms=1730.876
+HOST_PERF switch_cycle=9 rss_kib=Some(267984)
+HOST_PERF switch_cycle=10 open_preview_ms=1615.410
+HOST_PERF switch_cycle=10 rss_kib=Some(269552)
+HOST_PERF switch_cycle=11 open_preview_ms=1789.930
+HOST_PERF switch_cycle=11 rss_kib=Some(277632)
+=== mdoc :: tabs_host_performance
+test workspace::tests::tabs_host_performance ... TABS_PERF restore_24_tabs_ms=1160.615
+TABS_PERF switch_handler median_ms=0.014 p95_ms=0.019
+TABS_PERF switch_with_implicit_test_frame median_ms=13.089 p95_ms=117.748
+TABS_PERF switch_frame median_ms=12.719 p95_ms=120.176
+TABS_PERF long_markdown_frame median_ms=118.494 p95_ms=122.592
+TABS_PERF short_markdown_with_preview_frame median_ms=12.530 p95_ms=12.954
+TABS_PERF unchanged_long_markdown_frame median_ms=115.942 p95_ms=117.973
+TABS_PERF unchanged_long_editor_width=Some(760.0)
+TABS_PERF metadata_snapshot_24_tabs median_ms=0.009 p95_ms=0.010
+TABS_PERF before_close_cycles_rss_kib=Some(276864)
+TABS_PERF close_cycle=0 rss_kib=Some(280624)
+TABS_PERF close_cycle=1 rss_kib=Some(305664)
+TABS_PERF close_cycle=2 rss_kib=Some(322896)
+TABS_PERF close_cycle=3 rss_kib=Some(332544)
+TABS_PERF close_cycle=4 rss_kib=Some(337840)
+TABS_PERF close_cycles=5 all_viewers_and_docx_files_released=true
+=== mdoc :: review_host_performance
+test workspace::tests::review_host_performance ... REVIEW_PERF phase=plain_layout bytes=12000 editor_width=Some(714.0)
+HOST_PERF review_plain_layout median_ms=10.035 p95_ms=10.212
+REVIEW_PERF phase=proposed_panel bytes=12000 entities=16 mentions=160 editor_width=Some(714.0)
+HOST_PERF review_proposed_panel median_ms=15.321 p95_ms=15.488
+REVIEW_PERF phase=applied_panel bytes=12000 entities=16 mentions=160 editor_width=Some(714.0)
+HOST_PERF review_applied_panel median_ms=17.429 p95_ms=17.533
+REVIEW_PERF phase=before_after bytes=12000 entities=16 mentions=160 editor_width=Some(714.0)
+HOST_PERF review_before_after median_ms=18.960 p95_ms=19.112
+REVIEW_PERF case_fanout_3_members_ms=224.874 rss_kib=Some(86944)
+=== mdoc :: expanded_panel_projection_performance
+test pii::ui::mapping::tests::expanded_panel_projection_performance ... PANEL_PERF bytes=2097152 mentions=20000 entities=64 cold_ms=13.764 warm_median_ms=0.008292
+=== mdoc :: pii_annotation_geometry_matrix
+HOST_PERF pii_prose_unannotated median_ms=1152.960 p95_ms=1197.396
+HOST_PERF pii_prose_annotated median_ms=1151.336 p95_ms=1161.617
+HOST_PERF pii_long_line_unannotated median_ms=1013.333 p95_ms=1021.627
+HOST_PERF pii_long_line_annotated median_ms=1016.840 p95_ms=1051.645
+HOST_PERF pii_hidden_unannotated median_ms=1026.152 p95_ms=1032.400
+HOST_PERF pii_hidden_annotated median_ms=1023.041 p95_ms=1047.439
+HOST_PERF pii_utf8_table_unannotated median_ms=1335.776 p95_ms=1377.059
+HOST_PERF pii_utf8_table_annotated median_ms=1329.964 p95_ms=1340.909
+HOST_PERF pii_dense_hidden_wrapped_unannotated median_ms=985.814 p95_ms=995.331
+HOST_PERF pii_dense_hidden_wrapped_annotated median_ms=991.746 p95_ms=997.350
+=== mdoc :: large_markdown_scroll_budget
+test document_view_tests::large_markdown_scroll_budget ... MD_PERF file=coverage.docx state=markdown_only bytes=15780 lines=323 median_ms=8.79 p95_ms=9.39 editor_width=Some(760.0)
+MD_PERF file=coverage.docx state=markdown_only typing_p95_ms=23.73
+MD_PERF file=coverage.docx state=preview_open bytes=15780 lines=323 median_ms=10.88 p95_ms=11.46 editor_width=Some(483.0)
+MD_PERF file=coverage.docx state=preview_open typing_p95_ms=20.84
+MD_PERF file=coverage.docx state=preview_closed bytes=15780 lines=323 median_ms=9.11 p95_ms=10.01 editor_width=Some(760.0)
+MD_PERF file=coverage.docx state=preview_closed typing_p95_ms=17.21
+MD_PERF file=legal-opinion.docx state=markdown_only bytes=115662 lines=790 median_ms=18.21 p95_ms=24.38 editor_width=Some(760.0)
+MD_PERF file=legal-opinion.docx state=markdown_only typing_p95_ms=39.43
+MD_PERF file=legal-opinion.docx state=preview_open bytes=115662 lines=790 median_ms=22.00 p95_ms=27.45 editor_width=Some(483.0)
+MD_PERF file=legal-opinion.docx state=preview_open typing_p95_ms=47.38
+MD_PERF file=legal-opinion.docx state=preview_closed bytes=115662 lines=790 median_ms=18.30 p95_ms=24.14 editor_width=Some(760.0)
+MD_PERF file=legal-opinion.docx state=preview_closed typing_p95_ms=39.03
+=== mdoc-spell :: spelling_cache_performance
+test tests::spelling_cache_performance ... SPELL_PERF repeated=true bytes=490000 cold_ms=4.823 warm_median_ms=4.777
+SPELL_PERF repeated=false bytes=538890 cold_ms=184.230 warm_median_ms=8.389
+=== mdoc-editor :: search_performance_matrix
+=== gpui-pdf :: long_document_scroll_budget
+test perf_tests::long_document_scroll_budget ... PDF_PERF file=reference.pdf pages=1 initial_ms=27.61 page_h=1171.67 frame_median_ms=0.94 frame_p95_ms=0.94 settle_p95_ms=2.09 raster_requests=1
+PDF_PERF file=synthetic-64-pages.pdf pages=64 initial_ms=34.62 page_h=1071.18 frame_median_ms=3.37 frame_p95_ms=3.42 settle_p95_ms=11.90 raster_requests=126
+=== mdoc-pii :: identity_policy_history_shares_indices_and_prunes_states
+=== mdoc-pii :: utf8_matcher_storage_matrix
+=== mdoc-pii :: metadata_history_stress_retains_shared_originals_and_prunes_reversible_deltas

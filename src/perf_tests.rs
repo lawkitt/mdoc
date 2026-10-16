@@ -27,6 +27,7 @@ fn budget(name: &str) -> Option<[f64; 4]> {
     match name {
         "ordinary" => Some([12., 12., 140., 13.]),
         "contract" => Some([31., 30., 540., 30.]),
+        "legal_opinion" => Some([45., 44., 1730., 22.]),
         "large" => Some([320., 320., 3400., 310.]),
         "background" => Some([380., 380., 5700., 370.]),
         "long_paragraph" => Some([50., 65., 800., 62.]),
@@ -75,6 +76,14 @@ pub(crate) fn contract_markdown() -> String {
     out
 }
 
+/// The scrubbed 37-page legal opinion (`tests/fixtures/docx-preview/README.md`),
+/// as the DOCX importer produces it.
+pub(crate) fn legal_opinion_markdown() -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/docx-preview/legal-opinion.docx");
+    import::convert(&path).unwrap().markdown
+}
+
 pub(super) fn rss_kib() -> Option<u64> {
     // Optional observation only: allocators and global text/GPU caches retain
     // memory, so RSS is not an assertion about document-owned resource release.
@@ -108,6 +117,7 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
     let mut workloads = vec![
         ("ordinary", mixed.repeat(16)),
         ("contract", contract_markdown()),
+        ("legal_opinion", legal_opinion_markdown()),
         ("large", mixed.repeat(512)),
         ("background", mixed.repeat(600)),
         ("long_paragraph", "alpha beta words ".repeat(3000)),
