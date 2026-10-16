@@ -883,6 +883,13 @@ impl Workspace {
     }
     fn case_write_failed(&mut self, case: Case, error: String, cx: &mut Context<Self>) {
         if !self.cases.cases.iter().any(|current| current.id == case.id) {
+            // Removed while writing: nothing to retry, but release its close
+            // and keep the rest of the queue moving.
+            self.cases.failed.remove(&case.id);
+            if let Some(tab) = self.cases.close_after.remove(&case.id) {
+                self.cases.asked.remove(&tab);
+            }
+            self.pump_cases(cx);
             return;
         }
         self.notice = Some(format!("Could not save the case: {error}"));

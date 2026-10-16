@@ -3976,6 +3976,28 @@ fn abandoned_quit_does_not_block_later_case_saves(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn failed_write_of_a_removed_case_keeps_the_queue_moving(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, removed) = case_quit_fixture(cx, dir.path());
+    let other = crate::cases::Case::new("Other".into(), &[], None);
+    let good = dir.path().join("good-store");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.cases.cases.push(other.clone());
+        // The removed case's write is in flight against the blocked store;
+        // the other case queues behind it and targets a writable one.
+        tabs.toggle_case_category(&removed, crate::pii::Category::Person, cx);
+        tabs.use_case_store(crate::cases::Store::with_key(good.clone(), &[3; 32]));
+        tabs.toggle_case_category(&other.id, crate::pii::Category::Person, cx);
+        tabs.forget_case(&removed, window, cx);
+    });
+    cx.run_until_parked();
+    let saved = crate::cases::Store::with_key(good, &[3; 32])
+        .load(&other.id)
+        .unwrap();
+    assert_eq!(saved.skip.len(), 1);
+}
+
+#[gpui::test]
 fn case_quit_checks_edits_made_while_final_saves_are_pending(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
