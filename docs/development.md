@@ -81,7 +81,10 @@ problem; conversion and OCR algorithm changes belong in the dependency forks.
 
 Cargo.toml and Cargo.lock define dependency revisions; `src/ocr.rs` defines
 runtime URLs/digests, and the pinned pdf-inspector manifest defines OCR model
-artifacts. Avoid copying these into another configuration. AnyDoc supplies
+artifacts. Avoid copying these into another configuration. Cargo.lock must be
+what cargo resolves from Cargo.toml; `just lint` fails otherwise. Change a
+dependency's requirement in Cargo.toml, never the lockfile alone
+([ADR 0053](adr/0053-cargo-lock-matches-manifest.md)). AnyDoc supplies
 non-PDF conversion; pdf-inspector handles PDFs directly.
 
 For fork updates, test the fork first, review lockfile/transitive changes, then
