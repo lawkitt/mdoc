@@ -3085,12 +3085,19 @@ fn shape_inline_images(
 /// The layout needs only diagnostic coverage, not individual spelling words.
 /// Merge it once so even overlapping input ranges have monotonic ends; each
 /// line can then find its intersecting ranges without scanning the document.
+/// A range that doesn't fit `content` on char boundaries is stale (the host
+/// hasn't recomputed it yet) and is skipped: a text run cut inside a UTF-8
+/// character panics in the platform shaper.
 struct DiagnosticRanges(Vec<Range<usize>>);
 impl DiagnosticRanges {
-    fn new(diagnostics: &[Diagnostic]) -> Self {
+    fn new(content: &str, diagnostics: &[Diagnostic]) -> Self {
         let mut ranges: Vec<_> = diagnostics
             .iter()
-            .filter(|d| !d.range.is_empty())
+            .filter(|d| {
+                !d.range.is_empty()
+                    && content.is_char_boundary(d.range.start)
+                    && content.is_char_boundary(d.range.end)
+            })
             .map(|d| d.range.clone())
             .collect();
         if !ranges.is_sorted_by_key(|r| (r.start, r.end)) {
@@ -3175,7 +3182,7 @@ fn shape_document(
     folded_headings: &std::collections::HashSet<String>,
 ) -> ShapedDoc {
     let mut out = ShapedDoc::default();
-    let diagnostics = DiagnosticRanges::new(diagnostics);
+    let diagnostics = DiagnosticRanges::new(content, diagnostics);
     let lines: Vec<&str> = content.split('\n').collect();
     // Ordered items paint their computed CommonMark position, not their
     // literal source digits (the reader renumbers the same way).
@@ -4728,7 +4735,7 @@ mod diagnostic_range_tests {
             .into_iter()
             .map(|range| Diagnostic { range })
             .collect();
-        let ranges = DiagnosticRanges::new(&diagnostics);
+        let ranges = DiagnosticRanges::new(&"x".repeat(50), &diagnostics);
         assert_eq!(ranges.0, vec![2..16, 40..44, 45..50]);
         let clipped: Vec<_> = ranges
             .for_line(10, 42)
@@ -4751,13 +4758,24 @@ mod diagnostic_range_tests {
                 range: i * 20..i * 20 + 5,
             })
             .collect();
-        let ranges = DiagnosticRanges::new(&diagnostics);
+        let content = "x".repeat(400_000);
+        let ranges = DiagnosticRanges::new(&content, &diagnostics);
         let visits: usize = (0..20_000)
             .map(|i| ranges.intersecting(i * 20..i * 20 + 19).len())
             .sum();
         assert_eq!(visits, 20_000, "not 400 million candidate visits");
-        let spanning = DiagnosticRanges::new(&[Diagnostic { range: 0..400_000 }]);
+        let spanning = DiagnosticRanges::new(&content, &[Diagnostic { range: 0..400_000 }]);
         assert_eq!(spanning.for_line(20, 39)[0].range, 0..19);
+    }
+    #[test]
+    fn stale_ranges_inside_a_character_or_past_the_end_are_skipped() {
+        // "пример" is 12 bytes of 2-byte Cyrillic: 3 and 5 fall inside letters.
+        let diagnostics: Vec<_> = [0..4, 3..6, 2..5, 8..20]
+            .into_iter()
+            .map(|range| Diagnostic { range })
+            .collect();
+        let ranges = DiagnosticRanges::new("пример", &diagnostics);
+        assert_eq!(ranges.0, vec![0..4]);
     }
 }
 
