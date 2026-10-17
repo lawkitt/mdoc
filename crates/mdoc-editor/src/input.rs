@@ -703,6 +703,12 @@ impl EditorState {
     }
 
     pub(super) fn restore(&mut self, s: Snapshot) {
+        // A snapshot swaps the whole text, so diagnostics would keep offsets
+        // into the text being replaced — after undoing a batch of replacements
+        // they'd land inside multi-byte characters. Remap them through the one
+        // region that differs (common prefix/suffix kept).
+        let (edited, new_len) = changed_region(&self.content, &s.content);
+        self.remap_diagnostics(&edited, new_len);
         self.content_gen += 1;
         self.content = s.content;
         self.history_id = s.history_id;
@@ -1033,10 +1039,74 @@ impl EntityInputHandler for EditorState {
     }
 }
 
+/// The byte range of `old` that differs from `new` (after the longest common
+/// prefix and suffix, both on char boundaries) and that region's length in
+/// `new`, for remapping offsets through a whole-text swap.
+fn changed_region(old: &str, new: &str) -> (Range<usize>, usize) {
+    let (a, b) = (old.as_bytes(), new.as_bytes());
+    let mut pre = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+    while !(old.is_char_boundary(pre) && new.is_char_boundary(pre)) {
+        pre -= 1;
+    }
+    let max_suf = a.len().min(b.len()) - pre;
+    let mut suf = a
+        .iter()
+        .rev()
+        .zip(b.iter().rev())
+        .take(max_suf)
+        .take_while(|(x, y)| x == y)
+        .count();
+    while !(old.is_char_boundary(a.len() - suf) && new.is_char_boundary(b.len() - suf)) {
+        suf -= 1;
+    }
+    (pre..a.len() - suf, b.len() - suf - pre)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::SelectAll;
+
+    #[test]
+    fn changed_region_keeps_common_ends_on_char_boundaries() {
+        assert_eq!(changed_region("abc", "abc"), (3..3, 0));
+        assert_eq!(changed_region("a Иван b", "a [P1] b"), (2..10, 4));
+        // "д" and "ж" share their first UTF-8 byte; the region can't start mid-letter.
+        assert_eq!(changed_region("ад", "аж"), (2..4, 2));
+        assert_eq!(changed_region("ab", "aab"), (1..1, 1));
+    }
+
+    #[gpui::test]
+    fn undoing_replacements_remaps_diagnostics_off_character_middles(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update_in(cx, |e, window, cx| {
+            let text = "Иван Петров и Мария Сидорова пишут";
+            e.set_text(text, cx);
+            let word = text.find("пишут").unwrap();
+            e.set_diagnostics(
+                vec![crate::Diagnostic {
+                    range: word..text.len(),
+                }],
+                cx,
+            );
+            let ivan = 0..text.find(' ').unwrap();
+            let maria = text.find("Мария").unwrap()..text.find(" пишут").unwrap();
+            assert!(e.replace_ranges(
+                e.revision(),
+                &[(ivan, "[P1]".into()), (maria, "[P2]".into())],
+                cx,
+            ));
+            e.undo(&Undo, window, cx);
+            assert_eq!(e.text(), text);
+            let d = &e.diagnostics()[0].range;
+            assert_eq!(&text[d.clone()], "пишут");
+            e.redo(&Redo, window, cx);
+            let d = &e.diagnostics()[0].range;
+            assert_eq!(&e.text()[d.clone()], "пишут");
+        });
+    }
 
     #[gpui::test]
     fn math_is_ordinary_text_for_arrows_and_deletion(cx: &mut gpui::TestAppContext) {
