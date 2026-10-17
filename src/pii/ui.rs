@@ -133,11 +133,16 @@ impl ReviewUi {
         self.job.is_some()
     }
     /// Open a popup, remembering where focus returns when it closes.
+    /// Retargeting an open popup (stepping, a click on another mention, a
+    /// chooser pick) keeps the focus it returns to: the focus at that moment
+    /// is the popup's own.
     fn show_popup(&mut self, popup: Popup, previous_focus: Option<FocusHandle>) {
         self.enter_applies = false;
         self.popup_anchor.set(None);
+        if self.popup.is_none() {
+            self.popup_previous = previous_focus;
+        }
         self.popup = Some(popup);
-        self.popup_previous = previous_focus;
     }
     /// Re-show the selection popup after an edit, keeping the original return focus.
     fn keep_selection_popup(&mut self) {
