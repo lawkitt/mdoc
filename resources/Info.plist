@@ -32,9 +32,9 @@
     <string>io.github.lawkitt.mdoc</string>
 
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0-beta.12</string>
+    <string>0.1.0-beta.13</string>
     <key>CFBundleVersion</key>
-    <string>0.1.0-beta.12</string>
+    <string>0.1.0-beta.13</string>
 
     <key>CFBundleIconFile</key>
     <string>icon</string>
