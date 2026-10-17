@@ -305,6 +305,9 @@ impl Workspace {
             style::ThemeChoice::Light => ui::Icon::Sun,
             style::ThemeChoice::Dark => ui::Icon::Moon,
         };
+        let card = self.update_card(cx);
+        // The card carries its own dot; Settings marks an update only without it.
+        let dot = card.is_none() && crate::updater::state(cx).available.is_some();
         div()
             .flex()
             .flex_col()
@@ -313,7 +316,7 @@ impl Workspace {
             .pb_2()
             .pt_1()
             .flex_shrink_0()
-            .children(self.update_card(cx))
+            .children(card)
             .child(
                 div()
                     .flex()
@@ -323,7 +326,7 @@ impl Workspace {
                         nav_row("Settings", ui::Icon::Settings, "Settings", theme, false)
                             .track_focus(&self.settings_focus)
                             .flex_1()
-                            .when(crate::updater::state(cx).available.is_some(), |v| {
+                            .when(dot, |v| {
                                 v.child(
                                     div()
                                         .when(cfg!(test), |v| {
@@ -499,10 +502,7 @@ impl Workspace {
         let accent = theme.search_accent();
         let version = banner.version.clone();
         let (title, detail) = match banner.kind {
-            BannerKind::Available => (
-                "Update available".to_string(),
-                format!("v{version} · update"),
-            ),
+            BannerKind::Available => ("Update available".to_string(), format!("v{version}")),
             BannerKind::Downloading => (
                 "Downloading update".to_string(),
                 format!("v{version} · {}%", state.percent().unwrap_or(0)),
