@@ -643,6 +643,11 @@ fn update_banner_opens_settings_and_dismisses_per_version(cx: &mut TestAppContex
             ..found
         })
     });
+    draw(cx);
+    assert!(
+        cx.debug_bounds("update-dot").is_none(),
+        "the banner carries the only dot"
+    );
     click_toolbar(cx, "update-banner");
     cx.update(|_, cx| assert!(tabs.read(cx).settings.read(cx).open));
     tabs.update_in(cx, |tabs, window, cx| {
@@ -652,6 +657,10 @@ fn update_banner_opens_settings_and_dismisses_per_version(cx: &mut TestAppContex
     click_toolbar(cx, "dismiss-update-banner");
     draw(cx);
     assert!(cx.debug_bounds("update-banner").is_none());
+    assert!(
+        cx.debug_bounds("update-dot").is_some(),
+        "Settings marks the update once the banner is gone"
+    );
     cx.update(|_, cx| {
         assert!(
             !tabs.read(cx).settings.read(cx).open,
