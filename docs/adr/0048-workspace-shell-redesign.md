@@ -7,6 +7,8 @@ Status: Accepted, 2026-10-15. Supersedes the toolbar of
 [ADR 0032](0032-replacement-popup-redesign.md), the panel chrome and scope keys
 of [ADR 0033](0033-replacements-panel-redesign.md), and the "no per-category
 colours" of [ADR 0046](0046-workspace-polish-from-anoni-review.md).
+Amended by [ADR 0055](0055-stable-compact-mention-popup.md): popup width,
+placement, scope and arrow keys.
 
 ## Problem
 
@@ -70,15 +72,15 @@ step, but as a one-document wizard that hides editing.
    category underline; applied ones keep the blue chip (ADR 0032). Hover shows a
    tooltip (alias, category, "Click to edit"); a click places the caret, selects
    the panel row and opens the **popup**, holding the mention bar (☑ Replace ·
-   original → alias · category ▾ · scope) with ‹ n of N › and × at the row's
-   end. One width (up to 720 px), just below its word (above only without room).
+   original → alias · category ▾ · scope · ‹ n of N › · ×). Size, placement,
+   scopes and stability: ADR 0055.
    Panel entity clicks open the group and the popup on its first mention (a
    second click folds both); mention rows open the popup on that mention.
 8. **Keys.** Panel: ↑/↓, Space toggle, →/← expand, Enter jump, ⌫ Keep, ⌥↑/↓
    keyboard move. Popup: Enter applies this mention, Space unticks Replace in
-   scope, ⌫ / ⌘⌫ / ⇧⌘⌫ keep this / same wording / all. ⌘↩ applies everything,
-   everywhere; ⌘Z takes an applied mention back to proposed. ADR 0033's ⌘Enter /
-   ⇧⌘Enter scopes are gone.
+   scope, ←/→ and ↑/↓ step mentions (ADR 0055), ⌫ / ⌘⌫ / ⇧⌘⌫ keep this / same
+   wording / all. ⌘↩ applies everything, everywhere; ⌘Z takes an applied
+   mention back to proposed. ADR 0033's ⌘Enter / ⇧⌘Enter scopes are gone.
 9. **Reading column** centred, 760 px at 100%. **Zoom** scales the Markdown
    column's text, 50–200% in 5% steps (⌘= / ⌘− / ⌘0), per document, not saved.
 10. **View pill**: zoom − 100% + and, once replacements are applied, Edit ·

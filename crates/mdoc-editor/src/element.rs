@@ -1428,6 +1428,23 @@ impl Element for EditorElement {
                             quad.border_widths = Edges::all(px(1.));
                             quad.border_color = border;
                         }
+                    } else if let (Some(underline), true) =
+                        (annotation.underline, annotation.dotted)
+                    {
+                        // A quiet marker: 1 px dots at the glyphs' foot, no band.
+                        // Each row's bounds still count for hit-testing and anchors.
+                        for quad in &quads {
+                            let b = quad.bounds;
+                            let y = b.bottom() - (b.size.height * 0.12).min(px(3.)) - px(1.);
+                            let mut x = b.left();
+                            while x + px(1.) <= b.right() {
+                                annotations.push(gpui::fill(
+                                    Bounds::new(point(x, y), size(px(1.5), px(1.))),
+                                    underline,
+                                ));
+                                x += px(3.);
+                            }
+                        }
                     } else if let Some(underline) = annotation.underline {
                         // A tinted band with a 2 px underline at the glyphs' foot.
                         for quad in &mut quads {

@@ -362,6 +362,11 @@ fn owner_picker_click_links_without_merging_identities(cx: &mut gpui::TestAppCon
         });
         cx.run_until_parked();
         cx.update(|window, cx| window.draw(cx).clear(cx));
+        // Ownership lives in the category menu (ADR 0055).
+        let category = cx.debug_bounds("direct-category").unwrap().center();
+        cx.simulate_click(category, Default::default());
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         let owner = cx.debug_bounds("direct-owner").unwrap().center();
         cx.simulate_click(owner, Default::default());
         cx.run_until_parked();
@@ -699,6 +704,7 @@ fn same_wording_links_preserve_detached_homonyms_before_and_after_apply(
         assert!(app.pii.popup.is_some());
         assert_eq!(app.scoped_ranges(Scope::Wording).len(), 2);
         let anchor = app.active_replacement_range().unwrap().start;
+        app.pii.mapping.set_scope(Scope::Wording);
         app.separate_with_new_alias(cx);
         assert_eq!(app.active_replacement_range().unwrap().start, anchor);
         assert_eq!(
@@ -896,7 +902,12 @@ fn popup_apply_undo_and_keep_follow_scope_and_stay_on_the_mention(cx: &mut gpui:
             "Павлова М.С. · Павлова М.С. · marina@example.invalid"
         );
         assert_eq!(app.pii.review.remaining(), 1);
-        assert!(app.pii.popup.is_none());
+        // The popup stays on the mention, now kept (ADR 0055).
+        assert!(app.pii.popup.is_some() && app.active_is_kept());
+        assert_eq!(
+            app.active_replacement_range(),
+            Some(0.."Павлова М.С.".len())
+        );
         let history = app.editor.read(cx).history_id();
         assert_eq!(app.pii.mapping.kept_at(history), Some(2));
     });
@@ -1809,4 +1820,175 @@ fn expanded_panel_projection_performance(cx: &mut gpui::TestAppContext) {
             warm[50]
         );
     });
+}
+
+/// Propose every "Anna" in `source` as one person.
+fn seed_anna(app: &mut DocumentView, source: &str, cx: &mut Context<DocumentView>) -> Vec<u64> {
+    app.editor.update(cx, |e, cx| e.set_text(source, cx));
+    app.pii.review = Default::default();
+    app.pii.reviewing = true;
+    let detections = source
+        .match_indices("Anna")
+        .map(|(at, text)| pii::Detection {
+            range: at..at + text.len(),
+            category: Category::Person,
+            score: 0.9,
+            recognizer: pii::Recognizer::Model,
+        })
+        .collect();
+    app.pii.review.ingest(source, detections).unwrap();
+    app.pii.mapping.begin_review();
+    app.review_changed(cx);
+    let mut ids: Vec<_> = app
+        .pii
+        .review
+        .candidates()
+        .iter()
+        .map(|c| (c.range.start, c.id))
+        .collect();
+    ids.sort();
+    ids.into_iter().map(|(_, id)| id).collect()
+}
+
+fn draw_frames(cx: &mut gpui::VisualTestContext) {
+    for _ in 0..3 {
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+    }
+}
+
+#[gpui::test]
+fn popup_untick_stays_open_and_arrows_and_retick_follow_the_scope(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Anna met Bob. Anna left early. Then Anna came back.";
+    let starts: Vec<_> = source.match_indices("Anna").map(|(at, _)| at).collect();
+    app.update_in(cx, |app, window, cx| {
+        let ids = seed_anna(app, source, cx);
+        app.activate_annotation(ids[0], window, cx);
+        // All, the whole entity, is the default scope (ADR 0055).
+        assert!(app.pii.mapping.scope() == Scope::Entity);
+        app.toggle_replace(window, cx);
+        assert_eq!(app.pii.review.remaining(), 0);
+        assert_eq!(app.kept_entries().len(), 3);
+        assert!(app.pii.popup.is_some() && app.active_is_kept());
+        assert_eq!(app.active_replacement_range().unwrap().start, starts[0]);
+        assert!(app.pii.focus.is_focused(window));
+    });
+    draw_frames(cx);
+    // Kept originals keep a clickable marker in the text.
+    app.update(cx, |app, cx| {
+        for start in &starts {
+            let marker = KEPT_ID | *start as u64;
+            assert!(app.editor.read(cx).annotation_bounds(marker).is_some());
+        }
+    });
+    // → steps through the entity's mentions, kept ones included; ⌘→ ends.
+    cx.simulate_keystrokes("right");
+    cx.run_until_parked();
+    app.update(cx, |app, _| {
+        assert_eq!(app.active_replacement_range().unwrap().start, starts[1]);
+        assert!(app.active_is_kept());
+    });
+    cx.simulate_keystrokes("secondary-right");
+    cx.run_until_parked();
+    app.update(cx, |app, _| {
+        assert_eq!(app.active_replacement_range().unwrap().start, starts[2])
+    });
+    // ↑ / ↓ step like ← / →.
+    cx.simulate_keystrokes("up");
+    cx.run_until_parked();
+    app.update(cx, |app, _| {
+        assert_eq!(app.active_replacement_range().unwrap().start, starts[1])
+    });
+    cx.simulate_keystrokes("down");
+    cx.run_until_parked();
+    cx.simulate_keystrokes("left");
+    cx.run_until_parked();
+    // Ticking with This one proposes only this mention again.
+    app.update_in(cx, |app, window, cx| {
+        assert_eq!(app.active_replacement_range().unwrap().start, starts[1]);
+        app.pii.mapping.set_scope(Scope::Mention);
+        app.toggle_replace(window, cx);
+        assert_eq!(app.pii.review.remaining(), 1);
+        assert_eq!(app.kept_entries().len(), 2);
+        assert!(app.pii.popup.is_some() && !app.active_is_kept());
+        assert_eq!(app.active_replacement_range().unwrap().start, starts[1]);
+        // The chosen scope stays while stepping within the entity.
+        app.step_identity_occurrence(Step::Next, window, cx);
+        assert!(app.pii.mapping.scope() == Scope::Mention);
+        app.step_identity_occurrence(Step::Previous, window, cx);
+    });
+    // Undo from the popup takes it back to kept, and the popup follows.
+    cx.simulate_keystrokes("secondary-z");
+    cx.run_until_parked();
+    app.update(cx, |app, _| {
+        assert_eq!(app.kept_entries().len(), 3);
+        assert!(app.pii.popup.is_some() && app.active_is_kept());
+        assert_eq!(app.active_replacement_range().unwrap().start, starts[1]);
+    });
+    // Closing resets the next popup to the whole entity.
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert!(app.pii.popup.is_none());
+        assert!(app.pii.mapping.scope() == Scope::Entity);
+        // A click on a kept marker reopens its controls, unticked.
+        app.activate_annotation(KEPT_ID | starts[2] as u64, window, cx);
+        assert!(app.pii.popup.is_some() && app.active_is_kept());
+        assert_eq!(app.active_replacement_range().unwrap().start, starts[2]);
+    });
+}
+
+#[gpui::test]
+fn popup_leaves_its_line_and_the_next_visible_and_scrolls_with_it(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1200.), px(800.)));
+    let filler = "A line of ordinary contract text.\n\n".repeat(30);
+    let source = format!("{filler}Here Anna signs.\n\n{filler}");
+    app.update_in(cx, |app, window, cx| {
+        let ids = seed_anna(app, &source, cx);
+        let start = source.find("Anna").unwrap();
+        app.navigate_identity_mention(ids[0], start, window, cx);
+    });
+    cx.run_until_parked();
+    draw_frames(cx);
+    // Bring the mention to the middle of the view.
+    app.update(cx, |app, cx| {
+        let start = app.active_replacement_range().unwrap().start;
+        let top = app.editor.read(cx).offset_screen_top(start).unwrap();
+        let view = app.scroll.bounds();
+        let mut offset = app.scroll.offset();
+        offset.y -= top - view.center().y;
+        app.scroll.set_offset(offset);
+    });
+    draw_frames(cx);
+    let gap = |cx: &mut gpui::VisualTestContext| {
+        let popup = cx.debug_bounds("pseudonym-popup").unwrap();
+        app.update(cx, |app, cx| {
+            let editor = app.editor.read(cx);
+            let word = editor
+                .annotation_bounds(app.active_annotation().unwrap())
+                .unwrap();
+            let line = editor.base_line_height();
+            assert!(
+                popup.top() >= word.bottom() + line || popup.bottom() <= word.top() - line,
+                "popup {popup:?} covers the line next to {word:?}"
+            );
+            popup.top() - word.top()
+        })
+    };
+    let before = gap(cx);
+    // Scrolling moves the bar with its mention in the same frame.
+    app.update(cx, |app, _| {
+        let mut offset = app.scroll.offset();
+        offset.y -= px(37.);
+        app.scroll.set_offset(offset);
+    });
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    assert_eq!(gap(cx), before);
 }

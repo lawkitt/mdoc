@@ -203,8 +203,12 @@ unticked = Keep original, – = mixed mentions. Ticking records intent; text
 changes only on Apply.
 
 **Mention bar**: slim bar above a clicked mention: Replace checkbox, alias,
-category, scope. Replaced the replacement popup (ADR 0048).
+category, This one | All scope. Replaced the replacement popup (ADR 0048);
+stable, compact and reversible per [ADR 0055](docs/adr/0055-stable-compact-mention-popup.md).
 Motion and scoped popup presentation follow [ADR 0032](docs/adr/0032-replacement-popup-redesign.md).
+
+**Kept marker**: muted dotted underline on a kept mention while reviewing;
+clicking it reopens the mention bar with Replace unticked (ADR 0055).
 
 **Scope outline**: display-only ring around mentions affected by the selected scope.
 

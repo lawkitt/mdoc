@@ -7,6 +7,14 @@ pub(in crate::pii::ui) enum Scope {
     Wording,
     Entity,
 }
+/// Where ‹ › and ← → move the popup among an entity's mentions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::pii::ui) enum Step {
+    Previous,
+    Next,
+    First,
+    Last,
+}
 /// An entity offered for linking or ownership, labelled with an original.
 #[derive(Clone)]
 pub(super) struct AliasTarget {
@@ -142,6 +150,7 @@ impl DocumentView {
                 .review
                 .applied_occurrence(*id)
                 .map(|a| a.range.clone()),
+            Selection::Kept { range, .. } => Some(range.clone()),
             Selection::Entity(_) => None,
         }
     }
@@ -155,6 +164,7 @@ impl DocumentView {
                 .review
                 .applied_occurrence(*id)
                 .map(|a| a.step.original_shared().clone()),
+            Selection::Kept { original, .. } => Some(original.clone()),
             Selection::Entity(_) => None,
         }
     }
@@ -165,8 +175,42 @@ impl DocumentView {
                 range,
             } => self.pii.review.annotation_id(*group, range),
             Selection::Applied(id) => Some(APPLIED_ID | id),
+            Selection::Kept { range, .. } => Some(KEPT_ID | range.start as u64),
             Selection::Entity(_) => None,
         }
+    }
+    /// Whether the popup's mention is a kept original (Replace unticked).
+    pub(in crate::pii::ui) fn active_is_kept(&self) -> bool {
+        matches!(self.pii.mapping.selected, Some(Selection::Kept { .. }))
+    }
+    /// What the popup steps through and counts: the entity's live mentions
+    /// and its kept ones, in document order (ADR 0055).
+    pub(super) fn popup_occurrences(&self, id: u64) -> Vec<(u64, Range<usize>)> {
+        let mut result = self.identity_occurrences(id);
+        result.extend(
+            self.kept_of(id)
+                .into_iter()
+                .map(|(range, _)| (KEPT_ID | range.start as u64, range)),
+        );
+        result.sort_by_key(|(_, range)| range.start);
+        result
+    }
+    /// Kept mentions of the selected entity inside `scope`.
+    pub(super) fn scoped_kept(&self, scope: Scope) -> Vec<Range<usize>> {
+        let Some(id) = self.selected_entity() else {
+            return Vec::new();
+        };
+        let active = self.active_replacement_range();
+        let original = self.active_original();
+        self.kept_of(id)
+            .into_iter()
+            .filter(|(range, wording)| match scope {
+                Scope::Mention => Some(range) == active.as_ref(),
+                Scope::Wording => Some(wording) == original.as_ref(),
+                Scope::Entity => true,
+            })
+            .map(|(range, _)| range)
+            .collect()
     }
     pub(super) fn scoped_ranges(&self, scope: Scope) -> Vec<Range<usize>> {
         let Some(id) = self.selected_entity() else {
@@ -204,6 +248,13 @@ impl DocumentView {
             self.pii.mapping.remembered.insert(id, range.start);
         }
         let annotation = self.active_annotation();
+        self.pii.mapping.active_place = self.selected_entity().and_then(|id| {
+            let index = self
+                .popup_occurrences(id)
+                .iter()
+                .position(|(a, _)| Some(*a) == annotation)?;
+            Some((id, index))
+        });
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(annotation, cx));
         self.reveal_active_row(cx);
@@ -223,22 +274,42 @@ impl DocumentView {
             .map(|(r, text)| text.len() as isize - r.len() as isize)
             .sum();
         let offset = range.start.saturating_add_signed(shift);
+        let entity = self.selected_entity();
         let review = &self.pii.review;
-        let selection = review
+        // Several mentions can start here (a kept name and a shorter one
+        // inside it): stay with the same entity when it is among them.
+        let mut found: Vec<(Selection, Option<u64>)> = review
             .applied()
             .iter()
-            .find(|a| a.range.start == offset)
-            .map(|a| Selection::Applied(a.id))
-            .or_else(|| {
+            .filter(|a| a.range.start == offset)
+            .map(|a| (Selection::Applied(a.id), Some(a.step.identity)))
+            .chain(
                 review
                     .candidates()
                     .iter()
-                    .find(|c| c.range.start == offset)
-                    .map(|c| Selection::Candidate {
-                        variant: c.variant,
-                        range: c.range.clone(),
-                    })
-            });
+                    .filter(|c| c.range.start == offset)
+                    .map(|c| {
+                        let identity = review.occurrence_identity(c.variant, &c.range);
+                        let selection = Selection::Candidate {
+                            variant: c.variant,
+                            range: c.range.clone(),
+                        };
+                        (selection, identity)
+                    }),
+            )
+            .collect();
+        if let Some(kept) = self.kept_selection(offset) {
+            let identity = match &kept {
+                Selection::Kept { identity, .. } => Some(*identity),
+                _ => None,
+            };
+            found.push((kept, identity));
+        }
+        let index = found
+            .iter()
+            .position(|(_, identity)| entity.is_some() && *identity == entity)
+            .unwrap_or(0);
+        let selection = (!found.is_empty()).then(|| found.swap_remove(index).0);
         if let Some(selection) = selection {
             self.select_occurrence(selection, cx);
             self.pii.keep_selection_popup();
@@ -249,16 +320,16 @@ impl DocumentView {
                 .update(cx, |e, cx| e.set_active_annotation(None, cx));
         }
     }
-    pub(super) fn step_identity_occurrence(
+    pub(in crate::pii::ui) fn step_identity_occurrence(
         &mut self,
-        backwards: bool,
+        step: Step,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(id) = self.selected_entity() else {
             return;
         };
-        let mentions = self.identity_occurrences(id);
+        let mentions = self.popup_occurrences(id);
         if mentions.is_empty() {
             return;
         }
@@ -267,11 +338,15 @@ impl DocumentView {
             .iter()
             .position(|(_, r)| Some(r) == active.as_ref())
             .unwrap_or(0);
-        let index = if backwards {
-            index.checked_sub(1).unwrap_or(mentions.len() - 1)
-        } else {
-            (index + 1) % mentions.len()
+        let index = match step {
+            Step::Previous => index.checked_sub(1).unwrap_or(mentions.len() - 1),
+            Step::Next => (index + 1) % mentions.len(),
+            Step::First => 0,
+            Step::Last => mentions.len() - 1,
         };
+        if Some(&mentions[index].1) == active.as_ref() {
+            return;
+        }
         self.navigate_identity_mention(mentions[index].0, mentions[index].1.start, window, cx);
     }
     pub(super) fn scoped_mapping_action(
@@ -364,17 +439,28 @@ impl DocumentView {
     /// Outline what the popup's scope (or a hovered chip) covers, or the
     /// selected panel group's mentions (ADR 0025). Display only.
     pub(crate) fn sync_scope_outlines(&mut self, cx: &mut Context<Self>) {
-        let proposed = self.theme.get().proposed();
+        // Proposals ring in their category's colour, as the popup's alias
+        // shows it; applied ones in the applied blue (ADR 0055).
+        let proposed = self
+            .selected_name()
+            .map_or(self.theme.get().proposed(), |(_, category)| {
+                self.theme.get().category(category)
+            });
         let applied = self.theme.get().applied();
         let visible = self.pii.reviewing && (self.pii.mapping.open || self.pii.popup.is_some());
         let ranges = match self.selected_entity().filter(|_| visible) {
-            Some(_) if self.pii.popup.is_some() || self.pii.mapping.panel_selected => self
-                .scoped_ranges(
-                    self.pii
-                        .mapping
-                        .scope_hover
-                        .unwrap_or(self.pii.mapping.scope),
-                ),
+            Some(_) if self.pii.popup.is_some() || self.pii.mapping.panel_selected => {
+                let scope = self
+                    .pii
+                    .mapping
+                    .scope_hover
+                    .unwrap_or(self.pii.mapping.scope);
+                let mut ranges = self.scoped_ranges(scope);
+                if scope != Scope::Mention {
+                    ranges.extend(self.scoped_kept(scope));
+                }
+                ranges
+            }
             Some(id) => self
                 .identity_occurrences(id)
                 .into_iter()
@@ -598,7 +684,7 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         let (candidates, applied) = self.scoped_mentions();
-        if self.keep_mentions_now(candidates, applied, cx) {
+        if self.keep_mentions_now(candidates, applied, cx) && self.pii.popup.is_none() {
             window.focus(&self.editor.read(cx).focus_handle(cx), cx);
         }
     }
@@ -617,6 +703,8 @@ impl DocumentView {
         if count == 0 {
             return false;
         }
+        let active = self.active_replacement_range();
+        let mut moved = Vec::new();
         let mut faded: Vec<(Range<usize>, bool)> = Vec::new();
         if applied.is_empty() {
             faded.extend(candidates.iter().map(|(_, r)| (r.clone(), false)));
@@ -631,6 +719,7 @@ impl DocumentView {
                 return false;
             };
             faded.extend(Self::edited_ranges(&edits).into_iter().map(|r| (r, true)));
+            moved = edits.clone();
             let shifted: Vec<_> = candidates
                 .into_iter()
                 .map(|(group, range)| {
@@ -652,13 +741,35 @@ impl DocumentView {
         let history = self.editor.read(cx).history_id();
         self.pii.mapping.record_kept(count, history);
         self.flash_notice(cx);
-        self.pii.dismiss_popup();
         self.review_changed(cx);
         self.fade_out_kept(faded, cx);
-        self.editor
-            .update(cx, |e, cx| e.set_active_annotation(None, cx));
+        // The popup stays on its mention, now kept (ADR 0055).
+        if self.pii.popup.is_some() {
+            self.restore_active_replacement(active, &moved, cx);
+        } else {
+            self.editor
+                .update(cx, |e, cx| e.set_active_annotation(None, cx));
+        }
         cx.notify();
         true
+    }
+    /// The popup's Replace checkbox and Space: untick keeps the originals in
+    /// scope; ticking a kept mention proposes the kept ones in scope again.
+    /// Either way one undo step, and the popup stays (ADR 0055).
+    pub(in crate::pii::ui) fn toggle_replace(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.active_is_kept() {
+            self.keep_originals(window, cx);
+            return;
+        }
+        let ranges = self.scoped_kept(self.pii.mapping.scope);
+        let active = self.active_replacement_range();
+        if self.propose_kept(ranges, cx) && self.pii.popup.is_some() {
+            self.restore_active_replacement(active, &[], cx);
+        }
     }
     pub(in crate::pii::ui) fn apply_replacements(&mut self, cx: &mut Context<Self>) {
         if self.pii.scanning() || !self.can_copy_markdown() {

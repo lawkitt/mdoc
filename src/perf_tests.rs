@@ -411,6 +411,7 @@ fn pii_annotation_geometry_matrix(cx: &mut TestAppContext) {
                 border: gpui::transparent_black(),
                 text_color: None,
                 underline: None,
+                dotted: false,
             })
             .collect();
         app.update(cx, |app, cx| {

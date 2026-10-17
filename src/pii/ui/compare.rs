@@ -447,6 +447,7 @@ impl DocumentView {
             border: Hsla { a: 0.5, ..accent },
             text_color: Some(accent),
             underline: None,
+            dotted: false,
         };
         let mut shown = HashMap::with_capacity(marks.len());
         let (mut left_marks, mut right_marks) = (Vec::new(), Vec::new());

@@ -2,7 +2,8 @@
 
 Status: Accepted, 2026-10-09. Amended by
 [ADR 0051](0051-roadmap-structure-and-stable-scope.md) (repeats inside a longer
-mention). Superseded in part by [ADR 0025](0025-review-refinements.md) (category
+mention) and [ADR 0055](0055-stable-compact-mention-popup.md) (pill placement,
+hidden when invalid). Superseded in part by [ADR 0025](0025-review-refinements.md) (category
 guess) and [ADR 0033](0033-replacements-panel-redesign.md) (Enter applies).
 
 ## Problem
@@ -27,8 +28,8 @@ beforehand, and reports invalid selections only after the click.
   identity is suggested first under Same as…; nothing links automatically.
 - **Tidy selections**: trim edge whitespace, punctuation and unambiguous edge
   Markdown delimiters. A selection fully containing only proposed mentions
-  supersedes them. Anything else invalid disables the pill/menu item with a
-  one-line reason.
+  supersedes them. Anything else invalid disables the menu item with a
+  one-line reason and hides the pill (ADR 0055).
 - **No provenance marking**: manual additions look like any replacement and
   survive Rescan.
 

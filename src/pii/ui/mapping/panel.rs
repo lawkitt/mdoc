@@ -512,10 +512,10 @@ impl DocumentView {
     }
 
     /// Document undo/redo without leaving the panel (ADR 0033).
-    fn undo_last_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn undo_last_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.editor.update(cx, |e, cx| e.undo_step(window, cx));
     }
-    fn redo_last_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn redo_last_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.editor.update(cx, |e, cx| e.redo_step(window, cx));
     }
 

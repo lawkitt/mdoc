@@ -214,26 +214,48 @@ impl DocumentView {
     /// bar (ADR 0048).
     pub(crate) fn replacement_tip(&self, window: &Window, cx: &App) -> Option<AnyElement> {
         let annotation = self.editor.read(cx).hovered_annotation()?;
-        if self.pii.popup.is_some() && self.active_annotation() == Some(annotation) {
+        // While the popup is open a click moves it; tips would only stack
+        // over it (ADR 0055).
+        if self.pii.popup.is_some() {
             return None;
         }
         let review = &self.pii.review;
-        let (identity, applied) = if annotation & APPLIED_ID != 0 {
-            (
-                review
-                    .applied_occurrence(annotation & !APPLIED_ID)?
-                    .step
-                    .identity,
-                true,
-            )
+        let kept = annotation & KEPT_ID != 0;
+        let (alias, category, applied) = if kept {
+            // A kept original (ADR 0055): its entity's name, from the review
+            // or the record taken when it was unticked.
+            let Some(Selection::Kept {
+                identity, original, ..
+            }) = self.kept_selection((annotation & !KEPT_ID) as usize)
+            else {
+                return None;
+            };
+            match review.identity(identity) {
+                Some(i) => (i.alias.clone(), i.category, false),
+                None => {
+                    let name = self.pii.mapping.kept_names.get(&original)?;
+                    (name.alias.clone(), name.category, false)
+                }
+            }
         } else {
-            let candidate = review.candidate(annotation)?;
-            (
-                review.occurrence_identity(candidate.variant, &candidate.range)?,
-                false,
-            )
+            let (identity, applied) = if annotation & APPLIED_ID != 0 {
+                (
+                    review
+                        .applied_occurrence(annotation & !APPLIED_ID)?
+                        .step
+                        .identity,
+                    true,
+                )
+            } else {
+                let candidate = review.candidate(annotation)?;
+                (
+                    review.occurrence_identity(candidate.variant, &candidate.range)?,
+                    false,
+                )
+            };
+            let identity = review.identity(identity)?;
+            (identity.alias.clone(), identity.category, applied)
         };
-        let identity = review.identity(identity)?;
         let bounds = self.editor.read(cx).annotation_bounds(annotation)?;
         // The editor keeps its last hover when the pointer leaves it.
         if !bounds.contains(&window.mouse_position()) {
@@ -269,20 +291,20 @@ impl DocumentView {
                                         div()
                                             .size(px(7.))
                                             .rounded_full()
-                                            .bg(theme.category(identity.category)),
+                                            .bg(theme.category(category)),
                                     )
-                                    .child(
-                                        div()
-                                            .font_weight(gpui::FontWeight::MEDIUM)
-                                            .child(identity.alias.clone()),
-                                    )
+                                    .child(div().font_weight(gpui::FontWeight::MEDIUM).child(alias))
                                     .child(div().opacity(0.7).child(format!(
                                         "· {}{}",
-                                        identity.category.label(),
+                                        category.label(),
                                         if applied { " · applied" } else { "" }
                                     ))),
                             )
-                            .child(div().opacity(0.7).child("Click to edit")),
+                            .child(div().opacity(0.7).child(if kept {
+                                "Kept · click to edit"
+                            } else {
+                                "Click to edit"
+                            })),
                     ),
             )
             .with_priority(1)

@@ -28,7 +28,7 @@ pub(crate) struct RestoreState {
     ignored: HashSet<String>,
     summary_dismissed: bool,
     /// The token whose popup is open, and the highlighted identity row.
-    popup: Option<(Range<usize>, usize)>,
+    pub(super) popup: Option<(Range<usize>, usize)>,
     scroll: gpui::UniformListScrollHandle,
 }
 
@@ -235,6 +235,7 @@ impl DocumentView {
                 border: Hsla { a: 0.6, ..red },
                 text_color: Some(red),
                 underline: None,
+                dotted: false,
             })
             .collect()
     }

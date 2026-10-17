@@ -647,7 +647,11 @@ impl Element for SearchInputElement {
             ElementInputHandler::new(bounds, self.input.clone()),
             cx,
         );
-        if let Some(selection) = prepaint.selection.take() {
+        // Like the caret, the selection shows only while the input has focus:
+        // an unfocused token field reads as plain text.
+        if focus_handle.is_focused(window)
+            && let Some(selection) = prepaint.selection.take()
+        {
             window.paint_quad(selection);
         }
         prepaint
