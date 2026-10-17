@@ -18,6 +18,13 @@ ignore = [
     { id = "RUSTSEC-2024-0384", reason = "instant 0.1.13 unmaintained. Transitive via gpui-component and notify -> notify-types. Both upstream; revisit at each gpui-component rev bump." },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained (no safe upgrade). Transitive via fontdb, whose parents are all upstream: usvg (gpui + gpui-component), mermaid-rs-renderer (Zed), and ratex-render/-svg. Clears when upstreams move to skrifa; revisit at each gpui/ratex pull." },
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz unmaintained (no safe upgrade; maintainer points at harfrust). Transitive via usvg <- gpui and gpui-component. Clears when upstream usvg/Zed migrate shapers; revisit at each gpui pull." },
+    # zip 8.x: all three affect only `ZipArchive::extract` / `ZipStreamReader::extract`
+    # writing an archive to disk. Neither mdoc nor anydoc/docxide-pdf calls them —
+    # every use reads entries into memory. Fixed in zip 9, but docxide-pdf (0.18.4
+    # latest) still requires zip ^8; clears when it and anydoc move to zip 9.
+    { id = "RUSTSEC-2026-0367", reason = "zip extract() keeps SUID/SGID bits. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
+    { id = "RUSTSEC-2026-0368", reason = "zip extract() writes symlinks outside the destination. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
+    { id = "RUSTSEC-2026-0369", reason = "zip extract() applies permissions through symlinks. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
 ]
 
 [licenses]
