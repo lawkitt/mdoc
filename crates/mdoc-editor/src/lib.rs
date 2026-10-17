@@ -3012,12 +3012,15 @@ impl EditorState {
         // (Row insets stay out of it, as they always have.)
         let goal = self.goal_x.unwrap_or(cur.x + self.rtl_shift(row));
         self.goal_x = Some(goal);
-        // Step to the adjacent visual row. Down: to the bottom of the current
-        // row (= the top of the next one). Up: just above the current row's top
-        // — robust to the row above having a different height (e.g. a heading),
-        // since it doesn't depend on the current row's height.
+        // Step to the adjacent visual row. Down: just below the current row's
+        // bottom (= the top of the next one). Up: just above the current row's
+        // top — robust to the row above having a different height (e.g. a
+        // heading), since it doesn't depend on the current row's height. Both
+        // stay a pixel clear of the boundary: deep in a document, f32 rounding
+        // of the exact bottom resolves back onto the current wrap row, and the
+        // caret (or a Shift+Down selection) stops dead on that line.
         let target_y = if dir >= 0 {
-            global_y + cur_lh
+            global_y + cur_lh + px(1.)
         } else {
             global_y - px(1.)
         };
