@@ -936,6 +936,7 @@ impl EntityInputHandler for EditorState {
         // Keep unaffected diagnostics valid across the edit (shift those after
         // it, drop those it overlapped); the host recomputes the edited region.
         self.remap_diagnostics(&range, new_text.len());
+        self.reveal_caret = true;
         self.emit_changed(cx);
         cx.notify();
     }
@@ -983,6 +984,7 @@ impl EntityInputHandler for EditorState {
                 caret..caret
             });
         self.remap_diagnostics(&range, new_text.len());
+        self.reveal_caret = true;
         self.emit_changed(cx);
         cx.notify();
     }

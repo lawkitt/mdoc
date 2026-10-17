@@ -131,6 +131,7 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) -> Self {
         let markdown_search = cx.new(markdown_search::SearchInput::new);
+        let scroll = ScrollHandle::new();
         let editor = cx.new(|cx| {
             // Ghost text at the caret; the empty page centers the rest (ADR 0028).
             let mut editor = EditorState::new(window, cx).with_placeholder("Type here…");
@@ -139,6 +140,7 @@ impl DocumentView {
                 gpui_pdf::is_pdf(src).then(|| src.to_owned().into())
             });
             spelling::install_editor_hooks(&mut editor, dependencies.preferences.clone());
+            editor.set_autoscroll(scroll.clone());
             editor
         });
         let images = images::install(&editor, Document::default().directory(), cx);
@@ -224,7 +226,7 @@ impl DocumentView {
             pii: pii::ui::ReviewUi::new(cx),
             spelling: spelling::SpellState::default(),
             preview: preview::PreviewState::default(),
-            scroll: ScrollHandle::new(),
+            scroll,
             error: None,
             copy_feedback: None,
             more_open: false,

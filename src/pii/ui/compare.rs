@@ -153,11 +153,12 @@ impl DocumentView {
             return;
         }
         let theme = self.theme.get();
-        let pane = |window: &mut Window, cx: &mut Context<Self>| {
+        let pane = |scroll: &gpui::ScrollHandle, window: &mut Window, cx: &mut Context<Self>| {
             let editor = cx.new(|cx| {
                 let mut editor = mdoc_editor::EditorState::new(window, cx);
                 editor.set_markdown_style(crate::style::markdown_style(theme), cx);
                 editor.set_read_only(true, cx);
+                editor.set_autoscroll(scroll.clone());
                 editor
             });
             // A name clicked in either column selects its Replacements row.
@@ -177,8 +178,9 @@ impl DocumentView {
             });
             (editor, subscription)
         };
-        let (original, left) = pane(window, cx);
-        let (current, right) = pane(window, cx);
+        let (left_scroll, right_scroll) = (gpui::ScrollHandle::new(), gpui::ScrollHandle::new());
+        let (original, left) = pane(&left_scroll, window, cx);
+        let (current, right) = pane(&right_scroll, window, cx);
         self.pii.dismiss_popup();
         let hid_preview = std::mem::take(&mut self.preview.visible);
         let focus = cx.focus_handle();
@@ -186,8 +188,8 @@ impl DocumentView {
         self.compare = Some(CompareState {
             original,
             current,
-            left: gpui::ScrollHandle::new(),
-            right: gpui::ScrollHandle::new(),
+            left: left_scroll,
+            right: right_scroll,
             last: Default::default(),
             focus,
             key: None,

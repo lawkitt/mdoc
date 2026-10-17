@@ -660,6 +660,12 @@ pub struct EditorState {
     rtl_rows: Vec<Option<RtlRow>>,
     last_bounds: Option<Bounds<Pixels>>,
     line_height: Pixels,
+    /// The host scroll view this editor keeps its caret visible in (ADR 0054).
+    autoscroll: Option<ScrollHandle>,
+    /// A keyboard change moved the caret: reveal it after the next paint.
+    reveal_caret: bool,
+    /// Scrolls while a mouse selection is held near a viewport edge.
+    drag_autoscroll: Option<Task<()>>,
     /// Font size from the last paint. Hit-testing that runs during event
     /// dispatch (e.g. table-cell clicks) must measure at this size — the
     /// window's text-style stack is unwound there, so `window.text_style()`
@@ -877,6 +883,9 @@ impl EditorState {
             table_hover_cell: None,
             last_bounds: None,
             line_height: px(20.),
+            autoscroll: None,
+            reveal_caret: false,
+            drag_autoscroll: None,
             font_size: px(16.),
             paint_font: None,
             is_selecting: false,
@@ -941,6 +950,12 @@ impl EditorState {
     }
     pub fn is_read_only(&self) -> bool {
         self.read_only
+    }
+
+    /// Keep the caret visible in the host's scroll view: keyboard moves fit
+    /// it with context, and a held selection drag scrolls at the edges (ADR 0054).
+    pub fn set_autoscroll(&mut self, scroll: ScrollHandle) {
+        self.autoscroll = Some(scroll);
     }
     pub fn with_text(mut self, text: impl Into<String>) -> Self {
         self.content = text.into();
@@ -1883,6 +1898,7 @@ impl EditorState {
                 } else {
                     self.move_to(offset, cx);
                 }
+                self.start_drag_autoscroll(window, cx);
             }
         }
     }
@@ -2821,6 +2837,96 @@ impl EditorState {
         cx.notify();
     }
 
+    // --- Autoscroll (ADR 0054) ----------------------------------------------
+
+    /// Scroll the host view the least that shows the caret row with up to three
+    /// base line heights of context (Zed's `Fit`). Runs after a paint, so the
+    /// layout is the one the keyboard change produced.
+    fn fit_caret(&mut self, window: &mut Window) {
+        let Some(scroll) = self.autoscroll.clone() else {
+            return;
+        };
+        let Some(caret) = self.bounds_for_offset(self.cursor_offset()) else {
+            return;
+        };
+        let viewport = scroll.bounds();
+        let margin = (self.line_height * 3.)
+            .min((viewport.size.height - caret.size.height) / 2.)
+            .max(px(0.));
+        let mut offset = scroll.offset();
+        let top = caret.top() - margin;
+        let bottom = caret.bottom() + margin;
+        if top < viewport.top() {
+            offset.y += viewport.top() - top;
+        } else if bottom > viewport.bottom() {
+            offset.y -= bottom - viewport.bottom();
+        }
+        offset.y = offset.y.clamp(-scroll.max_offset().y, px(0.));
+        if offset != scroll.offset() {
+            scroll.set_offset(offset);
+            window.refresh();
+        }
+    }
+
+    /// Scroll while a mouse selection is held near a viewport edge, every frame
+    /// even with a still pointer, until the button is released.
+    fn start_drag_autoscroll(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.autoscroll.is_none() {
+            return;
+        }
+        self.drag_autoscroll = Some(cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(16))
+                    .await;
+                let held = this
+                    .update_in(cx, |editor, window, cx| {
+                        editor.drag_autoscroll_step(window, cx)
+                    })
+                    .unwrap_or(false);
+                if !held {
+                    break;
+                }
+            }
+        }));
+    }
+
+    /// One drag-autoscroll step; `false` once the selection drag has ended.
+    fn drag_autoscroll_step(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(scroll) = self.autoscroll.clone().filter(|_| self.is_selecting) else {
+            return false;
+        };
+        let viewport = scroll.bounds();
+        // Zed: a one-line band inside each edge, so a window flush with the
+        // screen edge still scrolls; speed grows with depth, capped at 3 lines.
+        let band = self.line_height.min(viewport.size.height / 3.);
+        let mouse = window.mouse_position();
+        let speed = |depth: Pixels| self.line_height * (f32::from(depth).powf(1.2) / 100.).min(3.);
+        let delta = if mouse.y < viewport.top() + band {
+            -speed(viewport.top() + band - mouse.y)
+        } else if mouse.y > viewport.bottom() - band {
+            speed(mouse.y - (viewport.bottom() - band))
+        } else {
+            return true;
+        };
+        let mut offset = scroll.offset();
+        let before = offset.y;
+        offset.y = (offset.y - delta).clamp(-scroll.max_offset().y, px(0.));
+        if offset.y != before {
+            scroll.set_offset(offset);
+            window.refresh();
+        }
+        // Hit-test against the last paint, shifted by this step's scroll.
+        let at = point(mouse.x, mouse.y - (offset.y - before));
+        let target = self
+            .table_offset_at(at, window)
+            .unwrap_or_else(|| self.index_for_mouse_position(at));
+        if target != self.cursor_offset() {
+            self.select_to(target, cx);
+        }
+        true
+    }
+
     // --- Line / row-col mapping ---------------------------------------------
 
     /// Byte offset where each visual line starts (line 0 starts at 0; each line
@@ -3344,6 +3450,17 @@ impl EditorState {
     }
 }
 
+/// Wrap a keyboard action so the caret it moves is kept in view (ADR 0054).
+fn revealing<A: 'static>(
+    action: fn(&mut EditorState, &A, &mut Window, &mut Context<EditorState>),
+) -> impl Fn(&mut EditorState, &A, &mut Window, &mut Context<EditorState>) + 'static {
+    move |editor, a, window, cx| {
+        action(editor, a, window, cx);
+        editor.reveal_caret = true;
+        cx.notify();
+    }
+}
+
 impl Focusable for EditorState {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -3359,37 +3476,37 @@ impl Render for EditorState {
             .key_context(CONTEXT)
             .track_focus(&self.focus_handle)
             .cursor(CursorStyle::IBeam)
-            .on_action(cx.listener(Self::backspace))
-            .on_action(cx.listener(Self::delete))
-            .on_action(cx.listener(Self::left))
-            .on_action(cx.listener(Self::right))
-            .on_action(cx.listener(Self::up))
-            .on_action(cx.listener(Self::down))
-            .on_action(cx.listener(Self::home))
-            .on_action(cx.listener(Self::end))
-            .on_action(cx.listener(Self::select_left))
-            .on_action(cx.listener(Self::select_right))
-            .on_action(cx.listener(Self::select_up))
-            .on_action(cx.listener(Self::select_down))
-            .on_action(cx.listener(Self::word_left))
-            .on_action(cx.listener(Self::word_right))
-            .on_action(cx.listener(Self::select_word_left))
-            .on_action(cx.listener(Self::select_word_right))
-            .on_action(cx.listener(Self::select_all))
-            .on_action(cx.listener(Self::newline))
-            .on_action(cx.listener(Self::bold))
-            .on_action(cx.listener(Self::italic))
-            .on_action(cx.listener(Self::underline))
-            .on_action(cx.listener(Self::strike))
-            .on_action(cx.listener(Self::code))
-            .on_action(cx.listener(Self::indent))
-            .on_action(cx.listener(Self::outdent))
-            .on_action(cx.listener(Self::paste))
+            .on_action(cx.listener(revealing(Self::backspace)))
+            .on_action(cx.listener(revealing(Self::delete)))
+            .on_action(cx.listener(revealing(Self::left)))
+            .on_action(cx.listener(revealing(Self::right)))
+            .on_action(cx.listener(revealing(Self::up)))
+            .on_action(cx.listener(revealing(Self::down)))
+            .on_action(cx.listener(revealing(Self::home)))
+            .on_action(cx.listener(revealing(Self::end)))
+            .on_action(cx.listener(revealing(Self::select_left)))
+            .on_action(cx.listener(revealing(Self::select_right)))
+            .on_action(cx.listener(revealing(Self::select_up)))
+            .on_action(cx.listener(revealing(Self::select_down)))
+            .on_action(cx.listener(revealing(Self::word_left)))
+            .on_action(cx.listener(revealing(Self::word_right)))
+            .on_action(cx.listener(revealing(Self::select_word_left)))
+            .on_action(cx.listener(revealing(Self::select_word_right)))
+            .on_action(cx.listener(revealing(Self::select_all)))
+            .on_action(cx.listener(revealing(Self::newline)))
+            .on_action(cx.listener(revealing(Self::bold)))
+            .on_action(cx.listener(revealing(Self::italic)))
+            .on_action(cx.listener(revealing(Self::underline)))
+            .on_action(cx.listener(revealing(Self::strike)))
+            .on_action(cx.listener(revealing(Self::code)))
+            .on_action(cx.listener(revealing(Self::indent)))
+            .on_action(cx.listener(revealing(Self::outdent)))
+            .on_action(cx.listener(revealing(Self::paste)))
             .on_action(cx.listener(Self::copy))
-            .on_action(cx.listener(Self::cut))
+            .on_action(cx.listener(revealing(Self::cut)))
             .on_action(cx.listener(Self::show_character_palette))
-            .on_action(cx.listener(Self::undo))
-            .on_action(cx.listener(Self::redo))
+            .on_action(cx.listener(revealing(Self::undo)))
+            .on_action(cx.listener(revealing(Self::redo)))
             .on_action(cx.listener(Self::dismiss))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_down(MouseButton::Middle, cx.listener(Self::on_middle_down))
@@ -5622,5 +5739,119 @@ mod annotation_tests {
             editor.replace_range(0..5, "Other", cx);
             assert!(editor.annotation_bounds(7).is_none());
         });
+    }
+
+    /// A host that stacks the editor in its own scroll view, like mdoc's
+    /// document view (ADR 0054).
+    struct ScrollHost {
+        editor: gpui::Entity<super::EditorState>,
+        scroll: gpui::ScrollHandle,
+    }
+
+    impl gpui::Render for ScrollHost {
+        fn render(
+            &mut self,
+            _: &mut gpui::Window,
+            _: &mut gpui::Context<Self>,
+        ) -> impl gpui::IntoElement {
+            use gpui::{InteractiveElement, ParentElement, StatefulInteractiveElement, Styled};
+            gpui::div()
+                .id("scroll")
+                .size_full()
+                .overflow_y_scroll()
+                .track_scroll(&self.scroll)
+                .child(self.editor.clone())
+        }
+    }
+
+    fn scroll_host(
+        cx: &mut gpui::TestAppContext,
+    ) -> (
+        gpui::Entity<super::EditorState>,
+        gpui::ScrollHandle,
+        &mut gpui::VisualTestContext,
+    ) {
+        use super::*;
+        use gpui::AppContext as _;
+        let scroll = ScrollHandle::new();
+        let (host, cx) = cx.add_window_view(|window, cx| {
+            let editor = cx.new(|cx| {
+                let mut editor = EditorState::new(window, cx);
+                let text = (0..120).map(|i| format!("line {i}")).collect::<Vec<_>>();
+                editor.set_text(text.join("\n"), cx);
+                editor.set_autoscroll(scroll.clone());
+                editor
+            });
+            ScrollHost {
+                editor,
+                scroll: scroll.clone(),
+            }
+        });
+        cx.simulate_resize(size(px(400.), px(300.)));
+        let editor = host.read_with(cx, |host, _| host.editor.clone());
+        editor.update_in(cx, |e, window, cx| e.focus(window, cx));
+        cx.run_until_parked();
+        (editor, scroll, cx)
+    }
+
+    #[gpui::test]
+    fn keyboard_selection_keeps_the_caret_in_view(cx: &mut gpui::TestAppContext) {
+        use super::*;
+        let (editor, scroll, cx) = scroll_host(cx);
+        let caret_visible = |cx: &mut gpui::VisualTestContext| {
+            cx.run_until_parked();
+            let caret = editor.read_with(cx, |e, _| e.bounds_for_offset(e.cursor()).unwrap());
+            let viewport = scroll.bounds();
+            assert!(
+                caret.top() >= viewport.top() && caret.bottom() <= viewport.bottom(),
+                "caret {caret:?} outside {viewport:?}"
+            );
+        };
+        // A move away from the edges never scrolls.
+        cx.dispatch_action(Down);
+        caret_visible(cx);
+        assert_eq!(scroll.offset().y, px(0.));
+        for _ in 0..40 {
+            cx.dispatch_action(SelectDown);
+            caret_visible(cx);
+        }
+        assert!(scroll.offset().y < px(0.), "Shift+Down scrolled down");
+        // Three lines of context stay below the caret.
+        let (caret, lh) = editor.read_with(cx, |e, _| {
+            (e.bounds_for_offset(e.cursor()).unwrap(), e.line_height)
+        });
+        assert!(scroll.bounds().bottom() - caret.bottom() >= lh * 3. - px(1.));
+        let scrolled = scroll.offset().y;
+        for _ in 0..40 {
+            cx.dispatch_action(SelectUp);
+            caret_visible(cx);
+        }
+        assert!(scroll.offset().y > scrolled, "Shift+Up scrolled back up");
+    }
+
+    #[gpui::test]
+    fn held_drag_at_the_edge_scrolls_and_extends_until_release(cx: &mut gpui::TestAppContext) {
+        use super::*;
+        let (editor, scroll, cx) = scroll_host(cx);
+        let viewport = scroll.bounds();
+        let from = point(viewport.left() + px(20.), viewport.top() + px(10.));
+        cx.simulate_mouse_down(from, MouseButton::Left, Default::default());
+        // Pointer held still just inside the bottom edge: no further moves.
+        let edge = point(from.x, viewport.bottom() - px(2.));
+        cx.simulate_mouse_move(edge, Some(MouseButton::Left), Default::default());
+        let before = editor.read_with(cx, |e, _| e.cursor());
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(500));
+        cx.run_until_parked();
+        assert!(scroll.offset().y < px(0.), "held drag scrolled");
+        let extended = editor.read_with(cx, |e, _| e.cursor());
+        assert!(extended > before, "selection followed the scroll");
+        cx.simulate_mouse_up(edge, MouseButton::Left, Default::default());
+        cx.run_until_parked();
+        let released = scroll.offset();
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(500));
+        cx.run_until_parked();
+        assert_eq!(scroll.offset(), released, "release stops the scroll");
     }
 }
