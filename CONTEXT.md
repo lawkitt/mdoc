@@ -115,6 +115,10 @@ macOS builds move it to the data protection keychain, which never asks
 linked automatically; a first name alone is not proposed
 ([ADR 0053](docs/adr/0053-short-and-inflected-name-variants.md)).
 
+**Merge hint**: a dismissible suggestion in the Replacements panel to link two
+identities that very likely name the same subject. Never applied automatically;
+Merge is one undo step. No score is shown.
+
 **Quiet probe**: the launch read of the case key with per-query "no UI"; it
 either opens cases or leaves them locked, and never shows a system dialog.
 

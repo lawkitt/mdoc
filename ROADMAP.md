@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap tracks work remaining as of 2026-10-17 (latest: 0.1.0-beta.11);
+This roadmap tracks work remaining as of 2026-10-17 (latest: 0.1.0-beta.13);
 accepted behavior lives in [ADRs](docs/adr/), with terminology in
 [CONTEXT.md](CONTEXT.md). Structure and stable scope:
 [ADR 0051](docs/adr/0051-roadmap-structure-and-stable-scope.md).
@@ -39,29 +39,12 @@ priority order.
 
 ### Should-fix
 
-1. **[UI] Mention popup: stable, compact, reversible, bordered and clear of the
-   text.** *From beta.11 known issue 5 and the 2026-10-16 UI backlog.*
-   - One stable popup anchored to the active mention while selecting entities,
-     stepping through mentions or scrolling: no transient dismissal, duplicates
-     or frames at a wrong position.
-   - Less width, padding and spacing; original, alias, category, Replace and scope
-     controls stay readable. Default scope is the whole entity group, with a clear
-     "this mention only" toggle.
-   - Unchecking Replace keeps the popup open. After dismissal, kept mentions keep
-     a subtle underline and reopen the controls on click. Occurrence identity and
-     chosen scope are preserved, and explicit Apply is unchanged.
-   - A restrained border that stays distinct over real text in both themes.
-   - The "Replace ⌘⌥P" chip and the mention bar no longer cover the selection or
-     the lines around it.
-
-   *Done when:* verified in the live editor in both themes on a long document
-   with wrapped and kept mentions and rapid panel selection.
-2. **[UI] Highlights follow line wraps.** *Known issue 2.* A wrapped proposed or
+1. **[UI] Highlights follow line wraps.** *Known issue 2.* A wrapped proposed or
    applied mention extends its underline or chip box to the end of the first line,
    and the continuation starts with a stub.
    *Done when:* each wrapped segment is boxed separately, in the editor and in
    Side by side.
-3. **[UI] Small shell fixes.**
+2. **[UI] Small shell fixes.**
    - Cmd + + (macOS) and Ctrl + + (Windows/Linux) increase Markdown text size
      through the zoom button's action, accepting the plus key (with Shift where the
      layout requires) alongside Cmd + = from ADR 0048; steps and limits unchanged.
@@ -81,28 +64,81 @@ In priority order, after any carried-over should-fix items.
    left for this tier are case fan-out, process memory, the legal opinion's
    25 ms search burst and two ~20 ms typing passes seen natively. [Restoration measurements](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
    are historical, not guarantees.
-2. **[UI] Center and smoothly scroll to the selected mention.** Clicking an
+2. **[Editor] Find and replace.** *From the 2026-10-17 roadmap grooming.* The
+   find field gains a replace row: Replace, Replace all, Match case and Whole
+   word; no regex or search in selection. Port the logic and the search bar
+   (option toggles, "3 of 12" counter, expanding replace row) from Zed's
+   GPL-3.0 `search` crate, crediting it in the ported files; its dependencies
+   rule out using the crate itself. Replace all is one undo step; matches inside
+   applied aliases are skipped; an edit touching a proposal invalidates it, as
+   typing does. Shortcut ⌘⌥F (macOS), Ctrl+H (Windows/Linux).
+   *Done when:* each control works with keyboard and mouse on a long document
+   with applied aliases, and one undo reverts a Replace all.
+3. **[PII] Merge hint.** *From the 2026-10-17 roadmap grooming.* When two
+   identities very likely name the same subject, the Replacements panel shows a
+   dismissible hint on the identity ("Looks like Maya Bennett · Merge"). Signals:
+   an ADR 0053 short or inflected form with exactly one candidate full name;
+   wordings differing only in case, whitespace or punctuation; OCR or typo
+   near-duplicates (edit distance 1, names of 6+ characters). Initials are not a
+   signal. No score is shown; nothing links without the click (ADR 0053). Merge
+   is one undo step with an Undo toast; a dismissed hint stays dismissed for
+   that pair.
+   *Done when:* tests cover each signal and a non-signal (relatives sharing a
+   surname, initials), and Merge, Undo and dismissal work in the live panel.
+4. **[UI] Center and smoothly scroll to the selected mention.** Clicking an
    entity or mention row in the Replacements panel reveals, highlights and focuses
    the mention near the vertical center of the editor, clear of the popup and
    clamped at document edges. Animate briefly; rapid selections head for the
    latest target without queued animations; manual scrolling interrupts; Reduce
    Motion positions immediately.
-3. **[UI] Expand/collapse all in the Replacements panel.** A compact icon
+5. **[UI] Expand/collapse all in the Replacements panel.** A compact icon
    control with tooltip and accessible label, preserving selection and
    replacement decisions.
-4. **[UI] Workspace Back/Forward.** Arrow buttons right of the sidebar toggle,
+6. **[UI] Settings redesign.** *From the 2026-10-17 roadmap grooming; reference:
+   Anoni Settings.* A wider overlay with a left category list: General
+   (appearance, updates, recent files), Detection (model, threshold, comparison),
+   Recognition (OCR), Spelling (with the dictionary), Cases, About. Each setting
+   is one row: title and description left, control right, hairline dividers.
+   Switches and segmented controls replace checkbox toggles; changes save
+   immediately, with no Apply; Advanced options move into their categories.
+   Layout only: no UI language or profiles.
+   *Done when:* every current setting is reachable, saved on change and
+   operable by keyboard, in both themes.
+7. **[Cases] Case page.** *From the 2026-10-17 roadmap grooming.* The sidebar
+   case header truncates long names and repeats the tab title; the Share
+   panel's Case row only says "saved"; nothing gives an overview of a case. Add a
+   case page, opened from the sidebar header, Home and the Share row, listing the
+   case's documents and identities, with rename, recolor and delete. Design it
+   and accept its ADR before implementation.
+   *Done when:* the ADR is accepted and the page ships with those actions,
+   verified in both themes.
+8. **[UI] Workspace Back/Forward.** Arrow buttons right of the sidebar toggle,
    available with the sidebar expanded or collapsed. Navigate visited documents
    and Home, restore view state, disable unavailable directions, skip closed
    documents, clear forward history on new navigation.
-5. **[OCR] Recover page structure.** *Known issue 1.* On a clean one-column A4
+9. **[OCR] Recover page structure.** *Known issue 1.* On a clean one-column A4
    scan (PP-OCRv6 Small, 150 DPI; 300 DPI does not help) paragraphs and headings
    merge, and table rows split or shift; on the *Brown v. Board* page a body line
    becomes a heading. Fix in the AnyDoc/pdf-inspector forks. Add the scan to the
    [OCR qualification set](tests/fixtures/ocr-qualification/README.md) now.
-6. **[Cases] System-wide Pseudonymize Clipboard hotkey** (macOS
-   `RegisterEventHotKey`, Windows `RegisterHotKey`). The in-app action, before/after
-   view and per-case category switches from the [Anoni review](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11)
-   are done.
+10. **[DOCX] Pseudonymized DOCX export with rdocx, then the preview.** *From the
+    2026-10-17 roadmap grooming.* Evaluate [rdocx](https://github.com/tensorbee/rdocx)
+    (MIT/Apache, young: 0.16) to write the applied case mapping into the
+    original DOCX, keeping its formatting. Other Markdown edits are not carried
+    over, and the save dialog says so. Cover headers, footers, footnotes, text
+    boxes, comments and their authors, tracked-change authors, document
+    properties and hyperlink targets; flag images and embedded objects, which
+    are not cleaned. UI follows Anoni's "Pseudonymized Word…" split button, to
+    be designed separately. Then evaluate rdocx in place of docxide-pdf for the
+    Source preview (fidelity, speed, dependencies; it would lift the zip 9
+    advisory ignore in `deny.toml`). Conversion stays in AnyDoc.
+    *Done when:* fixture DOCX exports, reconverted and scanned, contain no
+    original wording and open in Word with formatting intact; the preview
+    decision is recorded with fixture comparisons.
+11. **[Cases] System-wide Pseudonymize Clipboard hotkey** (macOS
+    `RegisterEventHotKey`, Windows `RegisterHotKey`). The in-app action, before/after
+    view and per-case category switches from the [Anoni review](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11)
+    are done. Its on/off switch goes in Settings › General.
 
 ## Ongoing tracks
 
@@ -159,7 +195,8 @@ In priority order, after any carried-over should-fix items.
 - Exporting or sharing a case key (encrypted file plus passphrase), a
   cross-case dictionary, deliberate forgetting of originals, and stronger
   anonymization claims.
-- Format-preserving pseudonymized DOCX/PDF export; an audit journal and
+- Format-preserving pseudonymized PDF export and restoring an AI reply into
+  DOCX (DOCX export is After 0.1.0 item 10); an audit journal and
   compliance report of replacements; a re-identification risk hint.
 - Bulk conversion beyond current lazy multi-file opening; design separately.
 - Online formatting/OCR repair; provider, credentials, trust and review need decisions.
@@ -172,3 +209,8 @@ In priority order, after any carried-over should-fix items.
   names ([ADR 0018](docs/adr/0018-document-local-identity-review.md)).
 - An irreversible redaction mode ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)).
 - Watermarking and watched folders (outside AI preparation).
+- [xerj](https://github.com/xerj-org/xerj) (local search server for agents): no
+  product fit for a single-document editor; a local server and its optional
+  off-machine reranker conflict with offline operation.
+- Replacing AnyDoc with rdocx for DOCX-to-Markdown conversion: conversion
+  changes belong in the AnyDoc fork ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)).
