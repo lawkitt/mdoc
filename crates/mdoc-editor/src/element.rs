@@ -2841,6 +2841,17 @@ impl Element for EditorElement {
             editor.font_size = font_size;
             editor.paint_font = Some(font.clone());
         });
+        // A keyboard change asked to keep the caret in view: fit it against
+        // this paint's layout once drawing ends (ADR 0054).
+        if self
+            .editor
+            .update(cx, |editor, _| std::mem::take(&mut editor.reveal_caret))
+        {
+            let editor = self.editor.clone();
+            window.defer(cx, move |window, cx| {
+                editor.update(cx, |editor, _| editor.fit_caret(window));
+            });
+        }
     }
 }
 

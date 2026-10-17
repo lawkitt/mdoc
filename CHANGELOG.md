@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **The document follows your selection.** Dragging a selection to the top or
+  bottom edge scrolls the page, even while the pointer stays still, and
+  Shift+arrow selection, arrow keys and typing keep the caret in view with a
+  few lines of context (ADR 0054).
 - **The zoom and view pill no longer covers text.** It fades after a moment
   and comes back when you move the pointer near the bottom of the document,
   scroll, zoom or switch views. It stays while the pointer is on it, and
