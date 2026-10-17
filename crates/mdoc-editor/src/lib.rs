@@ -657,6 +657,9 @@ pub struct EditorState {
     /// the wrong glyph widths and wrapped cells).
     paint_font: Option<Font>,
     is_selecting: bool,
+    /// The word a double-click selected: dragging from it extends the
+    /// selection word by word, like ⌥⇧←/→, and always keeps this word.
+    word_drag: Option<Range<usize>>,
     /// Host action for the current selection; see [`SelectionAction`].
     selection_action: Option<SelectionAction>,
     /// Escape hid the pill for this exact selection.
@@ -869,6 +872,7 @@ impl EditorState {
             font_size: px(16.),
             paint_font: None,
             is_selecting: false,
+            word_drag: None,
             selection_action: None,
             selection_action_dismissed: None,
             selection_bounds: Vec::new(),
@@ -1880,17 +1884,22 @@ impl EditorState {
         self.last_edit = EditKind::Other;
         match event.click_count {
             // Double-click selects the word under the cursor.
+            // Double-click selects the word under the cursor; holding and
+            // dragging extends the selection by whole words.
             2 => {
-                let (_row, _) = self.row_col(offset);
-                self.is_selecting = false;
-                self.selected_range = self.word_range_at(offset).unwrap_or(offset..offset);
+                let word = self.word_range_at(offset).unwrap_or(offset..offset);
+                self.selected_range = word.clone();
                 self.selection_reversed = false;
+                self.word_drag = Some(word);
+                self.is_selecting = true;
+                self.start_drag_autoscroll(window, cx);
                 cx.emit(EditorEvent::SelectionChanged);
                 cx.notify();
             }
             // Triple-click (or more): select the whole logical line.
             n if n >= 3 => {
                 let (row, _) = self.row_col(offset);
+                self.word_drag = None;
                 self.is_selecting = false;
                 let start = self.line_starts()[row];
                 self.selected_range = start..self.line_end(row);
@@ -1900,6 +1909,7 @@ impl EditorState {
             }
             // Single click: place the caret, or extend the selection with Shift.
             _ => {
+                self.word_drag = None;
                 self.is_selecting = true;
                 if event.modifiers.shift {
                     self.select_to(offset, cx);
@@ -1939,6 +1949,7 @@ impl EditorState {
             cx.notify();
             return;
         }
+        self.word_drag = None;
         if std::mem::take(&mut self.is_selecting) {
             cx.emit(EditorEvent::SelectionChanged);
             cx.notify();
@@ -2029,7 +2040,7 @@ impl EditorState {
             let offset = self
                 .table_offset_at(event.position, window)
                 .unwrap_or_else(|| self.index_for_mouse_position(event.position));
-            self.select_to(offset, cx);
+            self.drag_select_to(offset, cx);
             return;
         }
         // While the right-click menu is open it owns the pointer — don't let the
@@ -2810,6 +2821,27 @@ impl EditorState {
         }
     }
 
+    /// Extend a mouse selection to `offset`: by characters, or after a
+    /// double-click by whole words, keeping the double-clicked word.
+    fn drag_select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
+        let Some(anchor) = self.word_drag.clone() else {
+            self.select_to(offset, cx);
+            return;
+        };
+        let word = self.word_range_at(offset).unwrap_or(offset..offset);
+        let (range, reversed) = if word.start < anchor.start {
+            (word.start..anchor.end, true)
+        } else {
+            (anchor.start..word.end.max(anchor.end), false)
+        };
+        if range != self.selected_range || reversed != self.selection_reversed {
+            self.selected_range = range;
+            self.selection_reversed = reversed;
+            cx.emit(EditorEvent::SelectionChanged);
+            cx.notify();
+        }
+    }
+
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         if self.selection_reversed {
             self.selected_range.start = offset;
@@ -2909,7 +2941,7 @@ impl EditorState {
             .table_offset_at(at, window)
             .unwrap_or_else(|| self.index_for_mouse_position(at));
         if target != self.cursor_offset() {
-            self.select_to(target, cx);
+            self.drag_select_to(target, cx);
         }
         true
     }
@@ -5258,6 +5290,63 @@ mod tests {
             assert_eq!(e.cursor(), 5);
             assert!(e.table_col_resize.is_none());
         });
+    }
+
+    #[gpui::test]
+    fn double_click_drag_extends_the_selection_by_whole_words(cx: &mut gpui::TestAppContext) {
+        use super::*;
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        let source = "alpha beta gamma delta epsilon";
+        editor.update(cx, |e, cx| {
+            e.set_text(source, cx);
+            e.set_markdown_style(markdown_syntax::search_style(), cx);
+        });
+        cx.simulate_resize(size(px(600.), px(300.)));
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        // A point inside the character at `offset`.
+        let at = |cx: &mut gpui::VisualTestContext, offset: usize| {
+            editor.read_with(cx, |e, _| {
+                let b = e.bounds_for_offset(offset).unwrap();
+                point(b.left() + px(2.), b.center().y)
+            })
+        };
+        let gamma = source.find("gamma").unwrap();
+        let start = at(cx, gamma + 1);
+        cx.simulate_event(MouseDownEvent {
+            button: MouseButton::Left,
+            position: start,
+            modifiers: Default::default(),
+            click_count: 2,
+            first_mouse: false,
+        });
+        editor.read_with(cx, |e, _| {
+            assert_eq!(&source[e.selected_range.clone()], "gamma")
+        });
+        // Forward into the middle of "delta": the whole word joins.
+        let delta = at(cx, source.find("delta").unwrap() + 2);
+        cx.simulate_mouse_move(delta, Some(MouseButton::Left), Default::default());
+        editor.read_with(cx, |e, _| {
+            assert_eq!(&source[e.selected_range.clone()], "gamma delta");
+            assert!(!e.selection_reversed);
+        });
+        // Back past the anchor into "beta": it keeps "gamma" and grows left.
+        let beta = at(cx, source.find("beta").unwrap() + 2);
+        cx.simulate_mouse_move(beta, Some(MouseButton::Left), Default::default());
+        cx.simulate_mouse_up(beta, MouseButton::Left, Default::default());
+        editor.read_with(cx, |e, _| {
+            assert_eq!(&source[e.selected_range.clone()], "beta gamma");
+            assert!(e.selection_reversed);
+            assert!(e.word_drag.is_none() && !e.is_selecting);
+        });
+        // A plain drag afterwards is character-wise again.
+        let (alpha, third) = (at(cx, 1), at(cx, 3));
+        cx.simulate_mouse_down(alpha, MouseButton::Left, Default::default());
+        cx.simulate_mouse_move(third, Some(MouseButton::Left), Default::default());
+        cx.simulate_mouse_up(third, MouseButton::Left, Default::default());
+        editor.read_with(cx, |e, _| assert_eq!(e.selected_range.len(), 2));
     }
 
     #[gpui::test]
