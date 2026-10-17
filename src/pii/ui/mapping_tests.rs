@@ -1942,6 +1942,28 @@ fn popup_untick_stays_open_and_arrows_and_retick_follow_the_scope(cx: &mut gpui:
 }
 
 #[gpui::test]
+fn stepping_keeps_the_focus_the_popup_returns_to(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Anna met Bob. Anna left. Anna came back.";
+    app.update_in(cx, |app, window, cx| {
+        let ids = seed_anna(app, source, cx);
+        window.focus(&app.editor.read(cx).focus_handle(cx), cx);
+        app.activate_annotation(ids[0], window, cx);
+        assert!(app.pii.focus.is_focused(window));
+    });
+    cx.simulate_keystrokes("right");
+    cx.run_until_parked();
+    cx.simulate_keystrokes("down");
+    cx.run_until_parked();
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert!(app.pii.popup.is_none());
+        assert!(app.editor.read(cx).focus_handle(cx).is_focused(window));
+    });
+}
+
+#[gpui::test]
 fn popup_leaves_its_line_and_the_next_visible_and_scrolls_with_it(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     cx.simulate_resize(gpui::size(px(1200.), px(800.)));
