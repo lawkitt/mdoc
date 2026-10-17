@@ -40,6 +40,10 @@ pub(crate) enum Popup {
     Choose { ids: Arc<[u64]>, selected: usize },
 }
 const APPLIED_ID: u64 = 1 << 63;
+/// Window origin of the popup layer and the scroll offset it was laid out at.
+type PopupLayer = Rc<Cell<Option<(gpui::Point<Pixels>, gpui::Point<Pixels>)>>>;
+/// Annotation ids of kept-mention markers carry this bit over the start offset.
+const KEPT_ID: u64 = 1 << 61;
 pub(crate) struct ReviewUi {
     /// Derived data (panel projection, before/after view, spelling
     /// exclusions) is keyed on `review.revision()`, which its mutators advance.
@@ -70,6 +74,12 @@ pub(crate) struct ReviewUi {
     /// The popup's last measured anchor. Right after an edit the editor has
     /// not measured the new chip yet; holding this keeps the popup in place.
     popup_anchor: Cell<Option<gpui::Bounds<Pixels>>>,
+    /// The popup layer's window origin and the document scroll offset when it
+    /// was last laid out; with the current offset this places the mention on
+    /// screen in the frame being built (ADR 0055).
+    /// The mention bar's size at its last layout, for placing it.
+    popup_size: Rc<Cell<gpui::Size<Pixels>>>,
+    pub(crate) popup_layer: PopupLayer,
     chooser_scroll: gpui::UniformListScrollHandle,
     popup_controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
     /// Set in a tab opened by Paste AI Response (ADR 0041).
@@ -102,6 +112,8 @@ impl ReviewUi {
             popup_previous: None,
             popup_scroll: gpui::ScrollHandle::new(),
             popup_anchor: Cell::new(None),
+            popup_layer: Default::default(),
+            popup_size: Rc::new(Cell::new(gpui::size(px(480.), px(36.)))),
             chooser_scroll: gpui::UniformListScrollHandle::new(),
             popup_controls: Default::default(),
             restore: None,
@@ -156,6 +168,9 @@ impl ReviewUi {
 }
 
 pub(crate) fn bind_keys(cx: &mut App) {
+    const STEP: &str = "PseudonymReview && !PseudonymReplacement && !PiiChooser && !UiMenu";
+    // The alias field keeps its own text undo.
+    const POPUP_UNDO: &str = "PseudonymReview && !PseudonymReplacement";
     let modifier = if cfg!(target_os = "macos") {
         "cmd"
     } else {
@@ -178,6 +193,32 @@ pub(crate) fn bind_keys(cx: &mut App) {
         // In the alias field Enter confirms the draft; elsewhere in the popup
         // the shared decision keys apply (ADR 0033).
         KeyBinding::new("enter", PiiConfirm, Some("PseudonymReplacement")),
+        // ← → step through the entity's mentions, ⌘← ⌘→ to its ends; the
+        // alias field and menus keep their own arrows (ADR 0055).
+        KeyBinding::new("left", crate::PopupPreviousMention, Some(STEP)),
+        KeyBinding::new("right", crate::PopupNextMention, Some(STEP)),
+        KeyBinding::new("up", crate::PopupPreviousMention, Some(STEP)),
+        KeyBinding::new("down", crate::PopupNextMention, Some(STEP)),
+        KeyBinding::new(
+            &format!("{modifier}-up"),
+            crate::PopupFirstMention,
+            Some(STEP),
+        ),
+        KeyBinding::new(
+            &format!("{modifier}-down"),
+            crate::PopupLastMention,
+            Some(STEP),
+        ),
+        KeyBinding::new(
+            &format!("{modifier}-left"),
+            crate::PopupFirstMention,
+            Some(STEP),
+        ),
+        KeyBinding::new(
+            &format!("{modifier}-right"),
+            crate::PopupLastMention,
+            Some(STEP),
+        ),
         KeyBinding::new("escape", PiiClosePopup, Some("PseudonymReview")),
         // Esc leaves before/after, also from inside its read-only columns.
         KeyBinding::new("escape", crate::CloseCompare, Some("CompareView")),
@@ -190,6 +231,11 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-shift-z", mdoc_editor::Redo, Some("IdentityPanel")),
         KeyBinding::new("ctrl-shift-z", mdoc_editor::Redo, Some("IdentityPanel")),
         KeyBinding::new("ctrl-y", mdoc_editor::Redo, Some("IdentityPanel")),
+        KeyBinding::new("cmd-z", mdoc_editor::Undo, Some(POPUP_UNDO)),
+        KeyBinding::new("ctrl-z", mdoc_editor::Undo, Some(POPUP_UNDO)),
+        KeyBinding::new("cmd-shift-z", mdoc_editor::Redo, Some(POPUP_UNDO)),
+        KeyBinding::new("ctrl-shift-z", mdoc_editor::Redo, Some(POPUP_UNDO)),
+        KeyBinding::new("ctrl-y", mdoc_editor::Redo, Some(POPUP_UNDO)),
     ]);
 }
 
@@ -325,6 +371,7 @@ impl DocumentView {
                     border: gpui::transparent_black(),
                     text_color: None,
                     underline: Some(Hsla { a: 0.9, ..tint }),
+                    dotted: false,
                 }
             } else {
                 let occurrence = applied.next().unwrap();
@@ -345,8 +392,26 @@ impl DocumentView {
                     },
                     text_color: Some(applied_accent),
                     underline: None,
+                    dotted: false,
                 }
             });
+        }
+        // Kept originals keep a quiet dotted underline while reviewing; a
+        // click reopens their controls (ADR 0055).
+        if show_candidates {
+            let muted = theme.pdf_style().header_muted;
+            annotations.extend(self.kept_entries().into_iter().map(|(range, _, _)| {
+                mdoc_editor::SourceAnnotation {
+                    id: KEPT_ID | range.start as u64,
+                    range,
+                    color: gpui::transparent_black(),
+                    active_color: Hsla { a: 0.14, ..muted },
+                    border: gpui::transparent_black(),
+                    text_color: None,
+                    underline: Some(Hsla { a: 0.75, ..muted }),
+                    dotted: true,
+                }
+            }));
         }
         // A restored AI reply also marks placeholders it could not restore.
         annotations.extend(self.unresolved_annotations(cx));
@@ -487,7 +552,9 @@ impl DocumentView {
             return;
         }
         let review = &self.pii.review;
-        let available = if id & APPLIED_ID != 0 {
+        let available = if id & KEPT_ID != 0 {
+            self.pii.reviewing && self.kept_selection((id & !KEPT_ID) as usize).is_some()
+        } else if id & APPLIED_ID != 0 {
             review.applied_occurrence(id & !APPLIED_ID).is_some()
         } else {
             self.pii.reviewing && review.candidate(id).is_some()
@@ -905,6 +972,8 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         let previous = self.pii.close_popup();
+        // The next popup starts on the whole entity again (ADR 0055).
+        self.pii.mapping.set_scope(mapping::Scope::Entity);
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(None, cx));
         if let Some(focus) = previous {

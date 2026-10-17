@@ -17,6 +17,44 @@ fn secondary(
         .border_1()
         .border_color(theme.pdf_style().border)
 }
+/// A 12 × 6 px notch centred at `at` on the card's top edge (`up`) or bottom
+/// edge, filled like the card and outlined like its border.
+fn notch(up: bool, fill: Hsla, border: Hsla, at: Pixels) -> gpui::Canvas<()> {
+    const W: f32 = 12.;
+    const H: f32 = 6.;
+    let canvas = gpui::canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let o = bounds.origin;
+            let (tip, base) = if up { (0., H + 1.) } else { (H + 1., 0.) };
+            let p = |x: f32, y: f32| o + gpui::point(px(x), px(y));
+            let mut shape = gpui::PathBuilder::fill();
+            shape.move_to(p(0., base));
+            shape.line_to(p(W / 2., tip));
+            shape.line_to(p(W, base));
+            shape.close();
+            if let Ok(path) = shape.build() {
+                window.paint_path(path, fill);
+            }
+            let mut edge = gpui::PathBuilder::stroke(px(1.));
+            edge.move_to(p(0., if up { H } else { 1. }));
+            edge.line_to(p(W / 2., tip));
+            edge.line_to(p(W, if up { H } else { 1. }));
+            if let Ok(path) = edge.build() {
+                window.paint_path(path, border);
+            }
+        },
+    )
+    .absolute()
+    .left(at - px(W / 2.))
+    .w(px(W))
+    .h(px(H + 1.));
+    if up {
+        canvas.top(px(-H))
+    } else {
+        canvas.bottom(px(-H))
+    }
+}
 /// The alias cue: one soft accent glow, `delay` ms after the popup opens.
 fn cue_glow(delta: f32, delay: f32, accent: Hsla) -> Hsla {
     const TOTAL: f32 = 850.;
@@ -95,37 +133,54 @@ impl DocumentView {
             .when(cfg!(test), |v| v.debug_selector(move || debug.clone()))
             .track_focus(&focus)
     }
+    /// The mention bar (ADR 0048, ADR 0055), placed in the scrolled content
+    /// beside the editor so it moves with its mention in the same frame.
     pub(in crate::pii::ui) fn replacement_popup(
         &self,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
+        if !matches!(self.pii.popup, Some(Popup::Selection))
+            || self.pii.restore.as_ref().is_some_and(|r| r.popup.is_some())
+        {
+            return None;
+        }
         let annotation = self.active_annotation()?;
         let id = self.selected_entity()?;
-        let review = &self.pii.review;
-        let identity = review.identity(id)?;
-        let mapping = &self.pii.mapping;
+        let (alias, category) = self.selected_name()?;
+        let range = self.active_replacement_range()?;
         let original = self.active_original()?;
+        let review = &self.pii.review;
+        let kept = self.active_is_kept();
+        // A kept mention shows its name read-only; ticking Replace brings
+        // the alias and category controls back.
+        let identity = review.identity(id).filter(|_| !kept);
+        let mapping = &self.pii.mapping;
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let enabled = !self.pii.scanning();
+        // The mention's own colour, as the editor draws it.
+        let accent = if annotation & APPLIED_ID != 0 {
+            theme.applied()
+        } else {
+            theme.category(category)
+        };
         // Cancel addition while this mention's addition is the latest step.
-        let cancel = mapping
-            .added_at(self.editor.read(cx).history_id())
-            .is_some_and(|(added, _)| added.original == original);
+        let cancel = !kept
+            && mapping
+                .added_at(self.editor.read(cx).history_id())
+                .is_some_and(|(added, _)| added.original == original);
         let applied = annotation & APPLIED_ID != 0;
-        self.active_replacement_range()?;
-        let mentions = self.identity_occurrences(id);
+        let mentions = self.popup_occurrences(id);
         let index = mentions
             .iter()
             .position(|(a, _)| *a == annotation)
             .unwrap_or(0);
-        let wording = self.scoped_ranges(Scope::Wording).len();
         let selected_count = self.scoped_ranges(mapping.scope).len();
         let draft = mapping.alias.read(cx).value().trim().to_string();
-        let changed = draft != identity.alias;
+        let changed = draft != alias;
         let input_focused = mapping.alias.read(cx).focus_handle(cx).is_focused(window);
-        let choices = mapping.pickers.alias || input_focused;
+        let choices = identity.is_some() && (mapping.pickers.alias || input_focused);
         let query = if changed {
             draft.to_lowercase()
         } else {
@@ -136,45 +191,69 @@ impl DocumentView {
         } else {
             Vec::new().into()
         };
-        let owner_row = self.owner_row(identity, id, enabled, cx);
-        let available = self.scroll.bounds();
-        let anchor = self.editor.read(cx).annotation_bounds(annotation);
-        if anchor.is_some() {
-            self.pii.popup_anchor.set(anchor);
+        // Contacts and identifiers can belong to a person or organization;
+        // the category menu holds that choice (ADR 0055).
+        let ownable = identity.is_some_and(|i| {
+            i.owner.is_some()
+                || !matches!(
+                    i.category,
+                    Category::Person | Category::Organization | Category::Date | Category::Other
+                )
+        });
+        let owner = identity
+            .and_then(|i| i.owner)
+            .and_then(|owner| review.identity(owner))
+            .map(|owner| owner.alias.clone());
+
+        // Geometry, in the editor's own coordinates (ADR 0055). The bar keeps
+        // its mention's line and the line below visible, flips above under
+        // the same rule, and hides (keeping its state) while the mention is
+        // scrolled out of view.
+        let editor = self.editor.read(cx);
+        // A row is taller than the base line height and the mention's box is
+        // inset inside its row: clear a little more than one line.
+        let line = editor.base_line_height().max(px(12.)) * 1.25;
+        let hidden = editor.annotation_is_hidden(annotation);
+        let local = editor.local_annotation_bounds(annotation, range.start);
+        if local.is_some() {
+            self.pii.popup_anchor.set(local);
         }
-        let hidden = self.editor.read(cx).annotation_is_hidden(annotation);
-        // One width for every mention, so the bar never jumps (ADR 0048).
-        let width = px(720.).min((available.size.width - px(8.)).max(px(120.)));
-        // Shortcut hints only where they fit: in a narrow popup, Windows'
-        // "⇧Ctrl+⌫" pushes Keep original past the edge. The keys still work.
-        let hints = width >= px(240.);
-        let maximum = (available.size.height - px(44.)).max(px(110.));
-        // Pickers float over the card, so its height no longer depends on them.
-        let desired = px(150.).min(maximum);
-        let bounds = anchor
-            .or(self.pii.popup_anchor.get())
-            .unwrap_or(gpui::Bounds::new(
-                available.origin + gpui::point(px(8.), px(8.)),
-                gpui::size(px(1.), px(18.)),
-            ));
-        let below = (available.bottom() - bounds.bottom() - px(8.)).max(px(0.));
-        let above = (bounds.top() - available.top() - px(8.)).max(px(0.));
-        let height = desired.min(below.max(above).max(px(100.)));
-        // The bar sits just below its mention, never over it; above only
-        // when the view has no room below (ADR 0048).
-        let bar = px(48.);
-        let y = if below >= bar || below >= above {
-            bounds.bottom() + px(6.)
+        let layer = self.pii.popup_layer.get();
+        if local.is_none() || layer.is_none() {
+            // Not painted yet (new text or first frame): look again next frame.
+            window.request_animation_frame();
+        }
+        // Until both are known the bar stays in the tree (it holds focus and
+        // the keys) but invisible, never drawn at a guessed spot.
+        let placed = local.or(self.pii.popup_anchor.get()).zip(layer);
+        let (anchor, (layer, scrolled)) = placed.unwrap_or_default();
+        let view = self.scroll.bounds();
+        let origin = layer + (self.scroll.offset() - scrolled);
+        let top = origin.y + anchor.top();
+        let bottom = origin.y + anchor.bottom();
+        let offscreen = placed.is_none() || bottom < view.top() || top > view.bottom();
+        let measured = self.pii.popup_size.get();
+        let bar = measured.height;
+        let room_below = view.bottom() - bottom - line - px(4.);
+        let room_above = top - line - view.top() - px(4.);
+        let below = room_below >= bar || room_below >= room_above;
+        // The card fits its content, capped at the view (ADR 0055).
+        let max_width = (view.size.width - px(8.)).max(px(120.));
+        let width = measured.width.min(max_width);
+        // One row; only a truly narrow view lets the bar wrap.
+        let narrow = max_width < px(560.);
+        let left_min = view.left() + px(4.) - origin.x;
+        let left_max = (view.right() - width - px(4.) - origin.x).max(left_min);
+        let x = anchor.left().clamp(left_min, left_max);
+        let (corner, y) = if offscreen {
+            // Out of the window entirely, so its hitbox covers nothing.
+            (gpui::Anchor::TopLeft, px(-100_000.))
+        } else if below {
+            (gpui::Anchor::TopLeft, anchor.bottom() + line)
         } else {
-            bounds.top() - bar - px(6.)
+            (gpui::Anchor::BottomLeft, anchor.top() - line)
         };
-        let position = gpui::point(
-            bounds.left().clamp(
-                available.left() + px(4.),
-                (available.right() - width - px(4.)).max(available.left() + px(4.)),
-            ),
-            y.max(available.top()),
-        );
+        let height = (if below { room_below } else { room_above }).max(px(60.));
         // Re-recorded by whichever menu paints this frame.
         mapping.menu_bounds.set(None);
         let mut panel = crate::ui::panel("direct-replacement-popup", theme)
@@ -190,18 +269,22 @@ impl DocumentView {
             .tab_stop(false)
             .track_focus(&self.pii.focus)
             .map(|v| self.popup_decision_actions(v, cx))
-            .w(width)
+            .max_w(max_width)
             .max_h(height)
             .overflow_y_scroll()
             .track_scroll(&self.pii.popup_scroll)
-            .px_2()
-            .py(px(6.))
+            .px(px(6.))
+            .py(px(4.))
             .rounded_lg()
+            .border_color(theme.popup_border())
             .shadow_lg()
             .flex()
             .flex_col()
             .gap_1()
-            .text_size(px(13.))
+            .text_size(px(12.))
+            // Hidden by opacity, not visibility: a hidden element skips paint,
+            // where its key and action listeners register.
+            .when(offscreen, |v| v.opacity(0.))
             .on_action(cx.listener(|this, _: &crate::ui::NextControl, window, cx| {
                 crate::ui::cycle(window, cx, Some(&this.pii.focus), false);
                 cx.stop_propagation();
@@ -228,6 +311,39 @@ impl DocumentView {
                 this.escape_popup(window, cx);
                 cx.stop_propagation();
             }))
+            // Document undo from the popup, which keeps focus after a keep.
+            .on_action(cx.listener(|this, _: &mdoc_editor::Undo, window, cx| {
+                this.undo_last_step(window, cx);
+                cx.stop_propagation();
+            }))
+            .on_action(cx.listener(|this, _: &mdoc_editor::Redo, window, cx| {
+                this.redo_last_step(window, cx);
+                cx.stop_propagation();
+            }))
+            .on_action(
+                cx.listener(|this, _: &crate::PopupPreviousMention, window, cx| {
+                    this.step_identity_occurrence(Step::Previous, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::PopupNextMention, window, cx| {
+                    this.step_identity_occurrence(Step::Next, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::PopupFirstMention, window, cx| {
+                    this.step_identity_occurrence(Step::First, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::PopupLastMention, window, cx| {
+                    this.step_identity_occurrence(Step::Last, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
             .on_action(cx.listener(|this, _: &PiiConfirm, window, cx| {
                 if this
                     .pii
@@ -241,7 +357,7 @@ impl DocumentView {
                 } else if this.pii.enter_applies
                     && this
                         .active_annotation()
-                        .is_some_and(|a| a & APPLIED_ID == 0)
+                        .is_some_and(|a| a & (APPLIED_ID | KEPT_ID) == 0)
                 {
                     // After a manual addition, Apply is the default action.
                     this.apply_scope(cx);
@@ -260,16 +376,16 @@ impl DocumentView {
                     this.close_pii_popup(&PiiClosePopup, window, cx);
                 }),
             )
-            // The mention bar (ADR 0048): ☑ Replace · original → alias ·
-            // category ▾ · scope · ‹ n of N › · ×, wrapping when narrow.
+            // ☑ Replace · original → alias · category ▾ · scope · ‹ n of N › ·
+            // × in one row; the original truncates first, and only a narrow
+            // view wraps.
             .child(
                 div()
                     .flex_shrink_0()
                     .flex()
-                    .flex_wrap()
+                    .when(narrow, |v| v.flex_wrap().gap_y_1())
                     .items_center()
-                    .gap_x_2()
-                    .gap_y_1()
+                    .gap_x(px(6.))
                     .child(if cancel {
                         // A just-made selection is backed out, not kept (ADR 0032).
                         secondary(
@@ -285,56 +401,78 @@ impl DocumentView {
                         )
                         .into_any_element()
                     } else {
-                        // Ticked: replaced. Unticking keeps the originals in scope.
+                        // Ticked: replaced. Unticking keeps the originals in
+                        // scope; ticking a kept mention proposes it again.
                         let (scoped_candidates, scoped_applied) = self.scoped_mentions();
-                        let in_scope = scoped_candidates.len() + scoped_applied.len();
+                        let in_scope = if kept {
+                            self.scoped_kept(mapping.scope).len()
+                        } else {
+                            scoped_candidates.len() + scoped_applied.len()
+                        };
+                        let (fill, mark) = theme.checkbox();
                         self.popup_control("direct-keep", "", enabled && in_scope > 0, cx)
                             .when(cfg!(test), |v| v.debug_selector(|| "direct-keep".into()))
                             .role(gpui::Role::CheckBox)
-                            .aria_label(format!("Replace · untick to keep {in_scope} originals"))
+                            .aria_toggled(if kept {
+                                gpui::Toggled::False
+                            } else {
+                                gpui::Toggled::True
+                            })
+                            .aria_label(if kept {
+                                format!("Replace · tick to propose {in_scope} again")
+                            } else {
+                                format!("Replace · untick to keep {in_scope} originals")
+                            })
                             .flex()
                             .items_center()
-                            .gap(px(6.))
+                            .gap(px(5.))
                             .px_1()
                             .child(
                                 div()
-                                    .size(px(15.))
+                                    .size(px(14.))
                                     .flex()
                                     .items_center()
                                     .justify_center()
                                     .rounded(px(4.))
-                                    .bg(theme.checkbox().0)
-                                    .child(
-                                        gpui::svg()
-                                            .data(crate::ui::Icon::Check.data())
-                                            .size(px(11.))
-                                            .text_color(theme.checkbox().1),
-                                    ),
+                                    .when(!kept, |v| {
+                                        v.bg(fill).child(
+                                            gpui::svg()
+                                                .data(crate::ui::Icon::Check.data())
+                                                .size(px(10.))
+                                                .text_color(mark),
+                                        )
+                                    })
+                                    .when(kept, |v| {
+                                        v.border_1().border_color(palette.header_muted)
+                                    }),
                             )
                             .child("Replace")
                             .tooltip(crate::style::tooltip(
-                                format!(
-                                    "Untick to keep the original ({})",
-                                    scope_keys(mapping.scope, "⌫")
-                                ),
+                                if kept {
+                                    "Tick to replace again (Space)".to_string()
+                                } else {
+                                    format!(
+                                        "Untick to keep the original (Space, {})",
+                                        scope_keys(mapping.scope, "⌫")
+                                    )
+                                },
                                 theme,
                             ))
                             .on_click(
-                                cx.listener(|this, _, window, cx| this.keep_originals(window, cx)),
+                                cx.listener(|this, _, window, cx| this.toggle_replace(window, cx)),
                             )
                             .into_any_element()
                     })
-                    .child(div().w(px(1.)).h(px(18.)).bg(palette.border))
+                    .child(div().w(px(1.)).h(px(16.)).bg(palette.border))
                     .child(
-                        // The original → alias pair may wrap in a narrow bar.
+                        // The original → alias pair; the original gives way first.
                         self.with_dropdown(
                             div()
                                 .min_w_0()
                                 .flex()
-                                .flex_wrap()
+                                .when(narrow, |v| v.flex_wrap().gap_y_1())
                                 .items_center()
-                                .gap_x_2()
-                                .gap_y_1()
+                                .gap_x(px(6.))
                                 .child(
                                     div()
                                         .id("direct-original")
@@ -342,7 +480,7 @@ impl DocumentView {
                                             v.debug_selector(|| "pseudonym-original".into())
                                         })
                                         .min_w_0()
-                                        .max_w(px(130.))
+                                        .max_w(px(120.))
                                         .truncate()
                                         .text_color(palette.header_muted)
                                         .child(original.to_string())
@@ -357,8 +495,28 @@ impl DocumentView {
                                         .text_color(palette.header_muted)
                                         .child("→"),
                                 )
-                                .child(self.alias_field(input_focused, cx)),
-                            choices.then(|| {
+                                .child(if identity.is_some() {
+                                    self.alias_field(input_focused, accent, cx)
+                                } else {
+                                    div()
+                                        .id("direct-alias-kept")
+                                        .when(cfg!(test), |v| {
+                                            v.debug_selector(|| "direct-alias-kept".into())
+                                        })
+                                        .min_w_0()
+                                        .max_w(px(140.))
+                                        .truncate()
+                                        .text_color(palette.header_muted)
+                                        .child(alias.clone())
+                                        .tooltip(crate::style::tooltip(
+                                            format!(
+                                                "Kept as the original; tick Replace to use {alias}"
+                                            ),
+                                            theme,
+                                        ))
+                                        .into_any_element()
+                                }),
+                            identity.filter(|_| choices).map(|identity| {
                                 self.alias_menu(
                                     identity,
                                     &draft,
@@ -375,46 +533,63 @@ impl DocumentView {
                     )
                     .child(
                         self.with_dropdown(
-                            self.popup_control("direct-category", "", enabled, cx)
-                                .flex()
-                                .items_center()
-                                .gap(px(6.))
-                                .child(
-                                    div()
-                                        .size(px(7.))
-                                        .rounded_full()
-                                        .bg(theme.category(identity.category)),
-                                )
-                                .child(format!("{} ▾", identity.category.label()))
-                                .aria_label("Correct category for selected scope")
-                                .on_click(cx.listener(|this, _, _, cx| {
+                            self.popup_control(
+                                "direct-category",
+                                "",
+                                enabled && identity.is_some(),
+                                cx,
+                            )
+                            .flex()
+                            .items_center()
+                            .gap(px(5.))
+                            .child(
+                                div()
+                                    .size(px(7.))
+                                    .rounded_full()
+                                    .bg(theme.category(category)),
+                            )
+                            .child(match (&owner, identity.is_some()) {
+                                (Some(owner), _) => format!("{} · {owner} ▾", category.label()),
+                                (None, true) => format!("{} ▾", category.label()),
+                                (None, false) => category.label().to_string(),
+                            })
+                            .aria_label("Correct category for selected scope")
+                            .when(identity.is_some(), |v| {
+                                v.on_click(cx.listener(|this, _, _, cx| {
                                     this.pii.mapping.toggle_category_picker();
                                     cx.notify();
                                 }))
-                                .map(|v| match mapping.cue {
-                                    Some((generation, true)) => {
-                                        let accent = theme.applied();
-                                        v.with_animation(
-                                            SharedString::from(format!(
-                                                "category-cue-{generation}"
-                                            )),
-                                            Animation::new(Duration::from_millis(850))
-                                                .with_easing(gpui::ease_in_out),
-                                            move |v, delta| v.bg(cue_glow(delta, 150., accent)),
-                                        )
-                                        .into_any_element()
-                                    }
-                                    _ => v.into_any_element(),
-                                }),
-                            mapping.pickers.category.then(|| {
-                                self.category_menu(
-                                    identity,
-                                    selected_count,
-                                    mentions.len(),
-                                    enabled,
-                                    cx,
-                                )
+                            })
+                            .map(|v| match mapping.cue {
+                                Some((generation, true)) => {
+                                    let accent = theme.applied();
+                                    v.with_animation(
+                                        SharedString::from(format!("category-cue-{generation}")),
+                                        Animation::new(Duration::from_millis(850))
+                                            .with_easing(gpui::ease_in_out),
+                                        move |v, delta| v.bg(cue_glow(delta, 150., accent)),
+                                    )
+                                    .into_any_element()
+                                }
+                                _ => v.into_any_element(),
                             }),
+                            identity
+                                .filter(|_| mapping.pickers.category)
+                                .map(|identity| {
+                                    self.category_menu(
+                                        identity,
+                                        selected_count,
+                                        mentions.len(),
+                                        ownable.then(|| owner.clone()),
+                                        enabled,
+                                        cx,
+                                    )
+                                })
+                                .or_else(|| {
+                                    identity
+                                        .filter(|_| mapping.pickers.owner)
+                                        .map(|identity| self.owner_menu(identity, id, enabled, cx))
+                                }),
                         ),
                     )
                     .when(applied, |v| {
@@ -432,52 +607,50 @@ impl DocumentView {
                         )
                     })
                     .when(mentions.len() > 1, |v| {
-                        v.child(self.scope_control(
-                            wording,
-                            mentions.len(),
-                            &original,
-                            &identity.alias,
-                            enabled,
-                            cx,
-                        ))
+                        v.child(self.scope_control(mentions.len(), &alias, enabled, cx))
                     })
-                    // ‹ n of N › and × stay together at the row's end, so the
-                    // bar keeps one layout from mention to mention (ADR 0048).
+                    // ‹ n of N › and × follow the scope (ADR 0055).
                     .child(
                         div()
-                            .ml_auto()
                             .flex()
                             .items_center()
-                            .gap_1()
+                            .gap(px(2.))
                             .flex_shrink_0()
                             .when(mentions.len() > 1, |v| {
                                 v.child(
                                     self.popup_control("direct-prev", "‹", true, cx)
                                         .aria_label("Previous mention")
                                         .tooltip(crate::style::tooltip(
-                                            format!("Previous mention of {}", identity.alias),
+                                            format!("Previous mention of {alias} (←)"),
                                             theme,
                                         ))
                                         .on_click(cx.listener(|this, _, window, cx| {
-                                            this.step_identity_occurrence(true, window, cx)
+                                            this.step_identity_occurrence(
+                                                Step::Previous,
+                                                window,
+                                                cx,
+                                            )
                                         })),
                                 )
                                 .child(
                                     div()
                                         .flex_shrink_0()
+                                        .when(cfg!(test), |v| {
+                                            v.debug_selector(|| "direct-position".into())
+                                        })
                                         .text_size(px(11.))
                                         .text_color(palette.header_muted)
-                                        .child(format!("{} of {}", index + 1, mentions.len())),
+                                        .child(format!("{}/{}", index + 1, mentions.len())),
                                 )
                                 .child(
                                     self.popup_control("direct-next", "›", true, cx)
                                         .aria_label("Next mention")
                                         .tooltip(crate::style::tooltip(
-                                            format!("Next mention of {}", identity.alias),
+                                            format!("Next mention of {alias} (→)"),
                                             theme,
                                         ))
                                         .on_click(cx.listener(|this, _, window, cx| {
-                                            this.step_identity_occurrence(false, window, cx)
+                                            this.step_identity_occurrence(Step::Next, window, cx)
                                         })),
                                 )
                             })
@@ -499,7 +672,6 @@ impl DocumentView {
                         .child("Hidden source value · containing passage shown in document"),
                 )
             })
-            .children(owner_row)
             .when_some(mapping.field_error.clone(), |v, error| {
                 v.child(
                     div()
@@ -509,18 +681,23 @@ impl DocumentView {
                         .child(error),
                 )
             });
-        let _ = hints;
-        // The editor records word geometry during paint, after this popup is rendered.
-        // Reconcile once on the next frame so Apply and resize do not retain a stale anchor.
+        // The editor records geometry during paint, after this popup is
+        // rendered. Reconcile once on the next frame so Apply, resize and
+        // stepping do not keep a stale anchor.
         let weak = cx.entity().downgrade();
+        let measured = self.pii.popup_size.clone();
         panel = panel.relative().child(
             gpui::canvas(
-                move |_, window, _| {
+                move |bounds, window, _| {
+                    let resized = measured.replace(bounds.size) != bounds.size;
                     let weak = weak.clone();
                     window.on_next_frame(move |_, cx| {
                         let _ = weak.update(cx, |this, cx| {
+                            let editor = this.editor.read(cx);
                             if this.active_annotation() == Some(annotation)
-                                && this.editor.read(cx).annotation_bounds(annotation) != anchor
+                                && (resized
+                                    || editor.local_annotation_bounds(annotation, range.start)
+                                        != Some(anchor))
                             {
                                 cx.notify();
                             }
@@ -533,9 +710,23 @@ impl DocumentView {
             .inset_0(),
         );
         Some(
-            deferred(anchored().position(position).snap_to_window().child(panel))
-                .with_priority(2)
-                .into_any_element(),
+            deferred(
+                anchored()
+                    .anchor(corner)
+                    .position(gpui::point(x, y))
+                    .position_mode(gpui::AnchoredPositionMode::Local)
+                    // Kept inside the window, except when parked off it.
+                    .when(!offscreen, |v| v.snap_to_window_with_margin(px(4.)))
+                    .child(div().relative().child(panel).when(!offscreen, |v| {
+                        // A notch on the edge facing the mention ties the card
+                        // to its word across the cleared line (ADR 0055).
+                        let at = anchor.left() + (anchor.size.width / 2.).min(px(14.)) - x;
+                        let at = at.clamp(px(14.), (width - px(14.)).max(px(14.)));
+                        v.child(notch(below, palette.bg, theme.popup_border(), at))
+                    })),
+            )
+            .with_priority(2)
+            .into_any_element(),
         )
     }
 
@@ -624,11 +815,13 @@ impl DocumentView {
         identity: &pii::Identity,
         selected_count: usize,
         mentions: usize,
+        owner: Option<Option<String>>,
         enabled: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let review = &self.pii.review;
         let custom = identity.custom_alias;
+        let palette = self.theme.get().pdf_style();
         self.menu_surface("direct-category-menu")
             .children(Category::ALL.into_iter().map(|category| {
                 let current = identity.category == category;
@@ -647,34 +840,57 @@ impl DocumentView {
                 )
                 .on_click(cx.listener(move |this, _, _, cx| this.correct_category(category, cx)))
             }))
+            // Ownership opens in the menu's place (ADR 0055).
+            .when_some(owner, |v, owner| {
+                v.child(div().h(px(1.)).my_1().bg(palette.border)).child(
+                    self.menu_row(
+                        "direct-owner",
+                        "Belongs to…",
+                        owner.unwrap_or_else(|| "nobody".into()),
+                        None,
+                        enabled,
+                        cx,
+                    )
+                    .aria_label("Belongs to")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.pii.mapping.toggle_owner_picker();
+                        cx.notify();
+                    })),
+                )
+            })
             .into_any_element()
     }
     /// The editable alias: a boxed field, accent-bordered while editing.
-    fn alias_field(&self, focused: bool, cx: &mut Context<Self>) -> AnyElement {
+    /// The alias in its mention's colour (the category's while proposed, the
+    /// applied blue once applied); its field shows on hover and focus.
+    fn alias_field(&self, focused: bool, accent: Hsla, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let mapping = &self.pii.mapping;
+        // Sized to the alias, with room for the pencil (ADR 0055).
+        let chars = mapping.alias.read(cx).value().chars().count() as f32;
+        let width = px((chars * 8.2 + 22.).clamp(60., 220.));
         div()
             .id("direct-alias")
             .when(cfg!(test), |v| v.debug_selector(|| "direct-alias".into()))
-            .flex_1()
-            .min_w(px(96.))
+            .w(width)
+            .flex_shrink_0()
             .relative()
             .group("direct-alias")
             .cursor(gpui::CursorStyle::IBeam)
-            .px_2()
-            .py(px(3.))
+            .px(px(6.))
+            .py(px(2.))
             .rounded_md()
             .border_1()
             .border_color(if focused {
-                theme.applied()
+                accent
             } else {
-                palette.border
+                gpui::transparent_black()
             })
-            .bg(palette.placeholder_bg)
-            .text_color(theme.applied())
+            .when(focused, |v| v.bg(palette.placeholder_bg))
+            .text_color(accent)
             .font_weight(gpui::FontWeight::MEDIUM)
-            .hover(move |s| s.border_color(palette.header_muted))
+            .hover(move |s| s.border_color(palette.border))
             .child(mapping.alias.clone())
             // A pencil on hover marks the alias as editable.
             .child(
@@ -846,124 +1062,83 @@ impl DocumentView {
     }
     /// `Belongs to PERSON_1 ▾` for contacts and identifiers, or whenever an
     /// owner is set (ADR 0032).
-    fn owner_row(
+    /// The owner picker, opened from the category menu's "Belongs to…".
+    fn owner_menu(
         &self,
         identity: &pii::Identity,
         id: u64,
         enabled: bool,
         cx: &mut Context<Self>,
-    ) -> Option<gpui::Div> {
-        let review = &self.pii.review;
-        let owner = identity.owner.and_then(|owner| review.identity(owner));
-        if owner.is_none()
-            && matches!(
-                identity.category,
-                Category::Person | Category::Organization | Category::Date | Category::Other
-            )
-        {
-            return None;
-        }
+    ) -> AnyElement {
         let mapping = &self.pii.mapping;
-        let palette = self.theme.get().pdf_style();
-        let label = owner.map_or("nobody", |owner| owner.alias.as_str());
-        let menu = mapping.pickers.owner.then(|| {
-            let query = mapping.target.read(cx).value().trim().to_lowercase();
-            let owners: Arc<[_]> = self.alias_targets(&query, true).into();
-            let count = owners.len();
-            self.menu_surface("direct-owner-menu")
-                .child(div().px_1().pb_1().child(mapping.target.clone()))
-                .child(
-                    self.menu_row(
-                        "direct-owner-none",
-                        "Nobody",
-                        "",
-                        Some(identity.owner.is_none()),
-                        enabled,
-                        cx,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.change_mapping(MappingAction::Owner(id, None), cx)
-                    })),
+        let query = mapping.target.read(cx).value().trim().to_lowercase();
+        let owners: Arc<[_]> = self.alias_targets(&query, true).into();
+        let count = owners.len();
+        self.menu_surface("direct-owner-menu")
+            .child(self.menu_heading("Belongs to"))
+            .child(div().px_1().pb_1().child(mapping.target.clone()))
+            .child(
+                self.menu_row(
+                    "direct-owner-none",
+                    "Nobody",
+                    "",
+                    Some(identity.owner.is_none()),
+                    enabled,
+                    cx,
                 )
-                .child(
-                    uniform_list(
-                        "direct-owners",
-                        count,
-                        cx.processor(move |this, indices: Range<usize>, _, cx| {
-                            indices
-                                .map(|index| {
-                                    let popup::AliasTarget {
-                                        id: target_id,
-                                        alias,
-                                        original,
-                                        ..
-                                    } = owners[index].clone();
-                                    let current = this
-                                        .pii
-                                        .review
-                                        .identity(id)
-                                        .is_some_and(|i| i.owner == Some(target_id));
-                                    this.menu_row(
-                                        SharedString::from(format!("direct-owner-{target_id}")),
-                                        alias,
-                                        original,
-                                        Some(current),
-                                        !this.pii.scanning(),
-                                        cx,
-                                    )
-                                    .h(px(30.))
-                                    .on_click(cx.listener(
-                                        move |this, _, _, cx| {
-                                            this.change_mapping(
-                                                MappingAction::Owner(id, Some(target_id)),
-                                                cx,
-                                            )
-                                        },
-                                    ))
-                                })
-                                .collect()
-                        }),
-                    )
-                    .h(px((count as f32 * 30.).clamp(0., 150.)))
-                    .flex_shrink_0(),
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.change_mapping(MappingAction::Owner(id, None), cx)
+                })),
+            )
+            .child(
+                uniform_list(
+                    "direct-owners",
+                    count,
+                    cx.processor(move |this, indices: Range<usize>, _, cx| {
+                        indices
+                            .map(|index| {
+                                let popup::AliasTarget {
+                                    id: target_id,
+                                    alias,
+                                    original,
+                                    ..
+                                } = owners[index].clone();
+                                let current = this
+                                    .pii
+                                    .review
+                                    .identity(id)
+                                    .is_some_and(|i| i.owner == Some(target_id));
+                                this.menu_row(
+                                    SharedString::from(format!("direct-owner-{target_id}")),
+                                    alias,
+                                    original,
+                                    Some(current),
+                                    !this.pii.scanning(),
+                                    cx,
+                                )
+                                .h(px(30.))
+                                .on_click(cx.listener(
+                                    move |this, _, _, cx| {
+                                        this.change_mapping(
+                                            MappingAction::Owner(id, Some(target_id)),
+                                            cx,
+                                        )
+                                    },
+                                ))
+                            })
+                            .collect()
+                    }),
                 )
-                .into_any_element()
-        });
-        Some(
-            div()
-                .flex_shrink_0()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(
-                    div()
-                        .text_size(px(12.))
-                        .text_color(palette.header_muted)
-                        .child("Belongs to"),
-                )
-                .child(
-                    self.with_dropdown(
-                        self.popup_control("direct-owner", format!("{label} ▾"), enabled, cx)
-                            .text_size(px(12.))
-                            .aria_label(format!("Belongs to {label}"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.pii.mapping.toggle_owner_picker();
-                                cx.notify();
-                            })),
-                        menu,
-                    ),
-                ),
-        )
+                .h(px((count as f32 * 30.).clamp(0., 150.)))
+                .flex_shrink_0(),
+            )
+            .into_any_element()
     }
-    /// `Apply to ( This one | All N )`: the popup's one scope, and the only
-    /// place counts appear (ADR 0032). Labels stay short so three segments fit
-    /// the popup; tooltips spell each scope out.
-    #[allow(clippy::too_many_arguments)]
+    /// `( This one | All N )`: the popup's one scope, and the only place its
+    /// count appears. All, the whole entity, is the default (ADR 0055).
     fn scope_control(
         &self,
-        wording: usize,
         mentions: usize,
-        original: &str,
         alias: &str,
         enabled: bool,
         cx: &mut Context<Self>,
@@ -971,98 +1146,63 @@ impl DocumentView {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let selected = self.pii.mapping.scope;
-        let mut scopes = vec![Scope::Mention];
-        if wording > 1 {
-            scopes.push(Scope::Wording);
-        }
-        if mentions > wording {
-            scopes.push(Scope::Entity);
-        }
-        let three = scopes.len() == 3;
-        div()
-            .flex_shrink_0()
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap_x_2()
-            .gap_y_1()
-            .child(
-                div()
+        div().flex_shrink_0().flex().items_center().child(
+            div().flex().min_w_0().gap(px(2.)).children(
+                [Scope::Mention, Scope::Entity].into_iter().map(|scope| {
+                    let (label, count, tip) = match scope {
+                        Scope::Mention => ("This one", None, "Only this mention".to_string()),
+                        _ => (
+                            "All",
+                            Some(mentions),
+                            format!("All {mentions} mentions of {alias}, in every spelling"),
+                        ),
+                    };
+                    let on = selected == scope;
+                    self.popup_control(
+                        SharedString::from(format!("scope-{}", scope as u8)),
+                        "",
+                        enabled,
+                        cx,
+                    )
                     .flex()
-                    .min_w_0()
-                    .p(px(2.))
-                    .gap(px(2.))
-                    .rounded_md()
-                    .border_1()
-                    .border_color(palette.border)
-                    .children(scopes.into_iter().map(|scope| {
-                        let (label, count, tip) = match scope {
-                            Scope::Mention => ("This one", None, "Only this mention".to_string()),
-                            Scope::Wording if three => (
-                                "Same text",
-                                Some(wording),
-                                format!("Every mention written “{original}”"),
-                            ),
-                            Scope::Wording => (
-                                "All",
-                                Some(wording),
-                                format!("All {wording} mentions of {alias}"),
-                            ),
-                            Scope::Entity => (
-                                "All",
-                                Some(mentions),
-                                format!("All {mentions} mentions of {alias}, in every spelling"),
-                            ),
-                        };
-                        // A one-mention wording is the same as this mention.
-                        let on = selected == scope
-                            || (scope == Scope::Mention
-                                && selected == Scope::Wording
-                                && wording <= 1);
-                        self.popup_control(
-                            SharedString::from(format!("scope-{}", scope as u8)),
-                            "",
-                            enabled,
-                            cx,
-                        )
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .px_2()
-                        .py(px(1.))
-                        .rounded_sm()
-                        .text_size(px(12.))
-                        .whitespace_nowrap()
-                        .child(label)
-                        .children(count.map(|count| {
-                            div()
-                                .text_size(px(11.))
-                                .text_color(palette.header_muted)
-                                .child(count.to_string())
-                        }))
-                        .tooltip(crate::style::tooltip(tip, theme))
-                        .when(on, |v| {
-                            v.bg(palette.placeholder_bg)
-                                .text_color(palette.header_fg)
-                                .font_weight(gpui::FontWeight::MEDIUM)
-                        })
-                        .when(!on, |v| v.text_color(palette.header_muted))
-                        // Hovering previews the segment's scope outline.
-                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                            let mapping = &mut this.pii.mapping;
-                            if *hovered {
-                                mapping.scope_hover = Some(scope);
-                            } else if mapping.scope_hover == Some(scope) {
-                                mapping.scope_hover = None;
-                            }
-                            cx.notify();
-                        }))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.pii.mapping.set_scope(scope);
-                            cx.notify();
-                        }))
-                    })),
-            )
+                    .items_center()
+                    .gap_1()
+                    .px_2()
+                    .py(px(1.))
+                    .rounded_sm()
+                    .text_size(px(12.))
+                    .whitespace_nowrap()
+                    .child(label)
+                    .children(count.map(|count| {
+                        div()
+                            .text_size(px(11.))
+                            .text_color(palette.header_muted)
+                            .child(count.to_string())
+                    }))
+                    .tooltip(crate::style::tooltip(tip, theme))
+                    .when(on, |v| {
+                        v.bg(palette.placeholder_bg)
+                            .text_color(palette.header_fg)
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                    })
+                    .when(!on, |v| v.text_color(palette.header_muted))
+                    // Hovering previews the segment's scope outline.
+                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                        let mapping = &mut this.pii.mapping;
+                        if *hovered {
+                            mapping.scope_hover = Some(scope);
+                        } else if mapping.scope_hover == Some(scope) {
+                            mapping.scope_hover = None;
+                        }
+                        cx.notify();
+                    }))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.pii.mapping.set_scope(scope);
+                        cx.notify();
+                    }))
+                }),
+            ),
+        )
     }
 }
 

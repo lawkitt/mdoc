@@ -28,7 +28,6 @@ impl DocumentView {
         let mapping = &mut self.pii.mapping;
         mapping.panel_selected = true;
         mapping.cursor = Some(PanelCursor::Mention(annotation));
-        mapping.set_scope(Scope::Mention);
         self.editor
             .update(cx, |e, cx| e.set_active_annotation(Some(annotation), cx));
         self.reveal_replacement_offset(start, cx);
@@ -116,9 +115,10 @@ impl DocumentView {
         let Some(annotation) = self.active_annotation() else {
             return false;
         };
-        if annotation & APPLIED_ID != 0 && !keep {
+        if annotation & KEPT_ID != 0 || (annotation & APPLIED_ID != 0 && !keep) {
             return false;
         }
+        let previous = self.pii.mapping.scope;
         self.pii.mapping.set_scope(scope);
         if annotation & APPLIED_ID != 0 {
             let (_, applied) = self.scoped_mentions();
@@ -127,6 +127,10 @@ impl DocumentView {
             self.keep_originals(window, cx);
         } else {
             self.apply_scope(cx);
+        }
+        // This one and All stay chosen; Same text has no segment to show.
+        if scope == Scope::Wording {
+            self.pii.mapping.set_scope(previous);
         }
         true
     }
@@ -348,9 +352,9 @@ impl DocumentView {
                 this.decide(Scope::Entity, true, window, cx);
                 cx.stop_propagation();
             }))
-            // Space unticks the bar's ☑ Replace, in the selected scope.
+            // Space toggles the bar's ☑ Replace, in the selected scope.
             .on_action(cx.listener(|this, _: &crate::PanelKeep, window, cx| {
-                this.keep_originals(window, cx);
+                this.toggle_replace(window, cx);
                 cx.stop_propagation();
             }))
     }

@@ -1611,7 +1611,9 @@ impl Render for DocumentView {
                         .child(div().id("document-scroll").absolute().inset_0().overflow_y_scroll().track_scroll(&self.scroll).p_6().pb(px(72.))
                             .on_scroll_wheel(cx.listener(|this, _, _, cx| { this.wake_switcher(cx); cx.notify(); }))
                             // A centred reading column (ADR 0048, from variant B).
-                            .child(div().w_full().max_w(px(READING_WIDTH * self.zoom)).mx_auto().child(self.editor.clone())))
+                            .child(div().relative().w_full().max_w(px(READING_WIDTH * self.zoom)).mx_auto().child(self.editor.clone())
+                                // The mention bar scrolls with its mention (ADR 0055).
+                                .children(self.mention_popup_layer(window, cx))))
                         .child(markdown_scrollbar).children((empty_page && self.file_drag.is_some()).then(|| self.empty_page(cx))).into_any_element() })
                     .children(self.view_switcher(window, cx).filter(|_| !self.loading && !self.unavailable))))
                 // Replacements sit beside the text they describe, before Original.
@@ -1630,7 +1632,7 @@ impl Render for DocumentView {
 )
             .children(setup_notice.filter(|_| !(show_markdown && self.source_only && self.ocr_required.is_some()))).children(error_notice)
             // The word popup anchors to the editor, hidden under before/after.
-            .children(self.pii_popup(window, cx).filter(|_| self.compare.is_none()))
+            .children(self.pii_popup(cx).filter(|_| self.compare.is_none()))
             .children(self.replacement_tip(window, cx).filter(|_| self.compare.is_none()));
         // Sidebar collapsed: the header joins the title row and the document
         // sits in its own card below it (ADR 0048).

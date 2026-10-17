@@ -115,6 +115,16 @@ impl Theme {
         }
     }
 
+    /// The floating mention bar's edge: a step stronger than `border`, so it
+    /// stays distinct over text in both themes (ADR 0055).
+    pub fn popup_border(self) -> Hsla {
+        match self {
+            Self::Dark => rgb(0x56565f),
+            Self::Light => rgb(0xbcbcc4),
+        }
+        .into()
+    }
+
     pub fn search_accent(self) -> Hsla {
         match self {
             Self::Dark => rgb(0x82b9a7),

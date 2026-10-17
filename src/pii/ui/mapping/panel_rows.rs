@@ -520,8 +520,11 @@ impl DocumentView {
                     .text_ellipsis()
                     .child(format!("{before}{word}{after}")),
             )
-            .on_click(cx.listener(move |this, _, _, cx| {
+            .on_click(cx.listener(move |this, _, window, cx| {
+                // Like a kept marker in the text: the popup opens on it, unticked.
+                this.original_selected = false;
                 this.reveal_replacement_offset(start, cx);
+                this.activate_annotation(KEPT_ID | start as u64, window, cx);
                 cx.notify();
             }))
             .into_any_element()

@@ -693,6 +693,7 @@ fn applied_highlights_restore_one_or_matching_originals_and_keep_survives_rescan
         assert_eq!(app.editor.read(cx).text(), "PERSON_1 PERSON_2 PERSON_1");
         let id = app.pii.review.applied()[0].id;
         app.activate_annotation(APPLIED_ID | id, window, cx);
+        app.pii.mapping.set_scope(mapping::Scope::Entity);
         app.keep_originals(window, cx);
     });
     cx.run_until_parked();
@@ -757,8 +758,10 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
             cx.run_until_parked();
             app.update(cx, |app, cx| {
                 assert_eq!(app.editor.read(cx).text(), "Anna PERSON_2 Anna");
-                assert!(app.pii.popup.is_none());
+                assert!(app.pii.popup.is_some() && app.active_is_kept());
             });
+            cx.simulate_keystrokes("escape");
+            cx.run_until_parked();
             app.update_in(cx, |app, window, cx| {
                 let id = app.pii.review.applied()[0].id;
                 app.activate_annotation(APPLIED_ID | id, window, cx);
@@ -938,6 +941,7 @@ fn hidden_annotations_follow_visible_wrapped_rows(cx: &mut gpui::TestAppContext)
             border: gpui::transparent_black(),
             text_color: None,
             underline: None,
+            dotted: false,
         })
         .collect();
     app.update(cx, |app, cx| {

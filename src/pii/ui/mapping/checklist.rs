@@ -123,21 +123,29 @@ impl DocumentView {
         }
     }
 
-    fn propose_kept(&mut self, ranges: Vec<Range<usize>>, cx: &mut Context<Self>) {
+    /// Propose these kept mentions again as one undo step. Returns whether
+    /// any was proposed.
+    pub(in crate::pii::ui) fn propose_kept(
+        &mut self,
+        ranges: Vec<Range<usize>>,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if self.pii.scanning() || !self.can_copy_markdown() || ranges.is_empty() {
-            return;
+            return false;
         }
         let source = self.editor.read(cx).text().to_owned();
         let added =
             self.checkpoint_review(cx, |review| review.propose_kept_mentions(&source, &ranges));
-        if added.unwrap_or(0) == 0 {
-            self.pii.error = Some("Couldn't propose it again; select the text to add it.".into());
-        } else {
+        let proposed = added.unwrap_or(0) > 0;
+        if proposed {
             self.pii.reviewing = true;
             self.pii.error = None;
             self.review_changed(cx);
+        } else {
+            self.pii.error = Some("Couldn't propose it again; select the text to add it.".into());
         }
         cx.notify();
+        proposed
     }
 
     /// A click or Space on an entity row's checkbox.

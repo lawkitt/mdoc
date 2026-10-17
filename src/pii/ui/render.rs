@@ -126,13 +126,39 @@ impl DocumentView {
                 .into_any_element(),
         )
     }
-    pub(crate) fn pii_popup(&self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(crate) fn pii_popup(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if let Some(popup) = self.unresolved_popup(cx) {
             return Some(popup);
         }
         if let Popup::Choose { ids, selected } = self.pii.popup.as_ref()? {
             return Some(self.annotation_chooser(ids.clone(), *selected, cx));
         }
-        self.replacement_popup(window, cx)
+        None
+    }
+    /// The mention bar, laid out beside the editor inside the scrolled
+    /// content; `layer` records where that content sits (ADR 0055).
+    pub(crate) fn mention_popup_layer(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> [AnyElement; 2] {
+        let layer = self.pii.popup_layer.clone();
+        let scroll = self.scroll.clone();
+        [
+            gpui::canvas(
+                move |bounds, _, _| layer.set(Some((bounds.origin, scroll.offset()))),
+                |_, _, _, _| {},
+            )
+            .absolute()
+            .inset_0()
+            .into_any_element(),
+            // Anchored at the editor's top-left, in its coordinates.
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .children(self.replacement_popup(window, cx))
+                .into_any_element(),
+        ]
     }
 }

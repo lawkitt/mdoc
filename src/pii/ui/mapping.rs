@@ -6,7 +6,7 @@ mod panel_keys;
 mod panel_rows;
 mod popup;
 mod share;
-pub(super) use popup::Scope;
+pub(super) use popup::{Scope, Step};
 mod popup_render;
 
 /// What the workspace popup edits: a whole entity after a mapping change, or
@@ -14,8 +14,17 @@ mod popup_render;
 #[derive(Clone)]
 pub(super) enum Selection {
     Entity(u64),
-    Candidate { variant: u64, range: Range<usize> },
+    Candidate {
+        variant: u64,
+        range: Range<usize>,
+    },
     Applied(u64),
+    /// A kept mention: its entity, range and wording (ADR 0055).
+    Kept {
+        identity: u64,
+        range: Range<usize>,
+        original: Arc<str>,
+    },
 }
 
 /// Inline popup pickers. Several may be open at once.
@@ -151,6 +160,9 @@ pub(super) struct MappingUi {
     pub(super) target_scroll: gpui::UniformListScrollHandle,
     field_error: Option<String>,
     remembered: std::collections::HashMap<u64, usize>,
+    /// The popup's mention as (entity, index among its live and kept
+    /// mentions): undo and redo flip kept and live without reordering them.
+    active_place: Option<(u64, usize)>,
     bounds: Rc<Cell<Option<gpui::Bounds<Pixels>>>>,
     /// The open floating menu, which may hang below the popup card.
     menu_bounds: Rc<Cell<Option<gpui::Bounds<Pixels>>>>,
@@ -238,10 +250,13 @@ impl MappingUi {
     pub(super) fn select(&mut self, selected: Selection) {
         self.selected = Some(selected);
         self.pickers = Pickers::default();
-        self.scope = Scope::Wording;
         self.target_index = None;
         self.field_error = None;
         self.scroll.set_offset(gpui::point(px(0.), px(0.)));
+    }
+    #[cfg(test)]
+    pub(super) fn scope(&self) -> Scope {
+        self.scope
     }
     pub(super) fn set_scope(&mut self, scope: Scope) {
         self.scope = scope;
@@ -386,12 +401,13 @@ impl MappingUi {
             open: false,
             projection: Default::default(),
             entries_cache: Default::default(),
-            scope: Scope::Wording,
+            scope: Scope::Entity,
             pickers: Pickers::default(),
             target_index: None,
             target_scroll: gpui::UniformListScrollHandle::new(),
             field_error: None,
             remembered: Default::default(),
+            active_place: None,
             bounds: Rc::new(Cell::new(None)),
             menu_bounds: Rc::new(Cell::new(None)),
             popup_revision: None,
@@ -513,6 +529,7 @@ impl DocumentView {
                 .review
                 .applied_occurrence(*id)
                 .map(|a| a.step.identity),
+            Selection::Kept { identity, .. } => Some(*identity),
         }
     }
     #[cfg(test)]
@@ -543,15 +560,13 @@ impl DocumentView {
     pub(super) fn select_occurrence(&mut self, selected: Selection, cx: &mut Context<Self>) {
         let previous = self.selected_entity();
         self.pii.mapping.select(selected);
-        // A newly selected entity's group opens; other groups stay as they are.
+        // A newly selected entity's group opens and the scope returns to the
+        // whole entity; within an entity the chosen scope stays (ADR 0055).
         if let Some(id) = self.selected_entity().filter(|id| previous != Some(*id)) {
             self.pii.mapping.expanded.insert(id);
+            self.pii.mapping.set_scope(Scope::Entity);
         }
-        if let Some(identity) = self
-            .selected_entity()
-            .and_then(|id| self.pii.review.identity(id))
-        {
-            let alias = identity.alias.clone();
+        if let Some((alias, _)) = self.selected_name() {
             self.pii
                 .mapping
                 .alias
@@ -559,10 +574,36 @@ impl DocumentView {
         }
         cx.notify();
     }
+    /// The selected entity's alias and category; a fully kept entity no
+    /// longer in the review answers from its untick-time record.
+    pub(super) fn selected_name(&self) -> Option<(String, Category)> {
+        let id = self.selected_entity()?;
+        if let Some(identity) = self.pii.review.identity(id) {
+            return Some((identity.alias.clone(), identity.category));
+        }
+        let original = self.active_original()?;
+        let name = self.pii.mapping.kept_names.get(&original)?;
+        Some((name.alias.clone(), name.category))
+    }
+    /// The kept mention starting at `start`, as a selection.
+    pub(super) fn kept_selection(&self, start: usize) -> Option<Selection> {
+        self.kept_entries()
+            .into_iter()
+            .find(|(range, _, _)| range.start == start)
+            .and_then(|(range, original, identity)| {
+                Some(Selection::Kept {
+                    identity: identity?,
+                    range,
+                    original,
+                })
+            })
+    }
     pub(super) fn sync_replacement_annotation(&mut self, annotation: u64, cx: &mut Context<Self>) {
         self.pii.mapping.show();
         let review = &self.pii.review;
-        let selection = if annotation & APPLIED_ID != 0 {
+        let selection = if annotation & KEPT_ID != 0 {
+            self.kept_selection((annotation & !KEPT_ID) as usize)
+        } else if annotation & APPLIED_ID != 0 {
             review
                 .applied_occurrence(annotation & !APPLIED_ID)
                 .map(|_| Selection::Applied(annotation & !APPLIED_ID))
@@ -577,6 +618,20 @@ impl DocumentView {
         }
     }
     pub(super) fn sync_identity_selection_after_history(&mut self, cx: &mut Context<Self>) {
+        // An undo or redo can turn the popup's mention kept or live again:
+        // follow it by its place among the entity's mentions (ADR 0055).
+        if let (Some((id, index)), Some(_)) = (self.pii.mapping.active_place, &self.pii.popup) {
+            let mentions = self.popup_occurrences(id);
+            let current = self
+                .active_annotation()
+                .is_some_and(|a| mentions.iter().any(|(m, _)| *m == a));
+            if !current && let Some(&(annotation, _)) = mentions.get(index) {
+                self.sync_replacement_annotation(annotation, cx);
+                self.pii.keep_selection_popup();
+                self.remember_active_replacement(cx);
+                return;
+            }
+        }
         if let Some(selected) = self.pii.mapping.selected.clone() {
             if self.selected_entity().is_some() {
                 self.select_occurrence(selected, cx);

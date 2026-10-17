@@ -432,6 +432,8 @@ pub struct SourceAnnotation {
     pub text_color: Option<Hsla>,
     /// An underline under an unbordered fill, e.g. a category's colour.
     pub underline: Option<Hsla>,
+    /// Draw `underline` as a quiet 1 px dotted line, without the fill band.
+    pub dotted: bool,
 }
 
 /// A transient colour change on annotations, e.g. a replacement settling in.
@@ -488,28 +490,6 @@ pub struct SelectionAction {
     pub disabled: Option<SharedString>,
     /// Hover tint for the pill.
     pub accent: Hsla,
-}
-
-/// Plain hover tip for the selection pill.
-struct PillTip {
-    text: SharedString,
-    bg: Hsla,
-    fg: Hsla,
-    border: Hsla,
-}
-impl Render for PillTip {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .px(px(8.))
-            .py(px(4.))
-            .rounded(px(5.))
-            .bg(self.bg)
-            .border_1()
-            .border_color(self.border)
-            .text_color(self.fg)
-            .text_size(px(12.))
-            .child(self.text.clone())
-    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1144,6 +1124,34 @@ impl EditorState {
                     .map(|(_, bounds)| *bounds)
             })
             .flatten()
+    }
+
+    /// Where annotation `id` sits relative to the editor's own top-left after
+    /// the last paint: the union of its painted rows, or the text at `offset`
+    /// when it was not painted. Unlike window positions this stays valid while
+    /// a host scrolls the editor, so the host can anchor to it inside the
+    /// scrolled content. `None` once the text changed since that paint.
+    pub fn local_annotation_bounds(&self, id: u64, offset: usize) -> Option<Bounds<Pixels>> {
+        let origin = self.last_bounds?.origin;
+        if self.last_paint_gen != self.content_gen {
+            return None;
+        }
+        let painted = (self.annotation_revision == self.content_gen)
+            .then(|| {
+                self.annotation_bounds
+                    .iter()
+                    .filter(|(key, _)| *key == id)
+                    .map(|(_, bounds)| *bounds)
+                    .reduce(|a, b| a.union(&b))
+            })
+            .flatten();
+        let bounds = painted.or_else(|| self.bounds_for_offset(offset))?;
+        Some(Bounds::new(bounds.origin - origin, bounds.size))
+    }
+
+    /// The base text line height of the last paint.
+    pub fn base_line_height(&self) -> Pixels {
+        self.line_height
     }
 
     /// Whether the painted annotation represents hidden source in the gutter.
@@ -2306,13 +2314,17 @@ impl EditorState {
         )
     }
 
-    /// A compact pill above the settled selection's end (below near the window
-    /// top) offering the host's selection action.
+    /// A compact pill just above the settled selection's end (below it near
+    /// the window top) offering the host's selection action. It lives only
+    /// while the selection is held, so it may cover the line above (ADR 0055).
+    /// An action the selection cannot take shows no pill; the right-click
+    /// menu keeps the item and its reason.
     fn selection_pill(&self, window: &Window, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         use gpui::prelude::FluentBuilder as _;
         let action = self.live_selection_action()?.clone();
         if self.is_selecting
             || self.menu.is_some()
+            || action.disabled.is_some()
             || self.selection_action_dismissed.as_ref() == Some(&self.selected_range)
             || !self.focus_handle.is_focused(window)
         {
@@ -2334,21 +2346,16 @@ impl EditorState {
         let bg = st.map_or(rgb(0x26262b).into(), |s| s.popover_bg);
         let border = st.map_or(rgb(0x45454c).into(), |s| s.popover_border);
         let fg = st.map_or(rgb(0xe6e6e6).into(), |s| s.popover_fg);
-        let enabled = action.disabled.is_none();
-        let tip = action
-            .disabled
-            .clone()
-            .unwrap_or_else(|| action.menu_label.clone());
         let accent = action.accent;
         let (corner, at) = if end.top() > px(44.) {
             (
                 gpui::Anchor::BottomRight,
-                point(end.right(), end.top() - px(4.)),
+                point(end.right(), end.top() - px(3.)),
             )
         } else {
             (
                 gpui::Anchor::TopRight,
-                point(end.right(), end.bottom() + px(4.)),
+                point(end.right(), end.bottom() + px(3.)),
             )
         };
         let muted = Hsla {
@@ -2360,17 +2367,13 @@ impl EditorState {
         let pill = div()
             .id("selection-action-pill")
             .occlude()
-            .cursor(if enabled {
-                CursorStyle::PointingHand
-            } else {
-                CursorStyle::Arrow
-            })
-            .h(px(24.))
-            .pl(px(7.))
-            .pr(px(8.))
+            .cursor(CursorStyle::PointingHand)
+            .h(px(22.))
+            .pl(px(6.))
+            .pr(px(7.))
             .flex()
             .items_center()
-            .gap(px(6.))
+            .gap(px(5.))
             .rounded(px(6.))
             .bg(bg)
             .border_1()
@@ -2378,20 +2381,17 @@ impl EditorState {
             .shadow_md()
             .text_size(px(12.))
             .font_weight(FontWeight::MEDIUM)
-            .text_color(if enabled { fg } else { muted })
+            .text_color(fg)
             .child(
                 div()
-                    .size(px(10.))
+                    .size(px(9.))
                     .rounded(px(3.))
                     .border_1()
-                    .border_color(if enabled { accent } else { muted })
-                    .bg(Hsla {
-                        a: if enabled { 0.25 } else { 0. },
-                        ..accent
-                    }),
+                    .border_color(accent)
+                    .bg(Hsla { a: 0.25, ..accent }),
             )
             .child(action.label.clone())
-            .when(enabled && !action.shortcut.is_empty(), |v| {
+            .when(!action.shortcut.is_empty(), |v| {
                 v.child(
                     div()
                         .text_size(px(11.))
@@ -2400,28 +2400,15 @@ impl EditorState {
                         .child(action.shortcut.clone()),
                 )
             })
-            .tooltip(move |_, cx| {
-                gpui::AppContext::new(cx, |_| PillTip {
-                    text: tip.clone(),
-                    bg,
-                    fg,
-                    border,
-                })
-                .into()
-            })
             // Keep the editor from moving the caret under the pill.
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |_, _: &MouseDownEvent, _, cx| {
                     cx.stop_propagation();
-                    if enabled {
-                        cx.emit(EditorEvent::SelectionAction);
-                    }
+                    cx.emit(EditorEvent::SelectionAction);
                 }),
             )
-            .when(enabled, |v| {
-                v.hover(move |s| s.border_color(Hsla { a: 0.7, ..accent }))
-            });
+            .hover(move |s| s.border_color(Hsla { a: 0.7, ..accent }));
         Some(
             gpui::deferred(
                 gpui::anchored()
@@ -5613,6 +5600,7 @@ mod annotation_tests {
                         border: gpui::transparent_black(),
                         text_color: None,
                         underline: None,
+                        dotted: false,
                     })
                     .collect(),
                 cx,
@@ -5706,6 +5694,7 @@ mod annotation_tests {
                         border: gpui::transparent_black(),
                         text_color: None,
                         underline: None,
+                        dotted: false,
                     },
                     SourceAnnotation {
                         id: 8,
@@ -5715,6 +5704,7 @@ mod annotation_tests {
                         border: gpui::transparent_black(),
                         text_color: None,
                         underline: None,
+                        dotted: false,
                     },
                 ],
                 cx,
