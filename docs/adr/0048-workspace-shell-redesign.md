@@ -31,6 +31,7 @@ step, but as a one-document wizard that hides editing.
    without a case under "Open". Tabs drag between sections. Foot: an update card
    while an update waits, then ⚙ Settings · ◐ theme (System / Light / Dark,
    saved in the session; System follows the window live) · ? Help ↗.
+   Settings opens as an overlay; a click outside the dialog closes it.
    **Collapsed rail (44 px)**: quiet 16 px icons (toggle, Search, Home), a
    hairline, tabs as document glyphs (active on a soft fill, status as a dot,
    name and format in the tooltip), a plain +, and only Settings pinned to the
@@ -82,7 +83,9 @@ step, but as a one-document wizard that hides editing.
    wording / all. ⌘↩ applies everything, everywhere; ⌘Z takes an applied
    mention back to proposed. ADR 0033's ⌘Enter / ⇧⌘Enter scopes are gone.
 9. **Reading column** centred, 760 px at 100%. **Zoom** scales the Markdown
-   column's text, 50–200% in 5% steps (⌘= / ⌘− / ⌘0), per document, not saved.
+   column's text, 50–200% in 5% steps (⌘= or ⌘+ / ⌘− / ⌘0; Ctrl on Windows
+   and Linux; plus is accepted with the Shift a layout needs), per document,
+   not saved. The keys step exactly as the pill's buttons do.
 10. **View pill**: zoom − 100% + and, once replacements are applied, Edit ·
     Original · Pseudonymized · Side by side. It rests hidden: it fades 1.5 s
     after the last pointer move near the bottom of the text, scroll, zoom or
@@ -90,7 +93,9 @@ step, but as a one-document wizard that hides editing.
     goes without a fade.
 11. **Notices** that need attention (case key, crash report, session errors)
     float as toasts over the card's bottom-left, above the view pill, and are
-    counted by the bell. Expected limitations are not notices: the DOCX
+    counted by the bell. The bell opens and closes the notices popover, which
+    also closes from its × or an outside click; closing it keeps every notice
+    and the bell's count. Expected limitations are not notices: the DOCX
     preview's "approximate" caveat (ADR 0005) is an ⓘ beside the Source name;
     worker warnings stay in the preview pane. The preview header reads
     "Source · name"; its close button is "Close source".

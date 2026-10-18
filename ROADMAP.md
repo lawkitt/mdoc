@@ -39,20 +39,7 @@ priority order.
 
 ### Should-fix
 
-1. **[UI] Highlights follow line wraps.** *Known issue 2.* A wrapped proposed or
-   applied mention extends its underline or chip box to the end of the first line,
-   and the continuation starts with a stub.
-   *Done when:* each wrapped segment is boxed separately, in the editor and in
-   Side by side.
-2. **[UI] Small shell fixes.**
-   - Cmd + + (macOS) and Ctrl + + (Windows/Linux) increase Markdown text size
-     through the zoom button's action, accepting the plus key (with Shift where the
-     layout requires) alongside Cmd + = from ADR 0048; steps and limits unchanged.
-   - Clicking the bell while its popup is open closes it; the popup has a close
-     button styled like other dismissible UI. Notices keep their attention state.
-   - Clicking outside Settings closes it, like other overlays; clicks inside do not.
-
-   *Done when:* each works with the keyboard and mouse on macOS and Windows.
+None open.
 
 ## After 0.1.0
 

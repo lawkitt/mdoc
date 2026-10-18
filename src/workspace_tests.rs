@@ -574,6 +574,50 @@ fn toolbar_settings_opens_and_closes_without_editor_focus(cx: &mut TestAppContex
         window.draw(cx).clear(cx);
     });
     assert!(cx.debug_bounds("settings-dialog").is_none());
+    // A click inside keeps Settings open; one outside closes it.
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    click_toolbar(cx, "Settings");
+    let dialog = cx.debug_bounds("settings-dialog").unwrap();
+    cx.simulate_click(dialog.center(), Default::default());
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(panel.read(cx).open));
+    cx.simulate_click(
+        gpui::point(dialog.left() - px(20.), dialog.center().y),
+        Default::default(),
+    );
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        assert!(!panel.read(cx).open, "an outside click closes Settings");
+        window.draw(cx).clear(cx);
+    });
+    assert!(cx.debug_bounds("settings-dialog").is_none());
+}
+
+#[gpui::test]
+fn plus_keys_zoom_in_like_the_zoom_button(cx: &mut TestAppContext) {
+    cx.update(crate::bind_app_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    let view = active(&tabs, cx);
+    let mut zoom = cx.update(|_, cx| view.read(cx).zoom);
+    // Cmd/Ctrl with =, plus, and plus or = with the Shift a layout needs.
+    for keys in [
+        "secondary-=",
+        "secondary-+",
+        "secondary-shift-=",
+        "secondary-shift-+",
+    ] {
+        cx.simulate_keystrokes(keys);
+        cx.run_until_parked();
+        let next = cx.update(|_, cx| view.read(cx).zoom);
+        assert!(
+            (next - zoom - crate::document_view::ZOOM_STEP).abs() < 1e-4,
+            "{keys}: {zoom} -> {next}"
+        );
+        zoom = next;
+    }
+    cx.simulate_keystrokes("secondary-0");
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(view.read(cx).zoom, 1.));
 }
 
 #[gpui::test]
@@ -3686,6 +3730,22 @@ fn notices_wait_behind_the_header_bell(cx: &mut TestAppContext) {
     draw(cx);
     assert!(cx.debug_bounds("notices-popover").is_none());
     assert!(cx.debug_bounds("header-notices").is_some());
+    click_toolbar(cx, "header-notices");
+    draw(cx);
+    assert!(cx.debug_bounds("notices-popover").is_some());
+    // The bell closes its open popover rather than reopening it.
+    click_toolbar(cx, "header-notices");
+    draw(cx);
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    click_toolbar(cx, "header-notices");
+    draw(cx);
+    assert!(cx.debug_bounds("notices-popover").is_some());
+    // The close button closes it too; the notice keeps the bell.
+    click_toolbar(cx, "close-notices");
+    draw(cx);
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    assert!(cx.debug_bounds("header-notices").is_some());
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).title.notices.get(), 1));
     click_toolbar(cx, "header-notices");
     draw(cx);
     assert!(cx.debug_bounds("notices-popover").is_some());

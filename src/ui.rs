@@ -609,9 +609,15 @@ pub fn notice_bell(title: &crate::style::TitleBar, theme: Theme) -> Option<AnyEl
     }
     let open = title.notices_open.get();
     let amber = crate::style::markdown_style(theme).alert_warning;
+    let bell = title.notices_bell.clone();
     Some(
         div()
             .relative()
+            .child(
+                gpui::canvas(move |bounds, _, _| bell.set(bounds), |_, _, _, _| {})
+                    .absolute()
+                    .inset_0(),
+            )
             .child(
                 header_icon(
                     "header-notices",

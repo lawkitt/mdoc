@@ -899,8 +899,11 @@ impl Render for Panel {
                     != Some(current.pseudonymization.threshold)
         });
         div().id("settings-overlay").absolute().inset_0().p_4().flex().items_center().justify_center().occlude().bg(gpui::Hsla { a: 0.35, ..p.bg })
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            // A press on the backdrop closes Settings like other overlays;
+            // presses inside the dialog stop before reaching it.
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, w, cx| { cx.stop_propagation(); this.close(w, cx) }))
             .child(ui::panel("settings-dialog", theme).when(cfg!(test), |v| v.debug_selector(|| "settings-dialog".into()))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .key_context("ModelSettings UiPanel").track_focus(&self.focus).tab_group().tab_stop(false).w(px(600.)).max_w_full()
                 .max_h((window.viewport_size().height - px(32.)).max(px(160.)))
                 .flex().flex_col().rounded_lg().shadow_lg().bg(p.bg).text_color(p.header_fg).text_size(px(13.))
