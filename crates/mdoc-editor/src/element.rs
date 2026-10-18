@@ -1261,6 +1261,90 @@ impl Element for EditorElement {
                 sels
             };
 
+        // Annotation quads for source range `s..e`: one per wrap row, each
+        // covering only that row's part of the range (whitespace at a wrap
+        // trimmed), so a wrapped chip or underline is boxed per segment instead
+        // of running to the right edge. Table and bidi rows keep the shared
+        // geometry.
+        let annotation_quads =
+            |s: usize, e: usize, color: Hsla, window: &mut Window| -> Vec<PaintQuad> {
+                let (s_row, _) = row_col(s);
+                let (e_row, _) = row_col(e);
+                let mut quads = Vec::new();
+                for row in s_row..=e_row {
+                    let Some(line) = wrapped.get(row) else {
+                        continue;
+                    };
+                    let line_start = line_starts[row];
+                    let (rs, re) = (s.max(line_start), e.min(line_end(row)));
+                    if rs >= re {
+                        continue;
+                    }
+                    let lh = line_heights.get(row).copied().unwrap_or(base_lh);
+                    if lh <= px(0.5) {
+                        continue;
+                    }
+                    if line.wrap_boundaries.is_empty()
+                        || bidi(row).is_some()
+                        || tables.get(row).and_then(Option::as_ref).is_some()
+                    {
+                        quads.extend(range_quads(rs, re, color, window));
+                        continue;
+                    }
+                    let (a, b) = (
+                        disp_col(row, rs - line_start),
+                        disp_col(row, re - line_start),
+                    );
+                    let text = line.text.as_ref();
+                    let inset = row_x(row);
+                    let top = line_tops[row];
+                    let ends = line
+                        .wrap_boundaries
+                        .iter()
+                        .map(|w| line.unwrapped_layout.runs[w.run_ix].glyphs[w.glyph_ix].index)
+                        .chain([line.len()]);
+                    let mut row_start = 0;
+                    for (k, row_end) in ends.enumerate() {
+                        let (mut x, mut y) = (a.max(row_start), b.min(row_end));
+                        let start = row_start;
+                        row_start = row_end;
+                        if x >= y || !text.is_char_boundary(x) || !text.is_char_boundary(y) {
+                            continue;
+                        }
+                        while let Some(c) = text[x..y].chars().next().filter(|c| c.is_whitespace())
+                        {
+                            x += c.len_utf8();
+                        }
+                        while let Some(c) =
+                            text[x..y].chars().next_back().filter(|c| c.is_whitespace())
+                        {
+                            y -= c.len_utf8();
+                        }
+                        if x >= y {
+                            continue;
+                        }
+                        let y_top = lh * k;
+                        // An index on a wrap boundary resolves to the end of
+                        // the previous row; a segment starting there begins at
+                        // this row's left edge.
+                        let x0 = if x == start {
+                            px(0.)
+                        } else {
+                            search_position(row, line, x, lh).map_or(px(0.), |p| p.x)
+                        };
+                        let x1 = search_position(row, line, y, lh).map_or(x0, |p| p.x);
+                        quads.push(fill(
+                            Bounds::from_corners(
+                                to_screen(top, point(x0 + inset, y_top)),
+                                to_screen(top, point(x1.max(x0 + px(2.)) + inset, y_top + lh)),
+                            ),
+                            color,
+                        ));
+                    }
+                }
+                quads
+            };
+
         // Find-match highlights (host-set): the reader's browser-style find
         // colors — soft yellow everywhere, stronger orange on the active
         // match. Behind the text, like the selection.
@@ -1386,7 +1470,7 @@ impl Element for EditorElement {
                         now,
                     );
                     animating |= active;
-                    let mut quads = range_quads(
+                    let mut quads = annotation_quads(
                         annotation.range.start.max(visible.start),
                         annotation.range.end.min(visible.end),
                         color,
@@ -1405,7 +1489,7 @@ impl Element for EditorElement {
                             .map_or(start, |c| start + c.len_utf8());
                         let end = annotation.range.end.min(visible.end);
                         if next < end
-                            && range_quads(next, end, color, window)
+                            && annotation_quads(next, end, color, window)
                                 .iter()
                                 .filter(|q| q.bounds.size.width > px(1.))
                                 .count()

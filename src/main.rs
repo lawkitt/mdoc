@@ -237,36 +237,7 @@ fn main() {
             Some("ModelComparison"),
         )]);
         bind_markdown_search_keys(cx);
-        let modifier = if cfg!(target_os = "macos") {
-            "cmd"
-        } else {
-            "ctrl"
-        };
-        cx.bind_keys([
-            KeyBinding::new(&format!("{modifier}-,"), Settings, None),
-            KeyBinding::new(&format!("{modifier}-n"), New, None),
-            KeyBinding::new(&format!("{modifier}-o"), Open, None),
-            KeyBinding::new(&format!("{modifier}-shift-i"), Import, None),
-            KeyBinding::new(&format!("{modifier}-s"), Save, None),
-            KeyBinding::new(&format!("{modifier}-shift-s"), SaveAs, None),
-            KeyBinding::new(&format!("{modifier}-alt-shift-v"), PasteAiResponse, None),
-            KeyBinding::new(&format!("{modifier}-\\"), ToggleCompare, None),
-            KeyBinding::new(
-                &format!("{modifier}-alt-shift-c"),
-                PseudonymizeClipboard,
-                None,
-            ),
-            KeyBinding::new(&format!("{modifier}-w"), Close, None),
-            KeyBinding::new(&format!("{modifier}-="), ZoomIn, None),
-            KeyBinding::new(&format!("{modifier}-+"), ZoomIn, None),
-            KeyBinding::new(&format!("{modifier}--"), ZoomOut, None),
-            KeyBinding::new(&format!("{modifier}-0"), ZoomReset, None),
-            KeyBinding::new(&format!("{modifier}-q"), Quit, None),
-            KeyBinding::new(&format!("{modifier}-;"), NextMisspelling, None),
-            KeyBinding::new(&format!("{modifier}-shift-;"), PreviousMisspelling, None),
-            KeyBinding::new("ctrl-tab", NextTab, None),
-            KeyBinding::new("ctrl-shift-tab", PreviousTab, None),
-        ]);
+        bind_app_keys(cx);
         cx.set_menus(vec![Menu {
             name: "File".into(),
             items: vec![
@@ -340,4 +311,41 @@ fn main() {
         .detach();
         cx.activate(true);
     });
+}
+
+/// Window-wide shortcuts: files, tabs, zoom and spelling.
+pub(crate) fn bind_app_keys(cx: &mut App) {
+    let modifier = if cfg!(target_os = "macos") {
+        "cmd"
+    } else {
+        "ctrl"
+    };
+    cx.bind_keys([
+        KeyBinding::new(&format!("{modifier}-,"), Settings, None),
+        KeyBinding::new(&format!("{modifier}-n"), New, None),
+        KeyBinding::new(&format!("{modifier}-o"), Open, None),
+        KeyBinding::new(&format!("{modifier}-shift-i"), Import, None),
+        KeyBinding::new(&format!("{modifier}-s"), Save, None),
+        KeyBinding::new(&format!("{modifier}-shift-s"), SaveAs, None),
+        KeyBinding::new(&format!("{modifier}-alt-shift-v"), PasteAiResponse, None),
+        KeyBinding::new(&format!("{modifier}-\\"), ToggleCompare, None),
+        KeyBinding::new(
+            &format!("{modifier}-alt-shift-c"),
+            PseudonymizeClipboard,
+            None,
+        ),
+        KeyBinding::new(&format!("{modifier}-w"), Close, None),
+        KeyBinding::new(&format!("{modifier}-="), ZoomIn, None),
+        KeyBinding::new(&format!("{modifier}-+"), ZoomIn, None),
+        // Layouts where plus needs Shift (US: Shift + =) report the Shift.
+        KeyBinding::new(&format!("{modifier}-shift-="), ZoomIn, None),
+        KeyBinding::new(&format!("{modifier}-shift-+"), ZoomIn, None),
+        KeyBinding::new(&format!("{modifier}--"), ZoomOut, None),
+        KeyBinding::new(&format!("{modifier}-0"), ZoomReset, None),
+        KeyBinding::new(&format!("{modifier}-q"), Quit, None),
+        KeyBinding::new(&format!("{modifier}-;"), NextMisspelling, None),
+        KeyBinding::new(&format!("{modifier}-shift-;"), PreviousMisspelling, None),
+        KeyBinding::new("ctrl-tab", NextTab, None),
+        KeyBinding::new("ctrl-shift-tab", PreviousTab, None),
+    ]);
 }

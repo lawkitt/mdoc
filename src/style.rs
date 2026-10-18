@@ -26,6 +26,9 @@ pub struct TitleBar {
     pub notices: std::rc::Rc<std::cell::Cell<usize>>,
     /// The notices popover is open.
     pub notices_open: std::rc::Rc<std::cell::Cell<bool>>,
+    /// Where the bell painted last, so a press on it is left to its toggle
+    /// instead of closing the popover as an outside click.
+    pub notices_bell: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
 }
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]

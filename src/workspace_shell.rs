@@ -422,17 +422,40 @@ impl Workspace {
                             .flex()
                             .flex_col()
                             .gap_2()
-                            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                                this.title.notices_open.set(false);
-                                cx.notify();
-                            }))
+                            .on_mouse_down_out(cx.listener(
+                                |this, event: &gpui::MouseDownEvent, _, cx| {
+                                    // A press on the bell is its toggle's to handle.
+                                    if this.title.notices_bell.get().contains(&event.position) {
+                                        return;
+                                    }
+                                    this.title.notices_open.set(false);
+                                    cx.notify();
+                                },
+                            ))
                             .child(
                                 div()
-                                    .px_1()
-                                    .text_size(px(11.))
-                                    .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .text_color(p.header_muted)
-                                    .child("NOTICES"),
+                                    .flex()
+                                    .items_center()
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .px_1()
+                                            .text_size(px(11.))
+                                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                                            .text_color(p.header_muted)
+                                            .child("NOTICES"),
+                                    )
+                                    .child(
+                                        ui::control("close-notices", "×", theme, true)
+                                            .when(cfg!(test), |v| {
+                                                v.debug_selector(|| "close-notices".into())
+                                            })
+                                            .aria_label("Close notices")
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.title.notices_open.set(false);
+                                                cx.notify();
+                                            })),
+                                    ),
                             )
                             .children(cards),
                     ),

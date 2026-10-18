@@ -5823,6 +5823,86 @@ mod annotation_tests {
         });
     }
 
+    #[gpui::test]
+    fn wrapped_annotations_box_each_segment(cx: &mut gpui::TestAppContext) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        // Varying filler moves each mention against the wrap width, so some
+        // wrap between their two words.
+        let mut source = String::new();
+        let mut ranges = Vec::new();
+        for k in 0..80 {
+            source.push_str(&"w".repeat(1 + k % 9));
+            source.push(' ');
+            ranges.push(source.len()..source.len() + "Ann Lee".len());
+            source.push_str("Ann Lee ");
+        }
+        editor.update(cx, |editor, cx| {
+            editor.set_text(source.clone(), cx);
+            editor.set_annotations(
+                editor.revision(),
+                ranges
+                    .iter()
+                    .enumerate()
+                    .map(|(id, range)| SourceAnnotation {
+                        id: id as u64,
+                        range: range.clone(),
+                        color: rgba(0xffaa0022).into(),
+                        active_color: rgba(0xffaa0055).into(),
+                        border: rgba(0xffaa00ff).into(),
+                        text_color: None,
+                        underline: None,
+                        dotted: false,
+                    })
+                    .collect(),
+                cx,
+            );
+        });
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        editor.update(cx, |editor, _| {
+            let area = editor.last_bounds.unwrap();
+            let quads = |id: u64| -> Vec<Bounds<Pixels>> {
+                editor
+                    .annotation_bounds
+                    .iter()
+                    .filter(|(key, _)| *key == id)
+                    .map(|(_, bounds)| *bounds)
+                    .collect()
+            };
+            let whole = (0..ranges.len() as u64)
+                .map(quads)
+                .find(|q| q.len() == 1)
+                .expect("an unwrapped mention")[0]
+                .size
+                .width;
+            let wrapped: Vec<_> = (0..ranges.len() as u64)
+                .map(quads)
+                .filter(|q| q.len() == 2)
+                .collect();
+            assert!(!wrapped.is_empty(), "some mention wraps");
+            for q in wrapped {
+                let (first, rest) = (q[0], q[1]);
+                assert!(rest.top() > first.top());
+                // Chips pad 2 px around the glyphs.
+                assert!(
+                    first.right() < area.right() - px(1.),
+                    "the first segment ends at its text, not the right edge"
+                );
+                assert!(
+                    rest.left() <= area.left(),
+                    "the continuation starts at the row's text"
+                );
+                assert!(
+                    first.size.width + rest.size.width < whole + px(8.),
+                    "neither segment carries the other's part"
+                );
+                assert!(first.size.width > px(8.) && rest.size.width > px(8.));
+            }
+        });
+    }
+
     /// A host that stacks the editor in its own scroll view, like mdoc's
     /// document view (ADR 0054).
     struct ScrollHost {
