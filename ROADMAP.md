@@ -30,16 +30,36 @@ priority order.
    each EN and RU) live under `tests/fixtures/`, at least one with Markdown tables
    and paraphrased or inflected aliases, and Restore leaves no alias unrestored
    in any of them.
-2. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
-   Windows x64; keep Linux buildable. Done last, because it checks the finished UI.
-   *Done when:* one checklist per platform at `docs/evidence/platform/<date>/README.md`
-   covers both themes, IME (RU plus a CJK smoke test), clipboard,
-   VoiceOver/Narrator basics, and the popup, setup and file-drop flows, and lists
-   unavailable checks explicitly. The maintainer runs the Windows checks.
+2. **[Cases] Keychain prompt only after the explainer.** *From the 2026-10-18
+   macOS dry run (ADR 0057).* Dropping a folder as a case on beta.13 showed the
+   macOS "confidential information" password dialog together with the
+   "mdoc will ask for Keychain access" explainer, before Continue
+   ([ADR 0043](docs/adr/0043-deferred-keychain-access.md)). The quiet read
+   (`SecKeychainSetUserInteractionAllowed(false)`) is the suspect on macOS 15.
+   *Done when:* with a key whose ACL does not list the running build, every case
+   action shows the explainer alone, and the system dialog appears only after
+   Continue.
+3. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
+   Windows x64; keep Linux buildable. Done last, because it checks the finished UI:
+   an installed `0.1.0-rc.1` against the template `docs/platform-acceptance.md`
+   ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)), after a macOS dry run on the latest beta.
+   *Done when:* `docs/evidence/platform/<date>/` holds a README plus `macos.md`
+   and `windows.md` covering themes, IME (RU plus Japanese), clipboard,
+   VoiceOver/Narrator basics, the popup, setup and file-drop flows, install,
+   shortcuts, scaling, case key storage and Cyrillic paths; unavailable checks are
+   listed explicitly, and no Fail row lacks a linked roadmap item. The
+   maintainer runs the Windows checks. The dry run saw ⌘⇧S, ⌘⇧H and ⌘↩
+   ignored three times without a repro; confirm on a physical keyboard.
 
 ### Should-fix
 
-None open.
+1. **[Platform] Standard macOS menus.** *From the 2026-10-18 macOS dry run.*
+   GPUI makes the first menu the app menu, so the File menu shows as "mdoc";
+   there is no Edit or Window menu, About, Hide (⌘H) or Services. Add the app
+   menu (About, Settings, Hide, Quit), File, Edit (Undo, Redo, Cut, Copy, Paste,
+   Select All, Find) and Window menus, with their shortcuts.
+   *Done when:* each menu item runs its action and shows its shortcut, and
+   menu-bar Undo/Copy/Paste act on the focused editor or field.
 
 ## After 0.1.0
 
@@ -61,7 +81,14 @@ In priority order, after any carried-over should-fix items.
    typing does. Shortcut ⌘⌥F (macOS), Ctrl+H (Windows/Linux).
    *Done when:* each control works with keyboard and mouse on a long document
    with applied aliases, and one undo reverts a Replace all.
-3. **[PII] Merge hint.** *From the 2026-10-17 roadmap grooming.* When two
+3. **[A11y] Expose editor text to screen readers.** *From ADR 0057.* Controls
+   are labelled, but VoiceOver and Narrator cannot read or navigate the
+   document. Give the editor an AccessKit text role with its value, text
+   ranges, selection and caret events.
+   *Done when:* VoiceOver and Narrator read the document by line and word,
+   follow the caret, and announce selection in a long document with applied
+   aliases.
+4. **[PII] Merge hint.** *From the 2026-10-17 roadmap grooming.* When two
    identities very likely name the same subject, the Replacements panel shows a
    dismissible hint on the identity ("Looks like Maya Bennett · Merge"). Signals:
    an ADR 0053 short or inflected form with exactly one candidate full name;
@@ -72,16 +99,16 @@ In priority order, after any carried-over should-fix items.
    that pair.
    *Done when:* tests cover each signal and a non-signal (relatives sharing a
    surname, initials), and Merge, Undo and dismissal work in the live panel.
-4. **[UI] Center and smoothly scroll to the selected mention.** Clicking an
+5. **[UI] Center and smoothly scroll to the selected mention.** Clicking an
    entity or mention row in the Replacements panel reveals, highlights and focuses
    the mention near the vertical center of the editor, clear of the popup and
    clamped at document edges. Animate briefly; rapid selections head for the
    latest target without queued animations; manual scrolling interrupts; Reduce
    Motion positions immediately.
-5. **[UI] Expand/collapse all in the Replacements panel.** A compact icon
+6. **[UI] Expand/collapse all in the Replacements panel.** A compact icon
    control with tooltip and accessible label, preserving selection and
    replacement decisions.
-6. **[UI] Settings redesign.** *From the 2026-10-17 roadmap grooming; reference:
+7. **[UI] Settings redesign.** *From the 2026-10-17 roadmap grooming; reference:
    Anoni Settings.* A wider overlay with a left category list: General
    (appearance, updates, recent files), Detection (model, threshold, comparison),
    Recognition (OCR), Spelling (with the dictionary), Cases, About. Each setting
@@ -91,7 +118,7 @@ In priority order, after any carried-over should-fix items.
    Layout only: no UI language or profiles.
    *Done when:* every current setting is reachable, saved on change and
    operable by keyboard, in both themes.
-7. **[Cases] Case page.** *From the 2026-10-17 roadmap grooming.* The sidebar
+8. **[Cases] Case page.** *From the 2026-10-17 roadmap grooming.* The sidebar
    case header truncates long names and repeats the tab title; the Share
    panel's Case row only says "saved"; nothing gives an overview of a case. Add a
    case page, opened from the sidebar header, Home and the Share row, listing the
@@ -99,16 +126,16 @@ In priority order, after any carried-over should-fix items.
    and accept its ADR before implementation.
    *Done when:* the ADR is accepted and the page ships with those actions,
    verified in both themes.
-8. **[UI] Workspace Back/Forward.** Arrow buttons right of the sidebar toggle,
+9. **[UI] Workspace Back/Forward.** Arrow buttons right of the sidebar toggle,
    available with the sidebar expanded or collapsed. Navigate visited documents
    and Home, restore view state, disable unavailable directions, skip closed
    documents, clear forward history on new navigation.
-9. **[OCR] Recover page structure.** *Known issue 1.* On a clean one-column A4
-   scan (PP-OCRv6 Small, 150 DPI; 300 DPI does not help) paragraphs and headings
-   merge, and table rows split or shift; on the *Brown v. Board* page a body line
-   becomes a heading. Fix in the AnyDoc/pdf-inspector forks. Add the scan to the
-   [OCR qualification set](tests/fixtures/ocr-qualification/README.md) now.
-10. **[DOCX] Pseudonymized DOCX export with rdocx, then the preview.** *From the
+10. **[OCR] Recover page structure.** *Known issue 1.* On a clean one-column A4
+    scan (PP-OCRv6 Small, 150 DPI; 300 DPI does not help) paragraphs and headings
+    merge, and table rows split or shift; on the *Brown v. Board* page a body line
+    becomes a heading. Fix in the AnyDoc/pdf-inspector forks. Add the scan to the
+    [OCR qualification set](tests/fixtures/ocr-qualification/README.md) now.
+11. **[DOCX] Pseudonymized DOCX export with rdocx, then the preview.** *From the
     2026-10-17 roadmap grooming.* Evaluate [rdocx](https://github.com/tensorbee/rdocx)
     (MIT/Apache, young: 0.16) to write the applied case mapping into the
     original DOCX, keeping its formatting. Other Markdown edits are not carried
@@ -122,10 +149,22 @@ In priority order, after any carried-over should-fix items.
     *Done when:* fixture DOCX exports, reconverted and scanned, contain no
     original wording and open in Word with formatting intact; the preview
     decision is recorded with fixture comparisons.
-11. **[Cases] System-wide Pseudonymize Clipboard hotkey** (macOS
+12. **[Cases] System-wide Pseudonymize Clipboard hotkey** (macOS
     `RegisterEventHotKey`, Windows `RegisterHotKey`). The in-app action, before/after
     view and per-case category switches from the [Anoni review](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11)
     are done. Its on/off switch goes in Settings › General.
+13. **[Platform] Dry-run polish.** *From the 2026-10-18 macOS dry run.*
+    - The DOCX/PDF preview's find field builds text from key codes, not the
+      text-input path: injected text arrives garbled and IME likely fails.
+    - Screen-reader labels: Replacements panel checkboxes all read "Will be
+      replaced" without the identity; the panel search is not a text field;
+      zoom buttons read "+" or nothing; sidebar tabs are buttons, not tabs.
+    - Dragging an unsupported file shows an insertion line instead of "No
+      supported files"; the Notices popover shows the full path and stays open.
+    - The theme button's tooltip keeps the previous value while hovered; the
+      setup card's size changes from 665 MB to 662 MB after Cancel.
+    *Done when:* each point is fixed or moved to its own item, and the preview
+    find field accepts Japanese IME input.
 
 ## Ongoing tracks
 
