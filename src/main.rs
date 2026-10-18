@@ -14,6 +14,7 @@ mod images;
 mod import;
 mod import_session;
 mod markdown_search;
+mod menus;
 mod search_session;
 mod self_test;
 use search_session::SearchRefresh;
@@ -41,9 +42,9 @@ mod workspace;
 use document::Document;
 use document_view::*;
 use gpui::{
-    App, Bounds, Context, Entity, Focusable, KeyBinding, Menu, MenuItem, PathPromptOptions,
-    PromptLevel, ScrollHandle, Subscription, Window, WindowBounds, WindowOptions, actions, div,
-    prelude::*, px, size,
+    App, Bounds, Context, Entity, Focusable, KeyBinding, PathPromptOptions, PromptLevel,
+    ScrollHandle, Subscription, Window, WindowBounds, WindowOptions, actions, div, prelude::*, px,
+    size,
 };
 use gpui_pdf::PdfView;
 use mdoc_editor::{EditorEvent, EditorState, SearchIndex, SearchMatch};
@@ -238,27 +239,7 @@ fn main() {
         )]);
         bind_markdown_search_keys(cx);
         bind_app_keys(cx);
-        cx.set_menus(vec![Menu {
-            name: "File".into(),
-            items: vec![
-                MenuItem::action("New", New),
-                MenuItem::action("Open…", Open),
-                MenuItem::action("Open Case…", OpenCase),
-                MenuItem::action("Convert to Markdown", Import),
-                MenuItem::action("Save", Save),
-                MenuItem::action("Save As…", SaveAs),
-                MenuItem::action("Copy Markdown", CopyMarkdown),
-                MenuItem::action("Copy for AI", CopyForAi),
-                MenuItem::action("Paste AI Response", PasteAiResponse),
-                MenuItem::action("Before / After", ToggleCompare),
-                MenuItem::action("Pseudonymize Clipboard", PseudonymizeClipboard),
-                MenuItem::action("Pseudonymize", Pseudonymize),
-                MenuItem::action("Settings", Settings),
-                MenuItem::separator(),
-                MenuItem::action("Quit", Quit),
-            ],
-            disabled: false,
-        }]);
+        menus::install(cx);
         let bounds = Bounds::centered(None, size(px(1100.), px(760.)), cx);
         let handle = cx
             .open_window(

@@ -2756,6 +2756,12 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &Settings, window, cx| {
                 this.show_settings(window, cx);
             }))
+            // About shows the version, in Settings › Updates.
+            .on_action(cx.listener(|this, _: &crate::menus::About, window, cx| {
+                window.activate_window();
+                this.settings
+                    .update(cx, |panel, cx| panel.show_updates(window, cx));
+            }))
             .on_action(cx.listener(|this, _: &New, window, cx| {
                 if this.ready && this.quitting.is_none() {
                     this.new_tab(window, cx);

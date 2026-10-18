@@ -1087,6 +1087,49 @@ fn background_import_finishes_in_its_own_tab_without_stealing_focus(cx: &mut Tes
 }
 
 #[gpui::test]
+fn every_menu_item_reaches_a_handler_in_a_document(cx: &mut TestAppContext) {
+    let (_tabs, cx) = boot(cx, Session::default());
+    cx.update(|_, cx| crate::menus::install(cx));
+    cx.simulate_input("alpha beta");
+    cx.run_until_parked();
+    for (name, action) in crate::menus::items() {
+        // In the window's focus path, or app-wide (Hide, Minimize).
+        let available = cx.update(|window, cx| {
+            window.is_action_available(action.as_ref(), cx)
+                || cx.is_action_available(action.as_ref())
+        });
+        assert!(available, "menu item {name} has no handler");
+    }
+}
+
+#[gpui::test]
+fn edit_menu_reaches_the_find_field(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_input("alpha beta");
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input("alpha");
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("beta".into()));
+    cx.dispatch_action(mdoc_editor::SelectAll);
+    cx.dispatch_action(mdoc_editor::Paste);
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| assert_eq!(view.read(cx).markdown_search.read(cx).value(), "beta"));
+    cx.dispatch_action(mdoc_editor::SelectAll);
+    cx.dispatch_action(mdoc_editor::Cut);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(view.read(cx).markdown_search.read(cx).value(), ""));
+    assert_eq!(
+        cx.read_from_clipboard()
+            .and_then(|item| item.text())
+            .as_deref(),
+        Some("beta")
+    );
+    // The document is untouched.
+    cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), "alpha beta"));
+}
+
+#[gpui::test]
 fn retained_search_selection_and_preview_position_survive_switch(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_input("alpha beta alpha");

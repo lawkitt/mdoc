@@ -706,6 +706,19 @@ impl Render for SearchInput {
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
+            // The Edit menu sends the editor's actions.
+            .on_action(cx.listener(|this, _: &mdoc_editor::SelectAll, window, cx| {
+                this.select_all_action(&SelectAll, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &mdoc_editor::Paste, window, cx| {
+                this.paste(&Paste, window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &mdoc_editor::Cut, window, cx| this.cut(&Cut, window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &mdoc_editor::Copy, window, cx| this.copy(&Copy, window, cx)),
+            )
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))

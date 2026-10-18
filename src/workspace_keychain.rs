@@ -384,6 +384,7 @@ impl Workspace {
                             .on_action(|_: &Import, _, _| {})
                             .on_action(|_: &OpenCase, _, _| {})
                             .on_action(|_: &Settings, _, _| {})
+                            .on_action(|_: &crate::menus::About, _, _| {})
                             .on_action(|_: &NextTab, _, _| {})
                             .on_action(|_: &PreviousTab, _, _| {})
                             .on_action(|_: &ToggleSidebar, _, _| {})
