@@ -3,7 +3,8 @@
 Status: Accepted, 2026-10-13. Amends the storage section of
 [ADR 0041](0041-cases-and-ai-response-restoration.md). Amended by
 [ADR 0045](0045-prompt-free-case-key.md) (what counts as "may ask"; data
-protection keychain).
+protection keychain) and on 2026-10-18 (decision 5: the preview is a captioned
+figure below the text).
 
 ## Problem
 
@@ -39,7 +40,12 @@ that created it, so ad-hoc and dev builds prompt each other.
    mdoc badge, the real wording, the password field filling, a pointer pressing
    **Always Allow**. Loops every 4.2 s at up to 30 fps; under Reduce Motion a
    single frame (password typed, Always Allow pressed); follows system
-   light/dark.
+   light/dark. It sits **below the text**, captioned "After Continue, macOS
+   shows this:", flat (no window shadow), and is announced as an image
+   ("Preview of the macOS Keychain dialog"). At the top of the card, uncaptioned,
+   the 2026-10-18 dry run on beta.13 took it for the real dialog showing before
+   Continue: no SecurityAgent window existed until Continue, and a traced build
+   made only quiet reads (`errSecAuthFailed`, no dialog).
 6. **Denial** (`errSecUserCanceled`, `errSecAuthFailed` after a real dialog)
    keeps members locked and keeps the requested action; the bar offers
    **Try again…**, which finishes it once the key opens. A failed read never
