@@ -10,14 +10,24 @@ checks every directory here. The synthetic replies in
 
 | Directory | Assistant | Model | Date | Demo |
 | --- | --- | --- | --- | --- |
-| `chatgpt-en` | ChatGPT | | | [Settlement agreement.md](../../../docs/product-media/Settlement%20agreement.md) |
-| `chatgpt-ru` | ChatGPT | | | [Соглашение об урегулировании.md](../../../docs/product-media/Соглашение%20об%20урегулировании.md) |
-| `claude-en` | Claude | | | [Settlement agreement.md](../../../docs/product-media/Settlement%20agreement.md) |
-| `claude-ru` | Claude | | | [Соглашение об урегулировании.md](../../../docs/product-media/Соглашение%20об%20урегулировании.md) |
+| `chatgpt-en` | ChatGPT | default (name not recorded) | 2026-10-19 | [Settlement agreement.md](../../../docs/product-media/Settlement%20agreement.md) |
+| `chatgpt-ru` | ChatGPT | default (name not recorded) | 2026-10-19 | [Соглашение об урегулировании.md](../../../docs/product-media/Соглашение%20об%20урегулировании.md) |
+| `claude-en` | Claude | default (name not recorded) | 2026-10-19 | [Settlement agreement.md](../../../docs/product-media/Settlement%20agreement.md) |
+| `claude-ru` | Claude | default (name not recorded) | 2026-10-19 | [Соглашение об урегулировании.md](../../../docs/product-media/Соглашение%20об%20урегулировании.md) |
 
-Shapes seen (fill in after capture): Markdown table, inflected aliases
-(`PERSON_1у`), paraphrases, renumbered or invented aliases. A shape that did
-not appear after one retry is noted here, not faked.
+Shapes seen:
+
+- **Markdown tables** in all four replies; every alias copied exactly, none
+  renumbered or invented.
+- **No inflected aliases.** Both assistants kept the Russian aliases unchanged
+  and wrote around them («ноутбук PERSON_1», «мужу (PERSON_6)»). Not retried,
+  by the maintainer's choice.
+- **Paraphrases without a token** ("the Employee", «Работник», "her adviser"):
+  out of scope (ADR 0056).
+- **ChatGPT's Copy** adds `&#x20;` and a `sent.md` line, a citation of the
+  pasted text as an attachment; kept as captured.
+- **A wording ending in a period** («31 октября 2026 г.») followed by the
+  reply's own period restores with one period, so `expected.md` has one.
 
 ## Each directory
 

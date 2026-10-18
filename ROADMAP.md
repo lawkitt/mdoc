@@ -23,14 +23,7 @@ priority order.
 
 ### Must-fix
 
-1. **[Cases] Captured AI-reply fixtures for Restore.** Cases and restoration
-   ([saved mappings](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/saved-mappings.md)) are implemented in all four
-   phases, including the Linux Secret Service key.
-   *Done when:* four replies to the settlement-agreement demo (ChatGPT and Claude,
-   each EN and RU) live under `tests/fixtures/`, at least one with Markdown tables
-   and paraphrased or inflected aliases, and Restore leaves no alias unrestored
-   in any of them.
-2. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
+1. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
    Windows x64; keep Linux buildable. Done last, because it checks the finished UI:
    an installed `0.1.0-rc.1` against the template `docs/platform-acceptance.md`
    ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)), after a macOS dry run on the latest beta.

@@ -1,6 +1,6 @@
 # Captured AI-reply fixtures for Restore
 
-Status: Proposed, 2026-10-18. Amends [ADR 0041](0041-cases-and-ai-response-restoration.md)
+Status: Accepted, 2026-10-19. Amends [ADR 0041](0041-cases-and-ai-response-restoration.md)
 (stable-release invariant).
 
 ## Problem
@@ -69,12 +69,10 @@ must-fix).
   only be an mdoc alias. Invented or renumbered aliases stay unresolved for the
   user to assign; Restore never guesses (ADR 0041).
 
-- **Closing.** When the four captures pass, this ADR becomes Accepted, ADR
-  0041's stable-release invariant points here, and the ROADMAP must-fix item
-  is removed.
-
 ## Consequences
 
-- Restore's stable gate rests on four real replies; models change, so this
-  shows the shapes of one point in time, not a guarantee.
+- Restore's stable gate rests on four real replies, captured 2026-10-19;
+  models change, so this shows the shapes of one point in time, not a
+  guarantee. All four used tables and none inflected an alias, so inflected
+  aliases are still covered only by the synthetic fixtures.
 - The fixtures contain third-party model output about fictional data only.
