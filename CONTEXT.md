@@ -39,6 +39,12 @@ UI label: **Paste AI Response**.
 **Unresolved token**: an alias-shaped token in AI output that matches no case
 identity (e.g. an invented `PERSON_9`); highlighted, never guessed.
 
+**Captured reply**: a real ChatGPT or Claude answer to a demo's Copy for AI
+output, stored unedited under `tests/fixtures/restore/` with what was sent and
+the mapping used; the gate for Restore in a stable release
+([ADR 0056](docs/adr/0056-captured-ai-reply-fixtures.md)). Contrast the
+synthetic replies in `crates/mdoc-pii/fixtures/restore/`.
+
 **Multi-file opening**: open several files for individual reading and lazy conversion.
 
 **Batch conversion**: process an explicitly selected group without opening each

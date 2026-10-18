@@ -16,3 +16,7 @@ regex = "1"
 # emphasis characters.
 markdown = "1"
 mdoc-history = { path = "../mdoc-history" }
+
+[dev-dependencies]
+# Reads the identity maps of captured AI replies (ADR 0056).
+serde_json = "1"
