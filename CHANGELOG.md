@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Standard macOS menus.** The menu bar now has mdoc, File, Edit, View and
+  Window menus: About, Hide (⌘H), Services, menu-bar Undo, Cut, Copy and Paste
+  (which also work in Open and Save dialogs), Find, zoom, Minimize (⌘M) and tab
+  switching (ADR 0058).
 - **The Keychain explainer's picture can't be mistaken for the real dialog.**
   The animated preview of the macOS password dialog now sits below the
   explanation, captioned "After Continue, macOS shows this:". macOS still asks

@@ -44,13 +44,7 @@ priority order.
 
 ### Should-fix
 
-1. **[Platform] Standard macOS menus.** *From the 2026-10-18 macOS dry run.*
-   GPUI makes the first menu the app menu, so the File menu shows as "mdoc";
-   there is no Edit or Window menu, About, Hide (⌘H) or Services. Add the app
-   menu (About, Settings, Hide, Quit), File, Edit (Undo, Redo, Cut, Copy, Paste,
-   Select All, Find) and Window menus, with their shortcuts.
-   *Done when:* each menu item runs its action and shows its shortcut, and
-   menu-bar Undo/Copy/Paste act on the focused editor or field.
+None open.
 
 ## After 0.1.0
 

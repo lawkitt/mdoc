@@ -180,7 +180,7 @@ Every application shortcut, from `bind_app_keys`, `bind_markdown_search_keys`,
 | H14 | Mod+A, Mod+C, Mod+X, Mod+V, Mod+Z, Mod+Shift+Z (Ctrl+Y on Windows) | Editing | | |
 | H15 | Alt+←/→, Alt+Shift+←/→, Home/End, Shift+arrows, Tab/Shift+Tab | Word moves, selection, indent | | |
 | H16 | Mod+Q | Quit, with the unsaved-changes prompt | | |
-| H17 | *macOS*: every File menu item (New … Quit) runs its action; *Windows*: each File menu action is reachable from the window | | |
+| H17 | *macOS*: every item in the mdoc, File, Edit, View and Window menus runs its action and shows its shortcut; Edit › Paste works in the find field and in a Save dialog (ADR 0058). *Windows*: each File-menu action is reachable from the window | | |
 | H18 | Tab / Shift+Tab move through toolbar and panel controls with a visible focus ring; Esc closes menus | | |
 
 ## 10. Case key storage
