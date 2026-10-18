@@ -7,3 +7,6 @@ THIRD-PARTY-LICENSES.html -whitespace
 # Bundled Hunspell dictionaries are kept byte-for-byte (digests in their README).
 crates/mdoc-spell/dictionaries/*.aff -text
 crates/mdoc-spell/dictionaries/*.dic -text
+
+# Captured AI replies are compared byte for byte (ADR 0056): keep LF on Windows.
+tests/fixtures/restore/** text eol=lf
