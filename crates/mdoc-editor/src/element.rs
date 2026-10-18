@@ -1266,6 +1266,13 @@ impl Element for EditorElement {
         // trimmed), so a wrapped chip or underline is boxed per segment instead
         // of running to the right edge. Table and bidi rows keep the shared
         // geometry.
+        let shared_geometry = |row: usize| {
+            wrapped
+                .get(row)
+                .is_none_or(|line| line.wrap_boundaries.is_empty())
+                || bidi(row).is_some()
+                || tables.get(row).and_then(Option::as_ref).is_some()
+        };
         let annotation_quads =
             |s: usize, e: usize, color: Hsla, window: &mut Window| -> Vec<PaintQuad> {
                 let (s_row, _) = row_col(s);
@@ -1284,10 +1291,7 @@ impl Element for EditorElement {
                     if lh <= px(0.5) {
                         continue;
                     }
-                    if line.wrap_boundaries.is_empty()
-                        || bidi(row).is_some()
-                        || tables.get(row).and_then(Option::as_ref).is_some()
-                    {
+                    if shared_geometry(row) {
                         quads.extend(range_quads(rs, re, color, window));
                         continue;
                     }
@@ -1298,16 +1302,21 @@ impl Element for EditorElement {
                     let text = line.text.as_ref();
                     let inset = row_x(row);
                     let top = line_tops[row];
-                    let ends = line
-                        .wrap_boundaries
-                        .iter()
-                        .map(|w| line.unwrapped_layout.runs[w.run_ix].glyphs[w.glyph_ix].index)
-                        .chain([line.len()]);
-                    let mut row_start = 0;
-                    for (k, row_end) in ends.enumerate() {
-                        let (mut x, mut y) = (a.max(row_start), b.min(row_end));
-                        let start = row_start;
-                        row_start = row_end;
+                    let index = |w: &gpui::WrapBoundary| {
+                        line.unwrapped_layout.runs[w.run_ix].glyphs[w.glyph_ix].index
+                    };
+                    let bounds_of = |k: usize| line.wrap_boundaries.get(k).map(index);
+                    // Visit only the wrap rows the range touches: a long
+                    // paragraph has many, and each visible annotation needs
+                    // a handful.
+                    let first = line.wrap_boundaries.partition_point(|w| index(w) <= a);
+                    for k in first..=line.wrap_boundaries.len() {
+                        let start = k.checked_sub(1).and_then(bounds_of).unwrap_or(0);
+                        if start >= b {
+                            break;
+                        }
+                        let row_end = bounds_of(k).unwrap_or(line.len());
+                        let (mut x, mut y) = (a.max(start), b.min(row_end));
                         if x >= y || !text.is_char_boundary(x) || !text.is_char_boundary(y) {
                             continue;
                         }
@@ -1477,12 +1486,16 @@ impl Element for EditorElement {
                         window,
                     );
                     quads.retain(|q| q.bounds.size.width > px(1.));
-                    if annotation.border.a > 0. && quads.len() > 1 {
-                        // A start on a soft wrap resolves to the end of the
-                        // previous row; a bordered chip would show that empty
-                        // first band. It is spurious when skipping the first
-                        // character removes a row.
-                        let start = annotation.range.start.max(visible.start);
+                    let start = annotation.range.start.max(visible.start);
+                    if annotation.border.a > 0.
+                        && quads.len() > 1
+                        && shared_geometry(row_col(start).0)
+                    {
+                        // On a row with the shared geometry, a start on a soft
+                        // wrap resolves to the end of the previous row; a
+                        // bordered chip would show that empty first band. It
+                        // is spurious when skipping the first character
+                        // removes a row. Per-row geometry has no such band.
                         let next = editor.content[start..]
                             .chars()
                             .next()

@@ -5825,6 +5825,13 @@ mod annotation_tests {
 
     #[gpui::test]
     fn wrapped_annotations_box_each_segment(cx: &mut gpui::TestAppContext) {
+        // A one-letter first word keeps its own segment too.
+        for mention in ["Ann Lee", "A Lee"] {
+            wrapped_mention_boxes(cx, mention);
+        }
+    }
+
+    fn wrapped_mention_boxes(cx: &mut gpui::TestAppContext, mention: &str) {
         let (editor, cx) = cx.add_window_view(EditorState::new);
         // Varying filler moves each mention against the wrap width, so some
         // wrap between their two words.
@@ -5833,8 +5840,9 @@ mod annotation_tests {
         for k in 0..80 {
             source.push_str(&"w".repeat(1 + k % 9));
             source.push(' ');
-            ranges.push(source.len()..source.len() + "Ann Lee".len());
-            source.push_str("Ann Lee ");
+            ranges.push(source.len()..source.len() + mention.len());
+            source.push_str(mention);
+            source.push(' ');
         }
         editor.update(cx, |editor, cx| {
             editor.set_text(source.clone(), cx);
@@ -5881,7 +5889,7 @@ mod annotation_tests {
                 .map(quads)
                 .filter(|q| q.len() == 2)
                 .collect();
-            assert!(!wrapped.is_empty(), "some mention wraps");
+            assert!(!wrapped.is_empty(), "some {mention:?} wraps");
             for q in wrapped {
                 let (first, rest) = (q[0], q[1]);
                 assert!(rest.top() > first.top());
@@ -5898,7 +5906,7 @@ mod annotation_tests {
                     first.size.width + rest.size.width < whole + px(8.),
                     "neither segment carries the other's part"
                 );
-                assert!(first.size.width > px(8.) && rest.size.width > px(8.));
+                assert!(first.size.width > px(6.) && rest.size.width > px(6.));
             }
         });
     }
