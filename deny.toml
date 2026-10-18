@@ -25,6 +25,11 @@ ignore = [
     { id = "RUSTSEC-2026-0367", reason = "zip extract() keeps SUID/SGID bits. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
     { id = "RUSTSEC-2026-0368", reason = "zip extract() writes symlinks outside the destination. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
     { id = "RUSTSEC-2026-0369", reason = "zip extract() applies permissions through symlinks. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
+    # zbus 5 subcrates, merged into zbus 6 (no safe upgrade). Linux only, via
+    # gpui-pre-linux -> accesskit_unix / atspi; clears when upstream moves to zbus 6.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained (merged into zbus 6). Transitive via gpui-pre-linux -> accesskit_unix/atspi; revisit at each gpui pull." },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained (merged into zbus 6). Transitive via gpui-pre-linux -> accesskit_unix/atspi; revisit at each gpui pull." },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained (merged into zbus 6). Transitive via zvariant <- gpui-pre-linux; revisit at each gpui pull." },
 ]
 
 [licenses]
