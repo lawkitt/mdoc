@@ -296,6 +296,11 @@ must-fix items; unfinished should-fix items move to the next milestone. Distinct
 from a release gate, which is an automated check on every release
 ([ADR 0051](docs/adr/0051-roadmap-structure-and-stable-scope.md)).
 
+**Platform acceptance**: a manual checklist run on an installed release
+candidate on each shipped target, recorded under `docs/evidence/platform/`;
+each row is *Pass*, *Fail* or *Unavailable* (could not be observed, with the
+reason). Distinct from a release gate, which is automated ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)).
+
 **Ordinary legal document**: the interactive performance target, about 30 pages
 or 135 KB of Markdown. The 2 MiB / 20,000-mention workload is the separate
 *stress tier* ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
