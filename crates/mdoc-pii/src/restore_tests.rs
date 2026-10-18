@@ -498,3 +498,91 @@ fn a_partial_longer_match_does_not_hide_a_whole_shorter_name() {
         ("XAnna PERSON_2".into(), 1)
     );
 }
+
+/// An `identities.json` of a captured reply (tests/fixtures/restore/README.md).
+fn captured_identities(json: &str) -> Vec<ExportedIdentity> {
+    let strings = |value: Option<&serde_json::Value>| -> Vec<String> {
+        value
+            .and_then(|v| v.as_array())
+            .map(|list| {
+                list.iter()
+                    .map(|s| s.as_str().unwrap().to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let list: serde_json::Value = serde_json::from_str(json).unwrap();
+    list.as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| {
+            let alias = entry["alias"].as_str().unwrap().to_string();
+            let token = entry["category"].as_str().unwrap();
+            let category = *Category::ALL
+                .iter()
+                .find(|c| c.token() == token)
+                .unwrap_or_else(|| panic!("unknown category {token}"));
+            let originals = strings(entry.get("originals"));
+            assert!(!originals.is_empty(), "{alias} has no originals");
+            ExportedIdentity {
+                custom: parse_alias(&alias).is_none(),
+                previous: strings(entry.get("previous")),
+                originals: originals.iter().map(|o| Arc::from(o.as_str())).collect(),
+                category,
+                alias,
+            }
+        })
+        .collect()
+}
+
+/// Real ChatGPT and Claude answers to the settlement demos leave no alias
+/// behind (ADR 0056). `<assistant>-<en|ru>[-date]` names each capture.
+#[test]
+fn captured_replies_restore_completely() {
+    let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut captures: Vec<_> = std::fs::read_dir(repo.join("tests/fixtures/restore"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_dir())
+        .collect();
+    captures.sort();
+    for dir in captures {
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        let read = |path: &std::path::Path| {
+            std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
+        };
+        let demo = match name.split('-').nth(1) {
+            Some("en") => "Settlement agreement.md",
+            Some("ru") => "Соглашение об урегулировании.md",
+            _ => panic!("{name}: expected <assistant>-<en|ru>[-date]"),
+        };
+        let demo = read(&repo.join("docs/product-media").join(demo));
+        let map = RestoreMap::new(captured_identities(&read(&dir.join("identities.json"))));
+        let sent = read(&dir.join("sent.md"));
+        let (_, sent) = sent
+            .split_once("\n\n---\n\n")
+            .unwrap_or_else(|| panic!("{name}: sent.md has no Copy for AI note"));
+        assert_eq!(
+            map.pseudonymize(&demo).0,
+            sent,
+            "{name}: identities.json is not the mapping that was sent"
+        );
+        let reply = read(&dir.join("reply.md"));
+        assert_eq!(
+            map.restore(&reply).unresolved,
+            0,
+            "{name}: unresolved tokens"
+        );
+        let restored = apply(&map, &reply);
+        let left: Vec<_> = map
+            .tokens(&restored)
+            .iter()
+            .map(|t| &restored[t.range.clone()])
+            .collect();
+        assert!(
+            left.is_empty(),
+            "{name}: aliases left after Restore: {left:?}"
+        );
+        assert_eq!(restored, read(&dir.join("expected.md")), "{name}");
+    }
+}

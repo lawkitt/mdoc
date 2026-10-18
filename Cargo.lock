@@ -4538,6 +4538,7 @@ dependencies = [
  "markdown",
  "mdoc-history",
  "regex",
+ "serde_json",
 ]
 
 [[package]]

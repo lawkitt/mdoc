@@ -30,6 +30,13 @@ GitHub's light and dark backgrounds.
   `python-docx`) — a fictional UK settlement with hard cases ("Ms Bennett",
   "Maya", "Mia", a second Bennett). It reproduces [known issue 4](../../ROADMAP.md#must-fix)
   and returns to the README once that is fixed.
+- [Соглашение об урегулировании.md](Соглашение%20об%20урегулировании.md) and
+  its [.docx](Соглашение%20об%20урегулировании.docx)
+  (`python3 make-demo-docx.py "Соглашение об урегулировании.md"`) — its Russian
+  counterpart with patronymics, inflected surnames ("Павловой", "Павлову М. С.")
+  and a husband sharing the surname. Both demos are the inputs of the captured
+  AI replies in [tests/fixtures/restore](../../tests/fixtures/restore/README.md)
+  ([ADR 0056](../adr/0056-captured-ai-reply-fixtures.md)).
 
 All people, companies, addresses and numbers are invented; phone numbers are in
 Ofcom's drama range and emails use `.example` domains.
