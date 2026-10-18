@@ -8,5 +8,7 @@ THIRD-PARTY-LICENSES.html -whitespace
 crates/mdoc-spell/dictionaries/*.aff -text
 crates/mdoc-spell/dictionaries/*.dic -text
 
-# Captured AI replies are compared byte for byte (ADR 0056): keep LF on Windows.
+# Captured AI replies and the demos they were made from are compared byte for
+# byte (ADR 0056): keep LF on Windows.
 tests/fixtures/restore/** text eol=lf
+docs/product-media/*.md text eol=lf
