@@ -1,0 +1,20 @@
+[
+  { "alias": "REDACTED_1", "category": "REDACTED", "originals": ["2-1842/2026"] },
+  { "alias": "ORG_1", "category": "ORG", "originals": ["Дзержинский районный суд Санкт-Петербурга"] },
+  { "alias": "ORG_2", "category": "ORG", "originals": ["ООО «Северный двор»"] },
+  { "alias": "ADDRESS_1", "category": "ADDRESS", "originals": ["191187, Санкт-Петербург, Литейный проспект, д. 7, офис 12"] },
+  { "alias": "PERSON_1", "category": "PERSON", "originals": ["Павлова Марина Сергеевна", "Марина Сергеевна", "Маришей", "Марина", "Павловой М. С.", "Павлова", "Павловой", "Павлову"] },
+  { "alias": "ADDRESS_2", "category": "ADDRESS", "originals": ["197101, Санкт-Петербург, Ольховый переулок, д. 41, кв. 3"] },
+  { "alias": "DATE_1", "category": "DATE", "originals": ["14 марта 1988 г."] },
+  { "alias": "IDENTITY_1", "category": "IDENTITY", "originals": ["112-233-445 95"] },
+  { "alias": "DATE_2", "category": "DATE", "originals": ["2 мая 2019 г."] },
+  { "alias": "DATE_3", "category": "DATE", "originals": ["30 сентября 2026 г."] },
+  { "alias": "REDACTED_4", "category": "REDACTED", "originals": ["1 250 000 ₽"] },
+  { "alias": "PERSON_6", "category": "PERSON", "originals": ["Павлову Дмитрию Андреевичу"] },
+  { "alias": "DATE_4", "category": "DATE", "originals": ["31 октября 2026 г."] },
+  { "alias": "REDACTED_5", "category": "REDACTED", "originals": ["50 000 ₽"] },
+  { "alias": "PERSON_10", "category": "PERSON", "originals": ["Шахова Ирина Олеговна"] },
+  { "alias": "ORG_3", "category": "ORG", "originals": ["Елагин и партнёры"] },
+  { "alias": "EMAIL_1", "category": "EMAIL", "originals": ["marina.pavlova@example.com"] },
+  { "alias": "PHONE_1", "category": "PHONE", "originals": ["+7 900 000-00-00"] }
+]

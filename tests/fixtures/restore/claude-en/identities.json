@@ -1,0 +1,20 @@
+[
+  { "alias": "REDACTED_1", "category": "REDACTED", "originals": ["6001842/2026"] },
+  { "alias": "ORG_1", "category": "ORG", "originals": ["Harrow & Finch Ltd"] },
+  { "alias": "ADDRESS_1", "category": "ADDRESS", "originals": ["7 Coopers Yard, Bristol BS1 9ZX"] },
+  { "alias": "PERSON_1", "category": "PERSON", "originals": ["Maya Bennett", "Ms Bennett", "Maya", "Mia"] },
+  { "alias": "ADDRESS_2", "category": "ADDRESS", "originals": ["Flat 3, 41 Larch Road, Bristol BS6 9ZY"] },
+  { "alias": "DATE_1", "category": "DATE", "originals": ["14 March 1988"] },
+  { "alias": "IDENTITY_1", "category": "IDENTITY", "originals": ["QQ 12 34 56 C"] },
+  { "alias": "REDACTED_5", "category": "REDACTED", "originals": ["Senior Analyst"] },
+  { "alias": "DATE_2", "category": "DATE", "originals": ["2 May 2019"] },
+  { "alias": "DATE_3", "category": "DATE", "originals": ["30 September 2026"] },
+  { "alias": "REDACTED_2", "category": "REDACTED", "originals": ["£18,500"] },
+  { "alias": "PERSON_5", "category": "PERSON", "originals": ["Daniel Bennett"] },
+  { "alias": "DATE_4", "category": "DATE", "originals": ["31 October 2026"] },
+  { "alias": "REDACTED_3", "category": "REDACTED", "originals": ["£750"] },
+  { "alias": "PERSON_6", "category": "PERSON", "originals": ["Priya Shah"] },
+  { "alias": "ORG_3", "category": "ORG", "originals": ["Elm Row Legal LLP"] },
+  { "alias": "EMAIL_1", "category": "EMAIL", "originals": ["maya.bennett@example.com"] },
+  { "alias": "PHONE_1", "category": "PHONE", "originals": ["07700 900461"] }
+]

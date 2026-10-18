@@ -4,8 +4,9 @@ Status: Accepted, 2026-10-11. Supersedes, for cases only, the "mappings and
 originals are never serialized" rule of ADRs 0002, 0014 and 0018, and ADR 0019's
 single copy action. Amended by [ADR 0042](0042-live-before-after-view.md) (live
 view), [ADR 0043](0043-deferred-keychain-access.md) and
-[ADR 0045](0045-prompt-free-case-key.md) (key access), and
-[ADR 0048](0048-workspace-shell-redesign.md) (sidebar and header placement).
+[ADR 0045](0045-prompt-free-case-key.md) (key access),
+[ADR 0048](0048-workspace-shell-redesign.md) (sidebar and header placement), and
+[ADR 0056](0056-captured-ai-reply-fixtures.md) (captured replies).
 
 ## Problem
 
@@ -76,9 +77,9 @@ map, the better ones one map per case.
 
 - No originals in the session manifest or plaintext app data.
 - Tests use an injected store and never touch the real key or app data.
-- Restore ships in a stable release only once captured EN/RU replies from real
-  assistants restore as expected (ROADMAP must-fix); the fixtures in
-  `crates/mdoc-pii/fixtures/restore/` are synthetic.
+- Captured EN/RU replies from real assistants (`tests/fixtures/restore/`,
+  [ADR 0056](0056-captured-ai-reply-fixtures.md)) restore completely; the
+  fixtures in `crates/mdoc-pii/fixtures/restore/` are synthetic edge shapes.
 
 ## Consequences
 
