@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **The Keychain explainer's picture can't be mistaken for the real dialog.**
+  The animated preview of the macOS password dialog now sits below the
+  explanation, captioned "After Continue, macOS shows this:". macOS still asks
+  only after you press Continue (ADR 0043).
 - **The document follows your selection.** Dragging a selection to the top or
   bottom edge scrolls the page, even while the pointer stays still, and
   Shift+arrow selection, arrow keys and typing keep the caret in view with a

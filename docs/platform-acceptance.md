@@ -13,7 +13,11 @@ release gates do not establish what it checks.
    `%LOCALAPPDATA%\mdoc`) to restore it afterwards. Never delete the case key
    (`io.github.lawkitt.mdoc` / `case-key`): saved cases become unreadable. A
    first Keychain prompt (E2) needs a macOS user account that never ran mdoc;
-   without one, mark E2 Unavailable if no prompt appears.
+   without one, mark E2 Unavailable if no prompt appears. The explainer
+   contains a captioned drawing of the macOS dialog; the real one is a
+   separate SecurityAgent window that appears only after Continue. In a
+   screenshot-driven run, check for that window (for example with
+   `CGWindowListCopyWindowInfo`) rather than judging by the picture.
    Rows that need a physical keyboard (section 8, shortcuts with ⇧), spoken
    VoiceOver output, or the Keychain password are run by hand, not by
    computer use.

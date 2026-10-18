@@ -1,6 +1,7 @@
 //! The Keychain explainer (ADR 0043): before mdoc reads the case key in a way
 //! that may show the macOS password dialog, say why, and preview that dialog
-//! with a short animation so the real one is expected, not suspicious.
+//! with a short, captioned animation below the text so the real one is
+//! expected, not suspicious, and the drawing is never taken for it.
 use super::*;
 use gpui::{Animation, AnimationExt, Hsla};
 use std::{
@@ -160,7 +161,6 @@ fn preview_frame(theme: Theme, t: f32) -> gpui::Div {
         .bg(c.bg)
         .border_1()
         .border_color(c.border)
-        .shadow_lg()
         .text_color(c.text)
         .child(
             div()
@@ -407,15 +407,6 @@ impl Workspace {
                                     cx.stop_propagation();
                                 }
                             }))
-                            .child(
-                                div()
-                                    .flex()
-                                    .justify_center()
-                                    .py_4()
-                                    .rounded_md()
-                                    .bg(palette.placeholder_bg)
-                                    .child(preview(theme, cx)),
-                            )
                             .child(ui::card_title("mdoc will ask for Keychain access"))
                             .child(
                                 div()
@@ -432,6 +423,30 @@ impl Workspace {
                                          sees it.",
                                     ))
                                     .child(line("Choose Always Allow so it isn’t asked again.")),
+                            )
+                            // Below the text and captioned, so the drawing
+                            // reads as what comes next, never as the system
+                            // dialog itself.
+                            .child(
+                                div()
+                                    .id("keychain-preview-figure")
+                                    .role(gpui::Role::Image)
+                                    .aria_label("Preview of the macOS Keychain dialog")
+                                    .flex()
+                                    .flex_col()
+                                    .items_center()
+                                    .gap_2()
+                                    .pt_2()
+                                    .pb_4()
+                                    .rounded_md()
+                                    .bg(palette.placeholder_bg)
+                                    .child(
+                                        div()
+                                            .text_size(px(12.))
+                                            .text_color(palette.header_muted)
+                                            .child("After Continue, macOS shows this:"),
+                                    )
+                                    .child(preview(theme, cx)),
                             )
                             .child(
                                 div()

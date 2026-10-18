@@ -30,16 +30,7 @@ priority order.
    each EN and RU) live under `tests/fixtures/`, at least one with Markdown tables
    and paraphrased or inflected aliases, and Restore leaves no alias unrestored
    in any of them.
-2. **[Cases] Keychain prompt only after the explainer.** *From the 2026-10-18
-   macOS dry run (ADR 0057).* Dropping a folder as a case on beta.13 showed the
-   macOS "confidential information" password dialog together with the
-   "mdoc will ask for Keychain access" explainer, before Continue
-   ([ADR 0043](docs/adr/0043-deferred-keychain-access.md)). The quiet read
-   (`SecKeychainSetUserInteractionAllowed(false)`) is the suspect on macOS 15.
-   *Done when:* with a key whose ACL does not list the running build, every case
-   action shows the explainer alone, and the system dialog appears only after
-   Continue.
-3. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
+2. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
    Windows x64; keep Linux buildable. Done last, because it checks the finished UI:
    an installed `0.1.0-rc.1` against the template `docs/platform-acceptance.md`
    ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)), after a macOS dry run on the latest beta.
