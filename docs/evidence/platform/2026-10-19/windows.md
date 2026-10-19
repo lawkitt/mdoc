@@ -5,7 +5,9 @@ The Windows half of the [2026-10-19 run](README.md), from the template
 ([ADR 0057](../../../adr/0057-native-platform-acceptance.md)). Claude ran it
 from Claude Code on the maintainer's PC through computer use, reading state
 from UI Automation (`System.Windows.Automation`) and the clipboard; rows it
-could not observe were run by the maintainer the same day (notes start
+could not observe were run by the maintainer the same day, except the
+deferred D3, D4, S1 and A5; H3 ran on rc.2 and T6 was retested on rc.3 and a
+local build (notes start
 "Maintainer:"); rows still Pending are marked *Maintainer*. Shortcuts were
 injected without a keyboard layout: an ignored shortcut is not a failure on
 its own.
@@ -43,14 +45,14 @@ Fixture: the English demo DOCX, with the Source preview open and aliases applied
 | T3 | System: switching the OS appearance while mdoc is open updates every visible surface without a restart | Pass | Maintainer: switching the Windows appearance while mdoc was open updated every visible surface without a restart. |
 | T4 | Original page tone follows the theme; the override in the Original header works in both themes | Pass | Dark: "Show original paper" switches to white pages and back. Light hides the control because the pages are already original. |
 | T5 | Highlights (proposed, applied, search, spelling) stay distinguishable in both themes | Pass | Proposed (category tints), applied (blue), search (yellow, current orange) and spelling (red) are distinct in both themes. A match that wraps also paints a block at the end of the previous line ([After 0.1.0: RC acceptance follow-ups](../../../../ROADMAP.md)). |
-| T6 | *Windows*: caption buttons draw, work and snap layouts appear on hover | Fail | The buttons draw and highlight on hover, but clicking minimize, maximize/restore or close does nothing, and no snap layouts flyout appears; the same injected hover and click work on Notepad. A title-bar double-click maximizes but never restores, so a maximized window comes back only by dragging the title bar or Win+↓. Cause: the buttons stop the mouse-down (`src/ui.rs:728`), so GPUI never records the pressed caption button; GPUI's `zoom` only maximizes. **rc.3 retest (2026-10-19):** a title-bar double-click now toggles maximize and restore; the buttons still do nothing and show no snap layouts. The real cause: GPUI answers Windows' hit test with the first control area painted, and the enclosing title-bar Drag area is painted before the buttons, so they hit-test as caption. On a local release build of `d827218`, which puts the buttons beside the drag area, the maintainer's physical mouse shows snap layouts on hover, and minimize, maximize/restore and close work; Claude's injected hover and clicks still do nothing there, so T6 is a *Maintainer* row. [0.1.0 stable: Windows caption buttons](../../../../ROADMAP.md). |
+| T6 | *Windows*: caption buttons draw, work and snap layouts appear on hover | Fail | The buttons draw and highlight on hover, but clicking minimize, maximize/restore or close does nothing, and no snap layouts flyout appears; the same injected hover and click work on Notepad. A title-bar double-click maximizes but never restores, so a maximized window comes back only by dragging the title bar or Win+↓. Cause: the buttons stop the mouse-down (`src/ui.rs:728`), so GPUI never records the pressed caption button; GPUI's `zoom` only maximizes. **rc.3 retest (2026-10-19):** a title-bar double-click now toggles maximize and restore; the buttons still do nothing and show no snap layouts. The real cause: GPUI answers Windows' hit test with the first control area painted, and the enclosing title-bar Drag area is painted before the buttons, so they hit-test as caption. On a local release build of `d827218`, which puts the buttons beside the drag area, the maintainer's physical mouse shows snap layouts on hover, and minimize, maximize/restore and close work; Claude's injected hover and clicks still do nothing there, so T6 is a *Maintainer* row. The fix ships in 0.1.0 without another RC; the maintainer checks T6 on the installed 0.1.0. [0.1.0 stable: Windows caption buttons](../../../../ROADMAP.md). |
 
 ## 3. Display scaling
 
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
-| D3 | *Windows*: 125 % scale; text crisp, hit targets aligned with what is drawn | Pending | Display scaling is a system setting. *Maintainer*: deferred on 2026-10-19. |
-| D4 | *Windows*: 150 % scale; the same, including the popup and dialogs | Pending | As D3. *Maintainer*: deferred on 2026-10-19. |
+| D3 | *Windows*: 125 % scale; text crisp, hit targets aligned with what is drawn | Unavailable | Not run for 0.1.0: the maintainer deferred display scaling (2026-10-19; [After 0.1.0: Deferred acceptance rows](../../../../ROADMAP.md)). |
+| D4 | *Windows*: 150 % scale; the same, including the popup and dialogs | Unavailable | As D3. |
 | D5 | Resizing to the minimum window size keeps every control reachable | Pass | At the minimum (about 720 × 475 px) the header, Markdown/Source switch, Apply and the panel stay visible; Home scrolls to its buttons, Cases and Recents. |
 
 ## 4. Files and paths
@@ -71,7 +73,7 @@ Run on the clean profile.
 
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
-| S1 | Offline (network off): Pseudonymize shows the consent card; Download & continue fails cleanly with Retry and no crash | Pending | Needs the network off, a system setting, and the models moved aside again. *Maintainer*: deferred on 2026-10-19. |
+| S1 | Offline (network off): Pseudonymize shows the consent card; Download & continue fails cleanly with Retry and no crash | Unavailable | Not run for 0.1.0: the maintainer deferred the offline check (2026-10-19; [After 0.1.0: Deferred acceptance rows](../../../../ROADMAP.md)). |
 | S2 | Online: Retry downloads with byte progress, then Verifying / Checking runtime, and the scan resumes in the requesting tab | Pass | Retry downloaded with byte progress (… / 685 MB), showed "Checking runtime…", and the scan resumed in the requesting tab (24 proposals, 14 identities). Verifying passed too fast to see. |
 | S3 | Cancel during download returns to the card; a second attempt completes | Pass | Cancel at 14 / 709 MB returned to the card with "Download cancelled" and Retry; Retry completed. The size then read 685 MB ([After 0.1.0: Dry-run polish](../../../../ROADMAP.md)). |
 | S4 | Converting `reference.pdf` with OCR shows the OCR consent card and completes after the download | Pass | `reference.pdf` has a text layer, so the scanned `tests/fixtures/ocr-qualification/russian.pdf` was used: the card warned the default model reads English; Choose model › English & Russian, Download & recognize produced the text exactly, ё included. |
@@ -166,4 +168,4 @@ not mark it Fail.
 | A2 | Replacements panel controls and popup buttons announce a name and role | Pass | Rerun of the rc.1 failure: the popup's scope segments ("This one", "All 6 mentions") and all ten category menu rows are named toggle buttons; panel rows, checkboxes, search, Alias field and Close are named. No unnamed control in the window. |
 | A3 | Settings and the Keychain/unsaved-changes dialogs announce their title and buttons; focus stays inside | Fail | The unsaved-changes dialog is a native task dialog: title "Warning", both texts, Save/Cancel/Discard, focus on Save. Settings is not a dialog: no window or title in the tree, the document's controls stay behind it, and Tab focus is not reported to UI Automation. [After 0.1.0: RC acceptance follow-ups](../../../../ROADMAP.md). |
 | A4 | Every control in A1–A3 can be reached and activated without a mouse: with the screen reader, or Full Keyboard Access on macOS. Plain Tab from Home or the editor is not required for 0.1.0 (ADR 0057) | Pass | Controls expose Invoke, SelectionItem or Toggle: invoking Collapse/Expand sidebar, selecting a tab and toggling a panel checkbox through UI Automation, as Narrator does, worked. Spoken Narrator output not checked (A5). |
-| A5 | Scan status and toasts are announced | Pending | Announcements need spoken output. *Maintainer*: Narrator, deferred on 2026-10-19. |
+| A5 | Scan status and toasts are announced | Unavailable | Not run for 0.1.0: the maintainer deferred spoken Narrator output (2026-10-19; [After 0.1.0: Deferred acceptance rows](../../../../ROADMAP.md)). |

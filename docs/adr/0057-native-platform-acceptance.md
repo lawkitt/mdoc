@@ -1,6 +1,6 @@
 # Native platform acceptance
 
-Status: Proposed, 2026-10-18. Applies [ADR 0051](0051-roadmap-structure-and-stable-scope.md)
+Status: Accepted, 2026-10-19 (proposed 2026-10-18). Applies [ADR 0051](0051-roadmap-structure-and-stable-scope.md)
 (native acceptance in stable scope).
 
 ## Problem
@@ -40,7 +40,9 @@ build, machines, scope, layout and failure handling open.
   Narrator output; Claude marks those *Maintainer* and checks the result.
   The maintainer runs the Russian rows but not the Japanese ones. On macOS
   the maintainer did not run offline setup (S1) or spoken VoiceOver output
-  (A5) for 0.1.0 (2026-10-19); they are Unavailable and an After 0.1.0 item.
+  (A5) for 0.1.0 (2026-10-19); they are Unavailable and an After 0.1.0 item. On Windows the same holds for
+  S1, A5 and display scaling (D3, D4). Injected input does not reach the
+  Windows caption buttons, so T6 is the maintainer's row.
 - **Scope.** Light, Dark and System themes (including a live OS appearance
   switch, the Original page tone and popup/dialog contrast); IME; clipboard;
   VoiceOver/Narrator basics; the replacement popup, first-use setup and

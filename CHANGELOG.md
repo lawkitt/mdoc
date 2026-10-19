@@ -4,6 +4,9 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Windows window buttons work.** Minimize, maximize/restore and close act on
+  a click, hovering maximize shows snap layouts, and double-clicking the title
+  bar toggles maximize and restore (ADR 0048).
 - **Standard macOS menus.** The menu bar now has mdoc, File, Edit, View and
   Window menus: About, Hide (⌘H), Services, menu-bar Undo, Cut, Copy and Paste
   (which also work in Open and Save dialogs), Find, zoom, Minimize (⌘M) and tab

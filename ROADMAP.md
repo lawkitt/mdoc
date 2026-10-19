@@ -27,12 +27,11 @@ priority order.
    Windows x64; keep Linux buildable. Done last, because it checks the finished UI:
    an installed `0.1.0-rc.1` (published 2026-10-19) against the template
    `docs/platform-acceptance.md` ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)).
-   macOS is done (2026-10-19): rc.1 with A2 and H3 rerun on rc.2, the
-   maintainer's rows included; offline setup (S1) and spoken VoiceOver output
-   (A5) were not run for 0.1.0. Claude's Windows pass on rc.2 and the
-   maintainer's Windows rows are done (2026-10-19), except the deferred
-   scaling (D3, D4), offline setup (S1) and Narrator speech (A5) rows; T6 waits
-   for the maintainer on the next RC.
+   **Done (2026-10-19).** macOS: rc.1 with A2 and H3 rerun on rc.2, the
+   maintainer's rows included. Windows: rc.2, the maintainer's rows included,
+   with T6 retested on rc.3 and a local build. Rows not run for 0.1.0 are
+   Unavailable and [After 0.1.0: Deferred acceptance rows](#after-010); every
+   Fail row links an item.
    *Done when:* `docs/evidence/platform/<date>/` holds a README plus `macos.md`
    and `windows.md` covering themes, IME (RU; Japanese where available), clipboard,
    VoiceOver/Narrator basics, the popup, setup and file-drop flows, install,
@@ -57,7 +56,8 @@ priority order.
    do not reach them, so T6 is the maintainer's row).
    *Done when:* on Windows the three buttons act on a physical click, hovering
    maximize shows snap layouts, a title-bar double-click toggles maximize and
-   restore, and the T6 row passes on the next RC.
+   restore, and the T6 row passes on the installed 0.1.0 (no rc.4; the
+   maintainer checks it after publishing).
 
 ## After 0.1.0
 
@@ -238,13 +238,15 @@ In priority order, after any carried-over should-fix items.
     Russian input source suggests it; the user can still change it.
     *Done when:* the Russian OCR fixture gets English & Russian by default and
     the English one stays on English, with the choice explained on the card.
-19. **[Platform] Deferred macOS acceptance rows.** *From the 2026-10-19 macOS
-    run ([evidence](docs/evidence/platform/2026-10-19/macos.md)).* The
-    maintainer did not run S1 (offline first setup: the consent card, then
-    Download & continue failing cleanly with Retry) or A5 (VoiceOver speaks
-    scan status and toasts) for 0.1.0.
-    *Done when:* both rows pass on the next release's macOS run, or fail with
-    a linked item.
+19. **[Platform] Deferred acceptance rows.** *From the 2026-10-19 runs
+    ([macOS](docs/evidence/platform/2026-10-19/macos.md),
+    [Windows](docs/evidence/platform/2026-10-19/windows.md)).* The
+    maintainer did not run, for 0.1.0, S1 on either platform (offline first
+    setup: the consent card, then Download & continue failing cleanly with
+    Retry), A5 on either platform (VoiceOver or Narrator speaks scan status
+    and toasts), or D3 and D4 on Windows (125 % and 150 % display scale).
+    *Done when:* these rows pass on the next release's runs, or fail with a
+    linked item.
 ## Ongoing tracks
 
 - **Outgoing AI-analysis qualification.** A continuous quality gate, not a
