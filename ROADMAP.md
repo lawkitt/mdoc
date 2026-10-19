@@ -31,8 +31,8 @@ priority order.
    maintainer's rows included; offline setup (S1) and spoken VoiceOver output
    (A5) were not run for 0.1.0. Claude's Windows pass on rc.2 and the
    maintainer's Windows rows are done (2026-10-19), except the deferred
-   scaling (D3, D4), offline setup (S1) and Narrator speech (A5) rows; the T6
-   retest waits for the next RC.
+   scaling (D3, D4), offline setup (S1) and Narrator speech (A5) rows; T6 waits
+   for the maintainer on the next RC.
    *Done when:* `docs/evidence/platform/<date>/` holds a README plus `macos.md`
    and `windows.md` covering themes, IME (RU; Japanese where available), clipboard,
    VoiceOver/Narrator basics, the popup, setup and file-drop flows, install,
@@ -52,7 +52,9 @@ priority order.
    (it now restores) but not the buttons: GPUI answers `WM_NCHITTEST` with the
    first window-control area painted, and the title bar's Drag area encloses
    the buttons and is painted first, so they hit-test as `HTCAPTION`. The
-   buttons now sit beside the drag area (`ui::title_bar`).
+   buttons now sit beside the drag area (`ui::title_bar`); on a local build the
+   maintainer's physical clicks work and snap layouts appear (injected clicks
+   do not reach them, so T6 is the maintainer's row).
    *Done when:* on Windows the three buttons act on a physical click, hovering
    maximize shows snap layouts, a title-bar double-click toggles maximize and
    restore, and the T6 row passes on the next RC.
