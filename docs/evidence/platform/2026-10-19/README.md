@@ -3,13 +3,14 @@
 The native and platform acceptance run for 0.1.0
 ([ADR 0057](../../../adr/0057-native-platform-acceptance.md), template
 [`docs/platform-acceptance.md`](../../../platform-acceptance.md)). In progress:
-Claude's macOS pass (rc.1) and Windows pass (rc.2, which reran A2) are done;
-the maintainer's rows on both platforms are not.
+Claude's macOS pass (rc.1) and Windows pass (rc.2, which reran A2) are done,
+as are the maintainer's Windows rows except scaling, offline setup and
+Narrator speech; the maintainer's macOS rows are not.
 
 | Target | Checklist | Pass | Fail | Pending | Unavailable |
 | --- | --- | --- | --- | --- | --- |
 | Apple Silicon macOS | [macos.md](macos.md) | 49 | 6 | 14 | 6 |
-| Windows x64 | [windows.md](windows.md) | 47 | 4 | 17 | 5 |
+| Windows x64 | [windows.md](windows.md) | 59 | 4 | 5 | 5 |
 
 - **Build:** [v0.1.0-rc.1](https://github.com/lawkitt/mdoc/releases/tag/v0.1.0-rc.1),
   installed from `mdoc_0.1.0-rc.1_arm64.dmg` (SHA256SUMS verified, Notarized
@@ -54,21 +55,20 @@ Unlock… bar), E5, S1 (network off), C1 (paste into the ChatGPT and Claude web
 apps), K1, K2, K8, K9 (keyboard layouts and the character palette), A5 (spoken
 announcements), and H3 (Convert to Markdown in a source-only view).
 
-## Pending rows (Windows, for the maintainer)
+## Pending rows (Windows)
 
-I3 (SmartScreen and the installer UI from a browser download), T3 (live OS
-appearance switch), D3 and D4 (125 % and 150 % scale), P3–P6 (drops from File
-Explorer, which Claude may only click), S1 (network off, models moved aside),
-C1 (paste into the ChatGPT and Claude web apps), K1, K2, K9 (Russian layout,
-Ctrl+Shift+;, AltGr or dead keys), R8 (Ctrl+\), R9 (Alt+Enter), A5 (Narrator
-announcements), and H3 (Convert to Markdown in a source-only view).
+The maintainer deferred D3 and D4 (125 % and 150 % scale), S1 (network off,
+models moved aside) and A5 (Narrator announcements) on 2026-10-19. H3
+(Convert to Markdown in a source-only view) was not exercised; Claude runs it
+on the next RC with the T6 retest.
 
 ## Observations
 
 - Injected ⇧ shortcuts behave inconsistently: ⇧⌘S is ignored, while ⇧⌘P,
   ⇧⌘⌫ and ⌘⌥⇧C work. The maintainer confirmed ⇧⌘S, ⇧⌘H and ⌘↩ on a physical
   keyboard. On Windows injected Ctrl+Shift+S works, while Ctrl+\, Alt+Enter
-  and Ctrl+Shift+; did nothing.
+  and Ctrl+Shift+; did nothing; the maintainer confirmed all three on a
+  physical keyboard (R8, R9, K2).
 - Windows has no single-instance launch: each launch or "Open with" starts
   another process and window that restores the session.
 - Smaller findings without a row are in [After 0.1.0: RC acceptance follow-ups](../../../../ROADMAP.md):

@@ -5,8 +5,10 @@ The Windows half of the [2026-10-19 run](README.md), from the template
 ([ADR 0057](../../../adr/0057-native-platform-acceptance.md)). Claude ran it
 from Claude Code on the maintainer's PC through computer use, reading state
 from UI Automation (`System.Windows.Automation`) and the clipboard; rows it
-could not observe are Pending and marked *Maintainer*. Shortcuts were injected
-without a keyboard layout: an ignored shortcut is not a failure on its own.
+could not observe were run by the maintainer the same day (notes start
+"Maintainer:"); rows still Pending are marked *Maintainer*. Shortcuts were
+injected without a keyboard layout: an ignored shortcut is not a failure on
+its own.
 File Explorer was granted for plain clicks only, so no drag started from it.
 
 ## Header
@@ -14,7 +16,7 @@ File Explorer was granted for plain clicks only, so no drag started from it.
 | Field | Value |
 | --- | --- |
 | Date | 2026-10-19 |
-| Run by | Claude (computer use, UI Automation, clipboard reads); rows marked *Maintainer* wait on the maintainer |
+| Run by | Claude (computer use, UI Automation, clipboard reads); the maintainer ran the rows whose notes start "Maintainer:" |
 | mdoc version and artifact | 0.1.0-rc.2, `mdoc_0.1.0-rc.2_x64-setup.exe` (SHA256SUMS verified; draft release; not Authenticode-signed), installed silently over 0.1.0-beta.4 |
 | Machine, CPU, RAM, GPU | The maintainer's PC, AMD Ryzen 9 3900X, 32 GB, NVIDIA GeForce RTX 2070 SUPER |
 | OS and build | Windows 11 Pro 25H2, build 26200.9550 |
@@ -25,7 +27,7 @@ File Explorer was granted for plain clicks only, so no drag started from it.
 
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
-| I3 | *Windows*: SmartScreen shows, "Run anyway" proceeds (unsigned betas), the installer completes, and the VC++ Redistributable is installed or already present | Pending | `setup.exe /S` over beta.4 exited 0; VC++ 14.51 was already present. The copy came through `gh` without the Mark of the Web, so SmartScreen could not appear. *Maintainer*: download it in a browser, Run anyway, finish the installer UI. |
+| I3 | *Windows*: SmartScreen shows, "Run anyway" proceeds (unsigned betas), the installer completes, and the VC++ Redistributable is installed or already present | Pass | Maintainer: downloaded in a browser; SmartScreen showed, Run anyway proceeded and the installer UI completed. VC++ 14.51 was already present. |
 | I4 | *Windows*: Start menu entry and uninstaller are present; the app launches from Start | Pass | Apps list "mdoc 0.1.0-rc.2" (publisher lawkitt) with `uninstall.exe`; Start › mdoc launches it. The uninstaller was not run; its NSIS template deletes only the app's files and a then-empty folder, so models, cases and `key.dpapi` in the same folder stay. |
 | I5 | First launch shows Home with no error, no crash report notice, and no Keychain or network prompt | Pass | Clean profile: Home in Dark (System), no error, crash notice or prompt. |
 | I6 | About/Settings shows the expected version | Pass | Settings › Updates: "You have mdoc 0.1.0-rc.2." |
@@ -38,7 +40,7 @@ Fixture: the English demo DOCX, with the Source preview open and aliases applied
 | --- | --- | --- | --- |
 | T1 | Light: shell, sidebar, editor, Replacements panel, popup, dialogs and menus are legible, with no unthemed or invisible controls | Pass | Shell, sidebar, editor, panel (Review and Share), popup, More actions menu, palette and Settings legible. The toolbar's "…" glyph is faint. |
 | T2 | Dark: the same | Pass | The same in Dark; the preview pages follow the theme. |
-| T3 | System: switching the OS appearance while mdoc is open updates every visible surface without a restart | Pending | Switching the OS appearance is a system setting. *Maintainer*. |
+| T3 | System: switching the OS appearance while mdoc is open updates every visible surface without a restart | Pass | Maintainer: switching the Windows appearance while mdoc was open updated every visible surface without a restart. |
 | T4 | Original page tone follows the theme; the override in the Original header works in both themes | Pass | Dark: "Show original paper" switches to white pages and back. Light hides the control because the pages are already original. |
 | T5 | Highlights (proposed, applied, search, spelling) stay distinguishable in both themes | Pass | Proposed (category tints), applied (blue), search (yellow, current orange) and spelling (red) are distinct in both themes. A match that wraps also paints a block at the end of the previous line ([After 0.1.0: RC acceptance follow-ups](../../../../ROADMAP.md)). |
 | T6 | *Windows*: caption buttons draw, work and snap layouts appear on hover | Fail | The buttons draw and highlight on hover, but clicking minimize, maximize/restore or close does nothing, and no snap layouts flyout appears; the same injected hover and click work on Notepad. A title-bar double-click maximizes but never restores, so a maximized window comes back only by dragging the title bar or Win+↓. Cause: the buttons stop the mouse-down (`src/ui.rs:728`), so GPUI never records the pressed caption button; GPUI's `zoom` only maximizes. [0.1.0 stable: Windows caption buttons](../../../../ROADMAP.md). |
@@ -47,8 +49,8 @@ Fixture: the English demo DOCX, with the Source preview open and aliases applied
 
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
-| D3 | *Windows*: 125 % scale; text crisp, hit targets aligned with what is drawn | Pending | Display scaling is a system setting. *Maintainer*. |
-| D4 | *Windows*: 150 % scale; the same, including the popup and dialogs | Pending | As D3. *Maintainer*. |
+| D3 | *Windows*: 125 % scale; text crisp, hit targets aligned with what is drawn | Pending | Display scaling is a system setting. *Maintainer*: deferred on 2026-10-19. |
+| D4 | *Windows*: 150 % scale; the same, including the popup and dialogs | Pending | As D3. *Maintainer*: deferred on 2026-10-19. |
 | D5 | Resizing to the minimum window size keeps every control reachable | Pass | At the minimum (about 720 × 475 px) the header, Markdown/Source switch, Apply and the panel stay visible; Home scrolls to its buttons, Cases and Recents. |
 
 ## 4. Files and paths
@@ -57,10 +59,10 @@ Fixture: the English demo DOCX, with the Source preview open and aliases applied
 | --- | --- | --- | --- |
 | P1 | Open (Mod+O) `Соглашение об урегулировании.docx` from `Документы/Папка с пробелами/`; it converts and its preview shows | Pass | Ctrl+O with the path typed into the dialog; converted, Source preview shown, RU spelling underline on «Маришей». |
 | P2 | Save As (Mod+Shift+S) into the same folder under a Cyrillic name with spaces; reopening it from Recents works | Fail | Injected Ctrl+Shift+S opens Save As; `Мировое соглашение копия` (typed without extension) was saved as `…копия.md`, Cyrillic intact. As on macOS it never enters Recents; the tab also keeps its DOCX badge. [After 0.1.0: RC acceptance follow-ups](../../../../ROADMAP.md). |
-| P3 | Dropping that file onto Home opens it | Pending | Needs a drag from File Explorer, granted to Claude for plain clicks only. *Maintainer*. |
-| P4 | Dropping two files onto the sidebar shows the insertion line and opens both at that position | Pending | As P3. *Maintainer*. |
-| P5 | Dragging an unsupported file shows "No supported files" and opens nothing | Pending | As P3; `образец.xyz` is in `%USERPROFILE%\mdoc-acceptance`. macOS shows the insertion line instead ([After 0.1.0: Dry-run polish](../../../../ROADMAP.md)). *Maintainer*. |
-| P6 | Dropping a folder opens it as a case | Pending | As P3. *Maintainer*. |
+| P3 | Dropping that file onto Home opens it | Pass | Maintainer: dropping the file from File Explorer onto Home opened it. |
+| P4 | Dropping two files onto the sidebar shows the insertion line and opens both at that position | Pass | Maintainer: two files dropped onto the sidebar showed the insertion line and opened at that position. |
+| P5 | Dragging an unsupported file shows "No supported files" and opens nothing | Pass | Maintainer: dropping `образец.xyz` showed "No supported files" and opened nothing. |
+| P6 | Dropping a folder opens it as a case | Pass | Maintainer: a dropped folder opened as a case. What a folder drop should offer is [After 0.1.0: Folder drop flow](../../../../ROADMAP.md). |
 | P7 | Opening a file from the OS (Finder/Explorer "Open with") opens it in mdoc | Pass | `mdoc.exe "…\reference.pdf"` (what "Open with" runs) opened it with its preview, but in a second mdoc process and window: Windows has no single-instance launch, so every launch restores the session again. The installer registers no file associations ([After 0.1.0: RC acceptance follow-ups](../../../../ROADMAP.md)). |
 
 ## 5. First-use model setup
@@ -69,7 +71,7 @@ Run on the clean profile.
 
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
-| S1 | Offline (network off): Pseudonymize shows the consent card; Download & continue fails cleanly with Retry and no crash | Pending | Needs the network off, a system setting, and the models moved aside again. *Maintainer*. |
+| S1 | Offline (network off): Pseudonymize shows the consent card; Download & continue fails cleanly with Retry and no crash | Pending | Needs the network off, a system setting, and the models moved aside again. *Maintainer*: deferred on 2026-10-19. |
 | S2 | Online: Retry downloads with byte progress, then Verifying / Checking runtime, and the scan resumes in the requesting tab | Pass | Retry downloaded with byte progress (… / 685 MB), showed "Checking runtime…", and the scan resumed in the requesting tab (24 proposals, 14 identities). Verifying passed too fast to see. |
 | S3 | Cancel during download returns to the card; a second attempt completes | Pass | Cancel at 14 / 709 MB returned to the card with "Download cancelled" and Retry; Retry completed. The size then read 685 MB ([After 0.1.0: Dry-run polish](../../../../ROADMAP.md)). |
 | S4 | Converting `reference.pdf` with OCR shows the OCR consent card and completes after the download | Pass | `reference.pdf` has a text layer, so the scanned `tests/fixtures/ocr-qualification/russian.pdf` was used: the card warned the default model reads English; Choose model › English & Russian, Download & recognize produced the text exactly, ё included. |
@@ -88,14 +90,14 @@ Fixture: the English demo, scanned.
 | R5 | Mod+Z inside the popup and the panel undoes the last decision; Mod+Shift+Z (and Ctrl+Y on Windows) redoes | Pass | In the popup Ctrl+Z undoes a keep, Ctrl+Y and Ctrl+Shift+Z redo it; Ctrl+Z works in the panel. Undoing an applied mention closes the popup, so its redo then runs from the editor (Ctrl+Y and Ctrl+Shift+Z work there). |
 | R6 | Panel list: ↑/↓, Space, Enter, →/←, ⌫ behave as described in ADR 0048 | Pass | From the panel search, ↓ enters the list with a visible focus; ↓ moves, ← goes to the entity, Space toggles keep, ⌫ keeps, Ctrl+Z undoes. |
 | R7 | Mod+Enter applies all | Pass | Ctrl+Enter applied all 24 and switched to Share. |
-| R8 | Before / After (Mod+\\) shows both columns; Esc leaves | Pending | The view works: the editor's hover bar › Side by side shows Original and Pseudonymized; Esc leaves. Injected Ctrl+\ did nothing, and the palette has no Before / After. *Maintainer*: Ctrl+\ on the keyboard. |
-| R9 | Alt+Enter, Alt+↑/↓ and Mod+Alt+P work in the editor | Pending | Alt+↓ moves to the next proposal and opens its popup; Ctrl+Alt+P turned "Fictional" into a PERSON_7 proposal. Injected Alt+Enter did nothing with the caret in the editor. *Maintainer*: Alt+Enter on the keyboard. |
+| R8 | Before / After (Mod+\\) shows both columns; Esc leaves | Pass | Maintainer: Ctrl+\ on the keyboard opens Before / After with both columns; Esc leaves. |
+| R9 | Alt+Enter, Alt+↑/↓ and Mod+Alt+P work in the editor | Pass | Maintainer: Alt+Enter on the keyboard works in the editor; Alt+↓ and Ctrl+Alt+P as Claude observed. |
 
 ## 7. Clipboard
 
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
-| C1 | Copy for AI, pasted into the ChatGPT and Claude web apps, arrives as plain text with the placeholder note | Pending | Copy for AI puts plain text only on the clipboard (no HTML), starting with the placeholder note and with no original names. *Maintainer*: paste into the ChatGPT and Claude web apps. |
+| C1 | Copy for AI, pasted into the ChatGPT and Claude web apps, arrives as plain text with the placeholder note | Pass | Maintainer: Copy for AI pasted into the ChatGPT and Claude web apps arrives as plain text with the placeholder note. |
 | C2 | Copy Markdown of the Russian demo, pasted into TextEdit (plain text mode) or Notepad, is byte-identical to the saved file, Cyrillic intact; the same for a line with CJK text | Pass | Copy Markdown of the Russian demo is byte-identical to its file (3,844 bytes, LF); `cjk.md` (契約 テスト 合意) is byte-identical too. Compared from the clipboard, not through Notepad. |
 | C3 | Paste AI Response (Mod+Alt+Shift+V) of a browser selection carrying HTML and plain text uses the plain text and restores aliases | Pass | A clipboard with HTML (bold, red span, an HTML-only word) and plain text, pasted with Ctrl+Alt+Shift+V, opened "Summary. Maya Bennett may settle with Harrow & Finch Ltd; Ms Bennett keeps the reference." |
 | C4 | Pseudonymize Clipboard (Mod+Alt+Shift+C) replaces the known case names in the clipboard; pasting elsewhere shows the aliases | Pass | Ctrl+Alt+Shift+C turned "Maya Bennett emailed Harrow & Finch Ltd…; Ms Bennett keeps…" into "PERSON_1 emailed ORG_1…; CLAIMANT keeps…" (names from the active tab; on a tab without names it says so). |
@@ -109,14 +111,14 @@ unless Claude observed them on macOS (ADR 0057).
 
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
-| K1 | Russian typed into the editor and into the find field appears correctly | Pending | Computer use enters Cyrillic through the clipboard, not as typing. *Maintainer*: the Russian layout. |
-| K2 | A misspelled Russian word gets the spelling underline; Mod+; and Mod+Shift+; move between misspellings | Pending | The underline shows on «Маришей», «Шахова», «Елагин»; Ctrl+; moves «Шахова» → «Елагин». Injected Ctrl+Shift+; did not move back. *Maintainer*. |
+| K1 | Russian typed into the editor and into the find field appears correctly | Pass | Maintainer: Russian typed with the Russian layout appears correctly in the editor and the find field. |
+| K2 | A misspelled Russian word gets the spelling underline; Mod+; and Mod+Shift+; move between misspellings | Pass | Maintainer: the underline shows on misspelled Russian words; Ctrl+; and Ctrl+Shift+; on the keyboard move forward and back. |
 | K3 | Japanese in the editor: the marked text is underlined while composing | Unavailable | No Japanese input source; the maintainer does not run the Japanese rows (ADR 0057). |
 | K4 | The candidate window opens at the caret, not at the window corner | Unavailable | As K3. |
 | K5 | Choosing a candidate commits it; Esc during composition cancels it | Unavailable | As K3. |
 | K6 | One undo removes the committed Japanese text | Unavailable | As K3. |
 | K7 | Japanese in the find field composes, commits and finds the text | Unavailable | As K3. A headless test composes and commits Japanese in the preview find field. |
-| K9 | Dead keys or Option/AltGr characters (e.g. `é`, `€`) type correctly | Pending | *Maintainer* (the US layout has no AltGr; US-International or the Russian layout's AltGr). |
+| K9 | Dead keys or Option/AltGr characters (e.g. `é`, `€`) type correctly | Pass | Maintainer: AltGr and dead-key characters (`é`, `€`) type correctly. |
 
 ## 9. Shortcuts
 
@@ -164,4 +166,4 @@ not mark it Fail.
 | A2 | Replacements panel controls and popup buttons announce a name and role | Pass | Rerun of the rc.1 failure: the popup's scope segments ("This one", "All 6 mentions") and all ten category menu rows are named toggle buttons; panel rows, checkboxes, search, Alias field and Close are named. No unnamed control in the window. |
 | A3 | Settings and the Keychain/unsaved-changes dialogs announce their title and buttons; focus stays inside | Fail | The unsaved-changes dialog is a native task dialog: title "Warning", both texts, Save/Cancel/Discard, focus on Save. Settings is not a dialog: no window or title in the tree, the document's controls stay behind it, and Tab focus is not reported to UI Automation. [After 0.1.0: RC acceptance follow-ups](../../../../ROADMAP.md). |
 | A4 | Every control in A1–A3 can be reached and activated without a mouse: with the screen reader, or Full Keyboard Access on macOS. Plain Tab from Home or the editor is not required for 0.1.0 (ADR 0057) | Pass | Controls expose Invoke, SelectionItem or Toggle: invoking Collapse/Expand sidebar, selecting a tab and toggling a panel checkbox through UI Automation, as Narrator does, worked. Spoken Narrator output not checked (A5). |
-| A5 | Scan status and toasts are announced | Pending | Announcements need spoken output. *Maintainer*: Narrator. |
+| A5 | Scan status and toasts are announced | Pending | Announcements need spoken output. *Maintainer*: Narrator, deferred on 2026-10-19. |

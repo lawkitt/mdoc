@@ -30,8 +30,10 @@ priority order.
    The macOS dry run on beta.13 (2026-10-18) is done; the RC run covers the
    later menus (H17) and Keychain explainer (section 10); the dry-run findings
    that would have failed A1, A2 and K7 were fixed before the RC. Claude's
-   Windows pass on rc.2 is done (2026-10-19); the maintainer's rows on both
-   platforms are not.
+   Windows pass on rc.2 and the maintainer's Windows rows are done
+   (2026-10-19), except the deferred scaling (D3, D4), offline setup (S1) and
+   Narrator speech (A5) rows; H3 and the T6 retest wait for the next RC. The
+   maintainer's macOS rows are not done.
    *Done when:* `docs/evidence/platform/<date>/` holds a README plus `macos.md`
    and `windows.md` covering themes, IME (RU; Japanese where available), clipboard,
    VoiceOver/Narrator basics, the popup, setup and file-drop flows, install,
