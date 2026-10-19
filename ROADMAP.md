@@ -52,7 +52,21 @@ In priority order, after any carried-over should-fix items.
    left for this tier are case fan-out, process memory, the legal opinion's
    25 ms search burst and two ~20 ms typing passes seen natively. [Restoration measurements](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/evidence/pseudonymization/2026-10-07-restoration/README.md)
    are historical, not guarantees.
-2. **[Editor] Find and replace.** *From the 2026-10-17 roadmap grooming.* The
+2. **[Editor] Enter starts a paragraph.** *From the 2026-10-19 rc.1 run.* Enter
+    in a paragraph inserts one `\n`: the editor shows a new line, but Markdown
+    reads it as the same paragraph, so Copy for AI and other renderers join the
+    lines. Decide Enter (new paragraph, `\n\n`) versus ⇧Enter (line break) and
+    how lists, tables and headings keep their own Enter.
+    *Done when:* what the editor shows after Enter is what a CommonMark renderer
+    shows for the copied Markdown, with tests on paragraphs, lists and tables.
+3. **[Pseudonymization] Popup Enter follows the scope.** *From the 2026-10-19
+    rc.1 run.* The popup shows All N as its scope, but Enter applies only this
+    mention (`ApplyThis`) and quietly switches the scope to This one. Decide
+    whether Enter applies the shown scope or the scope defaults change, and
+    amend ADR 0048/0055 to match.
+    *Done when:* Enter, the scope segments and the Apply result agree, and a
+    test covers Enter in each scope.
+4. **[Editor] Find and replace.** *From the 2026-10-17 roadmap grooming.* The
    find field gains a replace row: Replace, Replace all, Match case and Whole
    word; no regex or search in selection. Port the logic and the search bar
    (option toggles, "3 of 12" counter, expanding replace row) from Zed's
@@ -62,14 +76,14 @@ In priority order, after any carried-over should-fix items.
    typing does. Shortcut ⌘⌥F (macOS), Ctrl+H (Windows/Linux).
    *Done when:* each control works with keyboard and mouse on a long document
    with applied aliases, and one undo reverts a Replace all.
-3. **[A11y] Expose editor text to screen readers.** *From ADR 0057.* Controls
+5. **[A11y] Expose editor text to screen readers.** *From ADR 0057.* Controls
    are labelled, but VoiceOver and Narrator cannot read or navigate the
    document. Give the editor an AccessKit text role with its value, text
    ranges, selection and caret events.
    *Done when:* VoiceOver and Narrator read the document by line and word,
    follow the caret, and announce selection in a long document with applied
    aliases.
-4. **[PII] Merge hint.** *From the 2026-10-17 roadmap grooming.* When two
+6. **[PII] Merge hint.** *From the 2026-10-17 roadmap grooming.* When two
    identities very likely name the same subject, the Replacements panel shows a
    dismissible hint on the identity ("Looks like Maya Bennett · Merge"). Signals:
    an ADR 0053 short or inflected form with exactly one candidate full name;
@@ -80,16 +94,16 @@ In priority order, after any carried-over should-fix items.
    that pair.
    *Done when:* tests cover each signal and a non-signal (relatives sharing a
    surname, initials), and Merge, Undo and dismissal work in the live panel.
-5. **[UI] Center and smoothly scroll to the selected mention.** Clicking an
+7. **[UI] Center and smoothly scroll to the selected mention.** Clicking an
    entity or mention row in the Replacements panel reveals, highlights and focuses
    the mention near the vertical center of the editor, clear of the popup and
    clamped at document edges. Animate briefly; rapid selections head for the
    latest target without queued animations; manual scrolling interrupts; Reduce
    Motion positions immediately.
-6. **[UI] Expand/collapse all in the Replacements panel.** A compact icon
+8. **[UI] Expand/collapse all in the Replacements panel.** A compact icon
    control with tooltip and accessible label, preserving selection and
    replacement decisions.
-7. **[UI] Settings redesign.** *From the 2026-10-17 roadmap grooming; reference:
+9. **[UI] Settings redesign.** *From the 2026-10-17 roadmap grooming; reference:
    Anoni Settings.* A wider overlay with a left category list: General
    (appearance, updates, recent files), Detection (model, threshold, comparison),
    Recognition (OCR), Spelling (with the dictionary), Cases, About. Each setting
@@ -99,24 +113,24 @@ In priority order, after any carried-over should-fix items.
    Layout only: no UI language or profiles.
    *Done when:* every current setting is reachable, saved on change and
    operable by keyboard, in both themes.
-8. **[Cases] Case page.** *From the 2026-10-17 roadmap grooming.* The sidebar
-   case header truncates long names and repeats the tab title; the Share
-   panel's Case row only says "saved"; nothing gives an overview of a case. Add a
-   case page, opened from the sidebar header, Home and the Share row, listing the
-   case's documents and identities, with rename, recolor and delete. Design it
-   and accept its ADR before implementation.
-   *Done when:* the ADR is accepted and the page ships with those actions,
-   verified in both themes.
-9. **[UI] Workspace Back/Forward.** Arrow buttons right of the sidebar toggle,
-   available with the sidebar expanded or collapsed. Navigate visited documents
-   and Home, restore view state, disable unavailable directions, skip closed
-   documents, clear forward history on new navigation.
-10. **[OCR] Recover page structure.** *Known issue 1.* On a clean one-column A4
+10. **[Cases] Case page.** *From the 2026-10-17 roadmap grooming.* The sidebar
+    case header truncates long names and repeats the tab title; the Share
+    panel's Case row only says "saved"; nothing gives an overview of a case. Add a
+    case page, opened from the sidebar header, Home and the Share row, listing the
+    case's documents and identities, with rename, recolor and delete. Design it
+    and accept its ADR before implementation.
+    *Done when:* the ADR is accepted and the page ships with those actions,
+    verified in both themes.
+11. **[UI] Workspace Back/Forward.** Arrow buttons right of the sidebar toggle,
+    available with the sidebar expanded or collapsed. Navigate visited documents
+    and Home, restore view state, disable unavailable directions, skip closed
+    documents, clear forward history on new navigation.
+12. **[OCR] Recover page structure.** *Known issue 1.* On a clean one-column A4
     scan (PP-OCRv6 Small, 150 DPI; 300 DPI does not help) paragraphs and headings
     merge, and table rows split or shift; on the *Brown v. Board* page a body line
     becomes a heading. Fix in the AnyDoc/pdf-inspector forks. Add the scan to the
     [OCR qualification set](tests/fixtures/ocr-qualification/README.md) now.
-11. **[DOCX] Pseudonymized DOCX export with rdocx, then the preview.** *From the
+13. **[DOCX] Pseudonymized DOCX export with rdocx, then the preview.** *From the
     2026-10-17 roadmap grooming.* Evaluate [rdocx](https://github.com/tensorbee/rdocx)
     (MIT/Apache, young: 0.16) to write the applied case mapping into the
     original DOCX, keeping its formatting. Other Markdown edits are not carried
@@ -130,11 +144,11 @@ In priority order, after any carried-over should-fix items.
     *Done when:* fixture DOCX exports, reconverted and scanned, contain no
     original wording and open in Word with formatting intact; the preview
     decision is recorded with fixture comparisons.
-12. **[Cases] System-wide Pseudonymize Clipboard hotkey** (macOS
+14. **[Cases] System-wide Pseudonymize Clipboard hotkey** (macOS
     `RegisterEventHotKey`, Windows `RegisterHotKey`). The in-app action, before/after
     view and per-case category switches from the [Anoni review](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11)
     are done. Its on/off switch goes in Settings › General.
-13. **[Platform] Dry-run polish.** *From the 2026-10-18 macOS dry run.*
+15. **[Platform] Dry-run polish.** *From the 2026-10-18 macOS dry run.*
     The preview find field and screen-reader labels were fixed before rc.1.
     - Dragging an unsupported file shows an insertion line instead of "No
       supported files"; the Notices popover shows the full path and stays open.
@@ -143,7 +157,7 @@ In priority order, after any carried-over should-fix items.
     - The theme button's tooltip keeps the previous value while hovered; the
       setup card's size changes from 665 MB to 662 MB after Cancel.
     *Done when:* each point is fixed or moved to its own item.
-14. **[Platform] RC acceptance follow-ups.** *From the 0.1.0-rc.1 macOS run
+16. **[Platform] RC acceptance follow-ups.** *From the 0.1.0-rc.1 macOS run
     ([evidence](docs/evidence/platform/2026-10-19/macos.md)).*
     - Save As never adds the saved file to Recents: the row stays the source
       DOCX, which reopens as a fresh conversion (P2). The new file is also
@@ -160,8 +174,30 @@ In priority order, after any carried-over should-fix items.
       Access reach every control ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)).
       Likely F6 / ⇧F6 between sidebar, toolbar and editor, and Tab from Home
       into the controls.
+    - Dropping from Finder does not activate mdoc, so a modal the drop opens
+      (the Keychain explainer) does not get Esc or other keys.
+    - Tabs with the same name in the same folder (a DOCX's conversion and an
+      `.md`) fall back to the full absolute path, home folder included;
+      disambiguate by source type instead.
+    - The DOCX notice "Equations, charts, SmartArt… may render incompletely"
+      shows on every DOCX; show it only when the file has such content.
+    - After ⌘↩ Apply all the popup stays open on a mention that is now applied.
+    - In a narrow window Markdown/Source are buttons, not tabs, for screen
+      readers.
     *Done when:* each point is fixed or moved to its own item.
-
+17. **[Workspace] Folder drop flow.** *From the 2026-10-19 rc.1 run.* Dropping a
+    folder opens every document in it (README.md included) and asks for the
+    Keychain before anything was chosen. Decide what a folder drop offers (a
+    file list, Open as case, a size limit) and when the case key is read.
+    *Done when:* a folder drop shows what will open before it opens, asks for
+    the key only when a case is created or unlocked, and a large folder cannot
+    flood the sidebar.
+18. **[OCR] Pick the recognition language.** *From the 2026-10-19 rc.1 run.* The
+    OCR card defaults to the English model for a Cyrillic scan and only warns.
+    Choose English & Russian when the text layer, the file name or an installed
+    Russian input source suggests it; the user can still change it.
+    *Done when:* the Russian OCR fixture gets English & Russian by default and
+    the English one stays on English, with the choice explained on the card.
 ## Ongoing tracks
 
 - **Outgoing AI-analysis qualification.** A continuous quality gate, not a
@@ -218,7 +254,7 @@ In priority order, after any carried-over should-fix items.
   cross-case dictionary, deliberate forgetting of originals, and stronger
   anonymization claims.
 - Format-preserving pseudonymized PDF export and restoring an AI reply into
-  DOCX (DOCX export is After 0.1.0 item 10); an audit journal and
+  DOCX (DOCX export is the After 0.1.0 item "Pseudonymized DOCX export"); an audit journal and
   compliance report of replacements; a re-identification risk hint.
 - Bulk conversion beyond current lazy multi-file opening; design separately.
 - Online formatting/OCR repair; provider, credentials, trust and review need decisions.

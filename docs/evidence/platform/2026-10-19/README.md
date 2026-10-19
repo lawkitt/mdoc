@@ -26,10 +26,10 @@ run are not.
 | Row | Failure | Triage | Link |
 | --- | --- | --- | --- |
 | A2 | The popup's scope segments (This one, All N) and its category menu rows had no accessible name | Must-fix (unnamed controls) | Fixed after rc.1; rerun on rc.2 |
-| A4, H18 | Without a screen reader, Tab cannot reach the toolbar or sidebar from Home or the editor | After 0.1.0: screen readers and Full Keyboard Access reach every control (ADR 0057, amended 2026-10-19) | [Item 14](../../../../ROADMAP.md) |
-| A3 | Settings is not exposed as a dialog: no title announced, the document stays in the tree behind it | After 0.1.0 | [Item 14](../../../../ROADMAP.md) |
-| P2 | Save As never adds the saved file to Recents | After 0.1.0 | [Item 14](../../../../ROADMAP.md) |
-| P5 | An unsupported file shows the insertion line, not "No supported files" | After 0.1.0 | [Item 13](../../../../ROADMAP.md) |
+| A4, H18 | Without a screen reader, Tab cannot reach the toolbar or sidebar from Home or the editor | After 0.1.0: screen readers and Full Keyboard Access reach every control (ADR 0057, amended 2026-10-19) | [RC acceptance follow-ups](../../../../ROADMAP.md) |
+| A3 | Settings is not exposed as a dialog: no title announced, the document stays in the tree behind it | After 0.1.0 | [RC acceptance follow-ups](../../../../ROADMAP.md) |
+| P2 | Save As never adds the saved file to Recents | After 0.1.0 | [RC acceptance follow-ups](../../../../ROADMAP.md) |
+| P5 | An unsupported file shows the insertion line, not "No supported files" | After 0.1.0 | [Dry-run polish](../../../../ROADMAP.md) |
 
 ## Unavailable rows (macOS)
 
@@ -51,6 +51,6 @@ announcements), and H3 (Convert to Markdown in a source-only view).
 - Injected ⇧ shortcuts behave inconsistently: ⇧⌘S is ignored, while ⇧⌘P,
   ⇧⌘⌫ and ⌘⌥⇧C work. The maintainer confirmed ⇧⌘S, ⇧⌘H and ⌘↩ on a physical
   keyboard.
-- Smaller findings without a row are in [After 0.1.0 item 14](../../../../ROADMAP.md):
+- Smaller findings without a row are in [After 0.1.0: RC acceptance follow-ups](../../../../ROADMAP.md):
   the missing ⌘-arrow caret moves, no Toggle Sidebar shortcut, mode 0600 on
   new files.
