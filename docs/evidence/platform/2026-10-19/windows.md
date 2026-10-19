@@ -129,7 +129,7 @@ Every application shortcut, from `bind_app_keys`, `bind_markdown_search_keys`,
 | --- | --- | --- | --- | --- |
 | H1 | Mod+N | New | Pass | New tab opens. |
 | H2 | Mod+O | Open | Pass | Open dialog. |
-| H3 | Mod+Shift+I | Convert to Markdown | Pending | Acts only in a source-only view; not exercised. |
+| H3 | Mod+Shift+I | Convert to Markdown | Pass | A CSV (`Name,Count` with a Cyrillic row) opens source-only with the Convert card; Ctrl+Shift+I converted it to a Markdown table, Cyrillic intact. |
 | H4 | Mod+S / Mod+Shift+S | Save / Save As | Pass | Ctrl+S wrote the edit to disk; injected Ctrl+Shift+S opens Save As on Windows. |
 | H5 | Mod+W | Close tab | Pass | Closes the tab. |
 | H6 | Ctrl+Tab / Ctrl+Shift+Tab | Next / previous tab | Pass | Ctrl+Tab wraps from the last tab to the first; Ctrl+Shift+Tab returns. |

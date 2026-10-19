@@ -10,7 +10,7 @@ Narrator speech; the maintainer's macOS rows are not.
 | Target | Checklist | Pass | Fail | Pending | Unavailable |
 | --- | --- | --- | --- | --- | --- |
 | Apple Silicon macOS | [macos.md](macos.md) | 49 | 6 | 14 | 6 |
-| Windows x64 | [windows.md](windows.md) | 59 | 4 | 5 | 5 |
+| Windows x64 | [windows.md](windows.md) | 60 | 4 | 4 | 5 |
 
 - **Build:** [v0.1.0-rc.1](https://github.com/lawkitt/mdoc/releases/tag/v0.1.0-rc.1),
   installed from `mdoc_0.1.0-rc.1_arm64.dmg` (SHA256SUMS verified, Notarized
@@ -58,9 +58,9 @@ announcements), and H3 (Convert to Markdown in a source-only view).
 ## Pending rows (Windows)
 
 The maintainer deferred D3 and D4 (125 % and 150 % scale), S1 (network off,
-models moved aside) and A5 (Narrator announcements) on 2026-10-19. H3
-(Convert to Markdown in a source-only view) was not exercised; Claude runs it
-on the next RC with the T6 retest.
+models moved aside) and A5 (Narrator announcements) on 2026-10-19. T6
+(Fail on rc.2) is retested on the next RC, which carries the caption-button
+fix.
 
 ## Observations
 

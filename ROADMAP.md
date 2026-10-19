@@ -32,7 +32,7 @@ priority order.
    that would have failed A1, A2 and K7 were fixed before the RC. Claude's
    Windows pass on rc.2 and the maintainer's Windows rows are done
    (2026-10-19), except the deferred scaling (D3, D4), offline setup (S1) and
-   Narrator speech (A5) rows; H3 and the T6 retest wait for the next RC. The
+   Narrator speech (A5) rows; the T6 retest waits for the next RC. The
    maintainer's macOS rows are not done.
    *Done when:* `docs/evidence/platform/<date>/` holds a README plus `macos.md`
    and `windows.md` covering themes, IME (RU; Japanese where available), clipboard,
