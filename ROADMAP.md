@@ -154,6 +154,12 @@ In priority order, after any carried-over should-fix items.
     - The editor lacks the platform caret moves: ⌘←/⌘→ and ⌘↑/⌘↓ (with ⇧) on
       macOS, Ctrl+Home/End on Windows.
     - View › Toggle Sidebar has no shortcut (⌃⌘S is the macOS convention).
+    - Plain Tab cannot reach the toolbar or sidebar: Tab cycles only once
+      focus is in a control, Home keeps focus on the window and the editor
+      uses Tab to indent (A4, H18). Screen readers and macOS Full Keyboard
+      Access reach every control ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)).
+      Likely F6 / ⇧F6 between sidebar, toolbar and editor, and Tab from Home
+      into the controls.
     *Done when:* each point is fixed or moved to its own item.
 
 ## Ongoing tracks

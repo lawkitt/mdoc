@@ -54,8 +54,11 @@ build, machines, scope, layout and failure handling open.
 - **Shortcuts.** Every bound shortcut and menu item, listed from the code, is a
   row on each platform.
 - **Screen readers.** "Basics" means controls: toolbar, sidebar, panels,
-  popup buttons and dialogs announce name and role and are reachable by
-  keyboard. The editor's text is not exposed to assistive technology; this is
+  popup buttons and dialogs announce name and role and are reachable without
+  a mouse through the screen reader (VoiceOver, Narrator) or macOS Full
+  Keyboard Access. Plain Tab cycles inside panels, the popup and dialogs but
+  does not reach the toolbar or sidebar from Home or the editor; that is an
+  After 0.1.0 item, not a 0.1.0 blocker (2026-10-19, rc.1 row A4). The editor's text is not exposed to assistive technology; this is
   a recorded known limitation, and exposing it is an After 0.1.0 item.
 - **Setup.** Starts from a wiped app-data directory: online model setup
   completes; an offline first launch shows the setup error/retry state
@@ -78,7 +81,8 @@ build, machines, scope, layout and failure handling open.
   `windows.md` from the template. Screenshots only for failures, of public
   fixtures only.
 - **Failures.** A failure that loses data, blocks a listed flow, or leaves a
-  control unreachable by keyboard or screen reader is must-fix: fix, cut a
+  control unreachable by screen reader (or by Tab where Tab already cycles:
+  panels, the popup, dialogs) is must-fix: fix, cut a
   new RC, rerun the affected rows. Cosmetic or rare failures become After
   0.1.0 items. The item is done when no Fail row lacks a linked roadmap item;
   this ADR then becomes Accepted.
@@ -89,3 +93,7 @@ build, machines, scope, layout and failure handling open.
   the template makes later releases repeatable.
 - Screen-reader users can operate controls but cannot read the document in
   0.1.0.
+- Keyboard-only users without a screen reader reach the toolbar and sidebar
+  through macOS Full Keyboard Access, shortcuts, menus and the ⌘K palette;
+  Windows has no Full Keyboard Access, so there Narrator, shortcuts and the
+  palette carry it until plain Tab reaches every control.

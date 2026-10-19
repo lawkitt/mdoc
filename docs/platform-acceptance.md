@@ -39,7 +39,8 @@ Copy a demo to a folder named `Документы/Папка с пробелам
 "Mod" is ⌘ on macOS and Ctrl on Windows.
 
 Failure triage: a failure that loses data, blocks a listed flow, or leaves a
-control unreachable by keyboard or screen reader is must-fix; fix it, cut a
+control unreachable by screen reader (or by Tab inside panels, the popup and
+dialogs) is must-fix; fix it, cut a
 new RC and rerun the affected rows. Anything else becomes an After 0.1.0
 roadmap item.
 
@@ -206,5 +207,5 @@ not mark it Fail.
 | A1 | Sidebar toggle, tabs, toolbar buttons and the Pseudonymize control announce a name and role | | |
 | A2 | Replacements panel controls and popup buttons announce a name and role | | |
 | A3 | Settings and the Keychain/unsaved-changes dialogs announce their title and buttons; focus stays inside | | |
-| A4 | Every control in A1–A3 can be reached and activated without a mouse | | |
+| A4 | Every control in A1–A3 can be reached and activated without a mouse: with the screen reader, or Full Keyboard Access on macOS. Plain Tab from Home or the editor is not required for 0.1.0 (ADR 0057) | | |
 | A5 | Scan status and toasts are announced | | |

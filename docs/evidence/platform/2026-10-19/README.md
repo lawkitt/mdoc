@@ -26,7 +26,7 @@ run are not.
 | Row | Failure | Triage | Link |
 | --- | --- | --- | --- |
 | A2 | The popup's scope segments (This one, All N) and its category menu rows had no accessible name | Must-fix (unnamed controls) | Fixed after rc.1; rerun on rc.2 |
-| A4, H18 | Without a screen reader, Tab cannot reach the toolbar or sidebar from Home or the editor | Must-fix by the triage rule ("a control unreachable by keyboard") | Decision pending |
+| A4, H18 | Without a screen reader, Tab cannot reach the toolbar or sidebar from Home or the editor | After 0.1.0: screen readers and Full Keyboard Access reach every control (ADR 0057, amended 2026-10-19) | [Item 14](../../../../ROADMAP.md) |
 | A3 | Settings is not exposed as a dialog: no title announced, the document stays in the tree behind it | After 0.1.0 | [Item 14](../../../../ROADMAP.md) |
 | P2 | Save As never adds the saved file to Recents | After 0.1.0 | [Item 14](../../../../ROADMAP.md) |
 | P5 | An unsupported file shows the insertion line, not "No supported files" | After 0.1.0 | [Item 13](../../../../ROADMAP.md) |
