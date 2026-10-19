@@ -143,6 +143,18 @@ In priority order, after any carried-over should-fix items.
     - The theme button's tooltip keeps the previous value while hovered; the
       setup card's size changes from 665 MB to 662 MB after Cancel.
     *Done when:* each point is fixed or moved to its own item.
+14. **[Platform] RC acceptance follow-ups.** *From the 0.1.0-rc.1 macOS run
+    ([evidence](docs/evidence/platform/2026-10-19/macos.md)).*
+    - Save As never adds the saved file to Recents: the row stays the source
+      DOCX, which reopens as a fresh conversion (P2). The new file is also
+      created with mode 0600.
+    - Settings is not exposed as a dialog: its title is not announced and the
+      document's controls stay in the accessibility tree behind it (A3); model
+      choices read as checkboxes, not radio buttons.
+    - The editor lacks the platform caret moves: ⌘←/⌘→ and ⌘↑/⌘↓ (with ⇧) on
+      macOS, Ctrl+Home/End on Windows.
+    - View › Toggle Sidebar has no shortcut (⌃⌘S is the macOS convention).
+    *Done when:* each point is fixed or moved to its own item.
 
 ## Ongoing tracks
 
