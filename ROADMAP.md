@@ -23,17 +23,32 @@ priority order.
 
 ### Must-fix
 
-1. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
+1. **[Platform] Pre-RC fixes.** *From the 2026-10-18 macOS dry run; split out of
+   After 0.1.0 item 13 because they would fail rows A1, A2 and K7 under the
+   ADR 0057 triage and force an rc.2.*
+   - The DOCX/PDF preview's find field builds text from key codes, not the
+     text-input path: injected text arrives garbled and IME likely fails.
+   - Screen-reader labels: Replacements panel checkboxes all read "Will be
+     replaced" without the identity; the panel search is not a text field;
+     zoom buttons read "+" or nothing; sidebar tabs are buttons, not tabs.
+   - Confirm ⌘⇧S, ⌘⇧H and ⌘↩ on a physical keyboard with a `just run` build
+     (the maintainer); the dry run saw them ignored three times without a repro.
+     A real failure is fixed here.
+   *Done when:* each point is fixed or confirmed, the preview find field accepts
+   Japanese IME input, and VoiceOver reads each control above with its name and role.
+2. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
    Windows x64; keep Linux buildable. Done last, because it checks the finished UI:
-   an installed `0.1.0-rc.1` against the template `docs/platform-acceptance.md`
-   ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)), after a macOS dry run on the latest beta.
+   an installed `0.1.0-rc.1`, cut once item 1 lands, against the template
+   `docs/platform-acceptance.md` ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)).
+   The macOS dry run on beta.13 (2026-10-18) is done; the RC run covers the
+   later menus (H17) and Keychain explainer (section 10).
    *Done when:* `docs/evidence/platform/<date>/` holds a README plus `macos.md`
    and `windows.md` covering themes, IME (RU plus Japanese), clipboard,
    VoiceOver/Narrator basics, the popup, setup and file-drop flows, install,
    shortcuts, scaling, case key storage and Cyrillic paths; unavailable checks are
    listed explicitly, and no Fail row lacks a linked roadmap item. The
-   maintainer runs the Windows checks. The dry run saw ⌘⇧S, ⌘⇧H and ⌘↩
-   ignored three times without a repro; confirm on a physical keyboard.
+   maintainer runs the Windows checks. The folder is named for the day the
+   macOS RC run starts; `windows.md` records its own date.
 
 ### Should-fix
 
@@ -132,17 +147,12 @@ In priority order, after any carried-over should-fix items.
     view and per-case category switches from the [Anoni review](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11)
     are done. Its on/off switch goes in Settings › General.
 13. **[Platform] Dry-run polish.** *From the 2026-10-18 macOS dry run.*
-    - The DOCX/PDF preview's find field builds text from key codes, not the
-      text-input path: injected text arrives garbled and IME likely fails.
-    - Screen-reader labels: Replacements panel checkboxes all read "Will be
-      replaced" without the identity; the panel search is not a text field;
-      zoom buttons read "+" or nothing; sidebar tabs are buttons, not tabs.
+    The preview find field and screen-reader labels moved to must-fix item 1.
     - Dragging an unsupported file shows an insertion line instead of "No
       supported files"; the Notices popover shows the full path and stays open.
     - The theme button's tooltip keeps the previous value while hovered; the
       setup card's size changes from 665 MB to 662 MB after Cancel.
-    *Done when:* each point is fixed or moved to its own item, and the preview
-    find field accepts Japanese IME input.
+    *Done when:* each point is fixed or moved to its own item.
 
 ## Ongoing tracks
 

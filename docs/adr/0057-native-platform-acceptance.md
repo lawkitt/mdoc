@@ -16,10 +16,15 @@ build, machines, scope, layout and failure handling open.
 - **Build.** Acceptance checks `0.1.0-rc.1`, installed from the CI release
   artifacts (`.dmg`, NSIS `.exe`) on each machine, so signing, notarization,
   SmartScreen and the installer are part of it. It is cut after the Cases
-  fixtures must-fix item (ADR 0056) lands.
+  fixtures (ADR 0056) and the pre-RC fixes land (2026-10-19): the dry-run
+  findings that would fail A1, A2 or K7 under the triage below (screen-reader
+  labels, the preview find field's text input) and a physical-keyboard check
+  of ⌘⇧S, ⌘⇧H and ⌘↩. Fixing them first avoids a certain rc.2.
 - **Dry run.** Before the RC, Claude runs the macOS template on the latest
   beta; results stay out of the tree and failures become fixes or roadmap
-  items at once. Only the RC run is recorded as evidence.
+  items at once. Only the RC run is recorded as evidence. The beta.13 dry run
+  (2026-10-18) is the dry run; changes landed after it (menus, ADR 0058; the
+  Keychain explainer) are covered by the RC run, not a second dry run.
 - **Machines.** The M4 reference Mac (macOS 15.7.x) and the maintainer's
   Windows 11 x64 PC; exact OS build and GPU are recorded. Windows 10 is listed
   as not checked.
@@ -61,7 +66,8 @@ build, machines, scope, layout and failure handling open.
 - **Linux.** Buildable means the existing CI `lint (ubuntu)` job passes; no
   runtime checks. The README says so.
 - **Layout.** A reusable template, `docs/platform-acceptance.md`. Each run is
-  `docs/evidence/platform/<date>/` with `README.md` (summary, environment,
+  `docs/evidence/platform/<date>/`, named for the day the macOS run starts
+  (`windows.md` records its own date in its header), with `README.md` (summary, environment,
   build, unavailable checks), `macos.md` and `windows.md`. Every row is Pass,
   Fail or Unavailable with a note. The maintainer fills and commits
   `windows.md` from the template. Screenshots only for failures, of public
