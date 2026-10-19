@@ -23,28 +23,13 @@ priority order.
 
 ### Must-fix
 
-1. **[Platform] Pre-RC fixes.** *From the 2026-10-18 macOS dry run; split out of
-   After 0.1.0 item 13 because they would fail rows A1, A2 and K7 under the
-   ADR 0057 triage and force an rc.2.*
-   - The DOCX/PDF preview's find field builds text from key codes, not the
-     text-input path: injected text arrives garbled and IME likely fails.
-   - Screen-reader labels: Replacements panel checkboxes all read "Will be
-     replaced" without the identity; the panel search is not a text field;
-     zoom buttons read "+" or nothing; sidebar tabs are buttons, not tabs.
-   - Confirm ⌘⇧S, ⌘⇧H and ⌘↩ on a physical keyboard with a `just run` build
-     (the maintainer); the dry run saw them ignored three times without a repro.
-     A real failure is fixed here.
-   *Done when:* each point is fixed or confirmed, a headless test composes and
-   commits Japanese in the preview find field, and VoiceOver reads each control
-   above with its name and role. The native Japanese attempt needs the Japanese
-   input source on the reference Mac, which only the maintainer can enable;
-   without it the Japanese rows stay Unavailable.
-2. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
+1. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
    Windows x64; keep Linux buildable. Done last, because it checks the finished UI:
-   an installed `0.1.0-rc.1`, cut once item 1 lands, against the template
+   an installed `0.1.0-rc.1` (published 2026-10-19) against the template
    `docs/platform-acceptance.md` ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)).
    The macOS dry run on beta.13 (2026-10-18) is done; the RC run covers the
-   later menus (H17) and Keychain explainer (section 10).
+   later menus (H17) and Keychain explainer (section 10); the dry-run findings
+   that would have failed A1, A2 and K7 were fixed before the RC.
    *Done when:* `docs/evidence/platform/<date>/` holds a README plus `macos.md`
    and `windows.md` covering themes, IME (RU; Japanese where available), clipboard,
    VoiceOver/Narrator basics, the popup, setup and file-drop flows, install,
@@ -150,7 +135,7 @@ In priority order, after any carried-over should-fix items.
     view and per-case category switches from the [Anoni review](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/saved-mappings.md#anoni-0810-hands-on-macos-2026-10-11)
     are done. Its on/off switch goes in Settings › General.
 13. **[Platform] Dry-run polish.** *From the 2026-10-18 macOS dry run.*
-    The preview find field and screen-reader labels moved to must-fix item 1.
+    The preview find field and screen-reader labels were fixed before rc.1.
     - Dragging an unsupported file shows an insertion line instead of "No
       supported files"; the Notices popover shows the full path and stays open.
     - The preview's Find button says "Find (⌘F)", but ⌘F opens the Markdown
@@ -179,7 +164,7 @@ In priority order, after any carried-over should-fix items.
     results, edits/undo, tab switching, copy/save and provenance lifetime are
     verified.
 
-  Native acceptance is tracked under must-fix item 2; ordinary-document
+  Native acceptance is tracked under must-fix item 1; ordinary-document
   [responsiveness](docs/evidence/editor-layout/2026-10-17-native/README.md) is done.
   Historical results: [initial qualification](tests/fixtures/pseudonymization/README.md)
   (no model passed) and the [last gate review](https://github.com/lawkitt/mdoc/blob/f368e436cd2d3e70789d51879b9f54f379900e1e/docs/design/pseudonymization-production-readiness.md).
