@@ -29,7 +29,9 @@ priority order.
    `docs/platform-acceptance.md` ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)).
    The macOS dry run on beta.13 (2026-10-18) is done; the RC run covers the
    later menus (H17) and Keychain explainer (section 10); the dry-run findings
-   that would have failed A1, A2 and K7 were fixed before the RC.
+   that would have failed A1, A2 and K7 were fixed before the RC. Claude's
+   Windows pass on rc.2 is done (2026-10-19); the maintainer's rows on both
+   platforms are not.
    *Done when:* `docs/evidence/platform/<date>/` holds a README plus `macos.md`
    and `windows.md` covering themes, IME (RU; Japanese where available), clipboard,
    VoiceOver/Narrator basics, the popup, setup and file-drop flows, install,
@@ -42,7 +44,17 @@ priority order.
 
 ### Should-fix
 
-None open.
+1. **[Platform] Windows caption buttons.** *From the 2026-10-19 Windows rc.2
+   run ([T6](docs/evidence/platform/2026-10-19/windows.md)).* Minimize,
+   maximize/restore and close draw and highlight but do nothing when clicked,
+   and no snap layouts flyout appears: the buttons stop the mouse-down
+   (`caption_buttons` in `src/ui.rs`), so GPUI never records the pressed
+   caption button. A title-bar double-click calls `zoom_window`, which on
+   Windows only maximizes, so a maximized window returns only by dragging the
+   title bar or Win+↓.
+   *Done when:* on Windows the three buttons act on a physical click, hovering
+   maximize shows snap layouts, a title-bar double-click toggles maximize and
+   restore, and the T6 row passes on the next RC.
 
 ## After 0.1.0
 
@@ -160,7 +172,8 @@ In priority order, after any carried-over should-fix items.
       setup card's size changes from 665 MB to 662 MB after Cancel.
     *Done when:* each point is fixed or moved to its own item.
 16. **[Platform] RC acceptance follow-ups.** *From the 0.1.0-rc.1 macOS run
-    ([evidence](docs/evidence/platform/2026-10-19/macos.md)).*
+    ([evidence](docs/evidence/platform/2026-10-19/macos.md)) and the rc.2
+    Windows run ([evidence](docs/evidence/platform/2026-10-19/windows.md)).*
     - Save As never adds the saved file to Recents: the row stays the source
       DOCX, which reopens as a fresh conversion (P2). The new file is also
       created with mode 0600.
@@ -168,7 +181,8 @@ In priority order, after any carried-over should-fix items.
       document's controls stay in the accessibility tree behind it (A3); model
       choices read as checkboxes, not radio buttons.
     - The editor lacks the platform caret moves: ⌘←/⌘→ and ⌘↑/⌘↓ (with ⇧) on
-      macOS, Ctrl+Home/End on Windows.
+      macOS; Ctrl+←/→ word moves (with ⇧), Ctrl+⌫/Ctrl+Del and Ctrl+Home/End
+      on Windows, where only Alt+←/→ moves by word.
     - View › Toggle Sidebar has no shortcut (⌃⌘S is the macOS convention).
     - Plain Tab cannot reach the toolbar or sidebar: Tab cycles only once
       focus is in a control, Home keeps focus on the window and the editor
@@ -186,6 +200,27 @@ In priority order, after any carried-over should-fix items.
     - After ⌘↩ Apply all the popup stays open on a mention that is now applied.
     - In a narrow window Markdown/Source are buttons, not tabs, for screen
       readers.
+    - Windows has no single-instance launch: every Start menu launch or
+      "Open with" starts another process and window that restores the same
+      session, and both write the session and Recents. The installer
+      registers no file associations, so mdoc is not offered under Open with.
+    - Windows has no menu bar, but the palette lacks Before / After, Toggle
+      Sidebar, Save As and Close Tab; Settings › Saved cases still says
+      "File → Open Case…".
+    - In Settings, Tab focus is not reported to UI Automation (the window
+      stays focused), so Narrator may not follow it.
+    - Formatting a selection that ends in a space puts the closing marker
+      after the space (`**delta **`), which CommonMark does not render.
+    - After some button clicks (Share › Save as case) and after an undo that
+      closes the popup, focus leaves the workspace: Ctrl+Q and the popup's
+      redo do nothing until the editor is clicked.
+    - Save as case on an unsaved conversion saves a case with 0 documents
+      that cannot be reopened; ask to save the document first.
+    - A search match that wraps also paints a block at the end of the
+      previous line; after Save As the tab keeps its DOCX badge; the window
+      title names the last document while Home shows; every tab's close
+      button reads only "Close tab"; the unsaved-changes dialog is titled
+      "Warning".
     *Done when:* each point is fixed or moved to its own item.
 17. **[Workspace] Folder drop flow.** *From the 2026-10-19 rc.1 run.* Dropping a
     folder opens every document in it (README.md included) and asks for the
