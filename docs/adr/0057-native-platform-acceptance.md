@@ -33,8 +33,12 @@ build, machines, scope, layout and failure handling open.
   maintainer to confirm. Computer use injects keys without a keyboard layout
   and cannot drive VoiceOver speech or the Keychain password dialog, so the
   keyboard/IME rows, spoken output and Keychain rows are the maintainer's.
-  The maintainer runs the Windows checklist, and runs the Russian rows but not
-  the Japanese ones.
+  Claude also runs the Windows checklist, from Claude Code on the
+  maintainer's PC through computer use (2026-10-19). On Windows the
+  maintainer clicks through SmartScreen (I3), switches display scaling (D3,
+  D4) and the network (S1), and runs the keyboard/IME rows and spoken
+  Narrator output; Claude marks those *Maintainer* and checks the result.
+  The maintainer runs the Russian rows but not the Japanese ones.
 - **Scope.** Light, Dark and System themes (including a live OS appearance
   switch, the Original page tone and popup/dialog contrast); IME; clipboard;
   VoiceOver/Narrator basics; the replacement popup, first-use setup and
@@ -77,8 +81,9 @@ build, machines, scope, layout and failure handling open.
   `docs/evidence/platform/<date>/`, named for the day the macOS run starts
   (`windows.md` records its own date in its header), with `README.md` (summary, environment,
   build, unavailable checks), `macos.md` and `windows.md`. Every row is Pass,
-  Fail or Unavailable with a note. The maintainer fills and commits
-  `windows.md` from the template. Screenshots only for failures, of public
+  Fail or Unavailable with a note. Each platform's runner fills and
+  commits its own file from the template; a platform may check a later RC
+  than the other, recorded in its header. Screenshots only for failures, of public
   fixtures only.
 - **Failures.** A failure that loses data, blocks a listed flow, or leaves a
   control unreachable by screen reader (or by Tab where Tab already cycles:

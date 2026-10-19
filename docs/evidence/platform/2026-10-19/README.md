@@ -3,13 +3,14 @@
 The native and platform acceptance run for 0.1.0
 ([ADR 0057](../../../adr/0057-native-platform-acceptance.md), template
 [`docs/platform-acceptance.md`](../../../platform-acceptance.md)). In progress:
-the macOS pass by Claude is done, the maintainer's macOS rows and the Windows
-run are not.
+the macOS pass by Claude is done (rc.1); the maintainer's macOS rows, the A2
+rerun on rc.2 and the Windows run (Claude on the maintainer's PC, rc.2) are
+not.
 
 | Target | Checklist | Pass | Fail | Pending | Unavailable |
 | --- | --- | --- | --- | --- | --- |
 | Apple Silicon macOS | [macos.md](macos.md) | 49 | 6 | 14 | 6 |
-| Windows x64 | `windows.md` (maintainer) | | | | |
+| Windows x64 | `windows.md` (Claude, rc.2) | | | | |
 
 - **Build:** [v0.1.0-rc.1](https://github.com/lawkitt/mdoc/releases/tag/v0.1.0-rc.1),
   installed from `mdoc_0.1.0-rc.1_arm64.dmg` (SHA256SUMS verified, Notarized

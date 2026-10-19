@@ -32,6 +32,34 @@ release gates do not establish what it checks.
    "Linux: compiles in CI (`lint (ubuntu)`); no runtime checks", and
    "Windows 10: not checked".
 
+### Running it with Claude
+
+Claude runs both checklists through computer use (ADR 0057), on the Mac and
+from Claude Code on the Windows PC. A session starting cold reads this file,
+ADR 0057 and the latest `docs/evidence/platform/<date>/README.md`.
+
+- **Read state from the accessibility tree**, not only screenshots: on macOS
+  `AXUIElement` (a small Swift script, as in the 2026-10-19 run), on Windows UI
+  Automation (`System.Windows.Automation` from PowerShell, or Accessibility
+  Insights). Names, roles, toggled and selected states there are what
+  VoiceOver and Narrator read.
+- **Injected keys carry no keyboard layout.** A shortcut that injection
+  ignores is not a Fail on its own; mark it for the maintainer's physical
+  keyboard. Typed text goes through the platform text input and is fine for
+  Cyrillic.
+- **System settings are the maintainer's:** SmartScreen "Run anyway" (I3),
+  display scaling (D3, D4), the network for offline setup (S1), the OS
+  appearance (T3) and adding input sources. Ask, wait, then check the result.
+- **Never delete the case key.** On Windows it is `key.dpapi` inside
+  `%LOCALAPPDATA%\mdoc\cases…`, so renaming the app-data folder for a clean
+  profile moves it too; restore the folder at the end. On macOS it is the
+  Keychain item above.
+- **Only public fixtures** on screen and in notes; close or avoid the
+  maintainer's own windows and files.
+- **Finish** by committing `<platform>.md`, updating the counts, Fail,
+  Unavailable and Pending lists in the run's `README.md`, and linking every
+  Fail row to a fix or a roadmap item (by its title, not its number).
+
 Fixtures: the demos in [`docs/product-media/`](product-media/)
 (`Settlement agreement.md`/`.docx`, `Соглашение об урегулировании.md`/`.docx`),
 `tests/fixtures/docx-preview/legal-opinion.docx` and `tests/fixtures/reference.pdf`.

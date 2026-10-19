@@ -34,8 +34,10 @@ priority order.
    and `windows.md` covering themes, IME (RU; Japanese where available), clipboard,
    VoiceOver/Narrator basics, the popup, setup and file-drop flows, install,
    shortcuts, scaling, case key storage and Cyrillic paths; unavailable checks are
-   listed explicitly, and no Fail row lacks a linked roadmap item. The
-   maintainer runs the Windows checks. The folder is named for the day the
+   listed explicitly, and no Fail row lacks a linked roadmap item. Claude
+   runs both checklists through computer use (on Windows from Claude Code on
+   the maintainer's PC); the maintainer runs the rows that need a physical
+   keyboard, system settings or spoken output. The folder is named for the day the
    macOS RC run starts; `windows.md` records its own date.
 
 ### Should-fix
