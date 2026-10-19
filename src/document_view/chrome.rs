@@ -337,7 +337,8 @@ impl DocumentView {
             .children(ui::notice_bell(&self.title, theme))
             .child(self.more_button(cx))
             .children(self.primary_button(cx).map(|b| div().ml_1().child(b)));
-        ui::title_drag(
+        let detached = self.title.detached.get();
+        let bar = ui::title_drag(
             div()
                 .when(cfg!(test), |v| {
                     v.debug_selector(|| "document-toolbar".into())
@@ -351,20 +352,17 @@ impl DocumentView {
                 .pr_2()
                 // In the title row (sidebar collapsed) it sits on the window
                 // ground, level with the traffic lights; in the card it has a rule.
-                .when(self.title.detached.get(), |v| {
+                .when(detached, |v| {
                     v.h(px(style::CARD_MARGIN + style::HEADER_HEIGHT))
                         .pt(px(style::CARD_MARGIN))
                 })
-                .when(!self.title.detached.get(), |v| {
-                    v.border_b_1().border_color(p.border)
-                }),
+                .when(!detached, |v| v.border_b_1().border_color(p.border)),
             self.title.armed.clone(),
         )
         .child(crumb)
         .child(div().flex_1().min_w_0())
-        .child(ui::no_drag(controls))
-        .children(ui::caption_buttons(window, theme))
-        .into_any_element()
+        .child(ui::no_drag(controls));
+        ui::title_bar(bar, (!detached).then_some(p.border), window, theme)
     }
 
     fn more_button(&self, cx: &mut Context<Self>) -> gpui::AnyElement {

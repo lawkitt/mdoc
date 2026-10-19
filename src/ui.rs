@@ -709,7 +709,8 @@ pub fn no_drag<E: InteractiveElement>(control: E) -> E {
 /// Drawn window buttons for Windows and client-decorated Linux (ADR 0048);
 /// macOS keeps its traffic lights. Windows hit-tests them natively and acts
 /// on release only if the press reached it, so they must not stop it there.
-pub fn caption_buttons(window: &Window, theme: Theme) -> Option<AnyElement> {
+/// Place them with [`title_bar`].
+fn caption_buttons(window: &Window, theme: Theme) -> Option<AnyElement> {
     if cfg!(target_os = "macos") || cfg!(test) {
         return None;
     }
@@ -757,6 +758,34 @@ pub fn caption_buttons(window: &Window, theme: Theme) -> Option<AnyElement> {
             .child(button("caption-close", "✕", gpui::WindowControlArea::Close))
             .into_any_element(),
     )
+}
+
+/// A header row: `bar` (a [`title_drag`] area) with the caption buttons
+/// beside it, not inside it. Windows asks GPUI which control area is under
+/// the pointer, and GPUI answers with the first one painted, so an enclosing
+/// drag area would turn the buttons into plain caption. `rule` repeats the
+/// bar's bottom border under the buttons.
+pub fn title_bar(
+    bar: gpui::Div,
+    rule: Option<gpui::Hsla>,
+    window: &Window,
+    theme: Theme,
+) -> AnyElement {
+    let Some(buttons) = caption_buttons(window, theme) else {
+        return bar.into_any_element();
+    };
+    div()
+        .flex()
+        .items_end()
+        .flex_shrink_0()
+        .child(bar.flex_1().min_w_0())
+        .child(
+            div()
+                .flex_shrink_0()
+                .when_some(rule, |v, color| v.border_b_1().border_color(color))
+                .child(buttons),
+        )
+        .into_any_element()
 }
 
 /// Reveal a focused control inside a scrolling panel without moving document state.

@@ -48,11 +48,11 @@ priority order.
 1. **[Platform] Windows caption buttons.** *From the 2026-10-19 Windows rc.2
    run ([T6](docs/evidence/platform/2026-10-19/windows.md)).* Minimize,
    maximize/restore and close draw and highlight but do nothing when clicked,
-   and no snap layouts flyout appears: the buttons stop the mouse-down
-   (`caption_buttons` in `src/ui.rs`), so GPUI never records the pressed
-   caption button. A title-bar double-click calls `zoom_window`, which on
-   Windows only maximizes, so a maximized window returns only by dragging the
-   title bar or Win+↓.
+   and no snap layouts flyout appears. rc.3 fixed the title-bar double-click
+   (it now restores) but not the buttons: GPUI answers `WM_NCHITTEST` with the
+   first window-control area painted, and the title bar's Drag area encloses
+   the buttons and is painted first, so they hit-test as `HTCAPTION`. The
+   buttons now sit beside the drag area (`ui::title_bar`).
    *Done when:* on Windows the three buttons act on a physical click, hovering
    maximize shows snap layouts, a title-bar double-click toggles maximize and
    restore, and the T6 row passes on the next RC.

@@ -633,7 +633,7 @@ impl Workspace {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let detached = self.title.detached.get();
-        let header = ui::title_drag(
+        let bar = ui::title_drag(
             div()
                 .flex()
                 .items_center()
@@ -652,8 +652,8 @@ impl Workspace {
         )
         .child(div().font_weight(gpui::FontWeight::MEDIUM).child("Home"))
         .child(div().flex_1())
-        .children(ui::notice_bell(&self.title, theme).map(|bell| ui::no_drag(div().child(bell))))
-        .children(ui::caption_buttons(window, theme));
+        .children(ui::notice_bell(&self.title, theme).map(|bell| ui::no_drag(div().child(bell))));
+        let header = ui::title_bar(bar, (!detached).then_some(p.border), window, theme);
         let banner = self.whats_new(cx);
         let body = div()
             .flex_1()
