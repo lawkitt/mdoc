@@ -153,6 +153,8 @@ In priority order, after any carried-over should-fix items.
     The preview find field and screen-reader labels moved to must-fix item 1.
     - Dragging an unsupported file shows an insertion line instead of "No
       supported files"; the Notices popover shows the full path and stays open.
+    - The preview's Find button says "Find (⌘F)", but ⌘F opens the Markdown
+      find from anywhere in the window; the preview find opens only by click.
     - The theme button's tooltip keeps the previous value while hovered; the
       setup card's size changes from 665 MB to 662 MB after Cancel.
     *Done when:* each point is fixed or moved to its own item.
