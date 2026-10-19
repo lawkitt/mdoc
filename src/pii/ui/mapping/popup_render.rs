@@ -779,7 +779,16 @@ impl DocumentView {
         cx: &App,
     ) -> gpui::Stateful<gpui::Div> {
         let palette = self.theme.get().pdf_style();
+        let label = label.into();
         self.menu_control(id, enabled, cx)
+            .aria_label(label.clone())
+            .when_some(checked, |v, checked| {
+                v.aria_toggled(if checked {
+                    gpui::Toggled::True
+                } else {
+                    gpui::Toggled::False
+                })
+            })
             .w_full()
             .flex()
             .items_center()
@@ -792,7 +801,7 @@ impl DocumentView {
                         .child(if checked { "✓" } else { "" }),
                 )
             })
-            .child(div().flex_1().min_w_0().text_ellipsis().child(label.into()))
+            .child(div().flex_1().min_w_0().text_ellipsis().child(label))
             .child(
                 div()
                     .flex_shrink_0()
@@ -1164,6 +1173,17 @@ impl DocumentView {
                         enabled,
                         cx,
                     )
+                    // The label and count are drawn as children; name the
+                    // segment for screen readers and report the chosen one.
+                    .aria_label(match count {
+                        Some(count) => format!("All {count} mentions"),
+                        None => label.to_string(),
+                    })
+                    .aria_toggled(if on {
+                        gpui::Toggled::True
+                    } else {
+                        gpui::Toggled::False
+                    })
                     .flex()
                     .items_center()
                     .gap_1()
