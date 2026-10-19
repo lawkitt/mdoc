@@ -4473,7 +4473,7 @@ dependencies = [
 
 [[package]]
 name = "mdoc"
-version = "0.1.0-beta.13"
+version = "0.1.0-rc.1"
 dependencies = [
  "aes-gcm",
  "anydoc",
