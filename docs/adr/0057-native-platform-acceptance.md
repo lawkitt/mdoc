@@ -38,7 +38,9 @@ build, machines, scope, layout and failure handling open.
   maintainer clicks through SmartScreen (I3), switches display scaling (D3,
   D4) and the network (S1), and runs the keyboard/IME rows and spoken
   Narrator output; Claude marks those *Maintainer* and checks the result.
-  The maintainer runs the Russian rows but not the Japanese ones.
+  The maintainer runs the Russian rows but not the Japanese ones. On macOS
+  the maintainer did not run offline setup (S1) or spoken VoiceOver output
+  (A5) for 0.1.0 (2026-10-19); they are Unavailable and an After 0.1.0 item.
 - **Scope.** Light, Dark and System themes (including a live OS appearance
   switch, the Original page tone and popup/dialog contrast); IME; clipboard;
   VoiceOver/Narrator basics; the replacement popup, first-use setup and

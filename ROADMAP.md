@@ -27,13 +27,12 @@ priority order.
    Windows x64; keep Linux buildable. Done last, because it checks the finished UI:
    an installed `0.1.0-rc.1` (published 2026-10-19) against the template
    `docs/platform-acceptance.md` ([ADR 0057](docs/adr/0057-native-platform-acceptance.md)).
-   The macOS dry run on beta.13 (2026-10-18) is done; the RC run covers the
-   later menus (H17) and Keychain explainer (section 10); the dry-run findings
-   that would have failed A1, A2 and K7 were fixed before the RC. Claude's
-   Windows pass on rc.2 and the maintainer's Windows rows are done
-   (2026-10-19), except the deferred scaling (D3, D4), offline setup (S1) and
-   Narrator speech (A5) rows; the T6 retest waits for the next RC. The
-   maintainer's macOS rows are not done.
+   macOS is done (2026-10-19): rc.1 with A2 and H3 rerun on rc.2, the
+   maintainer's rows included; offline setup (S1) and spoken VoiceOver output
+   (A5) were not run for 0.1.0. Claude's Windows pass on rc.2 and the
+   maintainer's Windows rows are done (2026-10-19), except the deferred
+   scaling (D3, D4), offline setup (S1) and Narrator speech (A5) rows; the T6
+   retest waits for the next RC.
    *Done when:* `docs/evidence/platform/<date>/` holds a README plus `macos.md`
    and `windows.md` covering themes, IME (RU; Japanese where available), clipboard,
    VoiceOver/Narrator basics, the popup, setup and file-drop flows, install,
@@ -237,6 +236,13 @@ In priority order, after any carried-over should-fix items.
     Russian input source suggests it; the user can still change it.
     *Done when:* the Russian OCR fixture gets English & Russian by default and
     the English one stays on English, with the choice explained on the card.
+19. **[Platform] Deferred macOS acceptance rows.** *From the 2026-10-19 macOS
+    run ([evidence](docs/evidence/platform/2026-10-19/macos.md)).* The
+    maintainer did not run S1 (offline first setup: the consent card, then
+    Download & continue failing cleanly with Retry) or A5 (VoiceOver speaks
+    scan status and toasts) for 0.1.0.
+    *Done when:* both rows pass on the next release's macOS run, or fail with
+    a linked item.
 ## Ongoing tracks
 
 - **Outgoing AI-analysis qualification.** A continuous quality gate, not a
