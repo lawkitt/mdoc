@@ -80,11 +80,12 @@ pub fn bind_keys(cx: &mut App) {
     ]);
     dictionary::bind_keys(cx);
 }
-fn field(value: &str, cx: &mut Context<Panel>) -> Entity<SearchInput> {
+fn field(label: &'static str, value: &str, cx: &mut Context<Panel>) -> Entity<SearchInput> {
     cx.new(|cx| {
         let mut input = SearchInput::new(cx)
             .with_key_context("SettingsInput")
-            .with_placeholder("0–1");
+            .with_placeholder("0–1")
+            .with_label(label);
         input.set_value(value.into(), cx);
         input
     })
@@ -182,8 +183,16 @@ impl Panel {
             statuses: vec![Status::Unknown; Model::ALL.len()],
             ocr_installations: Vec::new(),
             pending: Model::ALL.map(Model::pending).to_vec(),
-            threshold: field(&draft.pseudonymization.threshold.to_string(), cx),
-            confidence: field(&draft.ocr.minimum_confidence.to_string(), cx),
+            threshold: field(
+                "Detection threshold",
+                &draft.pseudonymization.threshold.to_string(),
+                cx,
+            ),
+            confidence: field(
+                "OCR minimum confidence",
+                &draft.ocr.minimum_confidence.to_string(),
+                cx,
+            ),
             draft,
             error: None,
             applying: false,

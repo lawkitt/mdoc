@@ -2058,6 +2058,8 @@ impl Workspace {
                                 self.compact_scroll.clone(),
                             )
                         })
+                        .role(gpui::Role::Tab)
+                        .aria_selected(self.active == id && !home)
                         .aria_label(name.clone())
                         .when(cfg!(test), |v| {
                             v.debug_selector(move || format!("compact-tab-{id}"))
@@ -2134,7 +2136,8 @@ impl Workspace {
                         })
                         .key_context("UiControl")
                         .tab_index(0)
-                        .role(gpui::Role::Button)
+                        .role(gpui::Role::Tab)
+                        .aria_selected(self.active == id && !home)
                         .aria_label(if duplicate {
                             format!("{name} · {parent_label}")
                         } else {
@@ -2365,6 +2368,8 @@ impl Workspace {
                 .child(
                     div()
                         .id("sidebar-tabs")
+                        .role(gpui::Role::TabList)
+                        .aria_label("Open documents")
                         .track_scroll(&self.sidebar_scroll)
                         .flex_1()
                         .min_h_0()
@@ -2453,6 +2458,8 @@ impl Workspace {
                     div()
                         .id("compact-tabs")
                         .track_scroll(&self.compact_scroll)
+                        .role(gpui::Role::TabList)
+                        .aria_label("Open documents")
                         .flex_1()
                         .min_h_0()
                         .overflow_y_scroll()

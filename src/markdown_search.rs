@@ -33,7 +33,7 @@ actions!(
 /// Bind the editing keys used by the compact Markdown find field.
 pub fn bind_keys(cx: &mut App) {
     let context = Some(
-        "MarkdownSearch || PseudonymReplacement || SettingsInput || ReplacementSearch || CommandPalette",
+        "MarkdownSearch || PreviewSearch || PseudonymReplacement || SettingsInput || ReplacementSearch || CommandPalette",
     );
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, context),
@@ -64,6 +64,8 @@ pub enum SearchInputEvent {
 /// A small single-line GPUI input used by the Markdown find bar.
 pub struct SearchInput {
     placeholder: &'static str,
+    /// The accessible name; the placeholder when unset.
+    label: Option<&'static str>,
     focus_handle: FocusHandle,
     key_context: &'static str,
     content: String,
@@ -80,6 +82,7 @@ impl SearchInput {
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
             placeholder: "Search Markdown",
+            label: None,
             focus_handle: cx.focus_handle().tab_index(0).tab_stop(true),
             key_context: CONTEXT,
             content: String::new(),
@@ -100,6 +103,13 @@ impl SearchInput {
 
     pub fn with_placeholder(mut self, placeholder: &'static str) -> Self {
         self.placeholder = placeholder;
+        self
+    }
+
+    /// Name the field for assistive technology when the placeholder is not a
+    /// name (a format hint such as "0–1").
+    pub fn with_label(mut self, label: &'static str) -> Self {
+        self.label = Some(label);
         self
     }
 
@@ -686,6 +696,11 @@ impl Element for SearchInputElement {
 impl Render for SearchInput {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
+            .id("search-input")
+            .role(gpui::Role::TextInput)
+            .aria_label(self.label.unwrap_or(self.placeholder))
+            .aria_placeholder(self.placeholder)
+            .aria_value(SharedString::from(self.content.clone()))
             .flex()
             .flex_1()
             .min_w_0()

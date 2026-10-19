@@ -38,7 +38,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    AnyView, App, AppContext, Context, EventEmitter, FocusHandle, Hsla, InteractiveElement,
+    AnyView, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Hsla, InteractiveElement,
     IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, RenderImage,
     ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div, hsla, img, point,
     px,
@@ -580,6 +580,13 @@ pub enum PdfEvent {
     },
 }
 
+/// The find bar's host-owned text input ([`PdfView::set_search_field`]).
+struct SearchField {
+    view: AnyView,
+    focus: FocusHandle,
+    _subscription: gpui::Subscription,
+}
+
 /// Construct with [`PdfView::new`] inside `cx.new`; it loads and measures the file
 /// off-thread. Render the resulting `Entity<PdfView>` like any child view. Call
 /// [`release`](PdfView::release) before dropping it (e.g. when its tab closes) to
@@ -657,6 +664,8 @@ pub struct PdfView {
     search_open: bool,
     /// The current search query (edited in the find bar).
     search_query: String,
+    /// A host-owned text field for the query (see [`PdfView::set_search_field`]).
+    search_field: Option<SearchField>,
     /// Matches across the document, in reading order (page, then top-to-bottom).
     matches: Vec<SearchMatch>,
     /// Index into `matches` of the focused match (the one ↑/↓/Enter cycle through).
@@ -753,6 +762,7 @@ impl PdfView {
             page_text: std::collections::HashMap::new(),
             search_open: false,
             search_query: String::new(),
+            search_field: None,
             matches: Vec::new(),
             current_match: None,
         }
@@ -855,10 +865,63 @@ impl PdfView {
 
     // ───────────────────────────── Find-in-PDF (search) ─────────────────────────────
 
+    /// Edit the find query in `field`, a host-owned single-line text input, so
+    /// typing goes through the platform text-input path (IME, dead keys,
+    /// paste). `query` reads its text; the viewer observes it and searches on
+    /// each change. Without a field the bar takes typed characters from key
+    /// events, which suits only plain ASCII.
+    pub fn set_search_field<T: Render>(
+        &mut self,
+        field: Entity<T>,
+        focus: FocusHandle,
+        query: impl Fn(&T) -> String + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let subscription = cx.observe(&field, move |this, field, cx| {
+            let query = query(field.read(cx));
+            if query != this.search_query {
+                this.search_query = query;
+                if this.search_open {
+                    this.on_search_query_changed(cx);
+                }
+                cx.notify();
+            }
+        });
+        self.search_field = Some(SearchField {
+            view: field.into(),
+            focus,
+            _subscription: subscription,
+        });
+    }
+
+    /// The find bar's query.
+    pub fn search_query(&self) -> &str {
+        &self.search_query
+    }
+
+    /// Whether the find bar is open.
+    pub fn is_search_open(&self) -> bool {
+        self.search_open
+    }
+
+    /// Focus the find field when the bar opens; return focus to the viewer
+    /// when it closes while the field held it.
+    fn focus_search_field(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(field) = &self.search_field else {
+            return;
+        };
+        if self.search_open {
+            window.focus(&field.focus, cx);
+        } else if field.focus.contains_focused(window, cx) {
+            window.focus(&self.focus, cx);
+        }
+    }
+
     /// Toggle the find bar. On open, extract every page's text (off-thread, cached)
     /// and compute matches; on close, drop them. (`search` feature.)
-    pub(crate) fn toggle_search(&mut self, cx: &mut Context<Self>) {
+    pub fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_open = !self.search_open;
+        self.focus_search_field(window, cx);
         if self.search_open {
             self.ensure_all_text(cx);
             self.recompute_matches(true, cx);
@@ -873,8 +936,9 @@ impl PdfView {
     }
 
     /// Close the find bar and clear matches. (`search` feature.)
-    pub(crate) fn close_search(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_open = false;
+        self.focus_search_field(window, cx);
         self.matches.clear();
         self.current_match = None;
         cx.notify();
@@ -1834,7 +1898,7 @@ impl Render for PdfView {
                 self.control("pdf-find", "🔍")
                     .aria_label("Find")
                     .bg(bg)
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_search(cx)))
+                    .on_click(cx.listener(|this, _, window, cx| this.toggle_search(window, cx)))
                     .tooltip(self.tip("Find (⌘F)")),
             )
         };
@@ -1912,7 +1976,7 @@ impl Render for PdfView {
                 {
                     // ⌘F toggles the find bar; ⌘G / ⌘⇧G step matches (bar open or not).
                     if secondary && key == "f" {
-                        this.toggle_search(cx);
+                        this.toggle_search(_window, cx);
                         return;
                     }
                     if secondary && key == "g" {
@@ -1929,7 +1993,7 @@ impl Render for PdfView {
                     if this.search_open {
                         match key {
                             "escape" => {
-                                this.close_search(cx);
+                                this.close_search(_window, cx);
                                 return;
                             }
                             "enter" => {
@@ -1940,6 +2004,8 @@ impl Render for PdfView {
                                 }
                                 return;
                             }
+                            // A host field edits the query through text input.
+                            _ if this.search_field.is_some() => {}
                             "backspace" => {
                                 this.search_query.pop();
                                 this.on_search_query_changed(cx);
@@ -2014,7 +2080,12 @@ impl Render for PdfView {
                     .rounded(px(1.0))
                     .bg(style.header_fg)
             };
-            let field = if has_query {
+            let field = if let Some(search_field) = &self.search_field {
+                field
+                    .w(px(160.0))
+                    .text_color(style.header_fg)
+                    .child(search_field.view.clone())
+            } else if has_query {
                 field
                     .text_color(style.header_fg)
                     .child(SharedString::from(self.search_query.clone()))
@@ -2061,7 +2132,9 @@ impl Render for PdfView {
                     )
                     .child(
                         self.control("pdf-find-close", "✕")
-                            .on_click(cx.listener(|this, _, _w, cx| this.close_search(cx)))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.close_search(window, cx)),
+                            )
                             .tooltip(self.tip("Close (Esc)")),
                     ),
             ))

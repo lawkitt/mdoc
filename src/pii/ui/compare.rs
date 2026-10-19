@@ -291,8 +291,9 @@ impl DocumentView {
                     cx.listener(move |this, _, window, cx| this.set_view_mode(mode, window, cx)),
                 )
         };
-        let zoom_step = |id: &'static str, label: &'static str, delta: f32| {
+        let zoom_step = |id: &'static str, label: &'static str, name: &'static str, delta: f32| {
             ui::control(id, label, theme, true)
+                .aria_label(name)
                 .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
                 .px_2()
                 .text_size(px(13.))
@@ -368,7 +369,12 @@ impl DocumentView {
                                 ))
                                 .child(div().w(px(1.)).h(px(16.)).mx_1().bg(palette.border))
                         })
-                        .child(zoom_step("zoom-out", "−", -crate::document_view::ZOOM_STEP))
+                        .child(zoom_step(
+                            "zoom-out",
+                            "−",
+                            "Zoom out",
+                            -crate::document_view::ZOOM_STEP,
+                        ))
                         .child(
                             ui::control("zoom-reset", percent, theme, true)
                                 .when(cfg!(test), |v| v.debug_selector(|| "zoom-reset".into()))
@@ -379,7 +385,12 @@ impl DocumentView {
                                 .text_size(px(12.))
                                 .on_click(cx.listener(|this, _, _, cx| this.set_zoom(1., cx))),
                         )
-                        .child(zoom_step("zoom-in", "+", crate::document_view::ZOOM_STEP))
+                        .child(zoom_step(
+                            "zoom-in",
+                            "+",
+                            "Zoom in",
+                            crate::document_view::ZOOM_STEP,
+                        ))
                         .opacity(opacity),
                 )
                 .into_any_element(),

@@ -781,6 +781,39 @@ fn detached_header_routes_preview_and_document_shortcuts(cx: &mut TestAppContext
 }
 
 #[gpui::test]
+fn preview_find_types_through_text_input(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    // The find button's action; Mod+F opens the Markdown find.
+    pdf.update_in(cx, |pdf, window, cx| pdf.toggle_search(window, cx));
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| pdf.read(cx).is_search_open()));
+    // Composed and non-ASCII text arrives through the input handler, not key
+    // codes, so IME and other layouts reach the query (ADR 0057, K7).
+    cx.simulate_input("Договор 契約");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| pdf.read(cx).search_query().to_owned()),
+        "Договор 契約"
+    );
+    cx.simulate_keystrokes("backspace backspace");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| pdf.read(cx).search_query().to_owned()),
+        "Договор "
+    );
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(!cx.update(|_, cx| pdf.read(cx).is_search_open()));
+    assert!(cx.update(|window, cx| pdf.read(cx).focus_handle(cx).is_focused(window)));
+}
+
+#[gpui::test]
 fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     let first = active(&tabs, cx);

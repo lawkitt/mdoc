@@ -190,10 +190,12 @@ impl DocumentView {
     }
 
     /// A checkbox: ticked will be replaced, unticked keeps the original,
-    /// dashed means some mentions are kept (ADR 0048).
+    /// dashed means some mentions are kept (ADR 0048). `name` says what it
+    /// replaces, so a screen reader tells the boxes apart.
     fn tick_box(
         &self,
         id: impl Into<gpui::ElementId>,
+        name: String,
         tick: Tick,
         cx: &mut Context<Self>,
         toggle: impl Fn(&mut Self, &mut Context<Self>) + 'static,
@@ -205,10 +207,11 @@ impl DocumentView {
         div()
             .id(id)
             .role(gpui::Role::CheckBox)
-            .aria_label(match tick {
-                Tick::On => "Will be replaced",
-                Tick::Off => "Original kept",
-                Tick::Mixed => "Some originals kept",
+            .aria_label(name)
+            .aria_toggled(match tick {
+                Tick::On => gpui::Toggled::True,
+                Tick::Off => gpui::Toggled::False,
+                Tick::Mixed => gpui::Toggled::Mixed,
             })
             .flex_shrink_0()
             .size(px(15.))
@@ -409,6 +412,7 @@ impl DocumentView {
         .child(
             self.tick_box(
                 SharedString::from(format!("entity-tick-{id}")),
+                format!("Replace {} with {}", row.original, row.alias),
                 tick,
                 cx,
                 move |this, cx| this.toggle_entity(id, cx),
@@ -505,6 +509,7 @@ impl DocumentView {
             .child(
                 self.tick_box(
                     SharedString::from(format!("kept-tick-{start}")),
+                    format!("Replace {word}"),
                     Tick::Off,
                     cx,
                     move |this, cx| this.retick_mention(id, tick_range.clone(), cx),
@@ -592,6 +597,7 @@ impl DocumentView {
         .child(
             self.tick_box(
                 SharedString::from(format!("mention-tick-{annotation}")),
+                format!("Replace {word}"),
                 Tick::On,
                 cx,
                 move |this, cx| this.toggle_mention(annotation, cx),
