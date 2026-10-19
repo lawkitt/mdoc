@@ -110,13 +110,21 @@ jobs:
           cache-key: release
 
       # cargo-wix uses the system WiX 3.14; Chocolatey's package version is
-      # the first three components of the winget version in tools.env.
+      # the first three components of the winget version in tools.env. Runner
+      # images may already carry a later package build of the same release
+      # (e.g. 3.14.1.20250415); keep it rather than fail on a downgrade.
       - name: Install WiX Toolset
         if: runner.os == 'Windows' && !contains(env.EFFECTIVE_VERSION, '-')
         shell: pwsh
         run: |
           $version = ($env:WIX_VERSION -split '\.')[0..2] -join '.'
-          choco install wixtoolset --version $version -y --no-progress
+          $installed = (choco list wixtoolset --exact --limit-output) -replace '^wixtoolset\|', ''
+          if ($installed -and (($installed -split '\.')[0..2] -join '.') -eq $version) {
+            Write-Host "WiX Toolset $installed already installed"
+          } else {
+            choco install wixtoolset --version $version -y --no-progress --allow-downgrade
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
           $wixDir = (Get-ChildItem 'C:\Program Files (x86)\WiX Toolset *' | Select-Object -First 1).FullName
           if (-not $wixDir) { Write-Error "WiX install directory not found"; exit 1 }
           "$wixDir\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
