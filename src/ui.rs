@@ -671,29 +671,34 @@ pub fn card_surface<E: Styled>(surface: E, theme: Theme) -> E {
 /// Make `area` move the window like a title bar (ADR 0048): a press that
 /// moves drags the window, a double click zooms. Controls inside stop the
 /// press first ([`no_drag`]), so clicking them never moves the window.
+/// Windows hit-tests the area as the native caption, which already moves
+/// the window and toggles maximize on a double click.
 pub fn title_drag(area: gpui::Div, armed: std::rc::Rc<std::cell::Cell<bool>>) -> gpui::Div {
+    let area = area.window_control_area(gpui::WindowControlArea::Drag);
+    if cfg!(target_os = "windows") {
+        return area;
+    }
     let (down, up, out) = (armed.clone(), armed.clone(), armed.clone());
-    area.window_control_area(gpui::WindowControlArea::Drag)
-        .on_mouse_down(gpui::MouseButton::Left, move |event, window, _| {
-            if event.click_count == 2 {
-                down.set(false);
-                if cfg!(target_os = "macos") {
-                    window.titlebar_double_click();
-                } else {
-                    window.zoom_window();
-                }
+    area.on_mouse_down(gpui::MouseButton::Left, move |event, window, _| {
+        if event.click_count == 2 {
+            down.set(false);
+            if cfg!(target_os = "macos") {
+                window.titlebar_double_click();
             } else {
-                down.set(true);
+                window.zoom_window();
             }
-        })
-        .on_mouse_up(gpui::MouseButton::Left, move |_, _, _| up.set(false))
-        .on_mouse_down_out(move |_, _, _| out.set(false))
-        .on_mouse_move(move |event, window, _| {
-            if armed.get() && event.pressed_button == Some(gpui::MouseButton::Left) {
-                armed.set(false);
-                window.start_window_move();
-            }
-        })
+        } else {
+            down.set(true);
+        }
+    })
+    .on_mouse_up(gpui::MouseButton::Left, move |_, _, _| up.set(false))
+    .on_mouse_down_out(move |_, _, _| out.set(false))
+    .on_mouse_move(move |event, window, _| {
+        if armed.get() && event.pressed_button == Some(gpui::MouseButton::Left) {
+            armed.set(false);
+            window.start_window_move();
+        }
+    })
 }
 
 /// Keep a press on `control` from reaching an enclosing [`title_drag`].
@@ -702,7 +707,8 @@ pub fn no_drag<E: InteractiveElement>(control: E) -> E {
 }
 
 /// Drawn window buttons for Windows and client-decorated Linux (ADR 0048);
-/// macOS keeps its traffic lights. Windows hit-tests them natively.
+/// macOS keeps its traffic lights. Windows hit-tests them natively and acts
+/// on release only if the press reached it, so they must not stop it there.
 pub fn caption_buttons(window: &Window, theme: Theme) -> Option<AnyElement> {
     if cfg!(target_os = "macos") || cfg!(test) {
         return None;
@@ -725,7 +731,9 @@ pub fn caption_buttons(window: &Window, theme: Theme) -> Option<AnyElement> {
             .hover(move |s| s.bg(p.placeholder_bg))
             .window_control_area(area)
             .child(glyph)
-            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            .when(!cfg!(target_os = "windows"), |b| {
+                b.on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            })
             .on_click(move |_, window, cx| {
                 if cfg!(target_os = "linux") {
                     match area {
