@@ -64,6 +64,10 @@ pub struct Panel {
     previous: Option<FocusHandle>,
     checks: u64,
     refresh_watch: Option<gpui::Task<()>>,
+    /// Another app job holding the model slot, as `refresh_watch` last saw
+    /// it. Read from the process-wide slot only there, so the layout
+    /// changes on that notify, never in the middle of a click.
+    other_work: Option<&'static str>,
     check_pending: bool,
     checking: bool,
     scroll: gpui::ScrollHandle,
@@ -205,6 +209,7 @@ impl Panel {
             previous: None,
             checks: 0,
             refresh_watch: None,
+            other_work: None,
             check_pending: false,
             checking: false,
             scroll: gpui::ScrollHandle::new(),
@@ -223,8 +228,8 @@ impl Panel {
         self.open = true;
         window.focus(&self.focus, cx);
         self.refresh(cx);
+        self.other_work = model_work::description();
         self.refresh_watch = Some(cx.spawn(async move |this, cx| {
-            let mut previous = model_work::description();
             loop {
                 cx.background_executor()
                     .timer(Duration::from_millis(250))
@@ -234,8 +239,8 @@ impl Panel {
                         this.refresh(cx);
                     }
                     let current = model_work::description();
-                    if current != previous {
-                        previous = current;
+                    if current != this.other_work {
+                        this.other_work = current;
                         cx.notify();
                     }
                     this.open
@@ -981,7 +986,7 @@ impl Render for Panel {
                     .child(self.updates_section(theme, cx))))
                 .when_some(self.error.clone(), |v, e| v.child(div().px_4().pb_3().text_size(px(12.)).text_color(style::markdown_style(theme).alert_warning).child(e)))
                 // Another app job (a scan or comparison) holds the model slot.
-                .when_some(model_work::description().filter(|_| self.working.is_none() && !self.checking), |v, work| v.child(ui::activity("model-work-activity", work, theme).px_4().pb_2()))
+                .when_some(self.other_work.filter(|_| self.working.is_none() && !self.checking), |v, work| v.child(ui::activity("model-work-activity", work, theme).px_4().pb_2()))
                 .child(div().flex().flex_wrap().gap_2().items_center().flex_shrink_0().px_4().py_3().border_t_1().border_color(p.border)
                     .when(self.dictionary.is_none(), |v| v.child(quiet_control("reset-settings", "Reset defaults", theme, !self.applying).when(cfg!(test), |v| v.debug_selector(|| "reset-settings".into())).on_click(cx.listener(|this, _, _, cx| this.reset(cx)))))
                     .child(div().flex_1())
