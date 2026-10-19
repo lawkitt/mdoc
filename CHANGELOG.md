@@ -4,6 +4,8 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+## [0.1.0] - 2026-10-20
+
 - **Windows window buttons work.** Minimize, maximize/restore and close act on
   a click, hovering maximize shows snap layouts, and double-clicking the title
   bar toggles maximize and restore (ADR 0048).
