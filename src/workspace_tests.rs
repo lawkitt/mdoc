@@ -814,6 +814,41 @@ fn preview_find_types_through_text_input(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn preview_find_composes_japanese(cx: &mut TestAppContext) {
+    use gpui::EntityInputHandler;
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    let mut field = None;
+    let (pdf, cx) = cx.add_window_view(|_, cx| {
+        let mut pdf = PdfView::new(path, Rc::new(Default::default), Rc::new(|| 1.), cx);
+        field = Some(crate::preview::attach_search_field(&mut pdf, cx));
+        pdf
+    });
+    let field = field.unwrap();
+    pdf.update_in(cx, |pdf, window, cx| pdf.toggle_search(window, cx));
+    cx.run_until_parked();
+    assert!(cx.update(|window, cx| field.read(cx).focus_handle(cx).is_focused(window)));
+    // What the IME sends: marked kana while composing, then the chosen kanji.
+    field.update_in(cx, |field, window, cx| {
+        field.replace_and_mark_text_in_range(None, "けいやく", None, window, cx);
+        assert_eq!(field.marked_text_range(window, cx), Some(0..4));
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| pdf.read(cx).search_query().to_owned()),
+        "けいやく"
+    );
+    field.update_in(cx, |field, window, cx| {
+        field.replace_text_in_range(None, "契約", window, cx);
+        assert_eq!(field.marked_text_range(window, cx), None);
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| pdf.read(cx).search_query().to_owned()),
+        "契約"
+    );
+}
+
+#[gpui::test]
 fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     let first = active(&tabs, cx);

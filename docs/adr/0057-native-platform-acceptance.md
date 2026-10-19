@@ -33,7 +33,8 @@ build, machines, scope, layout and failure handling open.
   maintainer to confirm. Computer use injects keys without a keyboard layout
   and cannot drive VoiceOver speech or the Keychain password dialog, so the
   keyboard/IME rows, spoken output and Keychain rows are the maintainer's.
-  The maintainer runs the Windows checklist.
+  The maintainer runs the Windows checklist, and runs the Russian rows but not
+  the Japanese ones.
 - **Scope.** Light, Dark and System themes (including a live OS appearance
   switch, the Original page tone and popup/dialog contrast); IME; clipboard;
   VoiceOver/Narrator basics; the replacement popup, first-use setup and
@@ -59,10 +60,14 @@ build, machines, scope, layout and failure handling open.
 - **Setup.** Starts from a wiped app-data directory: online model setup
   completes; an offline first launch shows the setup error/retry state
   without crashing.
-- **IME.** Japanese (built-in IME on both platforms) in the editor and the
-  find field: marked-text underline, candidate window at the caret, commit,
-  Esc cancels, one undo removes the committed text. Russian is typed in the
-  same places, plus the spellcheck underline on a misspelled RU word.
+- **IME.** Russian is typed in the editor and the find fields, plus the
+  spellcheck underline on a misspelled RU word. Japanese (built-in IME) rows
+  check marked-text underline, candidate window at the caret, commit, Esc
+  cancels and one undo removes the committed text; the maintainer does not
+  run them (2026-10-19), so they are Unavailable on both platforms unless
+  Claude observes them on macOS by switching to the Japanese input source and
+  pressing romaji keys through computer use. Headless tests cover the
+  composition calls (marked text, then commit) reaching each find field.
 - **Linux.** Buildable means the existing CI `lint (ubuntu)` job passes; no
   runtime checks. The README says so.
 - **Layout.** A reusable template, `docs/platform-acceptance.md`. Each run is

@@ -34,8 +34,11 @@ priority order.
    - Confirm ⌘⇧S, ⌘⇧H and ⌘↩ on a physical keyboard with a `just run` build
      (the maintainer); the dry run saw them ignored three times without a repro.
      A real failure is fixed here.
-   *Done when:* each point is fixed or confirmed, the preview find field accepts
-   Japanese IME input, and VoiceOver reads each control above with its name and role.
+   *Done when:* each point is fixed or confirmed, a headless test composes and
+   commits Japanese in the preview find field, and VoiceOver reads each control
+   above with its name and role. The native Japanese attempt needs the Japanese
+   input source on the reference Mac, which only the maintainer can enable;
+   without it the Japanese rows stay Unavailable.
 2. **[Platform] Native and platform acceptance** on Apple Silicon macOS and
    Windows x64; keep Linux buildable. Done last, because it checks the finished UI:
    an installed `0.1.0-rc.1`, cut once item 1 lands, against the template
@@ -43,7 +46,7 @@ priority order.
    The macOS dry run on beta.13 (2026-10-18) is done; the RC run covers the
    later menus (H17) and Keychain explainer (section 10).
    *Done when:* `docs/evidence/platform/<date>/` holds a README plus `macos.md`
-   and `windows.md` covering themes, IME (RU plus Japanese), clipboard,
+   and `windows.md` covering themes, IME (RU; Japanese where available), clipboard,
    VoiceOver/Narrator basics, the popup, setup and file-drop flows, install,
    shortcuts, scaling, case key storage and Cyrillic paths; unavailable checks are
    listed explicitly, and no Fail row lacks a linked roadmap item. The

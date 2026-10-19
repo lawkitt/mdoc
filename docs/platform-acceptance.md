@@ -143,7 +143,9 @@ Fixture: the English demo, scanned.
 
 ## 8. Keyboard input and IME
 
-Install the Russian layout and the built-in Japanese IME first.
+Install the Russian layout and the built-in Japanese IME first. The
+maintainer does not run the Japanese rows (K3–K7): mark them Unavailable
+unless Claude observed them on macOS (ADR 0057).
 
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |

@@ -7,6 +7,23 @@ use super::*;
 /// (ADR 0005); the Markdown is converted from the file itself.
 pub(crate) const DOCX_NOTE: &str = "Approximate preview: the layout may differ from Word. The Markdown is converted from the file itself.";
 
+/// Give the preview's find bar a text input, so typing goes through the
+/// text-input path and IME works.
+pub(crate) fn attach_search_field(
+    pdf: &mut PdfView,
+    cx: &mut Context<PdfView>,
+) -> Entity<markdown_search::SearchInput> {
+    let field = cx.new(|cx| {
+        markdown_search::SearchInput::new(cx)
+            .with_key_context("PreviewSearch")
+            .with_placeholder("Find…")
+            .with_label("Find in preview")
+    });
+    let focus = field.read(cx).focus_handle(cx);
+    pdf.set_search_field(field.clone(), focus, |field| field.value().to_owned(), cx);
+    field
+}
+
 struct PendingPreview {
     pdf: Entity<PdfView>,
     docx: Option<docx_preview::DocxPreview>,
@@ -219,15 +236,7 @@ impl DocumentView {
                 crate::ui::activity(label.clone(), label, activity_theme.get()).into_any_element()
             }));
             pdf.fit_width(cx);
-            // The find bar types through the text-input path, so IME works.
-            let field = cx.new(|cx| {
-                markdown_search::SearchInput::new(cx)
-                    .with_key_context("PreviewSearch")
-                    .with_placeholder("Find…")
-                    .with_label("Find in preview")
-            });
-            let focus = field.read(cx).focus_handle(cx);
-            pdf.set_search_field(field, focus, |field| field.value().to_owned(), cx);
+            attach_search_field(pdf, cx);
         });
         let owner = cx.entity().downgrade();
         pdf.update(cx, |pdf, _| {
