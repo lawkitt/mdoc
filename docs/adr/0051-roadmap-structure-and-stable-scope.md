@@ -1,6 +1,7 @@
 # Roadmap structure and 0.1.0 stable scope
 
-Status: Accepted, 2026-10-16. Amends [ADR 0024](0024-replace-custom-selection.md)
+Status: Accepted, 2026-10-16. Amended by [ADR 0059](0059-roadmap-after-0-1-0.md)
+(structure and upkeep after 0.1.0). Amends [ADR 0024](0024-replace-custom-selection.md)
 (repeats inside a longer mention). [ROADMAP.md](../../ROADMAP.md) applies it.
 
 ## Problem

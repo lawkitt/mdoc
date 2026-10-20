@@ -296,6 +296,17 @@ must-fix items; unfinished should-fix items move to the next milestone. Distinct
 from a release gate, which is an automated check on every release
 ([ADR 0051](docs/adr/0051-roadmap-structure-and-stable-scope.md)).
 
+**Patch lane**: the 0.x.y milestone after a release, for items that give wrong
+output, lose data or make an action fail silently and need no design decision;
+each is a GitHub issue ([ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md)).
+
+**Later**: roadmap items beyond the next milestone, one line each, written out
+only when promoted at grooming ([ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md)).
+
+**Smoke run**: a patch release's acceptance check on each shipped target:
+install, launch, open a document, Copy for AI, plus the platform-acceptance
+rows its fixes touch; no release candidate ([ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md)).
+
 **Platform acceptance**: a manual checklist run on an installed release
 candidate on each shipped target, recorded under `docs/evidence/platform/`;
 each row is *Pass*, *Fail* or *Unavailable* (could not be observed, with the

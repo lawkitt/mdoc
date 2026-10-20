@@ -108,4 +108,4 @@ the `contract` ceiling; its measured medians (25.3 / 24.6 / 25.0 ms) are within 
 - Image- and code-heavy documents still lay out every widget and code line per
   frame (27–31 ms release at 63–74 KB); their rows are not yet windowed.
 - Process memory and large case fan-out remain stress-tier follow-up
-  ([After 0.1.0](../../../../ROADMAP.md#after-010)).
+  ([Later](../../../../ROADMAP.md#later)).

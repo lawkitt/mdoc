@@ -24,7 +24,7 @@ The full list is under [Recipes](#recipes).
 
 ## Project documentation
 
-- [Roadmap](../ROADMAP.md): status, next steps and deferred work.
+- [Roadmap](../ROADMAP.md): open work by milestone; bugs are [Issues](https://github.com/lawkitt/mdoc/issues).
 - [Glossary](../CONTEXT.md): product and code terminology.
 - [Architecture decisions](adr/): accepted behavior and its rationale.
 - [Evidence](evidence/): measurements that current work still compares against.
@@ -45,6 +45,21 @@ history lives in git.
 - Never renumber: code cites ADRs by number.
 - Design interviews and dated evidence leave the tree once nothing live reads
   them; link them by commit permalink.
+
+### Roadmap upkeep
+
+[ADR 0059](adr/0059-roadmap-after-0-1-0.md) sets the rules.
+
+- **New finding:** a bug becomes a GitHub issue (with the patch milestone if it
+  meets the patch rule); an idea goes to the end of Later. Don't reorder.
+- **Finishing an item:** the same commit deletes it from ROADMAP.md and adds
+  the CHANGELOG entry; a patch commit says `fixes #n`.
+- **Item shape:** title, `[Theme]` tag, one-line source, 1–4 lines of what and
+  why, `*Done when:*`; about 6 lines. Diagnosis goes to the issue, evidence
+  or ADR, linked.
+- **Grooming** after each release and acceptance run: close the finished
+  milestone into Current status, triage open issues, pick at most ~5 must-fix
+  items for the next minor, promote from Later, and update the date line.
 
 ## Code layout
 
