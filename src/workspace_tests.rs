@@ -3793,6 +3793,15 @@ fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
     draw(cx);
     assert!(cx.debug_bounds("command-palette").is_none());
     cx.update(|_, cx| assert!(tabs.read(cx).shell.palette.is_none()));
+    // View actions without a menu bar on Windows are in the palette too.
+    let visible = tabs.read_with(cx, |tabs, _| tabs.sidebar_visible);
+    cx.simulate_keystrokes("secondary-k");
+    draw(cx);
+    cx.simulate_input("toggle sidebar");
+    draw(cx);
+    cx.simulate_keystrokes("enter");
+    draw(cx);
+    tabs.read_with(cx, |tabs, _| assert_eq!(tabs.sidebar_visible, !visible));
 }
 
 #[gpui::test]

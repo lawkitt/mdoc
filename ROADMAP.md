@@ -58,9 +58,9 @@ to the top of the next milestone. Items are in priority order.
    The popup shows All N, but Enter applies only this mention and switches the
    scope. Decide which wins; amend ADR 0048/0055.
    *Done when:* Enter, the scope segments and Apply agree, tested per scope.
-3. **[Editor] Platform caret moves.** *From the RC runs.* ⌘←/→/↑/↓ (with ⇧) on
-   macOS; Ctrl+←/→ (with ⇧), Ctrl+⌫/Del and Ctrl+Home/End on Windows.
-   *Done when:* each move and delete works per platform, with tests.
+3. **[Editor] macOS caret moves.** *From the RC runs.* ⌘←/→/↑/↓ (with ⇧);
+   Windows has its Ctrl moves.
+   *Done when:* each move works on macOS, with tests.
 4. **[A11y] Keyboard reach.** *From the RC runs (A4, H18).* Plain Tab cannot
    reach the toolbar or sidebar. Likely F6/⇧F6 between sidebar, toolbar and
    editor, and Tab from Home into its controls.
@@ -81,14 +81,9 @@ to the top of the next milestone. Items are in priority order.
 2. **[A11y] Dialog and role semantics.** *From the RC runs (A3).* Settings is
    not a dialog; model choices read as checkboxes; narrow Markdown/Source read
    as buttons; close buttons say only "Close tab"; the unsaved-changes dialog is
-   titled "Warning"; Settings Tab focus is not reported to UI Automation.
+   titled "Warning".
    *Done when:* VoiceOver and Narrator announce each with its proper role and name.
-3. **[Windows] Shell integration.** *From the rc.2 run.* The installer registers
-   no file associations; the palette lacks Before/After, Toggle Sidebar, Save
-   As and Close Tab; Settings › Saved cases says "File → Open Case…".
-   *Done when:* mdoc is offered under Open with, and every menu command is in
-   the palette.
-4. **[UI] Small polish.** *From the dry run and RC runs.* Toggle Sidebar
+3. **[UI] Small polish.** *From the dry run and RC runs.* Toggle Sidebar
    shortcut (⌃⌘S); same-name tabs disambiguated by source type, not full path;
    the DOCX notice only when the file has such content; wrapped search matches
    painting the previous line; the DOCX badge after Save As; the window title on
@@ -96,7 +91,7 @@ to the top of the next milestone. Items are in priority order.
    the Notices popover; the preview Find button's ⌘F hint; the theme tooltip;
    the setup card's size after Cancel.
    *Done when:* each point is fixed or moved to its own item.
-5. **[OCR] Pick the recognition language.** *From the rc.1 run.* Default to
+4. **[OCR] Pick the recognition language.** *From the rc.1 run.* Default to
    English & Russian when the text layer, file name or a Russian input source
    suggests it.
    *Done when:* the Russian OCR fixture gets English & Russian by default and

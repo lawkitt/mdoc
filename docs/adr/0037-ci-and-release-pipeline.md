@@ -44,6 +44,11 @@ than the repository. Nothing lets local development run the same checks as CI.
   runs it (elevated) only when the runtime is missing; CI checks its Microsoft
   Authenticode signature instead of a hash. The `.msi` refuses to install with
   a clear message when the runtime is missing.
+- **Open with**: both Windows installers list mdoc under Open with for `.md`,
+  `.markdown`, `.mdown`, `.txt`, `.pdf` and `.docx` (an `OpenWithProgids`
+  entry and `Applications\mdoc.exe`), never as the default app, and the
+  uninstaller removes exactly those entries. A second launch hands its files
+  to the running mdoc through a per-user named pipe and exits.
 - **Channels**: GitHub Releases only. winget automation is deleted;
   winget, Homebrew and Scoop return with signed `1.0` builds.
 - **Automation**: a root `justfile` of thin recipes with logic in

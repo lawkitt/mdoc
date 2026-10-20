@@ -117,6 +117,30 @@
                             Source='$(var.CargoTargetBinDir)\mdoc.exe'
                             KeyPath='yes'/>
                     </Component>
+                    <!--
+                        "Open with" for the types mdoc opens, as the NSIS
+                        installer registers them: never the default app.
+                        Windows Installer removes these values on uninstall.
+                    -->
+                    <Component Id='OpenWith' Guid='A7FC1C64-EB99-40F2-9B42-7C4EB41E3858'>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\io.github.lawkitt.mdoc.document' Type='string' Value='mdoc document' KeyPath='yes'/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\io.github.lawkitt.mdoc.document\DefaultIcon' Type='string' Value='"[APPLICATIONFOLDER]mdoc.exe",0'/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\io.github.lawkitt.mdoc.document\shell\open\command' Type='string' Value='"[APPLICATIONFOLDER]mdoc.exe" "%1"'/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\Applications\mdoc.exe' Name='FriendlyAppName' Type='string' Value='mdoc'/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\Applications\mdoc.exe\shell\open\command' Type='string' Value='"[APPLICATIONFOLDER]mdoc.exe" "%1"'/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\.md\OpenWithProgids' Name='io.github.lawkitt.mdoc.document' Type='string' Value=''/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\Applications\mdoc.exe\SupportedTypes' Name='.md' Type='string' Value=''/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\.markdown\OpenWithProgids' Name='io.github.lawkitt.mdoc.document' Type='string' Value=''/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\Applications\mdoc.exe\SupportedTypes' Name='.markdown' Type='string' Value=''/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\.mdown\OpenWithProgids' Name='io.github.lawkitt.mdoc.document' Type='string' Value=''/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\Applications\mdoc.exe\SupportedTypes' Name='.mdown' Type='string' Value=''/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\.txt\OpenWithProgids' Name='io.github.lawkitt.mdoc.document' Type='string' Value=''/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\Applications\mdoc.exe\SupportedTypes' Name='.txt' Type='string' Value=''/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\.pdf\OpenWithProgids' Name='io.github.lawkitt.mdoc.document' Type='string' Value=''/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\Applications\mdoc.exe\SupportedTypes' Name='.pdf' Type='string' Value=''/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\.docx\OpenWithProgids' Name='io.github.lawkitt.mdoc.document' Type='string' Value=''/>
+                        <RegistryValue Root='HKLM' Key='Software\Classes\Applications\mdoc.exe\SupportedTypes' Name='.docx' Type='string' Value=''/>
+                    </Component>
                 </Directory>
             </Directory>
 
@@ -147,6 +171,7 @@
         <Feature Id='Main' Title='mdoc' Description='mdoc application' Level='1'>
             <ComponentRef Id='MainExecutable'/>
             <ComponentRef Id='StartMenuShortcut'/>
+            <ComponentRef Id='OpenWith'/>
         </Feature>
 
         <!--

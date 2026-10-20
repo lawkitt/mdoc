@@ -1109,6 +1109,56 @@ mod tests {
     }
 
     #[gpui::test]
+    fn ctrl_word_and_document_moves(cx: &mut gpui::TestAppContext) {
+        // Windows caret moves: Ctrl+Backspace/Delete and Ctrl(+Shift)+Home/End.
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update_in(cx, |e, window, cx| {
+            e.set_text("Иван Петров пишет", cx);
+            e.set_cursor(e.text().find(" пишет").unwrap(), cx);
+            e.delete_word_left(&crate::DeleteWordLeft, window, cx);
+            assert_eq!(e.text(), "Иван  пишет");
+            e.delete_word_right(&crate::DeleteWordRight, window, cx);
+            assert_eq!(e.text(), "Иван ");
+            e.undo(&Undo, window, cx);
+            assert_eq!(e.text(), "Иван Петров пишет", "one deleting run, one undo");
+
+            e.set_cursor(0, cx);
+            e.delete_word_left(&crate::DeleteWordLeft, window, cx);
+            assert_eq!(e.text(), "Иван Петров пишет", "nothing before the start");
+
+            e.document_end(&crate::DocumentEnd, window, cx);
+            assert_eq!(e.cursor(), e.text().len());
+            e.select_to_document_start(&crate::SelectToDocumentStart, window, cx);
+            assert_eq!(e.selection(), 0..e.text().len());
+            e.document_start(&crate::DocumentStart, window, cx);
+            assert_eq!(e.cursor(), 0);
+            e.select_to_document_end(&crate::SelectToDocumentEnd, window, cx);
+            assert_eq!(e.selection(), 0..e.text().len());
+        });
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[gpui::test]
+    fn ctrl_arrows_move_by_word(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::bind_keys);
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update_in(cx, |e, window, cx| {
+            e.set_text("one two three", cx);
+            e.set_cursor(0, cx);
+            e.focus(window, cx);
+        });
+        cx.simulate_keystrokes("ctrl-right ctrl-right");
+        assert_eq!(editor.read_with(cx, |e, _| e.cursor()), 7);
+        cx.simulate_keystrokes("ctrl-shift-left");
+        assert_eq!(editor.read_with(cx, |e, _| e.selection()), 4..7);
+        cx.simulate_keystrokes("ctrl-end ctrl-backspace");
+        assert_eq!(
+            editor.read_with(cx, |e, _| e.text().to_string()),
+            "one two "
+        );
+    }
+
+    #[gpui::test]
     fn math_is_ordinary_text_for_arrows_and_deletion(cx: &mut gpui::TestAppContext) {
         // ADR 0031: mdoc has no math editor, so the caret enters math and
         // Backspace edits it character by character instead of deferring.

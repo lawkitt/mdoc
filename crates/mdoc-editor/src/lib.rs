@@ -94,6 +94,12 @@ actions!(
         WordRight,
         SelectWordLeft,
         SelectWordRight,
+        DeleteWordLeft,
+        DeleteWordRight,
+        DocumentStart,
+        DocumentEnd,
+        SelectToDocumentStart,
+        SelectToDocumentEnd,
         Indent,
         Outdent,
         Bold,
@@ -155,6 +161,21 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-u", Underline, ctx),
         KeyBinding::new("escape", Dismiss, ctx),
     ]);
+    // Windows and Linux caret moves; macOS keeps ⌥ for words.
+    if !cfg!(target_os = "macos") {
+        cx.bind_keys([
+            KeyBinding::new("ctrl-left", WordLeft, ctx),
+            KeyBinding::new("ctrl-right", WordRight, ctx),
+            KeyBinding::new("ctrl-shift-left", SelectWordLeft, ctx),
+            KeyBinding::new("ctrl-shift-right", SelectWordRight, ctx),
+            KeyBinding::new("ctrl-backspace", DeleteWordLeft, ctx),
+            KeyBinding::new("ctrl-delete", DeleteWordRight, ctx),
+            KeyBinding::new("ctrl-home", DocumentStart, ctx),
+            KeyBinding::new("ctrl-end", DocumentEnd, ctx),
+            KeyBinding::new("ctrl-shift-home", SelectToDocumentStart, ctx),
+            KeyBinding::new("ctrl-shift-end", SelectToDocumentEnd, ctx),
+        ]);
+    }
 }
 
 /// Line height as a multiple of the font size. Derived from the editor's own
@@ -3185,6 +3206,70 @@ impl EditorState {
         self.select_to(self.next_word(self.cursor_offset()), cx);
     }
 
+    /// Ctrl+Backspace: delete back to the previous word start, or the selection.
+    fn delete_word_left(
+        &mut self,
+        _: &DeleteWordLeft,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            let off = self.cursor_offset();
+            let start = self.prev_word(off);
+            if start == off {
+                return;
+            }
+            self.select_to(start, cx);
+        }
+        self.replace_text_in_range(None, "", window, cx);
+    }
+
+    /// Ctrl+Delete: delete forward to the next word end, or the selection.
+    fn delete_word_right(
+        &mut self,
+        _: &DeleteWordRight,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            let off = self.cursor_offset();
+            let end = self.next_word(off);
+            if end == off {
+                return;
+            }
+            self.select_to(end, cx);
+        }
+        self.replace_text_in_range(None, "", window, cx);
+    }
+
+    fn document_start(&mut self, _: &DocumentStart, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(0, cx);
+    }
+
+    fn document_end(&mut self, _: &DocumentEnd, _: &mut Window, cx: &mut Context<Self>) {
+        self.move_to(self.content.len(), cx);
+    }
+
+    fn select_to_document_start(
+        &mut self,
+        _: &SelectToDocumentStart,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.goal_x = None;
+        self.select_to(0, cx);
+    }
+
+    fn select_to_document_end(
+        &mut self,
+        _: &SelectToDocumentEnd,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.goal_x = None;
+        self.select_to(self.content.len(), cx);
+    }
+
     /// The `src` of a file chip on the row at window `position`, if that row is a
     /// chip (from the last paint) — left-click opens it, right-click edits.
     fn chip_at(&self, position: Point<Pixels>) -> Option<SharedString> {
@@ -3514,6 +3599,12 @@ impl Render for EditorState {
             .on_action(cx.listener(revealing(Self::word_right)))
             .on_action(cx.listener(revealing(Self::select_word_left)))
             .on_action(cx.listener(revealing(Self::select_word_right)))
+            .on_action(cx.listener(revealing(Self::delete_word_left)))
+            .on_action(cx.listener(revealing(Self::delete_word_right)))
+            .on_action(cx.listener(revealing(Self::document_start)))
+            .on_action(cx.listener(revealing(Self::document_end)))
+            .on_action(cx.listener(revealing(Self::select_to_document_start)))
+            .on_action(cx.listener(revealing(Self::select_to_document_end)))
             .on_action(cx.listener(revealing(Self::select_all)))
             .on_action(cx.listener(revealing(Self::newline)))
             .on_action(cx.listener(revealing(Self::bold)))

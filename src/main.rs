@@ -33,6 +33,7 @@ mod recents;
 mod session_store;
 mod settings;
 mod settings_ui;
+mod single_instance;
 mod spelling;
 mod style;
 mod ui;
@@ -183,9 +184,13 @@ fn main() {
         }
         return;
     }
+    let initial: Vec<_> = args.into_iter().skip(1).map(PathBuf::from).collect();
+    // Windows: a second launch hands its paths to the running mdoc.
+    let single_instance::Launch::Primary(later_launches) = single_instance::claim(&initial) else {
+        return;
+    };
     // The app itself, not its worker modes, records panics (ADR 0047).
     crash::install();
-    let initial: Vec<_> = args.into_iter().skip(1).map(PathBuf::from).collect();
     let application = gpui_platform::application();
     let open_context = Rc::new(RefCell::new(
         None::<(gpui::WindowHandle<workspace::Workspace>, gpui::AsyncApp)>,
@@ -279,6 +284,23 @@ fn main() {
             workspace.check_for_updates_at_launch(cx)
         });
         *open_context.borrow_mut() = Some((handle, cx.to_async()));
+        if let Some(launches) = later_launches {
+            // Polled: the listener is a plain thread, and a launch is rare.
+            cx.spawn(async move |cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(200))
+                        .await;
+                    while let Ok(paths) = launches.try_recv() {
+                        let _ = handle.update(cx, |workspace, window, cx| {
+                            window.activate_window();
+                            workspace.open_paths(paths, window, cx)
+                        });
+                    }
+                }
+            })
+            .detach();
+        }
         cx.on_window_closed(|cx, _| {
             if cx.windows().is_empty() {
                 // Restart now (ADR 0040): relaunch after the swap at quit.

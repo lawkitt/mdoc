@@ -74,7 +74,19 @@ security-framework = { version = "3", features = ["OSX_10_15"] }
 secret-service = { version = "5", default-features = false, features = ["rt-async-io-crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+# Single-instance launch (src/single_instance.rs) uses the pipe, session and
+# foreground features.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Cryptography",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [build-dependencies]
 embed-resource = "3"
@@ -120,19 +132,21 @@ before-packaging-command = "cargo build --release"
 icons = ["resources/icons/icon.icns", "resources/icons/icon.png", "resources/icons/icon.ico"]
 
 [package.metadata.packager.nsis]
+# The template inserts this text between its sections, so it also carries the
+# "Open with" registration and its uninstall section.
 # ONNX Runtime (OCR, pseudonymization) needs the x64 VC++ Redistributable
 # despite mdoc.exe's static CRT. Install it, with its own UAC prompt, only when
 # missing; scripts/package.sh supplies the signature-checked installer through
 # MDOC_VC_REDIST at compile time (ADR 0037). Failure doesn't stop the install:
 # the app explains how to get the runtime when OCR is first used.
-preinstall-section = """
+preinstall-section = '''
 Section VCRedist
   SetRegView 64
-  ReadRegDWORD $0 HKLM "SOFTWARE\\Microsoft\\VisualStudio\\14.0\\VC\\Runtimes\\x64" "Installed"
+  ReadRegDWORD $0 HKLM "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" "Installed"
   ${If} $0 != 1
     InitPluginsDir
-    File "/oname=$PLUGINSDIR\\vc_redist.x64.exe" "$%MDOC_VC_REDIST%"
-    ExecWait '"$PLUGINSDIR\\vc_redist.x64.exe" /install /passive /norestart' $1
+    File "/oname=$PLUGINSDIR\vc_redist.x64.exe" "$%MDOC_VC_REDIST%"
+    ExecWait '"$PLUGINSDIR\vc_redist.x64.exe" /install /passive /norestart' $1
     ${If} $1 != 0
     ${AndIf} $1 != 1638
     ${AndIf} $1 != 3010
@@ -141,7 +155,48 @@ Section VCRedist
     ${EndIf}
   ${EndIf}
 SectionEnd
-"""
+
+; "Open with" for the types mdoc opens (as resources/Info.plist on macOS),
+; never the default app: a ProgID listed under each extension's
+; OpenWithProgids, plus Applications\mdoc.exe. The uninstall section below
+; removes exactly these keys and values.
+!define MDOC_PROGID "io.github.lawkitt.mdoc.document"
+!macro MdocOpenWith EXT
+  WriteRegStr SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "${MDOC_PROGID}" ""
+  WriteRegStr SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe\SupportedTypes" ".${EXT}" ""
+!macroend
+!macro MdocRemoveOpenWith EXT
+  DeleteRegValue SHCTX "Software\Classes\.${EXT}\OpenWithProgids" "${MDOC_PROGID}"
+  DeleteRegKey /ifempty SHCTX "Software\Classes\.${EXT}\OpenWithProgids"
+!macroend
+
+Section OpenWith
+  WriteRegStr SHCTX "Software\Classes\${MDOC_PROGID}" "" "mdoc document"
+  WriteRegStr SHCTX "Software\Classes\${MDOC_PROGID}\DefaultIcon" "" '"$INSTDIR\${MAINBINARYNAME}.exe",0'
+  WriteRegStr SHCTX "Software\Classes\${MDOC_PROGID}\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
+  WriteRegStr SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe" "FriendlyAppName" "mdoc"
+  WriteRegStr SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe\shell\open\command" "" '"$INSTDIR\${MAINBINARYNAME}.exe" "%1"'
+  !insertmacro MdocOpenWith "md"
+  !insertmacro MdocOpenWith "markdown"
+  !insertmacro MdocOpenWith "mdown"
+  !insertmacro MdocOpenWith "txt"
+  !insertmacro MdocOpenWith "pdf"
+  !insertmacro MdocOpenWith "docx"
+  !insertmacro UPDATEFILEASSOC
+SectionEnd
+
+Section un.OpenWith
+  !insertmacro MdocRemoveOpenWith "md"
+  !insertmacro MdocRemoveOpenWith "markdown"
+  !insertmacro MdocRemoveOpenWith "mdown"
+  !insertmacro MdocRemoveOpenWith "txt"
+  !insertmacro MdocRemoveOpenWith "pdf"
+  !insertmacro MdocRemoveOpenWith "docx"
+  DeleteRegKey SHCTX "Software\Classes\${MDOC_PROGID}"
+  DeleteRegKey SHCTX "Software\Classes\Applications\${MAINBINARYNAME}.exe"
+  !insertmacro UPDATEFILEASSOC
+SectionEnd
+'''
 
 [package.metadata.packager.macos]
 # Hand-curated Info.plist (single-instance launch, high-DPI, stable bundle id).
