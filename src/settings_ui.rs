@@ -616,9 +616,12 @@ impl Panel {
         let enabled = !self.applying;
         div().flex().flex_col().gap_2().mt_4()
             .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Saved cases"))
-            .child(div().text_size(px(11.)).text_color(p.header_muted).child(
-                "A case keeps which original each alias stands for, encrypted on this computer, so AI replies can be restored later. Open cases from File → Open Case…",
-            ))
+            .child(div().text_size(px(11.)).text_color(p.header_muted).child(if cfg!(target_os = "macos") {
+                "A case keeps which original each alias stands for, encrypted on this computer, so AI replies can be restored later. Open cases from File → Open Case…"
+            } else {
+                // No menu bar outside macOS: Open Case lives on Home and in the palette.
+                "A case keeps which original each alias stands for, encrypted on this computer, so AI replies can be restored later. Open cases from Home or the command palette (Ctrl+K)."
+            }))
             .child(div().flex().flex_wrap().items_center().gap_2().child(
                 self.scrolled_control("cases-ask", "Ask before closing an unsaved mapping", theme, enabled, cx)
                     .when(cfg!(test), |v| v.debug_selector(|| "cases-ask".into()))
