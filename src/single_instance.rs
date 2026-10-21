@@ -9,7 +9,8 @@ use std::sync::mpsc::Receiver;
 
 /// What `claim` decided for this process.
 pub enum Launch {
-    /// Another mdoc took the paths; exit now.
+    /// Another mdoc took the paths; exit now. Windows only.
+    #[cfg_attr(not(windows), expect(dead_code))]
     Forwarded,
     /// This is the first mdoc: paths from later launches arrive here. An empty
     /// list asks only to bring the window to the front.
