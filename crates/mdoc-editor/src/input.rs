@@ -1118,13 +1118,23 @@ mod tests {
             e.delete_word_left(&crate::DeleteWordLeft, window, cx);
             assert_eq!(e.text(), "Иван  пишет");
             e.delete_word_right(&crate::DeleteWordRight, window, cx);
-            assert_eq!(e.text(), "Иван ");
+            assert_eq!(e.text(), "Иван пишет", "Ctrl+Delete stops at the next word");
             e.undo(&Undo, window, cx);
             assert_eq!(e.text(), "Иван Петров пишет", "one deleting run, one undo");
 
             e.set_cursor(0, cx);
             e.delete_word_left(&crate::DeleteWordLeft, window, cx);
             assert_eq!(e.text(), "Иван Петров пишет", "nothing before the start");
+
+            e.set_text("one\ntwo", cx);
+            e.set_cursor(0, cx);
+            e.next_word_start_action(&crate::NextWordStart, window, cx);
+            assert_eq!(e.cursor(), 3, "the line end is a stop");
+            e.next_word_start_action(&crate::NextWordStart, window, cx);
+            assert_eq!(e.cursor(), 4);
+            e.next_word_start_action(&crate::NextWordStart, window, cx);
+            assert_eq!(e.cursor(), 7);
+            e.set_text("Иван Петров пишет", cx);
 
             e.document_end(&crate::DocumentEnd, window, cx);
             assert_eq!(e.cursor(), e.text().len());
@@ -1147,10 +1157,13 @@ mod tests {
             e.set_cursor(0, cx);
             e.focus(window, cx);
         });
+        // Windows stops at word starts, not ends.
         cx.simulate_keystrokes("ctrl-right ctrl-right");
-        assert_eq!(editor.read_with(cx, |e, _| e.cursor()), 7);
+        assert_eq!(editor.read_with(cx, |e, _| e.cursor()), 8);
         cx.simulate_keystrokes("ctrl-shift-left");
-        assert_eq!(editor.read_with(cx, |e, _| e.selection()), 4..7);
+        assert_eq!(editor.read_with(cx, |e, _| e.selection()), 4..8);
+        cx.simulate_keystrokes("ctrl-shift-right");
+        assert_eq!(editor.read_with(cx, |e, _| e.cursor()), 8);
         cx.simulate_keystrokes("ctrl-end ctrl-backspace");
         assert_eq!(
             editor.read_with(cx, |e, _| e.text().to_string()),

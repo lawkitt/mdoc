@@ -94,6 +94,8 @@ actions!(
         WordRight,
         SelectWordLeft,
         SelectWordRight,
+        NextWordStart,
+        SelectToNextWordStart,
         DeleteWordLeft,
         DeleteWordRight,
         DocumentStart,
@@ -165,9 +167,9 @@ pub fn bind_keys(cx: &mut App) {
     if !cfg!(target_os = "macos") {
         cx.bind_keys([
             KeyBinding::new("ctrl-left", WordLeft, ctx),
-            KeyBinding::new("ctrl-right", WordRight, ctx),
+            KeyBinding::new("ctrl-right", NextWordStart, ctx),
             KeyBinding::new("ctrl-shift-left", SelectWordLeft, ctx),
-            KeyBinding::new("ctrl-shift-right", SelectWordRight, ctx),
+            KeyBinding::new("ctrl-shift-right", SelectToNextWordStart, ctx),
             KeyBinding::new("ctrl-backspace", DeleteWordLeft, ctx),
             KeyBinding::new("ctrl-delete", DeleteWordRight, ctx),
             KeyBinding::new("ctrl-home", DocumentStart, ctx),
@@ -3070,18 +3072,7 @@ impl EditorState {
         let last = self.wrapped.len() - 1;
         let total = self.line_tops[last] + self.line_h(last) * self.row_span(last) as f32;
         if target_y >= total {
-            // Landing at the very end would park the caret on a trailing
-            // collapsed row (a hidden closing ``` fence) and reveal it — clamp
-            // to the end of the last VISIBLE row instead.
-            let mut r = last;
-            while r > 0 && self.line_h(r) <= px(0.) {
-                r -= 1;
-            }
-            return if r == last {
-                self.content.len()
-            } else {
-                self.line_end(r)
-            };
+            return self.visible_end();
         }
         let mut trow = last;
         for i in 0..self.wrapped.len() {
@@ -3162,6 +3153,41 @@ impl EditorState {
             .unwrap_or(self.content.len())
     }
 
+    /// The start of the next word after `offset`, or the end of its line if
+    /// that comes first (Ctrl+→ and Ctrl+Delete on Windows).
+    fn next_word_start(&self, offset: usize) -> usize {
+        let word = self
+            .content
+            .unicode_word_indices()
+            .map(|(i, _)| i)
+            .find(|&start| start > offset)
+            .unwrap_or(self.content.len());
+        let line_end = self.content[offset.min(self.content.len())..]
+            .char_indices()
+            .skip(1)
+            .find(|&(_, c)| c == '\n')
+            .map_or(self.content.len(), |(i, _)| offset + i);
+        word.min(line_end)
+    }
+
+    /// The document's last caret position that reveals nothing: the end of
+    /// the last visible row, not a trailing collapsed one (a hidden closing
+    /// ``` fence).
+    fn visible_end(&self) -> usize {
+        let Some(last) = self.wrapped.len().checked_sub(1) else {
+            return self.content.len();
+        };
+        let mut r = last;
+        while r > 0 && self.line_h(r) <= px(0.) {
+            r -= 1;
+        }
+        if r == last {
+            self.content.len()
+        } else {
+            self.line_end(r)
+        }
+    }
+
     /// The start of the previous word before `offset` (⌥← on macOS).
     fn prev_word(&self, offset: usize) -> usize {
         self.content
@@ -3206,6 +3232,26 @@ impl EditorState {
         self.select_to(self.next_word(self.cursor_offset()), cx);
     }
 
+    fn next_word_start_action(
+        &mut self,
+        _: &NextWordStart,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let off = self.next_word_start(self.cursor_offset());
+        self.move_to(off, cx);
+    }
+
+    fn select_to_next_word_start(
+        &mut self,
+        _: &SelectToNextWordStart,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.goal_x = None;
+        self.select_to(self.next_word_start(self.cursor_offset()), cx);
+    }
+
     /// Ctrl+Backspace: delete back to the previous word start, or the selection.
     fn delete_word_left(
         &mut self,
@@ -3224,7 +3270,7 @@ impl EditorState {
         self.replace_text_in_range(None, "", window, cx);
     }
 
-    /// Ctrl+Delete: delete forward to the next word end, or the selection.
+    /// Ctrl+Delete: delete forward to the next word start, or the selection.
     fn delete_word_right(
         &mut self,
         _: &DeleteWordRight,
@@ -3233,7 +3279,7 @@ impl EditorState {
     ) {
         if self.selected_range.is_empty() {
             let off = self.cursor_offset();
-            let end = self.next_word(off);
+            let end = self.next_word_start(off);
             if end == off {
                 return;
             }
@@ -3242,12 +3288,14 @@ impl EditorState {
         self.replace_text_in_range(None, "", window, cx);
     }
 
+    /// Ctrl+Home: the first position that reveals nothing, as when a
+    /// document opens.
     fn document_start(&mut self, _: &DocumentStart, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_to(0, cx);
+        self.move_to(caret_off_marker_line(&self.content, 0), cx);
     }
 
     fn document_end(&mut self, _: &DocumentEnd, _: &mut Window, cx: &mut Context<Self>) {
-        self.move_to(self.content.len(), cx);
+        self.move_to(self.visible_end(), cx);
     }
 
     fn select_to_document_start(
@@ -3267,7 +3315,7 @@ impl EditorState {
         cx: &mut Context<Self>,
     ) {
         self.goal_x = None;
-        self.select_to(self.content.len(), cx);
+        self.select_to(self.visible_end(), cx);
     }
 
     /// The `src` of a file chip on the row at window `position`, if that row is a
@@ -3599,6 +3647,8 @@ impl Render for EditorState {
             .on_action(cx.listener(revealing(Self::word_right)))
             .on_action(cx.listener(revealing(Self::select_word_left)))
             .on_action(cx.listener(revealing(Self::select_word_right)))
+            .on_action(cx.listener(revealing(Self::next_word_start_action)))
+            .on_action(cx.listener(revealing(Self::select_to_next_word_start)))
             .on_action(cx.listener(revealing(Self::delete_word_left)))
             .on_action(cx.listener(revealing(Self::delete_word_right)))
             .on_action(cx.listener(revealing(Self::document_start)))

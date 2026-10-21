@@ -4664,6 +4664,39 @@ mod tests {
             });
         }
     }
+
+    #[gpui::test]
+    fn document_ends_skip_collapsed_marker_rows(cx: &mut TestAppContext) {
+        // Ctrl+Home/End land where the caret reveals nothing: after a leading
+        // math block (as when a document opens) and before a hidden closing
+        // fence (as ↓ on the last line does).
+        let source = "<!-- math:center -->\n$$\nx + y\n$$\n\ntext\n\n```\ncode\n```";
+        let (editor, cx) = image_editor(cx, source);
+        let draw = |cx: &mut VisualTestContext| {
+            cx.draw(
+                point(px(0.), px(0.)),
+                size(
+                    AvailableSpace::Definite(px(320.)),
+                    AvailableSpace::MinContent,
+                ),
+                |_, _| EditorElement {
+                    editor: editor.clone(),
+                },
+            );
+        };
+        let text_at = source.find("text").unwrap();
+        editor.update(cx, |e, cx| e.set_cursor(text_at, cx));
+        draw(cx);
+        editor.update_in(cx, |e, window, cx| {
+            e.document_end(&crate::DocumentEnd, window, cx);
+            assert_eq!(e.cursor(), source.find("code").unwrap() + "code".len());
+            e.select_to_document_start(&crate::SelectToDocumentStart, window, cx);
+            assert_eq!(e.selection().start, 0, "selecting keeps the whole start");
+            e.document_start(&crate::DocumentStart, window, cx);
+            let after_math = source.find("$$\n\n").unwrap() + 3;
+            assert_eq!(e.cursor(), after_math, "the line after the math block");
+        });
+    }
 }
 
 /// Where a flash peaks, as a fraction of its duration.
