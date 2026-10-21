@@ -207,6 +207,25 @@ update or a changed flag builds a complete new copy beside the old one, so run
 `cargo clean --profile dev` after one (the next build is cold, about two
 minutes for `just test`). Edits alone grow the cache only slowly.
 
+## Fleet
+
+Agents that dispatch work to the maintainer's other machines (the `fleet`
+skill) read this section for mdoc's needs.
+
+- **Where work goes.** Windows-only bugs and Windows checks: `windows`.
+  `wsl` runs only the platform-neutral crates (`cargo test -p mdoc-pii -p
+  mdoc-editor -p mdoc-history`); a Linux build of the app is not a shipped
+  target. Model qualification on the `wsl` GPU needs a decision first: the app
+  runs detection on CPU.
+- **Lane worktrees.** A worktree's `target/` reaches about 30 GiB and a cold
+  `just lint` + `just test` takes about 4.5 minutes on `windows`, so workers
+  reuse lanes instead of a new worktree per task: two on `windows`, one on
+  `wsl`. Each task starts with `git switch -c <machine>/<topic> origin/main`.
+  Retire other worktrees with `just retire-worktree <path>` once merged.
+- **Native checks stay manual.** Dispatched agents build and install; the
+  maintainer runs the [acceptance](platform-acceptance.md) rows that need the
+  machine (see [ADR 0057](adr/0057-native-platform-acceptance.md)).
+
 ## Releasing
 
 Releases ship only for Apple Silicon macOS (`.dmg`) and Windows x64 (NSIS
