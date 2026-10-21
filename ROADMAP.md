@@ -40,6 +40,8 @@ closes, with the expected behavior stated there.
    ([#78](https://github.com/lawkitt/mdoc/issues/78)).
 7. **[UI] Focus lost** after Share › Save as case and after an undo that
    closes the popup ([#79](https://github.com/lawkitt/mdoc/issues/79)).
+8. **[macOS] Quit leaves the process running** with no windows
+   ([#83](https://github.com/lawkitt/mdoc/issues/83)).
 
 ## 0.2.0
 

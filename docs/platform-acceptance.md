@@ -32,10 +32,14 @@ release gates do not establish what it checks.
    "Linux: compiles in CI (`lint (ubuntu)`); no runtime checks", and
    "Windows 10: not checked".
 
-### Running it with Claude
+### Running it with an agent
 
-Claude runs both checklists through computer use (ADR 0057), on the Mac and
-from Claude Code on the Windows PC. A session starting cold reads this file,
+An agent runs both checklists through computer use (ADR 0057). Dispatched
+runs use Codex through T3 (fleet ADR 0009): proven on the Mac; on the Windows
+PC not yet, so there Claude runs it from the Claude desktop app, started by
+the maintainer. Before the first screenshot, only public fixtures may be on
+screen: start from the clean profile in step 2, since mdoc restores the last
+session's documents. A session starting cold reads this file,
 ADR 0057 and the latest `docs/evidence/platform/<date>/README.md`.
 
 - **Read state from the accessibility tree**, not only screenshots: on macOS
