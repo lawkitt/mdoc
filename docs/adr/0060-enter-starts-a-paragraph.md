@@ -24,11 +24,14 @@ Copy for AI stay the text as typed.
 - **⇧Enter is a line break**: a CommonMark hard break, `\` then `\n`, which
   the editor hides away from the caret like other markers. In a list item the
   next line is indented to the item's body; in a quote it keeps the `>`
-  prefix. In a heading, or with no text before the caret on the line, ⇧Enter
-  is Enter.
+  prefix. A `\` already before the caret becomes the break rather than being
+  escaped. In a heading (also behind a list or quote prefix), or with no text
+  before the caret in the block's body, ⇧Enter is Enter. Enter right after a
+  ⇧Enter break replaces that break with its own, so no `\` is left dangling.
 - **Contexts keep their own Enter.**
-  - *Lists:* Enter opens the next item with one `\n` (a tight list); Enter on
-    an empty item exits, leaving a blank line.
+  - *Lists:* Enter opens the next item with one `\n` (a tight list), also
+    from an item's ⇧Enter continuation lines; Enter on an empty item exits,
+    leaving a blank line.
   - *Quotes:* Enter starts a new quoted paragraph (`>` line, then the
     prefix); Enter on an empty quote line exits, removing the bare `>` line
     above and leaving a blank line.
@@ -36,10 +39,13 @@ Copy for AI stay the text as typed.
   - *Tables:* Enter moves to the cell below; from the last row it leaves the
     table with a blank line, since GFM reads a line right below a table as a
     row. ⇧Enter inserts `<br>` ([ADR 0046](0046-workspace-polish-from-anoni-review.md)).
-- **⌫ and ⌦ undo a paragraph break in one press.** ⌫ at the start of a line
-  below exactly one blank line, or ⌦ at the end of a line above one, removes
-  the break and joins the two lines. It applies outside code, math and tables;
-  extra blank rows are removed one at a time first.
+- **⌫ and ⌦ undo a paragraph break in one press**, as their own undo step.
+  ⌫ at the start of a line below exactly one blank line, or ⌦ at the end of a
+  line above one, removes the break and joins the two lines; in a quote the
+  blank line is a bare `>` and ⌫ works at the start of the body. It applies
+  outside code, math and tables; extra blank rows are removed one at a time
+  first.
+- **Read-only panes** ignore Enter and ⇧Enter.
 - **Existing text is left alone.** Opening a document never rewrites its
   newlines; converted Markdown already separates paragraphs with blank lines.
 

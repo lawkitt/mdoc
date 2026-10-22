@@ -228,9 +228,15 @@ impl EditorState {
             }
             // At a paragraph's start, one ⌫ undoes Enter's paragraph break
             // (ADR 0060) instead of leaving two soft-joined lines.
-            if col == 0
+            let body = self
+                .content
+                .get(off - col..off)
+                .and_then(markdown_syntax::blockquote_prefix);
+            if (col == 0 || Some(col) == body)
                 && let Some(range) = self.paragraph_join_range(row)
             {
+                // Its own undo step, not part of a preceding ⌫ run.
+                self.last_edit = EditKind::Other;
                 self.replace_range(range, "", cx);
                 self.emit_changed(cx);
                 return;
@@ -270,9 +276,12 @@ impl EditorState {
                 return;
             }
             // At a paragraph's end, ⌦ joins the next paragraph (see backspace).
+            // Extra blank rows go one at a time first.
             if off == self.line_end(row)
+                && !self.row_is_blank(row + 2)
                 && let Some(range) = self.paragraph_join_range(row + 2)
             {
+                self.last_edit = EditKind::Other;
                 self.replace_range(range, "", cx);
                 self.emit_changed(cx);
                 return;
@@ -295,6 +304,9 @@ impl EditorState {
     }
 
     pub(super) fn newline(&mut self, _: &Newline, window: &mut Window, cx: &mut Context<Self>) {
+        if self.read_only {
+            return;
+        }
         // Inside a table, a raw newline would split the row's `| … |` markup.
         // Enter instead moves to the cell directly below (next row, same column,
         // spreadsheet-style); from the last row it exits onto a fresh line below
@@ -322,90 +334,152 @@ impl EditorState {
             }
             let starts = self.line_starts();
             let end = starts.get(last + 1).map_or(self.content.len(), |&s| s - 1);
-            self.selected_range = end..end;
             // A blank line ends the table: a line right below it would be read
             // as another row (GFM).
-            self.replace_text_in_range(None, "\n\n", window, cx);
+            self.edit(end..end, "\n\n", 2, window, cx);
             return;
         }
-        // Code and display math are literal: every newline counts as typed.
         let (row, _) = self.row_col(self.cursor_offset());
+        // Code and display math are literal: every newline counts as typed.
         if self.row_is_literal(row) {
             self.replace_text_in_range(None, "\n", window, cx);
             return;
         }
         // ADR 0060: everywhere else Enter makes a new block, so the copied
-        // Markdown breaks where the editor shows a break. Only with a collapsed
-        // selection; a selection is replaced by a plain paragraph break.
-        if self.selected_range.is_empty() {
-            let cursor = self.cursor_offset();
-            let (line_start, line_end) = self.caret_line();
-            let line = &self.content[line_start..line_end];
-            // List auto-continuation: Enter on a list/task item opens the next
-            // item (same marker + indent; ordered numbers increment). Enter on an
-            // *empty* item exits the list, leaving a blank line so the next
-            // text isn't a lazy continuation of the item.
-            if let Some((prefix_len, indent, ordered, num)) = markdown_syntax::list_prefix(line) {
-                let task = markdown_syntax::task_prefix(line);
-                let content_start = task.map_or(prefix_len, |(l, ..)| l);
-                if line.get(content_start..).unwrap_or("").trim().is_empty() {
-                    self.selected_range = line_start..line_end;
-                    self.replace_text_in_range(None, "\n", window, cx);
-                    return;
-                }
-                let ws = &line[..indent];
-                let bullet = line.as_bytes()[indent] as char;
-                let text = if task.is_some() {
+        // Markdown breaks where the editor shows a break. A selection is
+        // replaced by a plain paragraph break.
+        if !self.selected_range.is_empty() {
+            self.replace_text_in_range(None, "\n\n", window, cx);
+            return;
+        }
+        let (range, text, caret) = self.enter_edit();
+        self.edit(range, &text, caret, window, cx);
+    }
+
+    /// Enter's one edit at a collapsed caret outside tables, code and math:
+    /// the replaced range, its text and the caret's offset into that text.
+    fn enter_edit(&self) -> (Range<usize>, String, usize) {
+        let cursor = self.cursor_offset();
+        let (line_start, line_end) = self.caret_line();
+        let line = &self.content[line_start..line_end];
+        let quote = markdown_syntax::blockquote_prefix(line);
+        let body_start = line_start + quote.unwrap_or(0);
+        let before_blank = self.content[body_start.min(cursor)..cursor]
+            .trim()
+            .is_empty();
+        let at = |text: String| {
+            let len = text.len();
+            (cursor..cursor, text, len)
+        };
+        // The list item this line belongs to: its own, or the item a chain of
+        // ⇧Enter hard breaks above continues.
+        let item_line = if markdown_syntax::list_prefix(line).is_some() {
+            Some(line_start..line_end)
+        } else if quote.is_none() {
+            self.continued_item(line_start)
+        } else {
+            None
+        };
+        let next_item = |item: &str| {
+            let (prefix_len, indent, ordered, num) = markdown_syntax::list_prefix(item)?;
+            let task = markdown_syntax::task_prefix(item);
+            let ws = &item[..indent];
+            let bullet = item.as_bytes()[indent] as char;
+            Some((
+                task.map_or(prefix_len, |(l, ..)| l),
+                if task.is_some() {
                     format!("\n{ws}{bullet} [ ] ")
                 } else if ordered {
                     format!("\n{ws}{}. ", num + 1)
                 } else {
                     format!("\n{ws}{bullet} ")
-                };
-                self.replace_text_in_range(None, &text, window, cx);
-                return;
-            }
-            // Blockquote: Enter starts a new quoted paragraph (`>` blank line,
-            // then the same prefix); Enter on an empty quote line exits the
-            // quote, taking the bare `>` line above with it.
-            if let Some(plen) = markdown_syntax::blockquote_prefix(line) {
-                if !line[plen..].trim().is_empty() {
+                },
+            ))
+        };
+        // Enter right after a ⇧Enter break turns that break into Enter's own:
+        // the dangling `\` would otherwise stay as literal text.
+        if before_blank && let Some(bs) = self.hard_break_above(line_start) {
+            let to = cursor.max(body_start);
+            let text = match (&item_line, quote) {
+                (Some(item), _) => next_item(&self.content[item.clone()]).map(|(_, t)| t),
+                (None, Some(plen)) => {
                     let prefix = &line[..plen];
-                    let text = format!("\n{}\n{prefix}", prefix.trim_end());
-                    self.replace_text_in_range(None, &text, window, cx);
-                    return;
+                    Some(format!("\n{}\n{prefix}", prefix.trim_end()))
                 }
-                let prev_start = self.content[..line_start.saturating_sub(1)]
-                    .rfind('\n')
-                    .map_or(0, |i| i + 1);
-                let prev = &self.content[prev_start..line_start.saturating_sub(1)];
-                let bare_above = line_start > 0
-                    && markdown_syntax::blockquote_prefix(prev)
-                        .is_some_and(|p| prev[p..].trim().is_empty());
-                let from = if bare_above { prev_start } else { line_start };
-                self.selected_range = from..line_end;
-                self.replace_text_in_range(None, "\n", window, cx);
-                return;
+                (None, None) => None,
             }
-            // A blank line, or the caret at a line's start: one newline adds a
-            // row or splits soft-joined lines into paragraphs.
-            if self.content[line_start..cursor].trim().is_empty() {
-                self.replace_text_in_range(None, "\n", window, cx);
-                return;
-            }
-            // At the end of a line soft-joined to the next one, also separate
-            // the new paragraph from that line.
-            let next_joined = self.content[cursor..line_end].trim().is_empty()
-                && line_end < self.content.len()
-                && !self.row_is_blank(row + 1);
-            if next_joined {
-                self.replace_text_in_range(None, "\n\n\n", window, cx);
-                let caret = self.cursor_offset() - 1;
-                self.move_to(caret, cx);
-                return;
-            }
+            .unwrap_or_else(|| "\n\n".to_string());
+            let len = text.len();
+            return (bs..to, text, len);
         }
-        self.replace_text_in_range(None, "\n\n", window, cx);
+        // List auto-continuation: Enter on a list/task item (or its
+        // continuation line) opens the next item (same marker + indent;
+        // ordered numbers increment). Enter on an *empty* item exits the list,
+        // leaving a blank line so the next text isn't a lazy continuation.
+        if let Some(item) = item_line
+            && let Some((content_start, text)) = next_item(&self.content[item.clone()])
+        {
+            let own = item.start == line_start;
+            if own && line.get(content_start..).unwrap_or("").trim().is_empty() {
+                return (line_start..line_end, "\n".into(), 1);
+            }
+            return at(text);
+        }
+        // Blockquote: Enter starts a new quoted paragraph (`>` blank line,
+        // then the same prefix); Enter on an empty quote line exits the
+        // quote, taking the bare `>` line above with it.
+        if let Some(plen) = quote {
+            if !line[plen..].trim().is_empty() {
+                let prefix = &line[..plen];
+                return at(format!("\n{}\n{prefix}", prefix.trim_end()));
+            }
+            let prev_start = self.content[..line_start.saturating_sub(1)]
+                .rfind('\n')
+                .map_or(0, |i| i + 1);
+            let prev = &self.content[prev_start..line_start.saturating_sub(1)];
+            let bare_above = line_start > 0
+                && markdown_syntax::blockquote_prefix(prev)
+                    .is_some_and(|p| prev[p..].trim().is_empty());
+            let from = if bare_above { prev_start } else { line_start };
+            return (from..line_end, "\n".into(), 1);
+        }
+        // A blank line, or the caret at a line's start: one newline adds a
+        // row or splits soft-joined lines into paragraphs.
+        if before_blank {
+            return at("\n".into());
+        }
+        // At the end of a line soft-joined to the next one, also separate the
+        // new paragraph from that line.
+        let (row, _) = self.row_col(cursor);
+        if self.content[cursor..line_end].trim().is_empty()
+            && line_end < self.content.len()
+            && !self.row_is_blank(row + 1)
+        {
+            return (cursor..cursor, "\n\n\n".into(), 2);
+        }
+        at("\n\n".into())
+    }
+
+    /// Replace `range` with `text` as one undo step, leaving the caret
+    /// `caret` bytes into the inserted text.
+    fn edit(
+        &mut self,
+        range: Range<usize>,
+        text: &str,
+        caret: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.read_only {
+            return;
+        }
+        let start = range.start;
+        self.selected_range = range;
+        self.selection_reversed = false;
+        self.replace_text_in_range(None, text, window, cx);
+        if caret != text.len() {
+            self.move_to(start + caret, cx);
+        }
     }
 
     /// ⇧Enter: a line break inside the block (ADR 0060). In prose, lists and
@@ -419,6 +493,9 @@ impl EditorState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.read_only {
+            return;
+        }
         if self.caret_in_table() {
             self.replace_text_in_range(None, "<br>", window, cx);
             return;
@@ -436,9 +513,10 @@ impl EditorState {
         let line = &self.content[line_start..line_end];
         let quote = markdown_syntax::blockquote_prefix(line);
         let item = markdown_syntax::list_prefix(line).map(|(l, ..)| l);
-        let body_start = line_start + item.or(quote).unwrap_or(0);
-        if markdown_syntax::heading_level(line).is_some()
-            || self.content[body_start.min(start)..start].trim().is_empty()
+        let task = markdown_syntax::task_prefix(line).map(|(l, ..)| l);
+        let body = line_start + task.or(item).or(quote).unwrap_or(0);
+        if markdown_syntax::heading_level(&self.content[body.min(line_end)..line_end]).is_some()
+            || self.content[body.min(start)..start].trim().is_empty()
         {
             self.newline(&Newline, window, cx);
             return;
@@ -446,9 +524,17 @@ impl EditorState {
         let continuation = match (item, quote) {
             (Some(len), _) => " ".repeat(len),
             (None, Some(len)) => line[..len].to_string(),
-            (None, None) => String::new(),
+            // A continuation line keeps its indent (a list item's body).
+            (None, None) => line[..line.len() - line.trim_start().len()].to_string(),
         };
-        self.replace_text_in_range(None, &format!("\\\n{continuation}"), window, cx);
+        // A `\` already before the caret becomes the break; another one
+        // would escape it into a literal backslash.
+        let marker = if trailing_backslashes(&self.content[line_start..start]) % 2 == 1 {
+            ""
+        } else {
+            "\\"
+        };
+        self.replace_text_in_range(None, &format!("{marker}\n{continuation}"), window, cx);
     }
 
     /// The caret line's `(start, end)` byte offsets, its newline excluded.
@@ -459,6 +545,32 @@ impl EditorState {
             .find('\n')
             .map_or(self.content.len(), |i| start + i);
         (start, end)
+    }
+
+    /// The offset of the `\` ending the line above `line_start` when that line
+    /// ends in a hard break (an unescaped `\` after text).
+    fn hard_break_above(&self, line_start: usize) -> Option<usize> {
+        let prev_end = line_start.checked_sub(1)?;
+        let prev_start = self.content[..prev_end].rfind('\n').map_or(0, |i| i + 1);
+        let prev = &self.content[prev_start..prev_end];
+        let quote = markdown_syntax::blockquote_prefix(prev).unwrap_or(0);
+        (trailing_backslashes(prev) % 2 == 1 && !prev[quote..prev.len() - 1].trim().is_empty())
+            .then_some(prev_end - 1)
+    }
+
+    /// The list item a line continues through ⇧Enter hard breaks: the byte
+    /// range of the nearest item line above, reached only through lines that
+    /// each end in a hard break.
+    fn continued_item(&self, mut line_start: usize) -> Option<Range<usize>> {
+        while let Some(bs) = self.hard_break_above(line_start) {
+            let end = bs + 1;
+            let start = self.content[..end].rfind('\n').map_or(0, |i| i + 1);
+            if markdown_syntax::list_prefix(&self.content[start..end]).is_some() {
+                return Some(start..end);
+            }
+            line_start = start;
+        }
+        None
     }
 
     /// Whether logical line `row` is literal text, where Enter types a plain
@@ -483,14 +595,25 @@ impl EditorState {
             .is_none_or(|&s| self.content[s..self.line_end(row)].trim().is_empty())
     }
 
-    /// The separator to remove when ⌫ at the start of row `row` (or, with
-    /// `forward`, ⌦ at the end of the row above the blank line) joins two
-    /// paragraphs: the newlines and one blank line between them (ADR 0060).
-    /// `None` outside that shape, or where newlines are literal or structural
-    /// (code, math, tables).
+    /// The separator ⌫ at the start of row `below` (or ⌦ at the end of row
+    /// `below - 2`) removes to join two paragraphs, undoing Enter (ADR 0060):
+    /// one blank line between two rows, or a bare `>` line between two quoted
+    /// rows, whose prefix goes too. `None` outside that shape, or where
+    /// newlines are literal or structural (code, math, tables).
     fn paragraph_join_range(&self, below: usize) -> Option<Range<usize>> {
         let above = below.checked_sub(2)?;
-        if !self.row_is_blank(below - 1) || self.row_is_blank(above) {
+        let starts = self.line_starts();
+        let line = |r: usize| Some(&self.content[*starts.get(r)?..self.line_end(r)]);
+        let quote = |r: usize| line(r).and_then(markdown_syntax::blockquote_prefix);
+        let quoted = quote(above).is_some();
+        if [below - 1, below]
+            .iter()
+            .any(|&r| quote(r).is_some() != quoted)
+        {
+            return None;
+        }
+        let blank = |r: usize| line(r).is_none_or(|l| l[quote(r).unwrap_or(0)..].trim().is_empty());
+        if !blank(below - 1) || blank(above) {
             return None;
         }
         let scan = self.scan_data();
@@ -499,8 +622,7 @@ impl EditorState {
         if structural(above) || structural(below) {
             return None;
         }
-        let starts = self.line_starts();
-        Some(self.line_end(above)..*starts.get(below)?)
+        Some(self.line_end(above)..starts.get(below)? + quote(below).unwrap_or(0))
     }
 
     /// Toggle an inline wrapping marker (`**` bold, `*` italic, `` ` `` code)
@@ -1240,6 +1362,11 @@ fn changed_region(old: &str, new: &str) -> (Range<usize>, usize) {
     (pre..a.len() - suf, b.len() - suf - pre)
 }
 
+/// How many `\\` end `text`: odd means the last one is unescaped.
+fn trailing_backslashes(text: &str) -> usize {
+    text.bytes().rev().take_while(|&b| b == b'\\').count()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1476,6 +1603,86 @@ mod tests {
         assert_eq!(text_of(&editor, cx), "```\nlet a = 1;\nb\n```");
         cx.simulate_keystrokes("shift-enter");
         assert_eq!(text_of(&editor, cx), "```\nlet a = 1;\nb\n\n```");
+    }
+
+    #[gpui::test]
+    fn enter_review_regressions(cx: &mut gpui::TestAppContext) {
+        let (editor, cx) = typing(cx, "");
+        let set = |cx: &mut gpui::VisualTestContext, text: &str, caret: usize| {
+            editor.update_in(cx, |e, _, cx| {
+                e.set_text(text, cx);
+                e.set_cursor(caret, cx);
+            });
+        };
+        // Read-only: Enter changes nothing and keeps the caret on a boundary.
+        set(cx, "я\nBeta", 2);
+        editor.update(cx, |e, cx| e.set_read_only(true, cx));
+        cx.simulate_keystrokes("enter enter shift-enter");
+        assert_eq!(text_of(&editor, cx), "я\nBeta");
+        assert_eq!(editor.read_with(cx, |e, _| e.cursor()), 2);
+        editor.update(cx, |e, cx| e.set_read_only(false, cx));
+
+        // ⇧Enter after a typed `\` uses it as the break instead of escaping it.
+        set(cx, "Alpha\\Beta", 6);
+        cx.simulate_keystrokes("shift-enter");
+        assert_eq!(text_of(&editor, cx), "Alpha\\\nBeta");
+        assert_eq!(rendered(&text_of(&editor, cx)), "<p>Alpha<br />\nBeta</p>");
+
+        // A list item's continuation line continues the list, and keeps its
+        // indent on another ⇧Enter.
+        set(cx, "- one", 5);
+        cx.simulate_keystrokes("shift-enter");
+        cx.simulate_input("two");
+        cx.simulate_keystrokes("shift-enter");
+        cx.simulate_input("2b");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("three");
+        assert_eq!(text_of(&editor, cx), "- one\\\n  two\\\n  2b\n- three");
+        assert_eq!(
+            rendered(&text_of(&editor, cx)),
+            "<ul>\n<li>one<br />\ntwo<br />\n2b</li>\n<li>three</li>\n</ul>"
+        );
+        // Enter right after ⇧Enter turns the break into Enter's own.
+        set(cx, "- one", 5);
+        cx.simulate_keystrokes("shift-enter enter");
+        assert_eq!(text_of(&editor, cx), "- one\n- ");
+        set(cx, "Alpha", 5);
+        cx.simulate_keystrokes("shift-enter enter");
+        assert_eq!(text_of(&editor, cx), "Alpha\n\n");
+
+        // Headings behind a list or quote prefix, and empty tasks, take Enter.
+        set(cx, "- # Title", 9);
+        cx.simulate_keystrokes("shift-enter");
+        assert_eq!(text_of(&editor, cx), "- # Title\n- ");
+        set(cx, "> # Title", 9);
+        cx.simulate_keystrokes("shift-enter");
+        assert_eq!(text_of(&editor, cx), "> # Title\n>\n> ");
+        set(cx, "- [ ] one\n- [ ] ", 16);
+        cx.simulate_keystrokes("shift-enter");
+        assert_eq!(text_of(&editor, cx), "- [ ] one\n\n");
+
+        // ⌦ removes extra blank rows one at a time.
+        set(cx, "Alpha\n\n\nBeta", 5);
+        cx.simulate_keystrokes("delete");
+        assert_eq!(text_of(&editor, cx), "Alpha\n\nBeta");
+
+        // A joining ⌫ is its own undo step.
+        set(cx, "Alpha\n\n\nBeta", 8);
+        cx.simulate_keystrokes("backspace backspace");
+        assert_eq!(text_of(&editor, cx), "AlphaBeta");
+        editor.update_in(cx, |e, window, cx| e.undo(&Undo, window, cx));
+        assert_eq!(text_of(&editor, cx), "Alpha\n\nBeta");
+
+        // ⌫ and ⌦ undo a quoted paragraph break.
+        set(cx, "> one", 5);
+        cx.simulate_keystrokes("enter backspace");
+        assert_eq!(text_of(&editor, cx), "> one");
+        set(cx, "> one\n>\n> two", 10);
+        cx.simulate_keystrokes("backspace");
+        assert_eq!(text_of(&editor, cx), "> onetwo");
+        set(cx, "> one\n>\n> two", 5);
+        cx.simulate_keystrokes("delete");
+        assert_eq!(text_of(&editor, cx), "> onetwo");
     }
 
     #[gpui::test]
