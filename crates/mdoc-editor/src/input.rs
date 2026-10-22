@@ -228,17 +228,12 @@ impl EditorState {
             }
             // At a paragraph's start, one ⌫ undoes Enter's paragraph break
             // (ADR 0060) instead of leaving two soft-joined lines.
-            let body = self
-                .content
-                .get(off - col..off)
-                .and_then(markdown_syntax::blockquote_prefix);
+            let body =
+                markdown_syntax::blockquote_prefix(&self.content[off - col..self.line_end(row)]);
             if (col == 0 || Some(col) == body)
-                && let Some(range) = self.paragraph_join_range(row)
+                && let Some((range, caret)) = self.break_delete_range(row, false)
             {
-                // Its own undo step, not part of a preceding ⌫ run.
-                self.last_edit = EditKind::Other;
-                self.replace_range(range, "", cx);
-                self.emit_changed(cx);
+                self.delete_break(range, caret, cx);
                 return;
             }
             // Cditor-style around hidden formatting markers: delete the
@@ -276,14 +271,10 @@ impl EditorState {
                 return;
             }
             // At a paragraph's end, ⌦ joins the next paragraph (see backspace).
-            // Extra blank rows go one at a time first.
             if off == self.line_end(row)
-                && !self.row_is_blank(row + 2)
-                && let Some(range) = self.paragraph_join_range(row + 2)
+                && let Some((range, caret)) = self.break_delete_range(row, true)
             {
-                self.last_edit = EditKind::Other;
-                self.replace_range(range, "", cx);
-                self.emit_changed(cx);
+                self.delete_break(range, caret, cx);
                 return;
             }
             // Cditor-style around hidden formatting markers (see backspace).
@@ -410,6 +401,15 @@ impl EditorState {
             }
             .unwrap_or_else(|| "\n\n".to_string());
             let len = text.len();
+            // As below: keep a soft-joined next line out of the new paragraph.
+            let (row, _) = self.row_col(cursor);
+            if item_line.is_none()
+                && quote.is_none()
+                && self.content[cursor..line_end].trim().is_empty()
+                && !self.row_is_blank(row + 1)
+            {
+                return (bs..to, text + "\n", len);
+            }
             return (bs..to, text, len);
         }
         // List auto-continuation: Enter on a list/task item (or its
@@ -555,7 +555,7 @@ impl EditorState {
         let prev = &self.content[prev_start..prev_end];
         let quote = markdown_syntax::blockquote_prefix(prev).unwrap_or(0);
         (trailing_backslashes(prev) % 2 == 1 && !prev[quote..prev.len() - 1].trim().is_empty())
-            .then_some(prev_end - 1)
+            .then(|| prev_end - 1)
     }
 
     /// The list item a line continues through ⇧Enter hard breaks: the byte
@@ -595,34 +595,66 @@ impl EditorState {
             .is_none_or(|&s| self.content[s..self.line_end(row)].trim().is_empty())
     }
 
-    /// The separator ⌫ at the start of row `below` (or ⌦ at the end of row
-    /// `below - 2`) removes to join two paragraphs, undoing Enter (ADR 0060):
-    /// one blank line between two rows, or a bare `>` line between two quoted
-    /// rows, whose prefix goes too. `None` outside that shape, or where
-    /// newlines are literal or structural (code, math, tables).
-    fn paragraph_join_range(&self, below: usize) -> Option<Range<usize>> {
-        let above = below.checked_sub(2)?;
+    /// What ⌫ at the body start of `row` (or ⌦, with `forward`, at its end)
+    /// removes around a paragraph break (ADR 0060): the range and where the
+    /// caret lands. Across one blank line the two paragraphs join, undoing
+    /// Enter. In a quote the blank line is a bare `>` and the next row's
+    /// prefix goes too; extra bare `>` rows go one at a time, as plain blank
+    /// rows already do. `None` outside that shape, across differing quote
+    /// depths, or where newlines are literal or structural (code, math,
+    /// tables).
+    fn break_delete_range(&self, row: usize, forward: bool) -> Option<(Range<usize>, usize)> {
+        let (above, below) = if forward {
+            (row, row + 2)
+        } else {
+            (row.checked_sub(2)?, row)
+        };
+        let mid = above + 1;
         let starts = self.line_starts();
         let line = |r: usize| Some(&self.content[*starts.get(r)?..self.line_end(r)]);
-        let quote = |r: usize| line(r).and_then(markdown_syntax::blockquote_prefix);
-        let quoted = quote(above).is_some();
-        if [below - 1, below]
-            .iter()
-            .any(|&r| quote(r).is_some() != quoted)
-        {
+        let prefix = |r: usize| line(r).and_then(markdown_syntax::blockquote_prefix);
+        let depth = |r: usize| {
+            line(r).map(|l| prefix(r).map(|p| l[..p].bytes().filter(|&b| b == b'>').count()))
+        };
+        if depth(below)? != depth(mid)? || depth(above)? != depth(mid)? {
             return None;
         }
-        let blank = |r: usize| line(r).is_none_or(|l| l[quote(r).unwrap_or(0)..].trim().is_empty());
-        if !blank(below - 1) || blank(above) {
-            return None;
-        }
+        let blank =
+            |r: usize| line(r).is_some_and(|l| l[prefix(r).unwrap_or(0)..].trim().is_empty());
         let scan = self.scan_data();
         let structural =
             |r: usize| self.row_is_literal(r) || scan.tables.iter().any(|t| t.lines.contains(&r));
-        if structural(above) || structural(below) {
+        if !blank(mid) || [above, mid, below].into_iter().any(structural) {
             return None;
         }
-        Some(self.line_end(above)..starts.get(below)? + quote(below).unwrap_or(0))
+        let quoted = prefix(mid).is_some();
+        let far = if forward { below } else { above };
+        if blank(far) {
+            // An extra blank row: plain ones delete as ordinary newlines.
+            if !quoted {
+                return None;
+            }
+            let range = starts[mid]..starts[mid + 1];
+            let caret = if forward {
+                self.line_end(row)
+            } else {
+                starts[mid] + prefix(below).unwrap_or(0)
+            };
+            return Some((range, caret));
+        }
+        let range = self.line_end(above)..starts[below] + prefix(below).unwrap_or(0);
+        Some((range.clone(), range.start))
+    }
+
+    /// Apply [`Self::break_delete_range`] as its own undo step, not part of a
+    /// preceding ⌫/⌦ run.
+    fn delete_break(&mut self, range: Range<usize>, caret: usize, cx: &mut Context<Self>) {
+        self.last_edit = EditKind::Other;
+        self.replace_range(range, "", cx);
+        if self.cursor_offset() != caret {
+            self.move_to(caret, cx);
+        }
+        self.emit_changed(cx);
     }
 
     /// Toggle an inline wrapping marker (`**` bold, `*` italic, `` ` `` code)
@@ -1683,6 +1715,33 @@ mod tests {
         set(cx, "> one\n>\n> two", 5);
         cx.simulate_keystrokes("delete");
         assert_eq!(text_of(&editor, cx), "> onetwo");
+
+        // Round 2: repeated Enter in an empty document.
+        set(cx, "", 0);
+        cx.simulate_keystrokes("enter enter enter");
+        assert_eq!(text_of(&editor, cx), "\n\n\n");
+        // Enter after ⇧Enter keeps a soft-joined next line separate.
+        set(cx, "Alpha\nBeta", 5);
+        cx.simulate_keystrokes("shift-enter enter");
+        cx.simulate_input("New");
+        assert_eq!(text_of(&editor, cx), "Alpha\n\nNew\n\nBeta");
+        // Extra bare `>` rows go one at a time, both ways.
+        set(cx, "> one\n>\n>\n> two", 5);
+        cx.simulate_keystrokes("delete");
+        assert_eq!(text_of(&editor, cx), "> one\n>\n> two");
+        assert_eq!(editor.read_with(cx, |e, _| e.cursor()), 5);
+        set(cx, "> one\n>\n>\n> two", 12);
+        cx.simulate_keystrokes("backspace");
+        assert_eq!(text_of(&editor, cx), "> one\n>\n> two");
+        assert_eq!(editor.read_with(cx, |e, _| e.cursor()), 10);
+        // Differing quote depths don't join.
+        set(cx, "> outer\n>\n>> inner", 13);
+        cx.simulate_keystrokes("backspace");
+        assert_ne!(text_of(&editor, cx), "> outerinner");
+        // Inside the `> ` prefix isn't the body start.
+        set(cx, "> one\n>\n> two", 9);
+        cx.simulate_keystrokes("backspace");
+        assert_ne!(text_of(&editor, cx), "> onetwo");
     }
 
     #[gpui::test]
