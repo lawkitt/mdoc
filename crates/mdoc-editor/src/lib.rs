@@ -1692,12 +1692,6 @@ impl EditorState {
     /// The display-column span of the visual (wrapped) row holding display
     /// column `dcol` of logical line `row`; the whole line before a layout.
     fn visual_row_span(&self, row: usize, dcol: usize) -> (usize, usize) {
-        if let Some(r) = self.bidi_map(row) {
-            let (k, _) = r.row_of(dcol);
-            if let Some(rr) = r.rows.get(k) {
-                return (rr.start, rr.start + rr.len);
-            }
-        }
         let full = self.display_col(row, self.line_end(row) - self.line_starts()[row]);
         let Some(line) = self.wrapped.get(row) else {
             return (0, full);
@@ -1713,11 +1707,53 @@ impl EditorState {
         (start, bounds.get(k).copied().unwrap_or(full))
     }
 
+    /// On a bidi row, the source offsets drawn at the row's visual left and
+    /// right edges (an RTL row starts on the right).
+    fn bidi_row_edges(&self, row: usize, col: usize) -> Option<(usize, usize)> {
+        let r = self.bidi_map(row)?;
+        let (k, _) = r.row_of(self.display_col(row, col));
+        let rr = r.rows.get(k)?;
+        // The caret stops drawn furthest left and right, as the caret paints.
+        let text = self.wrapped.get(row)?.text.clone();
+        let stops = (0..=rr.len).filter(|i| text.is_char_boundary(rr.start + i));
+        let x = |i: &usize| rr.map.x_for_index(*i);
+        let left = stops.clone().min_by(|a, b| x(a).total_cmp(&x(b)))?;
+        let right = stops.max_by(|a, b| x(a).total_cmp(&x(b)))?;
+        let start = self.line_starts()[row];
+        let source = |i: usize| start + self.source_col(row, rr.start + i);
+        Some((source(left), source(right)))
+    }
+
+    /// A table cell holding the caret: its source range (ADR 0061 keeps the
+    /// line moves inside it).
+    fn caret_table_cell(&self) -> Option<Range<usize>> {
+        let (row, col) = self.row_col(self.cursor_offset());
+        let t = self.table_rows.get(row).and_then(Option::as_ref)?;
+        if t.is_separator || t.cell_ranges.is_empty() {
+            return None;
+        }
+        let cell = t
+            .cell_ranges
+            .iter()
+            .position(|r| col <= r.end)
+            .unwrap_or(t.cell_ranges.len() - 1);
+        let start = self.line_starts()[row];
+        let range = &t.cell_ranges[cell];
+        Some(start + range.start..start + range.end)
+    }
+
     /// ⌘← target: the caret's visual row start. On a first row with a hidden
     /// list, task or quote marker it lands after the marker, then at the true
-    /// start, like Home.
+    /// start, like Home. In a table, the cell's start; on a bidi row, its
+    /// visual left edge.
     fn visual_line_start(&self) -> usize {
+        if let Some(cell) = self.caret_table_cell() {
+            return cell.start;
+        }
         let (row, col) = self.row_col(self.cursor_offset());
+        if let Some((left, _)) = self.bidi_row_edges(row, col) {
+            return left;
+        }
         let start = self.line_starts()[row];
         let (vstart, _) = self.visual_row_span(row, self.display_col(row, col));
         if vstart == 0 {
@@ -1729,17 +1765,26 @@ impl EditorState {
     }
 
     /// ⌘→ target: the caret's visual row end. A soft-wrapped row ends before
-    /// the space it broke at, so the caret stays on that row.
+    /// the space it broke at, or before its last character when it broke
+    /// inside a word, so the caret stays on that row. In a table, the cell's
+    /// end; on a bidi row, its visual right edge.
     fn visual_line_end(&self) -> usize {
+        if let Some(cell) = self.caret_table_cell() {
+            return cell.end;
+        }
         let (row, col) = self.row_col(self.cursor_offset());
+        if let Some((_, right)) = self.bidi_row_edges(row, col) {
+            return right;
+        }
         let start = self.line_starts()[row];
         let line_end = self.line_end(row);
         let (_, vend) = self.visual_row_span(row, self.display_col(row, col));
         let mut target = start + self.source_col(row, vend);
         if target < line_end
             && let Some(c) = self.content[..target].chars().next_back()
-            && c.is_whitespace()
         {
+            // Without caret affinity, the wrap offset itself draws on the
+            // next row.
             target -= c.len_utf8();
         }
         target.clamp(start + col, line_end)
@@ -1782,7 +1827,17 @@ impl EditorState {
     ) {
         if self.selected_range.is_empty() {
             let off = self.cursor_offset();
-            let start = self.visual_line_start();
+            // Deletion goes to the row's start in reading order, also on an
+            // RTL row, whose visual left edge is its logical end.
+            let (row, col) = self.row_col(off);
+            let start = match self.bidi_map(row) {
+                Some(r) if self.caret_table_cell().is_none() => {
+                    let (k, _) = r.row_of(self.display_col(row, col));
+                    let first = r.rows.get(k).map_or(0, |rr| rr.start);
+                    self.line_starts()[row] + self.source_col(row, first)
+                }
+                _ => self.visual_line_start(),
+            };
             if start >= off {
                 self.backspace(&Backspace, window, cx);
                 return;

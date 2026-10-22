@@ -15,6 +15,14 @@ under `cfg!(target_os = "macos")`, so tests on other platforms never saw them.
   TextEdit. On a line with a hidden list, task or quote marker, ⌘← lands after
   the marker and a second ⌘← goes to the true start, like Home. On a wrapped
   continuation line ⌘← goes to that line's start.
+- **Tables and right-to-left rows.** In a table cell ⌘← / ⌘→ go to the
+  cell's start / end and ⌘⌫ deletes only to the cell's start. On a bidi row
+  ⌘← / ⌘→ go to the caret stops painted furthest left / right (an RTL row's
+  logical end / start); ⌘⌫ still deletes to the start in reading order.
+- **Soft wraps.** ⌘→ on a wrapped row stops before the space the row broke
+  at. A row that broke inside a word (a long URL, unspaced CJK) stops before
+  its last character: the editor has no caret affinity, so the wrap offset
+  itself draws on the next row.
 - **⌘↑ / ⌘↓** go to the document start / end (`DocumentStart`,
   `DocumentEnd`, which reveal nothing).
 - **⇧** with each of the four extends the selection.
@@ -28,7 +36,8 @@ under `cfg!(target_os = "macos")`, so tests on other platforms never saw them.
 ## Invariants
 
 - Tests cover each move and deletion, with and without ⇧, on the macOS
-  keymap, including a wrapped line and a list item.
+  keymap, including a wrapped line, a row broken inside a word, a list item,
+  a table cell and an RTL line (`caret_tests.rs`).
 - In the mention popup ⌘-arrows keep stepping to the first / last mention
   ([ADR 0055](0055-stable-compact-mention-popup.md)); the editor's moves apply
   only with the editor focused.
