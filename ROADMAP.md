@@ -38,26 +38,20 @@ to the top of the next milestone. Items are in priority order.
 
 ### Must-fix
 
-1. **[Editor] Enter starts a paragraph.** *From the rc.1 run.* Enter inserts one
-   `\n`, so Copy for AI joins lines the editor shows apart. Decide Enter
-   (`\n\n`) versus ⇧Enter (line break) and how lists, tables and headings keep
-   their own Enter.
-   *Done when:* the editor after Enter matches a CommonMark rendering of the
-   copied Markdown, with tests on paragraphs, lists and tables.
-2. **[Pseudonymization] Popup Enter and Apply all.** *From the rc.1 run.*
+1. **[Pseudonymization] Popup Enter and Apply all.** *From the rc.1 run.*
    The popup shows All N, but Enter applies only this mention and switches the
    scope; after ⌘↩ Apply all it stays open on an applied mention
    ([#78](https://github.com/lawkitt/mdoc/issues/78)). Decide both; amend ADR 0048/0055.
    *Done when:* Enter, the scope segments and Apply agree, tested per scope,
    and ⌘↩ leaves the popup as decided.
-3. **[Editor] macOS caret moves.** *From the RC runs.* ⌘←/→/↑/↓ (with ⇧);
+2. **[Editor] macOS caret moves.** *From the RC runs.* ⌘←/→/↑/↓ (with ⇧);
    Windows has its Ctrl moves.
    *Done when:* each move works on macOS, with tests.
-4. **[A11y] Keyboard reach.** *From the RC runs (A4, H18).* Plain Tab cannot
+3. **[A11y] Keyboard reach.** *From the RC runs (A4, H18).* Plain Tab cannot
    reach the toolbar or sidebar. Likely F6/⇧F6 between sidebar, toolbar and
    editor, and Tab from Home into its controls.
    *Done when:* every control is reachable by keyboard alone on both platforms.
-5. **[Platform] 0.2.0 acceptance.** An RC run of the full
+4. **[Platform] 0.2.0 acceptance.** An RC run of the full
    [checklist](docs/platform-acceptance.md) on both platforms, including S1,
    A5, D3 and D4 deferred from 0.1.0.
    *Done when:* the evidence folder covers every row; each Fail links an item.

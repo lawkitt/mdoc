@@ -4521,6 +4521,7 @@ dependencies = [
  "gpui-bidi",
  "gpui-pre",
  "gpui-pre-platform",
+ "markdown",
  "mdoc-history",
  "mdoc-spell",
  "unicode-segmentation",
