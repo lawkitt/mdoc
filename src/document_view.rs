@@ -35,6 +35,11 @@ impl OcrState {
 
 pub(crate) struct DocumentView {
     pub(crate) focus: gpui::FocusHandle,
+    /// F6 regions of the document (ADR 0062); the editor and the
+    /// replacements panel bring their own handles.
+    pub(crate) toolbar_region: gpui::FocusHandle,
+    pub(crate) preview_region: gpui::FocusHandle,
+    pub(crate) comments_region: gpui::FocusHandle,
     pub(crate) owner: (u64, gpui::WeakEntity<workspace::Workspace>),
     pub(crate) active: bool,
     pub(crate) dirty_cached: bool,
@@ -204,6 +209,9 @@ impl DocumentView {
         );
         Self {
             focus: cx.focus_handle(),
+            toolbar_region: cx.focus_handle(),
+            preview_region: cx.focus_handle(),
+            comments_region: cx.focus_handle(),
             owner: dependencies.owner,
             active: true,
             dirty_cached: false,
@@ -1327,6 +1335,27 @@ pub(crate) const ZOOM_STEP: f32 = 0.05;
 /// The widest the Markdown reading column gets at 100% (ADR 0048).
 const READING_WIDTH: f32 = 760.;
 
+impl DocumentView {
+    /// The document's F6 regions in order, each with whether it is a single
+    /// focus target (the editor) rather than a group of controls (ADR 0062).
+    pub(crate) fn focus_regions(&self, cx: &App) -> Vec<(gpui::FocusHandle, bool)> {
+        let mut regions = vec![(self.toolbar_region.clone(), false)];
+        if !self.source_only && !self.loading && !self.unavailable && self.compare.is_none() {
+            regions.push((self.editor.read(cx).focus_handle(cx), true));
+        }
+        if self.replacements_open() {
+            regions.push((self.replacements_focus(), false));
+        }
+        if self.preview.visible {
+            regions.push((self.preview_region.clone(), false));
+            if self.preview.comment_panel.is_some() {
+                regions.push((self.comments_region.clone(), false));
+            }
+        }
+        regions
+    }
+}
+
 impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The before/after view follows the applied replacements (ADR 0042).
@@ -1597,7 +1626,7 @@ impl Render for DocumentView {
                     cx.emit(workspace::TabEvent::Open(drag.paths().to_vec()));
                     cx.notify();
                 })))
-            .when(!detached, |v| v.child(self.header(window, cx)))
+            .when(!detached, |v| v.child(div().track_focus(&self.toolbar_region).key_context("ToolbarRegion").child(self.header(window, cx))))
             .when(!self.source_only && self.job.busy(), |v| v.child(
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
@@ -1632,12 +1661,12 @@ impl Render for DocumentView {
                     .child(self.conversion_card(window, cx))))
                 .when(self.preview.visible && !narrow_preview, |row| row.child(div().id("preview-divider").when(cfg!(test), |v| v.debug_selector(|| "preview-divider".into())).w(px(6.)).h_full().flex_shrink_0().cursor(gpui::CursorStyle::ResizeLeftRight).bg(palette.border)
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = true; cx.notify(); }))))
-                .when(show_original && self.preview.pdf.is_none(), |row| row.child(div().when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
+                .when(show_original && self.preview.pdf.is_none(), |row| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
                     .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
                     .child(if self.preview.loading { ui::activity("preview-activity", "Preparing preview…", theme).into_any_element() } else { div().child(if self.preview.queued { "Waiting to prepare preview…" } else { "Preview unavailable" }).into_any_element() }).when_some(self.preview.message.clone(), |v, message| v.child(self.notice("preview-notice", "Preview", message, self.preview.retryable, cx)))))
-                .when_some(self.preview.pdf.clone().filter(|_| show_original), |row, pdf| row.child(div().when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
+                .when_some(self.preview.pdf.clone().filter(|_| show_original), |row, pdf| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
-                    .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(comments))
+                    .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(div().track_focus(&self.comments_region).child(comments)))
                     .children(preview_notice)))
 )
             .children(setup_notice.filter(|_| !(show_markdown && self.source_only && self.ocr_required.is_some()))).children(error_notice)
@@ -1652,7 +1681,12 @@ impl Render for DocumentView {
                 .flex()
                 .flex_col()
                 .text_color(palette.header_fg)
-                .child(self.header(window, cx))
+                .child(
+                    div()
+                        .track_focus(&self.toolbar_region)
+                        .key_context("ToolbarRegion")
+                        .child(self.header(window, cx)),
+                )
                 .child(
                     ui::card_surface(div().flex_1().min_h_0().ml(px(style::CARD_MARGIN)), theme)
                         .child(body),

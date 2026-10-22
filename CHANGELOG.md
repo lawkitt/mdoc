@@ -4,6 +4,12 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Every control is reachable by keyboard.** F6 and Shift+F6 move between the
+  sidebar, the toolbar, the document, the Replacements panel and the original,
+  returning to the control you left in each. Tab from Home reaches its
+  buttons. In the sidebar, ↑ and ↓ move between documents and Backspace closes
+  one; Esc in the sidebar or toolbar returns to the document (ADR 0062).
+
 - **macOS caret keys.** ⌘← and ⌘→ go to the start and end of the line as
   you see it wrapped (after a list bullet first), ⌘↑ and ⌘↓ to the start and
   end of the document, and Shift with each selects. ⌥⌫ and ⌥⌦ delete a word,

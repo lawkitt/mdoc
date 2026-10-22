@@ -486,6 +486,10 @@ impl DocumentView {
     pub(crate) fn replacements_open(&self) -> bool {
         self.pii.mapping.open
     }
+    /// The replacements panel's focus group, an F6 region (ADR 0062).
+    pub(crate) fn replacements_focus(&self) -> FocusHandle {
+        self.pii.mapping.focus.clone()
+    }
     /// Download the selected model, then scan this document once if it is
     /// still the same document. Settings stays closed.
     fn setup_pii_model(&mut self, window: &mut Window, cx: &mut Context<Self>) {

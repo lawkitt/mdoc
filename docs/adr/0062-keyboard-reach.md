@@ -19,9 +19,10 @@ H18).
   unless function keys are standard).
 - **Landing:** a region takes focus on the control last focused in it,
   otherwise its first control; the editor gets its caret back.
-- **Inside a region** Tab / ⇧Tab move between controls, with a visible focus
-  ring, except in the editor, where Tab indents. Esc closes menus, and from
-  another region returns focus to the editor.
+- **Tab / ⇧Tab** move to the next / previous control with a visible focus
+  ring, going on into the next region at a region's end; in the editor Tab
+  indents. Esc closes menus; in the sidebar or toolbar it returns focus to
+  the editor.
 - **Sidebar tab list:** ↑ / ↓ move between tabs, Enter opens, ⌫ closes the
   tab, and Tab leaves the list for the next control, as in the replacements
   panel.
@@ -38,4 +39,5 @@ H18).
 
 Checklist rows A4 and H18 drop the 0.1.0 exception and check F6 regions.
 
-References: [ROADMAP 0.2.0 must-fix "Keyboard reach"](../../ROADMAP.md#must-fix).
+Code: `Workspace::cycle_region` and `DocumentView::focus_regions`; tests in
+`workspace_tests.rs` (`f6_*`, `tab_from_home_*`, `sidebar_tab_list_*`).

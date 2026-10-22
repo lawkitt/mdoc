@@ -217,7 +217,7 @@ Every application shortcut, from `bind_app_keys`, `bind_markdown_search_keys`,
 | H15 | Alt+←/→, Alt+Shift+←/→, Home/End, Shift+arrows, Tab/Shift+Tab | Word moves, selection, indent | | |
 | H16 | Mod+Q | Quit, with the unsaved-changes prompt | | |
 | H17 | *macOS*: every item in the mdoc, File, Edit, View and Window menus runs its action and shows its shortcut; Edit › Paste works in the find field and in a Save dialog (ADR 0058). *Windows*: each File-menu action is reachable from the window | | |
-| H18 | Tab / Shift+Tab move through toolbar and panel controls with a visible focus ring; Esc closes menus | | |
+| H18 | F6 / Shift+F6 cycle sidebar, toolbar, editor, Replacements, Original and Comments (open ones only), returning to the last control in each; Tab / Shift+Tab move between controls with a visible focus ring; in the sidebar ↑/↓ move between tabs and ⌫ closes one; Esc closes menus and returns from the sidebar or toolbar to the editor (ADR 0062) | | |
 | H19 | Enter, Shift+Enter in the editor | New paragraph, line break; Copy for AI pasted into a chat keeps both apart (ADR 0060) | | |
 | H20 | *macOS*: ⌘←/→ on a wrapped paragraph and a list item, ⌘↑/↓, each with ⇧ | Visual line start / end (after a list marker first), document start / end; ⇧ selects (ADR 0061) | | |
 | H21 | *macOS*: ⌥⌫, ⌥⌦, ⌘⌫ | Delete word left, word right, to the line start | | |
@@ -244,5 +244,5 @@ not mark it Fail.
 | A1 | Sidebar toggle, tabs, toolbar buttons and the Pseudonymize control announce a name and role | | |
 | A2 | Replacements panel controls and popup buttons announce a name and role | | |
 | A3 | Settings and the Keychain/unsaved-changes dialogs announce their title and buttons; focus stays inside | | |
-| A4 | Every control in A1–A3 can be reached and activated without a mouse: with the screen reader, or Full Keyboard Access on macOS. Plain Tab from Home or the editor is not required for 0.1.0 (ADR 0057) | | |
+| A4 | Every control in A1–A3 can be reached and activated by keyboard alone (F6, Tab, arrows, Enter, Space), from Home and from the editor, without a screen reader or Full Keyboard Access (ADR 0062) | | |
 | A5 | Scan status and toasts are announced | | |

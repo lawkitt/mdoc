@@ -4367,3 +4367,184 @@ fn case_quit_checks_edits_made_while_final_saves_are_pending(cx: &mut TestAppCon
             .ends_with(" New edit.")
     );
 }
+
+// Keyboard reach (ADR 0062).
+
+fn key(cx: &mut VisualTestContext, keys: &str) {
+    cx.simulate_keystrokes(keys);
+    cx.run_until_parked();
+    draw(cx);
+}
+
+fn editor_focused(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
+    let view = active(tabs, cx);
+    cx.update(|window, cx| {
+        view.read(cx)
+            .editor
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window)
+    })
+}
+
+fn in_toolbar(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
+    let view = active(tabs, cx);
+    cx.update(|window, cx| view.read(cx).toolbar_region.contains_focused(window, cx))
+}
+
+fn in_sidebar(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
+    cx.update(|window, cx| tabs.read(cx).sidebar_region.contains_focused(window, cx))
+}
+
+#[gpui::test]
+fn f6_cycles_sidebar_toolbar_and_editor_both_ways(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    draw(cx);
+    assert!(editor_focused(&tabs, cx));
+    // Editor → sidebar (wrapping) → toolbar → editor.
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
+    key(cx, "f6");
+    assert!(in_toolbar(&tabs, cx));
+    key(cx, "f6");
+    assert!(editor_focused(&tabs, cx));
+    // Backwards: editor → toolbar → sidebar.
+    key(cx, "shift-f6");
+    assert!(in_toolbar(&tabs, cx));
+    key(cx, "shift-f6");
+    assert!(in_sidebar(&tabs, cx));
+}
+
+#[gpui::test]
+fn f6_returns_to_the_control_last_focused_in_a_region(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    draw(cx);
+    // Into the sidebar, then Tab to its second control.
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
+    let first = cx.update(|window, cx| window.focused(cx));
+    key(cx, "tab");
+    let second = cx.update(|window, cx| window.focused(cx));
+    assert_ne!(first, second);
+    assert!(in_sidebar(&tabs, cx));
+    // On through the toolbar to the editor and back: the same control.
+    key(cx, "f6");
+    assert!(in_toolbar(&tabs, cx));
+    key(cx, "f6");
+    assert!(editor_focused(&tabs, cx));
+    key(cx, "f6");
+    assert_eq!(cx.update(|window, cx| window.focused(cx)), second);
+}
+
+#[gpui::test]
+fn escape_in_the_toolbar_or_sidebar_returns_to_the_editor(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    draw(cx);
+    key(cx, "shift-f6");
+    assert!(in_toolbar(&tabs, cx));
+    key(cx, "escape");
+    assert!(editor_focused(&tabs, cx));
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
+    key(cx, "escape");
+    assert!(editor_focused(&tabs, cx));
+}
+
+#[gpui::test]
+fn tab_from_home_enters_its_controls(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    assert!(cx.update(|_, cx| tabs.read(cx).showing_home(cx)));
+    tabs.update_in(cx, |tabs, window, cx| window.focus(&tabs.focus, cx));
+    draw(cx);
+    key(cx, "tab");
+    assert!(cx.update(|window, cx| tabs.read(cx).home_region.contains_focused(window, cx)));
+    let home = cx.update(|window, cx| window.focused(cx));
+    assert_ne!(
+        home,
+        cx.update(|_, cx| Some(tabs.read(cx).home_region.clone()))
+    );
+    // F6 on Home: sidebar, then Home again.
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
+    key(cx, "f6");
+    assert!(cx.update(|window, cx| tabs.read(cx).home_region.contains_focused(window, cx)));
+}
+
+#[gpui::test]
+fn sidebar_tab_list_moves_with_arrows_and_closes_with_backspace(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+        tabs.new_tab(window, cx);
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let listed = cx.update(|_, cx| tabs.read(cx).listed_tabs(cx));
+    assert_eq!(listed.len(), 3);
+    let row = |tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext| {
+        cx.update(|window, cx| {
+            tabs.read(cx)
+                .sidebar_row_focus
+                .borrow()
+                .get(&id)
+                .is_some_and(|f| f.is_focused(window))
+        })
+    };
+    // F6 into the sidebar lands on the list's one Tab stop: the active tab.
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    draw(cx);
+    let active_id = cx.update(|_, cx| tabs.read(cx).active);
+    assert_eq!(active_id, listed[2]);
+    tabs.update_in(cx, |tabs, window, cx| {
+        let focus = tabs
+            .sidebar_row_focus
+            .borrow()
+            .get(&active_id)
+            .cloned()
+            .unwrap();
+        window.focus(&focus, cx);
+    });
+    draw(cx);
+    key(cx, "up");
+    assert!(row(&tabs, listed[1], cx));
+    key(cx, "up");
+    assert!(row(&tabs, listed[0], cx));
+    key(cx, "up");
+    assert!(row(&tabs, listed[0], cx));
+    key(cx, "down");
+    assert!(row(&tabs, listed[1], cx));
+    // ⌫ closes the focused tab; focus moves to its neighbour.
+    key(cx, "backspace");
+    let now = cx.update(|_, cx| tabs.read(cx).listed_tabs(cx));
+    assert_eq!(now, vec![listed[0], listed[2]]);
+    assert!(row(&tabs, listed[2], cx));
+    // Tab leaves the list rather than visiting each row.
+    key(cx, "tab");
+    assert!(!row(&tabs, listed[0], cx) && !row(&tabs, listed[2], cx));
+}
+
+#[gpui::test]
+fn f6_includes_the_replacements_panel_when_open(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.editor
+            .update(cx, |e, cx| e.set_text("Anna wrote to Bob.", cx));
+        view.toggle_replacements_panel(window, cx);
+    });
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    draw(cx);
+    assert!(editor_focused(&tabs, cx));
+    key(cx, "f6");
+    assert!(cx.update(|window, cx| {
+        view.read(cx)
+            .replacements_focus()
+            .contains_focused(window, cx)
+    }));
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
+}

@@ -103,6 +103,11 @@ impl Render for TabDrag {
 
 pub(super) struct Workspace {
     focus: gpui::FocusHandle,
+    /// F6 regions the workspace owns, and the control last focused in each
+    /// region when F6 left it (ADR 0062).
+    sidebar_region: gpui::FocusHandle,
+    pub(super) home_region: gpui::FocusHandle,
+    region_last: Vec<(gpui::FocusHandle, gpui::FocusHandle)>,
     tabs: Vec<Tab>,
     active: u64,
     next_id: u64,
@@ -267,6 +272,9 @@ impl Workspace {
         let panel = cx.new(|cx| settings_ui::Panel::new(preferences.clone(), theme.clone(), cx));
         let mut this = Self {
             focus: cx.focus_handle(),
+            sidebar_region: cx.focus_handle(),
+            home_region: cx.focus_handle(),
+            region_last: Vec::new(),
             tabs: Vec::new(),
             active: 0,
             next_id: 1,
@@ -1935,6 +1943,13 @@ impl Workspace {
         let revealed = !expanded && self.reveal != Reveal::Hidden;
         let home = self.showing_home(cx);
         let mut compact_rows = Vec::with_capacity(self.tabs.len());
+        // One Tab stop for the list: the active tab, else the first listed.
+        let listed = self.listed_tabs(cx);
+        let roving = listed
+            .iter()
+            .copied()
+            .find(|id| *id == self.active && !home)
+            .or(listed.first().copied());
         let accent = theme.search_accent();
         let drop_index = self.file_drop_index();
         let rows = self
@@ -2052,9 +2067,11 @@ impl Workspace {
                     .entry(id)
                     .or_insert_with(|| cx.focus_handle().tab_stop(true))
                     .clone()
-                    .tab_stop(!revealed);
+                    .tab_stop(!revealed && roving == Some(id));
                 compact_rows.push(
                     ui::control(("compact-tab", id), "", theme, true)
+                        .key_context("UiControl SidebarTab")
+                        .tab_stop(!revealed && roving == Some(id))
                         .map(|v| {
                             ui::reveal_focus(
                                 v.track_focus(&compact_focus),
@@ -2138,8 +2155,9 @@ impl Workspace {
                                 self.sidebar_scroll.clone(),
                             )
                         })
-                        .key_context("UiControl")
+                        .key_context("UiControl SidebarTab")
                         .tab_index(0)
+                        .tab_stop(roving == Some(id))
                         .role(gpui::Role::Tab)
                         .aria_selected(self.active == id && !home)
                         .aria_label(if duplicate {
@@ -2220,6 +2238,8 @@ impl Workspace {
                         })
                         .child(
                             ui::control(("close-tab", id), "×", theme, true)
+                                // ⌫ on the row closes it; the button is for the pointer.
+                                .tab_stop(false)
                                 .aria_label("Close tab")
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
@@ -2496,6 +2516,8 @@ impl Workspace {
         let width = |open: bool| if open { PANEL_WIDTH } else { RAIL_WIDTH };
         let mut sidebar = div()
             .id("sidebar")
+            .track_focus(&self.sidebar_region)
+            .key_context("SidebarRegion")
             .relative()
             .w(px(width(expanded)))
             .flex_shrink_0()
@@ -2713,11 +2735,34 @@ impl Render for Workspace {
         });
         div()
             .track_focus(&self.focus)
+            .key_context("Workspace")
             .relative()
             .size_full()
             .flex()
             .flex_col()
             .bg(theme.sidebar_bg())
+            .on_action(cx.listener(|this, _: &ui::NextRegion, window, cx| {
+                this.cycle_region(false, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ui::PreviousRegion, window, cx| {
+                this.cycle_region(true, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ui::FocusEditor, window, cx| {
+                if !this.showing_home(cx) {
+                    this.focus_active(window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &ui::SidebarPrevious, window, cx| {
+                this.sidebar_step(-1, window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &ui::SidebarNext, window, cx| {
+                    this.sidebar_step(1, window, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &ui::SidebarCloseTab, window, cx| {
+                this.sidebar_close_focused(window, cx)
+            }))
             .text_color(palette.header_fg)
             .on_action(
                 cx.listener(|this, _: &shell::OpenPalette, window, cx| {
@@ -2824,13 +2869,11 @@ impl Render for Workspace {
                 }
                 cx.notify();
             }))
-            .on_action(
-                cx.listener(|_, _: &ui::NextControl, window, cx| {
-                    ui::cycle(window, cx, None, false)
-                }),
-            )
-            .on_action(cx.listener(|_, _: &ui::PreviousControl, window, cx| {
-                ui::cycle(window, cx, None, true)
+            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
+                this.tab_from_window(false, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
+                this.tab_from_window(true, window, cx)
             }))
             .on_action(cx.listener(|this, _: &RetryDocument, window, cx| {
                 if let Some(tab) = this.tabs.iter().find(|tab| tab.id == this.active) {
@@ -3038,3 +3081,140 @@ impl Workspace {
 #[cfg(test)]
 #[path = "workspace_tests.rs"]
 mod tests;
+
+/// Keyboard reach (ADR 0062): F6 regions, Tab from the window, and the
+/// sidebar's tab list.
+impl Workspace {
+    /// The window's F6 regions in order, each with whether it is a single
+    /// focus target (the editor) rather than a group of controls.
+    fn regions(&self, cx: &App) -> Vec<(gpui::FocusHandle, bool)> {
+        let mut regions = vec![(self.sidebar_region.clone(), false)];
+        if self.showing_home(cx) {
+            regions.push((self.home_region.clone(), false));
+        } else if let Some(view) = self.active_view() {
+            regions.extend(view.read(cx).focus_regions(cx));
+        }
+        regions
+    }
+
+    /// F6 / Shift+F6: leave the focused region for the next one, landing on
+    /// the control last focused there, else its first control.
+    pub(crate) fn cycle_region(&mut self, backwards: bool, window: &mut Window, cx: &mut App) {
+        let regions = self.regions(cx);
+        if regions.is_empty() {
+            return;
+        }
+        // Comments sit inside the preview: the innermost region wins.
+        let current = regions
+            .iter()
+            .rposition(|(region, _)| region.contains_focused(window, cx));
+        if let (Some(i), Some(focused)) = (current, window.focused(cx)) {
+            let region = regions[i].0.clone();
+            self.region_last.retain(|(r, _)| *r != region);
+            self.region_last.push((region, focused));
+        }
+        let n = regions.len();
+        let next = match current {
+            Some(i) if backwards => (i + n - 1) % n,
+            Some(i) => (i + 1) % n,
+            None if backwards => n - 1,
+            None => 0,
+        };
+        let (region, single) = regions[next].clone();
+        let last = self
+            .region_last
+            .iter()
+            .find(|(r, _)| *r == region)
+            .map(|(_, focus)| focus.clone())
+            .filter(|focus| *focus != region && region.contains(focus, window));
+        if single {
+            window.focus(&region, cx);
+        } else if let Some(last) = last {
+            window.focus(&last, cx);
+        } else {
+            window.focus(&region, cx);
+            ui::cycle(window, cx, Some(&region), false);
+            if !region.contains_focused(window, cx) {
+                window.focus(&region, cx);
+            }
+        }
+    }
+
+    /// Tab with no control focused. On Home it enters Home's controls;
+    /// elsewhere it moves through the window as before.
+    fn tab_from_window(&mut self, backwards: bool, window: &mut Window, cx: &mut App) {
+        if self.focus.is_focused(window) && self.showing_home(cx) {
+            let home = self.home_region.clone();
+            window.focus(&home, cx);
+            ui::cycle(window, cx, Some(&home), backwards);
+            if home.contains_focused(window, cx) {
+                return;
+            }
+        }
+        ui::cycle(window, cx, None, backwards);
+    }
+
+    /// The tabs the sidebar lists, in order (Home's placeholder is not).
+    fn listed_tabs(&self, cx: &App) -> Vec<u64> {
+        self.tabs
+            .iter()
+            .filter(|tab| !self.is_placeholder(tab, cx))
+            .map(|tab| tab.id)
+            .collect()
+    }
+
+    /// The listed tab whose sidebar row (expanded or rail) has focus, with
+    /// the row handles of that layout.
+    fn focused_sidebar_row(
+        &self,
+        window: &Window,
+        cx: &App,
+    ) -> Option<(
+        usize,
+        Vec<u64>,
+        std::collections::HashMap<u64, gpui::FocusHandle>,
+    )> {
+        let listed = self.listed_tabs(cx);
+        for rows in [&self.sidebar_row_focus, &self.compact_row_focus] {
+            let rows = rows.borrow();
+            if let Some(index) = listed
+                .iter()
+                .position(|id| rows.get(id).is_some_and(|f| f.is_focused(window)))
+            {
+                return Some((index, listed, rows.clone()));
+            }
+        }
+        None
+    }
+
+    /// ↑ / ↓ in the sidebar's tab list move focus to the neighbouring tab.
+    fn sidebar_step(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((index, listed, rows)) = self.focused_sidebar_row(window, cx) else {
+            return;
+        };
+        let next = index.saturating_add_signed(delta).min(listed.len() - 1);
+        if let Some(focus) = rows.get(&listed[next]) {
+            window.focus(focus, cx);
+            cx.notify();
+        }
+    }
+
+    /// ⌫ on a sidebar tab closes it; focus stays in the list.
+    fn sidebar_close_focused(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((index, listed, rows)) = self.focused_sidebar_row(window, cx) else {
+            return;
+        };
+        let id = listed[index];
+        let neighbour = listed
+            .get(index + 1)
+            .or(index.checked_sub(1).and_then(|i| listed.get(i)))
+            .copied();
+        self.close_tab(id, window, cx);
+        if self.tabs.iter().all(|tab| tab.id != id)
+            && let Some(focus) = neighbour.and_then(|n| rows.get(&n))
+        {
+            window.focus(focus, cx);
+        }
+        cx.notify();
+    }
+}
