@@ -2004,7 +2004,7 @@ impl Workspace {
         self.clear_file_drag(window, cx);
         // A drop from Finder leaves mdoc in the background; what it opens
         // (a dialog among them) needs the keyboard.
-        window.activate_window();
+        activate_for_drop(window, cx);
         if self.quitting.is_none() {
             self.open_paths_at(paths.paths().to_vec(), at, window, cx);
         }
@@ -2418,15 +2418,7 @@ impl Workspace {
                     .size(px(14.))
                     .text_color(palette.header_muted),
             )
-            .map(|v| {
-                if self.file_drop_refused {
-                    // The insertion line's place says why nothing will open.
-                    v.text_color(style::markdown_style(theme).alert_caution)
-                        .child("These files can't be opened")
-                } else {
-                    v.child("New tab")
-                }
-            })
+            .child("New tab")
             .when(drop_index == Some(self.tabs.len()), |v| {
                 v.border_t_2().border_color(accent)
             })
@@ -2467,6 +2459,17 @@ impl Workspace {
                     sidebar_toggle(&self.panel_toggle_focus, expanded, theme).into_any_element(),
                 ))
                 .child(self.sidebar_nav(cx))
+                // Above the scrolling list, so it shows however long it is.
+                .when(self.file_drop_refused, |v| {
+                    v.child(
+                        div()
+                            .when(cfg!(test), |v| v.debug_selector(|| "drop-refused".into()))
+                            .px_4()
+                            .py_1()
+                            .text_color(style::markdown_style(theme).alert_caution)
+                            .child("These files can't be opened"),
+                    )
+                })
                 .child(
                     div()
                         .id("sidebar-tabs")
@@ -2736,6 +2739,13 @@ fn sidebar_toggle(
         .on_click(|_, window, cx| window.dispatch_action(Box::new(ToggleSidebar), cx))
 }
 
+/// Bring mdoc to the front after a drop from another app. Making the window
+/// key is not enough on macOS: the application must activate too.
+pub(crate) fn activate_for_drop(window: &mut Window, cx: &mut App) {
+    cx.activate(true);
+    window.activate_window();
+}
+
 /// Whether a file drag holds anything mdoc opens (by extension, or a folder).
 fn openable_drag(paths: &gpui::ExternalPaths) -> bool {
     paths.paths().iter().any(|path| import::droppable(path))
@@ -2996,6 +3006,14 @@ impl Render for Workspace {
             }))
             .on_action(cx.listener(|this, _: &NextTab, window, cx| this.cycle(1, window, cx)))
             .on_action(cx.listener(|this, _: &PreviousTab, window, cx| this.cycle(-1, window, cx)))
+            // Esc closes Notices first, wherever focus is: a drop's notice
+            // opens while the document keeps focus (ADR 0062).
+            .capture_action(cx.listener(|this, _: &mdoc_editor::Dismiss, window, cx| {
+                if this.title.notices_open.get() {
+                    this.close_notices(window, cx);
+                    cx.stop_propagation();
+                }
+            }))
             .on_action(cx.listener(|this, _: &ToggleSidebar, window, cx| {
                 this.sidebar_visible = !this.sidebar_visible;
                 this.sidebar_choice = Some(this.sidebar_visible);
@@ -3171,7 +3189,7 @@ impl Workspace {
                         v.on_drop(
                             cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
                                 this.shell.drop = None;
-                                window.activate_window();
+                                activate_for_drop(window, cx);
                                 this.open_paths(paths.paths().to_vec(), window, cx);
                             }),
                         )

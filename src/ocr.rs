@@ -122,7 +122,8 @@ fn pending_in(
         .map(|a| a.size)
         .collect();
     crate::model_download::Pending {
-        resumed: !missing.is_empty() && missing.len() < artifacts.len(),
+        full: artifacts.iter().map(|a| a.size).sum::<u64>()
+            + RUNTIMES.iter().map(|r| r.size).sum::<u64>(),
         model: missing.iter().sum(),
         runtime: RUNTIMES
             .iter()
@@ -130,6 +131,10 @@ fn pending_in(
             .map(|r| r.size)
             .sum(),
     }
+}
+/// Bytes of the shared ONNX Runtime archive.
+pub(crate) fn onnx_runtime_size() -> u64 {
+    RUNTIMES[1].size
 }
 /// Bytes of the shared ONNX Runtime archive when it is not installed yet.
 pub(crate) fn onnx_runtime_pending() -> u64 {
@@ -575,6 +580,12 @@ mod tests {
             pending_in(Some(dir.path()), model).runtime,
             full.runtime - RUNTIMES[1].size
         );
+        // A runtime already here: the card says what is left, not "download".
+        assert!(!full.resumed());
+        assert!(full.download_label().ends_with(" MB download"));
+        let partial = pending_in(Some(dir.path()), model);
+        assert!(partial.resumed());
+        assert!(partial.download_label().ends_with(" MB left to download"));
     }
 
     #[test]

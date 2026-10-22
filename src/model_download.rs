@@ -37,13 +37,17 @@ impl State {
 pub struct Pending {
     pub model: u64,
     pub runtime: u64,
-    /// Some model files are already here (a cancelled setup kept them), so
-    /// `model` is what is left, not the whole model.
-    pub resumed: bool,
+    /// The whole bundle's size, model and runtime, with nothing installed.
+    pub full: u64,
 }
 impl Pending {
     pub fn total(self) -> u64 {
         self.model + self.runtime
+    }
+    /// Part of the bundle is already here (a cancelled setup keeps the files
+    /// it finished, or another model installed the shared runtime).
+    pub fn resumed(self) -> bool {
+        self.total() > 0 && self.total() < self.full
     }
     /// How setup cards name the download: "665 MB download" or, after a
     /// cancelled setup, "662 MB left to download".
@@ -51,7 +55,7 @@ impl Pending {
         format!(
             "{} MB {}",
             megabytes(self.total()),
-            if self.resumed {
+            if self.resumed() {
                 "left to download"
             } else {
                 "download"
