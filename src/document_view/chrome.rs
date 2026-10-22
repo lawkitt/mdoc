@@ -376,8 +376,14 @@ impl DocumentView {
         let theme = self.theme.get();
         let open = self.more_open;
         let menu = open.then(|| self.more_menu(cx));
+        let bounds = self.more_bounds.clone();
         div()
             .relative()
+            .child(
+                gpui::canvas(move |b, _, _| bounds.set(b), |_, _, _, _| {})
+                    .absolute()
+                    .inset_0(),
+            )
             .child(
                 ui::header_icon("header-more", "More actions", ui::Icon::More, theme, open)
                     .track_focus(&self.more_focus)
@@ -467,19 +473,25 @@ impl DocumentView {
                         .p_1()
                         .rounded_lg()
                         .shadow_lg()
-                        .on_mouse_down_out(cx.listener(|this, _, window, cx| {
-                            this.more_open = false;
-                            // Unless the click focused something, focus goes
-                            // back to the button rather than the closed menu.
-                            let menu = this.more_menu_focus.clone();
-                            let button = this.more_focus.clone();
-                            window.defer(cx, move |window, cx| {
-                                if menu.contains_focused(window, cx) {
-                                    window.focus(&button, cx);
+                        .on_mouse_down_out(cx.listener(
+                            |this, event: &gpui::MouseDownEvent, window, cx| {
+                                // A press on the More button is its toggle's.
+                                if this.more_bounds.get().contains(&event.position) {
+                                    return;
                                 }
-                            });
-                            cx.notify();
-                        }))
+                                this.more_open = false;
+                                // Unless the click focused something, focus goes
+                                // back to the button rather than the closed menu.
+                                let menu = this.more_menu_focus.clone();
+                                let button = this.more_focus.clone();
+                                window.defer(cx, move |window, cx| {
+                                    if menu.contains_focused(window, cx) {
+                                        window.focus(&button, cx);
+                                    }
+                                });
+                                cx.notify();
+                            },
+                        ))
                         .child(
                             row(
                                 "more-save",
@@ -560,7 +572,13 @@ impl DocumentView {
                             )
                             .on_click(cx.listener(
                                 |this, _, window, cx| {
+                                    // Focus back to the document, as other rows do.
                                     this.more_open = false;
+                                    if this.source_only {
+                                        window.focus(&this.focus, cx);
+                                    } else {
+                                        window.focus(&this.editor.read(cx).focus_handle(cx), cx);
+                                    }
                                     this.start_pii_scan(cx);
                                     window.refresh();
                                 },

@@ -1172,7 +1172,8 @@ impl Workspace {
     }
     /// Open the documents of a case from the Open Case list.
     pub(super) fn open_case(&mut self, case_id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        self.cases.list_open = false;
+        // Focus goes back first; opening a document then takes it.
+        self.close_case_list(window, cx);
         let Some(case) = self.cases.cases.iter().find(|c| c.id == case_id) else {
             return;
         };
@@ -1696,7 +1697,7 @@ impl Workspace {
                         )
                         .on_click(cx.listener(
                             move |this, _, window, cx| {
-                                this.cases.list_open = false;
+                                this.close_case_list(window, cx);
                                 this.delete_case(delete_id.clone(), window, cx)
                             },
                         )),
@@ -1737,8 +1738,25 @@ impl Workspace {
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                            .on_mouse_down_out(cx.listener(|this, _, window, cx| {
                                 this.cases.list_open = false;
+                                // Unless the click focused something, focus
+                                // goes back where the list was opened from.
+                                let list = this.case_list_focus.clone();
+                                let back = this.case_list_return.take();
+                                let weak = cx.entity().downgrade();
+                                window.defer(cx, move |window, cx| {
+                                    if list.contains_focused(window, cx) {
+                                        match back {
+                                            Some(focus) => window.focus(&focus, cx),
+                                            None => {
+                                                let _ = weak.update(cx, |this, cx| {
+                                                    this.focus_active(window, cx)
+                                                });
+                                            }
+                                        }
+                                    }
+                                });
                                 cx.notify();
                             }))
                             .child(

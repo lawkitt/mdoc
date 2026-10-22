@@ -425,14 +425,8 @@ impl Workspace {
                             .track_focus(&self.notices_focus)
                             .key_context("UiPanel UiMenu")
                             .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                                this.title.notices_open.set(false);
-                                if this.showing_home(cx) {
-                                    window.focus(&this.focus, cx);
-                                } else {
-                                    this.focus_active(window, cx);
-                                }
+                                this.close_notices(window, cx);
                                 cx.stop_propagation();
-                                cx.notify();
                             }))
                             .w(px(400.))
                             .p_2()
@@ -470,9 +464,8 @@ impl Workspace {
                                                 v.debug_selector(|| "close-notices".into())
                                             })
                                             .aria_label("Close notices")
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.title.notices_open.set(false);
-                                                cx.notify();
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.close_notices(window, cx);
                                             })),
                                     ),
                             )
@@ -482,6 +475,18 @@ impl Workspace {
             .with_priority(2)
             .into_any_element(),
         )
+    }
+
+    /// Close the notices popover; focus returns to the document, or to the
+    /// window on Home (ADR 0062).
+    pub(super) fn close_notices(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.title.notices_open.set(false);
+        if self.showing_home(cx) {
+            window.focus(&self.focus, cx);
+        } else {
+            self.focus_active(window, cx);
+        }
+        cx.notify();
     }
 
     /// The collapsed rail's foot: Settings only, an update shown as a dot on

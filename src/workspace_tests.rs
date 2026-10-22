@@ -4731,3 +4731,28 @@ fn the_open_case_list_takes_focus_traps_tab_and_gives_it_back(cx: &mut TestAppCo
     assert!(!cx.update(|_, cx| tabs.read(cx).cases.list_open));
     assert!(editor_focused(&tabs, cx));
 }
+
+#[gpui::test]
+fn clicking_more_again_closes_its_menu(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let view = active(&tabs, cx);
+    click_toolbar(cx, "header-more");
+    assert!(cx.update(|_, cx| view.read(cx).more_open));
+    click_toolbar(cx, "header-more");
+    assert!(!cx.update(|_, cx| view.read(cx).more_open));
+}
+
+#[gpui::test]
+fn closing_notices_with_its_button_returns_to_the_document(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.notice = Some("Saved elsewhere".into());
+        tabs.title.notices_open.set(true);
+        cx.notify();
+        window.focus(&tabs.notices_focus, cx);
+    });
+    draw(cx);
+    click_toolbar(cx, "close-notices");
+    cx.update(|_, cx| assert!(!tabs.read(cx).title.notices_open.get()));
+    assert!(editor_focused(&tabs, cx));
+}

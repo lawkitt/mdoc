@@ -44,6 +44,8 @@ pub(crate) struct DocumentView {
     pub(crate) more_focus: gpui::FocusHandle,
     /// The open More menu, which holds focus and Tab (ADR 0062).
     pub(crate) more_menu_focus: gpui::FocusHandle,
+    /// The More button's bounds, so a press on it is left to its toggle.
+    more_bounds: std::rc::Rc<std::cell::Cell<gpui::Bounds<gpui::Pixels>>>,
     /// Whether the last frame drew the Markdown and the original panes: a
     /// narrow window shows one of them (ADR 0062 skips the hidden one).
     panes_drawn: std::cell::Cell<(bool, bool)>,
@@ -221,6 +223,7 @@ impl DocumentView {
             comments_region: cx.focus_handle(),
             more_focus: cx.focus_handle().tab_stop(true),
             more_menu_focus: cx.focus_handle(),
+            more_bounds: Default::default(),
             panes_drawn: std::cell::Cell::new((true, false)),
             owner: dependencies.owner,
             active: true,
