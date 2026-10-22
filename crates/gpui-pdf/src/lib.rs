@@ -919,6 +919,11 @@ impl PdfView {
 
     /// Toggle the find bar. On open, extract every page's text (off-thread, cached)
     /// and compute matches; on close, drop them. (`search` feature.)
+    /// Whether the find bar is shown.
+    pub fn search_is_open(&self) -> bool {
+        self.search_open
+    }
+
     pub fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_open = !self.search_open;
         self.focus_search_field(window, cx);
