@@ -4814,7 +4814,7 @@ fn opening_a_case_with_enter_closes_the_list_and_focuses_its_document(cx: &mut T
     let view = active(&tabs, cx);
     assert_eq!(
         cx.update(|_, cx| view.read(cx).session.document.path.clone()),
-        Some(path)
+        Some(session_store::identity(&path))
     );
     assert!(editor_focused(&tabs, cx));
 }
