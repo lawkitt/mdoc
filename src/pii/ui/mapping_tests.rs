@@ -2211,3 +2211,190 @@ fn popup_keep_keys_leave_the_segment_as_shown(cx: &mut gpui::TestAppContext) {
         assert_eq!(app.pii.mapping.scope, Scope::Entity);
     });
 }
+
+/// Add `word` by hand as the user would: select it, then Add (ADR 0024).
+fn add_by_hand(app: &Entity<DocumentView>, word: &str, cx: &mut gpui::VisualTestContext) {
+    app.update_in(cx, |app, window, cx| {
+        let at = app.editor.read(cx).text().find(word).unwrap();
+        app.editor
+            .update(cx, |e, cx| e.set_selection(at..at + word.len(), cx));
+        app.add_pii_candidate(&crate::PiiAddCandidate, window, cx);
+        window.focus(&app.pii.focus, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+}
+
+#[gpui::test]
+fn popup_enter_after_a_manual_addition_stays_and_cancel_reverts_both(
+    cx: &mut gpui::TestAppContext,
+) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · Акме · marina@example.invalid";
+    for draft in [None, Some("CLIENT_9")] {
+        app.update(cx, |app, cx| {
+            seed(app, source, cx);
+        });
+        cx.run_until_parked();
+        add_by_hand(&app, "Акме", cx);
+        if let Some(draft) = draft {
+            // An alias draft is confirmed with the apply, in one step.
+            app.update(cx, |app, cx| {
+                app.pii
+                    .mapping
+                    .alias
+                    .update(cx, |input, cx| input.set_value(draft.into(), cx))
+            });
+        }
+        press("enter", cx);
+        app.read_with(cx, |app, cx| {
+            assert!(!app.editor.read(cx).text().contains("Акме"), "{draft:?}");
+            assert!(app.pii.popup.is_some(), "{draft:?}");
+            assert!(app.active_annotation().unwrap() & APPLIED_ID != 0);
+        });
+        let cancel = cx.debug_bounds("direct-cancel-addition");
+        assert!(cancel.is_some(), "{draft:?}");
+        cx.simulate_click(cancel.unwrap().center(), Default::default());
+        cx.run_until_parked();
+        app.read_with(cx, |app, cx| {
+            assert_eq!(app.editor.read(cx).text(), source, "{draft:?}");
+        });
+    }
+}
+
+#[gpui::test]
+fn popup_enter_under_this_one_with_an_alias_draft_keeps_the_segment(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С. · Павлова М.С.";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 0, cx);
+    app.update(cx, |app, cx| {
+        app.pii.mapping.set_scope(Scope::Mention);
+        app.pii
+            .mapping
+            .alias
+            .update(cx, |input, cx| input.set_value("CLIENT_1".into(), cx));
+    });
+    press("enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "CLIENT_1 · Павлова М.С. · Павлова М.С."
+        );
+        assert_eq!(app.pii.mapping.scope, Scope::Mention);
+    });
+    // The next Enter still applies one mention.
+    press("enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "CLIENT_1 · ORG_1 · Павлова М.С."
+        );
+        assert_eq!(app.pii.mapping.scope, Scope::Mention);
+    });
+}
+
+#[gpui::test]
+fn popup_enter_wraps_and_skips_entities_without_proposals(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · marina@example.invalid · Павлова М.С. · Павлова Марина Сергеевна";
+    let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    // This one from the entity's last proposal wraps to its first.
+    open_popup_on(&app, initials, 1, cx);
+    app.update(cx, |app, _| app.pii.mapping.set_scope(Scope::Mention));
+    let entity = app.read_with(cx, |app, _| app.selected_entity().unwrap());
+    press("enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.selected_entity(), Some(entity));
+        assert_eq!(app.active_replacement_range().unwrap().start, 0);
+        assert!(app.editor.read(cx).text().starts_with("Павлова М.С. · "));
+    });
+    // With the full name applied, Enter on the email goes to the next entity
+    // with proposals: the initials, wherever they sit in panel order.
+    let person = app.read_with(cx, |app, _| app.pii.review.variant_identity(full).unwrap());
+    open_popup_on(&app, full, 0, cx);
+    press("enter", cx);
+    let order = app.read_with(cx, |app, cx| app.panel_entity_order(cx));
+    let email = *order
+        .iter()
+        .find(|id| ![entity, person].contains(id))
+        .unwrap();
+    app.update_in(cx, |app, window, cx| {
+        let (annotation, _) = app.identity_occurrences(email)[0].clone();
+        app.activate_annotation(annotation, window, cx);
+        window.focus(&app.pii.focus, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    press("enter", cx);
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.selected_entity(), Some(entity));
+        assert!(app.active_annotation().unwrap() & (APPLIED_ID | KEPT_ID) == 0);
+    });
+}
+
+#[gpui::test]
+fn popup_enter_on_a_kept_mention_and_apply_all_with_nothing_left(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 0, cx);
+    press("space", cx);
+    let history = app.read_with(cx, |app, cx| {
+        assert!(app.active_is_kept());
+        app.editor.read(cx).history_id()
+    });
+    press("enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).history_id(), history);
+        assert!(app.pii.popup.is_some());
+    });
+    // Apply the rest, reopen the kept mention: Mod+Enter with nothing left
+    // closes the popup without a new step.
+    press("secondary-enter", cx);
+    app.update_in(cx, |app, window, cx| {
+        assert_eq!(app.pii.review.remaining(), 0);
+        let kept = app.kept_selection(0).unwrap();
+        app.select_occurrence(kept, cx);
+        app.pii.keep_selection_popup();
+        app.remember_active_replacement(cx);
+        window.focus(&app.pii.focus, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let history = app.read_with(cx, |app, cx| {
+        assert!(app.pii.popup.is_some());
+        app.editor.read(cx).history_id()
+    });
+    press("secondary-enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert!(app.pii.popup.is_none());
+        assert_eq!(app.editor.read(cx).history_id(), history);
+    });
+}
+
+#[gpui::test]
+fn popup_wider_keep_keys_leave_the_segment_as_shown(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С. · Павлова М.С.";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 0, cx);
+    app.update(cx, |app, _| app.pii.mapping.set_scope(Scope::Mention));
+    press("secondary-backspace", cx);
+    app.read_with(cx, |app, _| {
+        assert!(app.active_is_kept());
+        assert_eq!(app.pii.mapping.scope, Scope::Mention);
+    });
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 1, cx);
+    app.update(cx, |app, _| app.pii.mapping.set_scope(Scope::Mention));
+    press("secondary-shift-backspace", cx);
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.mapping.scope, Scope::Mention);
+    });
+}

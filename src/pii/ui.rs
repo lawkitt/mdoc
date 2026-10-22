@@ -739,14 +739,14 @@ impl DocumentView {
     ) {
         if self.pii.reviewing && self.pii.review.remaining() > 0 {
             self.apply_replacements(cx);
-            // Nothing is left to review, so the popup closes (ADR 0055).
-            if self.pii.popup.is_some() && self.pii.review.remaining() == 0 {
-                self.close_pii_popup(&PiiClosePopup, window, cx);
-            }
             // Inspector (ADR 0048 variant C): next comes sharing.
             if self.pii.review.remaining() == 0 && self.has_applied_aliases() {
                 self.inspector_share = true;
             }
+        }
+        // Nothing is left to review, so the popup closes (ADR 0055).
+        if self.pii.reviewing && self.pii.popup.is_some() && self.pii.review.remaining() == 0 {
+            self.close_pii_popup(&PiiClosePopup, window, cx);
         }
     }
     /// Record a metadata-only review change as its own undo step. The checkpoint

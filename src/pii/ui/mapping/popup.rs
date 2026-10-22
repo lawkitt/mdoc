@@ -529,7 +529,14 @@ impl DocumentView {
             return;
         }
         if self.alias_draft_changed(cx) {
+            // The alias and the apply are one step, which Cancel addition
+            // undoes like a plain apply (ADR 0025).
+            let before = self.editor.read(cx).history_id();
             self.confirm_alias(false, Applying::Ranges(ranges), cx);
+            let after = self.editor.read(cx).history_id();
+            if after != before {
+                self.pii.mapping.record_apply(before, after);
+            }
             return;
         }
         let active = self.active_replacement_range();
@@ -582,12 +589,15 @@ impl DocumentView {
             return;
         }
         let scope = self.pii.mapping.scope;
+        let manual = self.pii.enter_applies;
         let before = self.editor.read(cx).history_id();
         self.apply_scope(cx);
-        if self.pii.enter_applies
-            || self.editor.read(cx).history_id() == before
-            || self.pii.popup.is_none()
-        {
+        if self.editor.read(cx).history_id() == before || self.pii.popup.is_none() {
+            return;
+        }
+        if manual {
+            // Confirming an alias draft reopens the popup without the flag.
+            self.pii.enter_applies = true;
             return;
         }
         let proposals = |this: &Self, id| -> Vec<(u64, Range<usize>)> {
@@ -605,6 +615,9 @@ impl DocumentView {
                 .or(mentions.first())
             {
                 self.navigate_identity_mention(*a, r.start, window, cx);
+                // A scoped alias split this mention off; back on its entity
+                // the segment stays This one.
+                self.pii.mapping.set_scope(Scope::Mention);
                 return;
             }
         }
