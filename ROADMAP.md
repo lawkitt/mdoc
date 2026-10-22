@@ -21,14 +21,12 @@ and EN/RU spellcheck. No PII model has passed the
 ## 0.1.x patches
 
 Wrong output, data loss or silent failures that need no design decision
-([milestone](https://github.com/lawkitt/mdoc/milestone/1)). 0.1.1 ships when
-item 1 is checked; the rest ride along if ready.
+([milestone](https://github.com/lawkitt/mdoc/milestone/1)). Items that are not
+ready ride along with a later patch.
 Each patch gets a smoke run on both platforms; an item is done when its issue
 closes, with the expected behavior stated there.
 
-1. **[Platform] Windows caption buttons on the installed 0.1.0** ([#74](https://github.com/lawkitt/mdoc/issues/74)).
-   *Done when:* the maintainer's T6 row passes on 0.1.0, or a fix ships.
-2. **[macOS] Quit leaves the process running** with no windows
+1. **[macOS] Quit leaves the process running** with no windows
    ([#83](https://github.com/lawkitt/mdoc/issues/83)).
 
 ## 0.2.0
