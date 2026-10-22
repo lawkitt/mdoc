@@ -16,6 +16,7 @@ actions!(
         PaletteClose,
         ShowHome,
         PasteAsNewTab,
+        CloseNotices,
     ]
 );
 
@@ -34,6 +35,9 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("down", PaletteDown, Some(PALETTE)),
         KeyBinding::new("enter", PaletteConfirm, Some(PALETTE)),
         KeyBinding::new("escape", PaletteClose, Some(PALETTE)),
+        // The window's own Esc, below every deeper one: Notices opens without
+        // focus (ADR 0062), so Esc closes it from a source-only tab or Home.
+        KeyBinding::new("escape", CloseNotices, Some("Workspace")),
     ]);
 }
 

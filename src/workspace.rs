@@ -2916,6 +2916,13 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &ui::FocusEditor, window, cx| {
                 this.escape_to_editor(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &shell::CloseNotices, window, cx| {
+                if this.title.notices_open.get() {
+                    this.close_notices(window, cx);
+                } else {
+                    cx.propagate();
+                }
+            }))
             .on_action(cx.listener(|this, _: &ui::SidebarPrevious, window, cx| {
                 this.sidebar_step(-1, window, cx)
             }))
