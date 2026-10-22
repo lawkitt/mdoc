@@ -4,6 +4,9 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Bold and other formatting stay valid with a trailing space.** Formatting a
+  selection that starts or ends with a space keeps the space outside the
+  markers (`**delta** `), so Copy for AI keeps the formatting.
 - **A converted document saved as Markdown enters Recents** as the saved
   file, so it reopens as your edited Markdown instead of a fresh conversion of
   the source. On macOS, a newly saved file gets the usual permissions instead
