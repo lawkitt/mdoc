@@ -1,7 +1,8 @@
 # Native platform acceptance
 
 Status: Accepted, 2026-10-19 (proposed 2026-10-18). Applies [ADR 0051](0051-roadmap-structure-and-stable-scope.md)
-(native acceptance in stable scope).
+(native acceptance in stable scope). Superseded in part by ADR 0062: plain
+keyboard reach is required from 0.2.0.
 
 ## Problem
 
@@ -28,16 +29,17 @@ build, machines, scope, layout and failure handling open.
 - **Machines.** The M4 reference Mac (macOS 15.7.x) and the maintainer's
   Windows 11 x64 PC; exact OS build and GPU are recorded. Windows 10 is listed
   as not checked.
-- **Runners.** Claude runs the macOS checklist through computer use (VoiceOver
-  through its caption panel) and marks rows it could not observe for the
-  maintainer to confirm. Computer use injects keys without a keyboard layout
+- **Runners.** An agent runs each checklist through computer use: Codex
+  dispatched through T3 from the hub Mac (fleet ADR 0009), proven on both
+  machines; Claude in the Claude desktop app, started by the maintainer, is
+  the fallback. It reads VoiceOver through its caption panel and marks rows
+  it could not observe for the maintainer to confirm. Computer use injects keys without a keyboard layout
   and cannot drive VoiceOver speech or the Keychain password dialog, so the
   keyboard/IME rows, spoken output and Keychain rows are the maintainer's.
-  Claude also runs the Windows checklist, from Claude Code on the
-  maintainer's PC through computer use (2026-10-19). On Windows the
+  On Windows the
   maintainer clicks through SmartScreen (I3), switches display scaling (D3,
   D4) and the network (S1), and runs the keyboard/IME rows and spoken
-  Narrator output; Claude marks those *Maintainer* and checks the result.
+  Narrator output; the agent marks those *Maintainer* and checks the result.
   The maintainer runs the Russian rows but not the Japanese ones. On macOS
   the maintainer did not run offline setup (S1) or spoken VoiceOver output
   (A5) for 0.1.0 (2026-10-19); they are Unavailable and an After 0.1.0 item. On Windows the same holds for
@@ -63,10 +65,8 @@ build, machines, scope, layout and failure handling open.
   row on each platform.
 - **Screen readers.** "Basics" means controls: toolbar, sidebar, panels,
   popup buttons and dialogs announce name and role and are reachable without
-  a mouse through the screen reader (VoiceOver, Narrator) or macOS Full
-  Keyboard Access. Plain Tab cycles inside panels, the popup and dialogs but
-  does not reach the toolbar or sidebar from Home or the editor; that is an
-  After 0.1.0 item, not a 0.1.0 blocker (2026-10-19, rc.1 row A4). The editor's text is not exposed to assistive technology; this is
+  a mouse: by keyboard alone through F6 regions and Tab (ADR 0062), and
+  through the screen reader (VoiceOver, Narrator). The editor's text is not exposed to assistive technology; this is
   a recorded known limitation, and exposing it is an After 0.1.0 item.
 - **Setup.** Starts from a wiped app-data directory: online model setup
   completes; an offline first launch shows the setup error/retry state

@@ -213,7 +213,8 @@ unticked = Keep original, – = mixed mentions. Ticking records intent; text
 changes only on Apply.
 
 **Mention bar**: slim bar above a clicked mention: Replace checkbox, alias,
-category, This one | All scope. Replaced the replacement popup (ADR 0048);
+category, This one | All scope. Enter applies in the shown scope and moves to
+the next proposal. Replaced the replacement popup (ADR 0048);
 stable, compact and reversible per [ADR 0055](docs/adr/0055-stable-compact-mention-popup.md).
 Motion and scoped popup presentation follow [ADR 0032](docs/adr/0032-replacement-popup-redesign.md).
 
@@ -267,6 +268,10 @@ including unopened restored records. Code: `workspace::Workspace`.
 
 **Tab**: sidebar entry owning a document view once initialized; restored tabs
 allocate their document view when activated.
+
+**Region**: a part of the window that F6 / ⇧F6 move focus between: sidebar,
+toolbar, editor, replacements panel, source preview, comments, or Home's
+content. Tab moves inside a region ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
 
 **Document view**: one tab's editor, source preview, search, import/OCR and
 pseudonymization state. Code: `document_view::DocumentView`. Avoid calling this workspace.
