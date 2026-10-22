@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-22 (latest: 0.1.0); accepted
+This roadmap lists open work as of 2026-10-22 (latest: 0.1.1); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
@@ -17,11 +17,14 @@ PDF/DOCX previews, offline OCR, assistive pseudonymization
 cases with AI-reply restoration ([ADR 0041](docs/adr/0041-cases-and-ai-response-restoration.md))
 and EN/RU spellcheck. No PII model has passed the
 [initial qualification](tests/fixtures/pseudonymization/README.md).
+0.1.1 (2026-10-22) fixes Windows single-instance launch, cases on unsaved
+conversions, Save As and Recents, formatting next to spaces and lost focus
+([CHANGELOG](CHANGELOG.md), [smoke run](docs/evidence/platform/2026-10-22/README.md)).
 
 ## 0.1.x patches
 
 Wrong output, data loss or silent failures that need no design decision
-([milestone](https://github.com/lawkitt/mdoc/milestone/1)). Items that are not
+([milestone](https://github.com/lawkitt/mdoc/milestone/2)). Items that are not
 ready ride along with a later patch.
 Each patch gets a smoke run on both platforms; an item is done when its issue
 closes, with the expected behavior stated there.
