@@ -10,6 +10,11 @@ mod chrome;
 pub(crate) enum Next {
     Import(import::Imported),
     Close,
+    /// Saved first so the new case lists the document (#75); `close` closes
+    /// the tab once the case is written.
+    CreateCase {
+        close: bool,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -426,6 +431,10 @@ impl DocumentView {
         match next {
             Next::Close => {
                 cx.emit(workspace::TabEvent::CloseResolved);
+                return;
+            }
+            Next::CreateCase { close } => {
+                cx.emit(workspace::TabEvent::CreateCase { close });
                 return;
             }
             Next::Import(imported) => {
@@ -1175,7 +1184,7 @@ impl DocumentView {
         .detach();
     }
 
-    fn save(
+    pub(crate) fn save(
         &mut self,
         save_as: bool,
         next: Option<Next>,

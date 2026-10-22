@@ -2960,6 +2960,34 @@ fn a_saved_case_is_encrypted_named_and_listed_in_the_sidebar(cx: &mut TestAppCon
 }
 
 #[gpui::test]
+fn saving_an_unsaved_document_as_a_case_saves_the_markdown_first(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    // As a fresh conversion: Markdown never saved (#75).
+    active(&tabs, cx).update(cx, |view, _| view.session.document.path = None);
+    let store = || crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    // Cancelling the save creates no case.
+    tabs.update_in(cx, |tabs, window, cx| {
+        assert!(tabs.create_case(tab, window, cx).is_none())
+    });
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| None);
+    cx.run_until_parked();
+    assert!(store().list().0.is_empty());
+    // Saving it lists the saved file in the new case.
+    let saved = dir.path().join("converted.md");
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| Some(saved.clone()));
+    cx.run_until_parked();
+    let (cases, _) = store().list();
+    assert_eq!(cases.len(), 1);
+    assert_eq!(cases[0].members, [session_store::identity(&saved)]);
+    assert!(saved.exists());
+}
+
+#[gpui::test]
 fn a_long_case_name_keeps_the_categories_popup_close_button_inside(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
@@ -3082,6 +3110,27 @@ fn closing_an_unsaved_mapping_offers_to_save_it_once(cx: &mut TestAppContext) {
     cx.update(|_, cx| assert!(tabs.read(cx).tabs.iter().all(|t| t.id != tab)));
     let store = crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     assert_eq!(store.list().0.len(), 1);
+}
+
+#[gpui::test]
+fn closing_an_unsaved_conversion_as_a_case_saves_it_then_closes(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    active(&tabs, cx).update(cx, |view, _| view.session.document.path = None);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Save as Case");
+    cx.run_until_parked();
+    let saved = dir.path().join("converted.md");
+    cx.simulate_new_path_selection(|_| Some(saved.clone()));
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|_, cx| assert!(tabs.read(cx).tabs.iter().all(|t| t.id != tab)));
+    let store = crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let (cases, _) = store.list();
+    assert_eq!(cases.len(), 1);
+    assert_eq!(cases[0].members, [session_store::identity(&saved)]);
 }
 
 #[gpui::test]

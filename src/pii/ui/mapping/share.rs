@@ -198,7 +198,7 @@ impl DocumentView {
                                     .when(cfg!(test), |v| v.debug_selector(|| "share-save-case".into()))
                                     .on_click(cx.listener(move |_, _, _, cx| {
                                         if applied > 0 {
-                                            cx.emit(crate::workspace::TabEvent::CreateCase);
+                                            cx.emit(crate::workspace::TabEvent::CreateCase { close: false });
                                         }
                                     })),
                             )
