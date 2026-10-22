@@ -476,6 +476,9 @@ impl Workspace {
             cx.notify();
             return None;
         }
+        if self.save_before_case(id, false, window, cx) {
+            return None;
+        }
         if !self.case_key_ready(
             move |this, window, cx| {
                 this.create_case(id, window, cx);
@@ -1741,8 +1744,16 @@ impl Workspace {
 
     /// Save the tab as a case and close it once the case is safely written;
     /// after the Keychain explainer when that comes first (ADR 0043).
-    fn save_case_and_close(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn save_case_and_close(
+        &mut self,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.cases.asked.remove(&id);
+        if self.save_before_case(id, true, window, cx) {
+            return;
+        }
         if !self.case_key_ready(
             move |this, window, cx| this.save_case_and_close(id, window, cx),
             cx,
@@ -1753,6 +1764,29 @@ impl Workspace {
             self.cases.asked.insert(id);
             self.cases.close_after.insert(case, id);
         }
+    }
+
+    /// A case lists its documents by path, so a never-saved document (a fresh
+    /// conversion) is saved first; the case follows once it is (#75).
+    /// Returns true when a save started instead.
+    fn save_before_case(
+        &mut self,
+        id: u64,
+        close: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(view) = self.tab_view(id) else {
+            return false;
+        };
+        if view.read(cx).session.document.path.is_some() {
+            return false;
+        }
+        self.activate(id, window, cx);
+        view.update(cx, |view, cx| {
+            view.save(true, Some(Next::CreateCase { close }), window, cx)
+        });
+        true
     }
 
     /// Before closing a tab whose mapping would be lost, offer to keep it.

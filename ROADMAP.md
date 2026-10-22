@@ -22,23 +22,21 @@ and EN/RU spellcheck. No PII model has passed the
 
 Wrong output, data loss or silent failures that need no design decision
 ([milestone](https://github.com/lawkitt/mdoc/milestone/1)). 0.1.1 ships when
-item 1 is checked and item 2 is fixed; the rest ride along if ready.
+item 1 is checked; the rest ride along if ready.
 Each patch gets a smoke run on both platforms; an item is done when its issue
 closes, with the expected behavior stated there.
 
 1. **[Platform] Windows caption buttons on the installed 0.1.0** ([#74](https://github.com/lawkitt/mdoc/issues/74)).
    *Done when:* the maintainer's T6 row passes on 0.1.0, or a fix ships.
-2. **[Cases] Save as case on an unsaved conversion** creates an unopenable
-   case with 0 documents ([#75](https://github.com/lawkitt/mdoc/issues/75)).
-3. **[Workspace] Save As skips Recents** and creates the file with mode 0600
+2. **[Workspace] Save As skips Recents** and creates the file with mode 0600
    ([#76](https://github.com/lawkitt/mdoc/issues/76)).
-4. **[Editor] Closing marker after a trailing space** (`**delta **`)
+3. **[Editor] Closing marker after a trailing space** (`**delta **`)
    ([#77](https://github.com/lawkitt/mdoc/issues/77)).
-5. **[Pseudonymization] Popup stays open after ⌘↩ Apply all**
+4. **[Pseudonymization] Popup stays open after ⌘↩ Apply all**
    ([#78](https://github.com/lawkitt/mdoc/issues/78)).
-6. **[UI] Focus lost** after Share › Save as case and after an undo that
+5. **[UI] Focus lost** after Share › Save as case and after an undo that
    closes the popup ([#79](https://github.com/lawkitt/mdoc/issues/79)).
-7. **[macOS] Quit leaves the process running** with no windows
+6. **[macOS] Quit leaves the process running** with no windows
    ([#83](https://github.com/lawkitt/mdoc/issues/83)).
 
 ## 0.2.0

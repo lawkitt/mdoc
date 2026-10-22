@@ -36,8 +36,11 @@ pub(super) enum TabEvent {
     CaseChanged,
     /// Add a name to the tab's case before it appears (ADR 0041 #11).
     AddCaseTerm(String),
-    /// Save the tab's mapping as a case, from the Inspector (ADR 0048, C).
-    CreateCase,
+    /// Save the tab's mapping as a case, from the Inspector (ADR 0048, C),
+    /// or once the document is saved; `close` closes the tab after.
+    CreateCase {
+        close: bool,
+    },
 }
 impl EventEmitter<TabEvent> for DocumentView {}
 
@@ -1239,7 +1242,8 @@ impl Workspace {
             }
             TabEvent::CaseChanged => self.case_changed(id, cx),
             TabEvent::AddCaseTerm(term) => self.add_case_term(id, term, cx),
-            TabEvent::CreateCase => {
+            TabEvent::CreateCase { close: true } => self.save_case_and_close(id, window, cx),
+            TabEvent::CreateCase { close: false } => {
                 if self.can_create_case(id, cx) {
                     self.create_case(id, window, cx);
                 }

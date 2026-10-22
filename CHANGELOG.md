@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Save as case keeps the document.** On a conversion whose Markdown was
+  never saved, Save as case (or Save as Case when closing) first asks where to
+  save it, then creates the case with that file in it. It no longer creates
+  an empty case that can't be opened.
 - **One mdoc on Windows.** A second launch or **Open with** hands its files to
   the running mdoc, which opens them and comes to the front, instead of
   starting another copy that also writes the session and Recents.
