@@ -169,10 +169,7 @@ impl UpdateState {
     /// Whether Settings carries the update dot: a newer release exists or an
     /// install needs attention. The one-time "installed" notice doesn't count.
     pub fn marks_settings(&self) -> bool {
-        self.available.is_some()
-            || self
-                .banner()
-                .is_some_and(|b| b.kind != BannerKind::Updated)
+        self.available.is_some() || self.banner().is_some_and(|b| b.kind != BannerKind::Updated)
     }
 
     /// Download progress in percent while downloading.

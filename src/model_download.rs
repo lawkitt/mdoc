@@ -37,10 +37,26 @@ impl State {
 pub struct Pending {
     pub model: u64,
     pub runtime: u64,
+    /// Some model files are already here (a cancelled setup kept them), so
+    /// `model` is what is left, not the whole model.
+    pub resumed: bool,
 }
 impl Pending {
     pub fn total(self) -> u64 {
         self.model + self.runtime
+    }
+    /// How setup cards name the download: "665 MB download" or, after a
+    /// cancelled setup, "662 MB left to download".
+    pub fn download_label(self) -> String {
+        format!(
+            "{} MB {}",
+            megabytes(self.total()),
+            if self.resumed {
+                "left to download"
+            } else {
+                "download"
+            }
+        )
     }
 }
 /// A cheap presence check by size; digests are verified during setup and use.

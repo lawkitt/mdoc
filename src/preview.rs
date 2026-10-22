@@ -267,7 +267,6 @@ impl DocumentView {
                 return;
             }
             this.dirty_cached = this.dirty(cx);
-            this.update_title(window, cx);
             cx.notify();
         });
         self.preview.pending = Some(PendingPreview {

@@ -133,7 +133,7 @@ Fixture: the English demo DOCX, with the Source preview open and aliases applied
 | P2 | Save As (Mod+Shift+S) into the same folder under a Cyrillic name with spaces; reopening it from Recents works | | |
 | P3 | Dropping that file onto Home opens it | | |
 | P4 | Dropping two files onto the sidebar shows the insertion line and opens both at that position | | |
-| P5 | Dragging an unsupported file shows "No supported files" and opens nothing | | |
+| P5 | Dragging an unsupported file over Home or the sidebar says "These files can't be opened" (no insertion line) and opens nothing | | |
 | P6 | Dropping a folder opens it as a case | | |
 | P7 | Opening a file from the OS (Finder/Explorer "Open with") opens it in mdoc | | |
 

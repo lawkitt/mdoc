@@ -1904,7 +1904,8 @@ impl Render for PdfView {
                     .aria_label("Find")
                     .bg(bg)
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_search(window, cx)))
-                    .tooltip(self.tip("Find (⌘F)")),
+                    // No shortcut: the host's ⌘F finds in the Markdown.
+                    .tooltip(self.tip("Find in source")),
             )
         };
 

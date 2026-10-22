@@ -349,13 +349,20 @@ impl Workspace {
                             }),
                     )
                     .child(
-                        ui::header_icon(
+                        ui::header_icon_untipped(
                             "theme-toggle",
                             self.theme_choice.label(),
                             theme_icon,
                             theme,
                             false,
                         )
+                        // Clicking changes the choice under the pointer; the
+                        // tooltip follows it instead of the value at hover.
+                        .tooltip({
+                            self.theme_tip.set(self.theme_choice);
+                            let (choice, theme) = (self.theme_tip.clone(), self.theme.clone());
+                            style::live_tooltip(move || (choice.get().label().into(), theme.get()))
+                        })
                         .when(cfg!(test), |v| v.debug_selector(|| "theme-toggle".into()))
                         .on_click(cx.listener(|this, _, window, cx| this.cycle_theme(window, cx))),
                     )
@@ -1327,7 +1334,7 @@ impl Workspace {
                 section: "Actions",
                 label: "Toggle sidebar".into(),
                 detail: None,
-                shortcut: None,
+                shortcut: cfg!(target_os = "macos").then_some("⌃⌘S"),
                 command: Command::ToggleSidebar,
             },
             Row {

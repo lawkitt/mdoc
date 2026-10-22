@@ -145,6 +145,8 @@ pub(super) struct Workspace {
     /// and the collapsed rail under the pointer.
     file_drop_row: Option<(u64, usize)>,
     file_drop_list: bool,
+    /// Files over the sidebar, none of which mdoc opens.
+    file_drop_refused: bool,
     file_drag_rail: bool,
     rail_toggle_focus: gpui::FocusHandle,
     rail_new_focus: gpui::FocusHandle,
@@ -191,6 +193,11 @@ pub(super) struct Workspace {
     cases: cases_ui::CaseState,
     /// The sidebar's theme pick; `theme` holds what it resolves to (ADR 0048).
     theme_choice: style::ThemeChoice,
+    /// The theme button's tooltip reads the choice live.
+    theme_tip: Rc<Cell<style::ThemeChoice>>,
+    /// The title last given to the window: "mdoc" on Home, else the active
+    /// document's.
+    window_title: String,
     /// Home fills the card instead of the active tab (ADR 0048).
     home: bool,
     /// Shared with document headers: title-bar inset and drag state.
@@ -315,6 +322,7 @@ impl Workspace {
             reveal_escaped: None,
             file_drop_row: None,
             file_drop_list: false,
+            file_drop_refused: false,
             file_drag_rail: false,
             rail_toggle_focus: cx.focus_handle().tab_stop(true),
             rail_new_focus: cx.focus_handle().tab_stop(true),
@@ -359,6 +367,8 @@ impl Workspace {
             pending_write: None,
             cases: Default::default(),
             theme_choice: style::ThemeChoice::default(),
+            theme_tip: Rc::default(),
+            window_title: String::new(),
             home: false,
             title: style::TitleBar::default(),
             shell: shell::ShellState::new(cx),
@@ -947,7 +957,6 @@ impl Workspace {
                             {
                                 view.open_path(path, window, cx);
                             }
-                            view.update_title(window, cx);
                             if view.active {
                                 window.focus(&view.editor.read(cx).focus_handle(cx), cx);
                             }
@@ -986,7 +995,6 @@ impl Workspace {
             view.update(cx, |view, cx| {
                 view.active = true;
                 view.try_auto_convert(window, cx);
-                view.update_title(window, cx);
                 if view.source_only {
                     window.focus(&view.focus, cx);
                 } else if view.loading || view.unavailable {
@@ -1169,7 +1177,13 @@ impl Workspace {
         let mut unsupported = Vec::new();
         for (path, supported) in paths {
             if !supported {
-                unsupported.push(path.display().to_string());
+                // Names only: the notice is no place for the full path.
+                unsupported.push(
+                    path.file_name()
+                        .unwrap_or(path.as_os_str())
+                        .to_string_lossy()
+                        .into_owned(),
+                );
                 continue;
             }
             let existing = self.find_path(&path, None, cx).or_else(|| {
@@ -1958,6 +1972,9 @@ impl Workspace {
 
     /// Where files dropped on the document list would open (ADR 0028).
     fn file_drop_index(&self) -> Option<usize> {
+        if self.file_drop_refused {
+            return None;
+        }
         self.file_drop_row
             .map(|(_, index)| index)
             .or(self.file_drop_list.then_some(self.tabs.len()))
@@ -1967,6 +1984,7 @@ impl Workspace {
         let rail = std::mem::take(&mut self.file_drag_rail);
         self.file_drop_row = None;
         self.file_drop_list = false;
+        self.file_drop_refused = false;
         if rail {
             self.update_reveal(window, cx);
         }
@@ -1984,6 +2002,9 @@ impl Workspace {
     ) {
         let at = list.then(|| self.file_drop_index()).flatten();
         self.clear_file_drag(window, cx);
+        // A drop from Finder leaves mdoc in the background; what it opens
+        // (a dialog among them) needs the keyboard.
+        window.activate_window();
         if self.quitting.is_none() {
             self.open_paths_at(paths.paths().to_vec(), at, window, cx);
         }
@@ -2025,6 +2046,7 @@ impl Workspace {
             .or(listed.first().copied());
         let accent = theme.search_accent();
         let drop_index = self.file_drop_index();
+        let labels: Vec<TabLabel> = self.tabs.iter().map(|tab| tab_label(tab, cx)).collect();
         let rows = self
             .tabs
             .iter()
@@ -2036,31 +2058,12 @@ impl Workspace {
                     return None;
                 }
                 let view = tab.view.as_ref().map(|v| v.read(cx));
-                let name = view.map(|v| v.display_name()).unwrap_or_else(|| {
-                    let path = if tab.record.source_only {
-                        tab.record
-                            .attachment
-                            .as_ref()
-                            .unwrap_or(&tab.record.markdown)
-                    } else {
-                        &tab.record.markdown
-                    };
-                    path.file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "Untitled.md".into())
-                });
-                let path = view
-                    .and_then(|v| v.session.document.path.as_ref())
-                    .unwrap_or(&tab.record.markdown);
-                let source = view
-                    .and_then(|v| v.preview.attachment.as_ref().or(v.preview.source.as_ref()))
-                    .or(tab.record.attachment.as_ref());
-                let format = source
-                    .or(Some(path))
-                    .and_then(|p| p.extension())
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("md")
-                    .to_uppercase();
+                let TabLabel {
+                    name,
+                    identity,
+                    format,
+                    source,
+                } = labels[index].clone();
                 let dirty = view.is_some_and(|v| v.dirty_cached);
                 let running = view.is_some_and(|v| v.loading || v.job.busy() || v.preview.loading);
                 let busy = running || view.is_some_and(|v| v.preview.queued);
@@ -2069,13 +2072,21 @@ impl Workspace {
                 });
                 let pseudonymized = view.is_some_and(|v| v.pseudonymized());
                 let recognized = view.is_some_and(|v| v.recognized());
-                let identity = source.unwrap_or(path);
+                let identity = identity.as_path();
                 let parent = identity
                     .parent()
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 let tooltip = format!(
-                    "{name}\n{parent}{}{}{}{}{}",
+                    "{name}\n{parent}{}{}{}{}{}{}",
+                    // A saved conversion's badge is MD; the tooltip keeps
+                    // where it came from.
+                    source
+                        .as_ref()
+                        .filter(|source| source.as_path() != identity)
+                        .and_then(|source| source.file_name())
+                        .map(|source| format!("\nFrom {}", source.to_string_lossy()))
+                        .unwrap_or_default(),
                     if recognized {
                         "\nRecognized with OCR"
                     } else {
@@ -2086,44 +2097,22 @@ impl Workspace {
                     if busy { "\nProcessing…" } else { "" },
                     if error { "\nNeeds attention" } else { "" }
                 );
-                let duplicate = self
-                    .tabs
+                // Same-name tabs show the shortest distinguishing folder, or
+                // their type when they share one (a DOCX's conversion beside
+                // an .md of that name).
+                let peers: Vec<&TabLabel> =
+                    labels.iter().filter(|other| other.name == name).collect();
+                let duplicate = peers.len() > 1;
+                let peers: Vec<PathBuf> = peers
                     .iter()
-                    .filter(|other| {
-                        let other_view = other.view.as_ref().map(|v| v.read(cx));
-                        let other_name =
-                            other_view.map(|v| v.display_name()).unwrap_or_else(|| {
-                                other
-                                    .record
-                                    .markdown
-                                    .file_name()
-                                    .unwrap_or_default()
-                                    .to_string_lossy()
-                                    .into_owned()
-                            });
-                        other_name == name
-                    })
-                    .count()
-                    > 1;
-                let peers: Vec<PathBuf> = self
-                    .tabs
-                    .iter()
-                    .filter_map(|tab| {
-                        let view = tab.view.as_ref().map(|v| v.read(cx));
-                        view.and_then(|v| {
-                            v.preview
-                                .attachment
-                                .as_ref()
-                                .or(v.preview.source.as_ref())
-                                .or(v.session.document.path.as_ref())
-                        })
-                        .or(tab.record.attachment.as_ref())
-                        .or(Some(&tab.record.markdown))
-                        .filter(|p| !p.as_os_str().is_empty())
-                        .cloned()
-                    })
+                    .map(|other| other.identity.clone())
+                    .filter(|p| !p.as_os_str().is_empty())
                     .collect();
-                let parent_label = disambiguating_parent(identity, &peers);
+                let parent_label = if identity.as_os_str().is_empty() {
+                    String::new()
+                } else {
+                    disambiguating_parent(identity, &peers).unwrap_or_else(|| format.clone())
+                };
                 // Unsaved duplicates have no folder; an empty second line would
                 // lift the name off the row's centre.
                 let duplicate = duplicate && !parent_label.is_empty();
@@ -2429,7 +2418,15 @@ impl Workspace {
                     .size(px(14.))
                     .text_color(palette.header_muted),
             )
-            .child("New tab")
+            .map(|v| {
+                if self.file_drop_refused {
+                    // The insertion line's place says why nothing will open.
+                    v.text_color(style::markdown_style(theme).alert_caution)
+                        .child("These files can't be opened")
+                } else {
+                    v.child("New tab")
+                }
+            })
             .when(drop_index == Some(self.tabs.len()), |v| {
                 v.border_t_2().border_color(accent)
             })
@@ -2452,12 +2449,15 @@ impl Workspace {
                 .on_drag_move(cx.listener(
                     |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
                         let over = event.bounds.contains(&event.event.position);
-                        if this.file_drop_list != over {
+                        let refused = over && !openable_drag(event.drag(cx));
+                        if this.file_drop_list != over || this.file_drop_refused != refused {
                             this.file_drop_list = over;
+                            this.file_drop_refused = refused;
                             cx.notify();
                         }
                     },
                 ))
+                .can_drop(can_drop_files)
                 .on_drop(
                     cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
                         this.drop_files(paths, true, window, cx)
@@ -2615,6 +2615,7 @@ impl Workspace {
                         }
                     },
                 ))
+                .can_drop(can_drop_files)
                 .on_drop(cx.listener(
                     |this, paths: &gpui::ExternalPaths, window, cx| {
                         this.drop_files(paths, false, window, cx)
@@ -2735,11 +2736,75 @@ fn sidebar_toggle(
         .on_click(|_, window, cx| window.dispatch_action(Box::new(ToggleSidebar), cx))
 }
 
-/// Show the shortest parent suffix that distinguishes this document's location.
-fn disambiguating_parent(path: &std::path::Path, peers: &[PathBuf]) -> String {
-    let Some(parent) = path.parent() else {
-        return String::new();
+/// Whether a file drag holds anything mdoc opens (by extension, or a folder).
+fn openable_drag(paths: &gpui::ExternalPaths) -> bool {
+    paths.paths().iter().any(|path| import::droppable(path))
+}
+
+/// The sidebar takes only drags it can open; others fall through untouched.
+fn can_drop_files(drag: &dyn std::any::Any, _: &mut Window, _: &mut App) -> bool {
+    drag.downcast_ref::<gpui::ExternalPaths>()
+        .is_none_or(openable_drag)
+}
+
+/// What a sidebar row names a tab by.
+#[derive(Clone)]
+struct TabLabel {
+    name: String,
+    /// The source while it is only a conversion, else the saved Markdown.
+    identity: PathBuf,
+    /// The badge: the source's type until the tab is saved as Markdown.
+    format: String,
+    source: Option<PathBuf>,
+}
+
+fn tab_label(tab: &Tab, cx: &App) -> TabLabel {
+    let view = tab.view.as_ref().map(|v| v.read(cx));
+    let name = view.map(|v| v.display_name()).unwrap_or_else(|| {
+        let path = if tab.record.source_only {
+            tab.record
+                .attachment
+                .as_ref()
+                .unwrap_or(&tab.record.markdown)
+        } else {
+            &tab.record.markdown
+        };
+        path.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Untitled.md".into())
+    });
+    let saved = view.map(|v| v.session.document.path.as_ref());
+    let path = saved.flatten().unwrap_or(&tab.record.markdown);
+    let saved = saved.map_or(
+        !tab.record.source_only && !tab.record.markdown.as_os_str().is_empty(),
+        |path| path.is_some(),
+    );
+    let source = view
+        .and_then(|v| v.preview.attachment.as_ref().or(v.preview.source.as_ref()))
+        .or(tab.record.attachment.as_ref())
+        .cloned();
+    let identity = if saved {
+        path.clone()
+    } else {
+        source.clone().unwrap_or_else(|| path.clone())
     };
+    let format = identity
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("md")
+        .to_uppercase();
+    TabLabel {
+        name,
+        identity,
+        format,
+        source,
+    }
+}
+
+/// Show the shortest parent suffix that distinguishes this document's
+/// location; `None` when a peer shares its folder.
+fn disambiguating_parent(path: &std::path::Path, peers: &[PathBuf]) -> Option<String> {
+    let parent = path.parent()?;
     let components: Vec<_> = parent.components().collect();
     for depth in 1..=components.len() {
         let suffix: PathBuf = components[components.len() - depth..].iter().collect();
@@ -2747,10 +2812,10 @@ fn disambiguating_parent(path: &std::path::Path, peers: &[PathBuf]) -> String {
             .iter()
             .any(|peer| peer != path && peer.parent().is_some_and(|p| p.ends_with(&suffix)))
         {
-            return suffix.to_string_lossy().into_owned();
+            return Some(suffix.to_string_lossy().into_owned());
         }
     }
-    parent.to_string_lossy().into_owned()
+    None
 }
 
 impl Render for Workspace {
@@ -2760,13 +2825,25 @@ impl Render for Workspace {
         self.reveal_for_keyboard(window, cx);
         // A finished or abandoned OS drag leaves no insertion line or reveal.
         if !cx.has_active_drag()
-            && (self.file_drag_rail || self.file_drop_list || self.file_drop_row.is_some())
+            && (self.file_drag_rail
+                || self.file_drop_list
+                || self.file_drop_refused
+                || self.file_drop_row.is_some())
         {
             self.clear_file_drag(window, cx);
         }
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let home = self.showing_home(cx);
+        let title = self
+            .active_view()
+            .filter(|_| !home)
+            .map(|view| view.read(cx).window_title())
+            .unwrap_or_else(|| "mdoc".into());
+        if title != self.window_title {
+            window.set_window_title(&title);
+            self.window_title = title;
+        }
         if !cx.has_active_drag() && self.shell.drop.is_some() {
             self.shell.drop = None;
         }
@@ -3094,6 +3171,7 @@ impl Workspace {
                         v.on_drop(
                             cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
                                 this.shell.drop = None;
+                                window.activate_window();
                                 this.open_paths(paths.paths().to_vec(), window, cx);
                             }),
                         )

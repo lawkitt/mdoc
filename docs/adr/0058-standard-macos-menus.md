@@ -17,9 +17,9 @@ Save panels had no ⌘C/⌘V, since those come from the Edit menu. Found by the
   Case…, Convert to Markdown, Save, Save As…, Copy Markdown, Copy for AI, Paste
   AI Response, Close Tab), *Edit* (Undo, Redo, Cut, Copy, Paste, Select All,
   Find…, Find Next, Find Previous, Pseudonymize, Pseudonymize Clipboard),
-  *View* (Toggle Sidebar, Before / After, Zoom In, Zoom Out, Actual Size) and
+  *View* (Toggle Sidebar ⌃⌘S, Before / After, Zoom In, Zoom Out, Actual Size) and
   *Window* (Minimize ⌘M, Zoom, Next Tab, Previous Tab). Hide, Services and
-  their shortcuts are macOS only.
+  their shortcuts, and ⌃⌘S, are macOS only.
 - **Shortcuts come from the keymap.** Menu items show the binding GPUI finds
   for their action; no shortcut is defined twice.
 - **Edit uses the editor's actions with OS actions** (`cut:`, `copy:`,
