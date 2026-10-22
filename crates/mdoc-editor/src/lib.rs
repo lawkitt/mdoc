@@ -1761,7 +1761,13 @@ impl EditorState {
         if let Some((left, _)) = self.bidi_row_edges(row, col) {
             // At the body's start after a hidden marker: the second press
             // goes to the true start, like Home.
-            if plen > 0 && left == start + plen && col <= plen {
+            // Compared as drawn: hidden formatting after the marker takes
+            // no columns.
+            let body = self.display_col(row, plen);
+            if plen > 0
+                && self.display_col(row, left - start) == body
+                && self.display_col(row, col) <= body
+            {
                 return start;
             }
             return left;

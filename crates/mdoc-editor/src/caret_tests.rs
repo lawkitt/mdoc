@@ -276,9 +276,21 @@ fn cmd_left_on_a_right_to_left_list_item_reaches_the_line_start(cx: &mut gpui::T
         window.refresh();
         window.draw(cx).clear(cx);
     });
-    // Whatever the first press lands on, pressing again settles; from the
-    // body's start the next press reaches offset 0.
+    // From the body's start the next press reaches offset 0.
     editor.update(cx, |e, cx| e.set_cursor(2, cx));
+    press("cmd-left", cx);
+    assert_eq!(selection(&editor, cx), 0..0);
+    // Also with hidden formatting right after the marker.
+    editor.update(cx, |e, cx| {
+        e.set_text("- **abc** שלום def", cx);
+        e.set_cursor(12, cx);
+    });
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    press("cmd-left", cx);
+    press("cmd-left", cx);
     press("cmd-left", cx);
     assert_eq!(selection(&editor, cx), 0..0);
 }
