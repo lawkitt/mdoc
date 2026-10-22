@@ -4,6 +4,8 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+## [0.1.2] - 2026-10-22
+
 - **Dialogs and choices read correctly with a screen reader.** Settings is
   announced as a dialog; model choices as radio buttons in a named group; the
   narrow window's Markdown / Source switch as a "View" choice; each tab's
