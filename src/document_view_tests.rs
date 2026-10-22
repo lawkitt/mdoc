@@ -2021,3 +2021,153 @@ fn find_shows_the_markdown_pane_in_a_narrow_window(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(!cx.update(|_, cx| app.read(cx).original_selected));
 }
+
+/// Close a dirty tab with mdoc's confirm dialog installed (ADR 0064).
+fn ask_to_close(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut VisualTestContext) {
+    let (app, cx) = boot(cx);
+    cx.update(|_, cx| {
+        crate::confirm_dialog::install(
+            std::rc::Rc::new(std::cell::Cell::new(style::Theme::Light)),
+            cx,
+        )
+    });
+    app.update_in(cx, |app, window, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text("draft", cx);
+            editor.focus(window, cx);
+        });
+    });
+    cx.dispatch_action(Close);
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt(), "not the platform prompt");
+    assert!(cx.update(|window, _| window.has_active_prompt()));
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("confirm-dialog").is_some());
+    (app, cx)
+}
+
+#[gpui::test]
+fn unsaved_changes_esc_cancels_and_focus_returns(cx: &mut TestAppContext) {
+    let (app, cx) = ask_to_close(cx);
+    assert!(cx.update(|window, cx| {
+        !app.read(cx)
+            .editor
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window)
+    }));
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(cx.update(|window, _| !window.has_active_prompt()));
+    assert_eq!(active_document(&app, cx), app, "the tab stays open");
+    assert!(cx.update(|window, cx| {
+        app.read(cx)
+            .editor
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window)
+    }));
+}
+
+#[gpui::test]
+fn unsaved_changes_discard_chord_closes_without_saving(cx: &mut TestAppContext) {
+    let (app, cx) = ask_to_close(cx);
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-d"
+    } else {
+        "alt-d"
+    });
+    cx.run_until_parked();
+    assert!(cx.update(|window, _| !window.has_active_prompt()));
+    assert_ne!(active_document(&app, cx), app, "the dirty tab closed");
+}
+
+#[gpui::test]
+fn unsaved_changes_buttons_follow_tab_and_click(cx: &mut TestAppContext) {
+    let (app, cx) = ask_to_close(cx);
+    for _ in 0..3 {
+        cx.simulate_keystrokes("tab");
+    }
+    cx.run_until_parked();
+    assert!(
+        cx.update(|window, _| window.has_active_prompt()),
+        "Tab stays inside"
+    );
+    let cancel = cx.debug_bounds("confirm-Cancel").unwrap().center();
+    cx.simulate_click(cancel, gpui::Modifiers::none());
+    cx.run_until_parked();
+    assert!(cx.update(|window, _| !window.has_active_prompt()));
+    assert_eq!(active_document(&app, cx), app);
+}
+
+#[gpui::test]
+fn unsaved_changes_enter_saves_after_a_click_on_the_text(cx: &mut TestAppContext) {
+    let (_, cx) = ask_to_close(cx);
+    let text = cx.debug_bounds("confirm-dialog").unwrap().origin + gpui::point(px(30.), px(30.));
+    cx.simulate_click(text, gpui::Modifiers::none());
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    // Save on an untitled tab asks where to save: the dialog answered Save.
+    assert!(cx.update(|window, _| !window.has_active_prompt()));
+    assert!(cx.did_prompt_for_new_path());
+}
+
+#[gpui::test]
+fn files_opened_during_a_confirm_dialog_wait_for_the_answer(cx: &mut TestAppContext) {
+    let (app, cx) = ask_to_close(cx);
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("later.md");
+    std::fs::write(&path, "later").unwrap();
+    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::Open(vec![path])));
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(300));
+    cx.run_until_parked();
+    assert!(
+        cx.update(|window, _| window.has_active_prompt()),
+        "the dialog keeps focus"
+    );
+    assert_eq!(active_document(&app, cx), app);
+    cx.simulate_keystrokes("escape");
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(300));
+    cx.run_until_parked();
+    let opened = active_document(&app, cx);
+    assert_ne!(opened, app);
+    assert_eq!(
+        cx.update(|_, cx| opened.read(cx).editor.read(cx).text().to_owned()),
+        "later"
+    );
+}
+
+#[gpui::test]
+fn an_open_already_resolving_waits_for_a_dialog_raised_meanwhile(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    cx.update(|_, cx| {
+        crate::confirm_dialog::install(
+            std::rc::Rc::new(std::cell::Cell::new(style::Theme::Light)),
+            cx,
+        )
+    });
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("draft", cx))
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("later.md");
+    std::fs::write(&path, "later").unwrap();
+    // The open starts resolving, then the close asks before it finishes.
+    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::Open(vec![path])));
+    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::CloseRequested));
+    cx.run_until_parked();
+    assert!(cx.update(|window, _| window.has_active_prompt()));
+    assert_eq!(active_document(&app, cx), app, "the dialog keeps focus");
+    cx.simulate_keystrokes("escape");
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(300));
+    cx.run_until_parked();
+    let opened = active_document(&app, cx);
+    assert_eq!(
+        cx.update(|_, cx| opened.read(cx).editor.read(cx).text().to_owned()),
+        "later"
+    );
+}

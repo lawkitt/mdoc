@@ -20,6 +20,7 @@ mod self_test;
 use search_session::SearchRefresh;
 mod comparison;
 mod comparison_ui;
+mod confirm_dialog;
 #[cfg(test)]
 mod document_view_tests;
 mod model_download;
@@ -272,6 +273,7 @@ fn main() {
                 |window, cx| {
                     cx.new(|cx| {
                         let mut workspace = workspace::Workspace::new(window, cx);
+                        workspace.install_prompts(cx);
                         workspace.open_paths(initial, window, cx);
                         workspace
                     })

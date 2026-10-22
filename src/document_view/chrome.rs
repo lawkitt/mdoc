@@ -603,7 +603,11 @@ impl DocumentView {
 
     pub(super) fn pane_switch(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
+        // One choice of two panes: a radio group, not two buttons (ADR 0064).
         div()
+            .id("pane-switch")
+            .role(gpui::Role::RadioGroup)
+            .aria_label("View")
             .flex()
             .gap_1()
             .px_2()
@@ -614,6 +618,12 @@ impl DocumentView {
             .children([(false, "Markdown"), (true, "Source")].into_iter().map(
                 |(original, label)| {
                     ui::control(label, label, theme, true)
+                        .role(gpui::Role::RadioButton)
+                        .aria_toggled(if self.original_selected == original {
+                            gpui::Toggled::True
+                        } else {
+                            gpui::Toggled::False
+                        })
                         .when(cfg!(test), |v| v.debug_selector(move || label.into()))
                         .when(self.original_selected == original, |v| {
                             v.bg(theme.sidebar_selected())

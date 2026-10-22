@@ -64,6 +64,10 @@ visible text comes from several source ranges, as "foo bar" in
 `foo **bar**`) or overlaps an applied alias is never replaced
 ([ADR 0063](docs/adr/0063-find-and-replace.md)).
 
+**Confirm dialog**: mdoc's in-app modal question (unsaved changes, model
+removal, case actions), used instead of the platform prompt
+([ADR 0064](docs/adr/0064-dialog-and-role-semantics.md)).
+
 **Document header**: the title-bar row above a document: breadcrumb, Source,
 panel toggle, ⋯ and the primary action.
 
