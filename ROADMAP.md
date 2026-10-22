@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-20 (latest: 0.1.0); accepted
+This roadmap lists open work as of 2026-10-22 (latest: 0.1.0); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
@@ -22,7 +22,7 @@ and EN/RU spellcheck. No PII model has passed the
 
 Wrong output, data loss or silent failures that need no design decision
 ([milestone](https://github.com/lawkitt/mdoc/milestone/1)). 0.1.1 ships when
-item 1 is checked and items 2 and 3 are fixed; the rest ride along if ready.
+item 1 is checked and item 2 is fixed; the rest ride along if ready.
 Each patch gets a smoke run on both platforms; an item is done when its issue
 closes, with the expected behavior stated there.
 
@@ -30,17 +30,15 @@ closes, with the expected behavior stated there.
    *Done when:* the maintainer's T6 row passes on 0.1.0, or a fix ships.
 2. **[Cases] Save as case on an unsaved conversion** creates an unopenable
    case with 0 documents ([#75](https://github.com/lawkitt/mdoc/issues/75)).
-3. **[Windows] Single-instance launch:** a second launch starts another process
-   that also writes the session and Recents ([#80](https://github.com/lawkitt/mdoc/issues/80)).
-4. **[Workspace] Save As skips Recents** and creates the file with mode 0600
+3. **[Workspace] Save As skips Recents** and creates the file with mode 0600
    ([#76](https://github.com/lawkitt/mdoc/issues/76)).
-5. **[Editor] Closing marker after a trailing space** (`**delta **`)
+4. **[Editor] Closing marker after a trailing space** (`**delta **`)
    ([#77](https://github.com/lawkitt/mdoc/issues/77)).
-6. **[Pseudonymization] Popup stays open after ⌘↩ Apply all**
+5. **[Pseudonymization] Popup stays open after ⌘↩ Apply all**
    ([#78](https://github.com/lawkitt/mdoc/issues/78)).
-7. **[UI] Focus lost** after Share › Save as case and after an undo that
+6. **[UI] Focus lost** after Share › Save as case and after an undo that
    closes the popup ([#79](https://github.com/lawkitt/mdoc/issues/79)).
-8. **[macOS] Quit leaves the process running** with no windows
+7. **[macOS] Quit leaves the process running** with no windows
    ([#83](https://github.com/lawkitt/mdoc/issues/83)).
 
 ## 0.2.0

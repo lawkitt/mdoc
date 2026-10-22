@@ -4,6 +4,20 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **One mdoc on Windows.** A second launch or **Open with** hands its files to
+  the running mdoc, which opens them and comes to the front, instead of
+  starting another copy that also writes the session and Recents.
+- **mdoc is offered under Open with on Windows** for Markdown, text, PDF and
+  Word files, never as the default app; uninstalling removes exactly those
+  entries.
+- **Windows word and document moves.** Ctrl+←/→ (with Shift) move by word and
+  stop at the next word's start, Ctrl+Backspace/Delete delete a word, and
+  Ctrl+Home/End (with Shift) go to the document's ends without revealing
+  hidden syntax.
+- **The command palette covers what the Windows menu lacks:** Save As,
+  Before / After, Close Tab and Toggle Sidebar. Settings › Saved cases now
+  points to Home and the palette.
+
 ## [0.1.0] - 2026-10-20
 
 - **Windows window buttons work.** Minimize, maximize/restore and close act on
