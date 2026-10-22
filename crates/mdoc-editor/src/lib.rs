@@ -5095,6 +5095,43 @@ struct ShapeMemo {
 #[cfg(test)]
 mod tests {
     #[gpui::test]
+    fn formatting_leaves_edge_whitespace_outside_the_markers(cx: &mut gpui::TestAppContext) {
+        use super::*;
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update(cx, |editor, cx| {
+            editor.set_text("alpha delta gamma", cx);
+            // `delta ` with its trailing space, as Alt+Shift+← selects it (#77).
+            editor.set_selection(6..12, cx);
+        });
+        cx.update(|window, cx| editor.update(cx, |e, cx| e.bold(&Bold, window, cx)));
+        editor.read_with(cx, |e, _| {
+            assert_eq!(e.text(), "alpha **delta** gamma");
+            assert_eq!(e.selected_range, 8..13);
+        });
+        // A second press unwraps it again.
+        cx.update(|window, cx| editor.update(cx, |e, cx| e.bold(&Bold, window, cx)));
+        editor.read_with(cx, |e, _| assert_eq!(e.text(), "alpha delta gamma"));
+        // Only whitespace selected: nothing to format.
+        editor.update(cx, |editor, cx| editor.set_selection(5..6, cx));
+        cx.update(|window, cx| editor.update(cx, |e, cx| e.italic(&Italic, window, cx)));
+        editor.read_with(cx, |e, _| assert_eq!(e.text(), "alpha delta gamma"));
+        // Existing padded markers unwrap as selected, not wrap again.
+        editor.update(cx, |editor, cx| {
+            editor.set_text("<u> delta </u>", cx);
+            editor.set_selection(3..10, cx);
+        });
+        cx.update(|window, cx| editor.update(cx, |e, cx| e.underline(&Underline, window, cx)));
+        editor.read_with(cx, |e, _| assert_eq!(e.text(), " delta "));
+        // A trailing space after bold markers still unwraps them.
+        editor.update(cx, |editor, cx| {
+            editor.set_text("**delta** x", cx);
+            editor.set_selection(0..10, cx);
+        });
+        cx.update(|window, cx| editor.update(cx, |e, cx| e.bold(&Bold, window, cx)));
+        editor.read_with(cx, |e, _| assert_eq!(e.text(), "delta x"));
+    }
+
+    #[gpui::test]
     fn table_width_cache_tracks_viewport_content_and_style(cx: &mut gpui::TestAppContext) {
         use super::*;
         let (editor, cx) = cx.add_window_view(EditorState::new);

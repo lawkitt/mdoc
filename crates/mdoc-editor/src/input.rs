@@ -361,6 +361,9 @@ impl EditorState {
     /// around the selection. No-op on an empty selection. Unwraps when the
     /// selection is already wrapped (markers just inside or just outside it),
     /// otherwise wraps — keeping the same text selected so presses toggle.
+    /// Whitespace at either end stays outside new markers: CommonMark does not
+    /// render `**delta **` as bold (#77). Existing markers unwrap as selected
+    /// (`<u> delta </u>`) or once the whitespace is trimmed (`**delta** `).
     fn toggle_wrap_pair(&mut self, open: &str, close: &str, cx: &mut Context<Self>) {
         if self.read_only {
             return;
@@ -369,31 +372,25 @@ impl EditorState {
         if sel.start >= sel.end {
             return;
         }
-        let (ol, cl) = (open.len(), close.len());
-        let sel_text = &self.content[sel.clone()];
-        let (range, new, new_sel) =
-            if sel_text.len() >= ol + cl && sel_text.starts_with(open) && sel_text.ends_with(close)
-            {
-                // `**foo**` selected → strip the markers inside the selection.
-                let inner = self.content[sel.start + ol..sel.end - cl].to_string();
-                (sel.clone(), inner, sel.start..sel.end - ol - cl)
-            } else if self.content[..sel.start].ends_with(open)
-                && self.content[sel.end..].starts_with(close)
-            {
-                // `foo` selected with the markers just outside → strip them.
-                (
-                    sel.start - ol..sel.end + cl,
-                    sel_text.to_string(),
-                    sel.start - ol..sel.end - ol,
-                )
-            } else {
+        let text = &self.content[sel.clone()];
+        let start = sel.start + (text.len() - text.trim_start().len());
+        let trimmed = start..start + text.trim().len();
+        let unwrap = self
+            .unwrap_edit(sel.clone(), open, close)
+            .or_else(|| self.unwrap_edit(trimmed.clone(), open, close));
+        let (range, new, new_sel) = match unwrap {
+            Some(edit) => edit,
+            None if trimmed.is_empty() => return,
+            None => {
                 // Plain → wrap.
+                let ol = open.len();
                 (
-                    sel.clone(),
-                    format!("{open}{sel_text}{close}"),
-                    sel.start + ol..sel.end + ol,
+                    trimmed.clone(),
+                    format!("{open}{}{close}", &self.content[trimmed.clone()]),
+                    trimmed.start + ol..trimmed.end + ol,
                 )
-            };
+            }
+        };
         self.record_edit(&range, &new);
         self.content.replace_range(range.clone(), &new);
         self.selected_range = new_sel;
@@ -402,6 +399,35 @@ impl EditorState {
         self.remap_diagnostics(&range, new.len());
         self.emit_changed(cx);
         cx.notify();
+    }
+
+    /// The edit that strips `open`/`close` from `sel`, if they sit just
+    /// inside or just outside it: (range, replacement, new selection).
+    fn unwrap_edit(
+        &self,
+        sel: Range<usize>,
+        open: &str,
+        close: &str,
+    ) -> Option<(Range<usize>, String, Range<usize>)> {
+        let (ol, cl) = (open.len(), close.len());
+        let sel_text = &self.content[sel.clone()];
+        if sel_text.len() >= ol + cl && sel_text.starts_with(open) && sel_text.ends_with(close) {
+            // `**foo**` selected → strip the markers inside the selection.
+            let inner = self.content[sel.start + ol..sel.end - cl].to_string();
+            Some((sel.clone(), inner, sel.start..sel.end - ol - cl))
+        } else if !sel.is_empty()
+            && self.content[..sel.start].ends_with(open)
+            && self.content[sel.end..].starts_with(close)
+        {
+            // `foo` selected with the markers just outside → strip them.
+            Some((
+                sel.start - ol..sel.end + cl,
+                sel_text.to_string(),
+                sel.start - ol..sel.end - ol,
+            ))
+        } else {
+            None
+        }
     }
 
     pub(super) fn bold(&mut self, _: &Bold, _: &mut Window, cx: &mut Context<Self>) {
