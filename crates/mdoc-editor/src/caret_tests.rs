@@ -225,3 +225,79 @@ fn cmd_backspace_on_a_right_to_left_line_deletes_to_its_reading_start(
 "
     );
 }
+
+#[gpui::test]
+fn cmd_backspace_at_a_cell_start_keeps_the_cells(cx: &mut gpui::TestAppContext) {
+    let source = "| one | two |\n| --- | --- |\n| red | blue |";
+    let at = source.find("blue").unwrap();
+    let (editor, cx) = mac_editor(cx, source, at);
+    editor.update(cx, |e, cx| {
+        e.set_markdown_style(markdown_syntax::search_style(), cx)
+    });
+    press("cmd-backspace", cx);
+    assert_eq!(text(&editor, cx), source);
+}
+
+#[gpui::test]
+fn cmd_right_before_hidden_markers_at_a_wrap_stays_on_the_row(cx: &mut gpui::TestAppContext) {
+    // Every word bold: each row's wrap lands right before a hidden `**`.
+    let source = "**word** ".repeat(400);
+    let source = source.trim_end().to_string();
+    let (editor, cx) = mac_editor(cx, &source, 2);
+    editor.update(cx, |e, cx| {
+        e.set_markdown_style(markdown_syntax::search_style(), cx)
+    });
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    let row_top = |editor: &Entity<EditorState>, cx: &mut gpui::VisualTestContext| {
+        editor.read_with(cx, |e, _| {
+            e.bounds_for_offset(e.cursor_offset()).map(|b| b.top())
+        })
+    };
+    let top = row_top(&editor, cx);
+    press("cmd-right", cx);
+    let end = selection(&editor, cx).start;
+    assert!(end > 2 && end < source.len(), "{end}");
+    assert_eq!(row_top(&editor, cx), top);
+    press("cmd-right", cx);
+    assert_eq!(selection(&editor, cx).start, end);
+}
+
+#[gpui::test]
+fn cmd_left_on_a_right_to_left_list_item_reaches_the_line_start(cx: &mut gpui::TestAppContext) {
+    let source = "- abc שלום def";
+    let (editor, cx) = mac_editor(cx, source, 4);
+    editor.update(cx, |e, cx| {
+        e.set_markdown_style(markdown_syntax::search_style(), cx)
+    });
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    // Whatever the first press lands on, pressing again settles; from the
+    // body's start the next press reaches offset 0.
+    editor.update(cx, |e, cx| e.set_cursor(2, cx));
+    press("cmd-left", cx);
+    assert_eq!(selection(&editor, cx), 0..0);
+}
+
+#[gpui::test]
+fn cmd_left_on_a_wrapped_right_to_left_paragraph_stays_on_its_row(cx: &mut gpui::TestAppContext) {
+    let source = "שלום עולם ".repeat(300);
+    let source = source.trim_end().to_string();
+    let (editor, cx) = mac_editor(cx, &source, 4);
+    let row = |editor: &Entity<EditorState>, cx: &mut gpui::VisualTestContext| {
+        editor.read_with(cx, |e, _| {
+            let r = e.bidi_map(0).unwrap();
+            r.row_of(e.display_col(0, e.cursor_offset())).0
+        })
+    };
+    assert!(editor.read_with(cx, |e, _| e.bidi_map(0).unwrap().rows.len() > 1));
+    let first = row(&editor, cx);
+    for key in ["cmd-left", "cmd-left", "cmd-right", "cmd-right"] {
+        press(key, cx);
+        assert_eq!(row(&editor, cx), first, "{key}");
+    }
+}

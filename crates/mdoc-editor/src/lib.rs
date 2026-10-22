@@ -1715,7 +1715,12 @@ impl EditorState {
         let rr = r.rows.get(k)?;
         // The caret stops drawn furthest left and right, as the caret paints.
         let text = self.wrapped.get(row)?.text.clone();
-        let stops = (0..=rr.len).filter(|i| text.is_char_boundary(rr.start + i));
+        let last = if k + 1 < r.rows.len() {
+            rr.len.saturating_sub(1)
+        } else {
+            rr.len
+        };
+        let stops = (0..=last).filter(|i| text.is_char_boundary(rr.start + i));
         let x = |i: &usize| rr.map.x_for_index(*i);
         let left = stops.clone().min_by(|a, b| x(a).total_cmp(&x(b)))?;
         let right = stops.max_by(|a, b| x(a).total_cmp(&x(b)))?;
@@ -1751,14 +1756,19 @@ impl EditorState {
             return cell.start;
         }
         let (row, col) = self.row_col(self.cursor_offset());
+        let start = self.line_starts()[row];
+        let plen = self.hidden_prefix_len(row);
         if let Some((left, _)) = self.bidi_row_edges(row, col) {
+            // At the body's start after a hidden marker: the second press
+            // goes to the true start, like Home.
+            if plen > 0 && left == start + plen && col <= plen {
+                return start;
+            }
             return left;
         }
-        let start = self.line_starts()[row];
         let (vstart, _) = self.visual_row_span(row, self.display_col(row, col));
         if vstart == 0 {
             // The first row; display column 0 can sit after a hidden marker.
-            let plen = self.hidden_prefix_len(row);
             return start + if plen > 0 && col > plen { plen } else { 0 };
         }
         start + self.source_col(row, vstart)
@@ -1778,16 +1788,19 @@ impl EditorState {
         }
         let start = self.line_starts()[row];
         let line_end = self.line_end(row);
-        let (_, vend) = self.visual_row_span(row, self.display_col(row, col));
-        let mut target = start + self.source_col(row, vend);
-        if target < line_end
-            && let Some(c) = self.content[..target].chars().next_back()
+        let (vstart, vend) = self.visual_row_span(row, self.display_col(row, col));
+        let full = self.display_col(row, line_end - start);
+        let mut dend = vend;
+        if vend < full
+            && let Some(line) = self.wrapped.get(row)
+            && let Some(c) = line.text[..vend.min(line.text.len())].chars().next_back()
         {
             // Without caret affinity, the wrap offset itself draws on the
-            // next row.
-            target -= c.len_utf8();
+            // next row: step back one visible character (past hidden
+            // markers, which take no display columns).
+            dend = (vend - c.len_utf8()).max(vstart);
         }
-        target.clamp(start + col, line_end)
+        (start + self.source_col(row, dend)).clamp(start + col, line_end)
     }
 
     fn line_start(&mut self, _: &LineStart, _: &mut Window, cx: &mut Context<Self>) {
@@ -1839,7 +1852,10 @@ impl EditorState {
                 _ => self.visual_line_start(),
             };
             if start >= off {
-                self.backspace(&Backspace, window, cx);
+                // At a cell's start, stop: ⌫ would merge the cells.
+                if self.caret_table_cell().is_none() {
+                    self.backspace(&Backspace, window, cx);
+                }
                 return;
             }
             self.select_to(start, cx);

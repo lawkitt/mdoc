@@ -93,9 +93,9 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[OCR]** Recover page structure on clean scans, in the AnyDoc/pdf-inspector forks.
 - **[DOCX]** Pseudonymized DOCX export with rdocx, then rdocx for the preview.
 - **[Cases]** System-wide Pseudonymize Clipboard hotkey.
-- **[Editor]** Caret affinity at soft wraps, so ⌘→ (and End on a wrapped row)
-  can sit after a row's last character when the row broke inside a word; today
-  it stops one character short (ADR 0061). Table cells with wrapped text or
+- **[Editor]** Caret affinity at soft wraps, so ⌘→ can sit after a row's last
+  character when the row broke inside a word; today it stops one character
+  short (ADR 0061). Table cells with wrapped text or
   `<br>` rows would then move by their own visual rows too.
 - **[Tests]** Flaky `gpui-pdf` scrolling tests under `cargo test --workspace`
   on Windows (2026-10-22, twice in a row): `a_source_note_shows_beside_the_name`,
