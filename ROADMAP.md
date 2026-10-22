@@ -28,15 +28,13 @@ closes, with the expected behavior stated there.
 
 1. **[Platform] Windows caption buttons on the installed 0.1.0** ([#74](https://github.com/lawkitt/mdoc/issues/74)).
    *Done when:* the maintainer's T6 row passes on 0.1.0, or a fix ships.
-2. **[Workspace] Save As skips Recents** and creates the file with mode 0600
-   ([#76](https://github.com/lawkitt/mdoc/issues/76)).
-3. **[Editor] Closing marker after a trailing space** (`**delta **`)
+2. **[Editor] Closing marker after a trailing space** (`**delta **`)
    ([#77](https://github.com/lawkitt/mdoc/issues/77)).
-4. **[Pseudonymization] Popup stays open after ⌘↩ Apply all**
+3. **[Pseudonymization] Popup stays open after ⌘↩ Apply all**
    ([#78](https://github.com/lawkitt/mdoc/issues/78)).
-5. **[UI] Focus lost** after Share › Save as case and after an undo that
+4. **[UI] Focus lost** after Share › Save as case and after an undo that
    closes the popup ([#79](https://github.com/lawkitt/mdoc/issues/79)).
-6. **[macOS] Quit leaves the process running** with no windows
+5. **[macOS] Quit leaves the process running** with no windows
    ([#83](https://github.com/lawkitt/mdoc/issues/83)).
 
 ## 0.2.0

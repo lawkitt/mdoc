@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **A converted document saved as Markdown enters Recents** as the saved
+  file, so it reopens as your edited Markdown instead of a fresh conversion of
+  the source. On macOS, a newly saved file gets the usual permissions instead
+  of being readable only by you.
 - **Save as case keeps the document.** On a conversion whose Markdown was
   never saved, Save as case (or Save as Case when closing) first asks where to
   save it, then creates the case with that file in it. It no longer creates

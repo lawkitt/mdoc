@@ -184,12 +184,15 @@ impl Workspace {
         if view.loading || view.unavailable {
             return;
         }
+        // Saved Markdown first: a conversion saved as .md reopens as that
+        // file, not as a fresh conversion of its source (#76).
         let path = view
-            .preview
-            .attachment
+            .session
+            .document
+            .path
             .as_ref()
-            .or(view.preview.source.as_ref())
-            .or(view.session.document.path.as_ref());
+            .or(view.preview.attachment.as_ref())
+            .or(view.preview.source.as_ref());
         let opened = path != tab.recent_path.as_ref();
         if opened {
             tab.recent_path = path.cloned();

@@ -36,7 +36,16 @@ impl Document {
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or(Path::new("."));
-        let mut temporary = tempfile::NamedTempFile::new_in(parent)?;
+        // A new file gets the usual umask permissions, not tempfile's 0600 (#76).
+        #[cfg(unix)]
+        let builder = {
+            let mut builder = tempfile::Builder::new();
+            builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o666));
+            builder
+        };
+        #[cfg(not(unix))]
+        let builder = tempfile::Builder::new();
+        let mut temporary = builder.tempfile_in(parent)?;
         if let Ok(metadata) = std::fs::metadata(&target) {
             temporary
                 .as_file()
@@ -97,6 +106,19 @@ mod tests {
         assert!(doc.save(path.clone(), "my edits").is_err());
         assert_eq!(std::fs::read_to_string(path).unwrap(), "external");
     }
+    #[cfg(unix)]
+    #[test]
+    fn a_new_file_gets_umask_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let reference = dir.path().join("reference");
+        std::fs::write(&reference, "").unwrap();
+        let path = dir.path().join("note.md");
+        Document::default().save(path.clone(), "text").unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&path), mode(&reference));
+    }
+
     #[test]
     fn failed_save_preserves_document_state() {
         let dir = tempfile::tempdir().unwrap();
