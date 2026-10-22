@@ -1,7 +1,7 @@
 # Stable, compact, reversible mention popup
 
-Status: Accepted, 2026-10-17. Amends the popup, scope and keys of
-[ADR 0048](0048-workspace-shell-redesign.md).
+Status: Accepted, 2026-10-17; Enter and Apply all decided 2026-10-22. Amends
+the popup, scope and keys of [ADR 0048](0048-workspace-shell-redesign.md).
 
 ## Problem
 
@@ -9,7 +9,9 @@ The mention popup (ADR 0048) blinked out and back while a mention was selected,
 stepped or scrolled, sometimes framing a wrong position. At 720 px it was wider
 than its controls, covered the lines under its mention, and its border vanished
 over text. It defaulted to the "Same text" scope, so the whole entity took an
-extra click. Unticking Replace closed it, and kept mentions lost every mark, so
+extra click. Enter applied only this mention and switched the scope to This
+one, and ⌘↩ left the popup on a mention it had just applied
+([#78](https://github.com/lawkitt/mdoc/issues/78)). Unticking Replace closed it, and kept mentions lost every mark, so
 undoing a keep meant finding the mention again. The "Replace ⌘⌥P" chip covered
 the selection's neighbouring lines.
 
@@ -24,6 +26,16 @@ the selection's neighbouring lines.
   entity and the default. "Same text" leaves the popup; ⌘⌫ (keep same wording)
   and the panel still reach it. The scope persists while stepping within the
   entity and resets to All when another entity is opened.
+- **Enter applies in the selected scope.** With All N it applies every
+  proposed mention of the entity, with This one only this mention; the
+  segment does not change. Then the popup moves on: with This one to the
+  entity's next proposed mention, otherwise (or when the entity has none left)
+  to the first proposed mention of the next entity with proposals, in panel
+  order. With no proposals left it closes. Enter on an applied or kept
+  mention does nothing; ⌘Z and ticking Replace undo. After a manual addition
+  Enter applies it and stays, so its Cancel stays offered (ADR 0024, 0025).
+- **Apply all closes the popup.** ⌘↩ and the toolbar's Apply N apply every
+  proposal in the document and close the popup; ⌘Z undoes them as one step.
 - **Reversible Replace.** Unticking Replace keeps the mentions in scope and
   leaves the popup open, unticked. Ticking it again undoes that keep in the
   same scope. Each toggle is one undo step; text changes only on Apply. The
@@ -57,15 +69,19 @@ the selection's neighbouring lines.
 
 ## Invariants
 
-- Opening, stepping, scrolling or keeping never closes the popup; only Esc, ×
-  or a click outside does. Space and ⌫ keep like unticking Replace.
+- Opening, stepping, scrolling or keeping never closes the popup; only Esc, ×,
+  a click outside, or applying the last proposal (Enter or Apply all) does.
+  Space and ⌫ keep like unticking Replace.
+- Enter, Space, ⌫, ‹ › and the scope outline act on the segment shown; no key
+  changes it, except opening another entity, which resets it to All.
 - An occurrence's identity and the chosen scope survive stepping and toggling.
 - Apply stays explicit; ticking never changes text.
 
 ## Consequences
 
 ADR 0048's "One width (up to 720 px), just below its word", its three-segment
-scope and its Space-unticks-and-closes behaviour no longer hold, nor ADR
-0024's disabled pill (the menu item keeps the reason).
+scope, its Space-unticks-and-closes behaviour and its "Enter applies this
+mention" no longer hold, nor ADR 0024's disabled pill (the menu item keeps the
+reason). Tests cover Enter in each segment, the move after it, and ⌘↩ closing.
 
 References: [ROADMAP should-fix 1](../../ROADMAP.md#should-fix).

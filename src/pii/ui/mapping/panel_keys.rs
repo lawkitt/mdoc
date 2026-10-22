@@ -128,10 +128,9 @@ impl DocumentView {
         } else {
             self.apply_scope(cx);
         }
-        // This one and All stay chosen; Same text has no segment to show.
-        if scope == Scope::Wording {
-            self.pii.mapping.set_scope(previous);
-        }
+        // The key names its own scope; the segment keeps showing the chosen
+        // one (ADR 0055).
+        self.pii.mapping.set_scope(previous);
         true
     }
 
@@ -328,8 +327,9 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
         popup
+            // Enter applies in the shown scope and moves on (ADR 0055).
             .on_action(cx.listener(|this, _: &crate::ApplyThis, window, cx| {
-                this.decide(Scope::Mention, false, window, cx);
+                this.apply_and_advance(window, cx);
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &crate::ApplySame, window, cx| {

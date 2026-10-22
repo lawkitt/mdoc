@@ -8,7 +8,7 @@ Status: Accepted, 2026-10-15. Supersedes the toolbar of
 of [ADR 0033](0033-replacements-panel-redesign.md), and the "no per-category
 colours" of [ADR 0046](0046-workspace-polish-from-anoni-review.md).
 Amended by [ADR 0055](0055-stable-compact-mention-popup.md): popup width,
-placement, scope and arrow keys.
+placement, scope, arrow keys, Enter and Apply all.
 
 ## Problem
 
@@ -78,10 +78,10 @@ step, but as a one-document wizard that hides editing.
    Panel entity clicks open the group and the popup on its first mention (a
    second click folds both); mention rows open the popup on that mention.
 8. **Keys.** Panel: ↑/↓, Space toggle, →/← expand, Enter jump, ⌫ Keep, ⌥↑/↓
-   keyboard move. Popup: Enter applies this mention, Space unticks Replace in
-   scope, ←/→ and ↑/↓ step mentions (ADR 0055), ⌫ / ⌘⌫ / ⇧⌘⌫ keep this / same
-   wording / all. ⌘↩ applies everything, everywhere; ⌘Z takes an applied
-   mention back to proposed. ADR 0033's ⌘Enter / ⇧⌘Enter scopes are gone.
+   keyboard move. Popup: Enter applies in the selected scope and moves to the
+   next proposal (ADR 0055), Space unticks Replace in scope, ←/→ and ↑/↓ step mentions (ADR 0055), ⌫ / ⌘⌫ / ⇧⌘⌫ keep this / same
+   wording / all. ⌘↩ applies everything, everywhere, and closes the popup;
+   ⌘Z takes an applied mention back to proposed. ADR 0033's ⌘Enter / ⇧⌘Enter scopes are gone.
 9. **Reading column** centred, 760 px at 100%. **Zoom** scales the Markdown
    column's text, 50–200% in 5% steps (⌘= or ⌘+ / ⌘− / ⌘0; Ctrl on Windows
    and Linux; plus is accepted with the Shift a layout needs), per document,

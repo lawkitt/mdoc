@@ -4,6 +4,12 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Enter in the mention popup follows the scope you see.** With All N
+  selected, Enter replaces every mention of the name; with This one, only
+  this mention. The choice no longer flips to This one, and the popup moves
+  on to the next suggestion, closing when none is left. Apply all (⌘↩ /
+  Ctrl+Enter, or the toolbar's Apply) closes the popup (ADR 0055).
+
 - **Enter starts a paragraph.** Lines you separate with Enter stay separate
   in Copy for AI: Enter writes a blank line between paragraphs, and Shift+Enter
   is a line break within one (`\` at the line end, hidden away from the

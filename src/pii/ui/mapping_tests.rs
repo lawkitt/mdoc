@@ -640,7 +640,7 @@ fn visible_alias_draft_and_apply_share_one_undo_step(cx: &mut gpui::TestAppConte
             cx.run_until_parked();
             app.update_in(cx, |app, window, cx| {
                 assert_eq!(app.editor.read(cx).text(), "CLIENT_7 · ORG_1");
-                assert!(app.pii.popup.is_some());
+                assert!(app.pii.popup.is_none());
                 assert!(app.pii.mapping.field_error.is_none());
                 window.focus(&app.editor.read(cx).focus_handle(cx), cx);
             });
@@ -2051,4 +2051,163 @@ fn popup_leaves_its_line_and_the_next_visible_and_scrolls_with_it(cx: &mut gpui:
         window.draw(cx).clear(cx);
     });
     assert_eq!(gap(cx), before);
+}
+
+/// Open the popup on the variant's `index`-th mention, focused for keys.
+fn open_popup_on(
+    app: &Entity<DocumentView>,
+    variant: u64,
+    index: usize,
+    cx: &mut gpui::VisualTestContext,
+) {
+    app.update_in(cx, |app, window, cx| {
+        let range = app.pii.review.variant(variant).unwrap().mentions[index].clone();
+        let annotation = app.pii.review.annotation_id(variant, &range).unwrap();
+        app.activate_annotation(annotation, window, cx);
+        window.focus(&app.pii.focus, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+}
+
+fn press(keys: &str, cx: &mut gpui::VisualTestContext) {
+    cx.simulate_keystrokes(keys);
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+}
+
+#[gpui::test]
+fn popup_enter_applies_the_whole_entity_under_all_and_opens_the_next(
+    cx: &mut gpui::TestAppContext,
+) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 0, cx);
+    let entity = app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.mapping.scope, Scope::Entity);
+        app.selected_entity().unwrap()
+    });
+    press("enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "ORG_1 · ORG_1 · marina@example.invalid"
+        );
+        // The popup moved to the next entity's proposal, scope All.
+        assert!(app.pii.popup.is_some());
+        assert_ne!(app.selected_entity(), Some(entity));
+        assert!(app.active_annotation().unwrap() & (APPLIED_ID | KEPT_ID) == 0);
+        assert_eq!(app.pii.mapping.scope, Scope::Entity);
+    });
+    // The last proposal applied, nothing is left: the popup closes.
+    press("enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert!(!app.editor.read(cx).text().contains("marina@"));
+        assert_eq!(app.pii.review.remaining(), 0);
+        assert!(app.pii.popup.is_none());
+    });
+}
+
+#[gpui::test]
+fn popup_enter_under_this_one_applies_one_mention_and_steps_within_the_entity(
+    cx: &mut gpui::TestAppContext,
+) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 0, cx);
+    app.update(cx, |app, _| app.pii.mapping.set_scope(Scope::Mention));
+    let entity = app.read_with(cx, |app, _| app.selected_entity().unwrap());
+    press("enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "ORG_1 · Павлова М.С. · marina@example.invalid"
+        );
+        // The segment stays This one, on the entity's next proposal.
+        assert_eq!(app.pii.mapping.scope, Scope::Mention);
+        assert_eq!(app.selected_entity(), Some(entity));
+        let range = app.active_replacement_range().unwrap();
+        assert_eq!(&app.editor.read(cx).text()[range], "Павлова М.С.");
+    });
+    // The entity's last proposal: Enter moves to the next entity (All again).
+    press("enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "ORG_1 · ORG_1 · marina@example.invalid"
+        );
+        assert!(app.pii.popup.is_some());
+        assert_ne!(app.selected_entity(), Some(entity));
+        assert_eq!(app.pii.mapping.scope, Scope::Entity);
+    });
+}
+
+#[gpui::test]
+fn popup_enter_on_an_applied_mention_does_nothing(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 0, cx);
+    app.update(cx, |app, cx| app.apply_scope(cx));
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let (text, history) = app.read_with(cx, |app, cx| {
+        assert!(app.active_annotation().unwrap() & APPLIED_ID != 0);
+        (
+            app.editor.read(cx).text().to_owned(),
+            app.editor.read(cx).history_id(),
+        )
+    });
+    press("enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), text);
+        assert_eq!(app.editor.read(cx).history_id(), history);
+        assert!(app.pii.popup.is_some());
+    });
+}
+
+#[gpui::test]
+fn apply_all_closes_the_popup(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 0, cx);
+    press("secondary-enter", cx);
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.pii.review.remaining(), 0);
+        assert!(app.pii.popup.is_none());
+    });
+    // One undo brings every proposal back.
+    let undo = if cfg!(target_os = "macos") {
+        "cmd-z"
+    } else {
+        "ctrl-z"
+    };
+    press(undo, cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), source);
+    });
+}
+
+#[gpui::test]
+fn popup_keep_keys_leave_the_segment_as_shown(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 0, cx);
+    let entity = app.read_with(cx, |app, _| app.selected_entity().unwrap());
+    // ⌫ keeps only this mention; the segment still reads All.
+    press("backspace", cx);
+    app.read_with(cx, |app, _| {
+        assert!(app.active_is_kept());
+        assert_eq!(app.pii.review.identity_count(entity), 1);
+        assert_eq!(app.pii.mapping.scope, Scope::Entity);
+    });
 }

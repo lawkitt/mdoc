@@ -380,7 +380,8 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
             "**Анна** ORG_1 PERSON_CUSTOM [mail](EMAIL_1) Bob"
         );
         assert_eq!(app.pii.review.remaining(), 0);
-        assert!(app.pii.popup.is_some());
+        // Nothing is left to review, so Apply closes the popup (ADR 0055).
+        assert!(app.pii.popup.is_none());
         assert!(app.dirty(cx));
         assert!(app.pii.error.is_none());
     });
@@ -836,9 +837,14 @@ fn long_original_enter_applies_this_one_and_alias_enter_only_confirms(
         cx.run_until_parked();
         app.update_in(cx, |app, window, cx| {
             assert_eq!(app.editor.read(cx).text(), "CLIENT_1");
-            assert!(app.pii.popup.is_some());
+            assert!(app.pii.popup.is_none());
+            // Enter on the applied mention changes nothing.
+            let applied = app.pii.review.applied()[0].id;
+            app.activate_annotation(APPLIED_ID | applied, window, cx);
             window.focus(&app.pii.focus, cx);
         });
+        cx.run_until_parked();
+        cx.update(|window, cx| window.draw(cx).clear(cx));
         cx.simulate_keystrokes("enter");
         cx.run_until_parked();
         assert_eq!(

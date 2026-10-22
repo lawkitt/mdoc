@@ -203,6 +203,15 @@ impl DocumentView {
         projection
     }
 
+    /// Entity ids in the panel's row order (category, then entity).
+    pub(super) fn panel_entity_order(&self, cx: &App) -> Vec<u64> {
+        self.replacement_projection(cx)
+            .rows
+            .iter()
+            .map(|row| row.id)
+            .collect()
+    }
+
     fn replacement_query(&self, cx: &App) -> String {
         self.pii
             .mapping

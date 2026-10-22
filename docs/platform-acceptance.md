@@ -156,12 +156,12 @@ Fixture: the English demo, scanned.
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
 | R1 | Clicking a proposal opens the popup next to it, inside the window, with buttons inside the popup | | |
-| R2 | Enter applies, ⌫ keeps, ←/→ step through mentions, Mod+↑/↓ jump to the ends, Esc closes | | |
+| R2 | Enter applies in the shown segment (All N, then This one) without changing it and opens the next proposal; ⌫ keeps, ←/→ step through mentions, Mod+↑/↓ jump to the ends, Esc closes | | |
 | R3 | Mod+⌫ keeps the same text; Mod+Shift+⌫ keeps the whole entity | | |
 | R4 | Editing the alias field and pressing Enter renames the alias | | |
 | R5 | Mod+Z inside the popup and the panel undoes the last decision; Mod+Shift+Z (and Ctrl+Y on Windows) redoes | | |
 | R6 | Panel list: ↑/↓, Space, Enter, →/←, ⌫ behave as described in ADR 0048 | | |
-| R7 | Mod+Enter applies all | | |
+| R7 | Mod+Enter and the toolbar's Apply N apply all and close the popup; one Mod+Z undoes them | | |
 | R8 | Before / After (Mod+\\) shows both columns; Esc leaves | | |
 | R9 | Alt+Enter, Alt+↑/↓ and Mod+Alt+P work in the editor | | |
 

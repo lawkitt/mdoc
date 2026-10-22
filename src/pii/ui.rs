@@ -268,8 +268,8 @@ fn decision_bindings(modifier: &str) -> Vec<KeyBinding> {
         KeyBinding::new("delete", crate::PanelKeep, Some(LIST)),
         KeyBinding::new(&format!("{modifier}-enter"), PiiApplyAll, None),
     ];
-    // The mention bar: Enter applies this mention, Space unticks in the
-    // selected scope, ⌘↩ applies everything (ADR 0048).
+    // The mention bar: Enter applies in the selected scope and moves on,
+    // Space unticks in it, ⌘↩ applies everything (ADR 0055).
     bindings.extend([
         KeyBinding::new("enter", crate::ApplyThis, Some(POPUP)),
         KeyBinding::new("space", crate::PanelKeep, Some(POPUP)),
@@ -734,11 +734,15 @@ impl DocumentView {
     pub(crate) fn apply_all_pii(
         &mut self,
         _: &PiiApplyAll,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.pii.reviewing && self.pii.review.remaining() > 0 {
             self.apply_replacements(cx);
+            // Nothing is left to review, so the popup closes (ADR 0055).
+            if self.pii.popup.is_some() && self.pii.review.remaining() == 0 {
+                self.close_pii_popup(&PiiClosePopup, window, cx);
+            }
             // Inspector (ADR 0048 variant C): next comes sharing.
             if self.pii.review.remaining() == 0 && self.has_applied_aliases() {
                 self.inspector_share = true;

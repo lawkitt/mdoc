@@ -1,7 +1,7 @@
 //! Shared occurrence selection, explicit mutation scopes and draft lifecycle.
 use super::*;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::pii::ui) enum Scope {
     Mention,
     Wording,
@@ -562,6 +562,66 @@ impl DocumentView {
         self.review_changed(cx);
         self.restore_active_replacement(active, &edits, cx);
         cx.notify();
+    }
+    /// Popup Enter (ADR 0055): apply the proposals in the shown scope, then
+    /// open the next proposal (this entity's next one under This one, else the
+    /// next entity's first in panel order), or close when none is left. A
+    /// fresh manual addition stays put so its Cancel is still offered (ADR 0025).
+    pub(in crate::pii::ui) fn apply_and_advance(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(annotation) = self.active_annotation() else {
+            return;
+        };
+        let Some(entity) = self.selected_entity() else {
+            return;
+        };
+        if annotation & (APPLIED_ID | KEPT_ID) != 0 {
+            return;
+        }
+        let scope = self.pii.mapping.scope;
+        let before = self.editor.read(cx).history_id();
+        self.apply_scope(cx);
+        if self.pii.enter_applies
+            || self.editor.read(cx).history_id() == before
+            || self.pii.popup.is_none()
+        {
+            return;
+        }
+        let proposals = |this: &Self, id| -> Vec<(u64, Range<usize>)> {
+            this.identity_occurrences(id)
+                .into_iter()
+                .filter(|(a, _)| a & APPLIED_ID == 0)
+                .collect()
+        };
+        if scope == Scope::Mention {
+            let here = self.active_replacement_range().map_or(0, |r| r.start);
+            let mentions = proposals(self, entity);
+            if let Some((a, r)) = mentions
+                .iter()
+                .find(|(_, r)| r.start >= here)
+                .or(mentions.first())
+            {
+                self.navigate_identity_mention(*a, r.start, window, cx);
+                return;
+            }
+        }
+        let order = self.panel_entity_order(cx);
+        let after = order
+            .iter()
+            .position(|id| *id == entity)
+            .map_or(0, |i| i + 1);
+        let next = order[after..]
+            .iter()
+            .chain(&order[..after])
+            .filter(|id| **id != entity)
+            .find_map(|id| proposals(self, *id).into_iter().next());
+        match next {
+            Some((a, r)) => self.navigate_identity_mention(a, r.start, window, cx),
+            None => self.close_pii_popup(&PiiClosePopup, window, cx),
+        }
     }
     /// Undo a mistaken manual addition (and an Apply right after it) while
     /// those are the latest history steps (ADR 0025).
