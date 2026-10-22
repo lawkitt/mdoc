@@ -2760,6 +2760,27 @@ fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn escape_closes_notices_without_focus_in_an_editor(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.update(|_, cx| shell::bind_keys(cx));
+    let view = active(&tabs, cx);
+    // A source-only tab focuses its view, Home the window: neither is an
+    // editor, and neither is inside Notices.
+    let focus = cx.update(|_, cx| [view.read(cx).focus.clone(), tabs.read(cx).focus.clone()]);
+    for handle in focus {
+        tabs.update_in(cx, |tabs, window, cx| {
+            tabs.notice = Some("Unsupported files skipped: sample.xyz".into());
+            tabs.title.notices_open.set(true);
+            cx.notify();
+            window.focus(&handle, cx);
+        });
+        draw(cx);
+        key(cx, "escape");
+        cx.update(|_, cx| assert!(!tabs.read(cx).title.notices_open.get()));
+    }
+}
+
+#[gpui::test]
 fn the_refusal_shows_above_a_long_list(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let paths: Vec<_> = (0..40)
