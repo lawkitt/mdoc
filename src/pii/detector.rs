@@ -183,7 +183,7 @@ pub fn pending(model: crate::settings::PiiModel) -> crate::model_download::Pendi
         .map(|file| file.bytes)
         .collect();
     crate::model_download::Pending {
-        resumed: !missing.is_empty() && missing.len() < files.len(),
+        full: files.iter().map(|file| file.bytes).sum::<u64>() + crate::ocr::onnx_runtime_size(),
         model: missing.iter().sum(),
         runtime: crate::ocr::onnx_runtime_pending(),
     }

@@ -2750,6 +2750,48 @@ fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
         assert!(notice.contains("образец.xyz"), "{notice}");
         assert!(!notice.contains(&*dir.path().to_string_lossy()), "{notice}");
     });
+    // The notice opened on its own while the document kept focus; Esc
+    // there closes it.
+    draw(cx);
+    cx.update(|_, cx| assert!(tabs.read(cx).title.notices_open.get()));
+    assert!(editor_focused(&tabs, cx));
+    key(cx, "escape");
+    cx.update(|_, cx| assert!(!tabs.read(cx).title.notices_open.get()));
+}
+
+#[gpui::test]
+fn the_refusal_shows_above_a_long_list(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let paths: Vec<_> = (0..40)
+        .map(|i| {
+            let path = dir.path().join(format!("doc{i:02}.md"));
+            std::fs::write(&path, "x").unwrap();
+            path
+        })
+        .collect();
+    let unknown = dir.path().join("sample.xyz");
+    std::fs::write(&unknown, "x").unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_paths(paths, window, cx));
+    cx.run_until_parked();
+    draw(cx);
+    let first = cx.update(|_, cx| tabs.read(cx).tabs[0].id);
+    tabs.update(cx, |tabs, _| {
+        tabs.sidebar_scroll.set_offset(gpui::point(px(0.), px(0.)))
+    });
+    draw(cx);
+    let row = cx
+        .debug_bounds(Box::leak(format!("tab-{first}").into_boxed_str()))
+        .unwrap();
+    drag_files(cx, std::slice::from_ref(&unknown), row.center());
+    let viewport = cx.update(|window, _| window.viewport_size());
+    let hint = cx.debug_bounds("drop-refused").expect("refusal shown");
+    let row_now = cx
+        .debug_bounds(Box::leak(format!("tab-{first}").into_boxed_str()))
+        .unwrap();
+    assert!(hint.bottom() <= viewport.height);
+    assert!(hint.bottom() <= row_now.top(), "above the rows");
+    drop_files(cx, row.center());
 }
 
 #[gpui::test]

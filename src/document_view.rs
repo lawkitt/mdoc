@@ -1786,7 +1786,7 @@ impl Render for DocumentView {
                 .can_drop(|drag, _, _| drag.downcast_ref::<gpui::ExternalPaths>().is_some_and(|drag| drag.paths().iter().any(|path| import::droppable(path))))
                 .on_drop(cx.listener(|this, drag: &gpui::ExternalPaths, window, cx| {
                     this.file_drag = None;
-                    window.activate_window();
+                    workspace::activate_for_drop(window, cx);
                     cx.emit(workspace::TabEvent::Open(drag.paths().to_vec()));
                     cx.notify();
                 })))

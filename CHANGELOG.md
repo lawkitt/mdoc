@@ -14,10 +14,10 @@ All notable changes to **mdoc** are documented here.
   Finder brings mdoc to the front, so a dialog it opens gets the keyboard.
   Unsupported files dragged over the sidebar show "These files can't be
   opened" instead of the insertion line and open nothing; a mixed drop's
-  notice names skipped files without their folders. The original's Find
-  button no longer claims ⌘F (that finds in the Markdown). The theme button's
-  tooltip follows each click. A setup cancelled part-way says "MB left to
-  download".
+  notice names skipped files without their folders, and Esc closes it. The
+  source preview's Find button no longer claims ⌘F (that finds in the
+  Markdown). The theme button's tooltip follows each click. A setup cancelled
+  part-way says "MB left to download".
 
 ## [0.1.2] - 2026-10-22
 
