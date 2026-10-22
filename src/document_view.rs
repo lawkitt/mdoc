@@ -117,6 +117,8 @@ pub(crate) struct DocumentView {
     /// This document's last OCR run recognized nothing; OCR itself still works.
     pub(crate) ocr_error: Option<String>,
     pub(crate) markdown_search: Entity<markdown_search::SearchInput>,
+    /// The Replace row's field; its text stays with the tab (ADR 0063).
+    pub(crate) markdown_replace: Entity<markdown_search::SearchInput>,
     pub(crate) search: search_session::SearchSession,
     pub(crate) ocr_setup_subscription: Option<Subscription>,
     pub(crate) _subscription: Subscription,
@@ -152,6 +154,11 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) -> Self {
         let markdown_search = cx.new(markdown_search::SearchInput::new);
+        let markdown_replace = cx.new(|cx| {
+            markdown_search::SearchInput::new(cx)
+                .with_key_context("MarkdownReplace")
+                .with_placeholder("Replace with")
+        });
         let scroll = ScrollHandle::new();
         let editor = cx.new(|cx| {
             // Ghost text at the caret; the empty page centers the rest (ADR 0028).
@@ -282,6 +289,7 @@ impl DocumentView {
             ocr_state: dependencies.ocr,
             ocr_error: None,
             markdown_search,
+            markdown_replace,
             search: search_session::SearchSession::default(),
             ocr_setup_subscription: None,
             _subscription: subscription,
@@ -1319,40 +1327,90 @@ pub(crate) fn button(
         .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
 }
 
-pub(crate) fn bind_markdown_search_keys(cx: &mut App) {
-    let modifier = if cfg!(target_os = "macos") {
-        "cmd"
+/// A find-bar control: a focusable button named for assistive technology,
+/// whose tooltip shows its shortcut.
+fn search_bar_button(
+    id: &'static str,
+    content: impl IntoElement,
+    label: &'static str,
+    shortcut: &'static str,
+    theme: Theme,
+) -> gpui::Stateful<gpui::Div> {
+    let palette = theme.pdf_style();
+    div()
+        .id(id)
+        .role(gpui::Role::Button)
+        .key_context("UiControl")
+        .tab_index(0)
+        .focus_visible(|s| s.bg(palette.placeholder_bg))
+        .aria_label(label)
+        .aria_keyshortcuts(shortcut)
+        .tooltip(style::tooltip(format!("{label}  {shortcut}"), theme))
+        .flex_shrink_0()
+        .rounded_md()
+        .px_2()
+        .h(px(28.))
+        .flex()
+        .items_center()
+        .cursor_pointer()
+        .text_color(palette.header_muted)
+        .hover(|view| view.bg(palette.placeholder_bg))
+        .child(content)
+}
+
+/// The macOS or the Windows/Linux spelling of a shortcut.
+const fn chord(mac: &'static str, other: &'static str) -> &'static str {
+    if cfg!(target_os = "macos") {
+        mac
     } else {
-        "ctrl"
-    };
-    cx.bind_keys([
-        KeyBinding::new(&format!("{modifier}-f"), FindMarkdown, Some("Editor")),
-        KeyBinding::new(
-            &format!("{modifier}-f"),
-            FindMarkdown,
-            Some("MarkdownSearch"),
-        ),
-        KeyBinding::new(&format!("{modifier}-f"), FindMarkdown, None),
-        KeyBinding::new(&format!("{modifier}-g"), FindNextMarkdown, Some("Editor")),
-        KeyBinding::new(
-            &format!("{modifier}-g"),
-            FindNextMarkdown,
-            Some("MarkdownSearch"),
-        ),
-        KeyBinding::new(
-            &format!("{modifier}-shift-g"),
-            FindPreviousMarkdown,
-            Some("Editor"),
-        ),
-        KeyBinding::new(
-            &format!("{modifier}-shift-g"),
-            FindPreviousMarkdown,
-            Some("MarkdownSearch"),
-        ),
+        other
+    }
+}
+
+fn toggled(on: bool) -> gpui::Toggled {
+    if on {
+        gpui::Toggled::True
+    } else {
+        gpui::Toggled::False
+    }
+}
+
+pub(crate) fn bind_markdown_search_keys(cx: &mut App) {
+    let mac = cfg!(target_os = "macos");
+    let modifier = if mac { "cmd" } else { "ctrl" };
+    let find = &format!("{modifier}-f");
+    let next = &format!("{modifier}-g");
+    let previous = &format!("{modifier}-shift-g");
+    // Find and Replace keys follow Zed's defaults (ADR 0063).
+    let replace = if mac { "cmd-alt-f" } else { "ctrl-h" };
+    let replace_all = if mac { "cmd-enter" } else { "ctrl-alt-enter" };
+    let match_case = if mac { "cmd-alt-c" } else { "alt-c" };
+    let whole_word = if mac { "cmd-alt-w" } else { "alt-w" };
+    let fields = ["MarkdownSearch", "MarkdownReplace"];
+    let mut bindings = vec![
+        KeyBinding::new(find, FindMarkdown, Some("Editor")),
+        KeyBinding::new(find, FindMarkdown, None),
+        KeyBinding::new(replace, FindReplaceMarkdown, Some("Editor")),
+        KeyBinding::new(replace, FindReplaceMarkdown, None),
+        KeyBinding::new(next, FindNextMarkdown, Some("Editor")),
+        KeyBinding::new(previous, FindPreviousMarkdown, Some("Editor")),
         KeyBinding::new("enter", FindNextMarkdown, Some("MarkdownSearch")),
         KeyBinding::new("shift-enter", FindPreviousMarkdown, Some("MarkdownSearch")),
-        KeyBinding::new("escape", CloseMarkdownSearch, Some("MarkdownSearch")),
-    ]);
+        KeyBinding::new("enter", ReplaceNextMarkdown, Some("MarkdownReplace")),
+    ];
+    for field in fields {
+        bindings.extend([
+            KeyBinding::new(find, FindMarkdown, Some(field)),
+            KeyBinding::new(replace, FindReplaceMarkdown, Some(field)),
+            KeyBinding::new(next, FindNextMarkdown, Some(field)),
+            KeyBinding::new(previous, FindPreviousMarkdown, Some(field)),
+            KeyBinding::new(replace_all, ReplaceAllMarkdown, Some(field)),
+            KeyBinding::new(match_case, ToggleMarkdownMatchCase, Some(field)),
+            KeyBinding::new(whole_word, ToggleMarkdownWholeWord, Some(field)),
+            KeyBinding::new("escape", CloseMarkdownSearch, Some(field)),
+        ]);
+    }
+    cx.bind_keys(bindings);
 }
 
 /// One zoom step (ADR 0048).
@@ -1423,10 +1481,182 @@ impl Render for DocumentView {
             )
         };
         let navigation_disabled = self.search.matches.is_empty();
+        let replace_focused = self
+            .markdown_replace
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window);
+        let field = |id: &'static str, focused: bool| {
+            div()
+                .id(id)
+                .flex()
+                .flex_1()
+                .min_w_0()
+                .h(px(28.))
+                .px_2()
+                .items_center()
+                .bg(palette.bg)
+                .border_1()
+                .border_color(if focused {
+                    theme.search_accent()
+                } else {
+                    palette.border
+                })
+                .rounded_md()
+        };
+        let replace_toggle = search_bar_button(
+            "markdown-search-replace-toggle",
+            if self.search.replace_open {
+                "⌄"
+            } else {
+                "›"
+            },
+            "Replace",
+            chord("⌥⌘F", "Ctrl+H"),
+            theme,
+        )
+        .w(px(20.))
+        .aria_expanded(self.search.replace_open)
+        .on_click(cx.listener(|this, _, window, cx| this.toggle_markdown_replace(window, cx)));
+        let match_case = search_bar_button(
+            "markdown-search-match-case",
+            "Aa",
+            "Match case",
+            chord("⌥⌘C", "Alt+C"),
+            theme,
+        )
+        .aria_toggled(toggled(self.search.match_case))
+        .when(self.search.match_case, |view| {
+            view.bg(palette.placeholder_bg)
+                .text_color(theme.search_accent())
+        })
+        .on_click(cx.listener(|this, _, window, cx| {
+            this.toggle_markdown_match_case(&ToggleMarkdownMatchCase, window, cx)
+        }));
+        let whole_word = search_bar_button(
+            "markdown-search-whole-word",
+            div().underline().child("ab"),
+            "Whole word",
+            chord("⌥⌘W", "Alt+W"),
+            theme,
+        )
+        .aria_toggled(toggled(self.search.whole_word))
+        .when(self.search.whole_word, |view| {
+            view.bg(palette.placeholder_bg)
+                .text_color(theme.search_accent())
+        })
+        .on_click(cx.listener(|this, _, window, cx| {
+            this.toggle_markdown_whole_word(&ToggleMarkdownWholeWord, window, cx)
+        }));
+        let count = div()
+            .id("markdown-search-count")
+            .flex_shrink_0()
+            .px_2()
+            .text_size(px(12.))
+            .text_color(palette.header_muted)
+            .child(if self.search.task.is_some() {
+                ui::activity("search-activity", count, theme).into_any_element()
+            } else if let Some(status) = self.search.status.clone() {
+                // Replace results are announced (ADR 0063).
+                div()
+                    .id("markdown-replace-status")
+                    .role(gpui::Role::Status)
+                    .aria_label(status.clone())
+                    .child(status)
+                    .into_any_element()
+            } else {
+                div().child(count).into_any_element()
+            });
+        let previous = search_bar_button(
+            "markdown-search-previous",
+            "↑",
+            "Previous match",
+            chord("⇧⌘G", "Shift+Ctrl+G"),
+            theme,
+        )
+        .w(px(28.))
+        .justify_center()
+        .when(navigation_disabled, |view| {
+            view.text_color(palette.header_muted)
+        })
+        .on_click(cx.listener(|this, _, window, cx| {
+            this.find_previous_markdown(&FindPreviousMarkdown, window, cx)
+        }));
+        let next =
+            search_bar_button(
+                "markdown-search-next",
+                "↓",
+                "Next match",
+                chord("⌘G", "Ctrl+G"),
+                theme,
+            )
+            .w(px(28.))
+            .justify_center()
+            .when(navigation_disabled, |view| {
+                view.text_color(palette.header_muted)
+            })
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.find_next_markdown(&FindNextMarkdown, window, cx)
+            }));
+        let close = search_bar_button(
+            "markdown-search-close",
+            "×",
+            "Close Markdown search",
+            "Esc",
+            theme,
+        )
+        .w(px(28.))
+        .justify_center()
+        .on_click(cx.listener(|this, _, window, cx| {
+            this.close_markdown_search(&CloseMarkdownSearch, window, cx)
+        }));
+        let replace_row = self.search.replace_open.then(|| {
+            div()
+                .id("markdown-replace-row")
+                .flex()
+                .items_center()
+                .gap_1()
+                .pl(px(24.))
+                .child(
+                    field("markdown-replace-input", replace_focused)
+                        .aria_label("Replace with")
+                        .child(self.markdown_replace.clone()),
+                )
+                .child(
+                    search_bar_button(
+                        "markdown-replace-next",
+                        "Replace",
+                        "Replace",
+                        "Enter",
+                        theme,
+                    )
+                    .when(navigation_disabled, |view| {
+                        view.text_color(palette.header_muted)
+                    })
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.replace_next_markdown(&ReplaceNextMarkdown, window, cx)
+                    })),
+                )
+                .child(
+                    search_bar_button(
+                        "markdown-replace-all",
+                        "Replace All",
+                        "Replace all",
+                        chord("⌘Enter", "Ctrl+Alt+Enter"),
+                        theme,
+                    )
+                    .when(navigation_disabled, |view| {
+                        view.text_color(palette.header_muted)
+                    })
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.replace_all_markdown(&ReplaceAllMarkdown, window, cx)
+                    })),
+                )
+        });
         let search_bar = div()
             .id("markdown-search-bar")
             .flex()
-            .items_center()
+            .flex_col()
             .gap_1()
             .px_2()
             .py_1()
@@ -1437,139 +1667,23 @@ impl Render for DocumentView {
             .bg(palette.bg)
             .child(
                 div()
-                    .id("markdown-search-input")
-                    .flex()
-                    .flex_1()
-                    .min_w_0()
-                    .h(px(28.))
-                    .aria_label("Search Markdown")
-                    .px_2()
-                    .items_center()
-                    .bg(palette.bg)
-                    .border_1()
-                    .border_color(if search_focused {
-                        theme.search_accent()
-                    } else {
-                        palette.border
-                    })
-                    .rounded_md()
-                    .child(self.markdown_search.clone()),
-            )
-            .child(
-                div()
-                    .id("markdown-search-match-case")
-                    .role(gpui::Role::Button)
-                    .key_context("UiControl")
-                    .tab_index(0)
-                    .focus_visible(|s| s.bg(palette.placeholder_bg))
-                    .aria_label(if self.search.match_case {
-                        "Match case: on"
-                    } else {
-                        "Match case: off"
-                    })
-                    .flex_shrink_0()
-                    .rounded_md()
-                    .px_2()
-                    .h(px(28.))
                     .flex()
                     .items_center()
-                    .cursor_pointer()
-                    .text_color(palette.header_muted)
-                    .hover(|view| view.bg(palette.placeholder_bg))
-                    .when(self.search.match_case, |view| {
-                        view.bg(palette.placeholder_bg)
-                            .text_color(theme.search_accent())
-                    })
-                    .child("Aa")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.toggle_markdown_match_case(&ToggleMarkdownMatchCase, window, cx)
-                    })),
+                    .gap_1()
+                    .child(replace_toggle)
+                    .child(
+                        field("markdown-search-input", search_focused)
+                            .aria_label("Search Markdown")
+                            .child(self.markdown_search.clone()),
+                    )
+                    .child(match_case)
+                    .child(whole_word)
+                    .child(count)
+                    .child(previous)
+                    .child(next)
+                    .child(close),
             )
-            .child(
-                div()
-                    .id("markdown-search-count")
-                    .flex_shrink_0()
-                    .px_2()
-                    .text_size(px(12.))
-                    .text_color(palette.header_muted)
-                    .child(if self.search.task.is_some() {
-                        ui::activity("search-activity", count, theme).into_any_element()
-                    } else {
-                        div().child(count).into_any_element()
-                    }),
-            )
-            .child(
-                div()
-                    .id("markdown-search-previous")
-                    .role(gpui::Role::Button)
-                    .key_context("UiControl")
-                    .tab_index(0)
-                    .focus_visible(|s| s.bg(palette.placeholder_bg))
-                    .aria_label("Previous match")
-                    .w(px(28.))
-                    .h(px(28.))
-                    .flex()
-                    .flex_shrink_0()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .cursor_pointer()
-                    .hover(|view| view.bg(palette.placeholder_bg))
-                    .when(navigation_disabled, |view| {
-                        view.text_color(palette.header_muted)
-                    })
-                    .child("↑")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.find_previous_markdown(&FindPreviousMarkdown, window, cx)
-                    })),
-            )
-            .child(
-                div()
-                    .id("markdown-search-next")
-                    .role(gpui::Role::Button)
-                    .key_context("UiControl")
-                    .tab_index(0)
-                    .focus_visible(|s| s.bg(palette.placeholder_bg))
-                    .aria_label("Next match")
-                    .w(px(28.))
-                    .h(px(28.))
-                    .flex()
-                    .flex_shrink_0()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .cursor_pointer()
-                    .hover(|view| view.bg(palette.placeholder_bg))
-                    .when(navigation_disabled, |view| {
-                        view.text_color(palette.header_muted)
-                    })
-                    .child("↓")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.find_next_markdown(&FindNextMarkdown, window, cx)
-                    })),
-            )
-            .child(
-                div()
-                    .id("markdown-search-close")
-                    .role(gpui::Role::Button)
-                    .key_context("UiControl")
-                    .tab_index(0)
-                    .focus_visible(|s| s.bg(palette.placeholder_bg))
-                    .aria_label("Close Markdown search")
-                    .w(px(28.))
-                    .h(px(28.))
-                    .flex()
-                    .flex_shrink_0()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .cursor_pointer()
-                    .hover(|view| view.bg(palette.placeholder_bg))
-                    .child("×")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.close_markdown_search(&CloseMarkdownSearch, window, cx)
-                    })),
-            );
+            .children(replace_row);
         let markdown_scrollbar = gpui_pdf::scrollbar::overlay_scrollbar(
             "markdown-scrollbar",
             &self.scroll,
@@ -1799,6 +1913,11 @@ impl Render for DocumentView {
                 cx.notify();
             }))
             .on_action(cx.listener(Self::find_markdown))
+            .on_action(cx.listener(Self::find_replace_markdown))
+            .on_action(cx.listener(Self::replace_next_markdown))
+            .on_action(cx.listener(Self::replace_all_markdown))
+            .on_action(cx.listener(Self::toggle_markdown_match_case))
+            .on_action(cx.listener(Self::toggle_markdown_whole_word))
             .on_action(cx.listener(Self::next_misspelling))
             .on_action(cx.listener(Self::previous_misspelling))
             .on_action(cx.listener(Self::toggle_document_spelling))

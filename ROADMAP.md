@@ -50,18 +50,12 @@ to the top of the next milestone. Items are in priority order.
 
 ### Should-fix
 
-1. **[Editor] Find and replace.** *From the 2026-10-17 grooming.* Replace,
-   Replace all, Match case, Whole word; ported from Zed's GPL-3.0 `search`
-   crate with credit. Replace all is one undo step and skips applied aliases.
-   ⌘⌥F / Ctrl+H.
-   *Done when:* each control works by keyboard and mouse on a long document
-   with applied aliases, and one undo reverts Replace all.
-2. **[A11y] Dialog and role semantics.** *From the RC runs (A3).* Settings is
+1. **[A11y] Dialog and role semantics.** *From the RC runs (A3).* Settings is
    not a dialog; model choices read as checkboxes; narrow Markdown/Source read
    as buttons; close buttons say only "Close tab"; the unsaved-changes dialog is
    titled "Warning".
    *Done when:* VoiceOver and Narrator announce each with its proper role and name.
-3. **[UI] Small polish.** *From the dry run and RC runs.* Toggle Sidebar
+2. **[UI] Small polish.** *From the dry run and RC runs.* Toggle Sidebar
    shortcut (⌃⌘S); same-name tabs disambiguated by source type, not full path;
    the DOCX notice only when the file has such content; wrapped search matches
    painting the previous line; the DOCX badge after Save As; the window title on
@@ -69,7 +63,7 @@ to the top of the next milestone. Items are in priority order.
    the Notices popover; the preview Find button's ⌘F hint; the theme tooltip;
    the setup card's size after Cancel.
    *Done when:* each point is fixed or moved to its own item.
-4. **[OCR] Pick the recognition language.** *From the rc.1 run.* Default to
+3. **[OCR] Pick the recognition language.** *From the rc.1 run.* Default to
    English & Russian when the text layer, file name or a Russian input source
    suggests it.
    *Done when:* the Russian OCR fixture gets English & Russian by default and

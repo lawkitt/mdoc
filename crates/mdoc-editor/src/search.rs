@@ -16,6 +16,17 @@ use crate::markdown_syntax;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SearchMatch {
     pub source: Vec<Range<usize>>,
+    /// Whether Replace may rewrite this occurrence: its visible text comes from
+    /// one contiguous source range and whole source units, so no hidden syntax
+    /// or partly matched entity would be rewritten (ADR 0063).
+    pub replaceable: bool,
+}
+
+/// Find options shared by the find bar and Replace.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SearchOptions {
+    pub match_case: bool,
+    pub whole_word: bool,
 }
 
 /// Searchable visible-text segments for one Markdown document.
@@ -223,32 +234,44 @@ impl SearchIndex {
     /// Find non-overlapping literal occurrences. With `match_case = false`,
     /// matching uses Unicode full default case folding without normalization.
     pub fn find(&self, query: &str, match_case: bool) -> Vec<SearchMatch> {
+        self.find_with(
+            query,
+            SearchOptions {
+                match_case,
+                whole_word: false,
+            },
+        )
+    }
+
+    /// [`Self::find`] with every option. Whole word keeps only occurrences
+    /// bounded by non-word characters in the visible text.
+    pub fn find_with(&self, query: &str, options: SearchOptions) -> Vec<SearchMatch> {
         if query.is_empty() {
             return Vec::new();
         }
-        let folded_query = (!match_case).then(|| default_case_fold_str(query));
-        if folded_query.as_deref().is_some_and(str::is_empty) {
+        let folded_query = (!options.match_case).then(|| default_case_fold_str(query));
+        let query = folded_query.as_deref().unwrap_or(query);
+        if query.is_empty() {
             return Vec::new();
         }
         let mut out = Vec::new();
         for segment in &self.segments {
-            if match_case {
-                for (start, _) in segment.text.match_indices(query) {
-                    let end = start + query.len();
-                    if let Some(source) = map_units(&segment.units, start..end) {
-                        push_match(&mut out, source);
-                    }
-                }
+            let (text, units) = if options.match_case {
+                (segment.text.as_str(), segment.units.as_slice())
             } else {
                 let folded = segment.folded.get_or_init(|| fold_segment(segment));
-                for (start, _) in folded
-                    .text
-                    .match_indices(folded_query.as_deref().unwrap_or_default())
+                (folded.text.as_str(), folded.units.as_slice())
+            };
+            for (start, _) in text.match_indices(query) {
+                let end = start + query.len();
+                if options.whole_word
+                    && !(is_word_boundary(text, start) && is_word_boundary(text, end))
                 {
-                    let end = start + folded_query.as_ref().map_or(0, String::len);
-                    if let Some(source) = map_units(&folded.units, start..end) {
-                        push_match(&mut out, source);
-                    }
+                    continue;
+                }
+                if let Some(source) = map_units(units, start..end) {
+                    let replaceable = source.len() == 1 && covers_whole_units(units, start..end);
+                    push_match(&mut out, source, replaceable);
                 }
             }
         }
@@ -652,13 +675,61 @@ fn map_units(units: &[MappedUnit], range: Range<usize>) -> Option<Vec<Range<usiz
     (!out.is_empty()).then_some(out)
 }
 
-fn push_match(matches: &mut Vec<SearchMatch>, source: Vec<Range<usize>>) {
+fn push_match(matches: &mut Vec<SearchMatch>, source: Vec<Range<usize>>, replaceable: bool) {
     if matches
         .last()
         .is_none_or(|previous| previous.source != source)
     {
-        matches.push(SearchMatch { source });
+        matches.push(SearchMatch {
+            source,
+            replaceable,
+        });
     }
+}
+
+/// Whether a visible range starts and ends on source-unit edges, so it never
+/// takes part of an entity or a case-folding expansion such as `ß` → `ss`.
+fn covers_whole_units(units: &[MappedUnit], range: Range<usize>) -> bool {
+    let first = units.partition_point(|unit| unit.visible.end <= range.start);
+    let last = units.partition_point(|unit| unit.visible.start < range.end);
+    if first >= last || units[first].visible.start != range.start {
+        return false;
+    }
+    if units[last - 1].visible.end != range.end {
+        return false;
+    }
+    // Decoded text maps each of its characters to the same source span.
+    let shares_source = |a: &MappedUnit, b: &MappedUnit| a.source == b.source;
+    (first == 0 || !shares_source(&units[first - 1], &units[first]))
+        && units
+            .get(last)
+            .is_none_or(|next| !shares_source(&units[last - 1], next))
+}
+
+// Word characters are Unicode alphanumerics and `_`, the same rule Zed's
+// whole-word search uses. An apostrophe between word characters (client’s)
+// belongs to the word.
+fn is_word_char(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
+}
+
+fn is_apostrophe(ch: char) -> bool {
+    matches!(ch, '\'' | '\u{2019}')
+}
+
+fn is_word_boundary(text: &str, at: usize) -> bool {
+    let mut before = text[..at].chars().rev();
+    let mut after = text[at..].chars();
+    let (b, a) = (before.next(), after.next());
+    let word = |ch: Option<char>| ch.is_some_and(is_word_char);
+    let apostrophe = |ch: Option<char>| ch.is_some_and(is_apostrophe);
+    if word(b) && word(a) {
+        return false;
+    }
+    if apostrophe(b) && word(before.next()) && word(a) {
+        return false;
+    }
+    !(apostrophe(a) && word(after.next()) && word(b))
 }
 
 #[cfg(test)]
@@ -671,6 +742,42 @@ mod tests {
             .into_iter()
             .map(|m| m.source)
             .collect()
+    }
+
+    fn options(match_case: bool, whole_word: bool) -> SearchOptions {
+        SearchOptions {
+            match_case,
+            whole_word,
+        }
+    }
+
+    #[test]
+    fn whole_word_uses_visible_boundaries_and_keeps_in_word_apostrophes() {
+        let index =
+            SearchIndex::from_markdown("cat category cat_x **cat**s Кот котик client’s client");
+        let whole = |q: &str| index.find_with(q, options(false, true)).len();
+        assert_eq!(whole("cat"), 1, "`**cat**s` reads as one word");
+        assert_eq!(whole("кот"), 1, "Cyrillic is a word character");
+        assert_eq!(whole("client"), 1, "client’s is one word");
+        assert_eq!(whole("s"), 0);
+        assert_eq!(index.find_with("cat", options(false, false)).len(), 4);
+    }
+
+    #[test]
+    fn only_single_range_whole_unit_matches_are_replaceable() {
+        let index = SearchIndex::from_markdown("hello **world** A &amp; B Straße");
+        let replaceable = |q: &str| {
+            index
+                .find_with(q, options(false, false))
+                .into_iter()
+                .map(|m| m.replaceable)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(replaceable("hello world"), vec![false]);
+        assert_eq!(replaceable("world"), vec![true]);
+        assert_eq!(replaceable("a & b"), vec![true]);
+        assert_eq!(replaceable("stras"), vec![false], "half of ß's folding");
+        assert_eq!(replaceable("straße"), vec![true]);
     }
 
     #[test]

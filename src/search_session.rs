@@ -1,5 +1,12 @@
 //! Find-session ownership, scheduling, and editor integration.
+//!
+//! Replace, Replace all, Whole word and their keys follow the buffer search
+//! bar of Zed's `search` crate (https://github.com/zed-industries/zed),
+//! GPL-3.0-or-later; see THIRD-PARTY-LICENSES.html (ADR 0063).
 use super::*;
+use gpui::SharedString;
+use mdoc_editor::SearchOptions;
+use std::ops::Range;
 
 #[derive(Clone, Copy)]
 pub(super) enum SearchRefresh {
@@ -11,7 +18,15 @@ pub(super) enum SearchRefresh {
 #[derive(Default)]
 pub(super) struct SearchSession {
     pub open: bool,
+    /// The Replace row is shown (⌘⌥F / Ctrl+H, ADR 0063).
+    pub replace_open: bool,
     pub match_case: bool,
+    pub whole_word: bool,
+    /// The last Replace result, until the query or an option changes.
+    pub status: Option<SharedString>,
+    /// Where a Replace left off, in the edited text, so the next match is the
+    /// one after the replacement rather than the replacement itself.
+    next_anchor: Option<usize>,
     pub index: Option<SearchIndex>,
     pub source: Arc<str>,
     pub matches: Vec<SearchMatch>,
@@ -26,7 +41,7 @@ pub(super) struct SearchSession {
 struct SearchRequest {
     source: Arc<str>,
     query: String,
-    match_case: bool,
+    options: SearchOptions,
     revision: u64,
     anchor: usize,
     should_scroll: bool,
@@ -60,12 +75,78 @@ impl SearchSession {
         }
         self.open && self.revision == request.revision
     }
+
+    fn options(&self) -> SearchOptions {
+        SearchOptions {
+            match_case: self.match_case,
+            whole_word: self.whole_word,
+        }
+    }
+}
+
+/// Why Replace leaves a match alone (ADR 0063).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReplaceSkip {
+    /// Hidden Markdown syntax lies inside it.
+    Formatting,
+    /// It overlaps an applied alias.
+    Alias,
+}
+
+/// `applied` holds the applied alias ranges in source order.
+fn replace_skip(search_match: &SearchMatch, applied: &[Range<usize>]) -> Option<ReplaceSkip> {
+    let [range] = search_match.source.as_slice() else {
+        return Some(ReplaceSkip::Formatting);
+    };
+    if !search_match.replaceable {
+        return Some(ReplaceSkip::Formatting);
+    }
+    let first = applied.partition_point(|alias| alias.end <= range.start);
+    applied
+        .get(first)
+        .is_some_and(|alias| alias.start < range.end)
+        .then_some(ReplaceSkip::Alias)
+}
+
+fn replace_all_status(replaced: usize, formatting: usize, alias: usize) -> String {
+    let mut status = format!("Replaced {replaced}");
+    let mut skipped = Vec::new();
+    if formatting > 0 {
+        skipped.push(format!("{formatting} (formatting)"));
+    }
+    if alias > 0 {
+        skipped.push(format!("{alias} (alias)"));
+    }
+    if !skipped.is_empty() {
+        status.push_str(" · skipped ");
+        status.push_str(&skipped.join(" · "));
+    }
+    status
 }
 
 impl DocumentView {
     pub(super) fn find_markdown(
         &mut self,
         _: &FindMarkdown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_markdown_search(false, window, cx);
+    }
+
+    pub(super) fn find_replace_markdown(
+        &mut self,
+        _: &FindReplaceMarkdown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_markdown_search(true, window, cx);
+    }
+
+    /// Open find, with the Replace row or without it, focused on the query.
+    pub(super) fn open_markdown_search(
+        &mut self,
+        replace: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -77,6 +158,7 @@ impl DocumentView {
         if self.compare.is_some() {
             self.close_compare(window, cx);
         }
+        self.search.replace_open = replace;
         self.search.open = true;
         self.refresh_markdown_search(SearchRefresh::Open, true, window, cx);
         self.markdown_search
@@ -135,13 +217,174 @@ impl DocumentView {
         }
     }
 
+    pub(super) fn toggle_markdown_whole_word(
+        &mut self,
+        _: &ToggleMarkdownWholeWord,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.search.whole_word = !self.search.whole_word;
+        if self.search.open {
+            self.refresh_markdown_search(SearchRefresh::Query, true, window, cx);
+        } else {
+            cx.notify();
+        }
+    }
+
+    /// Show or hide the Replace row from its toggle button.
+    pub(super) fn toggle_markdown_replace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search.replace_open = !self.search.replace_open;
+        let focus = if self.search.replace_open {
+            self.markdown_replace.read(cx).focus_handle(cx)
+        } else {
+            self.markdown_search.read(cx).focus_handle(cx)
+        };
+        window.focus(&focus, cx);
+        cx.notify();
+    }
+
+    /// Matches for the current text and options, with the active one. Uses
+    /// the published matches when they describe the current text; otherwise
+    /// searches now, so Replace never acts on stale positions (ADR 0063).
+    fn current_markdown_matches(&self, cx: &App) -> (Vec<SearchMatch>, Option<usize>) {
+        let editor = self.editor.read(cx);
+        let text = editor.text();
+        if self.search.pending.is_none()
+            && !self.search.running
+            && text == self.search.source.as_ref()
+        {
+            return (self.search.matches.clone(), self.search.active);
+        }
+        let query = self.markdown_search.read(cx).value();
+        if query.is_empty() {
+            return (Vec::new(), None);
+        }
+        let matches = SearchIndex::from_markdown(text).find_with(query, self.search.options());
+        let active = first_search_match_at_or_after(&matches, editor.cursor())
+            .or((!matches.is_empty()).then_some(0));
+        (matches, active)
+    }
+
+    fn applied_alias_ranges(&self) -> Vec<Range<usize>> {
+        self.pii
+            .review
+            .applied()
+            .iter()
+            .map(|applied| applied.range.clone())
+            .collect()
+    }
+
+    /// Replace the active match and move to the next one. A match Replace
+    /// must leave alone is passed over with the reason in the status.
+    pub(super) fn replace_next_markdown(
+        &mut self,
+        _: &ReplaceNextMarkdown,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.search.open || !self.search.replace_open {
+            return;
+        }
+        let (matches, active) = self.current_markdown_matches(cx);
+        let Some(search_match) = active.and_then(|index| matches.get(index)) else {
+            return;
+        };
+        match replace_skip(search_match, &self.applied_alias_ranges()) {
+            Some(skip) => {
+                self.search.status = Some(
+                    match skip {
+                        ReplaceSkip::Formatting => "Skipped: crosses formatting",
+                        ReplaceSkip::Alias => "Skipped: alias, change it in Replacements",
+                    }
+                    .into(),
+                );
+                self.step_markdown_search(false, window, cx);
+            }
+            None => {
+                let range = search_match.source[0].clone();
+                let replacement = self.markdown_replace.read(cx).value().to_owned();
+                self.search.status = None;
+                self.commit_markdown_replacements(
+                    vec![(range.clone(), replacement.clone())],
+                    range.start + replacement.len(),
+                    cx,
+                );
+            }
+        }
+        cx.notify();
+    }
+
+    /// Replace every replaceable match as one undo step (ADR 0063).
+    pub(super) fn replace_all_markdown(
+        &mut self,
+        _: &ReplaceAllMarkdown,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.search.open || !self.search.replace_open {
+            return;
+        }
+        let (matches, _) = self.current_markdown_matches(cx);
+        if matches.is_empty() {
+            return;
+        }
+        let applied = self.applied_alias_ranges();
+        let replacement = self.markdown_replace.read(cx).value().to_owned();
+        let (mut formatting, mut alias) = (0, 0);
+        let mut edits = Vec::new();
+        for search_match in &matches {
+            match replace_skip(search_match, &applied) {
+                Some(ReplaceSkip::Formatting) => formatting += 1,
+                Some(ReplaceSkip::Alias) => alias += 1,
+                None => edits.push((search_match.source[0].clone(), replacement.clone())),
+            }
+        }
+        edits.sort_by_key(|(range, _)| range.start);
+        let replaced = edits.len();
+        let cursor = self.editor.read(cx).cursor();
+        let anchor = edits
+            .iter()
+            .filter(|(range, _)| range.end <= cursor)
+            .fold(cursor, |at, (range, value)| at + value.len() - range.len());
+        if !edits.is_empty() && !self.commit_markdown_replacements(edits, anchor, cx) {
+            return;
+        }
+        self.search.status = Some(replace_all_status(replaced, formatting, alias).into());
+        cx.notify();
+    }
+
+    /// One editor transaction; `anchor`, in the edited text, is where the
+    /// next match is sought.
+    fn commit_markdown_replacements(
+        &mut self,
+        edits: Vec<(Range<usize>, String)>,
+        anchor: usize,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let revision = self.editor.read(cx).revision();
+        self.search.next_anchor = Some(anchor);
+        let committed = self
+            .editor
+            .update(cx, |editor, cx| editor.replace_ranges(revision, &edits, cx));
+        if !committed {
+            self.search.next_anchor = None;
+        }
+        committed
+    }
+
     pub(super) fn reset_markdown_search(&mut self, cx: &mut Context<Self>) {
         self.search.invalidate();
         self.search.open = false;
+        self.search.replace_open = false;
+        self.search.status = None;
+        self.search.next_anchor = None;
         self.search.match_case = false;
+        self.search.whole_word = false;
         self.search.index = None;
         self.search.source = Arc::from("");
         self.markdown_search.update(cx, |input, cx| input.reset(cx));
+        self.markdown_replace
+            .update(cx, |input, cx| input.reset(cx));
         self.editor.update(cx, |editor, cx| {
             editor.set_search_matches(Vec::new(), None, cx)
         });
@@ -175,11 +418,22 @@ impl DocumentView {
             .and_then(|i| self.search.matches.get(i))
             .and_then(search_match_start)
             .or(self.search.anchor);
+        let replaced_to = self.search.next_anchor.take();
+        let should_scroll = should_scroll || replaced_to.is_some();
+        // Any other edit (an undo, typing) makes the last result stale.
+        if replaced_to.is_none() {
+            self.search.status = None;
+        }
         let anchor = match reason {
-            SearchRefresh::DocumentEdit => old_anchor
-                .map(|offset| map_edit_offset(&self.search.source, &source, offset))
+            SearchRefresh::DocumentEdit => replaced_to
+                .or_else(|| {
+                    old_anchor.map(|offset| map_edit_offset(&self.search.source, &source, offset))
+                })
                 .unwrap_or(self.editor.read(cx).cursor()),
-            SearchRefresh::Open | SearchRefresh::Query => self.editor.read(cx).cursor(),
+            SearchRefresh::Open | SearchRefresh::Query => {
+                self.search.status = None;
+                self.editor.read(cx).cursor()
+            }
         };
         if !Arc::ptr_eq(&source, &self.search.source) {
             self.search.index = None;
@@ -195,7 +449,7 @@ impl DocumentView {
         self.search.pending = Some(SearchRequest {
             source,
             query,
-            match_case: self.search.match_case,
+            options: self.search.options(),
             revision: self.search.revision,
             anchor,
             should_scroll,
@@ -214,7 +468,7 @@ impl DocumentView {
         if request.source.len() > 64 * 1024 {
             let work = cx.background_executor().spawn(async move {
                 let index = index.unwrap_or_else(|| SearchIndex::from_markdown(&request.source));
-                let matches = index.find(&request.query, request.match_case);
+                let matches = index.find_with(&request.query, request.options);
                 (request, index, matches)
             });
             self.search.task = Some(cx.spawn_in(window, async move |this, cx| {
@@ -226,7 +480,7 @@ impl DocumentView {
             }));
         } else {
             let index = index.unwrap_or_else(|| SearchIndex::from_markdown(&request.source));
-            let matches = index.find(&request.query, request.match_case);
+            let matches = index.find_with(&request.query, request.options);
             self.finish_search_work(request, index, matches, window, cx);
         }
     }
@@ -427,7 +681,7 @@ mod tests {
         session.pending = Some(SearchRequest {
             source: session.source.clone(),
             query: query.into(),
-            match_case: false,
+            options: SearchOptions::default(),
             revision: session.revision,
             anchor: 0,
             should_scroll: true,
@@ -453,7 +707,7 @@ mod tests {
         let (latest, index) = session.take_work().unwrap();
         assert_eq!(latest.query, "beta");
         let index = index.expect("reuse completed projection rather than rebuilding");
-        assert_eq!(index.find(&latest.query, latest.match_case).len(), 1);
+        assert_eq!(index.find_with(&latest.query, latest.options).len(), 1);
         assert!(session.complete(&latest, index));
         assert!(session.take_work().is_none());
     }
