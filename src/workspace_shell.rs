@@ -314,7 +314,7 @@ impl Workspace {
         };
         let card = self.update_card(cx);
         // The card carries its own dot; Settings marks an update only without it.
-        let dot = card.is_none() && crate::updater::state(cx).available.is_some();
+        let dot = card.is_none() && crate::updater::state(cx).marks_settings();
         div()
             .flex()
             .flex_col()
@@ -493,7 +493,7 @@ impl Workspace {
     /// it (ADR 0048). Theme and Help live in the open sidebar.
     pub(super) fn rail_foot(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
-        let update = crate::updater::state(cx).banner().is_some();
+        let update = crate::updater::state(cx).marks_settings();
         div()
             .flex()
             .flex_col()
@@ -524,6 +524,9 @@ impl Workspace {
                     .when(update, |v| {
                         v.child(
                             div()
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "rail-update-dot".into())
+                                })
                                 .absolute()
                                 .top(px(6.))
                                 .right(px(6.))

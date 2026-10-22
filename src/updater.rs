@@ -166,6 +166,15 @@ impl UpdateState {
         (self.hidden.as_ref() != Some(&banner)).then_some(banner)
     }
 
+    /// Whether Settings carries the update dot: a newer release exists or an
+    /// install needs attention. The one-time "installed" notice doesn't count.
+    pub fn marks_settings(&self) -> bool {
+        self.available.is_some()
+            || self
+                .banner()
+                .is_some_and(|b| b.kind != BannerKind::Updated)
+    }
+
     /// Download progress in percent while downloading.
     pub fn percent(&self) -> Option<u8> {
         match &self.install {

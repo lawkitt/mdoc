@@ -668,6 +668,37 @@ fn available_update_marks_the_settings_button(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn installed_notice_leaves_no_dot_on_the_collapsed_rail(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.md");
+    std::fs::write(&a, "a").unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![a.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    collapse(&tabs, cx);
+    // Just updated, nothing newer: the "installed" notice isn't an update.
+    cx.update(|_, cx| {
+        cx.set_global(crate::updater::UpdateState {
+            updated_to: Some("9.0.0".into()),
+            ..Default::default()
+        })
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("rail-settings").is_some());
+    assert!(cx.debug_bounds("rail-update-dot").is_none());
+    cx.update(|_, cx| {
+        cx.set_global(crate::updater::UpdateState {
+            available: Some(crate::updater::test_update("9.1.0")),
+            ..Default::default()
+        })
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("rail-update-dot").is_some());
+}
+
+#[gpui::test]
 fn update_banner_opens_settings_and_dismisses_per_version(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
