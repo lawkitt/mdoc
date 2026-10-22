@@ -50,15 +50,7 @@ to the top of the next milestone. Items are in priority order.
 
 ### Should-fix
 
-1. **[UI] Small polish.** *From the dry run and RC runs.* Toggle Sidebar
-   shortcut (⌃⌘S); same-name tabs disambiguated by source type, not full path;
-   the DOCX notice only when the file has such content; wrapped search matches
-   painting the previous line; the DOCX badge after Save As; the window title on
-   Home; Finder drop not activating mdoc; unsupported-file drop feedback and
-   the Notices popover; the preview Find button's ⌘F hint; the theme tooltip;
-   the setup card's size after Cancel.
-   *Done when:* each point is fixed or moved to its own item.
-2. **[OCR] Pick the recognition language.** *From the rc.1 run.* Default to
+1. **[OCR] Pick the recognition language.** *From the rc.1 run.* Default to
    English & Russian when the text layer, file name or a Russian input source
    suggests it.
    *Done when:* the Russian OCR fixture gets English & Russian by default and

@@ -401,7 +401,9 @@ fn inspect_package(bytes: &[u8]) -> Result<Vec<String>, PreviewError> {
                 if word && matches!(tag.name(), "object" | "control") {
                     warnings.push("Embedded objects were omitted.".into());
                 }
-                if ns.contains("/math")
+                // Word writes math settings (`m:mathPr`) into every
+                // settings.xml; only an equation itself counts.
+                if (ns.contains("/math") && matches!(tag.name(), "oMath" | "oMathPara"))
                     || ns.contains("/chart")
                     || ns.contains("/diagram")
                     || (word
@@ -533,6 +535,29 @@ mod tests {
                 .iter()
                 .any(|warning| warning == "Embedded objects were omitted.")
         );
+    }
+
+    #[test]
+    fn complex_content_notice_needs_an_equation_not_math_settings() {
+        const NOTICE: &str = "Equations, charts, SmartArt, embedded fonts, or alternate content may render incompletely.";
+        let math = "http://schemas.openxmlformats.org/officeDocument/2006/math";
+        let word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+        // Every Word document carries math settings.
+        let settings = format!(
+            r#"<w:settings xmlns:w="{word}" xmlns:m="{math}"><m:mathPr><m:mathFont m:val="Cambria Math"/></m:mathPr></w:settings>"#
+        );
+        let plain =
+            inspect_package(&package(&[("word/settings.xml", settings.as_bytes())])).unwrap();
+        assert!(!plain.iter().any(|warning| warning == NOTICE));
+        let equation = format!(
+            r#"<w:document xmlns:w="{word}" xmlns:m="{math}"><w:body><w:p><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath></w:p></w:body></w:document>"#
+        );
+        let with_equation = inspect_package(&package(&[
+            ("word/settings.xml", settings.as_bytes()),
+            ("word/document.xml", equation.as_bytes()),
+        ]))
+        .unwrap();
+        assert!(with_equation.iter().any(|warning| warning == NOTICE));
     }
 
     #[test]

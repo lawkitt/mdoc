@@ -6243,6 +6243,54 @@ mod annotation_tests {
     }
 
     #[gpui::test]
+    fn search_matches_paint_nothing_at_the_previous_rows_end(cx: &mut gpui::TestAppContext) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        let mut source = String::new();
+        for k in 0..80 {
+            source.push_str(&"w".repeat(1 + k % 9));
+            source.push_str(" Ann Lee ");
+        }
+        // Every word and every two-word name: some start a wrap row, some
+        // names wrap between their words.
+        let mut matches: Vec<Range<usize>> = Vec::new();
+        let mut start = None;
+        for (i, c) in source.char_indices().chain([(source.len(), ' ')]) {
+            match (c == ' ', start) {
+                (false, None) => start = Some(i),
+                (true, Some(s)) => {
+                    matches.push(s..i);
+                    start = None;
+                }
+                _ => {}
+            }
+        }
+        matches.extend(source.match_indices("Ann Lee").map(|(i, m)| i..i + m.len()));
+        editor.update(cx, |editor, cx| {
+            editor.set_text(source.clone(), cx);
+            editor.set_search(matches.clone(), None, cx);
+        });
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        editor.update(cx, |editor, _| {
+            let area = editor.last_bounds.unwrap();
+            let rows = editor.search_bounds.iter().flatten();
+            let tops: std::collections::BTreeSet<_> =
+                rows.clone().map(|b| f32::from(b.top()) as i32).collect();
+            assert!(tops.len() > 3, "the text wraps");
+            for (i, first) in editor.search_bounds.iter().enumerate() {
+                let first = first.expect("visible match");
+                assert!(
+                    first.right() < area.right() - px(1.),
+                    "match {:?} starts at its text, not the previous row's end",
+                    &source[matches[i].clone()]
+                );
+            }
+        });
+    }
+
+    #[gpui::test]
     fn wrapped_annotations_box_each_segment(cx: &mut gpui::TestAppContext) {
         // A one-letter first word keeps its own segment too.
         for mention in ["Ann Lee", "A Lee"] {

@@ -172,17 +172,19 @@ pub fn root_for(model: crate::settings::PiiModel) -> Result<PathBuf, String> {
 /// Tests always report a full download.
 pub fn pending(model: crate::settings::PiiModel) -> crate::model_download::Pending {
     let root = root_for(model).ok().filter(|_| !cfg!(test));
-    crate::model_download::Pending {
-        model: manifest_for(model)
-            .files
-            .iter()
-            .filter(|file| {
-                root.as_ref().is_none_or(|root| {
-                    crate::model_download::missing(&root.join(&file.path), file.bytes)
-                })
+    let files = manifest_for(model).files;
+    let missing: Vec<u64> = files
+        .iter()
+        .filter(|file| {
+            root.as_ref().is_none_or(|root| {
+                crate::model_download::missing(&root.join(&file.path), file.bytes)
             })
-            .map(|file| file.bytes)
-            .sum(),
+        })
+        .map(|file| file.bytes)
+        .collect();
+    crate::model_download::Pending {
+        resumed: !missing.is_empty() && missing.len() < files.len(),
+        model: missing.iter().sum(),
         runtime: crate::ocr::onnx_runtime_pending(),
     }
 }

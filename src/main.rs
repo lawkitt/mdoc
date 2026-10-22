@@ -355,6 +355,9 @@ pub(crate) fn bind_app_keys(cx: &mut App) {
         KeyBinding::new(&format!("{modifier}-;"), NextMisspelling, None),
         KeyBinding::new(&format!("{modifier}-shift-;"), PreviousMisspelling, None),
         KeyBinding::new("ctrl-tab", NextTab, None),
+        // The macOS convention for View › Toggle Sidebar.
+        #[cfg(target_os = "macos")]
+        KeyBinding::new("ctrl-cmd-s", ToggleSidebar, None),
         KeyBinding::new("ctrl-shift-tab", PreviousTab, None),
     ]);
 }

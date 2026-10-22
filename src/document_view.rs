@@ -184,7 +184,6 @@ impl DocumentView {
                     this.generated_unedited = false;
                     this.blank_disposable = false;
                     this.dirty_cached = this.dirty(cx);
-                    this.update_title(window, cx);
                     this.refresh_markdown_search(SearchRefresh::DocumentEdit, false, window, cx);
                     cx.notify();
                 }
@@ -410,19 +409,15 @@ impl DocumentView {
         if self.active {
             window.focus(&self.focus, cx);
         }
-        self.update_title(window, cx);
     }
 
-    pub(crate) fn update_title(&self, window: &mut Window, _cx: &App) {
-        if !self.active {
-            return;
-        }
-        let name = self.display_name();
-        window.set_window_title(&format!(
+    /// The window title while this tab shows; the workspace sets it.
+    pub(crate) fn window_title(&self) -> String {
+        format!(
             "{}{} — mdoc",
             if self.dirty_cached { "• " } else { "" },
-            name
-        ));
+            self.display_name()
+        )
     }
 
     pub(crate) fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
@@ -514,7 +509,6 @@ impl DocumentView {
                         Some("Source preview unavailable for this imported format.".into());
                 }
                 self.scroll.set_offset(gpui::point(px(0.), px(0.)));
-                self.update_title(window, cx);
             }
         }
         cx.notify();
@@ -855,8 +849,8 @@ impl DocumentView {
         let progress = model.and_then(|m| panel.progress_of(m));
         let cancelling = panel.cancelling();
         let pending = model
-            .map(|m| panel.pending[settings_ui::Panel::index(m)].total())
-            .unwrap_or(0);
+            .map(|m| panel.pending[settings_ui::Panel::index(m)])
+            .unwrap_or_default();
         let ready = matches!(self.ocr_state, OcrState::Ready(_));
         let installing = progress.is_some() || matches!(self.ocr_state, OcrState::Installing);
         let card = ui::state_card("conversion-card", theme)
@@ -1048,12 +1042,12 @@ impl DocumentView {
                 .when(cfg!(test), |v| v.debug_selector(|| "ocr-language-hint".into())))
             })
             .child(ui::card_note(
-                if ready || pending == 0 {
+                if ready || pending.total() == 0 {
                     format!("{name} · runs on this computer")
                 } else {
                     format!(
-                        "{name} · {} MB download, once · then runs on this computer",
-                        model_download::megabytes(pending)
+                        "{name} · {}, once · then runs on this computer",
+                        pending.download_label()
                     )
                 },
                 theme,
@@ -1309,7 +1303,6 @@ impl DocumentView {
                     self.replace_images(self.session.document.directory(), window, cx);
                 }
                 self.error = None;
-                self.update_title(window, cx);
                 if let Some(next) = next {
                     self.proceed(next, window, cx);
                 }
@@ -1791,8 +1784,9 @@ impl Render for DocumentView {
                     if this.file_drag != state { this.file_drag = state; cx.notify(); }
                 }))
                 .can_drop(|drag, _, _| drag.downcast_ref::<gpui::ExternalPaths>().is_some_and(|drag| drag.paths().iter().any(|path| import::droppable(path))))
-                .on_drop(cx.listener(|this, drag: &gpui::ExternalPaths, _, cx| {
+                .on_drop(cx.listener(|this, drag: &gpui::ExternalPaths, window, cx| {
                     this.file_drag = None;
+                    window.activate_window();
                     cx.emit(workspace::TabEvent::Open(drag.paths().to_vec()));
                     cx.notify();
                 })))

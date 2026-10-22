@@ -270,8 +270,36 @@ impl gpui::Render for Tip {
         _: &mut gpui::Window,
         _: &mut gpui::Context<Self>,
     ) -> impl gpui::IntoElement {
+        tip_body(self.text.clone(), self.theme)
+    }
+}
+
+/// A tooltip read on every frame, for a control whose click changes what
+/// it says while the pointer stays on it.
+struct LiveTip(std::rc::Rc<dyn Fn() -> (String, Theme)>);
+impl gpui::Render for LiveTip {
+    fn render(
+        &mut self,
+        _: &mut gpui::Window,
+        _: &mut gpui::Context<Self>,
+    ) -> impl gpui::IntoElement {
+        let (text, theme) = (self.0)();
+        tip_body(text, theme)
+    }
+}
+
+pub fn live_tooltip(
+    read: impl Fn() -> (String, Theme) + 'static,
+) -> impl Fn(&mut gpui::Window, &mut gpui::App) -> gpui::AnyView {
+    use gpui::AppContext;
+    let read: std::rc::Rc<dyn Fn() -> (String, Theme)> = std::rc::Rc::new(read);
+    move |_, cx| cx.new(|_| LiveTip(read.clone())).into()
+}
+
+fn tip_body(text: String, theme: Theme) -> impl gpui::IntoElement {
+    {
         use gpui::{div, prelude::*, px};
-        let palette = self.theme.pdf_style();
+        let palette = theme.pdf_style();
         div()
             .px_2()
             .py_1()
@@ -283,7 +311,7 @@ impl gpui::Render for Tip {
             .text_color(palette.header_fg)
             .border_1()
             .border_color(palette.border)
-            .child(self.text.clone())
+            .child(text)
     }
 }
 pub fn tooltip(

@@ -2384,8 +2384,56 @@ fn duplicate_names_show_distinguishing_parent_suffixes() {
             .to_string_lossy()
             .into_owned()
     };
-    assert_eq!(disambiguating_parent(&peers[0], &peers), suffix("first"));
-    assert_eq!(disambiguating_parent(&peers[1], &peers), suffix("second"));
+    assert_eq!(
+        disambiguating_parent(&peers[0], &peers),
+        Some(suffix("first"))
+    );
+    assert_eq!(
+        disambiguating_parent(&peers[1], &peers),
+        Some(suffix("second"))
+    );
+    // A DOCX's conversion beside an .md of that name: no folder tells them
+    // apart, so the row shows the type instead of the full path.
+    let same = vec![
+        PathBuf::from("/contracts/client/sample.docx"),
+        PathBuf::from("/contracts/client/sample.md"),
+    ];
+    assert_eq!(disambiguating_parent(&same[0], &same), None);
+}
+
+#[gpui::test]
+fn the_badge_names_the_source_until_saved_as_markdown(cx: &mut TestAppContext) {
+    let tab = |record: TabRecord| Tab {
+        id: 1,
+        record,
+        identity: None,
+        view: None,
+        recent_path: None,
+        subscriptions: Vec::new(),
+    };
+    let docx = PathBuf::from("/contracts/sample.docx");
+    let conversion = tab(TabRecord {
+        source_only: true,
+        attachment: Some(docx.clone()),
+        ..TabRecord::default()
+    });
+    // Saved As under another name, its DOCX still attached as the source.
+    let saved = tab(TabRecord {
+        markdown: PathBuf::from("/contracts/sample copy.md"),
+        attachment: Some(docx.clone()),
+        ..TabRecord::default()
+    });
+    cx.update(|cx| {
+        let label = tab_label(&conversion, cx);
+        assert_eq!(
+            (label.format.as_str(), label.identity),
+            ("DOCX", docx.clone())
+        );
+        let label = tab_label(&saved, cx);
+        assert_eq!(label.format, "MD");
+        assert_eq!(label.identity, PathBuf::from("/contracts/sample copy.md"));
+        assert_eq!(label.source, Some(docx));
+    });
 }
 
 #[gpui::test]
@@ -2641,6 +2689,67 @@ fn sidebar_drop_opens_files_at_the_insertion_line(cx: &mut TestAppContext) {
     cx.update(|_, cx| assert_eq!(tabs.read(cx).file_drop_index(), Some(3)));
     drop_files(cx, below);
     assert_eq!(tab_names(&tabs, cx), ["a.md", "c.md", "b.md", "d.md"]);
+}
+
+#[gpui::test]
+fn the_window_title_names_the_document_and_only_mdoc_on_home(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a.md");
+    std::fs::write(&a, "x").unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    draw(cx);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "mdoc"));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![a.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "a.md — mdoc"));
+    cx.dispatch_action(shell::ShowHome);
+    draw(cx);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "mdoc"));
+}
+
+#[gpui::test]
+fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (a, unknown) = (dir.path().join("a.md"), dir.path().join("образец.xyz"));
+    std::fs::write(&a, "x").unwrap();
+    std::fs::write(&unknown, "x").unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![a.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let a_id = cx.update(|_, cx| tabs.read(cx).tabs[0].id);
+    let row = cx
+        .debug_bounds(Box::leak(format!("tab-{a_id}").into_boxed_str()))
+        .unwrap();
+    // No insertion line: the list says the files can't be opened.
+    drag_files(cx, std::slice::from_ref(&unknown), row.center());
+    cx.update(|_, cx| {
+        assert!(tabs.read(cx).file_drop_refused);
+        assert_eq!(tabs.read(cx).file_drop_index(), None);
+    });
+    drop_files(cx, row.center());
+    assert_eq!(tab_names(&tabs, cx), ["a.md"]);
+    cx.update(|_, cx| {
+        assert!(!tabs.read(cx).file_drop_refused);
+        assert!(tabs.read(cx).notice.is_none(), "nothing to report");
+    });
+
+    // With an openable file beside it, the skipped one is named, not its path.
+    let b = dir.path().join("b.md");
+    std::fs::write(&b, "x").unwrap();
+    drag_files(cx, &[b.clone(), unknown.clone()], row.center());
+    cx.update(|_, cx| assert!(!tabs.read(cx).file_drop_refused));
+    drop_files(cx, row.center());
+    cx.update(|_, cx| {
+        let notice = tabs.read(cx).notice.clone().unwrap();
+        assert!(notice.contains("образец.xyz"), "{notice}");
+        assert!(!notice.contains(&*dir.path().to_string_lossy()), "{notice}");
+    });
 }
 
 #[gpui::test]

@@ -111,18 +111,19 @@ fn pending_in(
     model: crate::settings::OcrModel,
 ) -> crate::model_download::Pending {
     let model_root = root.map(|root| model_root(root, model));
+    let artifacts = model.manifest().artifacts;
+    let missing: Vec<u64> = artifacts
+        .iter()
+        .filter(|a| {
+            model_root
+                .as_ref()
+                .is_none_or(|dir| crate::model_download::missing(&dir.join(a.filename), a.size))
+        })
+        .map(|a| a.size)
+        .collect();
     crate::model_download::Pending {
-        model: model
-            .manifest()
-            .artifacts
-            .iter()
-            .filter(|a| {
-                model_root
-                    .as_ref()
-                    .is_none_or(|dir| crate::model_download::missing(&dir.join(a.filename), a.size))
-            })
-            .map(|a| a.size)
-            .sum(),
+        resumed: !missing.is_empty() && missing.len() < artifacts.len(),
+        model: missing.iter().sum(),
         runtime: RUNTIMES
             .iter()
             .filter(|r| root.is_none_or(|root| !root.join(r.library).exists()))

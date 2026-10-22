@@ -1390,7 +1390,14 @@ impl Element for EditorElement {
                 }
                 let mut first = None;
                 for range in &search_match.source {
-                    let quads = range_quads(range.start, range.end, color, window);
+                    // Per wrap row, like annotations: a match that starts on a
+                    // wrap boundary or wraps at a space paints nothing at the
+                    // previous row's end. A whitespace-only match keeps the
+                    // selection shape so it still has a box to scroll to.
+                    let mut quads = annotation_quads(range.start, range.end, color, window);
+                    if quads.is_empty() {
+                        quads = range_quads(range.start, range.end, color, window);
+                    }
                     if first.is_none() {
                         first = quads.first().map(|quad| quad.bounds);
                     }

@@ -211,9 +211,21 @@ pub fn header_icon(
     theme: Theme,
     on: bool,
 ) -> gpui::Stateful<gpui::Div> {
-    let p = theme.pdf_style();
     let label = label.into();
-    control_base(id, label.clone(), theme, true)
+    header_icon_untipped(id, label.clone(), icon, theme, on)
+        .tooltip(crate::style::tooltip(label.to_string(), theme))
+}
+
+/// A header icon whose caller sets its own tooltip.
+pub fn header_icon_untipped(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    icon: Icon,
+    theme: Theme,
+    on: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let p = theme.pdf_style();
+    control_base(id, label.into(), theme, true)
         .p_0()
         .size(px(28.))
         .flex()
@@ -226,7 +238,6 @@ pub fn header_icon(
                 .size(px(16.))
                 .text_color(if on { p.header_fg } else { p.header_muted }),
         )
-        .tooltip(crate::style::tooltip(label.to_string(), theme))
 }
 
 /// One row of a popover menu: label, optional check and shortcut.

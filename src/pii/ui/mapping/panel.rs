@@ -340,7 +340,9 @@ impl DocumentView {
         let progress = model.and_then(|m| panel.progress_of(m));
         let cancelling = panel.cancelling();
         let needs_setup = model.is_none_or(|m| panel.needs_setup(m));
-        let pending = model.map_or(0, |m| panel.pending[settings_ui::Panel::index(m)].total());
+        let pending = model.map_or_else(Default::default, |m| {
+            panel.pending[settings_ui::Panel::index(m)]
+        });
         let idle = panel.working.is_none() && !crate::model_work::busy();
         let error = self.pii.error.clone();
         let primary = if !needs_setup {
@@ -419,11 +421,9 @@ impl DocumentView {
                 )
         };
         let note = match model {
-            Some(m) if pending > 0 => format!(
-                "{} · {} MB, once",
-                m.short_name(),
-                crate::model_download::megabytes(pending)
-            ),
+            Some(m) if pending.total() > 0 => {
+                format!("{} · {}, once", m.short_name(), pending.download_label())
+            }
             Some(m) => format!("{} · runs on this computer", m.short_name()),
             None => String::new(),
         };
