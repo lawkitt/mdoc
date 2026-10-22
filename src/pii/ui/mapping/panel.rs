@@ -439,7 +439,12 @@ impl DocumentView {
             .tab_stop(false)
             .track_focus(&self.pii.mapping.focus)
             .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                this.close_replacements(window, cx);
+                // An open row or filter menu closes before the panel (#92).
+                if this.pii.mapping.panel_menu.take().is_some() {
+                    cx.notify();
+                } else {
+                    this.close_replacements(window, cx);
+                }
                 cx.stop_propagation();
             }))
             .flex_shrink_0()
@@ -718,7 +723,12 @@ impl DocumentView {
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                this.close_replacements(window, cx);
+                // An open row or filter menu closes before the panel (#92).
+                if this.pii.mapping.panel_menu.take().is_some() {
+                    cx.notify();
+                } else {
+                    this.close_replacements(window, cx);
+                }
                 cx.stop_propagation();
             }))
             .on_action(cx.listener(|this, _: &mdoc_editor::Undo, window, cx| {

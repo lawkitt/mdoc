@@ -877,6 +877,11 @@ impl DocumentView {
         self.restore_active_replacement(active, &edits, cx);
     }
     pub(super) fn escape_popup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // A panel menu opened over the popup is the top layer (#92).
+        if self.pii.mapping.panel_menu.take().is_some() {
+            cx.notify();
+            return;
+        }
         if self.pii.mapping.close_pickers() {
             window.focus(&self.pii.focus, cx);
         } else if self

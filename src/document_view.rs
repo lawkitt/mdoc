@@ -465,6 +465,7 @@ impl DocumentView {
                 self.source_only = false;
                 self.generated_unedited = self.automatic_import;
                 self.ocr_required = None;
+                self.ocr_error = None;
                 let retain_preview = self.preview.source.as_ref() == Some(&imported.source)
                     && (self.preview.pdf.is_some() || self.preview.loading);
                 self.session

@@ -1398,6 +1398,8 @@ fn dragging_a_mention_over_free_panel_space_offers_the_next_alias(cx: &mut gpui:
 #[gpui::test]
 fn escape_closes_a_panel_menu_before_the_popup(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
+    // The app binds the generic UiMenu Escape last, so it wins in the panel.
+    cx.update(|_, cx| crate::ui::bind_keys(cx));
     let source = "Павлова Марина Сергеевна · Павлова М.С. · marina@example.invalid";
     let (full, initials) = app.update(cx, |app, cx| {
         let (full, initials) = seed(app, source, cx);
@@ -1419,16 +1421,20 @@ fn escape_closes_a_panel_menu_before_the_popup(cx: &mut gpui::TestAppContext) {
         cx.simulate_keystrokes("escape");
         cx.run_until_parked();
     };
-    // Without a popup, Escape closes the menu (#92).
+    // Without a popup, Escape closes the menu and keeps the panel (#92).
     right_click(cx);
     app.read_with(cx, |app, _| assert!(app.pii.mapping.panel_menu.is_some()));
     escape(cx);
-    app.read_with(cx, |app, _| assert!(app.pii.mapping.panel_menu.is_none()));
-    // Over an open popup, the first Escape closes the menu, the second the popup.
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.panel_menu.is_none() && app.pii.mapping.open);
+    });
+    // Over the popup and its open picker, the menu closes first, then the
+    // picker, then the popup.
     app.update_in(cx, |app, window, cx| {
         let range = app.pii.review.variant(full).unwrap().mentions[0].clone();
         let annotation = app.pii.review.annotation_id(full, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
+        app.pii.mapping.pickers.category = true;
     });
     cx.run_until_parked();
     right_click(cx);
@@ -1438,9 +1444,16 @@ fn escape_closes_a_panel_menu_before_the_popup(cx: &mut gpui::TestAppContext) {
     escape(cx);
     app.read_with(cx, |app, _| {
         assert!(app.pii.mapping.panel_menu.is_none() && app.pii.popup.is_some());
+        assert!(app.pii.mapping.pickers.category);
     });
     escape(cx);
-    app.read_with(cx, |app, _| assert!(app.pii.popup.is_none()));
+    app.read_with(cx, |app, _| {
+        assert!(!app.pii.mapping.pickers.category && app.pii.popup.is_some());
+    });
+    escape(cx);
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.popup.is_none() && app.pii.mapping.open);
+    });
 }
 
 #[gpui::test]
