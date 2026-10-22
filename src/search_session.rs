@@ -143,6 +143,10 @@ impl DocumentView {
         if self.source_only {
             // Nothing to replace in a source-only tab: the chord opens the
             // preview's find, as ⌘F does there (ADR 0063).
+            if !self.preview.visible {
+                self.toggle_preview(window, cx);
+            }
+            self.original_selected = true;
             if let Some(pdf) = self.preview.pdf.clone() {
                 pdf.update(cx, |pdf, cx| {
                     if !pdf.search_is_open() {
@@ -170,6 +174,8 @@ impl DocumentView {
         if self.compare.is_some() {
             self.close_compare(window, cx);
         }
+        // In a narrow window the Markdown pane must be the one shown.
+        self.original_selected = false;
         self.search.replace_open = replace;
         self.search.open = true;
         self.refresh_markdown_search(SearchRefresh::Open, true, window, cx);
@@ -267,11 +273,21 @@ impl DocumentView {
         {
             return;
         }
+        // The highlighted match while the text is unchanged (stepping moves
+        // it past a skipped one), else where the last Replace left off.
+        let unchanged = text == self.search.source.as_ref();
+        let active = self
+            .search
+            .active
+            .and_then(|index| self.search.matches.get(index))
+            .and_then(search_match_start)
+            .filter(|_| unchanged);
         let source: Arc<str> = Arc::from(text);
         let anchor = self
             .search
             .next_anchor
             .take()
+            .or(active)
             .or(self.search.anchor)
             .unwrap_or_else(|| self.editor.read(cx).cursor());
         let query = self.markdown_search.read(cx).value().to_owned();
