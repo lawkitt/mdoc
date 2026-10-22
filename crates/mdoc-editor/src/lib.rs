@@ -3401,7 +3401,7 @@ impl EditorState {
 
     /// The document's last caret position that reveals nothing: the end of
     /// the last visible row, not a trailing collapsed one (a hidden closing
-    /// ``` fence).
+    /// code fence).
     fn visible_end(&self) -> usize {
         let Some(last) = self.wrapped.len().checked_sub(1) else {
             return self.content.len();

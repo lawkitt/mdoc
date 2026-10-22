@@ -3716,7 +3716,16 @@ fn the_keychain_explainer_is_modal_and_returns_keyboard_focus(cx: &mut TestAppCo
     });
     draw(cx);
     // Tab and Shift-Tab stay on the dialog's buttons.
-    for keys in ["tab", "tab", "tab", "shift-tab", "shift-tab", "shift-tab"] {
+    for keys in [
+        "tab",
+        "tab",
+        "tab",
+        "shift-tab",
+        "shift-tab",
+        "shift-tab",
+        "f6",
+        "shift-f6",
+    ] {
         cx.simulate_keystrokes(keys);
         draw(cx);
         tabs.update_in(cx, |tabs, window, cx| {
@@ -4376,6 +4385,27 @@ fn key(cx: &mut VisualTestContext, keys: &str) {
     draw(cx);
 }
 
+/// GPUI activates click controls on release; simulate_keystrokes sends only
+/// key-down events and therefore cannot prove keyboard button activation.
+fn activate_control(cx: &mut VisualTestContext) {
+    cx.update(|window, cx| {
+        use gpui::InputEvent;
+        let keystroke = gpui::Keystroke::parse("enter").unwrap();
+        window.dispatch_event(
+            gpui::KeyDownEvent {
+                keystroke: keystroke.clone(),
+                is_held: false,
+                prefer_character_input: false,
+            }
+            .to_platform_input(),
+            cx,
+        );
+        window.dispatch_event(gpui::KeyUpEvent { keystroke }.to_platform_input(), cx);
+    });
+    cx.run_until_parked();
+    draw(cx);
+}
+
 fn editor_focused(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
     let view = active(tabs, cx);
     cx.update(|window, cx| {
@@ -4703,7 +4733,7 @@ fn escape_in_the_notices_popover_closes_it(cx: &mut TestAppContext) {
 #[gpui::test]
 fn the_open_case_list_takes_focus_traps_tab_and_gives_it_back(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let _ = saved_case(dir.path());
+    let (case, _) = saved_case(dir.path());
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.stage_case_key(Ok(crate::cases::Store::with_key(
@@ -4711,6 +4741,7 @@ fn the_open_case_list_takes_focus_traps_tab_and_gives_it_back(cx: &mut TestAppCo
             &[3; 32],
         )));
         tabs.cases.test_may_ask = false;
+        tabs.cases.cases.push(case);
         tabs.focus_active(window, cx);
     });
     draw(cx);
@@ -4740,6 +4771,8 @@ fn clicking_more_again_closes_its_menu(cx: &mut TestAppContext) {
     assert!(cx.update(|_, cx| view.read(cx).more_open));
     click_toolbar(cx, "header-more");
     assert!(!cx.update(|_, cx| view.read(cx).more_open));
+    draw(cx);
+    assert!(cx.update(|window, cx| view.read(cx).more_focus.is_focused(window)));
 }
 
 #[gpui::test]
@@ -4755,4 +4788,121 @@ fn closing_notices_with_its_button_returns_to_the_document(cx: &mut TestAppConte
     click_toolbar(cx, "close-notices");
     cx.update(|_, cx| assert!(!tabs.read(cx).title.notices_open.get()));
     assert!(editor_focused(&tabs, cx));
+}
+
+#[gpui::test]
+fn opening_a_case_with_enter_closes_the_list_and_focuses_its_document(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (case, path) = saved_case(dir.path());
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(crate::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        )));
+        tabs.cases.test_may_ask = false;
+        tabs.cases.cases.push(case);
+        tabs.show_case_list(window, cx);
+    });
+    cx.run_until_parked();
+    draw(cx);
+    assert!(cx.debug_bounds("open-case-row").is_some());
+    key(cx, "tab"); // Close.
+    key(cx, "tab"); // The case's Open button.
+    activate_control(cx);
+    assert!(!cx.update(|_, cx| tabs.read(cx).cases.list_open));
+    let view = active(&tabs, cx);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).session.document.path.clone()),
+        Some(path)
+    );
+    assert!(editor_focused(&tabs, cx));
+}
+
+#[gpui::test]
+fn f6_skips_the_hidden_pane_in_a_narrow_window(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        view.source_only = false;
+        view.original_selected = false;
+        cx.notify();
+    });
+    cx.simulate_resize(size(px(640.), px(480.)));
+    draw(cx);
+    view.update_in(cx, |view, window, cx| {
+        window.focus(&view.toolbar_region, cx)
+    });
+    key(cx, "f6");
+    assert!(editor_focused(&tabs, cx));
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
+    click_toolbar(cx, "Source");
+    draw(cx);
+    view.update_in(cx, |view, window, cx| {
+        window.focus(&view.toolbar_region, cx)
+    });
+    key(cx, "f6");
+    assert!(cx.update(|window, cx| view.read(cx).preview_region.contains_focused(window, cx)));
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
+    key(cx, "shift-f6");
+    assert!(cx.update(|window, cx| view.read(cx).preview_region.contains_focused(window, cx)));
+    key(cx, "shift-f6");
+    assert!(in_toolbar(&tabs, cx));
+}
+
+#[gpui::test]
+fn sidebar_case_actions_and_categories_work_without_a_pointer(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| view.write(path, None, window, cx));
+    let case = tabs
+        .update_in(cx, |tabs, window, cx| {
+            tabs.create_case(tabs.active, window, cx)
+        })
+        .unwrap();
+    cx.run_until_parked();
+    draw(cx);
+    let row = cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        tabs.sidebar_row_focus.borrow()[&tabs.active].clone()
+    });
+    cx.update(|window, cx| window.focus(&row, cx));
+    key(cx, "shift-f10");
+    assert!(cx.update(|_, cx| tabs.read(cx).tab_menu.is_some()));
+    key(cx, "tab"); // Categories to detect.
+    activate_control(cx);
+    assert_eq!(
+        cx.update(|_, cx| tabs.read(cx).cases.categories_open.clone()),
+        Some(case.clone())
+    );
+    for keys in ["tab", "tab", "shift-tab", "f6", "shift-f6"] {
+        key(cx, keys);
+        assert!(
+            cx.update(|window, cx| tabs
+                .read(cx)
+                .case_categories_focus
+                .contains_focused(window, cx)),
+            "{keys}"
+        );
+    }
+    key(cx, "escape");
+    assert!(cx.update(|_, cx| tabs.read(cx).cases.categories_open.is_none()));
+    assert!(cx.update(|window, _| row.is_focused(window)));
+    collapse(&tabs, cx);
+    let id = cx.update(|_, cx| tabs.read(cx).active);
+    let compact = compact_focus(&tabs, cx, id);
+    cx.update(|window, cx| window.focus(&compact, cx));
+    key(cx, "shift-f10");
+    assert_eq!(
+        cx.update(|_, cx| tabs.read(cx).tab_menu.map(|(id, _)| id)),
+        Some(id)
+    );
+    key(cx, "escape");
+    assert!(in_sidebar(&tabs, cx));
 }

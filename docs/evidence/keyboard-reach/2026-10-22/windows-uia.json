@@ -1,0 +1,99 @@
+{
+  "trace": [
+    {
+      "key": "F6",
+      "focused": "7 button Collapse sidebar"
+    },
+    {
+      "key": "Tab",
+      "focused": "8 button Search or run an action"
+    },
+    {
+      "key": "Tab",
+      "focused": "9 button Home"
+    },
+    {
+      "key": "Tab",
+      "focused": "13 button Collapse case"
+    },
+    {
+      "key": "Tab",
+      "focused": "14 tab item (selectable) Public example.md"
+    },
+    {
+      "key": "Shift_L+F10",
+      "focused": "0 region Public example.md — mdoc Secondary Actions: Raise"
+    },
+    {
+      "key": "Tab",
+      "focused": "26 button Categories to detect…"
+    },
+    {
+      "key": "Return",
+      "focused": "0 region Public example.md — mdoc Secondary Actions: Raise"
+    },
+    {
+      "key": "Tab",
+      "focused": "31 button Close"
+    },
+    {
+      "key": "F6",
+      "focused": "31 button Close"
+    },
+    {
+      "key": "Shift_L+F6",
+      "focused": "31 button Close"
+    },
+    {
+      "key": "Escape",
+      "focused": "14 tab item (selectable) Public example.md"
+    },
+    {
+      "key": "F6",
+      "focused": "20 button More actions"
+    },
+    {
+      "key": "Return",
+      "focused": "0 region Public example.md — mdoc Secondary Actions: Raise"
+    },
+    {
+      "key": "Tab",
+      "focused": "40 menu item Save"
+    },
+    {
+      "key": "Escape",
+      "focused": "20 button More actions"
+    },
+    {
+      "key": "Escape",
+      "focused": "0 region Public example.md — mdoc Secondary Actions: Raise"
+    }
+  ],
+  "states": [
+    {
+      "key": "Shift_L+F10",
+      "focused": "0 region Public example.md — mdoc Secondary Actions: Raise",
+      "tree": "Window: \"Public example.md — mdoc\", App: mdoc.exe.\n\t0 region Public example.md — mdoc Secondary Actions: Raise\n\t\t1 title bar (settable, string) Value: Public example.md — mdoc\n\t\t\t2 menu bar System ID: MenuBar\n\t\t\t\t3 menu item System\n\t\t\t4 button Minimize\n\t\t\t5 button Maximize\n\t\t\t6 button Close\n\t\t7 button Collapse sidebar\n\t\t8 button Search or run an action\n\t\t9 button Home\n\t\t10 tab Open documents\n\t\t\t11 tab item (selectable) Untitled.md\n\t\t\t\t12 button Close tab\n\t\t\t13 button Collapse case\n\t\t\t14 tab item (selectable) Public example.md\n\t\t\t\t15 button Close tab\n\t\t\t16 button New Markdown tab\n\t\t17 button Settings\n\t\t18 button Theme: System\n\t\t19 button Help ↗\n\t\t20 button More actions\n\t\t21 button Pseudonymize\n\t\t22 group View\n\t\t\t23 button Zoom out\n\t\t\t24 button Reset zoom\n\t\t\t25 button Zoom in\n\t\t26 button Categories to detect…\n\t\t27 button Rename case…\n\t\t28 button Remove from case\n\t\t29 button Delete case and forget originals…\n\t\t30 button Close tab\n\nThe focused UI element is 0 region Public example.md — mdoc Secondary Actions: Raise."
+    },
+    {
+      "key": "Return",
+      "focused": "0 region Public example.md — mdoc Secondary Actions: Raise",
+      "tree": "Window: \"Public example.md — mdoc\", App: mdoc.exe.\n\t0 region Public example.md — mdoc Secondary Actions: Raise\n\t\t1 title bar (settable, string) Value: Public example.md — mdoc\n\t\t\t2 menu bar System ID: MenuBar\n\t\t\t\t3 menu item System\n\t\t\t4 button Minimize\n\t\t\t5 button Maximize\n\t\t\t6 button Close\n\t\t7 button Collapse sidebar\n\t\t8 button Search or run an action\n\t\t9 button Home\n\t\t10 tab Open documents\n\t\t\t11 tab item (selectable) Untitled.md\n\t\t\t\t12 button Close tab\n\t\t\t13 button Collapse case\n\t\t\t14 tab item (selectable) Public example.md\n\t\t\t\t15 button Close tab\n\t\t\t16 button New Markdown tab\n\t\t17 button Settings\n\t\t18 button Theme: System\n\t\t19 button Help ↗\n\t\t20 button More actions\n\t\t21 button Pseudonymize\n\t\t22 group View\n\t\t\t23 button Zoom out\n\t\t\t24 button Reset zoom\n\t\t\t25 button Zoom in\n\t\t31 button Close\n\t\t32 button ✓ Person\n\t\t33 button ✓ Organization\n\t\t34 button ✓ Email\n\t\t35 button ✓ Phone\n\t\t36 button ✓ Address\n\t\t37 button ✓ Identity\n\t\t38 button ✓ Tax identifier\n\t\t39 button ✓ Bank details\n\nThe focused UI element is 0 region Public example.md — mdoc Secondary Actions: Raise."
+    },
+    {
+      "key": "Escape",
+      "focused": "14 tab item (selectable) Public example.md",
+      "tree": "Window: \"Public example.md — mdoc\", App: mdoc.exe.\n\t0 region Public example.md — mdoc Secondary Actions: Raise\n\t\t1 title bar (settable, string) Value: Public example.md — mdoc\n\t\t\t2 menu bar System ID: MenuBar\n\t\t\t\t3 menu item System\n\t\t\t4 button Minimize\n\t\t\t5 button Maximize\n\t\t\t6 button Close\n\t\t7 button Collapse sidebar\n\t\t8 button Search or run an action\n\t\t9 button Home\n\t\t10 tab Open documents\n\t\t\t11 tab item (selectable) Untitled.md\n\t\t\t\t12 button Close tab\n\t\t\t13 button Collapse case\n\t\t\t14 tab item (selectable) Public example.md\n\t\t\t\t15 button Close tab\n\t\t\t16 button New Markdown tab\n\t\t17 button Settings\n\t\t18 button Theme: System\n\t\t19 button Help ↗\n\t\t20 button More actions\n\t\t21 button Pseudonymize\n\t\t22 group View\n\t\t\t23 button Zoom out\n\t\t\t24 button Reset zoom\n\t\t\t25 button Zoom in\n\nThe focused UI element is 14 tab item (selectable) Public example.md."
+    },
+    {
+      "key": "Escape",
+      "focused": "20 button More actions",
+      "tree": "Window: \"Public example.md — mdoc\", App: mdoc.exe.\n\t0 region Public example.md — mdoc Secondary Actions: Raise\n\t\t1 title bar (settable, string) Value: Public example.md — mdoc\n\t\t\t2 menu bar System ID: MenuBar\n\t\t\t\t3 menu item System\n\t\t\t4 button Minimize\n\t\t\t5 button Maximize\n\t\t\t6 button Close\n\t\t7 button Collapse sidebar\n\t\t8 button Search or run an action\n\t\t9 button Home\n\t\t10 tab Open documents\n\t\t\t11 tab item (selectable) Untitled.md\n\t\t\t\t12 button Close tab\n\t\t\t13 button Collapse case\n\t\t\t14 tab item (selectable) Public example.md\n\t\t\t\t15 button Close tab\n\t\t\t16 button New Markdown tab\n\t\t17 button Settings\n\t\t18 button Theme: System\n\t\t19 button Help ↗\n\t\t20 button More actions\n\t\t21 button Pseudonymize\n\t\t22 group View\n\t\t\t23 button Zoom out\n\t\t\t24 button Reset zoom\n\t\t\t25 button Zoom in\n\nThe focused UI element is 20 button More actions."
+    },
+    {
+      "key": "Escape",
+      "focused": "0 region Public example.md — mdoc Secondary Actions: Raise",
+      "tree": "Window: \"Public example.md — mdoc\", App: mdoc.exe.\n\t0 region Public example.md — mdoc Secondary Actions: Raise\n\t\t1 title bar (settable, string) Value: Public example.md — mdoc\n\t\t\t2 menu bar System ID: MenuBar\n\t\t\t\t3 menu item System\n\t\t\t4 button Minimize\n\t\t\t5 button Maximize\n\t\t\t6 button Close\n\t\t7 button Collapse sidebar\n\t\t8 button Search or run an action\n\t\t9 button Home\n\t\t10 tab Open documents\n\t\t\t11 tab item (selectable) Untitled.md\n\t\t\t\t12 button Close tab\n\t\t\t13 button Collapse case\n\t\t\t14 tab item (selectable) Public example.md\n\t\t\t\t15 button Close tab\n\t\t\t16 button New Markdown tab\n\t\t17 button Settings\n\t\t18 button Theme: System\n\t\t19 button Help ↗\n\t\t20 button More actions\n\t\t21 button Pseudonymize\n\t\t22 group View\n\t\t\t23 button Zoom out\n\t\t\t24 button Reset zoom\n\t\t\t25 button Zoom in\n\nThe focused UI element is 0 region Public example.md — mdoc Secondary Actions: Raise."
+    }
+  ]
+}

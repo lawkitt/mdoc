@@ -114,6 +114,8 @@ pub(super) struct Workspace {
     /// close; the notices popover takes Esc (ADR 0062).
     pub(super) case_list_focus: gpui::FocusHandle,
     pub(super) case_list_return: Option<gpui::FocusHandle>,
+    pub(super) case_categories_focus: gpui::FocusHandle,
+    pub(super) case_categories_return: Option<gpui::FocusHandle>,
     pub(super) notices_focus: gpui::FocusHandle,
     tabs: Vec<Tab>,
     active: u64,
@@ -285,6 +287,8 @@ impl Workspace {
             sidebar_cursor: None,
             case_list_focus: cx.focus_handle(),
             case_list_return: None,
+            case_categories_focus: cx.focus_handle(),
+            case_categories_return: None,
             notices_focus: cx.focus_handle(),
             tabs: Vec::new(),
             active: 0,
@@ -2087,6 +2091,7 @@ impl Workspace {
                     .tab_stop(!revealed && roving == Some(id));
                 compact_rows.push(
                     ui::control(("compact-tab", id), "", theme, true)
+                        .map(|v| self.sidebar_tab_menu(v, id, cx))
                         .key_context("UiControl SidebarTab")
                         .tab_stop(!revealed && roving == Some(id))
                         .map(|v| {
@@ -2165,6 +2170,7 @@ impl Workspace {
                 Some(
                     div()
                         .id(("tab", id))
+                        .map(|v| self.sidebar_tab_menu(v, id, cx))
                         .map(|v| {
                             ui::reveal_focus(
                                 v.track_focus(&focus),
@@ -3101,6 +3107,30 @@ mod tests;
 /// Keyboard reach (ADR 0062): F6 regions, Tab from the window, and the
 /// sidebar's tab list.
 impl Workspace {
+    /// Shift+F10 opens the focused tab's menu at its rendered row, including
+    /// the collapsed rail. It exposes case actions without a pointer.
+    fn sidebar_tab_menu(
+        &self,
+        row: gpui::Stateful<gpui::Div>,
+        id: u64,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        let bounds = std::rc::Rc::new(std::cell::Cell::new(gpui::Bounds::default()));
+        let drawn = bounds.clone();
+        row.relative()
+            .child(
+                gpui::canvas(move |b, _, _| drawn.set(b), |_, _, _, _| {})
+                    .absolute()
+                    .inset_0(),
+            )
+            .on_action(cx.listener(move |this, _: &ui::SidebarMenu, window, cx| {
+                this.menu_return = window.focused(cx);
+                this.tab_menu = Some((id, bounds.get().bottom_left()));
+                window.focus(&this.menu_focus, cx);
+                cx.notify();
+            }))
+    }
+
     /// The window's F6 regions in order, each with whether it is a single
     /// focus target (the editor) rather than a group of controls.
     fn regions(&self, cx: &App) -> Vec<(gpui::FocusHandle, bool)> {
@@ -3116,8 +3146,13 @@ impl Workspace {
     /// F6 / Shift+F6: leave the focused region for the next one, landing on
     /// the control last focused there, else its first control.
     pub(crate) fn cycle_region(&mut self, backwards: bool, window: &mut Window, cx: &mut App) {
-        // Settings, the case list and the palette keep focus until closed.
-        if self.settings.read(cx).open || self.cases.list_open || self.shell.palette.is_some() {
+        // Modal surfaces keep focus until closed.
+        if self.settings.read(cx).open
+            || self.cases.list_open
+            || self.cases.explainer
+            || self.cases.categories_open.is_some()
+            || self.shell.palette.is_some()
+        {
             return;
         }
         let regions = self.regions(cx);

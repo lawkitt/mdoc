@@ -1379,6 +1379,15 @@ impl Workspace {
         }
         cx.notify();
     }
+    pub(super) fn close_case_categories(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.cases.categories_open = None;
+        match self.case_categories_return.take() {
+            Some(focus) => window.focus(&focus, cx),
+            None => self.focus_active(window, cx),
+        }
+        cx.notify();
+    }
+
     /// The categories a case detects, as switches.
     pub(super) fn case_categories(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let case_id = self.cases.categories_open.clone()?;
@@ -1424,6 +1433,20 @@ impl Workspace {
                     .pt(px(80.))
                     .child(
                         ui::panel("case-categories", theme)
+                            .track_focus(&self.case_categories_focus)
+                            .key_context("UiPanel UiMenu")
+                            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
+                                ui::cycle(window, cx, Some(&this.case_categories_focus), false);
+                                cx.stop_propagation();
+                            }))
+                            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
+                                ui::cycle(window, cx, Some(&this.case_categories_focus), true);
+                                cx.stop_propagation();
+                            }))
+                            .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                                this.close_case_categories(window, cx);
+                                cx.stop_propagation();
+                            }))
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "case-categories".into())
                             })
@@ -1432,9 +1455,8 @@ impl Workspace {
                             .flex()
                             .flex_col()
                             .gap_1()
-                            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                                this.cases.categories_open = None;
-                                cx.notify();
+                            .on_mouse_down_out(cx.listener(|this, _, window, cx| {
+                                this.close_case_categories(window, cx);
                             }))
                             .child(
                                 div()
@@ -1466,9 +1488,8 @@ impl Workspace {
                                                 v.debug_selector(|| "close-case-categories".into())
                                             })
                                             .aria_label("Close")
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.cases.categories_open = None;
-                                                cx.notify();
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.close_case_categories(window, cx);
                                             })),
                                     ),
                             )
@@ -1557,9 +1578,11 @@ impl Workspace {
                 let categories = link.id.clone();
                 vec![
                     row("context-case-categories", "Categories to detect…")
-                        .on_click(cx.listener(move |this, _, _, cx| {
+                        .on_click(cx.listener(move |this, _, window, cx| {
                             this.tab_menu = None;
+                            this.case_categories_return = this.menu_return.take();
                             this.cases.categories_open = Some(categories.clone());
+                            window.focus(&this.case_categories_focus, cx);
                             cx.notify();
                         }))
                         .into_any_element(),

@@ -41,6 +41,11 @@ to the top of the next milestone. Items are in priority order.
 1. **[Platform] 0.2.0 acceptance.** An RC run of the full
    [checklist](docs/platform-acceptance.md) on both platforms, including S1,
    A5, D3 and D4 deferred from 0.1.0.
+   Keyboard reach follow-ups found during implementation ([#89](https://github.com/lawkitt/mdoc/pull/89))
+   also need native checks: F6 must stay in the Keychain explainer; Shift+F10
+   must open a sidebar tab's case actions in both sidebar layouts; Categories
+   to detect must take focus, hold Tab and return focus on Esc or Close.
+   Previously F6 escaped the explainer and case categories required a pointer.
    *Done when:* the evidence folder covers every row; each Fail links an item.
 
 ### Should-fix

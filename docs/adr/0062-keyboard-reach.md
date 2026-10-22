@@ -31,10 +31,15 @@ H18).
 - **Esc** closes a menu or the notices popover first; in the sidebar or
   toolbar with nothing open it returns focus to the editor.
 - **Modal surfaces** (Settings, the Open Case list, the palette) keep focus:
-  F6 does nothing while one is open.
+  F6 does nothing while one is open. The Keychain explainer and the case
+  category list keep focus too.
 - **Sidebar tab list:** one Tab stop, on the row the arrows last reached
   (else the active tab). ↑ / ↓ move between the rows shown (not folded case
   members), Enter opens, ⌫ closes the tab, and Tab leaves the list.
+- **Sidebar context menu:** ⇧F10 on a tab opens its menu in the expanded
+  sidebar or collapsed rail. Tab reaches case actions, including Categories
+  to detect. That list takes focus, keeps Tab inside, and Esc or Close returns
+  to the sidebar row that opened the menu.
 - **Home:** Tab from Home reaches its controls (Open files, Recents and so on).
 
 ## Invariants

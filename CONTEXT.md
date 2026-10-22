@@ -271,7 +271,8 @@ allocate their document view when activated.
 
 **Region**: a part of the window that F6 / ⇧F6 move focus between: sidebar,
 toolbar, editor, replacements panel, source preview, comments, or Home's
-content. Tab moves inside a region ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
+content. Tab follows window order; the Replacements panel, popups, menus and
+dialogs keep it inside ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
 
 **Document view**: one tab's editor, source preview, search, import/OCR and
 pseudonymization state. Code: `document_view::DocumentView`. Avoid calling this workspace.

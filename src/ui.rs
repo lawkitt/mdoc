@@ -453,6 +453,7 @@ actions!(
         SidebarPrevious,
         SidebarNext,
         SidebarCloseTab,
+        SidebarMenu,
     ]
 );
 
@@ -478,6 +479,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("down", SidebarNext, Some("SidebarTab")),
         KeyBinding::new("backspace", SidebarCloseTab, Some("SidebarTab")),
         KeyBinding::new("delete", SidebarCloseTab, Some("SidebarTab")),
+        KeyBinding::new("shift-f10", SidebarMenu, Some("SidebarTab")),
     ]);
 }
 
