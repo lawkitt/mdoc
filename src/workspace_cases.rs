@@ -1212,6 +1212,20 @@ impl Workspace {
         self.resume_locked(window, cx);
         self.load_cases(window, cx);
         self.cases.list_open = true;
+        self.case_list_return = window.focused(cx).filter(|f| *f != self.case_list_focus);
+        // After the palette, if it ran this, has restored its own focus.
+        let focus = self.case_list_focus.clone();
+        window.defer(cx, move |window, cx| window.focus(&focus, cx));
+        cx.notify();
+    }
+
+    /// Close the Open Case list, focus back where it was opened from.
+    pub(super) fn close_case_list(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.cases.list_open = false;
+        match self.case_list_return.take() {
+            Some(focus) => window.focus(&focus, cx),
+            None => self.focus_active(window, cx),
+        }
         cx.notify();
     }
 
@@ -1702,6 +1716,20 @@ impl Workspace {
                     .child(
                         ui::panel("case-list", theme)
                             .when(cfg!(test), |v| v.debug_selector(|| "case-list".into()))
+                            .track_focus(&self.case_list_focus)
+                            .key_context("UiPanel UiMenu")
+                            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
+                                ui::cycle(window, cx, Some(&this.case_list_focus), false);
+                                cx.stop_propagation();
+                            }))
+                            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
+                                ui::cycle(window, cx, Some(&this.case_list_focus), true);
+                                cx.stop_propagation();
+                            }))
+                            .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                                this.close_case_list(window, cx);
+                                cx.stop_propagation();
+                            }))
                             .w(px(420.))
                             .max_h(px(480.))
                             .overflow_y_scroll()
@@ -1723,9 +1751,8 @@ impl Workspace {
                                     .child(
                                         ui::control("close-case-list", "×", theme, true)
                                             .aria_label("Close case list")
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                this.cases.list_open = false;
-                                                cx.notify();
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.close_case_list(window, cx);
                                             })),
                                     ),
                             )

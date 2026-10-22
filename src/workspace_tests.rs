@@ -4656,3 +4656,78 @@ fn cycle_into_a_group_without_controls_keeps_focus(cx: &mut TestAppContext) {
     cx.update(|window, cx| ui::cycle(window, cx, Some(&empty), true));
     assert!(editor_focused(&tabs, cx));
 }
+
+#[gpui::test]
+fn the_more_menu_takes_focus_and_escape_returns_to_its_button(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    click_toolbar(cx, "header-more");
+    let view = active(&tabs, cx);
+    let in_menu = |view: &Entity<DocumentView>, cx: &mut VisualTestContext| {
+        cx.update(|window, cx| view.read(cx).more_menu_focus.contains_focused(window, cx))
+    };
+    assert!(cx.update(|_, cx| view.read(cx).more_open));
+    assert!(in_menu(&view, cx));
+    // Tab moves through the rows and stays in the menu.
+    for keys in ["tab", "tab", "shift-tab"] {
+        key(cx, keys);
+        assert!(in_menu(&view, cx), "{keys}");
+        assert!(!cx.update(|window, cx| view.read(cx).more_menu_focus.is_focused(window)));
+    }
+    key(cx, "escape");
+    cx.update(|window, cx| {
+        assert!(!view.read(cx).more_open);
+        assert!(view.read(cx).more_focus.is_focused(window));
+    });
+    key(cx, "escape");
+    assert!(editor_focused(&tabs, cx));
+}
+
+#[gpui::test]
+fn escape_in_the_notices_popover_closes_it(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.notice = Some("Saved elsewhere".into());
+        tabs.title.notices_open.set(true);
+        cx.notify();
+        window.focus(&tabs.notices_focus, cx);
+    });
+    draw(cx);
+    cx.update(|_, cx| assert!(tabs.read(cx).title.notices_open.get()));
+    key(cx, "tab");
+    key(cx, "escape");
+    cx.update(|_, cx| assert!(!tabs.read(cx).title.notices_open.get()));
+    assert!(editor_focused(&tabs, cx));
+}
+
+#[gpui::test]
+fn the_open_case_list_takes_focus_traps_tab_and_gives_it_back(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let _ = saved_case(dir.path());
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(crate::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        )));
+        tabs.cases.test_may_ask = false;
+        tabs.focus_active(window, cx);
+    });
+    draw(cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_case_list(window, cx));
+    cx.run_until_parked();
+    draw(cx);
+    let in_list = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        cx.update(|window, cx| tabs.read(cx).case_list_focus.contains_focused(window, cx))
+    };
+    assert!(cx.update(|_, cx| tabs.read(cx).cases.list_open));
+    assert!(in_list(&tabs, cx));
+    // Tab and Shift+Tab stay inside, through the case row and Close.
+    for keys in ["tab", "tab", "tab", "shift-tab", "shift-tab"] {
+        key(cx, keys);
+        assert!(in_list(&tabs, cx), "{keys}");
+    }
+    key(cx, "escape");
+    assert!(!cx.update(|_, cx| tabs.read(cx).cases.list_open));
+    assert!(editor_focused(&tabs, cx));
+}

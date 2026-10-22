@@ -25,8 +25,11 @@ H18).
   visible focus ring. The Replacements panel, the mention popup, menus and
   dialogs keep Tab inside them; F6 is the way between regions. The editor is
   entered with F6 or a click, and Tab indents there.
-- **Esc** closes a menu, the More menu or the notices popover first; in the
-  sidebar or toolbar with nothing open it returns focus to the editor.
+- **Menus and lists take focus.** Opening the More menu or the Open Case
+  list moves focus into it, and Tab / ⇧Tab stay inside. Esc closes it and
+  gives focus back: the More button, or where Open Case was chosen.
+- **Esc** closes a menu or the notices popover first; in the sidebar or
+  toolbar with nothing open it returns focus to the editor.
 - **Modal surfaces** (Settings, the Open Case list, the palette) keep focus:
   F6 does nothing while one is open.
 - **Sidebar tab list:** one Tab stop, on the row the arrows last reached

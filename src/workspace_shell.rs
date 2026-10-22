@@ -422,6 +422,18 @@ impl Workspace {
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "notices-popover".into())
                             })
+                            .track_focus(&self.notices_focus)
+                            .key_context("UiPanel UiMenu")
+                            .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                                this.title.notices_open.set(false);
+                                if this.showing_home(cx) {
+                                    window.focus(&this.focus, cx);
+                                } else {
+                                    this.focus_active(window, cx);
+                                }
+                                cx.stop_propagation();
+                                cx.notify();
+                            }))
                             .w(px(400.))
                             .p_2()
                             .rounded_lg()

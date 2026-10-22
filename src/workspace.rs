@@ -110,6 +110,11 @@ pub(super) struct Workspace {
     region_last: Vec<(gpui::FocusHandle, gpui::FocusHandle)>,
     /// The sidebar row the arrows last moved to: the list's one Tab stop.
     sidebar_cursor: Option<u64>,
+    /// The Open Case list holds focus while open, and gives it back on
+    /// close; the notices popover takes Esc (ADR 0062).
+    pub(super) case_list_focus: gpui::FocusHandle,
+    pub(super) case_list_return: Option<gpui::FocusHandle>,
+    pub(super) notices_focus: gpui::FocusHandle,
     tabs: Vec<Tab>,
     active: u64,
     next_id: u64,
@@ -278,6 +283,9 @@ impl Workspace {
             home_region: cx.focus_handle(),
             region_last: Vec::new(),
             sidebar_cursor: None,
+            case_list_focus: cx.focus_handle(),
+            case_list_return: None,
+            notices_focus: cx.focus_handle(),
             tabs: Vec::new(),
             active: 0,
             next_id: 1,
@@ -3172,10 +3180,7 @@ impl Workspace {
         if let Some(view) = self.active_view().filter(|_| !self.showing_home(cx))
             && view.read(cx).more_open
         {
-            view.update(cx, |view, cx| {
-                view.more_open = false;
-                cx.notify();
-            });
+            view.update(cx, |view, cx| view.close_more(window, cx));
             return;
         }
         self.note_region_focus(window, cx);

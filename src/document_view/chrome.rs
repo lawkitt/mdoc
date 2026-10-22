@@ -365,6 +365,13 @@ impl DocumentView {
         ui::title_bar(bar, (!detached).then_some(p.border), window, theme)
     }
 
+    /// Close the More menu, focus back on its button (ADR 0062).
+    pub(crate) fn close_more(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.more_open = false;
+        window.focus(&self.more_focus, cx);
+        cx.notify();
+    }
+
     fn more_button(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
         let open = self.more_open;
@@ -373,9 +380,14 @@ impl DocumentView {
             .relative()
             .child(
                 ui::header_icon("header-more", "More actions", ui::Icon::More, theme, open)
+                    .track_focus(&self.more_focus)
                     .when(cfg!(test), |v| v.debug_selector(|| "header-more".into()))
-                    .on_click(cx.listener(|this, _, _, cx| {
+                    .on_click(cx.listener(|this, _, window, cx| {
                         this.more_open = !this.more_open;
+                        // The menu takes focus, so Tab and Esc work in it.
+                        if this.more_open {
+                            window.focus(&this.more_menu_focus, cx);
+                        }
                         cx.notify();
                     })),
             )
@@ -437,12 +449,35 @@ impl DocumentView {
                 .snap_to_window_with_margin(px(8.))
                 .child(
                     ui::panel("more-menu", theme)
+                        .track_focus(&self.more_menu_focus)
+                        .key_context("UiPanel UiMenu")
+                        .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
+                            ui::cycle(window, cx, Some(&this.more_menu_focus), false);
+                            cx.stop_propagation();
+                        }))
+                        .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
+                            ui::cycle(window, cx, Some(&this.more_menu_focus), true);
+                            cx.stop_propagation();
+                        }))
+                        .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
+                            this.close_more(window, cx);
+                            cx.stop_propagation();
+                        }))
                         .mt(px(32.))
                         .p_1()
                         .rounded_lg()
                         .shadow_lg()
-                        .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                        .on_mouse_down_out(cx.listener(|this, _, window, cx| {
                             this.more_open = false;
+                            // Unless the click focused something, focus goes
+                            // back to the button rather than the closed menu.
+                            let menu = this.more_menu_focus.clone();
+                            let button = this.more_focus.clone();
+                            window.defer(cx, move |window, cx| {
+                                if menu.contains_focused(window, cx) {
+                                    window.focus(&button, cx);
+                                }
+                            });
                             cx.notify();
                         }))
                         .child(
