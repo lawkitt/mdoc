@@ -265,6 +265,10 @@ impl DocumentView {
             )
             .on_action(cx.listener(|this, _: &crate::PanelEscape, window, cx| {
                 cx.stop_propagation();
+                if this.pii.mapping.panel_menu.take().is_some() {
+                    cx.notify();
+                    return;
+                }
                 // Esc while ⌥ is held cancels a keyboard move.
                 if this.pii.mapping.key_moving {
                     let mapping = &mut this.pii.mapping;

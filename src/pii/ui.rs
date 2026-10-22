@@ -1000,6 +1000,11 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A panel menu opened over the popup closes first (#92).
+        if self.pii.mapping.panel_menu.take().is_some() {
+            cx.notify();
+            return;
+        }
         let previous = self.pii.close_popup();
         // The next popup starts on the whole entity again (ADR 0055).
         self.pii.mapping.set_scope(mapping::Scope::Entity);

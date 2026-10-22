@@ -30,6 +30,13 @@ All notable changes to **mdoc** are documented here.
   quote or table leaves a blank line. Backspace at a paragraph's start joins
   it to the one above in one press. Existing documents are not changed
   (ADR 0060).
+- **An OCR run that finds no text stays with its PDF.** Other PDF tabs, and
+  PDFs opened afterwards, offer Run OCR as usual instead of showing that
+  file's error and Retry.
+- **Esc closes the Replacements panel's right-click menu** first; with the
+  mention popup open, a second Esc closes the popup.
+- **A failed conversion points to the notice below**, where it is shown,
+  instead of "above".
 
 ## [0.1.1] - 2026-10-22
 

@@ -114,6 +114,8 @@ pub(crate) struct DocumentView {
     pub(crate) prompting: bool,
     pub(crate) job: import_session::ImportSession,
     pub(crate) ocr_state: OcrState,
+    /// This document's last OCR run recognized nothing; OCR itself still works.
+    pub(crate) ocr_error: Option<String>,
     pub(crate) markdown_search: Entity<markdown_search::SearchInput>,
     pub(crate) search: search_session::SearchSession,
     pub(crate) ocr_setup_subscription: Option<Subscription>,
@@ -278,6 +280,7 @@ impl DocumentView {
             prompting: false,
             job: import_session::ImportSession::default(),
             ocr_state: dependencies.ocr,
+            ocr_error: None,
             markdown_search,
             search: search_session::SearchSession::default(),
             ocr_setup_subscription: None,
@@ -598,6 +601,7 @@ impl DocumentView {
         let cancel = self.import_cancel.clone();
         let owner = self.owner.clone();
         self.error = None;
+        self.ocr_error = None;
         let generation = self.session.generation;
         let task = cx.background_executor().spawn(async move {
             let result = import::prepare_cancellable(&path, installed.as_ref(), skip_ocr, &cancel);
@@ -638,6 +642,13 @@ impl DocumentView {
                 Err(import::ImportError::OcrFailed(error)) => {
                     self.ocr_state = OcrState::Failed(error.clone());
                     cx.emit(workspace::TabEvent::OcrState(self.ocr_state.clone()));
+                    self.error = Some(error);
+                    if let Some(path) = self.conversion_source.clone() {
+                        self.await_ocr(path, cx);
+                    }
+                }
+                Err(import::ImportError::OcrNoText(error)) => {
+                    self.ocr_error = Some(error.clone());
                     self.error = Some(error);
                     if let Some(path) = self.conversion_source.clone() {
                         self.await_ocr(path, cx);
@@ -871,7 +882,7 @@ impl DocumentView {
                 })
                 .when(self.error.is_some() && !busy, |v| {
                     v.child(ui::card_text(
-                        "The notice above explains what went wrong.",
+                        "The notice below explains what went wrong.",
                         theme,
                     ))
                 })
@@ -945,9 +956,9 @@ impl DocumentView {
             self.job.busy() || self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy();
         let failed = match &self.ocr_state {
             OcrState::Failed(error) => Some(error.clone()),
-            _ => None,
+            _ => self.ocr_error.clone(),
         };
-        let primary = if ready {
+        let primary = if ready && self.ocr_error.is_none() {
             "Run OCR"
         } else if failed.is_some() {
             "Retry"

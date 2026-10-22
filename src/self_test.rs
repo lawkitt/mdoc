@@ -23,7 +23,9 @@ pub fn run(pdf: &Path, expected: &Path) -> Result<(), String> {
     let cancel = std::sync::atomic::AtomicBool::new(false);
     let imported = crate::import::prepare_cancellable(pdf, Some(&installed), false, &cancel)
         .map_err(|e| match e {
-            crate::import::ImportError::Message(m) | crate::import::ImportError::OcrFailed(m) => m,
+            crate::import::ImportError::Message(m)
+            | crate::import::ImportError::OcrFailed(m)
+            | crate::import::ImportError::OcrNoText(m) => m,
             crate::import::ImportError::NeedsOcr(..) => "OCR did not run.".into(),
         })?;
     if imported.ocr_configuration.is_none() {

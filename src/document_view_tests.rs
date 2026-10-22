@@ -1029,6 +1029,30 @@ fn ocr_runtime_failure_enables_setup_retry(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn ocr_without_text_stays_with_its_document(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.ocr_state = OcrState::Ready(crate::ocr::Installed {
+            config: crate::settings::OcrConfig::default(),
+            models: "models".into(),
+            pdfium: "pdfium".into(),
+            onnx: "onnx".into(),
+        });
+        app.conversion_source = Some("scan.pdf".into());
+        app.job.complete(
+            app.session.generation,
+            Err(import::ImportError::OcrNoText("no usable text".into())),
+        );
+        app.resume_import(window, cx);
+        assert!(matches!(app.ocr_state, OcrState::Ready(_)));
+        assert!(app.ocr_error.as_ref().unwrap().contains("no usable text"));
+        assert!(app.error.as_ref().unwrap().contains("no usable text"));
+        assert!(app.ocr_required.is_some());
+        assert!(!app.job.busy());
+    });
+}
+
+#[gpui::test]
 fn import_action_converts_and_saves_without_touching_source(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("table.csv");

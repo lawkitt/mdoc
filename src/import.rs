@@ -47,7 +47,10 @@ pub struct Imported {
 pub enum ImportError {
     NeedsOcr(PathBuf, Vec<u32>),
     Message(String),
+    /// The OCR runtime or models failed; the shared OCR state needs repair.
     OcrFailed(String),
+    /// OCR ran on this document but recognized nothing usable.
+    OcrNoText(String),
 }
 
 impl From<String> for ImportError {
@@ -64,7 +67,9 @@ impl From<&str> for ImportError {
 #[cfg(test)]
 pub fn convert(path: &Path) -> Result<Imported, String> {
     prepare(path, None, true).map_err(|error| match error {
-        ImportError::Message(message) | ImportError::OcrFailed(message) => message,
+        ImportError::Message(message)
+        | ImportError::OcrFailed(message)
+        | ImportError::OcrNoText(message) => message,
         ImportError::NeedsOcr(..) => "This PDF requires OCR.".into(),
     })
 }
@@ -193,7 +198,7 @@ fn convert_pdf(
     // Avoid importing punctuation-only failure output as a useful document.
     if !result.markdown.chars().any(char::is_alphanumeric) {
         return Err(if used_ocr {
-            ImportError::OcrFailed("Local OCR produced no usable text. Retry with a clearer scan or extract native text only.".into())
+            ImportError::OcrNoText("Local OCR produced no usable text. Retry with a clearer scan or extract native text only.".into())
         } else {
             "No usable native text was extracted. Run OCR or use a clearer source.".into()
         });

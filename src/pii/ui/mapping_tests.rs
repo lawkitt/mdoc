@@ -1396,6 +1396,54 @@ fn dragging_a_mention_over_free_panel_space_offers_the_next_alias(cx: &mut gpui:
 }
 
 #[gpui::test]
+fn escape_closes_a_panel_menu_before_the_popup(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · marina@example.invalid";
+    let (full, initials) = app.update(cx, |app, cx| {
+        let (full, initials) = seed(app, source, cx);
+        let review = &app.pii.review;
+        (full, review.variant_identity(initials).unwrap())
+    });
+    cx.run_until_parked();
+    let right_click = |cx: &mut gpui::VisualTestContext| {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let row = cx
+            .debug_bounds(Box::leak(format!("identity-{initials}").into_boxed_str()))
+            .unwrap()
+            .center();
+        cx.simulate_mouse_down(row, gpui::MouseButton::Right, Default::default());
+        cx.simulate_mouse_up(row, gpui::MouseButton::Right, Default::default());
+        cx.run_until_parked();
+    };
+    let escape = |cx: &mut gpui::VisualTestContext| {
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+    };
+    // Without a popup, Escape closes the menu (#92).
+    right_click(cx);
+    app.read_with(cx, |app, _| assert!(app.pii.mapping.panel_menu.is_some()));
+    escape(cx);
+    app.read_with(cx, |app, _| assert!(app.pii.mapping.panel_menu.is_none()));
+    // Over an open popup, the first Escape closes the menu, the second the popup.
+    app.update_in(cx, |app, window, cx| {
+        let range = app.pii.review.variant(full).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(full, &range).unwrap();
+        app.activate_annotation(annotation, window, cx);
+    });
+    cx.run_until_parked();
+    right_click(cx);
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.panel_menu.is_some() && app.pii.popup.is_some());
+    });
+    escape(cx);
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.panel_menu.is_none() && app.pii.popup.is_some());
+    });
+    escape(cx);
+    app.read_with(cx, |app, _| assert!(app.pii.popup.is_none()));
+}
+
+#[gpui::test]
 fn panel_groups_expand_independently_filter_and_edit_from_rows(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";

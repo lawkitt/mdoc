@@ -434,10 +434,16 @@ impl DocumentView {
         .child(chevron)
         .on_mouse_down(
             gpui::MouseButton::Right,
-            cx.listener(move |this, _, _, cx| {
+            cx.listener(move |this, _, window, cx| {
                 cx.stop_propagation();
                 let menu = &mut this.pii.mapping.panel_menu;
                 *menu = (*menu != Some(PanelMenu::Category(id))).then_some(PanelMenu::Category(id));
+                // Escape reaches the menu from the list; an open popup keeps
+                // its focus and closes the menu first (#92).
+                let popup = &this.pii.focus;
+                if !(popup.is_focused(window) || popup.contains_focused(window, cx)) {
+                    window.focus(&this.pii.mapping.focus, cx);
+                }
                 cx.notify();
             }),
         )
