@@ -17,15 +17,21 @@ H18).
   Hidden regions are skipped. On Home, which has no editor, the cycle is
   sidebar → Home content. F6 is the only chord (on MacBook keyboards fn+F6
   unless function keys are standard).
-- **Landing:** a region takes focus on the control last focused in it,
-  otherwise its first control; the editor gets its caret back.
-- **Tab / ⇧Tab** move to the next / previous control with a visible focus
-  ring, going on into the next region at a region's end; in the editor Tab
-  indents. Esc closes menus; in the sidebar or toolbar it returns focus to
-  the editor.
-- **Sidebar tab list:** ↑ / ↓ move between tabs, Enter opens, ⌫ closes the
-  tab, and Tab leaves the list for the next control, as in the replacements
-  panel.
+- **Landing:** a region takes focus on the control last focused in it
+  (however focus left it), otherwise its first control; the editor gets its
+  caret back. Regions follow what is drawn: in a narrow window only the
+  shown pane of Markdown and Original takes part.
+- **Tab / ⇧Tab** move to the next / previous control in window order, with a
+  visible focus ring. The Replacements panel, the mention popup, menus and
+  dialogs keep Tab inside them; F6 is the way between regions. The editor is
+  entered with F6 or a click, and Tab indents there.
+- **Esc** closes a menu, the More menu or the notices popover first; in the
+  sidebar or toolbar with nothing open it returns focus to the editor.
+- **Modal surfaces** (Settings, the Open Case list, the palette) keep focus:
+  F6 does nothing while one is open.
+- **Sidebar tab list:** one Tab stop, on the row the arrows last reached
+  (else the active tab). ↑ / ↓ move between the rows shown (not folded case
+  members), Enter opens, ⌫ closes the tab, and Tab leaves the list.
 - **Home:** Tab from Home reaches its controls (Open files, Recents and so on).
 
 ## Invariants

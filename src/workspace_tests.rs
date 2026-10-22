@@ -4548,3 +4548,111 @@ fn f6_includes_the_replacements_panel_when_open(cx: &mut TestAppContext) {
     key(cx, "f6");
     assert!(in_sidebar(&tabs, cx));
 }
+
+#[gpui::test]
+fn f6_stays_inside_settings(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_settings(window, cx));
+    cx.run_until_parked();
+    draw(cx);
+    assert!(cx.update(|_, cx| tabs.read(cx).settings.read(cx).open));
+    let before = cx.update(|window, cx| window.focused(cx));
+    key(cx, "f6");
+    assert_eq!(cx.update(|window, cx| window.focused(cx)), before);
+    key(cx, "shift-f6");
+    assert_eq!(cx.update(|window, cx| window.focused(cx)), before);
+}
+
+#[gpui::test]
+fn tab_leaves_the_sidebar_list_from_any_row(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+        tabs.new_tab(window, cx);
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let listed = cx.update(|_, cx| tabs.read(cx).listed_tabs(cx));
+    let on_row = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        cx.update(|window, cx| {
+            tabs.read(cx)
+                .sidebar_row_focus
+                .borrow()
+                .values()
+                .any(|f| f.is_focused(window))
+        })
+    };
+    tabs.update_in(cx, |tabs, window, cx| {
+        let focus = tabs
+            .sidebar_row_focus
+            .borrow()
+            .get(&listed[2])
+            .cloned()
+            .unwrap();
+        window.focus(&focus, cx);
+    });
+    draw(cx);
+    // Up to the first row, then Tab: out of the list, not to the next row.
+    key(cx, "up");
+    key(cx, "up");
+    key(cx, "tab");
+    assert!(!on_row(&tabs, cx));
+    // Shift+Tab comes back to the row the arrows left it on.
+    key(cx, "shift-tab");
+    assert!(cx.update(|window, cx| {
+        tabs.read(cx)
+            .sidebar_row_focus
+            .borrow()
+            .get(&listed[0])
+            .is_some_and(|f| f.is_focused(window))
+    }));
+}
+
+#[gpui::test]
+fn escape_closes_the_more_menu_before_returning_to_the_editor(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    click_toolbar(cx, "header-more");
+    let view = active(&tabs, cx);
+    assert!(cx.update(|_, cx| view.read(cx).more_open));
+    tabs.update_in(cx, |tabs, window, cx| {
+        let toolbar = tabs.active_view().unwrap().read(cx).toolbar_region.clone();
+        if !toolbar.contains_focused(window, cx) {
+            window.focus(&toolbar, cx);
+        }
+    });
+    draw(cx);
+    key(cx, "escape");
+    assert!(!cx.update(|_, cx| view.read(cx).more_open));
+    assert!(!editor_focused(&tabs, cx));
+    key(cx, "escape");
+    assert!(editor_focused(&tabs, cx));
+}
+
+#[gpui::test]
+fn escape_and_tab_departures_are_remembered_for_f6(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    draw(cx);
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
+    key(cx, "tab");
+    let second = cx.update(|window, cx| window.focused(cx));
+    assert!(in_sidebar(&tabs, cx));
+    // Leave with Esc, not F6; F6 back from the toolbar still lands there.
+    key(cx, "escape");
+    assert!(editor_focused(&tabs, cx));
+    key(cx, "f6");
+    assert_eq!(cx.update(|window, cx| window.focused(cx)), second);
+}
+
+#[gpui::test]
+fn cycle_into_a_group_without_controls_keeps_focus(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    draw(cx);
+    let empty = cx.update(|_, cx| cx.focus_handle());
+    cx.update(|window, cx| ui::cycle(window, cx, Some(&empty), false));
+    assert!(editor_focused(&tabs, cx));
+    cx.update(|window, cx| ui::cycle(window, cx, Some(&empty), true));
+    assert!(editor_focused(&tabs, cx));
+}

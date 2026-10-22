@@ -40,6 +40,9 @@ pub(crate) struct DocumentView {
     pub(crate) toolbar_region: gpui::FocusHandle,
     pub(crate) preview_region: gpui::FocusHandle,
     pub(crate) comments_region: gpui::FocusHandle,
+    /// Whether the last frame drew the Markdown and the original panes: a
+    /// narrow window shows one of them (ADR 0062 skips the hidden one).
+    panes_drawn: std::cell::Cell<(bool, bool)>,
     pub(crate) owner: (u64, gpui::WeakEntity<workspace::Workspace>),
     pub(crate) active: bool,
     pub(crate) dirty_cached: bool,
@@ -212,6 +215,7 @@ impl DocumentView {
             toolbar_region: cx.focus_handle(),
             preview_region: cx.focus_handle(),
             comments_region: cx.focus_handle(),
+            panes_drawn: std::cell::Cell::new((true, false)),
             owner: dependencies.owner,
             active: true,
             dirty_cached: false,
@@ -1339,14 +1343,20 @@ impl DocumentView {
     /// The document's F6 regions in order, each with whether it is a single
     /// focus target (the editor) rather than a group of controls (ADR 0062).
     pub(crate) fn focus_regions(&self, cx: &App) -> Vec<(gpui::FocusHandle, bool)> {
+        let (markdown, original) = self.panes_drawn.get();
         let mut regions = vec![(self.toolbar_region.clone(), false)];
-        if !self.source_only && !self.loading && !self.unavailable && self.compare.is_none() {
+        if markdown
+            && !self.source_only
+            && !self.loading
+            && !self.unavailable
+            && self.compare.is_none()
+        {
             regions.push((self.editor.read(cx).focus_handle(cx), true));
         }
-        if self.replacements_open() {
+        if self.replacements_open() && self.can_copy_markdown() {
             regions.push((self.replacements_focus(), false));
         }
-        if self.preview.visible {
+        if self.preview.visible && original {
             regions.push((self.preview_region.clone(), false));
             if self.preview.comment_panel.is_some() {
                 regions.push((self.comments_region.clone(), false));
@@ -1588,6 +1598,7 @@ impl Render for DocumentView {
         let narrow_preview = self.preview.visible && content_width < 620.;
         let show_original = self.preview.visible && (!narrow_preview || self.original_selected);
         let show_markdown = !narrow_preview || !self.original_selected;
+        self.panes_drawn.set((show_markdown, show_original));
         let minimum = (280. / content_width.max(620.)).min(0.5);
         let split = self
             .preview

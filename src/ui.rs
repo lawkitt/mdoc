@@ -482,15 +482,29 @@ pub fn bind_keys(cx: &mut App) {
 }
 
 pub fn cycle(window: &mut Window, cx: &mut App, group: Option<&FocusHandle>, backwards: bool) {
-    for _ in 0..256 {
+    let start = window.focused(cx);
+    let mut first = None;
+    // One full lap of the window's Tab stops at most; with no stop inside
+    // `group`, focus goes back where it was.
+    loop {
         if backwards {
             window.focus_prev(cx);
         } else {
             window.focus_next(cx);
         }
         if group.is_none_or(|group| group.contains_focused(window, cx)) {
-            break;
+            return;
         }
+        let now = window.focused(cx);
+        match &first {
+            None if now.is_some() => first = now,
+            Some(_) if now == first || now.is_none() => break,
+            None => break,
+            _ => {}
+        }
+    }
+    if let Some(start) = start {
+        window.focus(&start, cx);
     }
 }
 

@@ -93,6 +93,9 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   character when the row broke inside a word; today it stops one character
   short (ADR 0061). Table cells with wrapped text or
   `<br>` rows would then move by their own visual rows too.
+- **[A11y]** Region-aware Tab: Tab from the toolbar's last control into the
+  editor, and from the Replacements panel's last control on to the next region,
+  instead of window order and the panel's own loop; F6 covers both today (ADR 0062).
 - **[Tests]** Flaky `gpui-pdf` scrolling tests under `cargo test --workspace`
   on Windows (2026-10-22, twice in a row): `a_source_note_shows_beside_the_name`,
   `narrow_toolbar_exposes_and_wraps_pdf_tools`, `page_tone_toggle_follows_style_and_rerenders`
