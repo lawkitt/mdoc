@@ -1984,3 +1984,40 @@ fn replace_twice_before_a_background_search_settles(cx: &mut TestAppContext) {
         &edited[..20]
     );
 }
+
+#[gpui::test]
+fn replace_after_a_skip_takes_the_highlighted_match_while_a_search_runs(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    let text = format!("**c**at cat cat\n\n{}", "padding ".repeat(10_000));
+    open_replace(&app, &text, "cat", "dog", cx);
+    // An edit at the end queues a background search, left running below.
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |editor, cx| {
+            let end = editor.text().len();
+            editor.replace_range(end..end, "!", cx);
+            editor.set_cursor(0, cx);
+        });
+    });
+    assert!(cx.update(|_, cx| app.read(cx).search.task.is_some()));
+    app.update_in(cx, |app, window, cx| {
+        app.replace_next_markdown(&ReplaceNextMarkdown, window, cx);
+        assert_eq!(
+            app.search.status.as_deref(),
+            Some("Skipped: crosses formatting")
+        );
+        app.replace_next_markdown(&ReplaceNextMarkdown, window, cx);
+        app.replace_next_markdown(&ReplaceNextMarkdown, window, cx);
+    });
+    cx.run_until_parked();
+    let edited = cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned());
+    assert!(edited.starts_with("**c**at dog dog\n"), "{}", &edited[..20]);
+}
+
+#[gpui::test]
+fn find_shows_the_markdown_pane_in_a_narrow_window(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    app.update(cx, |app, _| app.original_selected = true);
+    cx.dispatch_action(FindReplaceMarkdown);
+    cx.run_until_parked();
+    assert!(!cx.update(|_, cx| app.read(cx).original_selected));
+}
