@@ -4,6 +4,14 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Dialogs and choices read correctly with a screen reader.** Settings is
+  announced as a dialog; model choices as radio buttons in a named group; the
+  narrow window's Markdown / Source switch as a "View" choice; each tab's
+  close button names its tab. Every confirmation (unsaved changes, model
+  removal, case actions) is now mdoc's own dialog, named by its question
+  rather than "Warning": unsaved changes ask "Save changes to “name”?" with
+  Save, Discard (⌘D / Alt+D) and Cancel (Esc) (ADR 0064).
+
 - **Find and Replace.** ⌘⌥F / Ctrl+H (or Edit ▸ Find and Replace…) opens find
   with a Replace row. Enter replaces the current match and moves on; ⌘↩ /
   Ctrl+Alt+Enter replaces all of them as one undo step. Whole word joins

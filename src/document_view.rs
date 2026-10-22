@@ -434,11 +434,17 @@ impl DocumentView {
             return;
         }
         self.prompting = true;
+        // Save is the default, Discard ⌘D / Alt+D, Cancel Esc (ADR 0064).
+        let question = format!("Save changes to “{}”?", self.display_name());
         let answer = window.prompt(
             PromptLevel::Warning,
-            "Save changes to this document?",
+            &question,
             Some("Unsaved changes will be lost if you discard them."),
-            &["Save", "Cancel", "Discard"],
+            &[
+                gpui::PromptButton::new("Save"),
+                gpui::PromptButton::new("Discard"),
+                gpui::PromptButton::cancel("Cancel"),
+            ],
             cx,
         );
         cx.spawn_in(window, async move |this, cx| {
@@ -447,7 +453,7 @@ impl DocumentView {
                 this.prompting = false;
                 match answer {
                     Some(0) => this.save(false, Some(next), window, cx),
-                    Some(2) => this.proceed(next, window, cx),
+                    Some(1) => this.proceed(next, window, cx),
                     _ => {
                         cx.emit(workspace::TabEvent::CloseCancelled);
                     }

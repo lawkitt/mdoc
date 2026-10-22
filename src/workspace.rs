@@ -169,6 +169,8 @@ pub(super) struct Workspace {
     ready: bool,
     ocr_state: OcrState,
     pending_open: Vec<PathBuf>,
+    /// Paths wait in `pending_open` for a confirm dialog to be answered.
+    awaiting_prompt: bool,
     notice: Option<String>,
     /// Last run's masked crash report and whether its preview is open (ADR 0047).
     crash: Option<(String, bool)>,
@@ -201,6 +203,11 @@ pub(super) struct Workspace {
 }
 
 impl Workspace {
+    /// Every prompt in the app is mdoc's own confirm dialog (ADR 0064).
+    pub(crate) fn install_prompts(&self, cx: &mut App) {
+        crate::confirm_dialog::install(self.theme.clone(), cx);
+    }
+
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let mut this = Self::empty(window, cx);
         this.ocr_state = OcrState::Checking;
@@ -334,6 +341,7 @@ impl Workspace {
                 OcrState::Unsupported
             },
             pending_open: Vec::new(),
+            awaiting_prompt: false,
             notice: None,
             crash: None,
             tab_menu: None,
@@ -1054,6 +1062,36 @@ impl Workspace {
         self.open_paths_at(paths, None, window, cx);
     }
 
+    /// Open what arrived while a confirm dialog was up, once it is answered.
+    fn open_after_prompt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.awaiting_prompt {
+            return;
+        }
+        self.awaiting_prompt = true;
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(100))
+                    .await;
+                let open = this.update_in(cx, |this, window, cx| {
+                    if window.has_active_prompt() {
+                        return false;
+                    }
+                    this.awaiting_prompt = false;
+                    let pending = std::mem::take(&mut this.pending_open);
+                    if !pending.is_empty() {
+                        this.open_paths(pending, window, cx);
+                    }
+                    true
+                });
+                if open.unwrap_or(true) {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
     /// Open paths as new tabs before the tab now at `at` (ADR 0028), or after
     /// the last tab. Already-open paths keep their position.
     pub fn open_paths_at(
@@ -1067,9 +1105,18 @@ impl Workspace {
             self.pending_open.extend(paths);
             return;
         }
+        // Opening activates a tab and takes focus; a confirm dialog keeps it
+        // until answered, and the paths open after (ADR 0064). Checked before
+        // quitting, so a cancelled quit still opens them.
+        if window.has_active_prompt() {
+            self.pending_open.extend(paths);
+            self.open_after_prompt(window, cx);
+            return;
+        }
         if self.quitting.is_some() || self.finishing {
             return;
         }
+        let requested = paths.clone();
         let task = cx.background_executor().spawn(async move {
             let supported = |path: &std::path::Path| {
                 !path.is_dir() && (document::is_markdown(path) || import::supported_source(path))
@@ -1090,6 +1137,12 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let (paths, folders) = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
+                // A dialog that came up while the paths resolved keeps focus.
+                if window.has_active_prompt() {
+                    this.pending_open.extend(requested);
+                    this.open_after_prompt(window, cx);
+                    return;
+                }
                 this.finish_open(paths, at, window, cx);
                 for folder in folders {
                     this.open_folder_case(folder, window, cx);
@@ -2074,6 +2127,11 @@ impl Workspace {
                 // Unsaved duplicates have no folder; an empty second line would
                 // lift the name off the row's centre.
                 let duplicate = duplicate && !parent_label.is_empty();
+                let row_label = if duplicate {
+                    format!("{name} · {parent_label}")
+                } else {
+                    name.clone()
+                };
                 let focus = self
                     .sidebar_row_focus
                     .borrow_mut()
@@ -2183,11 +2241,7 @@ impl Workspace {
                         .tab_stop(roving == Some(id))
                         .role(gpui::Role::Tab)
                         .aria_selected(self.active == id && !home)
-                        .aria_label(if duplicate {
-                            format!("{name} · {parent_label}")
-                        } else {
-                            name.clone()
-                        })
+                        .aria_label(row_label.clone())
                         .when(cfg!(test), |v| {
                             v.debug_selector(move || format!("tab-{id}"))
                         })
@@ -2263,7 +2317,8 @@ impl Workspace {
                             ui::control(("close-tab", id), "×", theme, true)
                                 // ⌫ on the row closes it; the button is for the pointer.
                                 .tab_stop(false)
-                                .aria_label("Close tab")
+                                // Named for its tab, as the tab is (ADR 0064).
+                                .aria_label(format!("Close {row_label}"))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
                                     this.close_tab(id, window, cx);
