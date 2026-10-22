@@ -29,8 +29,7 @@ ready ride along with a later patch.
 Each patch gets a smoke run on both platforms; an item is done when its issue
 closes, with the expected behavior stated there.
 
-1. **[macOS] Quit leaves the process running** with no windows
-   ([#83](https://github.com/lawkitt/mdoc/issues/83)).
+None open.
 
 ## 0.2.0
 
