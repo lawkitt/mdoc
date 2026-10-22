@@ -4,6 +4,8 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+## [0.1.1] - 2026-10-22
+
 - **Shortcuts keep working after Save as case and after undoing in the
   popup.** After Share › Save as case, focus stays in the Share panel, so
   Ctrl+Q / ⌘Q and other shortcuts work without clicking the document first. An undo that
