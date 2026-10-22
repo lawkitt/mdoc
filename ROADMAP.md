@@ -28,9 +28,7 @@ closes, with the expected behavior stated there.
 
 1. **[Platform] Windows caption buttons on the installed 0.1.0** ([#74](https://github.com/lawkitt/mdoc/issues/74)).
    *Done when:* the maintainer's T6 row passes on 0.1.0, or a fix ships.
-2. **[Pseudonymization] Popup stays open after ⌘↩ Apply all**
-   ([#78](https://github.com/lawkitt/mdoc/issues/78)).
-3. **[macOS] Quit leaves the process running** with no windows
+2. **[macOS] Quit leaves the process running** with no windows
    ([#83](https://github.com/lawkitt/mdoc/issues/83)).
 
 ## 0.2.0
@@ -46,10 +44,12 @@ to the top of the next milestone. Items are in priority order.
    their own Enter.
    *Done when:* the editor after Enter matches a CommonMark rendering of the
    copied Markdown, with tests on paragraphs, lists and tables.
-2. **[Pseudonymization] Popup Enter follows the scope.** *From the rc.1 run.*
+2. **[Pseudonymization] Popup Enter and Apply all.** *From the rc.1 run.*
    The popup shows All N, but Enter applies only this mention and switches the
-   scope. Decide which wins; amend ADR 0048/0055.
-   *Done when:* Enter, the scope segments and Apply agree, tested per scope.
+   scope; after ⌘↩ Apply all it stays open on an applied mention
+   ([#78](https://github.com/lawkitt/mdoc/issues/78)). Decide both; amend ADR 0048/0055.
+   *Done when:* Enter, the scope segments and Apply agree, tested per scope,
+   and ⌘↩ leaves the popup as decided.
 3. **[Editor] macOS caret moves.** *From the RC runs.* ⌘←/→/↑/↓ (with ⇧);
    Windows has its Ctrl moves.
    *Done when:* each move works on macOS, with tests.
