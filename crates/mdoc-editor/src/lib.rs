@@ -47,7 +47,7 @@ pub use markdown_syntax::SyntaxStyle;
 
 mod search;
 mod search_geometry;
-pub use search::{SearchIndex, SearchMatch};
+pub use search::{SearchIndex, SearchMatch, SearchOptions};
 mod spell_exclusions;
 pub use spell_exclusions::spell_exclusions;
 
@@ -1319,6 +1319,7 @@ impl EditorState {
                 .into_iter()
                 .map(|range| SearchMatch {
                     source: vec![range],
+                    replaceable: true,
                 })
                 .collect(),
             active,
@@ -5797,6 +5798,7 @@ mod tests {
             let matches: Vec<_> = (0..100_000)
                 .map(|i| SearchMatch {
                     source: std::iter::once(i..i + 1).collect(),
+                    replaceable: true,
                 })
                 .collect();
             editor.set_search_matches(matches, Some(0), cx);

@@ -4,6 +4,13 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Find and Replace.** ⌘⌥F / Ctrl+H (or Edit ▸ Find and Replace…) opens find
+  with a Replace row. Enter replaces the current match and moves on; ⌘↩ /
+  Ctrl+Alt+Enter replaces all of them as one undo step. Whole word joins
+  Match case (⌥⌘W / Alt+W and ⌥⌘C / Alt+C). Replace leaves applied aliases
+  and matches that cross hidden formatting alone and says how many it skipped
+  (ADR 0063).
+
 - **Every control is reachable by keyboard.** F6 and Shift+F6 move between the
   sidebar, the toolbar, the document, the Replacements panel and the original,
   returning to the control you left in each. Tab from Home reaches its

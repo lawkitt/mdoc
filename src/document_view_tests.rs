@@ -6,9 +6,10 @@ pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut Visua
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
     cx.update(markdown_search::bind_keys);
-    cx.update(bind_markdown_search_keys);
     cx.update(pii::ui::bind_keys);
     cx.update(settings_ui::bind_keys);
+    // After the global ⌘↩ (Apply all), as in main, so find fields win.
+    cx.update(bind_markdown_search_keys);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
         let mut tabs = workspace::Workspace::empty(window, cx);
         tabs.restore(session_store::Session::default(), window, cx);
@@ -1817,4 +1818,152 @@ fn a_missing_file_dialog_is_explained_not_silent() {
         message.contains("xdg-desktop-portal"),
         cfg!(target_os = "linux")
     );
+}
+
+fn open_replace(
+    app: &Entity<DocumentView>,
+    text: &str,
+    query: &str,
+    with: &str,
+    cx: &mut VisualTestContext,
+) {
+    app.update_in(cx, |app, window, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text(text, cx);
+            editor.set_cursor(0, cx);
+            editor.focus(window, cx);
+        });
+    });
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-alt-f"
+    } else {
+        "ctrl-h"
+    });
+    cx.run_until_parked();
+    cx.simulate_input(query);
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.markdown_replace.read(cx).focus_handle(cx), cx);
+    });
+    cx.simulate_input(with);
+    cx.run_until_parked();
+}
+
+fn replace_all_keys() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "cmd-enter"
+    } else {
+        "ctrl-alt-enter"
+    }
+}
+
+#[gpui::test]
+fn replace_all_skips_formatting_and_one_undo_reverts_it(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    let source = "hi **there**. hi there. Hi there.";
+    open_replace(&app, source, "hi there", "yo", cx);
+    assert!(cx.update(|_, cx| app.read(cx).search.replace_open));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 3);
+
+    cx.simulate_keystrokes(replace_all_keys());
+    cx.run_until_parked();
+    let text = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned())
+    };
+    assert_eq!(text(cx), "hi **there**. yo. yo.");
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).search.status.clone())
+            .as_deref(),
+        Some("Replaced 2 · skipped 1 (formatting)")
+    );
+
+    app.update_in(cx, |app, window, cx| {
+        app.editor.update(cx, |e, cx| e.focus(window, cx))
+    });
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-z"
+    } else {
+        "ctrl-z"
+    });
+    cx.run_until_parked();
+    assert_eq!(text(cx), source, "one undo reverts Replace all");
+    assert!(
+        cx.update(|_, cx| app.read(cx).search.status.is_none()),
+        "the result goes with the undo"
+    );
+}
+
+#[gpui::test]
+fn replace_moves_past_the_replacement_and_skips_formatting(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    open_replace(&app, "cat **c**at cat", "cat", "cats", cx);
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let state = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let app = app.read(cx);
+            (
+                app.editor.read(cx).text().to_owned(),
+                app.search.active,
+                app.search.status.clone(),
+            )
+        })
+    };
+    let (text, active, _) = state(cx);
+    assert_eq!(text, "cats **c**at cat");
+    assert_eq!(active, Some(1), "the next match, not cat inside cats");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let (text, active, status) = state(cx);
+    assert_eq!(text, "cats **c**at cat", "formatting is passed over");
+    assert_eq!(active, Some(2));
+    assert_eq!(status.as_deref(), Some("Skipped: crosses formatting"));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(state(cx).0, "cats **c**at cats");
+}
+
+#[gpui::test]
+fn whole_word_and_match_case_toggle_from_the_keyboard(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    open_replace(&app, "Cat cat category", "cat", "", cx);
+    let count = |cx: &mut VisualTestContext| cx.update(|_, cx| app.read(cx).search.matches.len());
+    assert_eq!(count(cx), 3);
+    let (word, case) = if cfg!(target_os = "macos") {
+        ("cmd-alt-w", "cmd-alt-c")
+    } else {
+        ("alt-w", "alt-c")
+    };
+    cx.simulate_keystrokes(word);
+    cx.run_until_parked();
+    assert_eq!(count(cx), 2);
+    cx.simulate_keystrokes(case);
+    cx.run_until_parked();
+    assert_eq!(count(cx), 1);
+    cx.simulate_keystrokes(replace_all_keys());
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
+        "Cat  category"
+    );
+}
+
+#[gpui::test]
+fn find_hides_the_replace_row_and_the_toggle_shows_it(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    cx.dispatch_action(FindMarkdown);
+    cx.run_until_parked();
+    assert!(!cx.update(|_, cx| app.read(cx).search.replace_open));
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds("markdown-replace-row").is_none());
+    app.update_in(cx, |app, window, cx| {
+        app.toggle_markdown_replace(window, cx)
+    });
+    cx.run_until_parked();
+    assert!(cx.update(|window, cx| {
+        app.read(cx)
+            .markdown_replace
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window)
+    }));
 }

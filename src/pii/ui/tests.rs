@@ -1930,3 +1930,57 @@ fn inspector_share_tab_copies_for_ai_after_apply(cx: &mut gpui::TestAppContext) 
     click(cx, "inspector-review");
     assert!(cx.debug_bounds("replacement-filter").is_some());
 }
+
+#[gpui::test]
+fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Bob met PERSON_X and Bob.";
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text(source, cx));
+        let id = app
+            .pii
+            .review
+            .add_manual(source, 0..3, Category::Person)
+            .unwrap();
+        let _ = id;
+        app.apply_replacements(cx);
+    });
+    cx.run_until_parked();
+    let applied = cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned());
+    assert_ne!(applied, source, "the manual mention is applied");
+    let alias = cx.update(|_, cx| app.read(cx).pii.review.applied()[0].step.after.to_string());
+    cx.dispatch_action(crate::FindReplaceMarkdown);
+    cx.run_until_parked();
+    cx.simulate_input(&alias);
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.markdown_replace.read(cx).focus_handle(cx), cx);
+    });
+    cx.simulate_input("Carol");
+    cx.run_until_parked();
+    let matches = cx.update(|_, cx| app.read(cx).search.matches.len());
+    assert!(matches >= 1);
+    let applied_count = cx.update(|_, cx| app.read(cx).pii.review.applied().len());
+    cx.dispatch_action(crate::ReplaceAllMarkdown);
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
+        applied
+    );
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).search.status.clone())
+            .as_deref(),
+        Some(format!("Replaced 0 · skipped {applied_count} (alias)").as_str())
+    );
+    cx.dispatch_action(crate::ReplaceNextMarkdown);
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
+        applied
+    );
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).search.status.clone())
+            .as_deref(),
+        Some("Skipped: alias, change it in Replacements")
+    );
+}

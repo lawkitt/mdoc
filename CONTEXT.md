@@ -58,6 +58,12 @@ locally and clearable in Settings.
 
 **Command palette**: ⌘K search over actions, open tabs, cases and recent files.
 
+**Find and Replace**: the find bar with its Replace row (⌘⌥F / Ctrl+H). It
+searches **visible text**, the Markdown with syntax hidden. A match that **crosses formatting** (its
+visible text comes from several source ranges, as "foo bar" in
+`foo **bar**`) or overlaps an applied alias is never replaced
+([ADR 0063](docs/adr/0063-find-and-replace.md)).
+
 **Document header**: the title-bar row above a document: breadcrumb, Source,
 panel toggle, ⋯ and the primary action.
 

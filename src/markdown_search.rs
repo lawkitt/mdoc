@@ -33,7 +33,7 @@ actions!(
 /// Bind the editing keys used by the compact Markdown find field.
 pub fn bind_keys(cx: &mut App) {
     let context = Some(
-        "MarkdownSearch || PreviewSearch || PseudonymReplacement || SettingsInput || ReplacementSearch || CommandPalette",
+        "MarkdownSearch || MarkdownReplace || PreviewSearch || PseudonymReplacement || SettingsInput || ReplacementSearch || CommandPalette",
     );
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, context),

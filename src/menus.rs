@@ -107,6 +107,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::os_action("Select All", mdoc_editor::SelectAll, OsAction::SelectAll),
             MenuItem::separator(),
             MenuItem::action("Find…", FindMarkdown),
+            MenuItem::action("Find and Replace…", FindReplaceMarkdown),
             MenuItem::action("Find Next", FindNextMarkdown),
             MenuItem::action("Find Previous", FindPreviousMarkdown),
             MenuItem::separator(),
