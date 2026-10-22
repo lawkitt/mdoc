@@ -703,6 +703,29 @@ fn scan_inline(
             i += 2;
             continue;
         }
+        // A hard line break (`\` ending a line with text before it, as ⇧Enter
+        // writes, ADR 0060): the reader consumes the backslash, so it hides
+        // like any marker and the caret reveals it.
+        if c == b'\\'
+            && b.get(i + 1).is_none_or(|&n| n == b'\n')
+            && !is_backslash_escaped(b, i)
+            && text[..i]
+                .rsplit('\n')
+                .next()
+                .is_some_and(|before| !before.trim().is_empty())
+        {
+            push(
+                out,
+                i..i + 1,
+                Style {
+                    hide: true,
+                    ..Default::default()
+                }
+                .over(base),
+            );
+            i += 1;
+            continue;
+        }
         // Entities share one decoded replacement and source map with search.
         if c == b'&'
             && let Some((len, decoded)) = decode_entity(&text[i..end])
@@ -2975,6 +2998,22 @@ mod tests {
         for s in ["[!note]", "[!NOTEXT]", "note", ""] {
             assert_eq!(alert_kind(s), None, "{s:?}");
         }
+    }
+
+    #[test]
+    fn hard_break_backslash_hides() {
+        let font = gpui::font("Helvetica");
+        let c = hsla(0., 0., 0., 1.);
+        let st = test_style();
+        let (disp, _, _) = hidden_runs("Alpha\\", &font, c, &[], None, 0, 0, false, &st);
+        assert_eq!(disp, "Alpha");
+        // Shown at the caret, and literal when escaped or alone on a line.
+        let (disp, _, _) = hidden_runs("Alpha\\", &font, c, &[], Some(6), 0, 0, false, &st);
+        assert_eq!(disp, "Alpha\\");
+        let (disp, _, _) = hidden_runs("Alpha\\\\", &font, c, &[], None, 0, 0, false, &st);
+        assert_eq!(disp, "Alpha\\");
+        let (disp, _, _) = hidden_runs("\\", &font, c, &[], None, 0, 0, false, &st);
+        assert_eq!(disp, "\\");
     }
 
     #[test]

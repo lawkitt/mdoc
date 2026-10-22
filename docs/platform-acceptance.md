@@ -218,6 +218,7 @@ Every application shortcut, from `bind_app_keys`, `bind_markdown_search_keys`,
 | H16 | Mod+Q | Quit, with the unsaved-changes prompt | | |
 | H17 | *macOS*: every item in the mdoc, File, Edit, View and Window menus runs its action and shows its shortcut; Edit › Paste works in the find field and in a Save dialog (ADR 0058). *Windows*: each File-menu action is reachable from the window | | |
 | H18 | Tab / Shift+Tab move through toolbar and panel controls with a visible focus ring; Esc closes menus | | |
+| H19 | Enter, Shift+Enter in the editor | New paragraph, line break; Copy for AI pasted into a chat keeps both apart (ADR 0060) | | |
 
 ## 10. Case key storage
 

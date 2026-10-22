@@ -36,6 +36,10 @@ mdoc-history = { path = "../mdoc-history" }
 gpui = { workspace = true, features = ["test-support"] }
 gpui_platform = { workspace = true }
 
+# A CommonMark/GFM reader for tests that check what the copied Markdown
+# renders as (ADR 0060). Already in the graph through mdoc-pii.
+markdown = "1"
+
 # The demo wires the editor to the app's spell checker (ADR 0036). Dev-only,
 # so the editor crate itself stays host-agnostic.
 mdoc-spell = { path = "../mdoc-spell" }

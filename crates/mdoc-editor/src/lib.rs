@@ -84,6 +84,7 @@ actions!(
         SelectDown,
         SelectAll,
         Newline,
+        LineBreak,
         Paste,
         Copy,
         Cut,
@@ -131,6 +132,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("shift-up", SelectUp, ctx),
         KeyBinding::new("shift-down", SelectDown, ctx),
         KeyBinding::new("enter", Newline, ctx),
+        KeyBinding::new("shift-enter", LineBreak, ctx),
         KeyBinding::new("tab", Indent, ctx),
         KeyBinding::new("shift-tab", Outdent, ctx),
         KeyBinding::new("cmd-a", SelectAll, ctx),
@@ -3657,6 +3659,7 @@ impl Render for EditorState {
             .on_action(cx.listener(revealing(Self::select_to_document_end)))
             .on_action(cx.listener(revealing(Self::select_all)))
             .on_action(cx.listener(revealing(Self::newline)))
+            .on_action(cx.listener(revealing(Self::line_break)))
             .on_action(cx.listener(revealing(Self::bold)))
             .on_action(cx.listener(revealing(Self::italic)))
             .on_action(cx.listener(revealing(Self::underline)))

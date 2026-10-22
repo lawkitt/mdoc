@@ -4,6 +4,14 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Enter starts a paragraph.** Lines you separate with Enter stay separate
+  in Copy for AI: Enter writes a blank line between paragraphs, and Shift+Enter
+  is a line break within one (`\` at the line end, hidden away from the
+  caret). Lists, quotes, tables and code keep their own Enter; leaving a list,
+  quote or table leaves a blank line. Backspace at a paragraph's start joins
+  it to the one above in one press. Existing documents are not changed
+  (ADR 0060).
+
 ## [0.1.1] - 2026-10-22
 
 - **Shortcuts keep working after Save as case and after undoing in the
