@@ -440,9 +440,7 @@ impl DocumentView {
             .track_focus(&self.pii.mapping.focus)
             .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
                 // An open row or filter menu closes before the panel (#92).
-                if this.pii.mapping.panel_menu.take().is_some() {
-                    cx.notify();
-                } else {
+                if !this.close_panel_menu(window, cx) {
                     this.close_replacements(window, cx);
                 }
                 cx.stop_propagation();
@@ -724,9 +722,7 @@ impl DocumentView {
             }))
             .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
                 // An open row or filter menu closes before the panel (#92).
-                if this.pii.mapping.panel_menu.take().is_some() {
-                    cx.notify();
-                } else {
+                if !this.close_panel_menu(window, cx) {
                     this.close_replacements(window, cx);
                 }
                 cx.stop_propagation();

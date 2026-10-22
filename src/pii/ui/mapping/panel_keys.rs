@@ -137,6 +137,25 @@ impl DocumentView {
     /// A decision on the panel's keyboard row. The selection stays on the
     /// mention acted on; a kept mention leaves the list, so its group header
     /// takes the cursor (ADR 0044).
+    /// Escape closes an open row or filter menu before anything else (#92).
+    /// Focus left on one of its items returns to the list; the search field
+    /// and the mention popup keep theirs.
+    pub(super) fn close_panel_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.pii.mapping.panel_menu.take().is_none() {
+            return false;
+        }
+        let search = self.pii.mapping.search.read(cx).focus_handle(cx);
+        let popup = &self.pii.focus;
+        if !(search.is_focused(window)
+            || self.pii.mapping.focus.is_focused(window)
+            || popup.is_focused(window)
+            || popup.contains_focused(window, cx))
+        {
+            window.focus(&self.pii.mapping.focus, cx);
+        }
+        cx.notify();
+        true
+    }
     pub(super) fn panel_decide(
         &mut self,
         scope: Scope,
@@ -265,8 +284,7 @@ impl DocumentView {
             )
             .on_action(cx.listener(|this, _: &crate::PanelEscape, window, cx| {
                 cx.stop_propagation();
-                if this.pii.mapping.panel_menu.take().is_some() {
-                    cx.notify();
+                if this.close_panel_menu(window, cx) {
                     return;
                 }
                 // Esc while ⌥ is held cancels a keyboard move.

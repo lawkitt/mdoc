@@ -1428,6 +1428,19 @@ fn escape_closes_a_panel_menu_before_the_popup(cx: &mut gpui::TestAppContext) {
     app.read_with(cx, |app, _| {
         assert!(app.pii.mapping.panel_menu.is_none() && app.pii.mapping.open);
     });
+    // Focus tabbed into the menu returns to the list, where keys still work.
+    right_click(cx);
+    cx.simulate_keystrokes("tab");
+    cx.run_until_parked();
+    escape(cx);
+    app.update_in(cx, |app, window, _| {
+        assert!(app.pii.mapping.panel_menu.is_none() && app.pii.mapping.open);
+        assert!(app.pii.mapping.focus.is_focused(window));
+        app.pii.mapping.cursor = None;
+    });
+    cx.simulate_keystrokes("down");
+    cx.run_until_parked();
+    app.read_with(cx, |app, _| assert!(app.pii.mapping.cursor.is_some()));
     // Over the popup and its open picker, the menu closes first, then the
     // picker, then the popup.
     app.update_in(cx, |app, window, cx| {
