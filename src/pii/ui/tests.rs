@@ -1592,6 +1592,11 @@ fn unrecognized_placeholders_are_assigned_or_left_never_guessed(cx: &mut gpui::T
         let tokens = app.unresolved_tokens(cx);
         assert_eq!(tokens.len(), 3);
         app.activate_annotation(restore::UNRESOLVED_ID | tokens[0].start as u64, window, cx);
+    });
+    // The picker keeps the focus it shares with the mention popup (#79).
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    app.update_in(cx, |app, window, cx| {
+        assert!(app.pii.focus.is_focused(window));
         app.assign_unresolved(0, window, cx);
     });
     cx.run_until_parked();

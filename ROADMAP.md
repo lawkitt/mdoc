@@ -30,9 +30,7 @@ closes, with the expected behavior stated there.
    *Done when:* the maintainer's T6 row passes on 0.1.0, or a fix ships.
 2. **[Pseudonymization] Popup stays open after ⌘↩ Apply all**
    ([#78](https://github.com/lawkitt/mdoc/issues/78)).
-3. **[UI] Focus lost** after Share › Save as case and after an undo that
-   closes the popup ([#79](https://github.com/lawkitt/mdoc/issues/79)).
-4. **[macOS] Quit leaves the process running** with no windows
+3. **[macOS] Quit leaves the process running** with no windows
    ([#83](https://github.com/lawkitt/mdoc/issues/83)).
 
 ## 0.2.0

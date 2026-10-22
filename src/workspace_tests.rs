@@ -2991,6 +2991,37 @@ fn saving_an_unsaved_document_as_a_case_saves_the_markdown_first(cx: &mut TestAp
 }
 
 #[gpui::test]
+fn shortcuts_work_right_after_share_save_as_case(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    cx.update(|_, cx| crate::bind_app_keys(cx));
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.inspector_share = true;
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    let button = cx.debug_bounds("share-save-case").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| assert!(view.read(cx).case.is_some()));
+    // #79: Mod+Q reaches the workspace without clicking the editor first.
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-q"
+    } else {
+        "ctrl-q"
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.quitting.is_some() || tabs.finishing);
+    });
+}
+
+#[gpui::test]
 fn a_long_case_name_keeps_the_categories_popup_close_button_inside(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
