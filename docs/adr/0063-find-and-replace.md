@@ -28,11 +28,14 @@ the link between an applied alias and its original value.
   If the document changed since matches were computed, Replace all searches
   the current text again first, so it never replaces stale positions.
 - **Literal replacement.** The Replace text is inserted as typed: no regex,
-  no `$1`, no case preservation. It persists across tabs like the Find text.
+  no `$1`, no case preservation. Each tab keeps its own, like the Find text.
 - **Status** after Replace all: "Replaced 12 · skipped 2 (formatting) · 1
   (alias)", or just "Replaced 12"; screen readers announce it.
-- **Read-only views** (the Source preview, comparisons) show no Replace row;
-  the Replace chord opens Find there.
+- **No Markdown, no Replace.** In a source-only tab the Replace chord opens
+  the preview's find, as ⌘F does there. In Before / After, Find and Replace
+  close the comparison and work in the editor, as Find does (ADR 0042).
+- **Undo from the find bar.** ⌘Z / Ctrl+Z (and Redo) in the Find or Replace
+  field undo the document, so Replace all is undone without leaving the bar.
 - **Whole word** uses Zed's rule: Unicode letters, digits and `_` are word
   characters, so Cyrillic works; a typographic apostrophe inside a word stays
   part of it.

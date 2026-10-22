@@ -1408,7 +1408,17 @@ pub(crate) fn bind_markdown_search_keys(cx: &mut App) {
             KeyBinding::new(match_case, ToggleMarkdownMatchCase, Some(field)),
             KeyBinding::new(whole_word, ToggleMarkdownWholeWord, Some(field)),
             KeyBinding::new("escape", CloseMarkdownSearch, Some(field)),
+            // Undo in the find bar undoes the document, Replace all included.
+            KeyBinding::new(&format!("{modifier}-z"), mdoc_editor::Undo, Some(field)),
+            KeyBinding::new(
+                &format!("{modifier}-shift-z"),
+                mdoc_editor::Redo,
+                Some(field),
+            ),
         ]);
+        if !mac {
+            bindings.push(KeyBinding::new("ctrl-y", mdoc_editor::Redo, Some(field)));
+        }
     }
     cx.bind_keys(bindings);
 }
@@ -1655,6 +1665,14 @@ impl Render for DocumentView {
         });
         let search_bar = div()
             .id("markdown-search-bar")
+            .on_action(cx.listener(|this, action: &mdoc_editor::Undo, window, cx| {
+                this.editor
+                    .update(cx, |editor, cx| editor.undo(action, window, cx))
+            }))
+            .on_action(cx.listener(|this, action: &mdoc_editor::Redo, window, cx| {
+                this.editor
+                    .update(cx, |editor, cx| editor.redo(action, window, cx))
+            }))
             .flex()
             .flex_col()
             .gap_1()

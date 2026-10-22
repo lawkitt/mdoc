@@ -1876,9 +1876,7 @@ fn replace_all_skips_formatting_and_one_undo_reverts_it(cx: &mut TestAppContext)
         Some("Replaced 2 · skipped 1 (formatting)")
     );
 
-    app.update_in(cx, |app, window, cx| {
-        app.editor.update(cx, |e, cx| e.focus(window, cx))
-    });
+    // Straight from the Replace field, without returning to the document.
     cx.simulate_keystrokes(if cfg!(target_os = "macos") {
         "cmd-z"
     } else {
@@ -1966,4 +1964,23 @@ fn find_hides_the_replace_row_and_the_toggle_shows_it(cx: &mut TestAppContext) {
             .focus_handle(cx)
             .is_focused(window)
     }));
+}
+
+#[gpui::test]
+fn replace_twice_before_a_background_search_settles(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    // Past the 64 KiB background threshold.
+    let text = format!("prefix cat cat\n\n{}", "padding ".repeat(10_000));
+    open_replace(&app, &text, "cat", "cats", cx);
+    app.update_in(cx, |app, window, cx| {
+        app.replace_next_markdown(&ReplaceNextMarkdown, window, cx);
+        app.replace_next_markdown(&ReplaceNextMarkdown, window, cx);
+    });
+    cx.run_until_parked();
+    let edited = cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned());
+    assert!(
+        edited.starts_with("prefix cats cats\n"),
+        "{}",
+        &edited[..20]
+    );
 }

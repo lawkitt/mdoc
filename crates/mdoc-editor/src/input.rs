@@ -978,7 +978,7 @@ impl EditorState {
 
     // --- Undo / redo ---------------------------------------------------------
 
-    pub(super) fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn undo(&mut self, _: &Undo, _: &mut Window, cx: &mut Context<Self>) {
         if self.read_only {
             return;
         }
@@ -1001,7 +1001,7 @@ impl EditorState {
         }
     }
 
-    pub(super) fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn redo(&mut self, _: &Redo, _: &mut Window, cx: &mut Context<Self>) {
         if self.read_only {
             return;
         }

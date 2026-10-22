@@ -140,6 +140,18 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.source_only {
+            // Nothing to replace in a source-only tab: the chord opens the
+            // preview's find, as ⌘F does there (ADR 0063).
+            if let Some(pdf) = self.preview.pdf.clone() {
+                pdf.update(cx, |pdf, cx| {
+                    if !pdf.search_is_open() {
+                        pdf.toggle_search(window, cx);
+                    }
+                });
+            }
+            return;
+        }
         self.open_markdown_search(true, window, cx);
     }
 
@@ -243,26 +255,37 @@ impl DocumentView {
         cx.notify();
     }
 
-    /// Matches for the current text and options, with the active one. Uses
-    /// the published matches when they describe the current text; otherwise
-    /// searches now, so Replace never acts on stale positions (ADR 0063).
-    fn current_markdown_matches(&self, cx: &App) -> (Vec<SearchMatch>, Option<usize>) {
-        let editor = self.editor.read(cx);
-        let text = editor.text();
+    /// Make the published matches describe the current text. A refresh
+    /// still pending (large documents search in the background) is done now,
+    /// from where the last Replace left off, so Replace never acts on stale
+    /// positions or the same occurrence twice (ADR 0063).
+    fn settle_markdown_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let text = self.editor.read(cx).text();
         if self.search.pending.is_none()
             && !self.search.running
             && text == self.search.source.as_ref()
         {
-            return (self.search.matches.clone(), self.search.active);
+            return;
         }
-        let query = self.markdown_search.read(cx).value();
-        if query.is_empty() {
-            return (Vec::new(), None);
-        }
-        let matches = SearchIndex::from_markdown(text).find_with(query, self.search.options());
-        let active = first_search_match_at_or_after(&matches, editor.cursor())
-            .or((!matches.is_empty()).then_some(0));
-        (matches, active)
+        let source: Arc<str> = Arc::from(text);
+        let anchor = self
+            .search
+            .next_anchor
+            .take()
+            .or(self.search.anchor)
+            .unwrap_or_else(|| self.editor.read(cx).cursor());
+        let query = self.markdown_search.read(cx).value().to_owned();
+        // A running search finishes for the old revision and is discarded.
+        self.search.invalidate();
+        let index = SearchIndex::from_markdown(&source);
+        let matches = if query.is_empty() {
+            Vec::new()
+        } else {
+            index.find_with(&query, self.search.options())
+        };
+        self.search.source = source;
+        self.search.index = Some(index);
+        self.publish_markdown_search(matches, anchor, true, window, cx);
     }
 
     fn applied_alias_ranges(&self) -> Vec<Range<usize>> {
@@ -285,11 +308,16 @@ impl DocumentView {
         if !self.search.open || !self.search.replace_open {
             return;
         }
-        let (matches, active) = self.current_markdown_matches(cx);
-        let Some(search_match) = active.and_then(|index| matches.get(index)) else {
+        self.settle_markdown_search(window, cx);
+        let Some(search_match) = self
+            .search
+            .active
+            .and_then(|index| self.search.matches.get(index))
+            .cloned()
+        else {
             return;
         };
-        match replace_skip(search_match, &self.applied_alias_ranges()) {
+        match replace_skip(&search_match, &self.applied_alias_ranges()) {
             Some(skip) => {
                 self.search.status = Some(
                     match skip {
@@ -318,13 +346,14 @@ impl DocumentView {
     pub(super) fn replace_all_markdown(
         &mut self,
         _: &ReplaceAllMarkdown,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if !self.search.open || !self.search.replace_open {
             return;
         }
-        let (matches, _) = self.current_markdown_matches(cx);
+        self.settle_markdown_search(window, cx);
+        let matches = self.search.matches.clone();
         if matches.is_empty() {
             return;
         }
