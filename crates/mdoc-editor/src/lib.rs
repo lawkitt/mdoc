@@ -103,6 +103,12 @@ actions!(
         DocumentEnd,
         SelectToDocumentStart,
         SelectToDocumentEnd,
+        LineStart,
+        LineEnd,
+        SelectToLineStart,
+        SelectToLineEnd,
+        DeleteToLineStart,
+        DeleteToWordEnd,
         Indent,
         Outdent,
         Bold,
@@ -117,8 +123,14 @@ actions!(
 /// Bind the editor's editing keys. Call once at startup. Bindings are scoped to
 /// the editor's key context, so they don't shadow the host's shortcuts.
 pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys(key_bindings(cfg!(target_os = "macos")));
+}
+
+/// The editor's key bindings on macOS (`mac`) or Windows and Linux. Taking the
+/// platform as an argument lets tests on any OS check both sets (ADR 0061).
+pub fn key_bindings(mac: bool) -> Vec<KeyBinding> {
     let ctx = Some(CONTEXT);
-    cx.bind_keys([
+    let mut bindings = vec![
         KeyBinding::new("backspace", Backspace, ctx),
         KeyBinding::new("delete", Delete, ctx),
         KeyBinding::new("left", Left, ctx),
@@ -164,10 +176,26 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-u", Underline, ctx),
         KeyBinding::new("ctrl-u", Underline, ctx),
         KeyBinding::new("escape", Dismiss, ctx),
-    ]);
-    // Windows and Linux caret moves; macOS keeps ⌥ for words.
-    if !cfg!(target_os = "macos") {
-        cx.bind_keys([
+    ];
+    if mac {
+        // macOS caret moves: ⌘←/→ to the visual line's ends, ⌘↑/↓ to the
+        // document's; ⇧ selects. ⌥⌫/⌥⌦ delete a word, ⌘⌫ to the line start.
+        bindings.extend([
+            KeyBinding::new("cmd-left", LineStart, ctx),
+            KeyBinding::new("cmd-right", LineEnd, ctx),
+            KeyBinding::new("cmd-shift-left", SelectToLineStart, ctx),
+            KeyBinding::new("cmd-shift-right", SelectToLineEnd, ctx),
+            KeyBinding::new("cmd-up", DocumentStart, ctx),
+            KeyBinding::new("cmd-down", DocumentEnd, ctx),
+            KeyBinding::new("cmd-shift-up", SelectToDocumentStart, ctx),
+            KeyBinding::new("cmd-shift-down", SelectToDocumentEnd, ctx),
+            KeyBinding::new("alt-backspace", DeleteWordLeft, ctx),
+            KeyBinding::new("alt-delete", DeleteToWordEnd, ctx),
+            KeyBinding::new("cmd-backspace", DeleteToLineStart, ctx),
+        ]);
+    } else {
+        // Windows and Linux caret moves; macOS keeps ⌥ for words.
+        bindings.extend([
             KeyBinding::new("ctrl-left", WordLeft, ctx),
             KeyBinding::new("ctrl-right", NextWordStart, ctx),
             KeyBinding::new("ctrl-shift-left", SelectWordLeft, ctx),
@@ -180,6 +208,7 @@ pub fn bind_keys(cx: &mut App) {
             KeyBinding::new("ctrl-shift-end", SelectToDocumentEnd, ctx),
         ]);
     }
+    bindings
 }
 
 /// Line height as a multiple of the font size. Derived from the editor's own
@@ -1658,6 +1687,127 @@ impl EditorState {
     fn end(&mut self, _: &End, _: &mut Window, cx: &mut Context<Self>) {
         let (row, _) = self.row_col(self.cursor_offset());
         self.move_to(self.line_end(row), cx);
+    }
+
+    /// The display-column span of the visual (wrapped) row holding display
+    /// column `dcol` of logical line `row`; the whole line before a layout.
+    fn visual_row_span(&self, row: usize, dcol: usize) -> (usize, usize) {
+        if let Some(r) = self.bidi_map(row) {
+            let (k, _) = r.row_of(dcol);
+            if let Some(rr) = r.rows.get(k) {
+                return (rr.start, rr.start + rr.len);
+            }
+        }
+        let full = self.display_col(row, self.line_end(row) - self.line_starts()[row]);
+        let Some(line) = self.wrapped.get(row) else {
+            return (0, full);
+        };
+        let bounds: Vec<usize> = line
+            .wrap_boundaries
+            .iter()
+            .map(|w| line.unwrapped_layout.runs[w.run_ix].glyphs[w.glyph_ix].index)
+            .collect();
+        // A caret at a boundary draws at the next row's start, so it belongs there.
+        let k = bounds.partition_point(|b| *b <= dcol);
+        let start = k.checked_sub(1).map_or(0, |i| bounds[i]);
+        (start, bounds.get(k).copied().unwrap_or(full))
+    }
+
+    /// ⌘← target: the caret's visual row start. On a first row with a hidden
+    /// list, task or quote marker it lands after the marker, then at the true
+    /// start, like Home.
+    fn visual_line_start(&self) -> usize {
+        let (row, col) = self.row_col(self.cursor_offset());
+        let start = self.line_starts()[row];
+        let (vstart, _) = self.visual_row_span(row, self.display_col(row, col));
+        if vstart == 0 {
+            // The first row; display column 0 can sit after a hidden marker.
+            let plen = self.hidden_prefix_len(row);
+            return start + if plen > 0 && col > plen { plen } else { 0 };
+        }
+        start + self.source_col(row, vstart)
+    }
+
+    /// ⌘→ target: the caret's visual row end. A soft-wrapped row ends before
+    /// the space it broke at, so the caret stays on that row.
+    fn visual_line_end(&self) -> usize {
+        let (row, col) = self.row_col(self.cursor_offset());
+        let start = self.line_starts()[row];
+        let line_end = self.line_end(row);
+        let (_, vend) = self.visual_row_span(row, self.display_col(row, col));
+        let mut target = start + self.source_col(row, vend);
+        if target < line_end
+            && let Some(c) = self.content[..target].chars().next_back()
+            && c.is_whitespace()
+        {
+            target -= c.len_utf8();
+        }
+        target.clamp(start + col, line_end)
+    }
+
+    fn line_start(&mut self, _: &LineStart, _: &mut Window, cx: &mut Context<Self>) {
+        let off = self.visual_line_start();
+        self.move_to(off, cx);
+    }
+
+    fn line_end_action(&mut self, _: &LineEnd, _: &mut Window, cx: &mut Context<Self>) {
+        let off = self.visual_line_end();
+        self.move_to(off, cx);
+    }
+
+    fn select_to_line_start(
+        &mut self,
+        _: &SelectToLineStart,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.goal_x = None;
+        let off = self.visual_line_start();
+        self.select_to(off, cx);
+    }
+
+    fn select_to_line_end(&mut self, _: &SelectToLineEnd, _: &mut Window, cx: &mut Context<Self>) {
+        self.goal_x = None;
+        let off = self.visual_line_end();
+        self.select_to(off, cx);
+    }
+
+    /// ⌘⌫: delete back to the visual line's start, or the selection. At the
+    /// start already it joins with the line above, like ⌫.
+    fn delete_to_line_start(
+        &mut self,
+        _: &DeleteToLineStart,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            let off = self.cursor_offset();
+            let start = self.visual_line_start();
+            if start >= off {
+                self.backspace(&Backspace, window, cx);
+                return;
+            }
+            self.select_to(start, cx);
+        }
+        self.replace_text_in_range(None, "", window, cx);
+    }
+
+    /// ⌥⌦ on macOS: delete forward to the end of the word, or the selection.
+    fn delete_to_word_end(
+        &mut self,
+        _: &DeleteToWordEnd,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.selected_range.is_empty() {
+            let off = self.cursor_offset();
+            let end = self.next_word(off);
+            if end == off {
+                return;
+            }
+            self.select_to(end, cx);
+        }
+        self.replace_text_in_range(None, "", window, cx);
     }
 
     // --- Mouse ---------------------------------------------------------------
@@ -3657,6 +3807,12 @@ impl Render for EditorState {
             .on_action(cx.listener(revealing(Self::document_end)))
             .on_action(cx.listener(revealing(Self::select_to_document_start)))
             .on_action(cx.listener(revealing(Self::select_to_document_end)))
+            .on_action(cx.listener(revealing(Self::line_start)))
+            .on_action(cx.listener(revealing(Self::line_end_action)))
+            .on_action(cx.listener(revealing(Self::select_to_line_start)))
+            .on_action(cx.listener(revealing(Self::select_to_line_end)))
+            .on_action(cx.listener(revealing(Self::delete_to_line_start)))
+            .on_action(cx.listener(revealing(Self::delete_to_word_end)))
             .on_action(cx.listener(revealing(Self::select_all)))
             .on_action(cx.listener(revealing(Self::newline)))
             .on_action(cx.listener(revealing(Self::line_break)))
@@ -5094,6 +5250,9 @@ struct ShapeMemo {
     font_size: Pixels,
     shaped: ShapedDoc,
 }
+
+#[cfg(test)]
+mod caret_tests;
 
 #[cfg(test)]
 mod tests {

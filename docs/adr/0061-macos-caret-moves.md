@@ -33,4 +33,4 @@ under `cfg!(target_os = "macos")`, so tests on other platforms never saw them.
   ([ADR 0055](0055-stable-compact-mention-popup.md)); the editor's moves apply
   only with the editor focused.
 
-References: [ROADMAP 0.2.0 must-fix "macOS caret moves"](../../ROADMAP.md#must-fix).
+References: ROADMAP 0.2.0 must-fix "macOS caret moves" (done; see CHANGELOG).

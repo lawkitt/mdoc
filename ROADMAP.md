@@ -38,15 +38,11 @@ to the top of the next milestone. Items are in priority order.
 
 ### Must-fix
 
-1. **[Editor] macOS caret moves.** *From the RC runs.* ⌘←/→/↑/↓ (with ⇧);
-   Windows has its Ctrl moves. Also ⌥⌫, ⌥⌦ and ⌘⌫
-   ([ADR 0061](docs/adr/0061-macos-caret-moves.md)).
-   *Done when:* each move works on macOS, with tests.
-2. **[A11y] Keyboard reach.** *From the RC runs (A4, H18).* Plain Tab cannot
+1. **[A11y] Keyboard reach.** *From the RC runs (A4, H18).* Plain Tab cannot
    reach the toolbar or sidebar. F6/⇧F6 between regions, Tab inside them, and Tab
    from Home into its controls ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
    *Done when:* every control is reachable by keyboard alone on both platforms.
-3. **[Platform] 0.2.0 acceptance.** An RC run of the full
+2. **[Platform] 0.2.0 acceptance.** An RC run of the full
    [checklist](docs/platform-acceptance.md) on both platforms, including S1,
    A5, D3 and D4 deferred from 0.1.0.
    *Done when:* the evidence folder covers every row; each Fail links an item.

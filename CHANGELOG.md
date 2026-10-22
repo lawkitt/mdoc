@@ -4,6 +4,11 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **macOS caret keys.** ⌘← and ⌘→ go to the start and end of the line as
+  you see it wrapped (after a list bullet first), ⌘↑ and ⌘↓ to the start and
+  end of the document, and Shift with each selects. ⌥⌫ and ⌥⌦ delete a word,
+  ⌘⌫ deletes to the line start (ADR 0061).
+
 - **Enter in the mention popup follows the scope you see.** With All N
   selected, Enter replaces every mention of the name; with This one, only
   this mention. The choice no longer flips to This one, and the popup moves
