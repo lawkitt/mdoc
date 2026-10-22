@@ -1331,6 +1331,7 @@ impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The before/after view follows the applied replacements (ADR 0042).
         self.refresh_compare(window, cx);
+        self.release_closed_popup_focus(window, cx);
         // Derived display state; set_outlines only notifies on change.
         self.sync_scope_outlines(cx);
         // Loads and Settings changes reach spellcheck here (no-op otherwise).

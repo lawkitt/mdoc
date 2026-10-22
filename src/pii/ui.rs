@@ -970,6 +970,22 @@ impl DocumentView {
         }
         cx.notify();
     }
+    /// A popup closed by an edit (an undo, a scan, Apply elsewhere) would
+    /// leave focus on its unrendered card, where shortcuts reach nothing.
+    /// Focus returns as Escape returns it (#79). Called while rendering.
+    pub(crate) fn release_closed_popup_focus(&mut self, window: &mut Window, cx: &mut App) {
+        // The restore picker shares the popup's focus (ADR 0041).
+        if self.pii.popup.is_some()
+            || self.pii.restore.as_ref().is_some_and(|r| r.popup.is_some())
+            || !(self.pii.focus.is_focused(window) || self.pii.focus.contains_focused(window, cx))
+        {
+            return;
+        }
+        match self.pii.popup_previous.take() {
+            Some(focus) => window.focus(&focus, cx),
+            None => window.focus(&self.editor.read(cx).focus_handle(cx), cx),
+        }
+    }
     pub(crate) fn close_pii_popup(
         &mut self,
         _: &PiiClosePopup,

@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Shortcuts keep working after Save as case and after undoing in the
+  popup.** After Share › Save as case, focus stays in the Share panel, so
+  Ctrl+Q / ⌘Q and other shortcuts work without clicking the document first. An undo that
+  closes the mention popup returns focus where Esc would, so redo still works.
 - **Bold and other formatting stay valid with a trailing space.** Formatting a
   selection that starts or ends with a space keeps the space outside the
   markers (`**delta** `), so Copy for AI keeps the formatting.

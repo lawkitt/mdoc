@@ -841,6 +841,44 @@ fn external_source_edit_discards_unconfirmed_mapping_draft(cx: &mut gpui::TestAp
 }
 
 #[gpui::test]
+fn redo_works_after_an_undo_closes_the_popup(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    let source = "Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let range = app.pii.review.variant(initials).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(initials, &range).unwrap();
+        app.activate_annotation(annotation, window, cx);
+        window.focus(&app.pii.focus, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let applied = "ORG_1 · marina@example.invalid";
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), applied)
+    });
+    let (undo, redo) = if cfg!(target_os = "macos") {
+        ("cmd-z", "cmd-shift-z")
+    } else {
+        ("ctrl-z", "ctrl-shift-z")
+    };
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    cx.simulate_keystrokes(undo);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| assert_eq!(app.editor.read(cx).text(), source));
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    // The popup may have closed with the undo; its redo still runs (#79).
+    cx.simulate_keystrokes(redo);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), applied)
+    });
+}
+
+#[gpui::test]
 fn popup_apply_undo_and_keep_follow_scope_and_stay_on_the_mention(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
