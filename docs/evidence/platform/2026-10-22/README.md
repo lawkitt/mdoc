@@ -42,6 +42,35 @@ relaunched mdoc.
 
 ### Windows x64
 
-Not run yet: the dispatched session found the PC locked. Pending: install
-(I3, I4), I5, I6, C1, H13, #75, H16, R5, P2, single-instance launch and Open
-with (#80), and quit.
+Codex by computer use (fleet ADR 0009) on the maintainer's PC (Windows 11
+25H2, build 26200.9711), 2026-10-22, from a clean profile; the original
+profile was restored and 0.1.1 reinstalled into it. Installed from
+`mdoc_0.1.1_x64-setup.exe` (SHA-256
+`30918c4e7fe78008952fa31109bf90b1e4ee2cf58f3745e77bd935df06aa7fb4`, matches
+SHA256SUMS).
+
+| ID | Check | Result | Notes |
+| --- | --- | --- | --- |
+| I3 | NSIS installation | Pass | Completed; VC++ runtime present; no SmartScreen prompt. |
+| I4 | Start menu and uninstaller | Pass | The Start shortcut launches mdoc. |
+| I5 | First launch | Pass | Home, no error or prompt. |
+| I6 | Version | Pass | Settings shows 0.1.1. |
+| C1 | Open a DOCX, Copy for AI | Pass | Markdown and the placeholder note after a replacement. |
+| H13 | Bold with a trailing space (#77) | Pass | `Plain ` became `**Plain** `. |
+| #75 | Save as case on an unsaved conversion | Pass | Save dialog first; the case lists 1 document. |
+| H16 | Ctrl+Q right after Save as case (#79) | Pass | Quit without clicking the document. |
+| R5 | Popup undo, then redo (#79) | Pass | Ctrl+Z restored the original; Ctrl+Y reapplied. |
+| P2 | Save As `Тест файл.md`, Recents (#76) | Pass | Listed and reopened. |
+| #80 | Single-instance launch | Pass | A second launch with a path kept one process (same PID) and opened the file. |
+| #80 | Open with | Pass | Explorer lists mdoc and opens the fixture; the default app is unchanged. |
+| — | Quit exits the process | Pass | No `mdoc` process 10 s after Ctrl+Q. |
+
+Automation note: started through the computer-use service, the setup first
+installed into Codex's package cache; the checks ran against a native install
+from PowerShell.
+
+## Result
+
+0.1.1 passes its smoke run on both platforms. The maintainer reports the macOS
+rows left to them (the case listing its document after the Keychain prompt,
+⌘Q right after Save as case, ⌘⌥P) as passing.
