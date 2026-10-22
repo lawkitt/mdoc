@@ -42,7 +42,8 @@ Copy for AI stay the text as typed.
 - **⌫ and ⌦ undo a paragraph break in one press**, as their own undo step.
   ⌫ at the start of a line below exactly one blank line, or ⌦ at the end of a
   line above one, removes the break and joins the two lines; in a quote the
-  blank line is a bare `>` and ⌫ works at the start of the body. It applies
+  blank line is a bare `>`, ⌫ works at the start of the body, and rows join
+  only at the same quote depth. It applies
   outside code, math and tables; extra blank rows are removed one at a time
   first.
 - **Read-only panes** ignore Enter and ⇧Enter.
