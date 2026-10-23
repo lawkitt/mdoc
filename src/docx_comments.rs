@@ -61,7 +61,7 @@ pub(super) fn prepare(bytes: &[u8]) -> Result<(Option<Vec<u8>>, Vec<DocxComment>
     // Input has already passed the package expansion/entry limits.
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).map_err(invalid)?;
-        if !entry.name().ends_with(".xml") {
+        if !entry.name().map_err(invalid)?.ends_with(".xml") {
             continue;
         }
         let mut raw = Vec::new();
@@ -161,7 +161,7 @@ pub(super) fn prepare(bytes: &[u8]) -> Result<(Option<Vec<u8>>, Vec<DocxComment>
         if let Some(xml) = replacements.get(&i) {
             output
                 .start_file(
-                    entry.name(),
+                    entry.name().map_err(invalid)?,
                     SimpleFileOptions::default()
                         .compression_method(zip::CompressionMethod::Deflated),
                 )

@@ -306,7 +306,10 @@ fn inspect_package(bytes: &[u8]) -> Result<Vec<String>, PreviewError> {
         let mut entry = archive
             .by_index(index)
             .map_err(|_| PreviewError::Package("unreadable entry".into()))?;
-        let name = entry.name().replace('\\', "/");
+        let name = entry
+            .name()
+            .map_err(|_| PreviewError::Package("unreadable entry name".into()))?
+            .replace('\\', "/");
         if name.starts_with('/')
             || name.contains(':')
             || name.split('/').any(|p| p == "..")
