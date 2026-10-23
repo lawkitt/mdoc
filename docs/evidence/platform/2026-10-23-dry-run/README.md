@@ -34,8 +34,8 @@ from 0.1.0, and the keyboard-reach follow-ups from that must-fix item.
 | Row | Failure | Triage | Link |
 | --- | --- | --- | --- |
 | R2 | When the next mention or proposal is already on screen, → or Enter scrolls the editor to the document's end and the popup is off-screen | Patch rule (wrong output, no design decision): issue in 0.1.3 | [Replacement popup scrolls the editor to the end when the next mention is already visible](https://github.com/lawkitt/mdoc/issues/102) |
-| H18, A4 | Home's Recents rows are neither Tab stops nor in the accessibility tree (ADR 0062 says Tab from Home reaches Recents) | Not the patch rule: Later. Under the checklist's triage (a control unreachable by keyboard and screen reader) it is must-fix for 0.2.0 | [Later: Home's Recents rows](../../../../ROADMAP.md#later) |
-| H18, A4 | In the Keychain explainer, once Tab moves from Continue to Not now, Tab and ⇧Tab stay on Not now; Continue tracks a focus handle that is not a Tab stop (`workspace_keychain.rs`) | Not the patch rule: Later. Must-fix under the checklist's triage (unreachable by Tab inside a dialog) | [Later: Keychain explainer](../../../../ROADMAP.md#later) |
+| H18, A4 | Home's Recents rows are neither Tab stops nor in the accessibility tree (ADR 0062 says Tab from Home reaches Recents) | Not the patch rule; must-fix for 0.2.0 under the checklist's triage (a control unreachable by keyboard and screen reader), promoted at grooming | [Must-fix 2: Home's Recents rows](../../../../ROADMAP.md#must-fix) |
+| H18, A4 | In the Keychain explainer, once Tab moves from Continue to Not now, Tab and ⇧Tab stay on Not now; Continue tracks a focus handle that is not a Tab stop (`workspace_keychain.rs`) | Not the patch rule; must-fix for 0.2.0 under the checklist's triage (unreachable by Tab inside a dialog), promoted at grooming | [Must-fix 3: Keychain explainer](../../../../ROADMAP.md#must-fix) |
 
 H16 passes, but the run found
 [⌘Q and Quit do nothing while a model downloads from its setup card](https://github.com/lawkitt/mdoc/issues/103)

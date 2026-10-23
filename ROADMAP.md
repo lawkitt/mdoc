@@ -47,6 +47,15 @@ to the top of the next milestone. Items are in priority order.
    to detect must take focus, hold Tab and return focus on Esc or Close.
    Previously F6 escaped the explainer and case categories required a pointer.
    *Done when:* the evidence folder covers every row; each Fail links an item.
+2. **[A11y] Home's Recents rows reachable by keyboard.** *From the 0.2.0 dry
+   run (H18, A4).* Each row is a Tab stop with an accessible name and role;
+   today Tab skips them and the accessibility tree omits them (ADR 0062).
+   *Done when:* the headless Tab walk asserts Home reaches every Recents row,
+   and VoiceOver and Narrator read each row's name.
+3. **[A11y] Keychain explainer keeps Continue reachable.** *From the 0.2.0 dry
+   run (H18, A4).* Today, once Tab leaves Continue, Tab and ⇧Tab stay on
+   Not now. *Done when:* the headless Tab walk asserts Tab and ⇧Tab cycle
+   through both buttons, confirmed natively on both platforms.
 
 ### Should-fix
 
@@ -97,11 +106,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[UI]** Headings as "Go to heading" results in the command palette. *From
   MiaoYan's table of contents.*
 - **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
-- **[A11y]** Home's Recents rows: a Tab stop and an accessible name and role
-  each; today Tab skips them and the accessibility tree omits them (ADR 0062).
-  *From the 0.2.0 dry run.*
-- **[A11y]** Keychain explainer: Continue stays a Tab stop after focus leaves
-  it; today Tab and ⇧Tab stay on Not now. *From the 0.2.0 dry run.*
 
 ## Ongoing tracks
 
