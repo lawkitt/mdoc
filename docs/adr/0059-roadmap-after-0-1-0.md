@@ -51,8 +51,8 @@ mechanics.
   touch, with no RC. A minor gets an RC and the full ADR 0057 checklist,
   including rows the previous run deferred (S1, A5, D3 and D4 for 0.2.0).
 - **0.2.0 order:** what users copy first, then editing, then performance. The
-  stress tier moves to Later; editor text for screen readers is the first
-  Later item to promote.
+  stress tier and editor text for screen readers stay in Later (grooming of
+  2026-10-23: screen-reader access to editor text is not required for 0.2.0).
 
 ## Consequences
 

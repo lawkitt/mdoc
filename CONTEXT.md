@@ -81,6 +81,18 @@ without a case sit under "Open".
 
 **OCR**: recognize text from document images when direct extraction is insufficient.
 
+**Recognition languages**: the list of languages OCR is asked to read; each
+engine maps it to the models or packs it has ([ADR 0065](docs/adr/0065-multilingual-by-design.md)).
+Avoid "OCR language" for a single fixed pair.
+
+**OS OCR engine**: text recognition built into the operating system (Apple
+Vision, `Windows.Media.Ocr`), needing no model download. Evaluated in Later,
+not yet used.
+
+**Qualified language**: a document language with its own OCR model,
+spellcheck dictionary and PII qualification; mdoc claims support only for
+these (English and Russian today).
+
 **Model bundle**: pinned, compatible model artifacts and required tokenizer or
 dictionary. Installation/runtime compatibility does not establish detection quality.
 

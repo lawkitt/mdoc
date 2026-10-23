@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-22 (latest: 0.1.1); accepted
+This roadmap lists open work as of 2026-10-23 (latest: 0.1.2); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
@@ -20,6 +20,8 @@ and EN/RU spellcheck. No PII model has passed the
 0.1.1 (2026-10-22) fixes Windows single-instance launch, cases on unsaved
 conversions, Save As and Recents, formatting next to spaces and lost focus
 ([CHANGELOG](CHANGELOG.md), [smoke run](docs/evidence/platform/2026-10-22/README.md)).
+0.1.2 (2026-10-22) adds Find and Replace, keyboard reach and dialog semantics
+for screen readers; its native checks are in the 0.2.0 acceptance run.
 
 ## 0.1.x patches
 
@@ -29,7 +31,8 @@ ready ride along with a later patch.
 Each patch gets a smoke run on both platforms; an item is done when its issue
 closes, with the expected behavior stated there.
 
-None open.
+1. **[DOCX] Preview joins words in justified lines** ([#91](https://github.com/lawkitt/mdoc/issues/91)).
+   0.1.3 ships when it is fixed, together with the Unreleased polish.
 
 ## 0.2.0
 
@@ -52,20 +55,39 @@ to the top of the next milestone. Items are in priority order.
 
 1. **[OCR] Pick the recognition language.** *From the rc.1 run.* Default to
    English & Russian when the text layer, file name or a Russian input source
-   suggests it.
+   suggests it. The choice is a list of languages that each engine maps to
+   what it reads, so OS engines and more languages fit later.
    *Done when:* the Russian OCR fixture gets English & Russian by default and
    the English one stays English, with the choice explained on the card.
+2. **[Tests] Flaky `gpui-pdf` scrolling tests on Windows.** *From 2026-10-22.*
+   Four tests find no `pdf-source-name`/`pdf-page-tone` bounds under
+   `cargo test --workspace` (`lib.rs:2599`, `2616`, `2686`, `2719`) but pass
+   alone; likely the PDF loads on a real thread `run_until_parked` skips.
+   *Done when:* `cargo test --workspace` passes 3/3 on Windows.
+3. **[Tests] Headless screen renders and Tab walk.** *From Panoply.* A dev-only
+   run renders every screen offscreen in light and dark, walks Tab and records
+   frame costs, so the RC run checks pictures instead of clicking through.
+   *Done when:* one command writes the renders and Tab order for Home, a
+   document, Review, Settings and the dialogs on both platforms.
 
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
 detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c400853/ROADMAP.md#after-010).
 
-- **[A11y]** Expose editor text to screen readers (AccessKit text role, ranges,
-  caret and selection events); first to promote.
 - **[Workspace]** Folder drop flow: show what will open, ask for the key only
   for a case, cap large folders.
+- **[OCR]** OS engines (Apple Vision, `Windows.Media.Ocr`) as the no-download
+  default where they beat PP-OCR on our fixtures by character error rate; Vision
+  reads Russian from macOS 13, Windows needs the Russian pack. *From Panoply.*
+- **[Conversion]** Join hyphenated line breaks and normalize lists and blank
+  lines at conversion, in the AnyDoc/pdf-inspector forks. *From MiaoYan's auto-format.*
 - **[Perf]** Stress tier (2 MiB / 20,000 mentions) and numerical budgets.
+- **[Models]** Show source and license, besides size, in the download prompt.
+  *From Panoply.*
+- **[A11y]** Expose editor text to screen readers (AccessKit text role, ranges,
+  caret and selection events); promote when a user asks or a buyer needs it
+  for compliance.
 - **[UI]** Center and smoothly scroll to the selected mention.
 - **[UI]** Expand/collapse all in the Replacements panel.
 - **[PII]** Merge hint for identities that very likely name the same subject.
@@ -74,7 +96,8 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[UI]** Workspace Back/Forward.
 - **[OCR]** Recover page structure on clean scans, in the AnyDoc/pdf-inspector forks.
 - **[DOCX]** Pseudonymized DOCX export with rdocx, then rdocx for the preview.
-- **[Cases]** System-wide Pseudonymize Clipboard hotkey.
+- **[Cases]** System-wide Pseudonymize Clipboard hotkey, via the `global-hotkey`
+  crate as in Panoply.
 - **[Editor]** Caret affinity at soft wraps, so ⌘→ can sit after a row's last
   character when the row broke inside a word; today it stops one character
   short (ADR 0061). Table cells with wrapped text or
@@ -82,13 +105,13 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[A11y]** Region-aware Tab: Tab from the toolbar's last control into the
   editor, and from the Replacements panel's last control on to the next region,
   instead of window order and the panel's own loop; F6 covers both today (ADR 0062).
-- **[Tests]** Flaky `gpui-pdf` scrolling tests under `cargo test --workspace`
-  on Windows (2026-10-22, twice in a row): `a_source_note_shows_beside_the_name`,
-  `narrow_toolbar_exposes_and_wraps_pdf_tools`, `page_tone_toggle_follows_style_and_rerenders`
-  and `horizontal_gestures_thumb_and_page_navigation_preserve_geometry` find no
-  `pdf-source-name`/`pdf-page-tone` bounds (`lib.rs:2599`, `2616`, `2686`, `2719`)
-  but pass 3/3 alone with `-p gpui-pdf`. Likely the PDF opens on a real thread
-  that `run_until_parked` does not wait for; wait for the load before drawing.
+- **[Tests]** CI smoke of the installed Windows package on a desktop runner,
+  with screenshots. *From Panoply.*
+- **[A11y]** Contrast (WCAG 2.2) and type-ramp checks as unit tests over the
+  theme in light and dark. *From Panoply.*
+- **[UI]** Headings as "Go to heading" results in the command palette. *From
+  MiaoYan's table of contents.*
+- **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
 
 ## Ongoing tracks
 
@@ -104,8 +127,8 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   case coordination and document lifecycle as separate, incremental projects,
   each boundary defined before implementation.
 - **Build-cache check** ([ADR 0050](docs/adr/0050-rust-build-cache-growth.md)):
-  re-measure with `just disk` on 2026-10-23 (28 GiB on 2026-10-20); evaluate
-  `sccache` only above about 30 GiB.
+  `just disk` read 38.5 GiB on 2026-10-23, over the ~30 GiB threshold; evaluate
+  `sccache` against a periodic `cargo clean --workspace`.
 - **Cleanup charter** ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)):
   concrete ownership/test improvements; conversion and OCR changes belong in
   the AnyDoc/pdf-inspector forks.
@@ -119,7 +142,12 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   anonymization claims.
 - Format-preserving pseudonymized PDF export and restoring an AI reply into
   DOCX (DOCX export is in Later); an audit journal and compliance report of
-  replacements; a re-identification risk hint.
+  replacements; a re-identification risk hint. For PDF, Panoply's `pdf.redact`
+  shape fits: redraw only matched pages with aliases painted in, an invisible
+  text layer, matched metadata dropped, and a leak check before saving.
+- Agent access (CLI or MCP, as in Panoply and MiaoYan) only where the agent
+  receives text the user reviewed in mdoc, then restores through the case;
+  design and trust model separately.
 - Bulk conversion beyond current lazy multi-file opening; design separately.
 - Online formatting/OCR repair; provider, credentials, trust and review need decisions.
 - Extra recognizers/full PII engines and optional source/page references; qualify
@@ -131,6 +159,13 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   names ([ADR 0018](docs/adr/0018-document-local-identity-review.md)).
 - An irreversible redaction mode ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md)).
 - Watermarking and watched folders (outside AI preparation).
+- MiaoYan's notes-app features (slides, wikilinks, Mermaid and LaTeX, slash
+  templates, a synced notes library): outside AI preparation, and
+  [ADR 0030](docs/adr/0030-render-standard-markdown-only.md) renders standard Markdown only.
+- Document version history: snapshots would keep client names in plaintext
+  outside the case and the file lifecycle ([ADR 0003](docs/adr/0003-file-based-document-lifecycle.md)).
+- An editor-wide Markdown reformat: it moves every proposal and alias; cleanup
+  belongs at conversion (Later).
 - [xerj](https://github.com/xerj-org/xerj) (local search server for agents): no
   product fit for a single-document editor; a local server and its optional
   off-machine reranker conflict with offline operation.
