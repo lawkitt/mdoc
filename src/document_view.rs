@@ -109,6 +109,7 @@ pub(crate) struct DocumentView {
     pub(crate) ocr_notice_dismissed: bool,
     pub(crate) setup_error_dismissed: bool,
     /// The card's primary action takes focus once when OCR consent appears.
+    /// Stable focus for a setup card's primary action or its in-progress Cancel.
     pub(crate) card_focus: gpui::FocusHandle,
     pub(crate) focus_card: bool,
     pub(crate) prompting: bool,
@@ -1154,6 +1155,7 @@ impl DocumentView {
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "cancel-ocr-setup".into())
                         })
+                        .track_focus(&self.card_focus)
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.model_panel
                                 .update(cx, |panel, cx| panel.cancel_setup(cx))

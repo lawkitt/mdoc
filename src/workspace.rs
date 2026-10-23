@@ -16,6 +16,9 @@ mod keychain_ui;
 mod shell;
 pub(crate) use cases_ui::{CancelCaseName, ConfirmCaseName, bind_keys as bind_case_keys};
 pub(crate) use shell::bind_keys as bind_shell_keys;
+#[path = "workspace_actions.rs"]
+mod app_actions;
+pub(crate) use app_actions::bind as bind_app_actions;
 
 pub(super) enum TabEvent {
     New,
@@ -1631,6 +1634,7 @@ impl Workspace {
     }
 
     fn close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings.update(cx, |panel, cx| panel.cancel_setup(cx));
         for tab in &self.tabs {
             if let Some(view) = &tab.view {
                 Self::release(view, window, cx);
@@ -2963,9 +2967,6 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &shell::PasteAsNewTab, window, cx| {
                 this.paste_as_new_tab(window, cx)
             }))
-            .on_action(
-                cx.listener(|this, _: &ToggleTheme, window, cx| this.cycle_theme(window, cx)),
-            )
             .on_action(cx.listener(|this, _: &ToggleNotices, _, cx| {
                 this.title.notices_open.set(!this.title.notices_open.get());
                 cx.notify();
@@ -2997,32 +2998,9 @@ impl Render for Workspace {
                     this.home_drag(event, cx)
                 },
             ))
-            .on_action(cx.listener(|this, _: &Settings, window, cx| {
-                this.show_settings(window, cx);
-            }))
-            // About shows the version, in Settings › Updates.
-            .on_action(cx.listener(|this, _: &crate::menus::About, window, cx| {
-                window.activate_window();
-                this.settings
-                    .update(cx, |panel, cx| panel.show_updates(window, cx));
-            }))
-            .on_action(cx.listener(|this, _: &New, window, cx| {
-                if this.ready && this.quitting.is_none() {
-                    this.new_tab(window, cx);
-                }
-            }))
-            .on_action(cx.listener(|this, _: &Quit, window, cx| this.quit(window, cx)))
-            .on_action(
-                cx.listener(|this, _: &OpenCase, window, cx| this.show_case_list(window, cx)),
-            )
             .on_action(
                 cx.listener(|this, _: &Close, window, cx| this.close_tab(this.active, window, cx)),
             )
-            .on_action(cx.listener(|this, _: &Open, window, cx| {
-                if let Some(view) = this.active_view() {
-                    view.update(cx, |view, cx| view.open(&Open, window, cx));
-                }
-            }))
             .on_action(cx.listener(|this, _: &Import, window, cx| {
                 if let Some(view) = this.active_view() {
                     view.update(cx, |view, cx| view.import(&Import, window, cx));
@@ -3037,33 +3015,6 @@ impl Render for Workspace {
                     this.close_notices(window, cx);
                     cx.stop_propagation();
                 }
-            }))
-            .on_action(cx.listener(|this, _: &ToggleSidebar, window, cx| {
-                this.sidebar_visible = !this.sidebar_visible;
-                this.sidebar_choice = Some(this.sidebar_visible);
-                this.sidebar_generation += 1;
-                // Only the sidebar layer animates; one repaint ends it.
-                this.sidebar_slide = Some(std::time::Instant::now() + SLIDE);
-                cx.spawn(async move |this, cx| {
-                    cx.background_executor()
-                        .timer(SLIDE + Duration::from_millis(16))
-                        .await;
-                    let _ = this.update(cx, |_, cx| cx.notify());
-                })
-                .detach();
-                this.reveal = Reveal::Hidden;
-                this.reveal_pending = None;
-                this.reveal_hover = (false, false);
-                this.reveal_keyboard = false;
-                this.reveal_return = None;
-                // Keep keyboard focus on the toggle that replaces the clicked one.
-                if this.sidebar_visible && this.rail_toggle_focus.is_focused(window) {
-                    window.focus(&this.panel_toggle_focus, cx);
-                } else if !this.sidebar_visible && this.panel_toggle_focus.is_focused(window) {
-                    window.focus(&this.rail_toggle_focus, cx);
-                    this.reveal_escaped = Some(this.rail_toggle_focus.clone());
-                }
-                cx.notify();
             }))
             .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
                 this.tab_from_window(false, window, cx)

@@ -267,6 +267,7 @@ fn main() {
         )]);
         bind_markdown_search_keys(cx);
         bind_app_keys(cx);
+        workspace::bind_app_actions(cx);
         menus::install(cx);
         let bounds = Bounds::centered(None, size(px(1100.), px(760.)), cx);
         let handle = cx

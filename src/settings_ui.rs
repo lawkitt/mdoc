@@ -288,6 +288,16 @@ impl Panel {
             .as_ref()
             .is_some_and(|p| p.cancel.load(Ordering::Relaxed))
     }
+    /// Render a running setup without network or model access in GPUI tests.
+    #[cfg(test)]
+    pub(crate) fn simulate_setup(&mut self, model: Model, cx: &mut Context<Self>) -> Progress {
+        let progress = Progress::default();
+        progress.phase("Downloading test model");
+        self.working = Some(model);
+        self.progress = Some(progress.clone());
+        cx.notify();
+        progress
+    }
     pub fn cancel_setup(&mut self, cx: &mut Context<Self>) {
         if let Some(p) = &self.progress {
             p.cancel.store(true, Ordering::Relaxed);
