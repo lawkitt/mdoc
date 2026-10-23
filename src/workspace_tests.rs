@@ -249,7 +249,7 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
     });
     draw(cx);
     cx.update(|_, cx| assert!(view.read(cx).ocr_required.is_some()));
-    assert_eq!(settings::OcrModel::V6Small.languages(), "English");
+    assert_eq!(settings::OcrModel::V6Small.title(), "English");
     for selector in [
         "ocr-language-hint",
         "conversion-card",
@@ -299,6 +299,200 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
     assert!(cx.debug_bounds("Run OCR").is_some());
     click_toolbar(cx, "choose-ocr-model");
     cx.update(|_, cx| assert!(panel.read(cx).open));
+}
+
+/// Open `path` and return its tab once the OCR card is up.
+fn open_scan(
+    tabs: &Entity<Workspace>,
+    path: PathBuf,
+    cx: &mut VisualTestContext,
+) -> Entity<DocumentView> {
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![path], window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(tabs, cx);
+    draw(cx);
+    cx.update(|_, cx| assert!(view.read(cx).ocr_required.is_some()));
+    view
+}
+
+fn recognition(
+    view: &Entity<DocumentView>,
+    cx: &mut VisualTestContext,
+) -> (Vec<recognition::Language>, String, settings::OcrModel) {
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        let choice = view.recognition_choice();
+        (choice.languages, choice.reason, view.recognition_model())
+    })
+}
+
+/// ROADMAP 0.2.0 should-fix 1: the Russian OCR fixture gets English &
+/// Russian by default and the English one stays English, with the reason
+/// on the card, even on a computer with a Russian keyboard.
+#[gpui::test]
+fn ocr_fixtures_default_to_their_recognition_languages(cx: &mut TestAppContext) {
+    use recognition::{ENGLISH, RUSSIAN};
+    let fixtures =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ocr-qualification");
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update(cx, |tabs, _| {
+        tabs.input_languages = || vec![ENGLISH, RUSSIAN]
+    });
+    let russian = open_scan(&tabs, fixtures.join("russian.pdf"), cx);
+    assert_eq!(
+        recognition(&russian, cx),
+        (
+            vec![ENGLISH, RUSSIAN],
+            "English & Russian: the file name mentions Russian".into(),
+            settings::OcrModel::Cyrillic
+        )
+    );
+    for selector in [
+        "ocr-language-hint",
+        "recognize English",
+        "recognize English & Russian",
+        "Download & recognize",
+    ] {
+        assert!(cx.debug_bounds(selector).is_some(), "{selector}");
+    }
+    let english = open_scan(&tabs, fixtures.join("english.pdf"), cx);
+    assert_ne!(english, russian);
+    assert_eq!(
+        recognition(&english, cx),
+        (
+            vec![ENGLISH],
+            "English: the file name mentions English".into(),
+            settings::OcrModel::V6Small
+        )
+    );
+    assert!(cx.debug_bounds("ocr-language-hint").is_some());
+}
+
+#[gpui::test]
+fn recognition_defaults_follow_text_file_name_then_keyboard(cx: &mut TestAppContext) {
+    use recognition::{ENGLISH, RUSSIAN};
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let dir = tempfile::tempdir().unwrap();
+    let raster = fixtures.join("ocr-qualification/english.pdf");
+    for name in ["договор.pdf", "scan.pdf", "page.pdf"] {
+        std::fs::copy(&raster, dir.path().join(name)).unwrap();
+    }
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let cyrillic = open_scan(&tabs, dir.path().join("договор.pdf"), cx);
+    assert_eq!(
+        recognition(&cyrillic, cx).1,
+        "English & Russian: the file name is in Russian"
+    );
+    // No keyboard, text or file-name sign: the Settings choice (English).
+    let plain = open_scan(&tabs, dir.path().join("page.pdf"), cx);
+    assert_eq!(
+        recognition(&plain, cx).1,
+        "English: no sign of Russian in the text, file name or keyboard"
+    );
+    tabs.update(cx, |tabs, _| {
+        tabs.input_languages = || vec![ENGLISH, RUSSIAN]
+    });
+    let keyboard = open_scan(&tabs, dir.path().join("scan.pdf"), cx);
+    assert_eq!(
+        recognition(&keyboard, cx),
+        (
+            vec![ENGLISH, RUSSIAN],
+            "English & Russian: this computer has a Russian keyboard".into(),
+            settings::OcrModel::Cyrillic
+        )
+    );
+    // English text on the pages that need no OCR outranks the keyboard.
+    let partly = open_scan(
+        &tabs,
+        fixtures.join("import/handmade-partly-scanned.pdf"),
+        cx,
+    );
+    assert_eq!(
+        recognition(&partly, cx),
+        (
+            vec![ENGLISH],
+            "English: the text layer has no Russian text".into(),
+            settings::OcrModel::V6Small
+        )
+    );
+}
+
+#[gpui::test]
+fn picking_recognition_languages_changes_only_this_document(cx: &mut TestAppContext) {
+    use recognition::ENGLISH;
+    let fixtures =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ocr-qualification");
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let english = open_scan(&tabs, fixtures.join("english.pdf"), cx);
+    let view = open_scan(&tabs, fixtures.join("russian.pdf"), cx);
+    let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
+    let installed = |model| ocr::Installed {
+        config: settings::OcrConfig {
+            model,
+            ..Default::default()
+        },
+        models: "missing-models".into(),
+        pdfium: "missing-pdfium".into(),
+        onnx: "missing-onnx".into(),
+    };
+    // English (the Settings model) is ready; English & Russian is not.
+    tabs.update(cx, |tabs, cx| {
+        tabs.set_ocr(OcrState::Ready(installed(settings::OcrModel::V6Small)), cx)
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("Download & recognize").is_some());
+    click_toolbar(cx, "recognize English");
+    assert_eq!(
+        recognition(&view, cx),
+        (
+            vec![ENGLISH],
+            "English: picked for this document".into(),
+            settings::OcrModel::V6Small
+        )
+    );
+    draw(cx);
+    assert!(cx.debug_bounds("Run OCR").is_some());
+    // Picking the detected list again restores its reason.
+    click_toolbar(cx, "recognize English & Russian");
+    assert_eq!(
+        recognition(&view, cx).1,
+        "English & Russian: the file name mentions Russian"
+    );
+    cx.update(|_, cx| {
+        assert_eq!(
+            english.read(cx).recognition_model(),
+            settings::OcrModel::V6Small
+        );
+        assert_eq!(
+            settings::Preferences::default().ocr.model,
+            settings::OcrModel::V6Small
+        );
+    });
+    // A checked English & Russian installation enables Run OCR. Its run
+    // fails here (no runtime), and that failure stays with this document.
+    panel.update(cx, |panel, _| {
+        panel
+            .ocr_installations
+            .push(installed(settings::OcrModel::Cyrillic))
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("Run OCR").is_some());
+    view.update_in(cx, |view, window, cx| view.ocr_action(false, window, cx));
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(view.ocr_failure.is_some());
+        assert!(matches!(view.ocr_state, OcrState::Ready(_)));
+        assert!(matches!(english.read(cx).ocr_state, OcrState::Ready(_)));
+        assert!(english.read(cx).ocr_failure.is_none());
+    });
+    assert!(cx.debug_bounds("Retry").is_some());
 }
 
 #[gpui::test]

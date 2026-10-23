@@ -173,6 +173,9 @@ pub(super) struct Workspace {
     theme: Rc<Cell<Theme>>,
     ready: bool,
     ocr_state: OcrState,
+    /// Keyboard input source languages for recognition defaults; tests
+    /// inject their own so they never read this computer's keyboards.
+    pub(super) input_languages: fn() -> Vec<crate::recognition::Language>,
     pending_open: Vec<PathBuf>,
     /// Paths wait in `pending_open` for a confirm dialog to be answered.
     awaiting_prompt: bool,
@@ -350,6 +353,11 @@ impl Workspace {
                 OcrState::Missing
             } else {
                 OcrState::Unsupported
+            },
+            input_languages: if cfg!(test) {
+                Vec::new
+            } else {
+                crate::recognition::input_source_languages
             },
             pending_open: Vec::new(),
             awaiting_prompt: false,
@@ -849,6 +857,7 @@ impl Workspace {
                     import_busy,
                     ocr: self.ocr_state.clone(),
                     title: self.title.clone(),
+                    input_languages: self.input_languages,
                 },
                 window,
                 cx,

@@ -116,6 +116,15 @@ pub(crate) struct DocumentView {
     pub(crate) ocr_state: OcrState,
     /// This document's last OCR run recognized nothing; OCR itself still works.
     pub(crate) ocr_error: Option<String>,
+    /// Setup or a run of this document's OCR model failed, when that is not
+    /// the Settings model (whose state `ocr_state` shares with every tab).
+    pub(crate) ocr_failure: Option<String>,
+    /// What detection saw when the card appeared (ADR 0065).
+    pub(crate) recognition_signals: Option<recognition::Signals>,
+    /// Recognition languages picked on the card, for this document only.
+    pub(crate) recognition_pick: Option<recognition::Choice>,
+    /// Keyboard input source languages; tests inject their own.
+    pub(crate) input_languages: fn() -> Vec<recognition::Language>,
     pub(crate) markdown_search: Entity<markdown_search::SearchInput>,
     /// The Replace row's field; its text stays with the tab (ADR 0063).
     pub(crate) markdown_replace: Entity<markdown_search::SearchInput>,
@@ -145,6 +154,8 @@ pub(crate) struct DocumentViewDependencies {
     pub(crate) import_busy: Arc<AtomicBool>,
     pub(crate) ocr: OcrState,
     pub(crate) title: style::TitleBar,
+    /// Keyboard input source languages (`recognition::input_source_languages`).
+    pub(crate) input_languages: fn() -> Vec<recognition::Language>,
 }
 
 impl DocumentView {
@@ -287,6 +298,10 @@ impl DocumentView {
             job: import_session::ImportSession::default(),
             ocr_state: dependencies.ocr,
             ocr_error: None,
+            ocr_failure: None,
+            recognition_signals: None,
+            recognition_pick: None,
+            input_languages: dependencies.input_languages,
             markdown_search,
             markdown_replace,
             search: search_session::SearchSession::default(),
@@ -369,6 +384,89 @@ impl DocumentView {
     /// The Markdown came from OCR.
     pub(crate) fn recognized(&self) -> bool {
         self.session.ocr_configuration.is_some()
+    }
+
+    /// The OCR model chosen in Settings, whose readiness `ocr_state` shares.
+    fn settings_ocr_model(&self) -> Option<settings::OcrModel> {
+        self.preferences
+            .borrow()
+            .snapshot()
+            .ok()
+            .map(|p| p.ocr.model)
+    }
+
+    /// This document's recognition languages: the card's pick, else the
+    /// detected default with its reason (ADR 0065).
+    pub(crate) fn recognition_choice(&self) -> recognition::Choice {
+        if let Some(pick) = &self.recognition_pick {
+            return pick.clone();
+        }
+        self.recognition_default()
+    }
+
+    fn recognition_default(&self) -> recognition::Choice {
+        let fallback = self.settings_ocr_model().unwrap_or_default();
+        recognition::detect(
+            &self.recognition_signals.clone().unwrap_or_default(),
+            &settings::OcrModel::offered(),
+            fallback.languages(),
+        )
+    }
+
+    /// The bundle that reads this document's recognition languages.
+    pub(crate) fn recognition_model(&self) -> settings::OcrModel {
+        settings::OcrModel::plan(&self.recognition_choice().languages).0
+    }
+
+    /// Gather detection signals for `path` once its card appears.
+    fn observe_recognition(&mut self, path: &std::path::Path, text: Vec<recognition::Language>) {
+        self.recognition_signals = Some(recognition::Signals {
+            text,
+            file_name: path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            input_sources: (self.input_languages)(),
+        });
+    }
+
+    /// Pick recognition languages on the card. Picking the detected list
+    /// again restores its explanation.
+    pub(crate) fn pick_recognition(
+        &mut self,
+        languages: Vec<recognition::Language>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.job.busy() || self.ocr_state.busy() {
+            return;
+        }
+        self.recognition_pick = (self.recognition_default().languages != languages)
+            .then(|| recognition::Choice::picked(languages));
+        self.ocr_failure = None;
+        cx.notify();
+    }
+
+    /// A checked installation of `model`: the shared one for the Settings
+    /// model, else one Settings checked or set up. None after a failure of
+    /// that model, so Retry verifies the installation again.
+    fn installed_for(&self, model: settings::OcrModel, cx: &App) -> Option<ocr::Installed> {
+        if self.settings_ocr_model() == Some(model) {
+            match &self.ocr_state {
+                OcrState::Ready(installed) if installed.config.model == model => {
+                    return Some(installed.clone());
+                }
+                OcrState::Failed(_) => return None,
+                _ => {}
+            }
+        } else if self.ocr_failure.is_some() {
+            return None;
+        }
+        self.model_panel
+            .read(cx)
+            .ocr_installations
+            .iter()
+            .find(|i| i.config.model == model)
+            .cloned()
     }
 
     /// Zoom the Markdown text between 50% and 200% in 5% steps.
@@ -475,6 +573,9 @@ impl DocumentView {
                 self.generated_unedited = self.automatic_import;
                 self.ocr_required = None;
                 self.ocr_error = None;
+                self.ocr_failure = None;
+                self.recognition_signals = None;
+                self.recognition_pick = None;
                 let retain_preview = self.preview.source.as_ref() == Some(&imported.source)
                     && (self.preview.pdf.is_some() || self.preview.loading);
                 self.session
@@ -560,9 +661,14 @@ impl DocumentView {
         if allow_ocr && self.ocr_state.busy() {
             return;
         }
+        // Settings' resolution and confidence, this document's model.
         let config = if allow_ocr && !skip_ocr {
-            match self.preferences.borrow().snapshot() {
-                Ok(p) => Some(p.ocr),
+            let snapshot = self.preferences.borrow().snapshot();
+            match snapshot {
+                Ok(p) => Some(settings::OcrConfig {
+                    model: self.recognition_model(),
+                    ..p.ocr
+                }),
                 Err(e) => {
                     self.error = Some(e);
                     cx.notify();
@@ -572,20 +678,12 @@ impl DocumentView {
         } else {
             None
         };
-        let installed = match &self.ocr_state {
-            OcrState::Ready(installed)
-                if allow_ocr
-                    && !skip_ocr
-                    && config
-                        .as_ref()
-                        .is_some_and(|c| c.model == installed.config.model) =>
-            {
-                let mut installed = installed.clone();
-                installed.config = config.clone().unwrap();
-                Some(installed)
-            }
-            _ => None,
-        };
+        let installed = config.and_then(|config| {
+            self.installed_for(config.model, cx).map(|mut installed| {
+                installed.config = config;
+                installed
+            })
+        });
         if allow_ocr && installed.is_none() {
             self.error = Some(
                 "Selected OCR model is not ready. Open Settings to download or repair it.".into(),
@@ -649,8 +747,12 @@ impl DocumentView {
                     self.request(Next::Import(imported), window, cx);
                 }
                 Err(import::ImportError::OcrFailed(error)) => {
-                    self.ocr_state = OcrState::Failed(error.clone());
-                    cx.emit(workspace::TabEvent::OcrState(self.ocr_state.clone()));
+                    if self.settings_ocr_model() == Some(self.recognition_model()) {
+                        self.ocr_state = OcrState::Failed(error.clone());
+                        cx.emit(workspace::TabEvent::OcrState(self.ocr_state.clone()));
+                    } else {
+                        self.ocr_failure = Some(error.clone());
+                    }
                     self.error = Some(error);
                     if let Some(path) = self.conversion_source.clone() {
                         self.await_ocr(path, cx);
@@ -664,7 +766,8 @@ impl DocumentView {
                     }
                 }
                 Err(import::ImportError::Message(error)) => self.error = Some(error),
-                Err(import::ImportError::NeedsOcr(path, pages)) => {
+                Err(import::ImportError::NeedsOcr(path, pages, text)) => {
+                    self.observe_recognition(&path, text);
                     self.ocr_required = Some(pages);
                     self.await_ocr(path, cx)
                 }
@@ -687,7 +790,7 @@ impl DocumentView {
         {
             return;
         }
-        if matches!(self.ocr_state, OcrState::Ready(_)) {
+        if self.installed_for(self.recognition_model(), cx).is_some() {
             return;
         }
         self.begin_ocr_setup(window, cx);
@@ -697,14 +800,20 @@ impl DocumentView {
         if self.ocr_state.busy() {
             return;
         }
-        let config = match self.preferences.borrow().snapshot() {
-            Ok(p) => p.ocr,
+        let snapshot = self.preferences.borrow().snapshot();
+        let config = match snapshot {
+            Ok(p) => settings::OcrConfig {
+                model: self.recognition_model(),
+                ..p.ocr
+            },
             Err(e) => {
                 self.error = Some(e);
                 cx.notify();
                 return;
             }
         };
+        let shared = self.settings_ocr_model() == Some(config.model);
+        self.ocr_failure = None;
         let panel = self.model_panel.clone();
         // The inline consent continuation remains document-owned. Settings downloads never create one.
         if self.job.has_ocr_continuation() {
@@ -733,8 +842,11 @@ impl DocumentView {
             panel.working == Some(settings::Model::Ocr(config.model))
         });
         if started {
-            self.ocr_state = OcrState::Installing;
-            cx.emit(workspace::TabEvent::OcrState(self.ocr_state.clone()));
+            // Another model's setup shows only in this card's progress.
+            if shared {
+                self.ocr_state = OcrState::Installing;
+                cx.emit(workspace::TabEvent::OcrState(self.ocr_state.clone()));
+            }
             cx.notify();
         } else if self.job.has_ocr_continuation() {
             self.finish_ocr_setup(
@@ -751,15 +863,28 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // Only the Settings model's outcome is shared with every tab; the
+        // Settings panel keeps any other model's installation.
+        let settings_model = self.settings_ocr_model();
+        let shared = match &result {
+            Ok(installed) => settings_model == Some(installed.config.model),
+            Err(_) => settings_model == Some(self.recognition_model()),
+        };
         match result {
             Ok(installed) => {
-                self.ocr_state = OcrState::Ready(installed);
+                if shared {
+                    self.ocr_state = OcrState::Ready(installed);
+                }
                 if let Some(path) = self.job.resume_after_setup(self.session.generation) {
                     self.start_import_mode(path, false, window, cx);
                 }
             }
             Err(error) => {
-                self.ocr_state = OcrState::Failed(error);
+                if shared {
+                    self.ocr_state = OcrState::Failed(error);
+                } else {
+                    self.ocr_failure = Some(error);
+                }
                 self.job.finish();
                 if let Some(path) = self.job.resume_after_setup(self.session.generation) {
                     self.await_ocr(path, cx);
@@ -769,7 +894,9 @@ impl DocumentView {
         if !self.job.busy() {
             self.import_permit = None;
         }
-        cx.emit(workspace::TabEvent::OcrState(self.ocr_state.clone()));
+        if shared {
+            cx.emit(workspace::TabEvent::OcrState(self.ocr_state.clone()));
+        }
         cx.emit(workspace::TabEvent::ImportState);
         cx.notify();
     }
@@ -777,6 +904,9 @@ impl DocumentView {
     // Consent lives in the source pane. Waiting for a decision must not hold
     // the global conversion slot or interrupt another tab with a modal dialog.
     fn await_ocr(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.recognition_signals.is_none() {
+            self.observe_recognition(&path, Vec::new());
+        }
         self.conversion_source = Some(path);
         self.ocr_required.get_or_insert_with(Vec::new);
         self.ocr_notice_dismissed = false;
@@ -801,7 +931,7 @@ impl DocumentView {
         self.automatic_import = false;
         if skip {
             self.start_import_mode(path, skip, window, cx);
-        } else if matches!(self.ocr_state, OcrState::Ready(_)) {
+        } else if self.installed_for(self.recognition_model(), cx).is_some() {
             self.start_import_mode(path, false, window, cx);
         } else if ocr::SUPPORTED {
             if model_work::busy() || self.model_panel.read(cx).working.is_some() {
@@ -839,20 +969,19 @@ impl DocumentView {
     fn conversion_card(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
-        let model = self
-            .preferences
-            .borrow()
-            .snapshot()
-            .ok()
-            .map(|p| settings::Model::Ocr(p.ocr.model));
+        let choice = self.recognition_choice();
+        let (ocr_model, unreadable) = settings::OcrModel::plan(&choice.languages);
+        let model = Some(settings::Model::Ocr(ocr_model));
+        let shared = self.settings_ocr_model() == Some(ocr_model);
+        let ready = self.installed_for(ocr_model, cx).is_some();
         let panel = self.model_panel.read(cx);
         let progress = model.and_then(|m| panel.progress_of(m));
         let cancelling = panel.cancelling();
         let pending = model
             .map(|m| panel.pending[settings_ui::Panel::index(m)])
             .unwrap_or_default();
-        let ready = matches!(self.ocr_state, OcrState::Ready(_));
-        let installing = progress.is_some() || matches!(self.ocr_state, OcrState::Installing);
+        let installing =
+            progress.is_some() || (shared && matches!(self.ocr_state, OcrState::Installing));
         let card = ui::state_card("conversion-card", theme)
             .when(cfg!(test), |v| {
                 v.debug_selector(|| "conversion-card".into())
@@ -964,13 +1093,16 @@ impl DocumentView {
         let disabled =
             self.job.busy() || self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy();
         let failed = match &self.ocr_state {
-            OcrState::Failed(error) => Some(error.clone()),
-            _ => self.ocr_error.clone(),
+            OcrState::Failed(error) if shared => Some(error.clone()),
+            _ => self.ocr_failure.clone().or_else(|| self.ocr_error.clone()),
         };
         let primary = if ready && self.ocr_error.is_none() {
             "Run OCR"
         } else if failed.is_some() {
             "Retry"
+        } else if pending.total() == 0 {
+            // Installed but not yet checked: setup only verifies it.
+            "Run OCR"
         } else {
             "Download & recognize"
         };
@@ -983,11 +1115,75 @@ impl DocumentView {
         let name = model
             .map(|m| m.short_name())
             .unwrap_or_else(|| "OCR".into());
-        let language = match model {
-            Some(settings::Model::Ocr(m)) => Some(m.languages()),
-            _ => None,
+        // The engine says what it cannot read (ADR 0065).
+        let hint = if unreadable.is_empty() {
+            choice.reason.clone()
+        } else {
+            format!(
+                "{}. {} OCR cannot read {}.",
+                choice.reason,
+                ocr_model.title(),
+                recognition::label(&unreadable)
+            )
         };
-        card.when_some(failed, |v, error| v.child(ui::card_error(error, theme)))
+        let accent = theme.search_accent();
+        let picker = div()
+            .id("recognition-languages")
+            .role(gpui::Role::RadioGroup)
+            .aria_label("Recognition languages")
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_1()
+            .child(
+                div()
+                    .mr_1()
+                    .text_size(px(12.))
+                    .text_color(palette.header_muted)
+                    .child("Recognize"),
+            )
+            .children(settings::OcrModel::offered().into_iter().enumerate().map(
+                |(index, languages)| {
+                    let selected = choice.languages == languages;
+                    let label = recognition::label(languages);
+                    let selector = format!("recognize {label}");
+                    div()
+                        .id(("recognition-language", index))
+                        .role(gpui::Role::RadioButton)
+                        .aria_label(label.clone())
+                        .aria_toggled(if selected {
+                            gpui::Toggled::True
+                        } else {
+                            gpui::Toggled::False
+                        })
+                        .key_context("UiControl")
+                        .tab_index(0)
+                        .tab_stop(!disabled)
+                        .px_2()
+                        .py(px(2.))
+                        .rounded_md()
+                        .border_1()
+                        .border_color(if selected { accent } else { palette.border })
+                        .when(selected, |v| v.bg(gpui::Hsla { a: 0.08, ..accent }))
+                        .text_size(px(12.))
+                        .text_color(if selected { accent } else { palette.header_fg })
+                        .focus_visible(move |s| s.bg(palette.placeholder_bg))
+                        .when(!disabled, |v| v.cursor_pointer())
+                        .when(disabled, |v| v.opacity(0.45))
+                        .child(label)
+                        .when(cfg!(test), move |v| v.debug_selector(move || selector))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if !disabled {
+                                this.pick_recognition(languages.to_vec(), cx);
+                            }
+                        }))
+                },
+            ));
+        card.child(picker)
+            .child(ui::card_hint(hint, theme).when(cfg!(test), |v| {
+                v.debug_selector(|| "ocr-language-hint".into())
+            }))
+            .when_some(failed, |v, error| v.child(ui::card_error(error, theme)))
             .child(
                 ui::card_actions()
                     .child(
@@ -1032,15 +1228,6 @@ impl DocumentView {
                             })),
                     ),
             )
-            .when_some(language, |v, languages| {
-                v.child(ui::card_hint(
-                    format!(
-                        "This model reads {languages}. If the document is in another language, choose a model that supports it."
-                    ),
-                    theme,
-                )
-                .when(cfg!(test), |v| v.debug_selector(|| "ocr-language-hint".into())))
-            })
             .child(ui::card_note(
                 if ready || pending.total() == 0 {
                     format!("{name} · runs on this computer")
@@ -1792,7 +1979,7 @@ impl Render for DocumentView {
                 })))
             .when(!detached, |v| v.child(div().track_focus(&self.toolbar_region).key_context("ToolbarRegion").child(self.header(window, cx))))
             .when(!self.source_only && self.job.busy(), |v| v.child(
-                ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
+                ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) || self.job.has_ocr_continuation() { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
             .children(import_notice).children(clipboard_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))

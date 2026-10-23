@@ -17,6 +17,13 @@ All notable changes to **mdoc** are documented here.
   with a temporary profile and no visible window or activation. Windows's
   headless DirectX adapter remains a follow-up.
 
+- **Pick the recognition languages on the OCR card.** The card offers English
+  or English & Russian for this document and picks a default: English &
+  Russian when the PDF's text, its file name (Cyrillic letters, or a word
+  such as "russian" or "ru") or, failing those, a Russian keyboard suggests
+  Russian; otherwise your Settings choice. One line says why, for example
+  "English & Russian: the file name is in Russian" (ADR 0066).
+
 - **Small polish.** View › Toggle Sidebar has ⌃⌘S on macOS. Two tabs of the
   same name in one folder (a DOCX's conversion beside an `.md`) show their
   type, not the full path. The DOCX notice about equations, charts and

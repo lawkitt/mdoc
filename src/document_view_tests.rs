@@ -959,7 +959,11 @@ fn inline_ocr_wait_preserves_current_edits(cx: &mut TestAppContext) {
             .update(cx, |editor, cx| editor.set_text("keep edits", cx));
         app.job.complete(
             app.session.generation,
-            Err(import::ImportError::NeedsOcr("scan.pdf".into(), vec![1])),
+            Err(import::ImportError::NeedsOcr(
+                "scan.pdf".into(),
+                vec![1],
+                Vec::new(),
+            )),
         );
         app.resume_import(window, cx);
     });

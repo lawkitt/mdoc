@@ -1,5 +1,6 @@
 //! Application preferences only. No document text, QA results or replacement maps.
 //! The user's spelling dictionary is a word list beside the settings file.
+use crate::recognition::{ENGLISH, Language, RUSSIAN};
 use pdf_inspector::vision::{ModelManifest, PP_OCR_CYRILLIC, PP_OCR_V6_SMALL};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -36,19 +37,37 @@ impl OcrModel {
             Self::V6Small => "PP-OCRv6 Small",
         }
     }
-    /// Plain-language row title.
-    pub fn title(self) -> &'static str {
+    /// Plain-language row title: the languages it reads, "English & Russian".
+    pub fn title(self) -> String {
+        crate::recognition::label(self.languages())
+    }
+    /// The recognition languages the bundle reads (ADR 0065).
+    pub fn languages(self) -> &'static [Language] {
         match self {
-            Self::V6Small => "English",
-            Self::Cyrillic => "English & Russian",
+            Self::V6Small => &[ENGLISH],
+            Self::Cyrillic => &[ENGLISH, RUSSIAN],
         }
     }
-    /// Languages the bundle recognizes, for setup hints.
-    pub fn languages(self) -> &'static str {
-        match self {
-            Self::V6Small => "English",
-            Self::Cyrillic => "English and Russian",
-        }
+    /// The recognition-language lists PP-OCR offers, one per bundle,
+    /// recommended first: English; English & Russian.
+    pub fn offered() -> Vec<&'static [Language]> {
+        Self::ALL.map(Self::languages).to_vec()
+    }
+    /// PP-OCR's reading of a recognition-language list: the first bundle
+    /// that reads all of it, else the one reading most, and the languages
+    /// that bundle cannot read.
+    pub fn plan(languages: &[Language]) -> (Self, Vec<Language>) {
+        let list = crate::recognition::closest(languages, &Self::offered());
+        let model = Self::ALL
+            .into_iter()
+            .find(|m| m.languages() == list.as_slice())
+            .unwrap_or_default();
+        let unreadable = languages
+            .iter()
+            .copied()
+            .filter(|l| !model.languages().contains(l))
+            .collect();
+        (model, unreadable)
     }
     pub fn summary(self) -> &'static str {
         match self {
@@ -149,10 +168,10 @@ impl Model {
             Self::Pii(m) => m.name(),
         }
     }
-    pub fn title(self) -> &'static str {
+    pub fn title(self) -> String {
         match self {
             Self::Ocr(m) => m.title(),
-            Self::Pii(m) => m.title(),
+            Self::Pii(m) => m.title().into(),
         }
     }
     pub fn summary(self) -> &'static str {
@@ -530,6 +549,29 @@ mod tests {
         save(&path, &stored).unwrap();
         assert_eq!(load(&path).unwrap().ocr.model, OcrModel::Cyrillic);
     }
+    #[test]
+    fn pp_ocr_maps_recognition_languages_and_names_what_it_cannot_read() {
+        use crate::recognition::{ENGLISH, Language, RUSSIAN};
+        // The card's offered lists come from the bundles, recommended first.
+        assert_eq!(
+            OcrModel::offered(),
+            [&[ENGLISH][..], &[ENGLISH, RUSSIAN][..]]
+        );
+        assert_eq!(OcrModel::Cyrillic.title(), "English & Russian");
+        assert_eq!(OcrModel::plan(&[ENGLISH]), (OcrModel::V6Small, vec![]));
+        assert_eq!(OcrModel::plan(&[RUSSIAN]), (OcrModel::Cyrillic, vec![]));
+        assert_eq!(
+            OcrModel::plan(&[ENGLISH, RUSSIAN]),
+            (OcrModel::Cyrillic, vec![])
+        );
+        let german = Language("de");
+        assert_eq!(
+            OcrModel::plan(&[RUSSIAN, german]),
+            (OcrModel::Cyrillic, vec![german])
+        );
+        assert_eq!(OcrModel::plan(&[german]), (OcrModel::V6Small, vec![german]));
+    }
+
     #[test]
     fn every_pii_model_roundtrips_without_changing_existing_defaults() {
         let dir = tempfile::tempdir().unwrap();

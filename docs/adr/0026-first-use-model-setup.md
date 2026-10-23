@@ -1,7 +1,9 @@
 # First-use model setup and English-first defaults
 
 Status: Accepted, 2026-10-09. Amends [ADR 0006](0006-local-model-settings.md)
-(defaults and Settings controls).
+(defaults and Settings controls). Amended by
+[ADR 0066](0066-recognition-language-defaults.md) (the OCR card picks
+recognition languages per document; "Choose model…" stays for Settings).
 
 ## Problem
 

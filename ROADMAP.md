@@ -50,13 +50,7 @@ to the top of the next milestone. Items are in priority order.
 
 ### Should-fix
 
-1. **[OCR] Pick the recognition language.** *From the rc.1 run.* Default to
-   English & Russian when the text layer, file name or a Russian input source
-   suggests it. The choice is a list of languages that each engine maps to
-   what it reads, so OS engines and more languages fit later.
-   *Done when:* the Russian OCR fixture gets English & Russian by default and
-   the English one stays English, with the choice explained on the card.
-2. **[Tests] Windows headless screen renders and Tab walk.** *From Panoply.*
+1. **[Tests] Windows headless screen renders and Tab walk.** *From Panoply.*
    Add GPUI's offscreen DirectX adapter and enable the macOS recipe on Windows
    ([follow-up](docs/development.md#headless-screen-renders-macos)).
    *Done when:* the same render/Tab output test passes on Windows without a visible window.

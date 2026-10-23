@@ -45,7 +45,9 @@ pub struct Imported {
 
 #[derive(Debug)]
 pub enum ImportError {
-    NeedsOcr(PathBuf, Vec<u32>),
+    /// Pages needing recognition, and the languages the PDF's own text
+    /// layer suggests (`recognition::text_languages`).
+    NeedsOcr(PathBuf, Vec<u32>, Vec<crate::recognition::Language>),
     Message(String),
     /// The OCR runtime or models failed; the shared OCR state needs repair.
     OcrFailed(String),
@@ -165,6 +167,7 @@ fn convert_pdf(
         return Err(ImportError::NeedsOcr(
             source,
             native.pages_recommended_for_ocr.clone(),
+            crate::recognition::text_languages(&native.markdown),
         ));
     }
     let (result, used_ocr) = if !skip_ocr && let Some(installed) = installed {
@@ -361,6 +364,23 @@ mod tests {
         let csv = dir.path().join("values.CSV");
         std::fs::write(&csv, "Name,Count\nApples,2\n").unwrap();
         assert!(convert(&csv).unwrap().markdown.contains("| Apples | 2 |"));
+    }
+
+    #[test]
+    fn scan_reports_the_languages_its_text_layer_suggests() {
+        use crate::recognition::ENGLISH;
+        let Err(ImportError::NeedsOcr(_, pages, text)) =
+            prepare(&fixture("handmade-partly-scanned.pdf"), None, false)
+        else {
+            panic!("needs OCR");
+        };
+        assert_eq!((pages, text), (vec![2, 5], vec![ENGLISH]));
+        let raster = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/ocr-qualification/russian.pdf");
+        assert!(matches!(
+            prepare(&raster, None, false),
+            Err(ImportError::NeedsOcr(_, _, text)) if text.is_empty()
+        ));
     }
 
     #[test]

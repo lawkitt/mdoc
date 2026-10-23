@@ -83,7 +83,13 @@ without a case sit under "Open".
 
 **Recognition languages**: the list of languages OCR is asked to read; each
 engine maps it to the models or packs it has ([ADR 0065](docs/adr/0065-multilingual-by-design.md)).
+Picked per document on the OCR card from the engine's offered lists.
 Avoid "OCR language" for a single fixed pair.
+
+**Language signal**: what suggests a document's recognition languages: its
+text layer, its file name, then a keyboard input source; the first that
+says anything sets the default, explained in one line on the card
+([ADR 0066](docs/adr/0066-recognition-language-defaults.md)).
 
 **OS OCR engine**: text recognition built into the operating system (Apple
 Vision, `Windows.Media.Ocr`), needing no model download. Evaluated in Later,

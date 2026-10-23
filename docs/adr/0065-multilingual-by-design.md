@@ -1,6 +1,7 @@
 # Multilingual by design
 
-Status: Accepted, 2026-10-23.
+Status: Accepted, 2026-10-23. Applied to OCR by
+[ADR 0066](0066-recognition-language-defaults.md).
 
 ## Problem
 

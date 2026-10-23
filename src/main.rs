@@ -32,6 +32,7 @@ mod perf_tests;
 mod pii;
 mod preview;
 mod recents;
+mod recognition;
 mod session_store;
 mod settings;
 mod settings_ui;
