@@ -1016,6 +1016,93 @@ fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut Tes
     });
 }
 
+fn set_default_ocr(app: &DocumentView, model: crate::settings::OcrModel) {
+    let mut store = app.preferences.borrow_mut();
+    store.current.as_mut().unwrap().ocr.model = model;
+}
+
+/// A pick, a run's choice and a setup's captured model all survive a
+/// Settings change, and setup never leaves the shared state Installing.
+#[gpui::test]
+fn recognition_choice_and_setup_survive_a_settings_change(cx: &mut TestAppContext) {
+    use crate::recognition::{ENGLISH, RUSSIAN};
+    use crate::settings::OcrModel;
+    let (app, cx) = boot(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.job.complete(
+            app.session.generation,
+            Err(import::ImportError::NeedsOcr(
+                "scan.pdf".into(),
+                vec![1],
+                Vec::new(),
+            )),
+        );
+        app.resume_import(window, cx);
+        assert_eq!(app.recognition_choice().languages, [ENGLISH]);
+        // Picking the default again still holds it.
+        app.pick_recognition(vec![ENGLISH, RUSSIAN], cx);
+        app.pick_recognition(vec![ENGLISH], cx);
+        set_default_ocr(app, OcrModel::Cyrillic);
+        assert_eq!(
+            app.recognition_choice().reason,
+            "English: no sign of Russian in the text, file name or keyboard"
+        );
+        assert_eq!(app.recognition_model(), OcrModel::V6Small);
+        // Without a pick, running OCR keeps the choice it ran with. The
+        // bundle counts as checked, so nothing is set up or downloaded.
+        app.recognition_pick = None;
+        assert_eq!(app.recognition_model(), OcrModel::Cyrillic);
+        app.model_panel.update(cx, |panel, _| {
+            panel.ocr_installations.push(ocr::Installed {
+                config: crate::settings::OcrConfig {
+                    model: OcrModel::Cyrillic,
+                    ..Default::default()
+                },
+                models: "models".into(),
+                pdfium: "pdfium".into(),
+                onnx: "onnx".into(),
+            })
+        });
+        app.ocr_action(false, window, cx);
+        assert!(app.job.recognizing());
+        set_default_ocr(app, OcrModel::V6Small);
+        assert_eq!(app.recognition_model(), OcrModel::Cyrillic);
+    });
+    cx.run_until_parked();
+    // English setup claimed the shared state; Settings moves to Cyrillic
+    // before it finishes. The tab resumes with English and clears Installing.
+    app.update_in(cx, |app, window, cx| {
+        assert!(!app.job.busy());
+        app.recognition_pick = None;
+        app.ocr_state = OcrState::Installing;
+        app.ocr_setup = Some((OcrModel::V6Small, true));
+        app.job
+            .defer_for_setup(app.session.generation, "scan.pdf".into());
+        set_default_ocr(app, OcrModel::Cyrillic);
+        app.finish_ocr_setup(
+            Ok(ocr::Installed {
+                config: crate::settings::OcrConfig::default(),
+                models: "models".into(),
+                pdfium: "pdfium".into(),
+                onnx: "onnx".into(),
+            }),
+            window,
+            cx,
+        );
+        // The new Settings model's state comes from what Settings knows.
+        assert!(matches!(
+            &app.ocr_state,
+            OcrState::Ready(i) if i.config.model == OcrModel::Cyrillic
+        ));
+        assert!(app.job.recognizing(), "resumed with the captured model");
+    });
+    cx.run_until_parked();
+    app.update_in(cx, |app, _, _| {
+        assert!(!app.job.busy());
+        assert!(!app.ocr_state.busy());
+    });
+}
+
 #[gpui::test]
 fn ocr_runtime_failure_enables_setup_retry(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);

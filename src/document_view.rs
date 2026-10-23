@@ -125,6 +125,9 @@ pub(crate) struct DocumentView {
     pub(crate) recognition_pick: Option<recognition::Choice>,
     /// Keyboard input source languages; tests inject their own.
     pub(crate) input_languages: fn() -> Vec<recognition::Language>,
+    /// The model this tab is setting up, and whether it put the shared
+    /// `ocr_state` into Installing (it must replace that state on finish).
+    pub(crate) ocr_setup: Option<(settings::OcrModel, bool)>,
     pub(crate) markdown_search: Entity<markdown_search::SearchInput>,
     /// The Replace row's field; its text stays with the tab (ADR 0063).
     pub(crate) markdown_replace: Entity<markdown_search::SearchInput>,
@@ -302,6 +305,7 @@ impl DocumentView {
             recognition_signals: None,
             recognition_pick: None,
             input_languages: dependencies.input_languages,
+            ocr_setup: None,
             markdown_search,
             markdown_replace,
             search: search_session::SearchSession::default(),
@@ -430,8 +434,9 @@ impl DocumentView {
         });
     }
 
-    /// Pick recognition languages on the card. Picking the detected list
-    /// again restores its explanation.
+    /// Pick recognition languages on the card. The pick holds until the
+    /// document converts; picking the detected list again keeps its
+    /// explanation, frozen so a later Settings change cannot move it.
     pub(crate) fn pick_recognition(
         &mut self,
         languages: Vec<recognition::Language>,
@@ -440,10 +445,39 @@ impl DocumentView {
         if self.job.busy() || self.ocr_state.busy() {
             return;
         }
-        self.recognition_pick = (self.recognition_default().languages != languages)
-            .then(|| recognition::Choice::picked(languages));
+        let detected = self.recognition_default();
+        self.recognition_pick = Some(if detected.languages == languages {
+            detected
+        } else {
+            recognition::Choice::picked(languages)
+        });
         self.ocr_failure = None;
         cx.notify();
+    }
+
+    /// The shared state for the Settings model from what Settings already
+    /// knows. Never starts a check: that would take the model slot from a
+    /// run about to resume.
+    fn known_settings_ocr_state(&self, cx: &App) -> OcrState {
+        let Ok(config) = self.preferences.borrow().snapshot().map(|p| p.ocr) else {
+            return OcrState::Missing;
+        };
+        let panel = self.model_panel.read(cx);
+        if let Some(mut installed) = panel
+            .ocr_installations
+            .iter()
+            .find(|i| i.config.model == config.model)
+            .cloned()
+        {
+            installed.config = config;
+            return OcrState::Ready(installed);
+        }
+        match &panel.statuses[settings_ui::Panel::index(settings::Model::Ocr(config.model))] {
+            settings_ui::Status::Damaged(e) | settings_ui::Status::Unavailable(e) => {
+                OcrState::Failed(e.clone())
+            }
+            _ => OcrState::Missing,
+        }
     }
 
     /// A checked installation of `model`: the shared one for the Settings
@@ -658,6 +692,20 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.start_import_with(path, skip_ocr, allow_ocr, None, window, cx);
+    }
+
+    /// `ready` is the installation a finished setup checked, with the
+    /// configuration captured when it started.
+    fn start_import_with(
+        &mut self,
+        path: PathBuf,
+        skip_ocr: bool,
+        allow_ocr: bool,
+        ready: Option<ocr::Installed>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if allow_ocr && self.ocr_state.busy() {
             return;
         }
@@ -678,12 +726,15 @@ impl DocumentView {
         } else {
             None
         };
-        let installed = config.and_then(|config| {
-            self.installed_for(config.model, cx).map(|mut installed| {
-                installed.config = config;
-                installed
-            })
-        });
+        let installed = match ready {
+            Some(ready) if allow_ocr && !skip_ocr => Some(ready),
+            _ => config.and_then(|config| {
+                self.installed_for(config.model, cx).map(|mut installed| {
+                    installed.config = config;
+                    installed
+                })
+            }),
+        };
         if allow_ocr && installed.is_none() {
             self.error = Some(
                 "Selected OCR model is not ready. Open Settings to download or repair it.".into(),
@@ -814,6 +865,7 @@ impl DocumentView {
         };
         let shared = self.settings_ocr_model() == Some(config.model);
         self.ocr_failure = None;
+        self.ocr_setup = None;
         let panel = self.model_panel.clone();
         // The inline consent continuation remains document-owned. Settings downloads never create one.
         if self.job.has_ocr_continuation() {
@@ -842,6 +894,7 @@ impl DocumentView {
             panel.working == Some(settings::Model::Ocr(config.model))
         });
         if started {
+            self.ocr_setup = Some((config.model, shared));
             // Another model's setup shows only in this card's progress.
             if shared {
                 self.ocr_state = OcrState::Installing;
@@ -863,28 +916,34 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let (model, claimed) = self.ocr_setup.take().unwrap_or_else(|| {
+            let model = match &result {
+                Ok(installed) => installed.config.model,
+                Err(_) => self.recognition_model(),
+            };
+            (model, self.settings_ocr_model() == Some(model))
+        });
         // Only the Settings model's outcome is shared with every tab; the
-        // Settings panel keeps any other model's installation.
-        let settings_model = self.settings_ocr_model();
-        let shared = match &result {
-            Ok(installed) => settings_model == Some(installed.config.model),
-            Err(_) => settings_model == Some(self.recognition_model()),
-        };
+        // Settings panel keeps any other model's installation. Settings may
+        // have changed during setup: a tab that set the shared state to
+        // Installing replaces it either way.
+        let shared = self.settings_ocr_model() == Some(model);
+        match &result {
+            Ok(installed) if shared => self.ocr_state = OcrState::Ready(installed.clone()),
+            Err(error) if shared => self.ocr_state = OcrState::Failed(error.clone()),
+            Err(error) => self.ocr_failure = Some(error.clone()),
+            Ok(_) => {}
+        }
+        if claimed && !shared {
+            self.ocr_state = self.known_settings_ocr_state(cx);
+        }
         match result {
             Ok(installed) => {
-                if shared {
-                    self.ocr_state = OcrState::Ready(installed);
-                }
                 if let Some(path) = self.job.resume_after_setup(self.session.generation) {
-                    self.start_import_mode(path, false, window, cx);
+                    self.start_import_with(path, false, true, Some(installed), window, cx);
                 }
             }
-            Err(error) => {
-                if shared {
-                    self.ocr_state = OcrState::Failed(error);
-                } else {
-                    self.ocr_failure = Some(error);
-                }
+            Err(_) => {
                 self.job.finish();
                 if let Some(path) = self.job.resume_after_setup(self.session.generation) {
                     self.await_ocr(path, cx);
@@ -894,7 +953,7 @@ impl DocumentView {
         if !self.job.busy() {
             self.import_permit = None;
         }
-        if shared {
+        if shared || claimed {
             cx.emit(workspace::TabEvent::OcrState(self.ocr_state.clone()));
         }
         cx.emit(workspace::TabEvent::ImportState);
@@ -929,6 +988,11 @@ impl DocumentView {
             return;
         };
         self.automatic_import = false;
+        if !skip && self.recognition_pick.is_none() {
+            // Running OCR keeps this choice: a Settings change during
+            // setup or recognition no longer moves it.
+            self.recognition_pick = Some(self.recognition_default());
+        }
         if skip {
             self.start_import_mode(path, skip, window, cx);
         } else if self.installed_for(self.recognition_model(), cx).is_some() {

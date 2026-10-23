@@ -110,6 +110,11 @@ const MIN_LETTERS: usize = 3;
 /// Languages a text's letters suggest, most letters first. A few stray
 /// letters of a script are ignored.
 pub fn text_languages(text: &str) -> Vec<Language> {
+    letter_languages(text, MIN_LETTERS)
+}
+
+/// Languages with at least `min` letters in `text`, most letters first.
+fn letter_languages(text: &str, min: usize) -> Vec<Language> {
     let mut counts: Vec<(Language, usize)> = Vec::new();
     for language in text.chars().filter_map(Language::of_letter) {
         match counts.iter_mut().find(|(l, _)| *l == language) {
@@ -117,7 +122,7 @@ pub fn text_languages(text: &str) -> Vec<Language> {
             None => counts.push((language, 1)),
         }
     }
-    counts.retain(|(_, count)| *count >= MIN_LETTERS);
+    counts.retain(|(_, count)| *count >= min);
     counts.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
     counts.into_iter().map(|(l, _)| l).collect()
 }
@@ -153,7 +158,8 @@ pub fn detect(signals: &Signals, offered: &[&'static [Language]], fallback: &[La
         .unwrap_or_default();
     // Only scripts other than Latin say something in a file name: Latin
     // names are as often transliterated ("dogovor.pdf") as English.
-    let script: Vec<_> = text_languages(&stem)
+    // Any such letter counts: a file name is short ("РФ.pdf").
+    let script: Vec<_> = letter_languages(&stem, 1)
         .into_iter()
         .filter(|l| *l != ENGLISH)
         .collect();
@@ -408,6 +414,13 @@ mod tests {
             reason(&signals("", "договор аренды.pdf", &[])),
             "English & Russian: the file name is in Russian"
         );
+        for short in ["РФ.pdf", "Я scan.pdf"] {
+            assert_eq!(
+                reason(&signals("", short, &[])),
+                "English & Russian: the file name is in Russian",
+                "{short}"
+            );
+        }
         assert_eq!(
             reason(&signals("", "russian.pdf", &[])),
             "English & Russian: the file name mentions Russian"

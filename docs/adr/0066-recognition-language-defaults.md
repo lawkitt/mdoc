@@ -15,14 +15,15 @@ ADR 0065 requires the choice to be a list of languages, not an EN/RU switch.
 
 - **Per-document recognition languages.** The OCR card offers the lists the
   engine offers, one per PP-OCR bundle: *English*; *English & Russian*. A pick
-  holds for that document until it converts and is never saved. Settings'
-  resolution and confidence still apply.
+  holds for that document until it converts and is never saved; so does the
+  default once OCR is run, so a Settings change during setup or recognition
+  does not move it. Settings' resolution and confidence still apply.
 - **Default from the first signal that says anything**, document before
   computer:
   1. the PDF's text layer on the pages that need no OCR: Cyrillic letters
      suggest Russian, Latin letters English (three letters of a script or
      more; fewer are strays);
-  2. Cyrillic letters in the file name ("договор.pdf");
+  2. Cyrillic letters in the file name, any number ("договор.pdf", "РФ.pdf");
   3. a word in the file name naming a language ("russian", "ru", "english",
      "eng", "русский");
   4. a Russian keyboard input source on this computer (macOS Text Input
@@ -40,7 +41,9 @@ ADR 0065 requires the choice to be a list of languages, not an EN/RU switch.
   (ADR 0065).
 - **Only the Settings model's readiness is shared between tabs.** A document
   using another bundle shows that bundle's setup in its own card, and its
-  setup or run failures stay with it.
+  setup or run failures stay with it. A setup that marked the shared state
+  as installing always replaces it when it ends, even if Settings changed
+  meanwhile; it then resumes with the bundle it set up.
 
 ## Invariants
 
