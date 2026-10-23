@@ -206,15 +206,21 @@ pub struct Store {
 }
 impl Store {
     pub fn default_dir() -> Option<PathBuf> {
-        dirs::data_local_dir().map(|p| p.join("mdoc").join(key::folder()))
+        crate::app_paths::data_local_dir().map(|p| p.join("mdoc").join(key::folder()))
     }
     /// Open the store without any OS dialog: `None` when the key can only be
     /// read after the macOS password dialog (ADR 0043).
     pub fn open_quietly(dir: PathBuf) -> Result<Option<Self>, String> {
+        if crate::app_paths::isolated() {
+            return Err("OS case keys are disabled in headless renders".into());
+        }
         Ok(key::load_quietly(&dir)?.map(|key| Self::with_key(dir, &key)))
     }
     /// Open the store, creating the OS-held key on first use.
     pub fn open(dir: PathBuf) -> Result<Self, String> {
+        if crate::app_paths::isolated() {
+            return Err("OS case keys are disabled in headless renders".into());
+        }
         let key = key::load_or_create(&dir)?;
         Ok(Self::with_key(dir, &key))
     }

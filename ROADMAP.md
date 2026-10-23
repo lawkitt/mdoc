@@ -56,11 +56,10 @@ to the top of the next milestone. Items are in priority order.
    what it reads, so OS engines and more languages fit later.
    *Done when:* the Russian OCR fixture gets English & Russian by default and
    the English one stays English, with the choice explained on the card.
-3. **[Tests] Headless screen renders and Tab walk.** *From Panoply.* A dev-only
-   run renders every screen offscreen in light and dark, walks Tab and records
-   frame costs, so the RC run checks pictures instead of clicking through.
-   *Done when:* one command writes the renders and Tab order for Home, a
-   document, Review, Settings and the dialogs on both platforms.
+2. **[Tests] Windows headless screen renders and Tab walk.** *From Panoply.*
+   Add GPUI's offscreen DirectX adapter and enable the macOS recipe on Windows
+   ([follow-up](docs/development.md#headless-screen-renders-macos)).
+   *Done when:* the same render/Tab output test passes on Windows without a visible window.
 
 ## Later
 

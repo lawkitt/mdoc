@@ -144,7 +144,10 @@ impl Workspace {
         self.cases.test_may_ask = true;
         self.cases.test_open = Some(open);
     }
-    #[cfg(test)]
+    #[cfg(any(
+        test,
+        all(debug_assertions, feature = "headless-renders", target_os = "macos")
+    ))]
     pub(super) fn use_case_store(&mut self, store: Store) {
         self.cases.store = Some(Arc::new(store));
         self.cases.loaded = false;

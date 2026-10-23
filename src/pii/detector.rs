@@ -158,7 +158,7 @@ pub fn manifest_for(model: crate::settings::PiiModel) -> Manifest {
     serde_json::from_str(source).expect("pinned model manifest")
 }
 pub fn root_for(model: crate::settings::PiiModel) -> Result<PathBuf, String> {
-    dirs::data_local_dir()
+    crate::app_paths::data_local_dir()
         .map(|root| {
             root.join(format!(
                 "mdoc/pseudonymization/{}-{}",

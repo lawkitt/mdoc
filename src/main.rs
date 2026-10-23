@@ -3,6 +3,7 @@
     all(target_os = "windows", not(debug_assertions)),
     windows_subsystem = "windows"
 )]
+mod app_paths;
 mod cases;
 mod comment_panel;
 mod crash;
@@ -152,6 +153,22 @@ fn main() {
         std::env::set_var("GLINER2_DEVICE", "cpu");
     }
     let args = std::env::args_os().collect::<Vec<_>>();
+    if args.get(1).is_some_and(|arg| arg == "--headless-renders") {
+        #[cfg(all(debug_assertions, feature = "headless-renders", target_os = "macos"))]
+        {
+            let result = match args.as_slice() {
+                [_, _, out] => workspace::headless_renders::run(std::path::Path::new(out)),
+                _ => Err("usage: mdoc --headless-renders <new-output-directory>".into()),
+            };
+            match result {
+                Ok(()) => return,
+                Err(error) => eprintln!("headless renders failed: {error}"),
+            }
+        }
+        #[cfg(not(all(debug_assertions, feature = "headless-renders", target_os = "macos")))]
+        eprintln!("headless renders require a macOS dev build with --features headless-renders");
+        std::process::exit(1);
+    }
     if args.get(1).is_some_and(|arg| arg == "--mdoc-docx-worker") {
         let (Some(input), Some(output)) = (args.get(2), args.get(3)) else {
             eprintln!("missing DOCX worker input or output");

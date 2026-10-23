@@ -8,7 +8,7 @@ const ISSUES: &str = "https://github.com/lawkitt/mdoc/issues/new";
 const URL_BODY_LIMIT: usize = 6000;
 
 pub fn report_path() -> Option<PathBuf> {
-    dirs::data_local_dir().map(|dir| dir.join("mdoc/crash-report.txt"))
+    crate::app_paths::data_local_dir().map(|dir| dir.join("mdoc/crash-report.txt"))
 }
 
 /// The program file's modification time at launch: a different one at panic

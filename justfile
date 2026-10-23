@@ -28,11 +28,16 @@ deny:
 # Cargo.lock must match Cargo.toml (ADR 0053); then clippy with warnings as errors
 lint:
     cargo metadata --locked --format-version 1 > /dev/null
-    cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets --features headless-renders -- -D warnings
 
 # Workspace tests
 test:
-    cargo test --workspace
+    cargo test --workspace --features headless-renders
+
+# Offscreen macOS screen/Tab evidence in a new output directory (dev only)
+[positional-arguments]
+headless-renders out:
+    cargo run --locked --features headless-renders --bin mdoc -- --headless-renders "$1"
 
 # Ignored performance tests, serially; run on an idle machine
 perf:

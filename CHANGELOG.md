@@ -11,6 +11,12 @@ All notable changes to **mdoc** are documented here.
 - **DOCX previews keep words apart.** The local renderer now resolves theme
   fonts correctly, preserving word spacing in bold justified headings with tabs.
 
+- **Offscreen screen evidence on macOS.** `just headless-renders <directory>`
+  writes light/dark PNGs for Home, a document, Review, Settings and app dialogs,
+  plus actual Tab walks, focus-ring images and frame costs in JSON. Dev-only,
+  with a temporary profile and no visible window or activation. Windows's
+  headless DirectX adapter remains a follow-up.
+
 - **Small polish.** View › Toggle Sidebar has ⌃⌘S on macOS. Two tabs of the
   same name in one folder (a DOCX's conversion beside an `.md`) show their
   type, not the full path. The DOCX notice about equations, charts and

@@ -7,6 +7,9 @@ use std::{collections::VecDeque, time::Duration};
 
 #[path = "workspace_cases.rs"]
 mod cases_ui;
+#[cfg(all(debug_assertions, feature = "headless-renders", target_os = "macos"))]
+#[path = "headless_renders.rs"]
+pub(crate) mod headless_renders;
 #[path = "workspace_keychain.rs"]
 mod keychain_ui;
 #[path = "workspace_shell.rs"]
@@ -232,7 +235,7 @@ impl Workspace {
         this.session_path = if cfg!(test) {
             None
         } else {
-            dirs::data_local_dir().map(|path| path.join("mdoc/session.json"))
+            crate::app_paths::data_local_dir().map(|path| path.join("mdoc/session.json"))
         };
         let path = this.session_path.clone();
         let task = cx.background_executor().spawn(async move {

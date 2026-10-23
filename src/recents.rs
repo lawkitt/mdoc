@@ -24,7 +24,7 @@ fn store_path() -> Option<PathBuf> {
     if cfg!(test) {
         return None;
     }
-    dirs::data_local_dir().map(|path| path.join("mdoc/recents.json"))
+    crate::app_paths::data_local_dir().map(|path| path.join("mdoc/recents.json"))
 }
 
 fn now() -> u64 {

@@ -429,7 +429,7 @@ impl Store {
         let path = if cfg!(test) {
             None
         } else {
-            dirs::data_local_dir().map(|p| p.join("mdoc/settings.json"))
+            crate::app_paths::data_local_dir().map(|p| p.join("mdoc/settings.json"))
         };
         let loaded = match &path {
             Some(path) => load(path),

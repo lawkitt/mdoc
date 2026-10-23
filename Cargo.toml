@@ -14,6 +14,10 @@ exclude = ["vendor"]
 members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-history", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell"]
 resolver = "2"
 
+[features]
+# The entry point and runner are additionally gated by debug_assertions.
+headless-renders = ["gpui/test-support", "gpui_platform/test-support"]
+
 # Remove when an adopted GPUI release includes the combining-mark correction.
 # Preserve the current GPUI family; see vendor/gpui-pre-wgpu/ZORITE-PATCH.md.
 [patch.crates-io]

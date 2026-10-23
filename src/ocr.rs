@@ -146,7 +146,7 @@ pub(crate) fn onnx_runtime_pending() -> u64 {
 }
 
 pub(crate) fn root() -> Result<PathBuf, String> {
-    dirs::data_local_dir()
+    crate::app_paths::data_local_dir()
         .map(|path| path.join("mdoc/ocr/v1"))
         .ok_or_else(|| "Could not find local application storage for OCR.".into())
 }

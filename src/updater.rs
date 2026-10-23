@@ -611,7 +611,7 @@ fn updates_dir() -> Option<PathBuf> {
     if cfg!(test) {
         return None;
     }
-    dirs::cache_dir().map(|d| d.join("io.github.lawkitt.mdoc/updates"))
+    crate::app_paths::cache_dir().map(|d| d.join("io.github.lawkitt.mdoc/updates"))
 }
 
 /// Update facts that outlive a launch: the dismissed banner version and the
@@ -637,7 +637,7 @@ impl Record {
         if cfg!(test) {
             return None;
         }
-        dirs::data_local_dir().map(|d| d.join("mdoc/update.json"))
+        crate::app_paths::data_local_dir().map(|d| d.join("mdoc/update.json"))
     }
     fn load() -> Self {
         Self::path()
