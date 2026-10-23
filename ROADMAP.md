@@ -59,11 +59,6 @@ to the top of the next milestone. Items are in priority order.
    what it reads, so OS engines and more languages fit later.
    *Done when:* the Russian OCR fixture gets English & Russian by default and
    the English one stays English, with the choice explained on the card.
-2. **[Tests] Flaky `gpui-pdf` scrolling tests on Windows.** *From 2026-10-22.*
-   Four tests find no `pdf-source-name`/`pdf-page-tone` bounds under
-   `cargo test --workspace` (`lib.rs:2599`, `2616`, `2686`, `2719`) but pass
-   alone; likely the PDF loads on a real thread `run_until_parked` skips.
-   *Done when:* `cargo test --workspace` passes 3/3 on Windows.
 3. **[Tests] Headless screen renders and Tab walk.** *From Panoply.* A dev-only
    run renders every screen offscreen in light and dark, walks Tab and records
    frame costs, so the RC run checks pictures instead of clicking through.

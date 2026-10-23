@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Reliable PDF scrolling tests on Windows.** The tests carry their PDF fixture
+  with them, so cached binaries still work after a checkout moves. They wait for
+  the PDF to load and report load errors before checking toolbar and scroll bounds.
+
 - **Small polish.** View › Toggle Sidebar has ⌃⌘S on macOS. Two tabs of the
   same name in one folder (a DOCX's conversion beside an `.md`) show their
   type, not the full path. The DOCX notice about equations, charts and
