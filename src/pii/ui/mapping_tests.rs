@@ -1971,6 +1971,137 @@ fn draw_frames(cx: &mut gpui::VisualTestContext) {
     }
 }
 
+fn assert_popup_in_view(app: &Entity<DocumentView>, cx: &mut gpui::VisualTestContext) {
+    let popup = cx.debug_bounds("pseudonym-popup").unwrap();
+    app.read_with(cx, |app, cx| {
+        let view = app.scroll.bounds();
+        let word = app
+            .editor
+            .read(cx)
+            .annotation_bounds(app.active_annotation().unwrap())
+            .unwrap();
+        assert!(
+            word.top() >= view.top() && word.bottom() <= view.bottom(),
+            "word {word:?}, view {view:?}"
+        );
+        assert!(
+            popup.top() >= view.top() && popup.bottom() <= view.bottom(),
+            "popup {popup:?}, view {view:?}"
+        );
+        assert!(
+            popup.left() >= view.left() && popup.right() <= view.right(),
+            "popup {popup:?}, view {view:?}"
+        );
+    });
+}
+
+#[gpui::test]
+fn popup_visible_mentions_do_not_scroll_when_stepping_either_way(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1200.), px(800.)));
+    let filler = "An ordinary contract paragraph.\n\n".repeat(30);
+    let source = format!("{filler}Here Anna signs.\n\nAnna agrees.\n\n{filler}");
+    let ids = app.update(cx, |app, cx| seed_anna(app, &source, cx));
+    cx.run_until_parked();
+    draw_frames(cx);
+    // Start partway through the document, with both mentions already visible.
+    app.update(cx, |app, cx| {
+        let start = app.pii.review.candidate(ids[0]).unwrap().range.start;
+        let top = app.editor.read(cx).offset_screen_top(start).unwrap();
+        let mut offset = app.scroll.offset();
+        offset.y -= top - app.scroll.bounds().top();
+        app.scroll.set_offset(offset);
+    });
+    draw_frames(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.activate_annotation(ids[0], window, cx)
+    });
+    draw_frames(cx);
+    let before = app.read_with(cx, |app, _| app.scroll.offset());
+    assert_popup_in_view(&app, cx);
+    for (key, id) in [("right", ids[1]), ("left", ids[0])] {
+        press(key, cx);
+        draw_frames(cx);
+        app.read_with(cx, |app, _| {
+            assert_eq!(app.active_annotation(), Some(id));
+            assert_eq!(
+                app.scroll.offset(),
+                before,
+                "{key} must leave visible mentions in place"
+            );
+        });
+        assert_popup_in_view(&app, cx);
+    }
+}
+
+#[gpui::test]
+fn popup_enter_to_visible_proposal_does_not_scroll(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1200.), px(800.)));
+    let source = format!(
+        "Павлова М.С. · Павлова М.С.\n\nmarina@example.invalid\n\n{}",
+        "An ordinary contract paragraph.\n\n".repeat(30)
+    );
+    let (_, initials) = app.update(cx, |app, cx| seed(app, &source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 0, cx);
+    draw_frames(cx);
+    let before = app.read_with(cx, |app, _| app.scroll.offset());
+    press("enter", cx);
+    draw_frames(cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.pii.review.applied().len(), 2);
+        let range = app.active_replacement_range().unwrap();
+        assert_eq!(&app.editor.read(cx).text()[range], "marina@example.invalid");
+        assert_eq!(
+            app.scroll.offset(),
+            before,
+            "Enter must leave the visible next proposal in place"
+        );
+    });
+    assert_popup_in_view(&app, cx);
+}
+
+#[gpui::test]
+fn popup_offscreen_mention_scrolls_only_to_the_nearest_edge(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1200.), px(800.)));
+    let filler = "An ordinary contract paragraph.\n\n".repeat(30);
+    let source = format!("Here Anna signs.\n\n{filler}Anna agrees.\n\n{filler}");
+    let ids = app.update(cx, |app, cx| seed_anna(app, &source, cx));
+    cx.run_until_parked();
+    draw_frames(cx);
+    app.update_in(cx, |app, window, cx| {
+        app.activate_annotation(ids[0], window, cx)
+    });
+    draw_frames(cx);
+    app.read_with(cx, |app, cx| {
+        let range = app.pii.review.candidate(ids[1]).unwrap().range.clone();
+        assert!(
+            app.editor.read(cx).offset_screen_top(range.start).unwrap()
+                > app.scroll.bounds().bottom()
+        );
+    });
+    press("right", cx);
+    draw_frames(cx);
+    assert_popup_in_view(&app, cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.active_annotation(), Some(ids[1]));
+        let word = app.editor.read(cx).annotation_bounds(ids[1]).unwrap();
+        let expected_bottom = app.scroll.bounds().bottom();
+        // Off-screen geometry uses the containing row; painted text is inset.
+        assert!(word.bottom() <= expected_bottom
+                && expected_bottom - word.bottom() < app.editor.read(cx).base_line_height(),
+            "a target below the view should fit at its bottom: {word:?}, expected {expected_bottom:?}");
+    });
+    press("left", cx);
+    draw_frames(cx);
+    assert_popup_in_view(&app, cx);
+    app.read_with(cx, |app, _| {
+        assert_eq!(app.active_annotation(), Some(ids[0]))
+    });
+}
+
 #[gpui::test]
 fn popup_untick_stays_open_and_arrows_and_retick_follow_the_scope(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);

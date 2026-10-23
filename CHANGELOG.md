@@ -7,6 +7,11 @@ All notable changes to **mdoc** are documented here.
 - **Dependency security update.** `ctutils` 0.4.5 fixes non-constant-time
   comparisons (RUSTSEC-2026-0385) in the crypto crates behind case encryption.
 
+- **Replacement navigation keeps visible mentions in place.** Stepping through
+  mentions or applying a proposal with Enter no longer scrolls away from an
+  already-visible target. Off-screen mentions scroll just far enough to show
+  the mention and its popup.
+
 - **Reliable PDF scrolling tests on Windows.** The tests carry their PDF fixture
   with them, so cached binaries still work after a checkout moves. They wait for
   the PDF to load and report load errors before checking toolbar and scroll bounds.

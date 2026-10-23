@@ -968,16 +968,11 @@ impl DocumentView {
     ) {
         self.original_selected = false;
         self.editor.update(cx, |e, cx| e.set_cursor(offset, cx));
-        if let Some(top) = self.editor.read(cx).offset_screen_top(offset) {
-            let delta = top - self.scroll.bounds().top() - px(24.);
-            let mut scroll = self.scroll.offset();
-            scroll.y = (scroll.y - delta).clamp(-self.scroll.max_offset().y, px(0.));
-            self.scroll.set_offset(scroll);
-        }
         self.activate_annotation(annotation, window, cx);
         self.remember_active_replacement(cx);
         window.focus(&self.pii.focus, cx);
         let revision = self.editor.read(cx).revision();
+        self.reveal_popup_mention(annotation, offset, revision, cx);
         let weak = cx.entity().downgrade();
         window.on_next_frame(move |window, cx| {
             let _ = weak.update(cx, |this, cx| {
@@ -986,14 +981,73 @@ impl DocumentView {
                 {
                     return;
                 }
-                this.reveal_replacement_offset(offset, cx);
+                if this.compare.is_some() {
+                    this.reveal_in_compare(offset, cx);
+                } else {
+                    this.reveal_popup_mention(annotation, offset, revision, cx);
+                }
                 let weak = cx.entity().downgrade();
                 window.on_next_frame(move |_, cx| {
-                    let _ = weak.update(cx, |_, cx| cx.notify());
+                    let _ = weak.update(cx, |this, cx| {
+                        // Enter changed the text: the first frame paints its
+                        // new layout before we can fit the next proposal.
+                        this.reveal_popup_mention(annotation, offset, revision, cx);
+                        cx.notify();
+                    });
                 });
                 cx.notify();
             });
         });
+    }
+
+    /// Fit the mention and its bar on whichever side needs the least scroll.
+    fn reveal_popup_mention(&self, annotation: u64, offset: usize, revision: u64, cx: &App) {
+        let editor = self.editor.read(cx);
+        if editor.revision() != revision
+            || self.active_annotation() != Some(annotation)
+            || !matches!(self.pii.popup, Some(Popup::Selection))
+            || self.compare.is_some()
+        {
+            return;
+        }
+        let Some(anchor) = editor.local_annotation_bounds(annotation, offset) else {
+            // Unlike offset_screen_top, this rejects a layout from before an
+            // edit. Enter's rebased byte offset must use the new layout.
+            return;
+        };
+        let Some((layer, painted_scroll)) = self.pii.popup_layer.get() else {
+            return;
+        };
+        // Window-space coordinates from the last paint become stale as soon
+        // as we set the scroll offset. Use content coordinates, just as the
+        // popup does, so a second reveal cannot apply the same delta again.
+        let current = self.scroll.offset();
+        let origin = layer + (current - painted_scroll);
+        let top = origin.y + anchor.top();
+        let bottom = origin.y + anchor.bottom();
+        let view = self.scroll.bounds();
+        let gap = editor.base_line_height().max(px(12.)) * 1.25;
+        let bar = self.pii.popup_size.get().height;
+        let low = view.top();
+        let high = view.bottom();
+        // Valid shifts for placing the bar below / above, including the
+        // clear neighbouring line (ADR 0055). Zero wins when already visible.
+        let shift = [
+            (low - top, high - px(4.) - gap - bar - bottom),
+            (low + px(4.) + gap + bar - top, high - bottom),
+        ]
+        .into_iter()
+        .filter(|(min, max)| min <= max)
+        .map(|(min, max)| px(0.).clamp(min, max))
+        .min_by(|a, b| f32::from(*a).abs().total_cmp(&f32::from(*b).abs()))
+        // An unusually tall mention cannot fit with its bar: show its start.
+        .unwrap_or(low - top);
+        if shift != px(0.) {
+            self.scroll.set_offset(gpui::point(
+                current.x,
+                (current.y + shift).clamp(-self.scroll.max_offset().y, px(0.)),
+            ));
+        }
     }
 }
 
