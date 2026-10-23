@@ -4,6 +4,8 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+## [0.1.5] - 2026-10-23
+
 - **Tab moves between regions.** Tab past the toolbar now enters the editor
   instead of skipping it, and Tab from the Replacements panel's last control
   moves on to the next region instead of looping inside the panel. ⇧Tab from
