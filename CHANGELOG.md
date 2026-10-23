@@ -4,6 +4,8 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+## [0.1.3] - 2026-10-23
+
 - **Dependency security update.** `ctutils` 0.4.5 fixes non-constant-time
   comparisons (RUSTSEC-2026-0385) in the crypto crates behind case encryption.
 
