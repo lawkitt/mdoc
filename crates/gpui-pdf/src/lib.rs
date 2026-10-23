@@ -2577,6 +2577,31 @@ mod perf_tests;
 #[cfg(test)]
 mod scrolling_tests {
     use super::*;
+
+    fn reference_pdf() -> tempfile::NamedTempFile {
+        use std::io::Write;
+
+        // Cached test binaries can outlive their build checkout. Embed the fixture
+        // instead of reading from the build-time CARGO_MANIFEST_DIR at runtime.
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        file.write_all(include_bytes!("../../../tests/fixtures/reference.pdf"))
+            .unwrap();
+        file
+    }
+
+    async fn wait_for_load(view: &Entity<PdfView>, cx: &mut gpui::VisualTestContext) {
+        cx.condition(view, |view, _| {
+            assert!(
+                view.load_error().is_none(),
+                "PDF load failed: {:?}",
+                view.load_error()
+            );
+            assert!(!view.is_locked(), "reference PDF unexpectedly locked");
+            view.is_loaded()
+        })
+        .await;
+    }
+
     fn draw(cx: &mut gpui::VisualTestContext) {
         for _ in 0..3 {
             cx.update(|window, cx| {
@@ -2587,13 +2612,13 @@ mod scrolling_tests {
         }
     }
     #[gpui::test]
-    fn a_source_note_shows_beside_the_name(cx: &mut gpui::TestAppContext) {
-        let path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/reference.pdf");
+    async fn a_source_note_shows_beside_the_name(cx: &mut gpui::TestAppContext) {
+        let file = reference_pdf();
+        let path = file.path().to_path_buf();
         let (view, cx) = cx.add_window_view(|_, cx| {
             PdfView::new(path, Rc::new(PdfStyle::default), Rc::new(|| 1.), cx)
         });
-        cx.run_until_parked();
+        wait_for_load(&view, cx).await;
         cx.simulate_resize(gpui::size(px(900.), px(480.)));
         draw(cx);
         assert!(cx.debug_bounds("pdf-source-note").is_none());
@@ -2609,13 +2634,13 @@ mod scrolling_tests {
     }
 
     #[gpui::test]
-    fn narrow_toolbar_exposes_and_wraps_pdf_tools(cx: &mut gpui::TestAppContext) {
-        let path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/reference.pdf");
+    async fn narrow_toolbar_exposes_and_wraps_pdf_tools(cx: &mut gpui::TestAppContext) {
+        let file = reference_pdf();
+        let path = file.path().to_path_buf();
         let (view, cx) = cx.add_window_view(|_, cx| {
             PdfView::new(path, Rc::new(PdfStyle::default), Rc::new(|| 1.), cx)
         });
-        cx.run_until_parked();
+        wait_for_load(&view, cx).await;
         for width in [320., 440., 900.] {
             cx.simulate_resize(gpui::size(px(width), px(480.)));
             draw(cx);
@@ -2667,9 +2692,9 @@ mod scrolling_tests {
     }
 
     #[gpui::test]
-    fn page_tone_toggle_follows_style_and_rerenders(cx: &mut gpui::TestAppContext) {
-        let path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/reference.pdf");
+    async fn page_tone_toggle_follows_style_and_rerenders(cx: &mut gpui::TestAppContext) {
+        let file = reference_pdf();
+        let path = file.path().to_path_buf();
         let dark = Rc::new(std::cell::Cell::new(true));
         let style_dark = dark.clone();
         let (view, cx) = cx.add_window_view(move |_, cx| {
@@ -2684,6 +2709,7 @@ mod scrolling_tests {
             };
             PdfView::new(path, Rc::new(style), Rc::new(|| 1.), cx)
         });
+        wait_for_load(&view, cx).await;
         cx.simulate_resize(gpui::size(px(700.), px(600.)));
         draw(cx);
         let tone = |cx: &mut gpui::VisualTestContext| cx.update(|_, cx| view.read(cx).last_tone);
@@ -2709,14 +2735,15 @@ mod scrolling_tests {
     }
 
     #[gpui::test]
-    fn horizontal_gestures_thumb_and_page_navigation_preserve_geometry(
+    async fn horizontal_gestures_thumb_and_page_navigation_preserve_geometry(
         cx: &mut gpui::TestAppContext,
     ) {
-        let path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/reference.pdf");
+        let file = reference_pdf();
+        let path = file.path().to_path_buf();
         let (view, cx) = cx.add_window_view(|_, cx| {
             PdfView::new(path, Rc::new(PdfStyle::default), Rc::new(|| 1.), cx)
         });
+        wait_for_load(&view, cx).await;
         cx.simulate_resize(gpui::size(px(500.), px(600.)));
         cx.run_until_parked();
         view.update(cx, |view, cx| view.set_zoom(1.5, cx));
