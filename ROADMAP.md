@@ -112,6 +112,11 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[UI]** Headings as "Go to heading" results in the command palette. *From
   MiaoYan's table of contents.*
 - **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
+- **[A11y]** Home's Recents rows: a Tab stop and an accessible name and role
+  each; today Tab skips them and the accessibility tree omits them (ADR 0062).
+  *From the 0.2.0 dry run.*
+- **[A11y]** Keychain explainer: Continue stays a Tab stop after focus leaves
+  it; today Tab and ⇧Tab stay on Not now. *From the 0.2.0 dry run.*
 
 ## Ongoing tracks
 
