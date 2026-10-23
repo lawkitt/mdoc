@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-23 (latest: 0.1.2); accepted
+This roadmap lists open work as of 2026-10-23 (latest: 0.1.3); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
@@ -22,6 +22,10 @@ conversions, Save As and Recents, formatting next to spaces and lost focus
 ([CHANGELOG](CHANGELOG.md), [smoke run](docs/evidence/platform/2026-10-22/README.md)).
 0.1.2 (2026-10-22) adds Find and Replace, keyboard reach and dialog semantics
 for screen readers; its native checks are in the 0.2.0 acceptance run.
+0.1.3 (2026-10-23) keeps visible mentions in place while stepping through
+replacements (#102), keeps Quit available during model setup (#103), adds
+recognition-language choice on the OCR card and fixes a crypto dependency
+advisory.
 
 ## 0.1.x patches
 
@@ -63,6 +67,27 @@ to the top of the next milestone. Items are in priority order.
    Add GPUI's offscreen DirectX adapter and enable the macOS recipe on Windows
    ([follow-up](docs/development.md#headless-screen-renders-macos)).
    *Done when:* the same render/Tab output test passes on Windows without a visible window.
+2. **[A11y] Region-aware Tab.** *From ADR 0062; promoted at the 0.1.3 grooming.*
+   Tab from the toolbar's last control moves into the editor, and Tab from the
+   Replacements panel's last control moves on to the next region, instead of
+   following window order and the panel's own loop. F6 keeps working as it does today.
+   *Done when:* the headless Tab walk asserts both transitions in both sidebar
+   layouts, and ⇧Tab reverses them.
+3. **[UI] Expand/collapse all in the Replacements panel.** *Promoted at the
+   0.1.3 grooming.* A header toggle (a Tab stop with an accessible name) and
+   palette commands "Expand all identities" and "Collapse all identities".
+   *Done when:* both work by keyboard and pointer, and the toggle's label
+   follows the panel's state.
+4. **[UI] Headings as "Go to heading" results in the command palette.** *From
+   MiaoYan's table of contents.* The palette lists the document's headings,
+   and choosing one moves the caret there and scrolls it into view.
+   *Done when:* a test covers listing, filtering and jumping, and the
+   document's Undo history is unchanged.
+5. **[A11y] Contrast and type-ramp tests over the theme.** *From Panoply.*
+   Unit tests check WCAG 2.2 contrast for text and UI tokens in light and
+   dark, and that the type ramp is monotonic. Theme colors that fail are fixed
+   in the same item.
+   *Done when:* the tests pass in both themes, and any exemption is justified in an ADR.
 
 ## Later
 
@@ -82,8 +107,9 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[A11y]** Expose editor text to screen readers (AccessKit text role, ranges,
   caret and selection events); promote when a user asks or a buyer needs it
   for compliance.
-- **[UI]** Center and smoothly scroll to the selected mention.
-- **[UI]** Expand/collapse all in the Replacements panel.
+- **[UI]** Smooth scrolling to the selected mention, and maybe centering it;
+  whether to center is still open, and either way it must not undo #102's
+  keep-visible-in-place behavior.
 - **[PII]** Merge hint for identities that very likely name the same subject.
 - **[UI]** Settings redesign with a category list and one row per setting.
 - **[Cases]** Case page (documents, identities, rename, recolor, delete); ADR first.
@@ -96,15 +122,8 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   character when the row broke inside a word; today it stops one character
   short (ADR 0061). Table cells with wrapped text or
   `<br>` rows would then move by their own visual rows too.
-- **[A11y]** Region-aware Tab: Tab from the toolbar's last control into the
-  editor, and from the Replacements panel's last control on to the next region,
-  instead of window order and the panel's own loop; F6 covers both today (ADR 0062).
 - **[Tests]** CI smoke of the installed Windows package on a desktop runner,
   with screenshots. *From Panoply.*
-- **[A11y]** Contrast (WCAG 2.2) and type-ramp checks as unit tests over the
-  theme in light and dark. *From Panoply.*
-- **[UI]** Headings as "Go to heading" results in the command palette. *From
-  MiaoYan's table of contents.*
 - **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
 
 ## Ongoing tracks
