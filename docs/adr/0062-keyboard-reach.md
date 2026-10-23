@@ -22,9 +22,15 @@ H18).
   caret back. Regions follow what is drawn: in a narrow window only the
   shown pane of Markdown and Original takes part.
 - **Tab / ⇧Tab** move to the next / previous control in window order, with a
-  visible focus ring. The Replacements panel, the mention popup, menus and
-  dialogs keep Tab inside them; F6 is the way between regions. The editor is
-  entered with F6 or a click, and Tab indents there.
+  visible focus ring, across region edges. The document's notices strip
+  (with the narrow-window pane switch), the find bar and the view switcher
+  belong to the toolbar's region: Tab reaches them, Esc returns to the editor
+  from the strip and the switcher, and F6 remembers them. The editor is no Tab stop, but Tab does not skip it: Tab
+  past the toolbar region's last control enters the editor, and ⇧Tab from the
+  region after the editor returns to it. Tab and ⇧Tab indent and outdent
+  there; F6 leaves.
+  The mention popup, menus (including the Replacements panel's row and filter
+  menus) and dialogs keep Tab inside them.
 - **Menus and lists take focus.** Opening the More menu or the Open Case
   list moves focus into it, and Tab / ⇧Tab stay inside. Esc closes it and
   gives focus back: the More button, or where Open Case was chosen.
@@ -47,11 +53,13 @@ H18).
 - Every control is reachable and can be activated by keyboard alone on both
   platforms, without a screen reader or Full Keyboard Access.
 - Tests cover the F6 order with and without the optional regions, return to
-  the last focused control, and the sidebar list keys.
+  the last focused control, Tab across region edges in both sidebar layouts,
+  and the sidebar list keys.
 
 ## Consequences
 
 Checklist rows A4 and H18 drop the 0.1.0 exception and check F6 regions.
 
 Code: `Workspace::cycle_region` and `DocumentView::focus_regions`; tests in
-`workspace_tests.rs` (`f6_*`, `tab_from_home_*`, `sidebar_tab_list_*`).
+`workspace_tests.rs` (`f6_*`, `tab_from_home_*`, `tab_moves_between_regions_*`,
+`sidebar_tab_list_*`).

@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-23 (latest: 0.1.3); accepted
+This roadmap lists open work as of 2026-10-23 (latest: 0.1.4); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
@@ -25,7 +25,8 @@ for screen readers; its native checks are in the 0.2.0 acceptance run.
 0.1.3 (2026-10-23) keeps visible mentions in place while stepping through
 replacements (#102), keeps Quit available during model setup (#103), adds
 recognition-language choice on the OCR card and fixes a crypto dependency
-advisory.
+advisory. Its build was never published; 0.1.4 (same day) ships the same
+changes.
 
 ## 0.1.x patches
 
@@ -67,23 +68,17 @@ to the top of the next milestone. Items are in priority order.
    Add GPUI's offscreen DirectX adapter and enable the macOS recipe on Windows
    ([follow-up](docs/development.md#headless-screen-renders-macos)).
    *Done when:* the same render/Tab output test passes on Windows without a visible window.
-2. **[A11y] Region-aware Tab.** *From ADR 0062; promoted at the 0.1.3 grooming.*
-   Tab from the toolbar's last control moves into the editor, and Tab from the
-   Replacements panel's last control moves on to the next region, instead of
-   following window order and the panel's own loop. F6 keeps working as it does today.
-   *Done when:* the headless Tab walk asserts both transitions in both sidebar
-   layouts, and ⇧Tab reverses them.
-3. **[UI] Expand/collapse all in the Replacements panel.** *Promoted at the
+2. **[UI] Expand/collapse all in the Replacements panel.** *Promoted at the
    0.1.3 grooming.* A header toggle (a Tab stop with an accessible name) and
    palette commands "Expand all identities" and "Collapse all identities".
    *Done when:* both work by keyboard and pointer, and the toggle's label
    follows the panel's state.
-4. **[UI] Headings as "Go to heading" results in the command palette.** *From
+3. **[UI] Headings as "Go to heading" results in the command palette.** *From
    MiaoYan's table of contents.* The palette lists the document's headings,
    and choosing one moves the caret there and scrolls it into view.
    *Done when:* a test covers listing, filtering and jumping, and the
    document's Undo history is unchanged.
-5. **[A11y] Contrast and type-ramp tests over the theme.** *From Panoply.*
+4. **[A11y] Contrast and type-ramp tests over the theme.** *From Panoply.*
    Unit tests check WCAG 2.2 contrast for text and UI tokens in light and
    dark, and that the type ramp is monotonic. Theme colors that fail are fixed
    in the same item.

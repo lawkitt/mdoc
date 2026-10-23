@@ -4,6 +4,12 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Tab moves between regions.** Tab past the toolbar now enters the editor
+  instead of skipping it, and Tab from the Replacements panel's last control
+  moves on to the next region instead of looping inside the panel. ⇧Tab from
+  the panel returns to the editor. F6 is unchanged, and the editor still
+  takes Tab for Indent.
+
 ## [0.1.4] - 2026-10-23
 
 - **First published release with the 0.1.3 changes.** The 0.1.3 release build

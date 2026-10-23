@@ -38,6 +38,12 @@ pub(crate) struct DocumentView {
     /// F6 regions of the document (ADR 0062); the editor and the
     /// replacements panel bring their own handles.
     pub(crate) toolbar_region: gpui::FocusHandle,
+    /// Controls outside the toolbar that belong to its region: the notices
+    /// strip with the pane switch, and the view switcher (ADR 0062).
+    pub(crate) controls_region: gpui::FocusHandle,
+    pub(crate) switcher_region: gpui::FocusHandle,
+    /// The find bar, between the toolbar and the editor in Tab order.
+    pub(crate) find_region: gpui::FocusHandle,
     pub(crate) preview_region: gpui::FocusHandle,
     pub(crate) comments_region: gpui::FocusHandle,
     /// The toolbar's More button, which its menu returns focus to.
@@ -268,6 +274,9 @@ impl DocumentView {
         Self {
             focus: cx.focus_handle(),
             toolbar_region: cx.focus_handle(),
+            controls_region: cx.focus_handle(),
+            switcher_region: cx.focus_handle(),
+            find_region: cx.focus_handle(),
             preview_region: cx.focus_handle(),
             comments_region: cx.focus_handle(),
             more_focus: cx.focus_handle().tab_stop(true),
@@ -1689,6 +1698,16 @@ pub(crate) const ZOOM_STEP: f32 = 0.05;
 const READING_WIDTH: f32 = 760.;
 
 impl DocumentView {
+    /// Focus handles outside the toolbar whose controls count as the
+    /// toolbar's region (ADR 0062).
+    pub(crate) fn toolbar_members(&self) -> [&gpui::FocusHandle; 3] {
+        [
+            &self.controls_region,
+            &self.find_region,
+            &self.switcher_region,
+        ]
+    }
+
     /// The document's F6 regions in order, each with whether it is a single
     /// focus target (the editor) rather than a group of controls (ADR 0062).
     pub(crate) fn focus_regions(&self, cx: &App) -> Vec<(gpui::FocusHandle, bool)> {
@@ -1925,6 +1944,7 @@ impl Render for DocumentView {
         });
         let search_bar = div()
             .id("markdown-search-bar")
+            .track_focus(&self.find_region)
             .on_action(cx.listener(|this, action: &mdoc_editor::Undo, window, cx| {
                 this.editor
                     .update(cx, |editor, cx| editor.undo(action, window, cx))
@@ -2052,12 +2072,13 @@ impl Render for DocumentView {
                     cx.notify();
                 })))
             .when(!detached, |v| v.child(div().track_focus(&self.toolbar_region).key_context("ToolbarRegion").child(self.header(window, cx))))
+            .child(div().track_focus(&self.controls_region).key_context("ToolbarRegion").flex().flex_col().flex_shrink_0()
             .when(!self.source_only && self.job.busy(), |v| v.child(
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) || self.job.has_ocr_continuation() { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
             .children(import_notice).children(clipboard_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))
-            .when(narrow_preview, |v| v.child(self.pane_switch(cx)))
+            .when(narrow_preview, |v| v.child(self.pane_switch(cx))))
             .child(div().flex().flex_1().min_h_0()
                 .when(!self.source_only && show_markdown, |row| row.child(div().relative().flex().flex_1().min_w_0().h_full().flex().flex_col().text_size(px(16. * self.zoom))
                     .child({ let column = self.switcher.column.clone(); gpui::canvas(move |bounds, _, _| column.set(bounds), |_, _, _, _| {}).absolute().inset_0() })
@@ -2125,14 +2146,8 @@ impl Render for DocumentView {
             .size_full()
             .flex()
             .flex_col()
-            .on_action(
-                cx.listener(|_, _: &ui::NextControl, window, cx| {
-                    ui::cycle(window, cx, None, false)
-                }),
-            )
-            .on_action(cx.listener(|_, _: &ui::PreviousControl, window, cx| {
-                ui::cycle(window, cx, None, true)
-            }))
+            // Tab between controls is the workspace's: it knows the F6
+            // regions (ADR 0062).
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::toggle_theme))
             .on_action(cx.listener(|this, _: &TogglePreview, window, cx| {

@@ -3299,7 +3299,7 @@ impl Workspace {
             .iter()
             .find(|(r, _)| *r == region)
             .map(|(_, focus)| focus.clone())
-            .filter(|focus| *focus != region && region.contains(focus, window));
+            .filter(|focus| *focus != region && self.region_holds(&region, focus, window, cx));
         if single {
             window.focus(&region, cx);
         } else if let Some(last) = last {
@@ -3313,13 +3313,58 @@ impl Workspace {
         }
     }
 
+    /// The region holding focus. Comments sit inside the preview: the
+    /// innermost wins. The document's notices strip and view switcher count
+    /// as its toolbar.
+    fn region_index(
+        &self,
+        regions: &[(gpui::FocusHandle, bool)],
+        window: &Window,
+        cx: &App,
+    ) -> Option<usize> {
+        regions
+            .iter()
+            .rposition(|(region, _)| region.contains_focused(window, cx))
+            .or_else(|| {
+                let view = self.active_view().filter(|_| !self.showing_home(cx))?;
+                let view = view.read(cx);
+                view.toolbar_members()
+                    .iter()
+                    .any(|member| member.contains_focused(window, cx))
+                    .then(|| {
+                        regions
+                            .iter()
+                            .position(|(region, _)| *region == view.toolbar_region)
+                    })
+                    .flatten()
+            })
+    }
+
+    /// Whether `focus` sits in `region`, counting the document's toolbar
+    /// members as its toolbar.
+    fn region_holds(
+        &self,
+        region: &gpui::FocusHandle,
+        focus: &gpui::FocusHandle,
+        window: &Window,
+        cx: &App,
+    ) -> bool {
+        region.contains(focus, window)
+            || self.active_view().is_some_and(|view| {
+                let view = view.read(cx);
+                view.toolbar_region == *region
+                    && view
+                        .toolbar_members()
+                        .iter()
+                        .any(|member| member.contains(focus, window))
+            })
+    }
+
     /// Remember the focused control as its region's last; returns that
     /// region's index. Comments sit inside the preview: the innermost wins.
     fn note_region_focus(&mut self, window: &Window, cx: &App) -> Option<usize> {
         let regions = self.regions(cx);
-        let current = regions
-            .iter()
-            .rposition(|(region, _)| region.contains_focused(window, cx));
+        let current = self.region_index(&regions, window, cx);
         if let (Some(i), Some(focused)) = (current, window.focused(cx)) {
             let region = regions[i].0.clone();
             if focused != region {
@@ -3350,10 +3395,13 @@ impl Workspace {
         }
     }
 
-    /// Tab with no control focused. On Home it enters Home's controls;
-    /// elsewhere it moves through the window as before.
+    /// Tab / Shift+Tab outside the editor, menus and dialogs (ADR 0062).
+    /// With no control focused on Home it enters Home's controls. Otherwise
+    /// focus follows window order, except that the editor, which is no Tab
+    /// stop, is entered rather than skipped: Tab past the toolbar's last
+    /// control, and Shift+Tab back from the region after it.
     fn tab_from_window(&mut self, backwards: bool, window: &mut Window, cx: &mut App) {
-        self.note_region_focus(window, cx);
+        let from = self.note_region_focus(window, cx);
         if self.focus.is_focused(window) && self.showing_home(cx) {
             let home = self.home_region.clone();
             window.focus(&home, cx);
@@ -3363,7 +3411,32 @@ impl Workspace {
             }
             window.focus(&self.focus, cx);
         }
+        let regions = self.regions(cx);
         ui::cycle(window, cx, None, backwards);
+        if from.is_some_and(|i| regions[i].1) {
+            return;
+        }
+        let to = self.region_index(&regions, window, cx);
+        let n = regions.len();
+        let editor = match (from, to) {
+            (Some(i), Some(j)) if i == j => None,
+            // Leaving a region: the editor when it comes next in F6 order.
+            (Some(i), _) => {
+                let next = if backwards {
+                    (i + n - 1) % n
+                } else {
+                    (i + 1) % n
+                };
+                regions[next].1.then_some(next)
+            }
+            // From a control outside every region (the find bar), forward
+            // into the region right after the editor: the editor first.
+            (None, Some(j)) if !backwards && j > 0 && regions[j - 1].1 => Some(j - 1),
+            (None, _) => None,
+        };
+        if let Some(editor) = editor {
+            window.focus(&regions[editor].0, cx);
+        }
     }
 
     /// The tabs the expanded sidebar lists, in order: not Home's

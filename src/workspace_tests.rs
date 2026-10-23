@@ -5486,8 +5486,9 @@ fn f6_skips_the_hidden_pane_in_a_narrow_window(cx: &mut TestAppContext) {
     assert!(in_sidebar(&tabs, cx));
     key(cx, "shift-f6");
     assert!(cx.update(|window, cx| view.read(cx).preview_region.contains_focused(window, cx)));
+    // Back to the toolbar's region, on the pane switch clicked last.
     key(cx, "shift-f6");
-    assert!(in_toolbar(&tabs, cx));
+    assert!(cx.update(|window, cx| view.read(cx).controls_region.contains_focused(window, cx)));
 }
 
 #[gpui::test]
@@ -5540,4 +5541,162 @@ fn sidebar_case_actions_and_categories_work_without_a_pointer(cx: &mut TestAppCo
     );
     key(cx, "escape");
     assert!(in_sidebar(&tabs, cx));
+}
+
+/// Tab past the toolbar (and the view switcher, part of its region) enters
+/// the editor, and from the Replacements panel's last control moves on to the
+/// next region; Shift+Tab from a region's first control goes back (ADR 0062).
+/// Both sidebar layouts.
+#[gpui::test]
+fn tab_moves_between_regions_at_their_edges(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.editor
+            .update(cx, |e, cx| e.set_text("Anna wrote to Bob.", cx));
+        view.toggle_replacements_panel(window, cx);
+    });
+    cx.run_until_parked();
+    let in_panel = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| {
+            view.read(cx)
+                .replacements_focus()
+                .contains_focused(window, cx)
+        })
+    };
+    // Tab until focus leaves `inside`, with a bound against loops.
+    let tab_out = |cx: &mut VisualTestContext, inside: &dyn Fn(&mut VisualTestContext) -> bool| {
+        for _ in 0..60 {
+            key(cx, "tab");
+            if !inside(cx) {
+                return;
+            }
+        }
+        panic!("Tab never left the region");
+    };
+    for layout in ["expanded", "rail"] {
+        if layout == "rail" {
+            cx.dispatch_action(ToggleSidebar);
+            cx.run_until_parked();
+        }
+        tabs.update_in(cx, |tabs, window, cx| {
+            tabs.region_last.clear();
+            tabs.focus_active(window, cx);
+        });
+        draw(cx);
+        // Toolbar: Shift+Tab from its first control goes to the sidebar;
+        // Tab past its last control enters the editor.
+        key(cx, "shift-f6");
+        assert!(in_toolbar(&tabs, cx), "{layout}");
+        key(cx, "shift-tab");
+        assert!(
+            in_sidebar(&tabs, cx),
+            "{layout}: Shift+Tab from the toolbar"
+        );
+        tabs.update_in(cx, |tabs, _, _| tabs.region_last.clear());
+        key(cx, "f6");
+        assert!(in_toolbar(&tabs, cx), "{layout}");
+        // The view switcher counts as the toolbar's region.
+        let toolbar_or_switcher = |cx: &mut VisualTestContext| {
+            in_toolbar(&tabs, cx)
+                || cx
+                    .update(|window, cx| view.read(cx).switcher_region.contains_focused(window, cx))
+        };
+        let mut switcher = false;
+        for _ in 0..60 {
+            key(cx, "tab");
+            if !toolbar_or_switcher(cx) {
+                break;
+            }
+            switcher |= !in_toolbar(&tabs, cx);
+        }
+        assert!(switcher, "{layout}: Tab reaches the view switcher");
+        assert!(editor_focused(&tabs, cx), "{layout}: Tab past the toolbar");
+        // Panel: Shift+Tab from its first control returns to the editor;
+        // Tab past its last control moves on, wrapping to the sidebar.
+        tabs.update_in(cx, |tabs, _, _| tabs.region_last.clear());
+        key(cx, "f6");
+        assert!(in_panel(cx), "{layout}");
+        key(cx, "shift-tab");
+        assert!(
+            editor_focused(&tabs, cx),
+            "{layout}: Shift+Tab from the panel"
+        );
+        tabs.update_in(cx, |tabs, _, _| tabs.region_last.clear());
+        key(cx, "f6");
+        tab_out(cx, &in_panel);
+        assert!(in_sidebar(&tabs, cx), "{layout}: Tab past the panel");
+        // And back: Shift+Tab from the sidebar's first control.
+        tabs.update_in(cx, |tabs, window, cx| {
+            tabs.region_last.clear();
+            tabs.focus_active(window, cx);
+        });
+        key(cx, "shift-f6");
+        key(cx, "shift-f6");
+        assert!(in_sidebar(&tabs, cx), "{layout}");
+        key(cx, "shift-tab");
+        assert!(in_panel(cx), "{layout}: Shift+Tab from the sidebar");
+    }
+}
+
+/// The find bar and the view switcher belong to the toolbar's region: Tab
+/// from the header reaches them before the editor, Esc returns to the editor
+/// from them, and F6 comes back to the control last focused there (ADR 0062).
+#[gpui::test]
+fn toolbar_members_take_part_in_tab_esc_and_f6(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.editor
+            .update(cx, |e, cx| e.set_text("Anna wrote to Bob.", cx));
+        view.toggle_replacements_panel(window, cx);
+    });
+    cx.run_until_parked();
+    let member = |cx: &mut VisualTestContext, which: &str| {
+        cx.update(|window, cx| {
+            let view = view.read(cx);
+            match which {
+                "find" => view.find_region.contains_focused(window, cx),
+                _ => view.switcher_region.contains_focused(window, cx),
+            }
+        })
+    };
+    // Esc and F6 from a view switcher control.
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    draw(cx);
+    key(cx, "shift-f6");
+    for _ in 0..60 {
+        if member(cx, "switcher") {
+            break;
+        }
+        key(cx, "tab");
+    }
+    assert!(member(cx, "switcher"));
+    let control = cx.update(|window, cx| window.focused(cx));
+    key(cx, "escape");
+    assert!(editor_focused(&tabs, cx), "Esc from the view switcher");
+    key(cx, "shift-f6");
+    assert_eq!(cx.update(|window, cx| window.focused(cx)), control);
+    // With find open, Tab from the header passes through it first.
+    view.update_in(cx, |view, window, cx| {
+        view.open_markdown_search(true, window, cx)
+    });
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.region_last.clear();
+        tabs.focus_active(window, cx);
+    });
+    draw(cx);
+    key(cx, "shift-f6");
+    assert!(in_toolbar(&tabs, cx));
+    let mut found = false;
+    for _ in 0..60 {
+        key(cx, "tab");
+        found |= member(cx, "find");
+        if editor_focused(&tabs, cx) {
+            break;
+        }
+    }
+    assert!(found, "Tab reaches the find bar");
+    assert!(editor_focused(&tabs, cx), "and then the editor");
 }

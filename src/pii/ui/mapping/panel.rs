@@ -714,13 +714,21 @@ impl DocumentView {
                     .absolute()
                     .inset_0(),
             )
+            // An open row or filter menu keeps Tab inside the panel;
+            // otherwise Tab moves on to the next region (ADR 0062).
             .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                ui::cycle(window, cx, Some(&this.pii.mapping.focus), false);
-                cx.stop_propagation();
+                if this.pii.mapping.panel_menu.is_some() {
+                    ui::cycle(window, cx, Some(&this.pii.mapping.focus), false);
+                } else {
+                    cx.propagate();
+                }
             }))
             .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                ui::cycle(window, cx, Some(&this.pii.mapping.focus), true);
-                cx.stop_propagation();
+                if this.pii.mapping.panel_menu.is_some() {
+                    ui::cycle(window, cx, Some(&this.pii.mapping.focus), true);
+                } else {
+                    cx.propagate();
+                }
             }))
             .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
                 // An open row or filter menu closes before the panel (#92).

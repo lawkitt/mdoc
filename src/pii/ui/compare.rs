@@ -330,6 +330,8 @@ impl DocumentView {
                 .child(
                     div()
                         .id("view-switcher")
+                        .track_focus(&self.switcher_region)
+                        .key_context("ToolbarRegion")
                         .when(cfg!(test), |v| v.debug_selector(|| "view-switcher".into()))
                         .role(gpui::Role::Group)
                         .aria_label("View")
