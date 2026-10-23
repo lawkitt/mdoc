@@ -729,10 +729,7 @@ mod tests {
         // Second setup verifies a complete installation without network recovery.
         let ready = validate(dir.path()).unwrap();
         assert_eq!(installed.models, ready.models);
-        assert_eq!(
-            pending_in(Some(dir.path()), OcrModel::Cyrillic),
-            Default::default()
-        );
+        assert_eq!(pending_in(Some(dir.path()), OcrModel::Cyrillic).total(), 0);
         for language in ["english", "russian"] {
             let base =
                 Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ocr-qualification");
