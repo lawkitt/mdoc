@@ -4,6 +4,9 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Dependency security update.** `ctutils` 0.4.5 fixes non-constant-time
+  comparisons (RUSTSEC-2026-0385) in the crypto crates behind case encryption.
+
 - **Reliable PDF scrolling tests on Windows.** The tests carry their PDF fixture
   with them, so cached binaries still work after a checkout moves. They wait for
   the PDF to load and report load errors before checking toolbar and scroll bounds.
