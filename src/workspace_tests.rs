@@ -22,6 +22,7 @@ fn boot_home(
 ) -> (Entity<Workspace>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
+    cx.update(bind_app_actions);
     // Sidebar animations settle at once; timers still need the clock.
     cx.update(|cx| cx.set_reduce_motion(true));
     cx.update(markdown_search::bind_keys);
@@ -223,6 +224,214 @@ fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
     second.update_in(cx, |view, window, cx| view.import(&Import, window, cx));
     cx.run_until_parked();
     cx.update(|_, cx| assert!(second.read(cx).editor.read(cx).text().contains("pears")));
+}
+
+/// Set up the real card with a synthetic running transfer: no model/network access.
+fn setup_download_card(
+    cx: &mut TestAppContext,
+    model: settings::Model,
+) -> (
+    Entity<Workspace>,
+    &'static str,
+    &'static str,
+    &mut VisualTestContext,
+) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.update(|_, cx| bind_app_keys(cx));
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let view = active(&tabs, cx);
+    let (primary, cancel) = match model {
+        settings::Model::Ocr(_) => {
+            view.update(cx, |view, cx| {
+                view.source_only = true;
+                view.conversion_source = Some("scan.pdf".into());
+                view.ocr_required = Some(vec![1]);
+                view.ocr_state = OcrState::Missing;
+                cx.notify();
+            });
+            ("Download & recognize", "cancel-ocr-setup")
+        }
+        settings::Model::Pii(_) => {
+            cx.simulate_input("Alice needs review");
+            cx.dispatch_action(Pseudonymize);
+            cx.run_until_parked();
+            ("pii-setup-primary", "cancel-pii-setup")
+        }
+    };
+    draw(cx);
+    assert!(cx.debug_bounds(primary).is_some());
+    (tabs, primary, cancel, cx)
+}
+
+fn download_retains_card_focus(cx: &mut TestAppContext, model: settings::Model) {
+    let (tabs, primary, cancel, cx) = setup_download_card(cx, model);
+    // Mouse-down focuses Download without invoking its network-backed click.
+    let position = cx.debug_bounds(primary).unwrap().center();
+    cx.simulate_mouse_down(position, gpui::MouseButton::Left, Default::default());
+    draw(cx);
+    let before = cx.update(|window, cx| window.focused(cx).expect("Download takes focus"));
+    let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
+    panel.update(cx, |panel, cx| panel.simulate_setup(model, cx));
+    draw(cx);
+    assert!(cx.debug_bounds(primary).is_none());
+    assert!(cx.debug_bounds(cancel).is_some());
+    cx.update(|window, cx| {
+        assert_eq!(
+            window.focused(cx),
+            Some(before),
+            "Cancel retains Download's focus"
+        );
+    });
+    // The retained focus is on Cancel: keyboard activation cancels setup.
+    activate_control(cx);
+    cx.update(|_, cx| assert!(panel.read(cx).cancelling()));
+}
+
+#[gpui::test]
+fn ocr_download_retains_card_focus(cx: &mut TestAppContext) {
+    download_retains_card_focus(cx, settings::Model::Ocr(settings::OcrModel::V6Small));
+}
+
+#[gpui::test]
+fn pii_download_retains_card_focus(cx: &mut TestAppContext) {
+    download_retains_card_focus(cx, settings::Model::Pii(settings::PiiModel::Fp16));
+}
+
+fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
+    let (tabs, _, cancel, cx) = setup_download_card(cx, model);
+    // A separate dirty tab must still get the normal unsaved-changes prompt.
+    let setup_tab = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.simulate_input("Unsaved draft");
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(setup_tab, window, cx));
+    let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
+    let progress = panel.update(cx, |panel, cx| panel.simulate_setup(model, cx));
+    draw(cx);
+    assert!(cx.debug_bounds(cancel).is_some());
+    // Routing must work independently of focus repair (including menu validation).
+    cx.update(|window, cx| window.blur(cx));
+    draw(cx);
+    assert!(
+        cx.update(|_, cx| cx.is_action_available(&Quit)),
+        "Quit menu stays enabled"
+    );
+    cx.dispatch_action(Quit);
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| tabs.read(cx).quitting.is_some()));
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(tabs.read(cx).quitting.is_none());
+        assert!(!progress.cancel.load(Ordering::Relaxed));
+    });
+    let dirty = cx.update(|_, cx| {
+        tabs.read(cx)
+            .tabs
+            .iter()
+            .filter(|tab| {
+                tab.view
+                    .as_ref()
+                    .is_some_and(|view| view.read(cx).dirty(cx))
+            })
+            .count()
+    });
+    // The keyboard path also works without focus; Discard completes shutdown.
+    cx.update(|window, cx| window.blur(cx));
+    draw(cx);
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-q"
+    } else {
+        "ctrl-q"
+    });
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| tabs.read(cx).quitting.is_some()));
+    for _ in 0..dirty {
+        cx.simulate_prompt_answer("Discard");
+        cx.run_until_parked();
+    }
+    assert!(progress.cancel.load(Ordering::Relaxed));
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+}
+
+#[gpui::test]
+fn ocr_quit_during_setup_download(cx: &mut TestAppContext) {
+    quit_during_setup_download(cx, settings::Model::Ocr(settings::OcrModel::V6Small));
+}
+
+#[gpui::test]
+fn pii_quit_during_setup_download(cx: &mut TestAppContext) {
+    quit_during_setup_download(cx, settings::Model::Pii(settings::PiiModel::Fp16));
+}
+
+#[gpui::test]
+fn app_commands_work_without_control_focus(cx: &mut TestAppContext) {
+    use gpui::Action;
+    let (tabs, cx) = boot_home(cx, Session::default());
+    draw(cx);
+    cx.update(|window, cx| window.blur(cx));
+    draw(cx);
+    for action in [
+        Quit.boxed_clone(),
+        Settings.boxed_clone(),
+        crate::menus::About.boxed_clone(),
+        New.boxed_clone(),
+        Open.boxed_clone(),
+        OpenCase.boxed_clone(),
+        ToggleTheme.boxed_clone(),
+        ToggleSidebar.boxed_clone(),
+    ] {
+        assert!(cx.update(|_, cx| cx.is_action_available(action.as_ref())));
+    }
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.len(), 1));
+    cx.update(|window, cx| window.blur(cx));
+    draw(cx);
+    cx.dispatch_action(Settings);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(tabs.read(cx).settings.read(cx).open));
+}
+
+#[gpui::test]
+fn app_commands_preserve_confirmation_focus(cx: &mut TestAppContext) {
+    use gpui::Action;
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, cx| tabs.install_prompts(cx));
+    let _answer = cx.update(|window, cx| {
+        window.prompt(
+            gpui::PromptLevel::Warning,
+            "Keep this confirmation focused",
+            None,
+            &["Continue", "Cancel"],
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let focus = cx.update(|window, cx| window.focused(cx).unwrap());
+    for action in [
+        Quit.boxed_clone(),
+        Settings.boxed_clone(),
+        crate::menus::About.boxed_clone(),
+        New.boxed_clone(),
+        Open.boxed_clone(),
+        OpenCase.boxed_clone(),
+        ToggleTheme.boxed_clone(),
+        ToggleSidebar.boxed_clone(),
+    ] {
+        cx.update(|window, cx| window.dispatch_action(action, cx));
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|window, cx| {
+            assert!(window.has_active_prompt());
+            assert_eq!(window.focused(cx), Some(focus.clone()));
+            assert_eq!(tabs.read(cx).tabs.len(), 1);
+            assert!(!tabs.read(cx).settings.read(cx).open);
+        });
+    }
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.update(|window, _| assert!(!window.has_active_prompt()));
 }
 
 #[gpui::test]
@@ -1735,6 +1944,7 @@ fn production_shell_queues_startup_opens_and_close_hook_keeps_dirty_tabs(cx: &mu
     let path = dir.path().join("startup.md");
     std::fs::write(&path, "startup").unwrap();
     cx.update(mdoc_editor::bind_keys);
+    cx.update(bind_app_actions);
     let (tabs, cx) = cx.add_window_view(|window, cx| {
         let mut tabs = Workspace::new(window, cx);
         tabs.open_path(path, window, cx);

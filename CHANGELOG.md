@@ -12,6 +12,11 @@ All notable changes to **mdoc** are documented here.
   already-visible target. Off-screen mentions scroll just far enough to show
   the mention and its popup.
 
+- **Quit works during model setup.** Quit and app-level commands stay available
+  without keyboard focus. Both the pseudonymization and OCR cards keep focus on
+  Cancel when Download becomes progress. Quit still asks about unsaved documents
+  and cancels setup after those prompts are resolved (fixes #103).
+
 - **Reliable PDF scrolling tests on Windows.** The tests carry their PDF fixture
   with them, so cached binaries still work after a checkout moves. They wait for
   the PDF to load and report load errors before checking toolbar and scroll bounds.

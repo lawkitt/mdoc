@@ -5,6 +5,7 @@ use gpui::{TestAppContext, VisualTestContext};
 pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
+    cx.update(workspace::bind_app_actions);
     cx.update(markdown_search::bind_keys);
     cx.update(pii::ui::bind_keys);
     cx.update(settings_ui::bind_keys);

@@ -426,6 +426,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             ui::bind_keys(cx);
             bind_markdown_search_keys(cx);
             bind_app_keys(cx);
+            bind_app_actions(cx);
             cx.bind_keys([KeyBinding::new(
                 "escape",
                 comparison_ui::CloseComparison,

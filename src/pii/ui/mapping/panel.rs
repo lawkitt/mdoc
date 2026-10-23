@@ -370,6 +370,7 @@ impl DocumentView {
             .child(
                 ui::card_actions().child(
                     settings_ui::control("cancel-pii-setup", "Cancel", theme, !cancelling)
+                        .track_focus(&self.card_focus)
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "cancel-pii-setup".into())
                         })
@@ -393,6 +394,7 @@ impl DocumentView {
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "pii-setup-primary".into())
                             })
+                            .track_focus(&self.card_focus)
                             .on_click(cx.listener(
                                 move |this, _, window, cx| {
                                     if !needs_setup {
