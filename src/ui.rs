@@ -588,6 +588,8 @@ pub enum Icon {
     Source,
     ChevronRight,
     ChevronDown,
+    ExpandAll,
+    CollapseAll,
     Plus,
     Reply,
     ThemeSystem,
@@ -618,6 +620,8 @@ impl Icon {
             Self::Source => include_bytes!("../resources/ui/source.svg"),
             Self::ChevronRight => include_bytes!("../resources/ui/chevron-right.svg"),
             Self::ChevronDown => include_bytes!("../resources/ui/chevron-down.svg"),
+            Self::ExpandAll => include_bytes!("../resources/ui/expand-all.svg"),
+            Self::CollapseAll => include_bytes!("../resources/ui/collapse-all.svg"),
             Self::Plus => include_bytes!("../resources/ui/plus.svg"),
             Self::Reply => include_bytes!("../resources/ui/reply.svg"),
             Self::ThemeSystem => include_bytes!("../resources/ui/theme-system.svg"),
@@ -702,8 +706,8 @@ pub fn notice_bell(title: &crate::style::TitleBar, theme: Theme) -> Option<AnyEl
                     .px(px(3.))
                     .rounded_full()
                     .bg(amber)
-                    .text_color(gpui::white())
-                    .text_size(px(9.))
+                    .text_color(theme.badge_fg())
+                    .text_size(px(10.))
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .flex()
                     .items_center()

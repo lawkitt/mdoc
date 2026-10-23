@@ -1164,7 +1164,12 @@ impl DocumentView {
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "cancel-ocr-setup".into())
                         })
-                        .track_focus(&self.card_focus)
+                        .track_focus(
+                            &self
+                                .card_focus
+                                .clone()
+                                .tab_stop(progress.is_some() && !cancelling),
+                        )
                         .on_click(cx.listener(|this, _, _, cx| {
                             this.model_panel
                                 .update(cx, |panel, cx| panel.cancel_setup(cx))
@@ -1271,7 +1276,7 @@ impl DocumentView {
                 ui::card_actions()
                     .child(
                         ui::primary_button("run-ocr", primary, theme, !disabled)
-                            .track_focus(&self.card_focus)
+                            .track_focus(&self.card_focus.clone().tab_stop(!disabled))
                             .when(cfg!(test), move |v| {
                                 v.debug_selector(move || primary.into())
                             })
@@ -2150,6 +2155,18 @@ impl Render for DocumentView {
             // regions (ADR 0062).
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::toggle_theme))
+            .on_action(cx.listener(|this, _: &crate::ExpandAllIdentities, _, cx| {
+                if this.replacements_open() {
+                    this.set_all_identities_expanded(true, cx)
+                }
+            }))
+            .on_action(
+                cx.listener(|this, _: &crate::CollapseAllIdentities, _, cx| {
+                    if this.replacements_open() {
+                        this.set_all_identities_expanded(false, cx)
+                    }
+                }),
+            )
             .on_action(cx.listener(|this, _: &TogglePreview, window, cx| {
                 if this.compare.is_none() {
                     this.toggle_preview(window, cx)

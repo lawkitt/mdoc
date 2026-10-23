@@ -338,7 +338,8 @@ impl Workspace {
             panel_toggle_focus: cx.focus_handle().tab_stop(true),
             panel_new_focus: cx.focus_handle().tab_stop(true),
             menu_focus: cx.focus_handle(),
-            explainer_focus: cx.focus_handle(),
+            // Continue's own handle, so it must say it is a Tab stop.
+            explainer_focus: cx.focus_handle().tab_stop(true),
             explainer_focus_pending: false,
             explainer_group: cx.focus_handle(),
             explainer_return: None,
@@ -2272,7 +2273,7 @@ impl Workspace {
                         .cursor_pointer()
                         .child(
                             div()
-                                .text_size(px(9.))
+                                .text_size(px(10.))
                                 .text_color(palette.header_muted)
                                 .flex_shrink_0()
                                 .child(format),

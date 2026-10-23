@@ -190,7 +190,7 @@ fn preview_frame(theme: Theme, t: f32) -> gpui::Div {
                         )
                         .child(
                             div()
-                                .text_size(px(10.5))
+                                .text_size(px(10.5)) // type-ramp: illustration
                                 .text_color(c.secondary)
                                 .child("To allow this, enter the “login” keychain password."),
                         )
@@ -221,7 +221,7 @@ fn preview_frame(theme: Theme, t: f32) -> gpui::Div {
                                             spread_radius: px(2.5),
                                             inset: false,
                                         }])
-                                        .text_size(px(9.))
+                                        .text_size(px(9.)) // type-ramp: illustration
                                         .child("●".repeat(dots))
                                         .when(caret, |v| {
                                             v.child(

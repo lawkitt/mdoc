@@ -47,6 +47,11 @@ H18).
   to detect. That list takes focus, keeps Tab inside, and Esc or Close returns
   to the sidebar row that opened the menu.
 - **Home:** Tab from Home reaches its controls (Open files, Recents and so on).
+  Each Cases and Recents row is a Tab stop with the button role and a name
+  (file, folder, pseudonymized, when opened); Enter or Space opens it.
+- **Focus handles on buttons** that a control tracks itself (Keychain
+  Continue, the setup cards' buttons) are marked as Tab stops, or Tab skips
+  them once focus leaves them.
 
 ## Invariants
 

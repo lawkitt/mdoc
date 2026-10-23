@@ -19,6 +19,9 @@ menu hid Rescan, and decisions needed the popup or the mouse.
 - **Scan state** is shown in one place (ADR 0032); the panel keeps its list and
   shows quiet empty states.
 - **Groups** expand independently of selection; a header click only toggles.
+  A toggle beside the filter expands or collapses every listed group; its
+  name ("Expand all identities" / "Collapse all identities") follows the
+  state, and collapsing moves a mention cursor to its group's row.
   Colour appears only on alias and state text.
 - **Keyboard**: ↑/↓ rows, ⌘↑/↓ first/last. Enter outside the alias field
   applies this mention as one undo step; in the alias field Enter only confirms

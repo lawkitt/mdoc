@@ -44,8 +44,11 @@ step, but as a one-document wizard that hides editing.
    a quiet Share; Copy on a restored reply tab. ⋯ holds Save, Save as, Copy
    Markdown, Copy for AI, Paste AI reply…, Spelling, Rescan, case actions and
    Close tab, all also in the palette and the menu bar. No stepper.
-4. **Command palette ⌘K**: actions, Go to (tabs, cases, Settings), Recent
-   files. ⌘F stays find-in-document.
+4. **Command palette ⌘K**: actions, Go to (tabs, cases, Settings), Go to
+   heading (the active document's ATX headings outside code fences: the caret
+   moves to the heading's line and scrolls into view, Undo is untouched),
+   Recent files. With the Replacements panel open, Expand / Collapse all
+   identities. ⌘F stays find-in-document.
 5. **Home**: shown with no tab open and from the sidebar: greeting, drop zone (a
    drag anywhere over the window activates it: solid accent border, lifted
    illustration, "Drop N files"), Open files… ⌘O, Paste text, Restore AI reply,

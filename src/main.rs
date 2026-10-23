@@ -110,6 +110,8 @@ actions!(
         PanelOpen,
         PanelExpand,
         PanelCollapse,
+        ExpandAllIdentities,
+        CollapseAllIdentities,
         PanelKeep,
         ApplyThis,
         ApplySame,

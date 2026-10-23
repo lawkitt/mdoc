@@ -109,9 +109,11 @@ impl Theme {
                 bg: rgb(0xfafaf9).into(),
                 border: rgb(0xdcdce0).into(),
                 placeholder_bg: rgb(0xececef).into(),
-                placeholder_fg: rgb(0x666670).into(),
+                // 4.5:1 or more on every light ground, the selected
+                // sidebar row included (ADR 0067).
+                placeholder_fg: rgb(0x5f5f69).into(),
                 header_fg: rgb(0x24242b).into(),
-                header_muted: rgb(0x666670).into(),
+                header_muted: rgb(0x5f5f69).into(),
                 overlays: PageOverlays::default(),
                 themed_pages: None,
             },
@@ -149,7 +151,17 @@ impl Theme {
     pub fn applied(self) -> Hsla {
         match self {
             Self::Dark => rgb(0x6aa7f5),
-            Self::Light => rgb(0x2f6bd0),
+            Self::Light => rgb(0x2a62c0),
+        }
+        .into()
+    }
+
+    /// Applied alias text on its own blue tint in the editor: a stronger
+    /// shade of [`Self::applied`], 4.5:1 even on the active tint (ADR 0067).
+    pub fn applied_text(self) -> Hsla {
+        match self {
+            Self::Dark => rgb(0x9cc6fa),
+            Self::Light => rgb(0x1c4a94),
         }
         .into()
     }
@@ -198,8 +210,9 @@ impl Theme {
             Other => (0.0, 0.0),
         };
         match self {
-            Self::Dark => hsla(hue, sat, 0.66, 1.),
-            Self::Light => hsla(hue, sat, 0.42, 1.),
+            // Mention words and aliases are drawn in it: 4.5:1 (ADR 0067).
+            Self::Dark => hsla(hue, sat, 0.70, 1.),
+            Self::Light => hsla(hue, sat, 0.32, 1.),
         }
     }
 
@@ -210,6 +223,17 @@ impl Theme {
             Self::Light => rgb(0xdfdfdc),
         }
         .into()
+    }
+}
+
+impl Theme {
+    /// Text on the notices bell's amber badge: dark on the dark theme's
+    /// lighter amber, white on the light theme's deeper one (ADR 0067).
+    pub fn badge_fg(self) -> Hsla {
+        match self {
+            Self::Dark => rgb(0x1e1e22).into(),
+            Self::Light => gpui::white(),
+        }
     }
 }
 
@@ -232,7 +256,7 @@ pub fn markdown_style(theme: Theme) -> SyntaxStyle {
         popover_fg: hsla(0., 0., 0.9, 1.),           // menu text
         popover_hover: hsla(0.58, 0.75, 0.66, 0.16), // soft accent tint
         popover_divider: hsla(0., 0., 1., 0.18),     // group divider
-        popover_danger: gpui::rgb(0xE5484D).into(),  // destructive rows
+        popover_danger: gpui::rgb(0xF47C7F).into(),  // destructive rows
         mono: font("Menlo"),
     };
     if theme == Theme::Light {
@@ -325,5 +349,220 @@ pub fn tooltip(
             theme,
         })
         .into()
+    }
+}
+
+/// WCAG 2.2 contrast over the theme in light and dark (ADR 0067): text at
+/// 4.5:1 on the grounds it is drawn on (1.4.3), the marks a control needs
+/// to be seen at 3:1 (1.4.11). Alpha colors are blended onto their ground.
+#[cfg(test)]
+mod contrast_tests {
+    use super::*;
+    use mdoc_pii::Category;
+
+    /// The UI's text sizes in px, smallest first. Every `text_size(px(…))`
+    /// in the app is one of these steps.
+    const TYPE_RAMP: [f32; 9] = [10., 11., 12., 13., 14., 15., 16., 18., 26.];
+
+    /// A colour's name, the colour and the grounds it is drawn on.
+    type Pair<'a> = (&'a str, Hsla, &'a [(&'a str, Hsla)]);
+
+    fn luminance(color: Hsla, ground: Hsla) -> f32 {
+        let (c, g) = (gpui::Rgba::from(color), gpui::Rgba::from(ground));
+        let channel = |c: f32, g: f32| {
+            let v = c * color.a + g * (1. - color.a);
+            if v <= 0.04045 {
+                v / 12.92
+            } else {
+                ((v + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * channel(c.r, g.r) + 0.7152 * channel(c.g, g.g) + 0.0722 * channel(c.b, g.b)
+    }
+
+    /// `color` painted over an opaque `ground`, as one opaque colour.
+    fn over(color: Hsla, ground: Hsla) -> Hsla {
+        let (c, g) = (gpui::Rgba::from(color), gpui::Rgba::from(ground));
+        let mix = |c: f32, g: f32| c * color.a + g * (1. - color.a);
+        gpui::Rgba {
+            r: mix(c.r, g.r),
+            g: mix(c.g, g.g),
+            b: mix(c.b, g.b),
+            a: 1.,
+        }
+        .into()
+    }
+
+    fn ratio(fg: Hsla, bg: Hsla) -> f32 {
+        let (a, b) = (luminance(fg, bg), luminance(bg, bg));
+        (a.max(b) + 0.05) / (a.min(b) + 0.05)
+    }
+
+    /// Every failing (theme, name, ground, ratio) below `minimum`.
+    fn failures(theme: Theme, minimum: f32, pairs: &[Pair]) -> Vec<String> {
+        let mut out = Vec::new();
+        for (name, color, grounds) in pairs {
+            for (ground, bg) in grounds.iter() {
+                let r = ratio(*color, *bg);
+                if r < minimum {
+                    out.push(format!("{theme:?}: {name} on {ground} is {r:.2}:1"));
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn theme_text_and_controls_meet_wcag_contrast() {
+        let mut failed = Vec::new();
+        for theme in [Theme::Dark, Theme::Light] {
+            let p = theme.pdf_style();
+            let m = markdown_style(theme);
+            let card = ("card", p.bg);
+            let hover = ("hover", p.placeholder_bg);
+            let chrome: &[(&str, Hsla)] = &[
+                card,
+                ("sidebar", theme.sidebar_bg()),
+                hover,
+                ("selected row", theme.sidebar_selected()),
+            ];
+            let rows: &[(&str, Hsla)] = &[card, hover];
+            let page: &[(&str, Hsla)] = &[card];
+            // Text, 1.4.3. Syntax markers (`**`, `#`) are left out: they are
+            // dimmed on purpose and repeat what the rendered style shows.
+            failed.extend(failures(
+                theme,
+                4.5,
+                &[
+                    ("header text", p.header_fg, chrome),
+                    ("muted text", p.header_muted, chrome),
+                    ("placeholder text", p.placeholder_fg, rows),
+                    ("focused control text", theme.search_accent(), rows),
+                    ("applied alias", theme.applied(), rows),
+                    ("destructive menu row", m.popover_danger, rows),
+                    ("tooltip text", p.header_fg, &[hover]),
+                    ("link", m.link, page),
+                    ("inline code", m.code, page),
+                    ("quote", m.quote, page),
+                    ("note", m.alert_note, page),
+                    ("tip", m.alert_tip, page),
+                    ("important", m.alert_important, page),
+                    ("warning", m.alert_warning, page),
+                    ("caution", m.alert_caution, page),
+                    (
+                        "bell count",
+                        theme.badge_fg(),
+                        &[("amber badge", m.alert_warning)],
+                    ),
+                ],
+            ));
+            // Non-text, 1.4.11: what a control needs to be seen. Borders and
+            // hairlines (the card, dividers, the mention bar's edge) are
+            // decorative: content and shadow identify those surfaces.
+            let (fill, tick) = theme.checkbox();
+            let categories = [
+                Category::Person,
+                Category::Organization,
+                Category::Email,
+                Category::Phone,
+                Category::Address,
+                Category::Date,
+                Category::Identity,
+                Category::Tax,
+                Category::Bank,
+            ]
+            .map(|c| (format!("{c:?} category"), theme.category(c)));
+            let its_box = [("its box", fill)];
+            let mut marks: Vec<Pair> = vec![
+                ("ticked checkbox", fill, rows),
+                ("checkbox tick", tick, &its_box),
+                ("proposed ring", theme.proposed(), rows),
+                ("applied ring", theme.applied(), rows),
+                ("focus accent", theme.search_accent(), rows),
+            ];
+            for (name, color) in &categories {
+                marks.push((name.as_str(), *color, page));
+            }
+            // Applied aliases in the editor sit on their own blue tint, at
+            // rest (16%) and active (34%), as `pii::ui` paints them.
+            let tint = |a: f32| {
+                over(
+                    Hsla {
+                        a,
+                        ..theme.applied()
+                    },
+                    p.bg,
+                )
+            };
+            failed.extend(failures(
+                theme,
+                4.5,
+                &[(
+                    "applied alias in the editor",
+                    theme.applied_text(),
+                    &[("its tint", tint(0.16)), ("its active tint", tint(0.34))],
+                )],
+            ));
+            // Mention words and popup aliases are drawn in category colours.
+            let category_text: Vec<Pair> = categories
+                .iter()
+                .map(|(name, color)| (name.as_str(), *color, rows))
+                .collect();
+            failed.extend(failures(theme, 4.5, &category_text));
+            failed.extend(failures(theme, 3., &marks));
+        }
+        assert!(
+            failed.is_empty(),
+            "contrast below WCAG 2.2 AA:\n{}",
+            failed.join("\n")
+        );
+    }
+
+    #[test]
+    fn the_type_ramp_rises_and_every_text_size_is_on_it() {
+        assert!(TYPE_RAMP.windows(2).all(|w| w[0] < w[1]), "ramp rises");
+        const { assert!(TYPE_RAMP[0] >= 10., "nothing below 10 px") };
+        // Every literal size in the app's and crates' sources is a step.
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut stack = vec![root.join("src"), root.join("crates")];
+        let mut off = Vec::new();
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap() {
+                let path = entry.unwrap().path();
+                let name = path.file_name().unwrap().to_string_lossy();
+                if path.is_dir() {
+                    if name != "examples" && name != "target" {
+                        stack.push(path);
+                    }
+                    continue;
+                }
+                if !name.ends_with(".rs") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path).unwrap();
+                for (n, line) in text.lines().enumerate() {
+                    // A drawing of another app's dialog keeps that app's sizes.
+                    if line.contains("type-ramp: illustration") {
+                        continue;
+                    }
+                    for part in line.split("text_size(px(").skip(1) {
+                        let Some(number) = part.split(')').next() else {
+                            continue;
+                        };
+                        let Ok(size) = number.trim_end_matches('.').parse::<f32>() else {
+                            continue;
+                        };
+                        if !TYPE_RAMP.contains(&size) {
+                            off.push(format!("{}:{} uses {size} px", path.display(), n + 1));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(
+            off.is_empty(),
+            "sizes off the type ramp:\n{}",
+            off.join("\n")
+        );
     }
 }

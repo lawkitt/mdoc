@@ -1186,6 +1186,79 @@ pub(crate) fn heading_level(line: &str) -> Option<u8> {
     ((1..=6).contains(&n) && (n == b.len() || b[n] == b' ')).then_some(n as u8)
 }
 
+/// One ATX heading of a document: its depth, its text without the `#`
+/// markers, and the byte offset where its line starts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Heading {
+    pub level: u8,
+    pub title: String,
+    pub offset: usize,
+}
+
+/// The document's top-level ATX headings in order, skipping fenced code.
+pub fn headings(content: &str) -> Vec<Heading> {
+    let mut out = Vec::new();
+    // The open fence's character and length: a fence closes only with the
+    // same character, at least as long, and nothing after it.
+    let mut fence: Option<(u8, usize)> = None;
+    let mut offset = 0;
+    for line in content.split('\n') {
+        let start = offset;
+        offset += line.len() + 1;
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        let indent = line.len() - line.trim_start_matches(' ').len();
+        let marker = line.trim_start_matches(' ');
+        let run = |c: u8| marker.bytes().take_while(|b| *b == c).count();
+        let opening = (indent < 4)
+            .then(|| {
+                b"`~".iter().map(|&c| (c, run(c))).find(|&(c, n)| {
+                    // A backtick fence's info string has no backticks, so
+                    // ```code``` on one line is inline code.
+                    n >= 3 && (c != b'`' || !marker[n..].contains('`'))
+                })
+            })
+            .flatten();
+        match (fence, opening) {
+            (None, Some(open)) => {
+                fence = Some(open);
+                continue;
+            }
+            (Some((c, n)), Some((d, m))) if c == d && m >= n && marker[m..].trim().is_empty() => {
+                fence = None;
+                continue;
+            }
+            (Some(_), _) => continue,
+            (None, None) => {}
+        }
+        // Up to three spaces of indent; a space or tab after the markers.
+        let level = marker.bytes().take_while(|b| *b == b'#').count();
+        if indent > 3
+            || !(1..=6).contains(&level)
+            || !matches!(marker.as_bytes().get(level), None | Some(b' ' | b'\t'))
+        {
+            continue;
+        }
+        // A closing sequence (`## Title ##`) needs a space before it, so
+        // `## C#` keeps its `#`.
+        let rest = marker[level..].trim();
+        let stripped = rest.trim_end_matches('#');
+        let title =
+            if stripped.len() < rest.len() && (stripped.is_empty() || stripped.ends_with(' ')) {
+                stripped.trim_end()
+            } else {
+                rest
+            };
+        if !title.is_empty() {
+            out.push(Heading {
+                level: level as u8,
+                title: title.to_owned(),
+                offset: start,
+            });
+        }
+    }
+    out
+}
+
 /// [`heading_level`], also matching a heading behind a list marker
 /// (`- ### Notes`, the outliner shape). Returns the depth plus the line's
 /// indent when it's a LIST heading (`None` = a top-level heading) — list
@@ -3297,5 +3370,46 @@ mod tests {
         let src = "* ### Notes: ^abc\n  - one\n\n  - two\n* sibling\n# After";
         let folded: std::collections::HashSet<String> = ["* ### Notes: ^abc".to_string()].into();
         assert_eq!(heading_fold_regions(src, &folded), vec![0..4]);
+    }
+}
+
+#[cfg(test)]
+mod heading_list_tests {
+    use super::*;
+
+    #[test]
+    fn headings_list_atx_titles_outside_fences() {
+        let text = "# Title\nBody\n```\n# not a heading\n```\n## Terms ##\n#hashtag\n### \n####### seven\n## C#\n~~~\n# tilde code\n~~~\n````\n```\n# still code\n````\n```inline```\n   ## Indented\n##\tTabbed\n    # four spaces is code\n";
+        let found = headings(text);
+        assert_eq!(
+            found,
+            vec![
+                Heading {
+                    level: 1,
+                    title: "Title".into(),
+                    offset: 0
+                },
+                Heading {
+                    level: 2,
+                    title: "Terms".into(),
+                    offset: text.find("## Terms").unwrap()
+                },
+                Heading {
+                    level: 2,
+                    title: "C#".into(),
+                    offset: text.find("## C#").unwrap()
+                },
+                Heading {
+                    level: 2,
+                    title: "Indented".into(),
+                    offset: text.find("   ## Indented").unwrap()
+                },
+                Heading {
+                    level: 2,
+                    title: "Tabbed".into(),
+                    offset: text.find("##\tTabbed").unwrap()
+                },
+            ]
+        );
     }
 }

@@ -43,7 +43,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 mod markdown_syntax;
 mod syntax;
-pub use markdown_syntax::SyntaxStyle;
+pub use markdown_syntax::{Heading, SyntaxStyle, headings};
 
 mod search;
 mod search_geometry;
@@ -1366,6 +1366,19 @@ impl EditorState {
             offset -= 1;
         }
         self.move_to(offset, cx);
+    }
+
+    /// The caret's last painted bounds, if it was drawn.
+    pub fn caret_bounds(&self) -> Option<Bounds<Pixels>> {
+        self.bounds_for_offset(self.cursor_offset())
+    }
+
+    /// Put the caret at `offset` and scroll it into view after the next
+    /// paint, as a keyboard move would. The undo history is untouched.
+    pub fn reveal_offset(&mut self, offset: usize, cx: &mut Context<Self>) {
+        self.set_cursor(offset, cx);
+        self.reveal_caret = true;
+        cx.notify();
     }
 
     /// Select `range` (clamped to char boundaries), as a keyboard selection would.

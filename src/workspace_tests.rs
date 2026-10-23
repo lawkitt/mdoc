@@ -4350,6 +4350,23 @@ fn the_keychain_explainer_is_modal_and_returns_keyboard_focus(cx: &mut TestAppCo
         tabs.create_case(tab, window, cx);
     });
     draw(cx);
+    // Focus starts on Continue; Tab and Shift-Tab alternate between both
+    // buttons, never sticking on Not now (dry-run H18 / A4).
+    let continue_focused = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| tabs.read(cx).explainer_focus.is_focused(window))
+    };
+    assert!(continue_focused(cx), "Continue starts focused");
+    for (keys, on_continue) in [
+        ("tab", false),
+        ("tab", true),
+        ("tab", false),
+        ("shift-tab", true),
+        ("shift-tab", false),
+        ("shift-tab", true),
+    ] {
+        key(cx, keys);
+        assert_eq!(continue_focused(cx), on_continue, "{keys}");
+    }
     // Tab and Shift-Tab stay on the dialog's buttons.
     for keys in [
         "tab",
@@ -5699,4 +5716,169 @@ fn toolbar_members_take_part_in_tab_esc_and_f6(cx: &mut TestAppContext) {
     }
     assert!(found, "Tab reaches the find bar");
     assert!(editor_focused(&tabs, cx), "and then the editor");
+}
+
+/// Each Home Recents row is a Tab stop named for screen readers, and Enter
+/// opens it (ADR 0062, dry-run H18 / A4).
+#[gpui::test]
+fn home_recents_rows_are_reachable_by_tab_and_open_with_enter(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let paths: Vec<_> = (0..3)
+        .map(|i| {
+            let path = dir.path().join(format!("recent-{i}.md"));
+            std::fs::write(&path, format!("Recent {i}")).unwrap();
+            path
+        })
+        .collect();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.shell.recents.files = paths
+            .iter()
+            .map(|path| crate::recents::Recent {
+                path: path.clone(),
+                opened: 0,
+                pseudonymized: false,
+            })
+            .collect();
+        window.focus(&tabs.focus, cx);
+        cx.notify();
+    });
+    draw(cx);
+    let rows: Vec<_> = cx.update(|_, cx| tabs.read(cx).shell.recent_focus.borrow()[..3].to_vec());
+    // Walk Home's Tab stops, noting which rows take focus.
+    let mut reached = [false; 3];
+    for _ in 0..40 {
+        key(cx, "tab");
+        for (i, row) in rows.iter().enumerate() {
+            reached[i] |= cx.update(|window, _| row.is_focused(window));
+        }
+        if reached.iter().all(|r| *r) {
+            break;
+        }
+    }
+    assert_eq!(reached, [true; 3], "Tab reaches every Recents row");
+    // The third row opens with Enter.
+    assert!(cx.update(|window, _| rows[2].is_focused(window)));
+    activate_control(cx);
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| !tabs.read(cx).showing_home(cx)));
+    assert_eq!(
+        tab_names(&tabs, cx).last().map(String::as_str),
+        Some("recent-2.md")
+    );
+}
+
+/// The Replacements panel's header toggle expands or collapses every
+/// identity, by pointer or keyboard, and its name follows the state; the
+/// palette has both commands while the panel is open.
+#[gpui::test]
+fn expand_and_collapse_all_identities(cx: &mut TestAppContext) {
+    cx.update(shell::bind_keys);
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+        // Apply all leaves the inspector on Share; the list is on Review.
+        view.inspector_share = false;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let state = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let view = view.read(cx);
+            (view.expanded_identities(), view.all_identities_expanded(cx))
+        })
+    };
+    assert_eq!(state(cx), (0, false));
+    // Pointer: expand all, then collapse all.
+    click_toolbar(cx, "replacement-expand-all");
+    assert_eq!(state(cx), (2, true));
+    click_toolbar(cx, "replacement-expand-all");
+    assert_eq!(state(cx), (0, false));
+    // Keyboard: Tab through the panel to the toggle, then Enter.
+    view.update_in(cx, |view, window, cx| {
+        window.focus(&view.replacements_focus(), cx)
+    });
+    draw(cx);
+    let toggle = cx.update(|_, cx| view.read(cx).expand_all_focus());
+    let mut on_toggle = false;
+    for _ in 0..30 {
+        key(cx, "tab");
+        on_toggle = cx.update(|window, _| toggle.is_focused(window));
+        if on_toggle {
+            break;
+        }
+    }
+    assert!(on_toggle, "Tab reaches the toggle");
+    activate_control(cx);
+    assert_eq!(state(cx), (2, true));
+    // Palette: both commands, run with focus in the sidebar, outside the
+    // document's own action handlers.
+    for (query, expanded) in [("collapse all identities", 0), ("expand all identities", 2)] {
+        tabs.update_in(cx, |tabs, window, cx| {
+            let sidebar = tabs.sidebar_region.clone();
+            window.focus(&sidebar, cx);
+        });
+        draw(cx);
+        cx.simulate_keystrokes("secondary-k");
+        draw(cx);
+        cx.simulate_input(query);
+        draw(cx);
+        cx.simulate_keystrokes("enter");
+        draw(cx);
+        assert_eq!(state(cx).0, expanded, "{query}");
+    }
+}
+
+/// The palette lists the document's headings; choosing one moves the caret
+/// to its line and scrolls it into view, leaving Undo as it was.
+#[gpui::test]
+fn palette_goes_to_a_heading(cx: &mut TestAppContext) {
+    cx.update(shell::bind_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(600.)));
+    let view = active(&tabs, cx);
+    let filler = "Paragraph text.\n\n".repeat(60);
+    let text = format!("# Overview\n\n{filler}## Termination clause\n\n{filler}## Fees\n");
+    view.update_in(cx, |view, _, cx| {
+        view.editor.update(cx, |e, cx| e.set_text(&text, cx));
+        view.editor.update(cx, |e, cx| e.set_cursor(text.len(), cx));
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    draw(cx);
+    // One typed character is the Undo step to keep.
+    cx.simulate_input("x");
+    draw(cx);
+    let rows = cx.update(|_, cx| tabs.read(cx).palette_section("Go to heading", cx));
+    assert_eq!(rows, ["Overview", "Termination clause", "Fees"]);
+    // A narrow window showing Source switches back to the Markdown pane.
+    view.update(cx, |view, _| view.original_selected = true);
+    cx.simulate_keystrokes("secondary-k");
+    draw(cx);
+    cx.simulate_input("termination");
+    draw(cx);
+    cx.simulate_keystrokes("enter");
+    draw(cx);
+    draw(cx);
+    let target = text.find("## Termination").unwrap();
+    assert!(!cx.update(|_, cx| view.read(cx).original_selected));
+    assert!(editor_focused(&tabs, cx));
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.editor.read(cx).cursor(), target);
+        let caret = view.editor.read(cx).caret_bounds().unwrap();
+        let viewport = view.scroll.bounds();
+        assert!(
+            caret.top() >= viewport.top() && caret.bottom() <= viewport.bottom(),
+            "heading {caret:?} outside {viewport:?}"
+        );
+    });
+    // Undo still removes the typed character and nothing else.
+    cx.dispatch_action(mdoc_editor::Undo);
+    draw(cx);
+    cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), text));
 }

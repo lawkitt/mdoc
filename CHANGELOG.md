@@ -10,6 +10,24 @@ All notable changes to **mdoc** are documented here.
   the panel returns to the editor. F6 is unchanged, and the editor still
   takes Tab for Indent.
 
+- **Home's Recents and Cases rows work by keyboard.** Each row is a Tab stop
+  with a name for screen readers, and Enter or Space opens it.
+
+- **Keychain explainer keeps Continue reachable.** Tab and ⇧Tab now move
+  between Not now and Continue instead of sticking on Not now. The OCR and
+  pseudonymization setup cards' buttons had the same fault and are fixed too.
+
+- **Expand or collapse all identities.** A toggle beside the Replacements
+  panel's filter, and two palette commands, open or close every group.
+
+- **Go to heading.** The command palette lists the document's headings;
+  choosing one moves the caret there and scrolls it into view.
+
+- **Contrast checks.** Tests hold text to WCAG 4.5:1 and controls to 3:1 in
+  both themes. Light muted text, light applied aliases, dark destructive menu
+  rows, category-coloured mention text and the notices badge are adjusted to
+  pass, and nothing is drawn below 10 px.
+
 ## [0.1.4] - 2026-10-23
 
 - **First published release with the 0.1.3 changes.** The 0.1.3 release build

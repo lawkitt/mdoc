@@ -211,6 +211,8 @@ pub(super) struct MappingUi {
     scroll: gpui::ScrollHandle,
     list_scroll: gpui::UniformListScrollHandle,
     pub(super) focus: FocusHandle,
+    /// The header's expand/collapse-all toggle.
+    pub(super) expand_all_focus: FocusHandle,
 }
 impl MappingUi {
     pub(super) fn invalidate_source_edit(&mut self, cx: &mut Context<DocumentView>) {
@@ -440,6 +442,7 @@ impl MappingUi {
             scroll: gpui::ScrollHandle::new(),
             list_scroll: gpui::UniformListScrollHandle::new(),
             focus: cx.focus_handle(),
+            expand_all_focus: cx.focus_handle().tab_stop(true),
         }
     }
 }

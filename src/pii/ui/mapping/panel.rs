@@ -370,7 +370,7 @@ impl DocumentView {
             .child(
                 ui::card_actions().child(
                     settings_ui::control("cancel-pii-setup", "Cancel", theme, !cancelling)
-                        .track_focus(&self.card_focus)
+                        .track_focus(&self.card_focus.clone().tab_stop(!cancelling))
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "cancel-pii-setup".into())
                         })
@@ -394,7 +394,7 @@ impl DocumentView {
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "pii-setup-primary".into())
                             })
-                            .track_focus(&self.card_focus)
+                            .track_focus(&self.card_focus.clone().tab_stop(idle || !needs_setup))
                             .on_click(cx.listener(
                                 move |this, _, window, cx| {
                                     if !needs_setup {
@@ -531,6 +531,30 @@ impl DocumentView {
     }
     pub(super) fn redo_last_step(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.editor.update(cx, |e, cx| e.redo_step(window, cx));
+    }
+
+    /// Expand or collapse every listed identity; its name follows the state.
+    fn expand_all_control(&self, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
+        let expanded = self.all_identities_expanded(cx);
+        let (label, icon) = if expanded {
+            ("Collapse all identities", ui::Icon::CollapseAll)
+        } else {
+            ("Expand all identities", ui::Icon::ExpandAll)
+        };
+        ui::header_icon(
+            "replacement-expand-all",
+            label,
+            icon,
+            self.theme.get(),
+            false,
+        )
+        .track_focus(&self.pii.mapping.expand_all_focus)
+        .when(cfg!(test), |v| {
+            v.debug_selector(|| "replacement-expand-all".into())
+        })
+        .on_click(
+            cx.listener(move |this, _, _, cx| this.set_all_identities_expanded(!expanded, cx)),
+        )
     }
 
     /// The panel-only filter; a dot marks anything but All (ADR 0033).
@@ -771,7 +795,8 @@ impl DocumentView {
                                 .text_color(palette.header_muted),
                         )
                         .child(div().flex_1().min_w_0().child(mapping.search.clone()))
-                        .child(self.filter_control(cx)),
+                        .child(self.filter_control(cx))
+                        .child(self.expand_all_control(cx)),
                 ),
             )
             .child(div().h(px(1.)).flex_shrink_0().bg(palette.border))

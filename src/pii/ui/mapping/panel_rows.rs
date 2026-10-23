@@ -678,6 +678,50 @@ impl DocumentView {
             .into_any_element()
     }
 
+    #[cfg(test)]
+    pub(crate) fn expanded_identities(&self) -> usize {
+        self.pii.mapping.expanded.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn expand_all_focus(&self) -> gpui::FocusHandle {
+        self.pii.mapping.expand_all_focus.clone()
+    }
+
+    /// Whether every identity the panel lists is expanded.
+    pub(crate) fn all_identities_expanded(&self, cx: &App) -> bool {
+        let entries = self.replacement_entries(cx);
+        let mut headers = entries
+            .iter()
+            .filter(|(_, item)| matches!(item, PanelItem::Header))
+            .peekable();
+        headers.peek().is_some()
+            && headers.all(|(row, _)| self.pii.mapping.expanded.contains(&row.id))
+    }
+
+    /// Expand or collapse every identity the panel lists. A mention under
+    /// the keyboard cursor hands it to its identity's row when collapsing.
+    pub(crate) fn set_all_identities_expanded(&mut self, expand: bool, cx: &mut Context<Self>) {
+        let entries = self.replacement_entries(cx);
+        if expand {
+            let ids = entries
+                .iter()
+                .filter(|(_, item)| matches!(item, PanelItem::Header))
+                .map(|(row, _)| row.id);
+            self.pii.mapping.expanded.extend(ids);
+        } else {
+            if let Some(PanelCursor::Mention(annotation)) = self.pii.mapping.cursor
+                && let Some((row, _)) = entries
+                    .iter()
+                    .find(|(_, item)| item.mention() == Some(annotation))
+            {
+                self.pii.mapping.cursor = Some(PanelCursor::Header(row.id));
+            }
+            self.pii.mapping.expanded.clear();
+        }
+        cx.notify();
+    }
+
     /// Expand or collapse one group; nothing is selected (ADR 0033).
     pub(super) fn toggle_group(&mut self, id: u64, cx: &mut Context<Self>) {
         let expanded = &mut self.pii.mapping.expanded;

@@ -50,6 +50,8 @@ pub(super) struct ShellState {
     pub drop: Option<usize>,
     pub drop_generation: u64,
     home_scroll: gpui::ScrollHandle,
+    /// Focus for each Recents row on Home, by position.
+    pub recent_focus: std::cell::RefCell<Vec<gpui::FocusHandle>>,
 }
 
 impl ShellState {
@@ -60,6 +62,7 @@ impl ShellState {
             palette: None,
             drop: None,
             drop_generation: 0,
+            recent_focus: Default::default(),
             home_scroll: gpui::ScrollHandle::new(),
         }
     }
@@ -87,11 +90,15 @@ enum Command {
     SaveAs,
     CloseTab,
     BeforeAfter,
+    ExpandIdentities,
+    CollapseIdentities,
     ToggleSidebar,
     OpenCase,
     Home,
     Settings,
     Theme,
+    /// The active document's heading whose line starts at this offset.
+    Heading(usize),
     Tab(u64),
     Case(String),
     Recent(PathBuf),
@@ -993,31 +1000,41 @@ impl Workspace {
             let id = case.id.clone();
             let documents = case.members.len();
             list = list.child(
-                home_row(SharedString::from(format!("home-case-{}", case.id)), theme)
-                    .child(
-                        div()
-                            .size(px(8.))
-                            .rounded_full()
-                            .bg(link.color())
-                            .flex_shrink_0(),
-                    )
-                    .child(div().flex_1().min_w_0().truncate().child(case.name.clone()))
-                    .child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(p.header_muted)
-                            .child(format!(
-                                "{documents} {}",
-                                if documents == 1 {
-                                    "document"
-                                } else {
-                                    "documents"
-                                }
-                            )),
-                    )
-                    .on_click(
-                        cx.listener(move |this, _, window, cx| this.open_case(&id, window, cx)),
+                home_row(
+                    SharedString::from(format!("home-case-{}", case.id)),
+                    format!(
+                        "Case {}, {documents} {}",
+                        case.name,
+                        if documents == 1 {
+                            "document"
+                        } else {
+                            "documents"
+                        }
                     ),
+                    theme,
+                )
+                .child(
+                    div()
+                        .size(px(8.))
+                        .rounded_full()
+                        .bg(link.color())
+                        .flex_shrink_0(),
+                )
+                .child(div().flex_1().min_w_0().truncate().child(case.name.clone()))
+                .child(
+                    div()
+                        .text_size(px(12.))
+                        .text_color(p.header_muted)
+                        .child(format!(
+                            "{documents} {}",
+                            if documents == 1 {
+                                "document"
+                            } else {
+                                "documents"
+                            }
+                        )),
+                )
+                .on_click(cx.listener(move |this, _, window, cx| this.open_case(&id, window, cx))),
             );
         }
         Some(
@@ -1055,7 +1072,24 @@ impl Workspace {
                     .and_then(|p| p.file_name())
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                home_row(("home-recent", i), theme)
+                let label = format!(
+                    "{name} in {folder}{}, opened {}",
+                    if recent.pseudonymized {
+                        ", pseudonymized"
+                    } else {
+                        ""
+                    },
+                    recents::when(recent.opened).to_lowercase()
+                );
+                let focus = {
+                    let mut handles = self.shell.recent_focus.borrow_mut();
+                    while handles.len() <= i {
+                        handles.push(cx.focus_handle().tab_stop(true));
+                    }
+                    handles[i].clone()
+                };
+                home_row(("home-recent", i), label, theme)
+                    .track_focus(&focus)
                     .when(cfg!(test), |v| {
                         v.debug_selector(move || format!("home-recent-{i}"))
                     })
@@ -1290,14 +1324,36 @@ impl Workspace {
                     shortcut: Some(shortcut("⌘\\", "Ctrl+\\")),
                     command: Command::BeforeAfter,
                 },
-                Row {
-                    section: "Actions",
-                    label: "Close tab".into(),
-                    detail: None,
-                    shortcut: Some(shortcut("⌘W", "Ctrl+W")),
-                    command: Command::CloseTab,
-                },
             ]);
+            let panel = self.active_view().is_some_and(|view| {
+                let view = view.read(cx);
+                view.replacements_open() && view.can_copy_markdown()
+            });
+            if panel {
+                rows.extend([
+                    Row {
+                        section: "Actions",
+                        label: "Expand all identities".into(),
+                        detail: None,
+                        shortcut: None,
+                        command: Command::ExpandIdentities,
+                    },
+                    Row {
+                        section: "Actions",
+                        label: "Collapse all identities".into(),
+                        detail: None,
+                        shortcut: None,
+                        command: Command::CollapseIdentities,
+                    },
+                ]);
+            }
+            rows.extend([Row {
+                section: "Actions",
+                label: "Close tab".into(),
+                detail: None,
+                shortcut: Some(shortcut("⌘W", "Ctrl+W")),
+                command: Command::CloseTab,
+            }]);
         }
         rows.extend([
             Row {
@@ -1356,6 +1412,21 @@ impl Workspace {
                 command: Command::Settings,
             },
         ]);
+        // The active document's headings (from MiaoYan's table of contents).
+        if let Some(view) = self.active_view().filter(|_| has_document) {
+            let view = view.read(cx);
+            if !view.source_only && !view.loading && !view.unavailable {
+                for heading in mdoc_editor::headings(view.editor.read(cx).text()) {
+                    rows.push(Row {
+                        section: "Go to heading",
+                        label: heading.title,
+                        detail: Some(format!("H{}", heading.level)),
+                        shortcut: None,
+                        command: Command::Heading(heading.offset),
+                    });
+                }
+            }
+        }
         for tab in &self.tabs {
             if self.is_placeholder(tab, cx) {
                 continue;
@@ -1420,6 +1491,16 @@ impl Workspace {
             .collect()
     }
 
+    /// The palette's labels in one section, for tests.
+    #[cfg(test)]
+    pub(super) fn palette_section(&self, section: &str, cx: &App) -> Vec<String> {
+        self.palette_rows(cx)
+            .into_iter()
+            .filter(|row| row.section == section)
+            .map(|row| row.label)
+            .collect()
+    }
+
     pub(super) fn palette_step(&mut self, delta: isize, cx: &mut Context<Self>) {
         let count = self.palette_rows(cx).len();
         if let Some(palette) = &mut self.shell.palette
@@ -1460,11 +1541,39 @@ impl Workspace {
             Command::SaveAs => dispatch(window, cx, Box::new(SaveAs)),
             Command::CloseTab => dispatch(window, cx, Box::new(Close)),
             Command::BeforeAfter => dispatch(window, cx, Box::new(ToggleCompare)),
+            // Straight to the document: focus may have gone back to the
+            // sidebar, outside the view's action handlers.
+            Command::ExpandIdentities | Command::CollapseIdentities => {
+                let expand = matches!(row.command, Command::ExpandIdentities);
+                if let Some(view) = self.active_view() {
+                    view.update(cx, |view, cx| {
+                        if view.replacements_open() {
+                            view.set_all_identities_expanded(expand, cx)
+                        }
+                    });
+                }
+            }
             Command::ToggleSidebar => dispatch(window, cx, Box::new(ToggleSidebar)),
             Command::OpenCase => dispatch(window, cx, Box::new(OpenCase)),
             Command::Home => self.show_home(window, cx),
             Command::Settings => dispatch(window, cx, Box::new(Settings)),
             Command::Theme => self.cycle_theme(window, cx),
+            Command::Heading(offset) => {
+                // The Markdown editor must be the pane shown: not Before/After,
+                // nor Source in a narrow window.
+                if let Some(view) = self.active_view() {
+                    view.update(cx, |view, cx| {
+                        if view.compare.is_some() {
+                            view.close_compare(window, cx);
+                        }
+                        view.original_selected = false;
+                        view.editor
+                            .update(cx, |editor, cx| editor.reveal_offset(offset, cx));
+                        cx.notify();
+                    });
+                }
+                self.focus_active(window, cx);
+            }
             Command::Tab(id) => self.activate(id, window, cx),
             Command::Case(id) => self.open_case(&id, window, cx),
             Command::Recent(path) => self.open_paths(vec![path], window, cx),
@@ -1496,6 +1605,7 @@ impl Workspace {
                 Command::NewTab | Command::PasteText => ui::Icon::Plus,
                 Command::OpenFiles => ui::Icon::Open,
                 Command::Tab(_) | Command::Recent(_) => ui::Icon::Source,
+                Command::Heading(_) => ui::Icon::ChevronRight,
                 Command::Home => ui::Icon::Home,
                 Command::Settings => ui::Icon::Settings,
                 Command::Theme => ui::Icon::ThemeSystem,
@@ -1504,6 +1614,8 @@ impl Workspace {
                 Command::Save | Command::SaveAs => ui::Icon::Save,
                 Command::CloseTab => ui::Icon::Close,
                 Command::BeforeAfter => ui::Icon::PanelRight,
+                Command::ExpandIdentities => ui::Icon::ExpandAll,
+                Command::CollapseIdentities => ui::Icon::CollapseAll,
                 Command::ToggleSidebar => ui::Icon::Sidebar,
                 Command::Pseudonymize | Command::PseudonymizeClipboard => ui::Icon::Anonymous,
                 Command::Case(_) | Command::OpenCase => ui::Icon::Sidebar,
@@ -1683,10 +1795,21 @@ fn home_label(label: &'static str, theme: Theme) -> gpui::Div {
         .child(label)
 }
 
-fn home_row(id: impl Into<gpui::ElementId>, theme: Theme) -> gpui::Stateful<gpui::Div> {
+/// A Home list row: a Tab stop that Enter or Space opens, read by screen
+/// readers as a button named `label` (ADR 0062).
+fn home_row(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<SharedString>,
+    theme: Theme,
+) -> gpui::Stateful<gpui::Div> {
     let p = theme.pdf_style();
     div()
         .id(id)
+        .role(gpui::Role::Button)
+        .aria_label(label.into())
+        .key_context("UiControl")
+        .tab_index(0)
+        .focus_visible(move |s| s.bg(p.placeholder_bg))
         .flex()
         .items_center()
         .gap_3()

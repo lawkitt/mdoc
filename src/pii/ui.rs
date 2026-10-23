@@ -395,7 +395,7 @@ impl DocumentView {
                         a: 0.5,
                         ..applied_accent
                     },
-                    text_color: Some(applied_accent),
+                    text_color: Some(theme.applied_text()),
                     underline: None,
                     dotted: false,
                 }

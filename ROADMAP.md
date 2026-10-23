@@ -51,16 +51,9 @@ to the top of the next milestone. Items are in priority order.
    must open a sidebar tab's case actions in both sidebar layouts; Categories
    to detect must take focus, hold Tab and return focus on Esc or Close.
    Previously F6 escaped the explainer and case categories required a pointer.
+   Also natively: VoiceOver and Narrator read each Home Recents row's name,
+   and Tab and ⇧Tab cycle the Keychain explainer's two buttons.
    *Done when:* the evidence folder covers every row; each Fail links an item.
-2. **[A11y] Home's Recents rows reachable by keyboard.** *From the 0.2.0 dry
-   run (H18, A4).* Each row is a Tab stop with an accessible name and role;
-   today Tab skips them and the accessibility tree omits them (ADR 0062).
-   *Done when:* the headless Tab walk asserts Home reaches every Recents row,
-   and VoiceOver and Narrator read each row's name.
-3. **[A11y] Keychain explainer keeps Continue reachable.** *From the 0.2.0 dry
-   run (H18, A4).* Today, once Tab leaves Continue, Tab and ⇧Tab stay on
-   Not now. *Done when:* the headless Tab walk asserts Tab and ⇧Tab cycle
-   through both buttons, confirmed natively on both platforms.
 
 ### Should-fix
 
@@ -68,21 +61,6 @@ to the top of the next milestone. Items are in priority order.
    Add GPUI's offscreen DirectX adapter and enable the macOS recipe on Windows
    ([follow-up](docs/development.md#headless-screen-renders-macos)).
    *Done when:* the same render/Tab output test passes on Windows without a visible window.
-2. **[UI] Expand/collapse all in the Replacements panel.** *Promoted at the
-   0.1.3 grooming.* A header toggle (a Tab stop with an accessible name) and
-   palette commands "Expand all identities" and "Collapse all identities".
-   *Done when:* both work by keyboard and pointer, and the toggle's label
-   follows the panel's state.
-3. **[UI] Headings as "Go to heading" results in the command palette.** *From
-   MiaoYan's table of contents.* The palette lists the document's headings,
-   and choosing one moves the caret there and scrolls it into view.
-   *Done when:* a test covers listing, filtering and jumping, and the
-   document's Undo history is unchanged.
-4. **[A11y] Contrast and type-ramp tests over the theme.** *From Panoply.*
-   Unit tests check WCAG 2.2 contrast for text and UI tokens in light and
-   dark, and that the type ramp is monotonic. Theme colors that fail are fixed
-   in the same item.
-   *Done when:* the tests pass in both themes, and any exemption is justified in an ADR.
 
 ## Later
 
