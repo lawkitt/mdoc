@@ -207,6 +207,46 @@ fn coverage_corpus_preserves_text_links_and_landscape() {
 }
 
 #[test]
+fn legal_opinion_justified_heading_preserves_word_spaces() {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/docx-preview/legal-opinion.docx");
+    let preview = render_with_executable(
+        &source,
+        Arc::new(AtomicBool::new(false)),
+        Path::new(env!("CARGO_BIN_EXE_mdoc")),
+        Duration::from_secs(30),
+    )
+    .unwrap();
+    let pdf = gpui_pdf::parse(Arc::new(std::fs::read(&preview.pdf_path).unwrap())).unwrap();
+    let page = gpui_pdf::extract_page_text(&pdf, 0).unwrap();
+    // Text alone is insufficient: invisible space glyphs can make extraction
+    // correct even when the visible words touch. Check the glyph outlines too.
+    let page_width = gpui_pdf::page_dims(&pdf)[0].0;
+    for (left, right) in [("Investment", "and"), ("Refund", "Part")] {
+        let before = page.find_matches(left)[0][0];
+        let after = page
+            .find_matches(right)
+            .into_iter()
+            .flatten()
+            .filter(|r| r.x > before.x && (r.y - before.y).abs() < 0.002)
+            .min_by(|a, b| a.x.total_cmp(&b.x))
+            .unwrap();
+        let gap = (after.x - before.x - before.w) * page_width;
+        assert!(
+            gap >= 2.0,
+            "{left} / {right} has only {gap:.2} pt of visible space"
+        );
+    }
+    let text = page.text();
+    assert!(
+        text.contains(
+            "Partnership of Investment and Plan Collateral Arrangement in the Refund Part Transfer"
+        ),
+        "heading lost its word boundaries: {text}"
+    );
+}
+
+#[test]
 fn worker_preserves_comments_and_source() {
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");

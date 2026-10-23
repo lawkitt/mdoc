@@ -52,8 +52,7 @@ use image::{Frame, RgbaImage};
 use gpui::deferred;
 
 mod text;
-pub use text::extract_page_text;
-pub(crate) use text::{NormRect, PageText};
+pub use text::{NormRect, PageText, extract_page_text};
 
 /// PDF outline / table-of-contents + link extraction (always available — no deps).
 mod outline;

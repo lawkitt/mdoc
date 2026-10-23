@@ -31,9 +31,6 @@ ready ride along with a later patch.
 Each patch gets a smoke run on both platforms; an item is done when its issue
 closes, with the expected behavior stated there.
 
-1. **[DOCX] Preview joins words in justified lines** ([#91](https://github.com/lawkitt/mdoc/issues/91)).
-   0.1.3 ships when it is fixed, together with the Unreleased polish.
-
 ## 0.2.0
 
 Waits only on must-fix items; should-fix items ship if ready, otherwise move

@@ -8,6 +8,9 @@ All notable changes to **mdoc** are documented here.
   with them, so cached binaries still work after a checkout moves. They wait for
   the PDF to load and report load errors before checking toolbar and scroll bounds.
 
+- **DOCX previews keep words apart.** The local renderer now resolves theme
+  fonts correctly, preserving word spacing in bold justified headings with tabs.
+
 - **Small polish.** View › Toggle Sidebar has ⌃⌘S on macOS. Two tabs of the
   same name in one folder (a DOCX's conversion beside an `.md`) show their
   type, not the full path. The DOCX notice about equations, charts and
