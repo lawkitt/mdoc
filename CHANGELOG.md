@@ -4,6 +4,8 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+## [0.1.4] - 2026-10-23
+
 - **First published release with the 0.1.3 changes.** The 0.1.3 release build
   stopped at a stale OCR smoke-test check and was never published; 0.1.4 ships
   the same changes with the test fixed.
