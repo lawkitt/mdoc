@@ -42,7 +42,7 @@ tar = "0.4"
 flate2 = "1"
 # Exact: DOCX preview rendering changes between releases; bump by hand (ADR 0053).
 docxide-pdf = { version = "=0.18.0", default-features = false }
-zip = { version = "8.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 thiserror = "2"
 roxmltree = "0.21"
 serde = { version = "1", features = ["derive"] }
