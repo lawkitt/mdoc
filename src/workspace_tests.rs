@@ -495,6 +495,34 @@ fn picking_recognition_languages_changes_only_this_document(cx: &mut TestAppCont
     assert!(cx.debug_bounds("Retry").is_some());
 }
 
+/// A tab set up the Settings model and was closed; Settings then chose
+/// another model. The setup's end still clears the shared Installing.
+#[gpui::test]
+fn ocr_setup_ending_after_its_tab_closed_clears_installing(cx: &mut TestAppContext) {
+    let fixtures =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ocr-qualification");
+    let (tabs, cx) = boot(cx, Session::default());
+    let view = open_scan(&tabs, fixtures.join("english.pdf"), cx);
+    tabs.update(cx, |tabs, cx| tabs.set_ocr(OcrState::Installing, cx));
+    let id = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(id, window, cx));
+    cx.run_until_parked();
+    drop(view);
+    let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
+    cx.update(|_, cx| {
+        let prefs = tabs.read(cx).preferences.clone();
+        prefs.borrow_mut().current.as_mut().unwrap().ocr.model = settings::OcrModel::Cyrillic;
+    });
+    panel.update(cx, |_, cx| {
+        cx.emit(settings_ui::Event::Finished(
+            settings::Model::Ocr(settings::OcrModel::V6Small),
+            Err("Download cancelled.".into()),
+        ))
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(matches!(tabs.read(cx).ocr_state, OcrState::Missing)));
+}
+
 #[gpui::test]
 fn closing_source_rejects_conversion_even_when_view_is_retained(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();

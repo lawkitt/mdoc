@@ -418,6 +418,11 @@ impl Workspace {
                                 Err(e) => OcrState::Failed(e.clone()),
                             };
                             this.set_ocr(state, cx);
+                        } else if matches!(this.ocr_state, OcrState::Installing) {
+                            // A tab's setup of a model Settings no longer
+                            // selects ended; the tab may be gone (ADR 0066).
+                            let state = known_ocr_state(&this.preferences, this.settings.read(cx));
+                            this.set_ocr(state, cx);
                         }
                     }
                     settings_ui::Event::Finished(_, _) => {}

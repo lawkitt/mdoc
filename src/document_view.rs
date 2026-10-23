@@ -161,6 +161,32 @@ pub(crate) struct DocumentViewDependencies {
     pub(crate) input_languages: fn() -> Vec<recognition::Language>,
 }
 
+/// The shared OCR state for the Settings model from what Settings already
+/// knows, without starting a check (ADR 0066).
+pub(crate) fn known_ocr_state(
+    preferences: &settings::Shared,
+    panel: &settings_ui::Panel,
+) -> OcrState {
+    let Ok(config) = preferences.borrow().snapshot().map(|p| p.ocr) else {
+        return OcrState::Missing;
+    };
+    if let Some(mut installed) = panel
+        .ocr_installations
+        .iter()
+        .find(|i| i.config.model == config.model)
+        .cloned()
+    {
+        installed.config = config;
+        return OcrState::Ready(installed);
+    }
+    match &panel.statuses[settings_ui::Panel::index(settings::Model::Ocr(config.model))] {
+        settings_ui::Status::Damaged(e) | settings_ui::Status::Unavailable(e) => {
+            OcrState::Failed(e.clone())
+        }
+        _ => OcrState::Missing,
+    }
+}
+
 impl DocumentView {
     pub(crate) fn new(
         dependencies: DocumentViewDependencies,
@@ -459,25 +485,7 @@ impl DocumentView {
     /// knows. Never starts a check: that would take the model slot from a
     /// run about to resume.
     fn known_settings_ocr_state(&self, cx: &App) -> OcrState {
-        let Ok(config) = self.preferences.borrow().snapshot().map(|p| p.ocr) else {
-            return OcrState::Missing;
-        };
-        let panel = self.model_panel.read(cx);
-        if let Some(mut installed) = panel
-            .ocr_installations
-            .iter()
-            .find(|i| i.config.model == config.model)
-            .cloned()
-        {
-            installed.config = config;
-            return OcrState::Ready(installed);
-        }
-        match &panel.statuses[settings_ui::Panel::index(settings::Model::Ocr(config.model))] {
-            settings_ui::Status::Damaged(e) | settings_ui::Status::Unavailable(e) => {
-                OcrState::Failed(e.clone())
-            }
-            _ => OcrState::Missing,
-        }
+        known_ocr_state(&self.preferences, self.model_panel.read(cx))
     }
 
     /// A checked installation of `model`: the shared one for the Settings

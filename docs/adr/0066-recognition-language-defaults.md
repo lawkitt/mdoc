@@ -43,7 +43,7 @@ ADR 0065 requires the choice to be a list of languages, not an EN/RU switch.
   using another bundle shows that bundle's setup in its own card, and its
   setup or run failures stay with it. A setup that marked the shared state
   as installing always replaces it when it ends, even if Settings changed
-  meanwhile; it then resumes with the bundle it set up.
+  or the tab closed meanwhile; the tab resumes with the bundle it set up.
 
 ## Invariants
 
