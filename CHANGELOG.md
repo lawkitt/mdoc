@@ -8,6 +8,10 @@ All notable changes to **mdoc** are documented here.
   text fields and wrap their controls within the editor column when the
   Replacements panel and Source preview are open at the minimum window size.
 
+- **Know what a model download contains.** Pseudonymization and OCR setup,
+  including the model choices in Settings, show the source repository and
+  license beside the download size.
+
 - **Windows offscreen screen and Tab evidence.** `just headless-renders`
   now renders both themes through DirectWrite and a software DirectX device,
   without creating native windows. The Windows test gate checks the same PNG,

@@ -468,6 +468,22 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
     ] {
         assert!(cx.debug_bounds(selector).is_some(), "{selector}");
     }
+    for model in settings::OcrModel::ALL {
+        view.update(cx, |view, cx| {
+            view.pick_recognition(model.languages().to_vec(), cx);
+        });
+        draw(cx);
+        let model = settings::Model::Ocr(model);
+        let label = format!("{}: {}", model.name(), model.attribution_label());
+        let bounds = cx
+            .debug_bounds(Box::leak(label.into_boxed_str()))
+            .expect("OCR source and license");
+        let card = cx.debug_bounds("conversion-card").unwrap();
+        assert!(bounds.top() >= card.top() && bounds.bottom() <= card.bottom());
+    }
+    view.update(cx, |view, cx| {
+        view.pick_recognition(settings::OcrModel::V6Small.languages().to_vec(), cx);
+    });
     // Setup progress replaces the actions with Cancel.
     view.update(cx, |view, cx| {
         view.ocr_state = OcrState::Installing;

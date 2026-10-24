@@ -2,6 +2,7 @@
   "id": "gliner2-pii-fp16",
   "engine": "gliner2",
   "repository": "jugaadsrl/gliner2-privacy-filter-PII-multi-onnx",
+  "license": "Apache-2.0; encoder MIT",
   "revision": "e594898629d452e8311796f5f329c7edbeda907c",
   "files": [
     {

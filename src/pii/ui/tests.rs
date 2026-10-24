@@ -542,6 +542,38 @@ fn missing_model_asks_first_and_resumes_only_after_this_setup(cx: &mut gpui::Tes
     assert!(cx.debug_bounds("replacement-commands").is_none());
     cx.update(|_, cx| assert!(panel.read(cx).working.is_none()));
 
+    // Every precision shows the export repository (not just the base model)
+    // and its manifest license on the consent card, without opening Settings.
+    for model in settings::PiiModel::ALL {
+        app.update(cx, |app, cx| {
+            app.preferences
+                .borrow_mut()
+                .current
+                .as_mut()
+                .unwrap()
+                .pseudonymization
+                .model = model;
+            cx.notify();
+        });
+        draw(cx);
+        let model = settings::Model::Pii(model);
+        let label = format!("{}: {}", model.name(), model.attribution_label());
+        let bounds = cx
+            .debug_bounds(Box::leak(label.into_boxed_str()))
+            .expect("PII source and license");
+        let card = cx.debug_bounds("pii-setup-card").unwrap();
+        assert!(bounds.top() >= card.top() && bounds.bottom() <= card.bottom());
+    }
+    app.update(cx, |app, _| {
+        app.preferences
+            .borrow_mut()
+            .current
+            .as_mut()
+            .unwrap()
+            .pseudonymization
+            .model = settings::PiiModel::Fp16;
+    });
+
     // A download finished elsewhere (Settings) never scans by itself.
     panel.update(cx, |panel, cx| {
         panel.pending.fill(Default::default());

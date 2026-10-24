@@ -137,6 +137,7 @@ pub struct Manifest {
     pub id: String,
     pub revision: String,
     pub repository: String,
+    pub license: String,
     pub files: Vec<Artifact>,
 }
 #[derive(Deserialize)]

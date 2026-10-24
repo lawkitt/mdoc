@@ -243,6 +243,26 @@ fn scenarios(
     records.push(d.capture(out, "setup-consent")?);
     d.change(|_, _, cx| {
         view.update(cx, |v, cx| {
+            v.preferences
+                .borrow_mut()
+                .current
+                .as_mut()
+                .expect("sandbox preferences")
+                .pseudonymization
+                .model = settings::PiiModel::Fp32;
+            cx.notify();
+        })
+    })?;
+    records.push(d.capture(out, "setup-consent-fp32")?);
+    d.change(|_, _, cx| {
+        view.update(cx, |v, cx| {
+            v.preferences
+                .borrow_mut()
+                .current
+                .as_mut()
+                .expect("sandbox preferences")
+                .pseudonymization
+                .model = settings::PiiModel::Fp16;
             v.pii.setup = false;
             cx.notify();
         })

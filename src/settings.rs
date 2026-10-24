@@ -1,7 +1,6 @@
 //! Application preferences only. No document text, QA results or replacement maps.
 //! The user's spelling dictionary is a word list beside the settings file.
 use crate::recognition::{ENGLISH, Language, RUSSIAN};
-use pdf_inspector::vision::{ModelManifest, PP_OCR_CYRILLIC, PP_OCR_V6_SMALL};
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
@@ -25,11 +24,8 @@ pub enum OcrModel {
 impl OcrModel {
     /// Recommended first.
     pub const ALL: [Self; 2] = [Self::V6Small, Self::Cyrillic];
-    pub fn manifest(self) -> &'static ModelManifest {
-        match self {
-            Self::Cyrillic => &PP_OCR_CYRILLIC,
-            Self::V6Small => &PP_OCR_V6_SMALL,
-        }
+    pub fn manifest(self) -> &'static crate::ocr::manifest::Manifest {
+        crate::ocr::manifest::for_model(self)
     }
     pub fn name(self) -> &'static str {
         match self {
@@ -143,9 +139,6 @@ impl PiiModel {
     pub fn evidence(self) -> &'static str {
         "Known EN/RU misses; neither precision is qualified. Review the complete document."
     }
-    pub fn license(self) -> &'static str {
-        "Apache-2.0; encoder MIT"
-    }
     pub fn hugging_face_url(self) -> &'static str {
         "https://huggingface.co/fastino/gliner2-privacy-filter-PII-multi"
     }
@@ -199,6 +192,29 @@ impl Model {
             Self::Ocr(m) => crate::ocr::pending(m),
             Self::Pii(m) => crate::pii::detector::pending(m),
         }
+    }
+    /// Attribution for exactly the files setup offers, including ONNX exports.
+    pub fn source_and_license(self) -> (String, String) {
+        match self {
+            Self::Ocr(m) => {
+                let manifest = m.manifest();
+                (
+                    format!("GitHub · {}", manifest.repository),
+                    manifest.license.into(),
+                )
+            }
+            Self::Pii(m) => {
+                let manifest = crate::pii::detector::manifest_for(m);
+                (
+                    format!("Hugging Face · {}", manifest.repository),
+                    manifest.license,
+                )
+            }
+        }
+    }
+    pub fn attribution_label(self) -> String {
+        let (source, license) = self.source_and_license();
+        format!("Source: {source}\nLicense: {license}")
     }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -519,6 +535,46 @@ pub fn save(path: &Path, prefs: &Preferences) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn model_attribution_tracks_the_pinned_downloads() {
+        for model in Model::ALL {
+            let (source, license) = model.source_and_license();
+            match model {
+                Model::Pii(m) => {
+                    let manifest = crate::pii::detector::manifest_for(m);
+                    assert_eq!(
+                        source,
+                        "Hugging Face · jugaadsrl/gliner2-privacy-filter-PII-multi-onnx"
+                    );
+                    assert_eq!(license, "Apache-2.0; encoder MIT");
+                    for file in manifest.files {
+                        assert!(file.url.starts_with(&format!(
+                            "https://huggingface.co/{}/resolve/{}/",
+                            manifest.repository, manifest.revision
+                        )));
+                    }
+                }
+                Model::Ocr(m) => {
+                    let manifest = m.manifest();
+                    assert_eq!(source, "GitHub · GreatV/oar-ocr");
+                    assert_eq!(license, "Apache-2.0");
+                    assert_eq!(
+                        manifest.revision,
+                        match m {
+                            OcrModel::V6Small => "oar-ocr-v0.7.0",
+                            OcrModel::Cyrillic => "oar-det-v0.7.0-rec-v0.3.0",
+                        }
+                    );
+                    for file in manifest.artifacts {
+                        assert!(file.url.starts_with(&format!(
+                            "https://github.com/{}/releases/download/",
+                            manifest.repository
+                        )));
+                    }
+                }
+            }
+        }
+    }
     #[test]
     fn settings_roundtrip_and_invalid_values_preserve_previous_file() {
         let d = tempfile::tempdir().unwrap();

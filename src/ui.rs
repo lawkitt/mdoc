@@ -353,6 +353,26 @@ pub fn card_note(text: impl Into<gpui::SharedString>, theme: Theme) -> gpui::Div
         .text_color(theme.pdf_style().header_muted)
         .child(text.into())
 }
+/// Static model provenance next to the download size. It adds no Tab stop;
+/// screen readers can read its named group and each prompt's existing actions.
+pub fn model_attribution(
+    id: impl Into<gpui::ElementId>,
+    model: crate::settings::Model,
+    theme: Theme,
+) -> gpui::Stateful<gpui::Div> {
+    let text = model.attribution_label();
+    div()
+        .id(id)
+        .role(gpui::Role::Group)
+        .aria_label(format!("{}. {text}", model.name()))
+        .min_w_0()
+        .text_size(px(11.))
+        .text_color(theme.pdf_style().header_muted)
+        .child(text.clone())
+        .when(cfg!(test), |v| {
+            v.debug_selector(move || format!("{}: {text}", model.name()))
+        })
+}
 /// A secondary explanation under a card's actions, e.g. language scope.
 pub fn card_hint(text: impl Into<gpui::SharedString>, theme: Theme) -> gpui::Div {
     let p = theme.pdf_style();
