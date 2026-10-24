@@ -4,15 +4,26 @@ Plain paragraph with **bold**, *italic*, and <s>struck</s> runs. **Style-bold pa
 
 ## Lists
 
-1.First numbered
-2.Second numbered
-a)Alpha sub one
-b)Alpha sub two
-i.Roman sub sub
-3.Third numbered Interrupting paragraph between lists.
-4.Fourth, continuing the count IV.Roman starting at four
-V.Roman five •Bullet one •Bullet two ◦Nested bullet **Table** Wide head End Tall B2 C2
-B3 C3
+1. First numbered
+2. Second numbered
+
+- a) Alpha sub one
+- b) Alpha sub two
+- i. Roman sub sub
+
+3. Third numbered
+
+Interrupting paragraph between lists.
+
+4. Fourth, continuing the count
+
+- IV. Roman starting at four
+- V. Roman five
+- Bullet one
+- Bullet two
+- Nested bullet
+
+**Table** Wide head End Tall B2 C2 B3 C3
 
 ## Notes and special text
 

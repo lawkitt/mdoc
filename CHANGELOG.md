@@ -4,6 +4,9 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Cleaner document conversion.** Converted PDFs and Office documents join
+  hyphenated line breaks and normalize lists and blank lines.
+
 - **Find controls fit small windows.** Find and Find and Replace keep usable
   text fields and wrap their controls within the editor column when the
   Replacements panel and Source preview are open at the minimum window size.
