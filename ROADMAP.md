@@ -101,6 +101,21 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Tests]** CI smoke of the installed Windows package on a desktop runner,
   with screenshots. *From Panoply.*
 - **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
+- **[UI]** Narrow windows: preview toolbar on one row, Fit width below 50%.
+- **[UI]** Plain error states: one "Preview unavailable", no Retry or "invalid
+  ZIP" for a corrupt DOCX.
+- **[UI]** "Saved cases are locked" notice only where it matters, not opened on
+  any new document.
+- **[Cases]** Restore banner wording: say plainly that restored names are
+  proposals and what Apply does.
+- **[Cases]** One close prompt for mapping and unsaved changes; Discard all on
+  quit (see #119); ADR first.
+- **[UI]** Home and Open hints name every supported format (DOC, ODT, XLS/XLSX),
+  not only PDF, DOCX, Markdown.
+- **[UI]** Panel snippets cut at word boundaries; a disabled Copy for AI says
+  why.
+- **[Import]** Images (screenshots, photos of pages) through OCR, like Anoni's
+  Image → text.
 
 ## Ongoing tracks
 
