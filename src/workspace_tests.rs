@@ -3031,6 +3031,44 @@ fn home_opens_several_files_and_new_tab_is_a_plain_editor(cx: &mut TestAppContex
 }
 
 #[gpui::test]
+fn cancelled_pseudonymization_setup_does_not_tag_recents(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("never-scanned.md");
+    std::fs::write(&path, "Alice needs review").unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    click_toolbar(cx, "Pseudonymize");
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert!(view.pii.setup);
+        assert!(view.pii.reviewing);
+        assert!(!view.pseudonymized());
+        assert!(!tabs.read(cx).shell.recents.files[0].pseudonymized);
+    });
+    click_toolbar(cx, "pii-setup-cancel");
+    click_toolbar(cx, "sidebar-home");
+    assert!(cx.debug_bounds("home-recent-0").is_some());
+    cx.update(|_, cx| {
+        assert!(!view.read(cx).pii.setup);
+        assert!(!view.read(cx).pseudonymized());
+        // Both the visible tag and the row's accessibility name use this flag.
+        assert!(!tabs.read(cx).shell.recents.files[0].pseudonymized);
+    });
+
+    // A completed scan counts even with no candidates, and survives closing review.
+    view.update(cx, |view, cx| {
+        view.pii.scans.push(settings::PiiConfig::default());
+        view.pii.reviewing = false;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(tabs.read(cx).shell.recents.files[0].pseudonymized));
+}
+
+#[gpui::test]
 fn recents_stay_capped_and_cleared_when_open_documents_notify(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());

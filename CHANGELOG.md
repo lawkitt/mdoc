@@ -11,6 +11,13 @@ All notable changes to **mdoc** are documented here.
 - **Cleaner document conversion.** Converted PDFs and Office documents join
   hyphenated line breaks and normalize lists and blank lines.
 
+- **Recents waits for pseudonymization results.** Opening or cancelling model
+  setup no longer adds the "pseudonymized" tag to a never-scanned document,
+  on screen or in its screen reader name (fixes #117).
+
+- **Text recognition names both supported languages.** Settings now says it
+  reads English and Russian, matching the offered model choices (fixes #120).
+
 - **Find controls fit small windows.** Find and Find and Replace keep usable
   text fields and wrap their controls within the editor column when the
   Replacements panel and Source preview are open at the minimum window size.

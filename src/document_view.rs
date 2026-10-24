@@ -417,9 +417,11 @@ impl DocumentView {
         cx.notify();
     }
 
-    /// Replacements are applied or the review is open in this tab.
+    /// This tab has a completed scan or replacement data, not just an open review.
     pub(crate) fn pseudonymized(&self) -> bool {
-        self.pii.reviewing || !self.pii.review.applied().is_empty()
+        !self.pii.scans.is_empty()
+            || !self.pii.review.variants().is_empty()
+            || !self.pii.review.applied().is_empty()
     }
     /// The Markdown came from OCR.
     pub(crate) fn recognized(&self) -> bool {
