@@ -406,6 +406,29 @@ fn scenarios(
         source_name: "Claude public EN fixture".into(),
         case: None,
     };
+    // A damaged DOCX: the conversion and preview failures as their panes
+    // state them, set directly so no converter or worker runs.
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            let source = PathBuf::from("Damaged agreement.docx");
+            v.source_only = true;
+            v.preview.source = Some(source.clone());
+            v.preview.attachment = Some(source);
+            v.preview.visible = true;
+            v.preview.retryable = false;
+            v.preview.failed = true;
+            v.preview.message = Some(
+                crate::docx_preview::PreviewError::Package("invalid ZIP".into()).plain_message(),
+            );
+            v.error = Some(
+                "This document could not be converted because its contents are damaged or incomplete."
+                    .into(),
+            );
+            cx.notify();
+        });
+    })?;
+    records.push(d.capture(out, "conversion-failed")?);
     d.change(|w, window, cx| {
         w.new_tab(window, cx);
         w.active_view()

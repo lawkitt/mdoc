@@ -91,6 +91,8 @@ pub enum PreviewError {
     Package(String),
     #[error("DOCX preview could not be rendered: {0}")]
     Render(String),
+    #[error("DOCX preview renderer rejected this document")]
+    Rejected,
     #[error("DOCX preview conversion timed out after 30 seconds")]
     Timeout,
     #[error("DOCX preview conversion was cancelled")]
@@ -99,6 +101,82 @@ pub enum PreviewError {
     TemporaryStorage(String),
     #[error("DOCX preview could not read the source: {0}")]
     Read(#[from] std::io::Error),
+}
+
+impl PreviewError {
+    /// The one sentence the preview pane shows. The `Display` text keeps the
+    /// technical detail for tests and diagnostics.
+    pub fn plain_message(&self) -> String {
+        match self {
+            Self::InputTooLarge => "This DOCX is too large to preview. Previews take files up to 50 MB.".into(),
+            Self::MacrosNotSupported => "DOCX files with macros can't be previewed.".into(),
+            Self::Encrypted => "This DOCX is password-protected. Open an unlocked copy to preview it.".into(),
+            Self::TrackedChangesNotSupported => "DOCX files with tracked changes can't be previewed. Accept or reject the changes in Word first.".into(),
+            Self::NestedArchive => "This DOCX contains other packed files, so it can't be previewed.".into(),
+            Self::Package(_) => "This DOCX is damaged or incomplete, so it can't be previewed.".into(),
+            Self::Render(_) => "The preview could not be drawn.".into(),
+            Self::Rejected => "The preview can't draw this DOCX.".into(),
+            Self::Timeout => "The preview took longer than 30 seconds and was stopped.".into(),
+            Self::Cancelled => "The preview was cancelled.".into(),
+            Self::TemporaryStorage(_) => "mdoc could not create temporary files for the preview.".into(),
+            Self::Read(_) => "mdoc could not read this file. Check that it is still there.".into(),
+        }
+    }
+
+    /// Whether trying again can give a different result: a timeout, a worker
+    /// that failed, or a file system problem. The document's own content
+    /// fails the same way every time.
+    /// The worker's error file: a kind tag, a tab, then the `Display` text,
+    /// so the supervisor can tell a damaged document from a failed worker.
+    fn report(&self) -> String {
+        let kind = match self {
+            Self::InputTooLarge => "too-large",
+            Self::MacrosNotSupported => "macros",
+            Self::Encrypted => "encrypted",
+            Self::TrackedChangesNotSupported => "tracked-changes",
+            Self::NestedArchive => "nested-archive",
+            Self::Package(_) => "package",
+            Self::Render(_) => "render",
+            Self::Rejected => "rejected",
+            Self::Timeout => "timeout",
+            Self::Cancelled => "cancelled",
+            Self::TemporaryStorage(_) => "temporary-storage",
+            Self::Read(_) => "read",
+        };
+        format!("{kind}\t{self}")
+    }
+
+    /// Reads `report` back. Anything unrecognized is a failed worker.
+    fn from_report(report: &str) -> Self {
+        let (kind, text) = report.split_once('\t').unwrap_or(("", report));
+        let detail = |prefix: &str| text.strip_prefix(prefix).unwrap_or(text).to_owned();
+        match kind {
+            "too-large" => Self::InputTooLarge,
+            "macros" => Self::MacrosNotSupported,
+            "encrypted" => Self::Encrypted,
+            "tracked-changes" => Self::TrackedChangesNotSupported,
+            "nested-archive" => Self::NestedArchive,
+            "package" => Self::Package(detail("DOCX preview package is invalid: ")),
+            "rejected" => Self::Rejected,
+            "timeout" => Self::Timeout,
+            "cancelled" => Self::Cancelled,
+            "temporary-storage" => {
+                Self::TemporaryStorage(detail("DOCX preview could not create temporary storage: "))
+            }
+            "read" => Self::Read(std::io::Error::other(detail(
+                "DOCX preview could not read the source: ",
+            ))),
+            "render" => Self::Render(detail("DOCX preview could not be rendered: ")),
+            _ => Self::Render(text.to_owned()),
+        }
+    }
+
+    pub fn retryable(&self) -> bool {
+        matches!(
+            self,
+            Self::Render(_) | Self::Timeout | Self::TemporaryStorage(_) | Self::Read(_)
+        )
+    }
 }
 
 // Headless UI tests cannot launch the Rust test harness as an app worker.
@@ -174,9 +252,10 @@ pub fn render_with_executable(
         }
         if let Some(status) = child.0.try_wait()? {
             if !status.success() {
-                let message = fs::read_to_string(pdf_path.with_extension("error"))
-                    .unwrap_or_else(|_| format!("worker exited with {status}"));
-                return Err(PreviewError::Render(message));
+                return Err(match fs::read_to_string(pdf_path.with_extension("error")) {
+                    Ok(report) => PreviewError::from_report(&report),
+                    Err(_) => PreviewError::Render(format!("worker exited with {status}")),
+                });
             }
             if !pdf_path.is_file() {
                 return Err(PreviewError::Render("worker produced no PDF".into()));
@@ -204,6 +283,14 @@ pub fn render_for_test(path: &Path) -> Result<DocxPreview, PreviewError> {
 
 pub fn run_worker(input: &Path, output: &Path) -> Result<(), PreviewError> {
     render_direct_to(input, output)
+}
+
+/// Runs the worker and, on failure, leaves the error report beside `output`
+/// for `render_with_executable`.
+pub fn run_worker_reporting(input: &Path, output: &Path) -> Result<(), PreviewError> {
+    run_worker(input, output).inspect_err(|error| {
+        let _ = fs::write(output.with_extension("error"), error.report());
+    })
 }
 
 #[cfg(test)]
@@ -248,8 +335,11 @@ fn render_direct_to(path: &Path, output: &Path) -> Result<(), PreviewError> {
 }
 
 fn render_bytes(bytes: &[u8], output: &Path) -> Result<(), PreviewError> {
-    docxide_pdf::convert_docx_bytes_to_pdf(bytes, output)
-        .map_err(|_| PreviewError::Render("the renderer rejected this document".into()))?;
+    docxide_pdf::convert_docx_bytes_to_pdf(bytes, output).map_err(|error| match error {
+        // Writing the PDF failed, not the document: storage can recover.
+        docxide_pdf::Error::Io(error) => PreviewError::TemporaryStorage(error.to_string()),
+        _ => PreviewError::Rejected,
+    })?;
     Ok(())
 }
 
@@ -438,6 +528,34 @@ fn read_comments(pdf: &Path) -> Result<Arc<Vec<DocxComment>>, PreviewError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn worker_reports_keep_the_error_kind() {
+        for error in [
+            PreviewError::InputTooLarge,
+            PreviewError::MacrosNotSupported,
+            PreviewError::Encrypted,
+            PreviewError::TrackedChangesNotSupported,
+            PreviewError::NestedArchive,
+            PreviewError::Package("invalid ZIP".into()),
+            PreviewError::Render("worker crashed".into()),
+            PreviewError::Rejected,
+            PreviewError::Timeout,
+            PreviewError::TemporaryStorage("disk full".into()),
+            PreviewError::Read(std::io::Error::other("gone")),
+        ] {
+            let back = PreviewError::from_report(&error.report());
+            assert_eq!(back.to_string(), error.to_string());
+            assert_eq!(back.retryable(), error.retryable(), "{error}");
+            assert_eq!(back.plain_message(), error.plain_message());
+        }
+        assert!(matches!(
+            PreviewError::from_report("an older worker's text"),
+            PreviewError::Render(text) if text == "an older worker's text"
+        ));
+        assert!(!PreviewError::Package("invalid ZIP".into()).retryable());
+        assert!(PreviewError::Timeout.retryable());
+    }
     use std::io::Write;
     use zip::write::SimpleFileOptions;
 

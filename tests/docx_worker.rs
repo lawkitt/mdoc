@@ -41,7 +41,18 @@ fn real_worker_renders_searchable_pdf_and_reports_failure() {
         executable,
         Duration::from_secs(30),
     );
-    assert!(matches!(result, Err(PreviewError::Render(_))));
+    assert!(matches!(result, Err(PreviewError::Read(_))));
+    // The worker reports what kind of failure it was, so a damaged package
+    // is not shown as a failed worker with Retry.
+    let result = render_with_executable(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/truncated--errors.docx"),
+        Arc::new(AtomicBool::new(false)),
+        executable,
+        Duration::from_secs(30),
+    );
+    let error = result.err().unwrap();
+    assert!(matches!(error, PreviewError::Package(_)), "{error}");
+    assert!(!error.retryable());
     assert!(
         !std::process::Command::new(executable)
             .arg("--mdoc-docx-worker")
@@ -133,7 +144,7 @@ fn oversize_input_is_rejected_in_the_worker() {
         Path::new(env!("CARGO_BIN_EXE_mdoc")),
         Duration::from_secs(30),
     );
-    assert!(matches!(result, Err(PreviewError::Render(message)) if message.contains("50 MiB")));
+    assert!(matches!(result, Err(PreviewError::InputTooLarge)));
 }
 
 #[test]
