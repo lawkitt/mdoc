@@ -31,8 +31,9 @@ H18).
   there; F6 leaves.
   The mention popup, menus (including the Replacements panel's row and filter
   menus) and dialogs keep Tab inside them.
-- **Menus and lists take focus.** Opening the More menu or the Open Case
-  list moves focus into it, and Tab / ⇧Tab stay inside. Esc closes it and
+- **Menus and lists take focus.** Opening the More menu, the source
+  preview's More menu (the tools a narrow preview has no room for) or the
+  Open Case list moves focus into it, and Tab / ⇧Tab stay inside. Esc closes it and
   gives focus back: the More button, or where Open Case was chosen.
 - **Esc** closes a menu or the notices popover first; in the sidebar or
   toolbar with nothing open it returns focus to the editor.

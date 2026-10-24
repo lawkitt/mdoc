@@ -4,6 +4,12 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **The source preview fits narrow windows.** Its toolbar stays on one row
+  down to the minimum window size; tools without room move into a ⋯ menu
+  that works from the keyboard. Fit width now fits the page at any width
+  instead of stopping at 50%, and the preview's find bar stays inside the
+  pane.
+
 - **Undo works from the toolbar.** Undo and Redo reach the active document
   after clicking Apply and from other document chrome, including Ctrl+Y on
   Windows. Text fields keep their existing shortcut behavior.

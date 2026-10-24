@@ -22,6 +22,7 @@ fn boot_home(
 ) -> (Entity<Workspace>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
+    cx.update(gpui_pdf::bind_keys);
     cx.update(bind_app_actions);
     // Sidebar animations settle at once; timers still need the clock.
     cx.update(|cx| cx.set_reduce_motion(true));
