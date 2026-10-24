@@ -5317,6 +5317,66 @@ fn f6_returns_to_the_control_last_focused_in_a_region(cx: &mut TestAppContext) {
     assert_eq!(cx.update(|window, cx| window.focused(cx)), second);
 }
 
+/// Whether keyboard focus is on `id`'s sidebar row in either layout: the
+/// expanded list (or the rail's reveal of it) or the collapsed rail.
+fn tab_row_focused(tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext) -> bool {
+    cx.update(|window, cx| {
+        let tabs = tabs.read(cx);
+        [&tabs.sidebar_row_focus, &tabs.compact_row_focus]
+            .iter()
+            .any(|rows| rows.borrow().get(&id).is_some_and(|f| f.is_focused(window)))
+    })
+}
+
+#[gpui::test]
+fn f6_into_the_collapsed_rail_returns_to_the_last_focused_tab(cx: &mut TestAppContext) {
+    // ADR 0062: the rail lands on the tab that last had focus, not Search.
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(900.), px(700.)));
+    let first = cx.update(|_, cx| tabs.read(cx).active);
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    draw(cx);
+    // Expanded sidebar: focus the first tab's row, then leave by F6.
+    tabs.update_in(cx, |tabs, window, cx| {
+        let row = tabs.sidebar_row_focus.borrow()[&first].clone();
+        window.focus(&row, cx);
+    });
+    draw(cx);
+    key(cx, "f6");
+    assert!(in_toolbar(&tabs, cx));
+    key(cx, "f6");
+    assert!(editor_focused(&tabs, cx));
+    // Collapse: F6 comes back to that tab in the rail.
+    collapse(&tabs, cx);
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
+    assert!(
+        tab_row_focused(&tabs, first, cx),
+        "the rail lands on the tab"
+    );
+    // Out and back again, still in the rail.
+    key(cx, "f6");
+    key(cx, "f6");
+    assert!(editor_focused(&tabs, cx));
+    key(cx, "f6");
+    assert!(tab_row_focused(&tabs, first, cx), "and again after leaving");
+    // Expand: F6 lands on the same tab in the full list.
+    key(cx, "f6");
+    key(cx, "f6");
+    assert!(editor_focused(&tabs, cx));
+    tabs.update(cx, |tabs, cx| {
+        tabs.sidebar_visible = true;
+        tabs.sidebar_choice = Some(true);
+        cx.notify();
+    });
+    draw(cx);
+    key(cx, "f6");
+    cx.update(|window, cx| {
+        assert!(tabs.read(cx).sidebar_row_focus.borrow()[&first].is_focused(window));
+    });
+}
+
 #[gpui::test]
 fn escape_in_the_toolbar_or_sidebar_returns_to_the_editor(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
