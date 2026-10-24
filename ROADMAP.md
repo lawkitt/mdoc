@@ -116,6 +116,25 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   why.
 - **[Import]** Images (screenshots, photos of pages) through OCR, like Anoni's
   Image → text.
+- **[A11y]** In the collapsed rail, F6 returns to the tab that last had focus,
+  not to Search (ADR 0062). *From the 0.2.0-rc.1 acceptance run.*
+- **[A11y]** Expose the find bar's match counter ("14/16") and the popup's
+  mention counter ("4/6") to screen readers. *From the 0.2.0 acceptance runs.*
+- **[UI]** Keyboard shortcuts panel: `?` and a palette action list every
+  shortcut by context (everywhere, editor, popup, panel). *From Anoni 0.86.1.*
+- **[PII]** Selection bar: selecting text shows a small "Pseudonymize as…"
+  bar, a pointer path to ⌘⌥P with the category picked in place. *From Anoni 0.86.1.*
+- **[Cases]** Restore in place: a reply box in Share that restores live, with
+  a Reply view and "N values restored · M unrecognised"; today a reply opens
+  its own tab (ADR 0041). ADR first. *From Anoni 0.86.1.*
+- **[Workspace]** Per-document history of decisions ("What you did": applied,
+  kept, renamed, with time), next to undo. ADR first. *From Anoni 0.86.1.*
+- **[Models]** Model choices show what each detects (Person, Email, Address…)
+  and the memory of the active set ("2.3 GB in memory"). *From Anoni 0.86.1.*
+- **[PII]** Default categories to detect for new documents in Settings,
+  besides per-case categories. *From Anoni 0.86.1.*
+- **[UI]** Theme as a System / Light / Dark segmented control in Settings;
+  the sidebar button cycles without showing the choices. *From Anoni 0.86.1.*
 
 ## Ongoing tracks
 
