@@ -7,7 +7,11 @@ use std::{collections::VecDeque, time::Duration};
 
 #[path = "workspace_cases.rs"]
 mod cases_ui;
-#[cfg(all(debug_assertions, feature = "headless-renders", target_os = "macos"))]
+#[cfg(all(
+    debug_assertions,
+    feature = "headless-renders",
+    any(target_os = "macos", target_os = "windows")
+))]
 #[path = "headless_renders.rs"]
 pub(crate) mod headless_renders;
 #[path = "workspace_keychain.rs"]

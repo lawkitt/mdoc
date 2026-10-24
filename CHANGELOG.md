@@ -4,6 +4,11 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Windows offscreen screen and Tab evidence.** `just headless-renders`
+  now renders both themes through DirectWrite and a software DirectX device,
+  without creating native windows. The Windows test gate checks the same PNG,
+  Tab-walk and timing contract as macOS, using a temporary app profile.
+
 ## [0.1.5] - 2026-10-23
 
 - **Tab moves between regions.** Tab past the toolbar now enters the editor

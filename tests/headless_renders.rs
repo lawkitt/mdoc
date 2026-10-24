@@ -1,4 +1,8 @@
-#![cfg(all(target_os = "macos", debug_assertions, feature = "headless-renders"))]
+#![cfg(all(
+    any(target_os = "macos", target_os = "windows"),
+    debug_assertions,
+    feature = "headless-renders"
+))]
 
 use serde_json::Value;
 use std::{
@@ -42,10 +46,8 @@ fn png(path: &Path) {
     assert_eq!(u32::from_be_bytes(header[20..24].try_into().unwrap()), 1520);
 }
 
-#[test]
-fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
-    let temp = tempfile::tempdir().unwrap();
-    let out = temp.path().join("renders with spaces");
+#[cfg(target_os = "macos")]
+fn render_command() -> Command {
     // The child must succeed even when the real app profile and update cache
     // are inaccessible. No existing profile file is read, moved or modified.
     let mut policy = String::from("(version 1)(allow default)(deny network*)");
@@ -62,21 +64,73 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
             "(deny file-read* file-write* (subpath \"{escaped}\"))"
         ));
     }
-    let mut child = Command::new("/usr/bin/sandbox-exec")
-        .args([
-            "-p",
-            &policy,
-            env!("CARGO_BIN_EXE_mdoc"),
-            "--headless-renders",
-        ])
+    let mut command = Command::new("/usr/bin/sandbox-exec");
+    command.args(["-p", &policy, env!("CARGO_BIN_EXE_mdoc")]);
+    command
+}
+
+#[cfg(target_os = "windows")]
+fn render_command() -> Command {
+    // App path redirection and request/key guards are checked by the runner.
+    // This does not impose macOS sandbox-exec's OS file/network denial.
+    Command::new(env!("CARGO_BIN_EXE_mdoc"))
+}
+
+#[cfg(target_os = "windows")]
+fn native_windows_present(pid: u32) -> Result<bool, String> {
+    use windows_sys::Win32::{
+        Foundation::{HWND, LPARAM},
+        UI::WindowsAndMessaging::*,
+    };
+    struct Probe {
+        pid: u32,
+        found: bool,
+    }
+    unsafe extern "system" fn visit(hwnd: HWND, data: LPARAM) -> i32 {
+        let probe = unsafe { &mut *(data as *mut Probe) };
+        let mut owner = 0;
+        unsafe { GetWindowThreadProcessId(hwnd, &mut owner) };
+        probe.found |= owner == probe.pid;
+        1
+    }
+    let mut probe = Probe { pid, found: false };
+    // Include hidden top-level windows, not just visible/foreground windows.
+    if unsafe { EnumWindows(Some(visit), &mut probe as *mut Probe as isize) } == 0 {
+        return Err(format!("EnumWindows: {}", std::io::Error::last_os_error()));
+    }
+    Ok(probe.found)
+}
+
+#[test]
+fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
+    let temp = tempfile::tempdir().unwrap();
+    let out = temp.path().join("renders with spaces");
+    let mut child = render_command()
+        .arg("--headless-renders")
         .arg(&out)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     let start = Instant::now();
+    // WARP rasterizes every 2x frame in software; allow slower hosted Windows
+    // CPUs as well as this workstation. This is a hang watchdog, not a budget.
+    let timeout = Duration::from_secs(if cfg!(target_os = "windows") {
+        1200
+    } else {
+        300
+    });
     while child.try_wait().unwrap().is_none() {
-        if start.elapsed() > Duration::from_secs(300) {
+        #[cfg(target_os = "windows")]
+        if native_windows_present(child.id()) != Ok(false) {
+            child.kill().unwrap();
+            let output = child.wait_with_output().unwrap();
+            panic!(
+                "native window check failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        if start.elapsed() > timeout {
             child.kill().unwrap();
             let output = child.wait_with_output().unwrap();
             panic!(
@@ -95,7 +149,21 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
     let summary: Value =
         serde_json::from_slice(&std::fs::read(out.join("summary.json")).unwrap()).unwrap();
     assert_eq!(summary["schema_version"], 1);
-    assert_eq!(summary["renderer"], "headless-metal");
+    assert_eq!(summary["platform"], std::env::consts::OS);
+    assert_eq!(
+        summary["renderer"],
+        if cfg!(target_os = "windows") {
+            "headless-directx-warp"
+        } else {
+            "headless-metal"
+        }
+    );
+    assert_eq!(summary["isolation"]["os_case_keys_disabled"], true);
+    assert_eq!(summary["isolation"]["network_requests_disabled"], true);
+    let profile = Path::new(summary["profile_directory"].as_str().unwrap());
+    for root in ["data_directory", "cache_directory"] {
+        assert!(Path::new(summary["isolation"][root].as_str().unwrap()).starts_with(profile));
+    }
     assert!(
         !Path::new(summary["profile_directory"].as_str().unwrap()).exists(),
         "temporary profile must be removed"
@@ -158,7 +226,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
     assert!(light.pixels().any(|p| p[3] != 0));
     // Existing output is rejected, so a partial/older run cannot pass as new evidence.
     let before = std::fs::read(out.join("summary.json")).unwrap();
-    let rejected = Command::new(env!("CARGO_BIN_EXE_mdoc"))
+    let rejected = render_command()
         .arg("--headless-renders")
         .arg(&out)
         .output()

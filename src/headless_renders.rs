@@ -1,4 +1,4 @@
-//! Dev-only screen evidence. TestPlatform owns every window: no NSWindow,
+//! Dev-only screen evidence. TestPlatform owns every window: no native window,
 //! application event loop, activation, clipboard or OS prompt is used.
 use super::*;
 use gpui::{HeadlessAppContext, Keystroke};
@@ -401,7 +401,37 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     std::fs::create_dir(out).map_err(|e| format!("create {}: {e}", out.display()))?;
     let profile = tempfile::tempdir().map_err(|e| e.to_string())?;
     crate::app_paths::isolate(profile.path().to_path_buf())?;
-    let platform = gpui_platform::current_platform(true);
+    let data_directory = crate::app_paths::data_local_dir().ok_or("missing data directory")?;
+    let cache_directory = crate::app_paths::cache_dir().ok_or("missing cache directory")?;
+    if !data_directory.starts_with(profile.path()) || !cache_directory.starts_with(profile.path()) {
+        return Err("headless profile escaped temporary directory".into());
+    }
+    // Exercise both OS-key entry points before building app state. Both must
+    // refuse without touching the OS key store or any profile file.
+    let cases = data_directory.join("mdoc/cases");
+    let key_error = "OS case keys are disabled in headless renders";
+    for result in [
+        crate::cases::Store::open(cases.clone()).map(|_| ()),
+        crate::cases::Store::open_quietly(cases).map(|_| ()),
+    ] {
+        if result.err().as_deref() != Some(key_error) {
+            return Err("OS case-key guard is not active".into());
+        }
+    }
+    let network_probe = crate::model_download::fetch(
+        "https://invalid.invalid/headless-network-probe",
+        1,
+        "",
+        &profile.path().join("never-downloaded"),
+        &crate::model_download::Progress::default(),
+    );
+    if network_probe.err().as_deref() != Some("network is disabled in headless renders") {
+        return Err("network guard is not active".into());
+    }
+    #[cfg(target_os = "macos")]
+    let text_system = gpui_platform::current_platform(true).text_system();
+    #[cfg(target_os = "windows")]
+    let text_system = gpui_windows::headless_text_system().map_err(|e| e.to_string())?;
     let (text, detections) = fixture()?;
     let path = profile.path().join("Services Agreement.md");
     std::fs::write(&path, text).map_err(|e| e.to_string())?;
@@ -410,11 +440,18 @@ pub(crate) fn run(out: &Path) -> Result<()> {
         (style::ThemeChoice::Light, "light"),
         (style::ThemeChoice::Dark, "dark"),
     ] {
-        let mut cx = HeadlessAppContext::with_platform(
-            platform.text_system(),
-            Arc::new(()),
-            gpui_platform::current_headless_renderer,
-        );
+        let mut cx = HeadlessAppContext::with_platform(text_system.clone(), Arc::new(()), || {
+            #[cfg(target_os = "macos")]
+            {
+                gpui_platform::current_headless_renderer()
+            }
+            #[cfg(target_os = "windows")]
+            {
+                Some(Box::new(
+                    gpui_windows::DirectXHeadlessRenderer::new().expect("WARP renderer"),
+                ))
+            }
+        });
         cx.update(|cx| {
             cx.set_reduce_motion(true);
             mdoc_editor::bind_keys(cx);
@@ -475,8 +512,15 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             screens.push(record);
         }
     }
-    let summary = json!({"schema_version": 1, "platform": "macos", "renderer": "headless-metal", "viewport": [WIDTH, HEIGHT],
+    let renderer = if cfg!(target_os = "windows") {
+        "headless-directx-warp"
+    } else {
+        "headless-metal"
+    };
+    let summary = json!({"schema_version": 1, "platform": std::env::consts::OS, "renderer": renderer, "viewport": [WIDTH, HEIGHT],
         "profile_directory": profile.path(), "screens": screens,
+        "isolation": {"data_directory": data_directory, "cache_directory": cache_directory,
+            "os_case_keys_disabled": true, "network_requests_disabled": true},
         "timing_scope": "CPU layout/paint and synchronous GPU raster/readback measured separately; PNG encoding excluded",
         "tab_scope": "Actual Tab dispatch until first repeated focus handle, or 128 presses. Focus IDs are run-local; each step includes a PNG with the focus ring. A cycle can be a local panel loop, not whole-window coverage."});
     std::fs::write(

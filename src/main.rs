@@ -157,7 +157,11 @@ fn main() {
     }
     let args = std::env::args_os().collect::<Vec<_>>();
     if args.get(1).is_some_and(|arg| arg == "--headless-renders") {
-        #[cfg(all(debug_assertions, feature = "headless-renders", target_os = "macos"))]
+        #[cfg(all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        ))]
         {
             let result = match args.as_slice() {
                 [_, _, out] => workspace::headless_renders::run(std::path::Path::new(out)),
@@ -168,8 +172,14 @@ fn main() {
                 Err(error) => eprintln!("headless renders failed: {error}"),
             }
         }
-        #[cfg(not(all(debug_assertions, feature = "headless-renders", target_os = "macos")))]
-        eprintln!("headless renders require a macOS dev build with --features headless-renders");
+        #[cfg(not(all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )))]
+        eprintln!(
+            "headless renders require a macOS or Windows dev build with --features headless-renders"
+        );
         std::process::exit(1);
     }
     if args.get(1).is_some_and(|arg| arg == "--mdoc-docx-worker") {

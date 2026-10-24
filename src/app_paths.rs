@@ -2,10 +2,18 @@
 //! app state exists; normal and release builds use the platform directories.
 use std::path::PathBuf;
 
-#[cfg(all(debug_assertions, feature = "headless-renders", target_os = "macos"))]
+#[cfg(all(
+    debug_assertions,
+    feature = "headless-renders",
+    any(target_os = "macos", target_os = "windows")
+))]
 static SANDBOX: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
 
-#[cfg(all(debug_assertions, feature = "headless-renders", target_os = "macos"))]
+#[cfg(all(
+    debug_assertions,
+    feature = "headless-renders",
+    any(target_os = "macos", target_os = "windows")
+))]
 pub(crate) fn isolate(path: PathBuf) -> Result<(), String> {
     SANDBOX
         .set(path)
@@ -13,7 +21,11 @@ pub(crate) fn isolate(path: PathBuf) -> Result<(), String> {
 }
 
 pub(crate) fn data_local_dir() -> Option<PathBuf> {
-    #[cfg(all(debug_assertions, feature = "headless-renders", target_os = "macos"))]
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
     if let Some(path) = SANDBOX.get() {
         return Some(path.join("data"));
     }
@@ -21,7 +33,11 @@ pub(crate) fn data_local_dir() -> Option<PathBuf> {
 }
 
 pub(crate) fn cache_dir() -> Option<PathBuf> {
-    #[cfg(all(debug_assertions, feature = "headless-renders", target_os = "macos"))]
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
     if let Some(path) = SANDBOX.get() {
         return Some(path.join("cache"));
     }
@@ -29,11 +45,19 @@ pub(crate) fn cache_dir() -> Option<PathBuf> {
 }
 
 pub(crate) fn isolated() -> bool {
-    #[cfg(all(debug_assertions, feature = "headless-renders", target_os = "macos"))]
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
     {
         SANDBOX.get().is_some()
     }
-    #[cfg(not(all(debug_assertions, feature = "headless-renders", target_os = "macos")))]
+    #[cfg(not(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    )))]
     {
         false
     }
