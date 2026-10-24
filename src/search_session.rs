@@ -191,6 +191,8 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // The counter, not the last replace result, says where you are (ADR 0064).
+        self.search.status = None;
         self.step_markdown_search(false, window, cx);
     }
 
@@ -200,6 +202,8 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // The counter, not the last replace result, says where you are (ADR 0064).
+        self.search.status = None;
         self.step_markdown_search(true, window, cx);
     }
 

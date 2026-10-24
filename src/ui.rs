@@ -99,6 +99,26 @@ pub fn activity(
         .child(div().min_w_0().child(label))
 }
 
+/// A counter or status line for screen readers (ADR 0064): a Label node whose
+/// value is `spoken`, in a polite live region, so VoiceOver and Narrator read
+/// it and announce each change. Keep `id` stable across states so a change is
+/// an update of one node, not a new one.
+pub fn live_text(
+    id: impl Into<gpui::ElementId>,
+    spoken: impl Into<gpui::SharedString>,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .role(gpui::Role::Label)
+        .aria_value(spoken)
+        .a11y_synthetic_children(|tree| tree.parent_node().set_live(gpui::accesskit::Live::Polite))
+}
+
+/// What a screen reader says for a "4/6" position: "Mention 4 of 6".
+pub fn position_announcement(noun: &str, position: usize, total: usize) -> String {
+    format!("{noun} {position} of {total}")
+}
+
 /// Real byte counts only: the caller must not pass stale counts from a
 /// verification/runtime phase.
 pub fn progress_bar(received: u64, total: u64, theme: Theme) -> gpui::Div {
@@ -918,6 +938,14 @@ pub fn reveal_focus(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn positions_are_spoken_in_words() {
+        assert_eq!(
+            super::position_announcement("Mention", 4, 6),
+            "Mention 4 of 6"
+        );
+    }
+
     #[test]
     fn page_lists_compress_to_ranges() {
         assert_eq!(super::page_ranges(&[3, 4, 5, 6, 7, 12], 8), "3–7, 12");

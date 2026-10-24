@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Screen readers hear the counters.** VoiceOver and Narrator read the find
+  bar's match counter ("Match 14 of 16") and the mention popup's position
+  ("Mention 4 of 6"), and announce each change as you step through.
+
 - **Undo works from the toolbar.** Undo and Redo reach the active document
   after clicking Apply and from other document chrome, including Ctrl+Y on
   Windows. Text fields keep their existing shortcut behavior.
