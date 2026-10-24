@@ -168,8 +168,33 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  release:
+  installed-windows:
+    name: installed Windows desktop smoke
     needs: [package]
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: package-Windows
+          path: dist
+      - name: Install, launch, inspect, capture, quit and uninstall
+        shell: pwsh
+        run: scripts/ci-installed-windows.ps1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: installed-windows-desktop
+          path: installed-windows-evidence/*
+          if-no-files-found: error
+
+  release:
+    needs: [package, installed-windows]
     # Test builds stop at the run page; only tags produce a release.
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
