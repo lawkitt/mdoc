@@ -314,6 +314,11 @@ skill) read this section for mdoc's needs.
 
 ## Releasing
 
+Use `just release <version> --yes` for no prompts (`--check-all` opts into smoke
+tests; `--no-push` wins over automatic push), and `--skip-checks-if-ci-green`
+to skip local checks only when the latest CI-relevant commit on `origin/main`
+has a successful CI push run; uncertain status falls back to local checks.
+
 Releases ship only for Apple Silicon macOS (`.dmg`) and Windows x64 (NSIS
 `.exe`; `.msi` for stable versions). The repository version is the source of
 truth: `just release 0.1.0-beta.1` checks that `main` is clean and current, runs

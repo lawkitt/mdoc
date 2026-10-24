@@ -1,14 +1,44 @@
 #!/usr/bin/env bash
-# Usage: scripts/release.sh <version> [--no-push]
+# Usage: scripts/release.sh <version> [--yes] [--check-all]
+#        [--skip-checks-if-ci-green] [--no-push] [--help]
 # Makes the release commit and tag (ADR 0037): checks main is clean and
 # current, runs the checks, sets the version, names the CHANGELOG section for
 # stable versions, commits `release: v<version>`, tags, and pushes on y/N.
 source "$(dirname "$0")/lib.sh"
+source scripts/release-ci.sh
 
-new=${1:?usage: release.sh <version> [--no-push]}
+usage() {
+  cat <<'EOF'
+Usage: scripts/release.sh <version> [flags]
+  --yes                      Do not prompt; use check and confirm the push
+  --check-all                Run check-all instead of offering the smoke tests
+  --skip-checks-if-ci-green   Skip local checks when origin/main has green CI
+  --no-push                  Create the commit and tag without pushing (wins over --yes)
+  --help                     Show this help
+Flags may appear in any order after the version. --yes uses check unless
+--check-all is given. Unclear CI status always falls back to local checks.
+EOF
+}
+
+[ "$#" -gt 0 ] || { usage >&2; exit 1; }
+[ "$1" != --help ] || { usage; exit 0; }
+new=$1
+shift
 new=${new#v}
 push=1
-[ "${2:-}" = "--no-push" ] && push=0
+yes=0
+check_all=0
+skip_checks=0
+for flag in "$@"; do
+  case "$flag" in
+    --yes) yes=1 ;;
+    --check-all) check_all=1 ;;
+    --skip-checks-if-ci-green) skip_checks=1 ;;
+    --no-push) push=0 ;;
+    --help) usage; exit 0 ;;
+    *) die "unknown flag: $flag (see --help)" ;;
+  esac
+done
 is_semver "$new" || die "not a SemVer version: $new"
 tag="v$new"
 
@@ -27,10 +57,14 @@ if [ "$stable" = 1 ]; then
   [ -n "$body" ] || die "CHANGELOG.md has no Unreleased entries for $new"
 fi
 
-if confirm "Also run the model and OCR smoke tests (just check-all, downloads models)?"; then
-  just check-all
+if [ "$skip_checks" = 1 ] && release_ci_green; then
+  : # The tag's Release workflow still runs full CI before packaging.
 else
-  just check
+  if [ "$check_all" = 1 ] || { [ "$yes" = 0 ] && confirm "Also run the model and OCR smoke tests (just check-all, downloads models)?"; }; then
+    just check-all
+  else
+    just check
+  fi
 fi
 
 scripts/set-version.sh "$new"
@@ -48,7 +82,7 @@ git tag -a "$tag" -m "mdoc $tag"
 echo "created release commit and tag $tag"
 
 if [ "$push" = 1 ]; then
-  if confirm "Push main and $tag to origin (starts the release build)?"; then
+  if [ "$yes" = 1 ] || confirm "Push main and $tag to origin (starts the release build)?"; then
     git push --atomic origin main "$tag"
     echo "pushed; the draft release appears at https://github.com/lawkitt/mdoc/releases once the build finishes"
     exit 0
