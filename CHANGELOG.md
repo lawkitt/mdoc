@@ -4,6 +4,13 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **The locked-cases notice waits until it matters.** Opening a plain
+  document no longer pops "Saved cases are locked" over its preview; the
+  notice stays behind the Notices bell. It still opens by itself when a tab
+  restored from a saved case is open, when Paste AI Response or Pseudonymize
+  clipboard finds no names in the tab while cases are locked, and after a
+  declined Keychain dialog, so Try again is in view.
+
 - **The source preview fits narrow windows.** Its toolbar stays on one row
   down to the minimum window size; tools without room move into a ⋯ menu
   that works from the keyboard. Fit width now fits the page at any width
