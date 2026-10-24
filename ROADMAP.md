@@ -61,10 +61,9 @@ to the top of the next milestone. Items are in priority order.
 
 ### Should-fix
 
-1. **[Tests] Windows headless screen renders and Tab walk.** *From Panoply.*
-   Add GPUI's offscreen DirectX adapter and enable the macOS recipe on Windows
-   ([follow-up](docs/development.md#headless-screen-renders-macos)).
-   *Done when:* the same render/Tab output test passes on Windows without a visible window.
+None open. The five from the rc.1 run (Windows headless renders, installed
+Windows package smoke, model source and license, conversion clean-up, caret
+affinity) shipped in 0.2.0-rc.2.
 
 ## Later
 
