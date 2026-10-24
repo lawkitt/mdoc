@@ -692,6 +692,9 @@ fn newest(
 /// Blocking; call from a background task. `/releases/latest` already excludes
 /// drafts and pre-releases; the list endpoint is needed when they count.
 fn fetch(include_prereleases: bool) -> Result<Vec<Release>, String> {
+    if crate::app_paths::isolated() {
+        return Err("network is disabled in headless renders".into());
+    }
     if cfg!(test) {
         return Err("no network in tests".into());
     }

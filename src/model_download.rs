@@ -119,6 +119,9 @@ pub fn fetch(
     path: &Path,
     progress: &Progress,
 ) -> Result<(), String> {
+    if crate::app_paths::isolated() {
+        return Err("network is disabled in headless renders".into());
+    }
     progress.check()?;
     progress.phase("Verifying");
     if verify(path, bytes, sha).is_ok() {

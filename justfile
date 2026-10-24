@@ -34,7 +34,7 @@ lint:
 test:
     cargo test --workspace --features headless-renders
 
-# Offscreen macOS screen/Tab evidence in a new output directory (dev only)
+# Offscreen macOS/Windows screen/Tab evidence in a new output directory (dev only)
 [positional-arguments]
 headless-renders out:
     cargo run --locked --features headless-renders --bin mdoc -- --headless-renders "$1"

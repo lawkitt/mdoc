@@ -146,7 +146,11 @@ impl Workspace {
     }
     #[cfg(any(
         test,
-        all(debug_assertions, feature = "headless-renders", target_os = "macos")
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
     ))]
     pub(super) fn use_case_store(&mut self, store: Store) {
         self.cases.store = Some(Arc::new(store));

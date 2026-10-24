@@ -169,7 +169,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just smoke-models [--download]` | Default OCR and pseudonymization models through setup and offline paths |
 | `just check-all` | `check` + both smoke recipes |
 | `just perf` | Ignored performance tests, serially |
-| `just headless-renders <new-directory>` | macOS: light/dark PNGs, actual Tab walks and frame costs, entirely offscreen |
+| `just headless-renders <new-directory>` | macOS/Windows: light/dark PNGs, actual Tab walks and frame costs, entirely offscreen |
 | `just package` | This machine's installers into `dist/` |
 | `just smoke-package` | OCR from the packaged artifact: the `.dmg`'s signed app, or the release `mdoc.exe` (release gate) |
 | `just smoke-update [dmg]` | An older Developer ID signed `.dmg` updates itself to the latest release through `--mdoc-self-update` (manual, before releases that change the updater) |
@@ -181,26 +181,32 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 Heavy, download and machine-dependent tests run only through these recipes, on
 the Apple Silicon Mac and the Windows x64 PC.
 
-### Headless screen renders (macOS)
+### Headless screen renders (macOS and Windows)
 
 ```sh
-just headless-renders /tmp/mdoc-renders
+just headless-renders ./mdoc-renders
 ```
 
 The output directory must be new and its parent must exist. The recipe builds
 the dev binary with `headless-renders`; the runner is absent in release builds,
 even with that feature enabled. It uses GPUI's `HeadlessAppContext`, native
-macOS text shaping and the headless Metal texture renderer. All windows are
-`TestWindow`s: no native window, application event loop, activation or screen
-capture. It can run while someone else uses the Mac.
+text shaping (Core Text on macOS, DirectWrite on Windows). macOS uses the
+headless Metal texture renderer; Windows uses a test-only DirectX 11 WARP
+software device and offscreen textures, with staging readback to RGBA. The
+Windows adapter constructs neither `WindowsPlatform` nor an HWND, swap chain
+or DirectComposition target. All windows are `TestWindow`s: no native window, application event loop, activation or screen
+capture. It can run while someone else uses the desktop.
 
 Every run creates and removes a temporary profile, redirects app data and cache
 paths before building app state, injects a temporary case store and disables OS
 case-key access. It reads only public fixtures, never the real mdoc profile,
 clipboard or installed models; it downloads nothing. The gate's integration
-test runs the child under `sandbox-exec`, denying the real profile/update cache
-and network access. `just lint` and `just test` enable this dev feature; on
-macOS the latter checks the actual generated files and profile cleanup.
+test on macOS runs the child under `sandbox-exec`, denying the real
+profile/update cache and network access. `just lint` and `just test` enable
+this dev feature; on both platforms the latter checks the actual generated files and profile cleanup.
+The existing CI Windows job runs this test through `just test`. On Windows,
+the integration test also polls all top-level HWNDs owned by the child
+(including hidden ones) and fails if it creates any; the check filters by child process ID and leaves other apps untouched.
 
 Output layout:
 
@@ -241,14 +247,18 @@ PNG encoding is excluded. Timings describe this dev run, without pass/fail
 budgets; use an idle machine to compare them. These images do not establish
 native input, IME, accessibility or display-presentation acceptance.
 
-**Windows follow-up:** GPUI 0.3.2 has DirectX image readback, but
-`current_headless_renderer()` returns `None` outside macOS. Add a standalone
-`PlatformHeadlessRenderer` backed by offscreen DirectX textures and DirectWrite
-shaping, expose it through that factory, then enable the runner's Windows cfg.
-Run the same output test on Windows, replacing the macOS sandbox policy with a
-Windows profile-isolation check and verifying no HWND is shown or activated.
-Keep the Git Bash recipe and JSON/file contract. No Windows implementation or
-runtime validation is included here.
+**Windows isolation limits:** app data/cache roots are redirected before app
+state is constructed, and the runner checks they remain under its temporary
+profile. Both OS case-key entry points refuse in this mode (no DPAPI access);
+the runner exercises those guards. All app HTTP request entry points reject
+requests in this mode, and the model-download guard is exercised before any
+render. The GPUI test HTTP client has no network backend. This is application
+isolation, not an OS security boundary: Windows does not run `sandbox-exec`,
+and the test applies no filesystem ACL, AppContainer or firewall policy.
+A new unguarded native filesystem/network call would not be denied by Windows.
+No permissions or files in the real `%LOCALAPPDATA%\mdoc` are changed, and the
+installed app can continue running in parallel. Native presentation and GPU
+hardware behavior remain outside this software-rendered test.
 
 ## Build cache and disk use
 

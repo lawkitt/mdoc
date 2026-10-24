@@ -16,12 +16,14 @@ resolver = "2"
 
 [features]
 # The entry point and runner are additionally gated by debug_assertions.
-headless-renders = ["gpui/test-support", "gpui_platform/test-support"]
+headless-renders = ["gpui/test-support", "gpui_platform/test-support", "dep:gpui_windows", "gpui_windows/test-support"]
 
 # Remove when an adopted GPUI release includes the combining-mark correction.
 # Preserve the current GPUI family; see vendor/gpui-pre-wgpu/ZORITE-PATCH.md.
 [patch.crates-io]
 gpui-pre-wgpu = { path = "vendor/gpui-pre-wgpu" }
+# Test-only WARP adapter; see vendor/gpui-pre-windows/MDOC-PATCH.md.
+gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
 
 [workspace.dependencies]
 gpui = { package = "gpui-pre", version = "0.3" }
@@ -78,6 +80,7 @@ security-framework = { version = "3", features = ["OSX_10_15"] }
 secret-service = { version = "5", default-features = false, features = ["rt-async-io-crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]
+gpui_windows = { package = "gpui-pre-windows", version = "=0.3.2", optional = true }
 # Single-instance launch (src/single_instance.rs) uses the pipe, session and
 # foreground features; recognition defaults read the keyboard layouts.
 windows-sys = { version = "0.61", features = [
