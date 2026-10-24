@@ -907,9 +907,15 @@ impl Workspace {
             )
             .child(
                 div()
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .text_center()
+                    .px_4()
                     .text_size(px(12.))
                     .text_color(p.header_muted)
-                    .child("PDF, DOCX or Markdown · several at once open in their own tabs"),
+                    .child(crate::import::supported_formats())
+                    .child("Several at once open in their own tabs"),
             )
             .into_any_element()
     }

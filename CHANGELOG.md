@@ -4,6 +4,11 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Open hints name every format.** Home and a new tab list each format mdoc
+  opens: PDF, Word, Excel, PowerPoint, OpenDocument, RTF, EPUB, CSV and
+  Markdown, not just PDF, DOCX and Markdown. The unsupported-format message
+  uses the same list.
+
 - **Screen readers hear the counters.** VoiceOver and Narrator read the find
   bar's match counter ("Match 14 of 16") and the mention popup's position
   ("Mention 4 of 6"), and announce each change as you step through.

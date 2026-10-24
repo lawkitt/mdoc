@@ -11,7 +11,45 @@ pub fn supported_extension(path: &Path) -> bool {
     crate::document::is_markdown(path) || anydoc::Format::from_path(path).is_some()
 }
 
-/// What a drop target accepts: a supported file, or a folder that opens as a
+/// The formats mdoc opens, as hints name them: one entry per converter
+/// family, then Markdown, which opens without conversion. `format_family`
+/// keeps this list in step with AnyDoc's formats.
+const FORMAT_NAMES: [&str; 9] = [
+    "PDF",
+    "Word",
+    "Excel",
+    "PowerPoint",
+    "OpenDocument",
+    "RTF",
+    "EPUB",
+    "CSV",
+    "Markdown",
+];
+
+/// The index in `FORMAT_NAMES` that names `format`. Exhaustive, so a format
+/// added to AnyDoc fails the test build until a hint names it.
+#[cfg(test)]
+fn format_family(format: anydoc::Format) -> usize {
+    use anydoc::Format;
+    match format {
+        Format::Pdf => 0,
+        Format::Doc | Format::Docx => 1,
+        Format::Excel => 2,
+        Format::Ppt | Format::Pptx => 3,
+        Format::Odt | Format::Ods | Format::Odp => 4,
+        Format::Rtf => 5,
+        Format::Epub => 6,
+        Format::Csv => 7,
+    }
+}
+
+/// Every supported format for a hint: "PDF, Word, … or Markdown".
+pub fn supported_formats() -> String {
+    let (last, rest) = FORMAT_NAMES.split_last().expect("formats");
+    format!("{} or {last}", rest.join(", "))
+}
+
+/// What a drop target accepts:a supported file, or a folder that opens as a
 /// case (ADR 0041 #28). One stat per dragged path.
 pub fn droppable(path: &Path) -> bool {
     supported_extension(path) || path.is_dir()
@@ -246,7 +284,7 @@ fn message(error: anydoc::ConvertError) -> String {
     match error {
         ConvertError::NeedsOcr { .. } => "This PDF requires OCR. Run text recognition in another application, then import it again.".into(),
         ConvertError::Encrypted => "This document is password-protected. Import an unlocked copy.".into(),
-        ConvertError::Unsupported(_) => "This format is not supported. Choose a PDF, Office, OpenDocument, RTF, EPUB, or CSV file.".into(),
+        ConvertError::Unsupported(_) => format!("This format is not supported. Choose a {} file.", supported_formats()),
         ConvertError::Malformed { .. } | ConvertError::MissingPart { .. } => "This document could not be converted because its contents are damaged or incomplete.".into(),
         ConvertError::ResourceLimit { .. } => "This document exceeds the converter’s resource limits. Try importing a smaller document.".into(),
         ConvertError::Io(error) => format!("Could not read document: {error}"),
@@ -257,6 +295,34 @@ fn message(error: anydoc::ConvertError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_hint_names_every_converter_format() {
+        assert_eq!(
+            supported_formats(),
+            "PDF, Word, Excel, PowerPoint, OpenDocument, RTF, EPUB, CSV or Markdown"
+        );
+        // Every extension the pinned AnyDoc accepts, with the family a hint
+        // names it by.
+        for (family, extensions) in [
+            ("PDF", &["pdf"][..]),
+            ("Word", &["doc", "docx", "docm"]),
+            ("Excel", &["xls", "xlsx", "xlsm", "xlsb"]),
+            (
+                "PowerPoint",
+                &["ppt", "pps", "pot", "pptx", "pptm", "ppsx", "ppsm"],
+            ),
+            ("OpenDocument", &["odt", "ods", "odp"]),
+            ("RTF", &["rtf"]),
+            ("EPUB", &["epub"]),
+            ("CSV", &["csv"]),
+        ] {
+            for extension in extensions {
+                let format = anydoc::Format::from_extension(extension).expect(extension);
+                assert_eq!(FORMAT_NAMES[format_family(format)], family, "{extension}");
+            }
+        }
+    }
 
     fn fixture(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
