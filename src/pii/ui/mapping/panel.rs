@@ -452,7 +452,12 @@ impl DocumentView {
             .flex_col()
             .w(self.replacements_panel_width(window) - px(16.))
             .p_3()
-            .child(card.child(ui::card_note(note, theme)))
+            .child(
+                card.child(ui::card_note(note, theme))
+                    .when_some(model, |card, model| {
+                        card.child(ui::model_attribution("pii-model-attribution", model, theme))
+                    }),
+            )
             .into_any_element()
     }
 

@@ -1,4 +1,5 @@
 //! Explicit, app-managed OCR setup. Only `install` is allowed to use the network.
+pub mod manifest;
 use std::{
     fs::{self, File},
     io::Read,

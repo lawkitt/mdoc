@@ -870,6 +870,7 @@ impl Panel {
                     .child(self.scrolled_quiet(("model-details", index), if self.details == Some(model) { "Less ↑" } else { "Details ↓" }, theme, true, cx)
                         .when(cfg!(test) && model == Model::Pii(PiiModel::Fp16), |v| v.debug_selector(|| "settings-details-fp16".into()))
                         .on_click(cx.listener(move |this, _, _, cx| { this.details = if this.details == Some(model) { None } else { Some(model) }; cx.notify(); })))))
+            .child(div().px_3().pb_2().child(ui::model_attribution(("model-attribution", index), model, theme)))
             .when_some(self.progress_of(model), |v, state| v.child(div().px_3().pb_3().child(ui::setup_progress(("model-progress", index), &state, self.cancelling(), theme))))
             .when(self.details == Some(model), |v| {
                 let (revision, path) = match model {
@@ -877,7 +878,7 @@ impl Panel {
                     Model::Pii(m) => (pii::detector::manifest_for(m).revision, pii::detector::root_for(m)),
                 };
                 let evidence = match model { Model::Ocr(m) => m.evidence(), Model::Pii(m) => m.evidence() };
-                let license = match model { Model::Ocr(_) => "Apache-2.0", Model::Pii(m) => m.license() };
+                let (_, license) = model.source_and_license();
                 let mut details = div().flex().flex_col().gap_2().px_3().pb_3().min_w_0().text_size(px(11.)).text_color(palette.header_muted)
                     .child(div().text_color(palette.header_fg).child(format!("{} · {} MB", model.name(), model_download::megabytes(bytes))))
                     .child(evidence)
@@ -1018,6 +1019,31 @@ impl Render for Panel {
 mod tests {
     use super::*;
     use gpui::TestAppContext;
+    #[gpui::test]
+    fn all_download_choices_show_source_and_license_without_details(cx: &mut TestAppContext) {
+        let (panel, cx) = cx.add_window_view(|_, cx| {
+            Panel::new(Store::new(), Rc::new(Cell::new(Theme::default())), cx)
+        });
+        cx.simulate_resize(size(px(800.), px(2400.)));
+        panel.update(cx, |panel, cx| {
+            panel.open = true;
+            panel.statuses.fill(Status::Missing);
+            assert!(panel.details.is_none());
+            cx.notify();
+        });
+        cx.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        for model in Model::ALL {
+            let label = format!("{}: {}", model.name(), model.attribution_label());
+            assert!(
+                cx.debug_bounds(Box::leak(label.clone().into_boxed_str()))
+                    .is_some(),
+                "{label}"
+            );
+        }
+    }
     #[gpui::test]
     fn keyboard_focus_reveals_choices_in_small_scrolling_panel(cx: &mut TestAppContext) {
         cx.update(bind_keys);

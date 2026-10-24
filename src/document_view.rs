@@ -1327,6 +1327,9 @@ impl DocumentView {
                 },
                 theme,
             ))
+            .when_some(model, |card, model| {
+                card.child(ui::model_attribution("ocr-model-attribution", model, theme))
+            })
             .into_any_element()
     }
 

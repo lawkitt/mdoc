@@ -468,6 +468,22 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
     ] {
         assert!(cx.debug_bounds(selector).is_some(), "{selector}");
     }
+    for model in settings::OcrModel::ALL {
+        view.update(cx, |view, cx| {
+            view.pick_recognition(model.languages().to_vec(), cx);
+        });
+        draw(cx);
+        let model = settings::Model::Ocr(model);
+        let label = format!("{}: {}", model.name(), model.attribution_label());
+        let bounds = cx
+            .debug_bounds(Box::leak(label.into_boxed_str()))
+            .expect("OCR source and license");
+        let card = cx.debug_bounds("conversion-card").unwrap();
+        assert!(bounds.top() >= card.top() && bounds.bottom() <= card.bottom());
+    }
+    view.update(cx, |view, cx| {
+        view.pick_recognition(settings::OcrModel::V6Small.languages().to_vec(), cx);
+    });
     // Setup progress replaces the actions with Cancel.
     view.update(cx, |view, cx| {
         view.ocr_state = OcrState::Installing;
@@ -967,7 +983,10 @@ fn copy_markdown_button_uses_active_tab_without_editor_focus(cx: &mut TestAppCon
 fn toolbar_settings_opens_and_closes_without_editor_focus(cx: &mut TestAppContext) {
     cx.update(settings_ui::bind_keys);
     let (tabs, cx) = boot(cx, Session::default());
-    cx.simulate_resize(size(px(1100.), px(760.)));
+    // Keep the direct-click targets visible with the model attribution rows.
+    // Scrolling keyboard reach is covered separately; below we resize small
+    // to verify that the dialog and its footer stay within the viewport.
+    cx.simulate_resize(size(px(1100.), px(1200.)));
     let panel = cx.update(|window, cx| {
         window.focus(&tabs.read(cx).focus.clone(), cx);
         tabs.read(cx).settings.clone()
