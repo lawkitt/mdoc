@@ -3546,6 +3546,146 @@ fn applied_document<'a>(
 }
 
 #[gpui::test]
+fn chrome_history_undoes_toolbar_apply_and_redoes_without_editor_focus(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    cx.update(|_, cx| bind_app_keys(cx));
+    let view = active(&tabs, cx);
+    let source = "Anna Petrova met Northwind Traders Ltd.";
+    let applied = "PERSON_1 met ORG_1.";
+    view.update_in(cx, |view, window, cx| {
+        view.editor
+            .update(cx, |editor, cx| editor.undo(&mdoc_editor::Undo, window, cx));
+    });
+    cx.run_until_parked();
+    click_toolbar(cx, "primary-apply");
+    cx.update(|window, cx| {
+        assert_eq!(view.read(cx).editor.read(cx).text(), applied);
+        assert!(
+            window
+                .context_stack()
+                .iter()
+                .any(|context| context.contains("UiControl"))
+        );
+        assert!(
+            !view
+                .read(cx)
+                .editor
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        );
+    });
+    let (undo, redo) = if cfg!(target_os = "macos") {
+        ("cmd-z", "cmd-shift-z")
+    } else {
+        ("ctrl-z", "ctrl-shift-z")
+    };
+    key(cx, undo);
+    cx.update(|_, cx| {
+        assert_eq!(view.read(cx).editor.read(cx).text(), source);
+        assert_eq!(view.read(cx).pii.review.remaining(), 2);
+    });
+    key(cx, redo);
+    cx.update(|_, cx| {
+        assert_eq!(view.read(cx).editor.read(cx).text(), applied);
+        assert_eq!(view.read(cx).pii.review.remaining(), 0);
+    });
+    if !cfg!(target_os = "macos") {
+        key(cx, undo);
+        key(cx, "ctrl-y");
+        cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), applied));
+    }
+}
+
+#[gpui::test]
+fn chrome_history_targets_the_active_tab_and_leaves_home_and_settings_alone(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    cx.update(|_, cx| bind_app_keys(cx));
+    let first = active(&tabs, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    let second = active(&tabs, cx);
+    second.update(cx, |view, cx| {
+        view.editor
+            .update(cx, |editor, cx| editor.replace_range(0..0, "second", cx));
+    });
+    cx.run_until_parked();
+    // The sidebar's toggle is outside DocumentView's dispatch subtree.
+    click_toolbar(cx, "sidebar-toggle");
+    let undo = if cfg!(target_os = "macos") {
+        "cmd-z"
+    } else {
+        "ctrl-z"
+    };
+    key(cx, undo);
+    cx.update(|_, cx| {
+        assert_eq!(second.read(cx).editor.read(cx).text(), "");
+        assert_eq!(first.read(cx).editor.read(cx).text(), "PERSON_1 met ORG_1.");
+    });
+    key(
+        cx,
+        if cfg!(target_os = "macos") {
+            "cmd-shift-z"
+        } else {
+            "ctrl-shift-z"
+        },
+    );
+    click_toolbar(cx, "sidebar-toggle");
+    click_toolbar(cx, "sidebar-home");
+    key(cx, undo);
+    cx.update(|_, cx| assert_eq!(second.read(cx).editor.read(cx).text(), "second"));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.activate(second.read(cx).owner.0, window, cx);
+        tabs.show_settings(window, cx);
+    });
+    cx.run_until_parked();
+    key(cx, undo);
+    cx.update(|_, cx| assert_eq!(second.read(cx).editor.read(cx).text(), "second"));
+}
+
+#[gpui::test]
+fn unsaved_mapping_is_absent_after_session_restore(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    // Saving Markdown retains alias tokens, but does not save their originals.
+    view.update_in(cx, |view, window, cx| view.write(path, None, window, cx));
+    cx.run_until_parked();
+    let manifest = dir.path().join("session.json");
+    cx.update(|_, cx| session_store::save(&manifest, &tabs.read(cx).snapshot(cx)).unwrap());
+    let json = std::fs::read_to_string(&manifest).unwrap();
+    assert!(!json.contains("Anna Petrova"));
+    assert!(!json.contains("Northwind Traders"));
+    let saved = session_store::load(&manifest).unwrap();
+    assert!(saved.tabs[0].case.is_none());
+    let restored = cx.update(|window, cx| {
+        cx.new(|cx| {
+            let mut restored = Workspace::empty(window, cx);
+            restored.use_case_store(crate::cases::Store::with_key(
+                dir.path().join("cases"),
+                &[3; 32],
+            ));
+            restored.restore(saved, window, cx);
+            restored
+        })
+    });
+    cx.run_until_parked();
+    let reopened = active(&restored, cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            reopened.read(cx).editor.read(cx).text(),
+            "PERSON_1 met ORG_1."
+        );
+        assert!(reopened.read(cx).case.is_none());
+        assert!(reopened.read(cx).pii.review.active_identities().is_empty());
+    });
+}
+
+#[gpui::test]
 fn home_clipboard_actions_use_the_active_documents_mapping(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());

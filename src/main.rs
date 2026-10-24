@@ -361,6 +361,23 @@ pub(crate) fn bind_app_keys(cx: &mut App) {
         "ctrl"
     };
     cx.bind_keys([
+        // Chrome falls back to the active document; text fields keep their keys.
+        KeyBinding::new(
+            &format!("{modifier}-z"),
+            mdoc_editor::Undo,
+            Some("Workspace && !Editor && !TextInput"),
+        ),
+        KeyBinding::new(
+            &format!("{modifier}-shift-z"),
+            mdoc_editor::Redo,
+            Some("Workspace && !Editor && !TextInput"),
+        ),
+        #[cfg(not(target_os = "macos"))]
+        KeyBinding::new(
+            "ctrl-y",
+            mdoc_editor::Redo,
+            Some("Workspace && !Editor && !TextInput"),
+        ),
         KeyBinding::new(&format!("{modifier}-,"), Settings, None),
         KeyBinding::new(&format!("{modifier}-n"), New, None),
         KeyBinding::new(&format!("{modifier}-o"), Open, None),

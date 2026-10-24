@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Undo works from the toolbar.** Undo and Redo reach the active document
+  after clicking Apply and from other document chrome, including Ctrl+Y on
+  Windows. Text fields keep their existing shortcut behavior.
+
 - **Cleaner document conversion.** Converted PDFs and Office documents join
   hyphenated line breaks and normalize lists and blank lines.
 

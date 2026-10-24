@@ -159,38 +159,42 @@ impl DocumentView {
             Primary::None => return None,
             Primary::Scanning => self.scan_status(cx)?,
             Primary::Convert => {
-                ui::filled_button("primary-convert", "Convert to Markdown", theme, true)
+                ui::filled_button("primary-action", "Convert to Markdown", theme, true)
                     .when(cfg!(test), |v| {
                         v.debug_selector(|| "primary-convert".into())
                     })
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(Import), cx))
                     .into_any_element()
             }
-            Primary::Pseudonymize => ui::filled_button("Pseudonymize", "Pseudonymize", theme, true)
-                .when(cfg!(test), |v| v.debug_selector(|| "Pseudonymize".into()))
-                .on_click(cx.listener(|this, _, window, cx| {
-                    // Pseudonymize scans once and opens the panel; it never
-                    // closes it (ADR 0048 decision 22).
-                    let review = &this.pii.review;
-                    let fresh = !this.pii.reviewing
-                        && review.variants().is_empty()
-                        && review.applied().is_empty();
-                    if fresh {
-                        this.start_pii_scan(cx);
-                    }
-                    if !this.replacements_open() {
-                        this.toggle_replacements_panel(window, cx);
-                    }
-                }))
-                .into_any_element(),
+            Primary::Pseudonymize => {
+                ui::filled_button("primary-action", "Pseudonymize", theme, true)
+                    .when(cfg!(test), |v| v.debug_selector(|| "Pseudonymize".into()))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        // Pseudonymize scans once and opens the panel; it never
+                        // closes it (ADR 0048 decision 22).
+                        let review = &this.pii.review;
+                        let fresh = !this.pii.reviewing
+                            && review.variants().is_empty()
+                            && review.applied().is_empty();
+                        if fresh {
+                            this.start_pii_scan(cx);
+                        }
+                        if !this.replacements_open() {
+                            this.toggle_replacements_panel(window, cx);
+                        }
+                    }))
+                    .into_any_element()
+            }
             Primary::Apply(n) => {
-                ui::filled_button("primary-apply", format!("Apply {n}"), theme, true)
+                // Keep the element's generated focus handle when Apply becomes
+                // Share (and back on Undo), so chrome shortcuts still dispatch.
+                ui::filled_button("primary-action", format!("Apply {n}"), theme, true)
                     .when(cfg!(test), |v| v.debug_selector(|| "primary-apply".into()))
                     .child(ui::key_hint(format!("{modifier}↩")))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(PiiApplyAll), cx))
                     .into_any_element()
             }
-            Primary::Share => ui::primary_button("primary-share", "Share", theme, true)
+            Primary::Share => ui::primary_button("primary-action", "Share", theme, true)
                 .when(cfg!(test), |v| v.debug_selector(|| "primary-share".into()))
                 .h(px(28.))
                 .on_click(cx.listener(|this, _, window, cx| {
@@ -202,7 +206,7 @@ impl DocumentView {
                 }))
                 .into_any_element(),
             Primary::Copy => ui::filled_button(
-                "primary-copy",
+                "primary-action",
                 if copied { "Copied" } else { "Copy" },
                 theme,
                 true,
