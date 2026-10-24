@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Find controls fit small windows.** Find and Find and Replace keep usable
+  text fields and wrap their controls within the editor column when the
+  Replacements panel and Source preview are open at the minimum window size.
+
 - **Windows offscreen screen and Tab evidence.** `just headless-renders`
   now renders both themes through DirectWrite and a software DirectX device,
   without creating native windows. The Windows test gate checks the same PNG,

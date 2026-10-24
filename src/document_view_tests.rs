@@ -1949,6 +1949,104 @@ fn replace_all_keys() -> &'static str {
 }
 
 #[gpui::test]
+fn find_and_replace_fit_beside_replacements_at_minimum_window_size(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    for theme in [Theme::Dark, Theme::Light] {
+        for width in [720., 1100., 1500.] {
+            for replace in [false, true] {
+                cx.simulate_resize(size(px(width), px(480.)));
+                open_replace(&app, "the cat and the dog", "the", "a", cx);
+                app.update_in(cx, |app, window, cx| {
+                    app.theme.set(theme);
+                    app.pii.reviewing = true;
+                    if !app.replacements_open() {
+                        app.toggle_replacements_panel(window, cx);
+                    }
+                    app.preview.visible = true;
+                    app.original_selected = false;
+                    app.search.replace_open = replace;
+                    if replace {
+                        // Replacement results are wider than the ordinary match count.
+                        app.search.status = Some("Replaced 2 · skipped 1 (formatting)".into());
+                    }
+                    cx.notify();
+                });
+                // The document measures its column after the workspace/sidebar layout.
+                cx.run_until_parked();
+                for _ in 0..3 {
+                    cx.update(|window, cx| {
+                        window.refresh();
+                        window.draw(cx).clear(cx);
+                    });
+                    cx.run_until_parked();
+                }
+                let panel = cx.debug_bounds("identity-panel").unwrap();
+                let mut controls = vec![
+                    "markdown-search-replace-toggle",
+                    "markdown-search-input",
+                    "markdown-search-match-case",
+                    "markdown-search-whole-word",
+                    "markdown-search-count",
+                    "markdown-search-previous",
+                    "markdown-search-next",
+                    "markdown-search-close",
+                ];
+                if replace {
+                    controls.extend([
+                        "markdown-replace-input",
+                        "markdown-replace-next",
+                        "markdown-replace-all",
+                    ]);
+                }
+                let mut boxes = Vec::new();
+                for id in controls {
+                    let bounds = cx.debug_bounds(id).unwrap();
+                    assert!(
+                        bounds.left() >= px(0.)
+                            && bounds.right() <= panel.left()
+                            && bounds.top() >= px(0.)
+                            && bounds.bottom() <= px(480.),
+                        "{id} {bounds:?} must fit before panel {panel:?} at {width}"
+                    );
+                    if id.ends_with("-input") {
+                        assert!(bounds.size.width >= px(96.), "usable {id}: {bounds:?}");
+                    }
+                    for (other_id, other) in &boxes {
+                        assert!(!bounds.intersects(other), "{id} overlaps {other_id}");
+                    }
+                    boxes.push((id, bounds));
+                }
+                for id in ["markdown-search-input", "markdown-replace-input"] {
+                    if id == "markdown-replace-input" && !replace {
+                        continue;
+                    }
+                    let field = cx.debug_bounds(id).unwrap();
+                    cx.simulate_click(field.center(), Default::default());
+                    cx.run_until_parked();
+                    assert!(cx.update(|window, cx| {
+                        let app = app.read(cx);
+                        let input = if id == "markdown-search-input" {
+                            &app.markdown_search
+                        } else {
+                            &app.markdown_replace
+                        };
+                        input.read(cx).focus_handle(cx).is_focused(window)
+                    }));
+                }
+                let next = cx.debug_bounds("markdown-search-next").unwrap();
+                cx.simulate_click(next.center(), Default::default());
+                cx.run_until_parked();
+                assert_eq!(app.read_with(cx, |app, _| app.search.active), Some(1));
+                let close = cx.debug_bounds("markdown-search-close").unwrap();
+                cx.simulate_click(close.center(), Default::default());
+                cx.run_until_parked();
+                assert!(!app.read_with(cx, |app, _| app.search.open));
+            }
+        }
+    }
+}
+
+#[gpui::test]
 fn replace_all_skips_formatting_and_one_undo_reverts_it(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     let source = "hi **there**. hi there. Hi there.";

@@ -1613,6 +1613,7 @@ fn search_bar_button(
     let palette = theme.pdf_style();
     div()
         .id(id)
+        .when(cfg!(test), |v| v.debug_selector(move || id.into()))
         .role(gpui::Role::Button)
         .key_context("UiControl")
         .tab_index(0)
@@ -1783,9 +1784,11 @@ impl Render for DocumentView {
         let field = |id: &'static str, focused: bool| {
             div()
                 .id(id)
+                .when(cfg!(test), |v| v.debug_selector(move || id.into()))
                 .flex()
                 .flex_1()
-                .min_w_0()
+                // Keep room for text after padding, even beside the inspector.
+                .min_w(px(96.))
                 .h(px(28.))
                 .px_2()
                 .items_center()
@@ -1844,7 +1847,11 @@ impl Render for DocumentView {
         }));
         let count = div()
             .id("markdown-search-count")
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "markdown-search-count".into())
+            })
             .flex_shrink_0()
+            .max_w_full()
             .px_2()
             .text_size(px(12.))
             .text_color(palette.header_muted)
@@ -1908,6 +1915,9 @@ impl Render for DocumentView {
             div()
                 .id("markdown-replace-row")
                 .flex()
+                .flex_wrap()
+                .w_full()
+                .min_w_0()
                 .items_center()
                 .gap_1()
                 .pl(px(24.))
@@ -1971,6 +1981,9 @@ impl Render for DocumentView {
             .child(
                 div()
                     .flex()
+                    .flex_wrap()
+                    .w_full()
+                    .min_w_0()
                     .items_center()
                     .gap_1()
                     .child(replace_toggle)
