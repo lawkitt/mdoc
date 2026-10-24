@@ -3,8 +3,9 @@
 Status: Accepted, 2026-10-13. Amends the storage section of
 [ADR 0041](0041-cases-and-ai-response-restoration.md). Amended by
 [ADR 0045](0045-prompt-free-case-key.md) (what counts as "may ask"; data
-protection keychain) and on 2026-10-18 (decision 5: the preview is a captioned
-figure below the text).
+protection keychain), on 2026-10-18 (decision 5: the preview is a captioned
+figure below the text) and on 2026-10-24 (decision 3: the notice opens by
+itself only when a locked case is needed).
 
 ## Problem
 
@@ -25,10 +26,17 @@ that created it, so ad-hoc and dev builds prompt each other.
    new key created without a dialog, opens the store silently. Any quiet refusal
    means "may ask" (ADR 0045). Windows and Linux never see the explainer.
 3. **Nothing asks at launch.** Launch reads the key only when it will not ask.
-   Otherwise cases stay locked: members keep their case link, and a bar says
-   "Saved cases are locked. Unlock them to restore replacements in their
-   documents." with **Unlock…**. The bar shows whenever cases are locked,
-   because a document opened by hand is matched to its case by path.
+   Otherwise cases stay locked: members keep their case link, and a notice
+   says "Saved cases are locked. Unlock them to restore replacements in their
+   documents." with **Unlock…**. The Notices bell counts it whenever cases
+   are locked, because a document opened by hand is matched to its case by
+   path. The notice opens by itself only when a locked case is needed: an
+   open tab carries a case link from the session, Paste AI Response or
+   Pseudonymize clipboard finds no mapping in the tab (cases are checked
+   quietly first), or the Keychain was declined after an action (Try again).
+   Otherwise it waits behind the bell, so it never covers a plain document's
+   preview unasked. A member opened by hand cannot be told from a plain
+   document until cases unlock; its notice waits behind the bell too.
 4. **Explainer before the system dialog** (`src/workspace_keychain.rs`), in the
    standard dialog style (ADR 0015). Title "mdoc will ask for Keychain access":
    saved cases are encrypted with a key in the Mac's Keychain; macOS will ask for

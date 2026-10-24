@@ -278,6 +278,8 @@ impl Workspace {
     fn key_failed(&mut self, error: String) {
         if error == crate::cases::KEY_DENIED {
             self.cases.denied = true;
+            // The action the user asked for is waiting: show Try again.
+            self.title.notices_open.set(true);
         } else {
             self.notice = Some(error);
         }
@@ -299,6 +301,13 @@ impl Workspace {
             "Saved cases are locked. Unlock them to restore replacements in their documents.",
             "Unlock…",
         ))
+    }
+    /// Whether the locked-cases notice should open by itself: the key was
+    /// declined after an action, or an open tab belongs to a case whose
+    /// mapping is locked. Otherwise it waits behind the bell (ADR 0043).
+    pub(super) fn case_key_needed(&self) -> bool {
+        self.case_key_banner().is_some()
+            && (self.cases.denied || self.tabs.iter().any(|tab| tab.record.case.is_some()))
     }
     /// Read every case in the background, then attach loaded member tabs.
     /// Nothing touches the key until a cases folder exists, and launch never
