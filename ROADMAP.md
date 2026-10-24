@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-24 (latest: 0.1.5); accepted
+This roadmap lists open work as of 2026-10-24 (latest: 0.1.5; 0.2.0-rc.2 tagged); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
@@ -31,6 +31,10 @@ changes.
 Cases rows keyboard-operable, keeps the Keychain explainer's Continue
 reachable, and adds expand/collapse all identities, Go to heading and WCAG
 contrast checks.
+0.2.0-rc.1 passed the macOS acceptance run on 2026-10-24 with one fail (#115,
+fixed by #123); Windows did not run
+([evidence](docs/evidence/platform/2026-10-24/README.md)). 0.2.0-rc.2 adds the
+rc.1 should-fix items and goes to the Windows run; 0.2.0 ships from it.
 
 ## 0.1.x patches
 
@@ -49,7 +53,8 @@ to the top of the next milestone. Items are in priority order.
 
 1. **[Platform] 0.2.0 acceptance.** An RC run of the full
    [checklist](docs/platform-acceptance.md) on both platforms, including S1,
-   A5, D3 and D4 deferred from 0.1.0.
+   A5, D3 and D4 deferred from 0.1.0. macOS ran on rc.1; Windows, including
+   the model-download rows S2–S5, runs on rc.2.
    Keyboard reach follow-ups found during implementation ([#89](https://github.com/lawkitt/mdoc/pull/89))
    also need native checks: F6 must stay in the Keychain explainer; Shift+F10
    must open a sidebar tab's case actions in both sidebar layouts; Categories
@@ -65,6 +70,44 @@ None open. The five from the rc.1 run (Windows headless renders, installed
 Windows package smoke, model source and license, conversion clean-up, caret
 affinity) shipped in 0.2.0-rc.2.
 
+## 0.3.0
+
+UI and accessibility polish from the 2026-10-22 UX review and the 0.2.0
+acceptance runs; none needs a design decision. Merges to main as each is
+done; 0.2.0 ships from rc.2 regardless. Items are in priority order.
+
+1. **[UI] Format hints.** Home and Open say "PDF, DOCX or Markdown", but mdoc
+   also converts DOC, ODT and XLS/XLSX ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
+   *Done when:* every hint names each supported format, from one list.
+2. **[UI] Plain error states.** A corrupt DOCX shows "invalid ZIP" with a
+   Retry that cannot help; an unsupported format says "Preview unavailable"
+   twice ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
+   *Done when:* each case shows one plain message, and Retry only where a
+   retry can succeed.
+3. **[UI] Locked-cases notice where it matters.** "Saved cases are locked"
+   opens on its own over a plain document's preview ([UX review](docs/evidence/ux-review/2026-10-22/README.md),
+   [ADR 0043](docs/adr/0043-deferred-keychain-access.md)).
+   *Done when:* the notice opens by itself only when a locked case is needed
+   (restore or a case document); otherwise it stays in the Notices badge.
+4. **[UI] Snippets and disabled reasons.** Replacements panel snippets start
+   mid-word; the ⋯ menu's disabled Copy for AI gives no reason
+   ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
+   *Done when:* snippets cut at word boundaries and the disabled item says why.
+5. **[A11y] Counters for screen readers.** The find bar's match counter
+   ("14/16") and the popup's mention counter ("4/6") are not exposed
+   ([rc.1 notes](docs/evidence/platform/2026-10-24/macos.md), [ADR 0064](docs/adr/0064-dialog-and-role-semantics.md)).
+   *Done when:* VoiceOver and Narrator read each counter and its changes, as
+   seen in the accessibility tree.
+6. **[A11y] F6 in the collapsed rail.** F6 lands on Search instead of the tab
+   that last had focus ([rc.1 notes](docs/evidence/platform/2026-10-24/macos.md),
+   [ADR 0062](docs/adr/0062-keyboard-reach.md)).
+   *Done when:* F6 into the rail focuses the last-focused tab, in both sidebar
+   layouts, and ADR 0062 says so.
+7. **[UI] Narrow windows.** At ~575 pt the preview toolbar wraps to two rows
+   and Fit width stops at 50%, clipping the page ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
+   *Done when:* the toolbar keeps one row down to the minimum window size and
+   Fit width fits the page at any width.
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
@@ -75,11 +118,7 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[OCR]** OS engines (Apple Vision, `Windows.Media.Ocr`) as the no-download
   default where they beat PP-OCR on our fixtures by character error rate; Vision
   reads Russian from macOS 13, Windows needs the Russian pack. *From Panoply.*
-- **[Conversion]** Join hyphenated line breaks and normalize lists and blank
-  lines at conversion, in the AnyDoc/pdf-inspector forks. *From MiaoYan's auto-format.*
 - **[Perf]** Stress tier (2 MiB / 20,000 mentions) and numerical budgets.
-- **[Models]** Show source and license, besides size, in the download prompt.
-  *From Panoply.*
 - **[A11y]** Expose editor text to screen readers (AccessKit text role, ranges,
   caret and selection events); promote when a user asks or a buyer needs it
   for compliance.
@@ -94,32 +133,13 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[DOCX]** Pseudonymized DOCX export with rdocx, then rdocx for the preview.
 - **[Cases]** System-wide Pseudonymize Clipboard hotkey, via the `global-hotkey`
   crate as in Panoply.
-- **[Editor]** Caret affinity at soft wraps, so ⌘→ can sit after a row's last
-  character when the row broke inside a word; today it stops one character
-  short (ADR 0061). Table cells with wrapped text or
-  `<br>` rows would then move by their own visual rows too.
-- **[Tests]** CI smoke of the installed Windows package on a desktop runner,
-  with screenshots. *From Panoply.*
 - **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
-- **[UI]** Narrow windows: preview toolbar on one row, Fit width below 50%.
-- **[UI]** Plain error states: one "Preview unavailable", no Retry or "invalid
-  ZIP" for a corrupt DOCX.
-- **[UI]** "Saved cases are locked" notice only where it matters, not opened on
-  any new document.
 - **[Cases]** Restore banner wording: say plainly that restored names are
   proposals and what Apply does.
 - **[Cases]** One close prompt for mapping and unsaved changes; Discard all on
   quit (see #119); ADR first.
-- **[UI]** Home and Open hints name every supported format (DOC, ODT, XLS/XLSX),
-  not only PDF, DOCX, Markdown.
-- **[UI]** Panel snippets cut at word boundaries; a disabled Copy for AI says
-  why.
 - **[Import]** Images (screenshots, photos of pages) through OCR, like Anoni's
   Image → text.
-- **[A11y]** In the collapsed rail, F6 returns to the tab that last had focus,
-  not to Search (ADR 0062). *From the 0.2.0-rc.1 acceptance run.*
-- **[A11y]** Expose the find bar's match counter ("14/16") and the popup's
-  mention counter ("4/6") to screen readers. *From the 0.2.0 acceptance runs.*
 - **[UI]** Keyboard shortcuts panel: `?` and a palette action list every
   shortcut by context (everywhere, editor, popup, panel). *From Anoni 0.86.1.*
 - **[PII]** Selection bar: selecting text shows a small "Pseudonymize as…"
