@@ -33,6 +33,11 @@ lint:
 # Workspace tests
 test:
     cargo test --workspace --features headless-renders
+    just test-release
+
+# Isolated release-script regressions; no network, builds or real releases
+test-release:
+    bash scripts/test-release.sh
 
 # Offscreen macOS/Windows screen/Tab evidence in a new output directory (dev only)
 [positional-arguments]
@@ -66,7 +71,7 @@ smoke-package:
 smoke-update *args:
     scripts/smoke-update.sh {{args}}
 
-# Release commit + tag for <version>, push after confirmation (--no-push to skip)
+# Release commit + tag; see `scripts/release.sh --help` for automation flags
 release version *flags:
     scripts/release.sh {{version}} {{flags}}
 

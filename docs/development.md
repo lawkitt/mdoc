@@ -327,6 +327,13 @@ hand. "Run workflow" on the Release workflow builds an unpublished test build
 from any pushed branch; it goes straight to packaging (the branch already ran
 CI) unless **checks** is ticked, and signs the macOS app only with **sign**.
 
+For a run without prompts, `just release <version> --yes` (`--check-all` opts
+into the smoke tests; `--no-push` wins over the automatic push).
+`--skip-checks-if-ci-green` skips the local checks only when the latest
+CI-relevant commit on `origin/main` has a successful CI push run, or, for a
+`release: v…` commit, a successful Release run on its tag. Anything uncertain
+falls back to the local checks.
+
 Both paths reuse the packaged NSIS artifact in a separate GitHub-hosted Windows
 desktop job: silent install, fresh-profile launch, UI Automation main-window
 check, screenshot, clean quit and uninstall. The `installed-windows-desktop`
