@@ -90,11 +90,6 @@ done; 0.2.0 ships from rc.2 regardless. Items are in priority order.
    mid-word; the ⋯ menu's disabled Copy for AI gives no reason
    ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
    *Done when:* snippets cut at word boundaries and the disabled item says why.
-6. **[A11y] F6 in the collapsed rail.** F6 lands on Search instead of the tab
-   that last had focus ([rc.1 notes](docs/evidence/platform/2026-10-24/macos.md),
-   [ADR 0062](docs/adr/0062-keyboard-reach.md)).
-   *Done when:* F6 into the rail focuses the last-focused tab, in both sidebar
-   layouts, and ADR 0062 says so.
 7. **[UI] Narrow windows.** At ~575 pt the preview toolbar wraps to two rows
    and Fit width stops at 50%, clipping the page ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
    *Done when:* the toolbar keeps one row down to the minimum window size and
