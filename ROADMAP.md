@@ -76,9 +76,6 @@ UI and accessibility polish from the 2026-10-22 UX review and the 0.2.0
 acceptance runs; none needs a design decision. Merges to main as each is
 done; 0.2.0 ships from rc.2 regardless. Items are in priority order.
 
-1. **[UI] Format hints.** Home and Open say "PDF, DOCX or Markdown", but mdoc
-   also converts DOC, ODT and XLS/XLSX ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
-   *Done when:* every hint names each supported format, from one list.
 2. **[UI] Plain error states.** A corrupt DOCX shows "invalid ZIP" with a
    Retry that cannot help; an unsupported format says "Preview unavailable"
    twice ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
