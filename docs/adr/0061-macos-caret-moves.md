@@ -28,9 +28,10 @@ under `cfg!(target_os = "macos")`, so tests on other platforms never saw them.
   (upstream). Upstream comes only from ⌘→, Up/Down whose goal is past a
   row's end, and a click past a row's end; any other move or an edit drops
   it. Bidi rows ignore affinity (they keep their own rows).
-- **Table cells.** Up/Down step through a cell's own visual rows (wrapped
-  text, `<br>` lines) at the caret's x before moving to the same column of
-  the next table row, which they enter at that x.
+- **Table cells.** Up/Down, with or without ⇧, step through a cell's own
+  visual rows (wrapped text, `<br>` lines) at a kept x before moving to the
+  same column of the next table row, which they enter at that x. A wrapped
+  line holding right-to-left text is not stepped through.
 - **⌘↑ / ⌘↓** go to the document start / end (`DocumentStart`,
   `DocumentEnd`, which reveal nothing).
 - **⇧** with each of the four extends the selection.

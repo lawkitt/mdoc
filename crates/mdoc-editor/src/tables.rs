@@ -273,12 +273,19 @@ impl EditorState {
     }
 
     /// Up/Down through the caret cell's own visual rows — its wrapped text and
-    /// `<br>` lines — at the caret's x: the offset on the adjacent row and its
-    /// affinity. From the cell's first / last row, the same column's cell on
-    /// the adjacent table row (skipping the separator), on its nearest row at
+    /// `<br>` lines — at `goal`, the in-cell x a run of moves keeps, or else
+    /// the caret's x: the offset on the adjacent row, its affinity and the x
+    /// used. From the cell's first / last row, the same column's cell on the
+    /// adjacent table row (skipping the separator), on its nearest row at
     /// that x. `None` at the table's edge (the move then leaves the table)
-    /// and on a right-to-left row.
-    pub(crate) fn table_move_visual(&self, dir: i32, window: &mut Window) -> Option<(usize, bool)> {
+    /// and from a wrapped line holding right-to-left text, whose rows gpui
+    /// does not lay out in reading order.
+    pub(crate) fn table_move_visual(
+        &self,
+        dir: i32,
+        goal: Option<Pixels>,
+        window: &mut Window,
+    ) -> Option<(usize, bool, Pixels)> {
         let (row, col) = self.row_col(self.cursor_offset());
         let t = self.table_rows.get(row).and_then(Option::as_ref)?;
         if t.is_separator || t.cell_ranges.is_empty() || t.col_widths.is_empty() {
@@ -287,9 +294,6 @@ impl EditorState {
         let cell = table_cell_at(t, col);
         let content = t.cells.get(cell)?;
         let range = t.cell_ranges.get(cell)?;
-        if t.rtl || crate::syntax::contains_rtl(content) {
-            return None;
-        }
         let font = self
             .paint_font
             .clone()
@@ -310,17 +314,35 @@ impl EditorState {
             (px(0.), 0)
         } else {
             let (index, above) = cell_line_at(&lines, in_cell);
-            let CellLine { line: wl, map, .. } = lines.get(index)?;
+            let CellLine {
+                line: wl,
+                map,
+                range: line_range,
+                ..
+            } = lines.get(index)?;
             let display = map
                 .partition_point(|&offset| offset < in_cell)
                 .min(map.len().saturating_sub(1));
-            let pos = cell_line_pos(wl, display, line_h, self.caret_upstream())?;
+            let wrapped = !wl.wrap_boundaries().is_empty();
+            let pos = if crate::syntax::contains_rtl(&content[line_range.clone()]) {
+                if wrapped {
+                    return None;
+                }
+                // The caret's x as painted (`table_caret_pos`).
+                let bidi = gpui_bidi::map_of_wrapped(wl, map.len().saturating_sub(1));
+                point(px(bidi.x_for_index(display)), px(0.))
+            } else {
+                cell_line_pos(wl, display, line_h, self.caret_upstream())?
+            };
             let caret_row = above + ((pos.y / line_h).round() as usize);
             (align_off(wl.width()) + pos.x, caret_row)
         };
+        let x = goal.unwrap_or(x);
         let target_row = caret_row as i64 + dir as i64;
         if (0..rows as i64).contains(&target_row) {
-            return self.cell_hit_at(row, cell, x, Some(target_row as usize), window);
+            return self
+                .cell_hit_at(row, cell, x, Some(target_row as usize), window)
+                .map(|(offset, upstream)| (offset, upstream, x));
         }
         // The same column on the adjacent table row.
         let mut r = row as i64 + dir as i64;
@@ -332,6 +354,38 @@ impl EditorState {
             r += dir as i64;
         }
         self.cell_hit_at(r as usize, cell, x, (dir < 0).then_some(usize::MAX), window)
+            .map(|(offset, upstream)| (offset, upstream, x))
+    }
+
+    /// Window-space bounds of the caret in a table cell, as painted — the
+    /// caret's own row geometry ([`Self::bounds_for_offset`]) is the raw
+    /// `| … |` line's, not the cell's.
+    pub(crate) fn table_caret_bounds(&self, window: &mut Window) -> Option<Bounds<Pixels>> {
+        if !self.selected_range.is_empty() {
+            return None;
+        }
+        let bounds = self.last_bounds?;
+        let (row, col) = self.row_col(self.cursor_offset());
+        let t = self.table_rows.get(row).and_then(Option::as_ref)?;
+        if t.is_separator {
+            return None;
+        }
+        let font = self
+            .paint_font
+            .clone()
+            .unwrap_or_else(|| window.text_style().font());
+        let (x, y_off, ..) = table_caret_pos(
+            t,
+            col,
+            self.table_left(t, row, &bounds),
+            &font,
+            self.font_size,
+            window,
+            self.caret_upstream(),
+        )?;
+        let top = bounds.top() + self.line_tops.get(row).copied()? + px(6.) + y_off;
+        let line_h = self.font_size * LINE_HEIGHT_RATIO;
+        Some(Bounds::from_corners(point(x, top), point(x, top + line_h)))
     }
 
     /// The offset at in-cell `x` on visual row `row_in_cell` (clamped to the

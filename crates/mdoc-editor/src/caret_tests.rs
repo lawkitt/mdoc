@@ -543,3 +543,114 @@ fn up_and_down_walk_a_table_cells_own_rows(cx: &mut gpui::TestAppContext) {
     press("up", cx);
     assert_eq!(selection(&editor, cx).start, *stops.last().unwrap());
 }
+
+/// A table whose first body cell is `cell`, laid out with Markdown styling,
+/// the caret at `at` bytes into that cell.
+fn table_editor<'a>(
+    cx: &'a mut gpui::TestAppContext,
+    cell: &str,
+    at: usize,
+) -> (
+    Entity<EditorState>,
+    &'a mut gpui::VisualTestContext,
+    String,
+    usize,
+) {
+    let source = format!("| A | B |\n| --- | --- |\n| {cell} | y |\nclosing line");
+    let start = source.find(cell).unwrap();
+    let (editor, cx) = mac_editor(cx, &source, start + at);
+    editor.update(cx, |e, cx| {
+        e.set_markdown_style(markdown_syntax::search_style(), cx)
+    });
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    (editor, cx, source, start)
+}
+
+#[gpui::test]
+fn shift_down_selects_through_a_cells_rows(cx: &mut gpui::TestAppContext) {
+    let (editor, cx, source, start) = table_editor(cx, "one<br>two", 0);
+    let two = source.find("two").unwrap();
+    press("shift-down", cx);
+    assert_eq!(selection(&editor, cx), start..two);
+    press("shift-up", cx);
+    assert_eq!(selection(&editor, cx), start..start);
+}
+
+#[gpui::test]
+fn a_cells_rows_keep_the_goal_column_and_report_their_bounds(cx: &mut gpui::TestAppContext) {
+    let (editor, cx, source, start) = table_editor(cx, "abcdefghij<br>x<br>abcdefghij<br>xyz", 8);
+    let third = source.rfind("abcdefghij").unwrap();
+    let top = |editor: &Entity<EditorState>, cx: &mut gpui::VisualTestContext| {
+        cx.update(|window, cx| {
+            editor.update(cx, |e, _| e.table_caret_bounds(window).unwrap().top())
+        })
+    };
+    let first_top = top(&editor, cx);
+    press("down", cx);
+    assert_eq!(
+        selection(&editor, cx).start,
+        source.find("x<br>").unwrap() + 1
+    );
+    // Through the short line and back out at the column it started from.
+    press("down", cx);
+    assert_eq!(selection(&editor, cx), third + 8..third + 8);
+    // The bounds autoscroll follows are the cell row's, two rows down.
+    let line_h = editor.read_with(cx, |e, _| e.font_size * LINE_HEIGHT_RATIO);
+    let moved = top(&editor, cx) - first_top;
+    assert!((f32::from(moved - line_h * 2.)).abs() < 0.5, "{moved:?}");
+    assert!(start < third);
+}
+
+#[gpui::test]
+fn a_cells_right_to_left_br_line_is_a_row_too(cx: &mut gpui::TestAppContext) {
+    let (editor, cx, source, _) = table_editor(cx, "one<br>שלום", 0);
+    let hebrew = source.find("שלום").unwrap();
+    press("down", cx);
+    let at = selection(&editor, cx).start;
+    assert!(at >= hebrew && at <= hebrew + "שלום".len(), "{at}");
+}
+
+#[gpui::test]
+fn cmd_right_after_a_click_past_a_space_broken_rows_end_stays(cx: &mut gpui::TestAppContext) {
+    let source = "word ".repeat(400);
+    let source = source.trim_end().to_string();
+    let (editor, cx) = mac_editor(cx, &source, 0);
+    let (origin, row_h, width) = editor.read_with(cx, |e, _| {
+        let bounds = e.last_bounds.unwrap();
+        (bounds.origin, e.line_h(0), bounds.size.width)
+    });
+    cx.simulate_click(
+        point(origin.x + width - px(1.), origin.y + row_h / 2.),
+        gpui::Modifiers::none(),
+    );
+    let clicked = selection(&editor, cx);
+    assert_eq!(caret_at(&editor, cx).y, origin.y);
+    press("cmd-right", cx);
+    assert_eq!(selection(&editor, cx), clicked);
+    assert_eq!(caret_at(&editor, cx).y, origin.y);
+}
+
+#[gpui::test]
+fn ime_bounds_at_the_caret_follow_its_affinity(cx: &mut gpui::TestAppContext) {
+    let source = mid_word_source();
+    let (editor, cx) = mac_editor(cx, &source, 0);
+    let b = boundaries(&editor, cx, 0);
+    let ime_top = |editor: &Entity<EditorState>, cx: &mut gpui::VisualTestContext| {
+        editor.update_in(cx, |e, window, cx| {
+            let bounds = e.last_bounds.unwrap();
+            e.bounds_for_range(b[0]..b[0], bounds, window, cx)
+                .unwrap()
+                .top()
+        })
+    };
+    // Downstream: the lower row, where the caret draws.
+    editor.update(cx, |e, cx| e.set_cursor(b[0], cx));
+    assert_eq!(ime_top(&editor, cx), caret_at(&editor, cx).y);
+    // Upstream: the upper row.
+    editor.update(cx, |e, cx| e.set_cursor(0, cx));
+    press("cmd-right", cx);
+    assert_eq!(ime_top(&editor, cx), caret_at(&editor, cx).y);
+}
