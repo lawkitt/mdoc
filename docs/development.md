@@ -181,6 +181,8 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 Heavy, download and machine-dependent tests run only through these recipes, on
 the Apple Silicon Mac and the Windows x64 PC.
 
+<a id="headless-screen-renders-macos"></a>
+
 ### Headless screen renders (macOS and Windows)
 
 ```sh
@@ -194,8 +196,8 @@ text shaping (Core Text on macOS, DirectWrite on Windows). macOS uses the
 headless Metal texture renderer; Windows uses a test-only DirectX 11 WARP
 software device and offscreen textures, with staging readback to RGBA. The
 Windows adapter constructs neither `WindowsPlatform` nor an HWND, swap chain
-or DirectComposition target. All windows are `TestWindow`s: no native window, application event loop, activation or screen
-capture. It can run while someone else uses the desktop.
+or DirectComposition target. All windows are `TestWindow`s: no native window,
+application event loop, activation or screen capture. It can run while someone else uses the desktop.
 
 Every run creates and removes a temporary profile, redirects app data and cache
 paths before building app state, injects a temporary case store and disables OS
@@ -203,10 +205,12 @@ case-key access. It reads only public fixtures, never the real mdoc profile,
 clipboard or installed models; it downloads nothing. The gate's integration
 test on macOS runs the child under `sandbox-exec`, denying the real
 profile/update cache and network access. `just lint` and `just test` enable
-this dev feature; on both platforms the latter checks the actual generated files and profile cleanup.
+this dev feature; on both platforms the latter checks the actual generated
+files and profile cleanup.
 The existing CI Windows job runs this test through `just test`. On Windows,
 the integration test also polls all top-level HWNDs owned by the child
-(including hidden ones) and fails if it creates any; the check filters by child process ID and leaves other apps untouched.
+(including hidden ones) and fails if it creates any; the check filters by
+child process ID and leaves other apps untouched.
 
 Output layout:
 
