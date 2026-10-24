@@ -84,11 +84,6 @@ done; 0.2.0 ships from rc.2 regardless. Items are in priority order.
    twice ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
    *Done when:* each case shows one plain message, and Retry only where a
    retry can succeed.
-3. **[UI] Locked-cases notice where it matters.** "Saved cases are locked"
-   opens on its own over a plain document's preview ([UX review](docs/evidence/ux-review/2026-10-22/README.md),
-   [ADR 0043](docs/adr/0043-deferred-keychain-access.md)).
-   *Done when:* the notice opens by itself only when a locked case is needed
-   (restore or a case document); otherwise it stays in the Notices badge.
 4. **[UI] Snippets and disabled reasons.** Replacements panel snippets start
    mid-word; the ⋯ menu's disabled Copy for AI gives no reason
    ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).

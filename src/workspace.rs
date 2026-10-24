@@ -51,6 +51,9 @@ pub(super) enum TabEvent {
     CreateCase {
         close: bool,
     },
+    /// Restoring or pseudonymizing found no mapping in the tab; a locked
+    /// case may hold it (ADR 0043).
+    MappingMissing,
 }
 impl EventEmitter<TabEvent> for DocumentView {}
 
@@ -1356,6 +1359,14 @@ impl Workspace {
                 self.case_changed(id, cx);
             }
             TabEvent::CaseChanged => self.case_changed(id, cx),
+            TabEvent::MappingMissing => {
+                // A quiet look: launch onto Home may not have checked yet.
+                self.load_cases(window, cx);
+                if self.case_key_banner().is_some() {
+                    self.title.notices_open.set(true);
+                    cx.notify();
+                }
+            }
             TabEvent::AddCaseTerm(term) => self.add_case_term(id, term, cx),
             TabEvent::CreateCase { close: true } => self.save_case_and_close(id, window, cx),
             TabEvent::CreateCase { close: false } => {
@@ -2883,16 +2894,18 @@ impl Render for Workspace {
         if !cx.has_active_drag() && self.shell.drop.is_some() {
             self.shell.drop = None;
         }
-        // Notices wait behind the header's bell; a new one opens it (ADR 0048).
-        let notices = usize::from(self.case_key_banner().is_some())
-            + usize::from(self.crash.is_some())
-            + usize::from(self.notice.is_some());
-        if notices > self.shell.notice_count {
+        // Notices wait behind the header's bell; a new one opens it (ADR 0048),
+        // except locked cases, which open it only when a locked case is
+        // needed (ADR 0043).
+        let others = usize::from(self.crash.is_some()) + usize::from(self.notice.is_some());
+        let notices = others + usize::from(self.case_key_banner().is_some());
+        let opening = others + usize::from(self.case_key_needed());
+        if opening > self.shell.notice_count {
             self.title.notices_open.set(true);
         } else if notices == 0 {
             self.title.notices_open.set(false);
         }
-        self.shell.notice_count = notices;
+        self.shell.notice_count = opening;
         self.title.notices.set(notices);
         // A crash report says what the window showed (no text, no names).
         crate::crash::note_state(format!(
