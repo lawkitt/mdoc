@@ -14,13 +14,29 @@ cat > "$tmp/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -eu
 printf '%s\n' "$@" > "$GH_LOG"
-[[ "$*" == 'run list --workflow ci.yml --commit '* ]] || exit 90
-[[ "$*" == *'--branch main --event push --limit 1 --json '* ]] || exit 91
+args="$*"
+[[ "$args" == 'run list --workflow '* ]] || exit 90
 while [ "$1" != --commit ]; do shift; done
 sha=$2
+if [[ "$args" == 'run list --workflow release.yml --commit '* ]]; then
+  # The tag's Release run for a release commit.
+  [[ "$args" == *"--branch $GH_RELEASE_TAG --event push --limit 1 --json "* ]] || exit 94
+  [ "$sha" = "$GH_RUN_SHA" ] || exit 0
+  case "${GH_RELEASE_RESULT:-missing}" in
+    missing) ;;
+    green) printf 'completed|success|https://github.com/example/mdoc/actions/runs/43|%s|push|Release|%s\n' "$sha" "$GH_RELEASE_TAG" ;;
+    failed) printf 'completed|failure|https://github.com/example/mdoc/actions/runs/43|%s|push|Release|%s\n' "$sha" "$GH_RELEASE_TAG" ;;
+    pending) printf 'in_progress||https://github.com/example/mdoc/actions/runs/43|%s|push|Release|%s\n' "$sha" "$GH_RELEASE_TAG" ;;
+    *) exit 95 ;;
+  esac
+  exit 0
+fi
+[[ "$args" == 'run list --workflow ci.yml --commit '* ]] || exit 90
+[[ "$args" == *'--branch main --event push --limit 1 --json '* ]] || exit 91
 [ "${GH_RESULT:-}" != error ] || exit 1
 [ "$sha" = "$GH_RUN_SHA" ] || exit 0
 case "$GH_RESULT" in
+  skipped) printf 'completed|skipped|https://github.com/example/mdoc/actions/runs/42|%s|push|CI\n' "$sha" ;;
   missing) ;;
   green) printf 'completed|success|https://github.com/example/mdoc/actions/runs/42|%s|push|CI\n' "$sha" ;;
   failed) printf 'completed|failure|https://github.com/example/mdoc/actions/runs/42|%s|push|CI\n' "$sha" ;;
@@ -50,7 +66,7 @@ printf '[[package]]\nname = "mdoc"\nversion = "%s"\n' "$v" > Cargo.lock
 EOF
 chmod +x "$tmp/bin/gh" "$tmp/bin/git" "$tmp/bin/just" "$tmp/bin/cargo"
 export PATH="$tmp/bin:$PATH"
-export GH_RESULT=green GH_RUN_SHA
+export GH_RESULT=green GH_RUN_SHA GH_RELEASE_RESULT=missing GH_RELEASE_TAG=none
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 contains() { grep -F -- "$2" "$1" >/dev/null || fail "missing '$2' in $1"; }
@@ -134,7 +150,39 @@ GH_RUN_SHA=$(git rev-parse HEAD)
 green
 echo 'ok: merge changes are CI-relevant'
 
+# ci.yml skips the release commit on main; its tag's Release run counts.
+printf '[package]\nname = "mdoc"\nversion = "0.1.1"\nedition = "2021"\n' > Cargo.toml
+commit 'release: v0.1.1'
+GH_RUN_SHA=$(git rev-parse HEAD)
+GH_RESULT=skipped
+GH_RELEASE_TAG=v0.1.1
+local_checks 'tag v0.1.1 does not point at it'
+git tag -a v0.1.1 -m 'mdoc v0.1.1'
+GH_RELEASE_RESULT=missing
+local_checks 'no Release run for v0.1.1'
+GH_RELEASE_RESULT=pending
+local_checks 'status=in_progress'
+GH_RELEASE_RESULT=failed
+local_checks 'conclusion=failure'
+GH_RELEASE_RESULT=green
+release_green() {
+  release_ci_green > "$tmp/result" || fail "expected green: $(cat "$tmp/result")"
+  contains "$tmp/result" "$GH_RUN_SHA is release commit v0.1.1"
+  contains "$tmp/result" 'https://github.com/example/mdoc/actions/runs/43'
+}
+release_green
+printf 'docs\n' > docs/after-release.md
+commit 'docs after release'
+release_green
+printf 'x\n' >> code.rs
+commit 'fix skipped by CI'
+GH_RUN_SHA=$(git rev-parse HEAD)
+local_checks 'was skipped'
+GH_RESULT=green GH_RELEASE_RESULT=missing GH_RELEASE_TAG=none
+echo 'ok: a release commit skipped by CI uses its tag'"'"'s Release run'
+
 mkdir "$tmp/empty"
+# shellcheck disable=SC2123 # an empty PATH is the point
 ( PATH="$tmp/empty"; if release_ci_green > "$tmp/result"; then fail 'unexpected green without gh'; fi )
 contains "$tmp/result" 'gh is unavailable'
 echo 'ok: gh unavailable'
@@ -170,7 +218,7 @@ release_case() {
   printf '%s' "${ANSWERS:-}" > "$tmp/answers"
   bash scripts/release.sh 0.2.0-rc.3 "$@" > "$tmp/release-output" < "$tmp/answers"
   [ "$(git log -1 --format=%s)" = 'release: v0.2.0-rc.3' ] || fail 'release commit missing'
-  [ "$(git rev-parse v0.2.0-rc.3^{commit})" = "$(git rev-parse HEAD)" ] || fail 'tag missing'
+  [ "$(git rev-parse 'v0.2.0-rc.3^{commit}')" = "$(git rev-parse HEAD)" ] || fail 'tag missing'
   [ -z "$(git status --porcelain)" ] || fail 'dirty release tree'
   contains Cargo.toml 'version = "0.2.0-rc.3"'
   contains Cargo.lock 'version = "0.2.0-rc.3"'

@@ -5,14 +5,14 @@
 # current, runs the checks, sets the version, names the CHANGELOG section for
 # stable versions, commits `release: v<version>`, tags, and pushes on y/N.
 source "$(dirname "$0")/lib.sh"
-source scripts/release-ci.sh
+source scripts/release-ci.sh  # lib.sh has moved to the repository root
 
 usage() {
   cat <<'EOF'
 Usage: scripts/release.sh <version> [flags]
   --yes                      Do not prompt; use check and confirm the push
   --check-all                Run check-all instead of offering the smoke tests
-  --skip-checks-if-ci-green   Skip local checks when origin/main has green CI
+  --skip-checks-if-ci-green  Skip local checks when origin/main has green CI
   --no-push                  Create the commit and tag without pushing (wins over --yes)
   --help                     Show this help
 Flags may appear in any order after the version. --yes uses check unless
@@ -58,7 +58,8 @@ if [ "$stable" = 1 ]; then
 fi
 
 if [ "$skip_checks" = 1 ] && release_ci_green; then
-  : # The tag's Release workflow still runs full CI before packaging.
+  # The tag's Release workflow still runs full CI before packaging.
+  [ "$check_all" = 0 ] || echo "--check-all not run: CI is green; the Release run adds the OCR smoke test"
 else
   if [ "$check_all" = 1 ] || { [ "$yes" = 0 ] && confirm "Also run the model and OCR smoke tests (just check-all, downloads models)?"; }; then
     just check-all

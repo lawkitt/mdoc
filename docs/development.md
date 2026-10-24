@@ -314,11 +314,6 @@ skill) read this section for mdoc's needs.
 
 ## Releasing
 
-Use `just release <version> --yes` for no prompts (`--check-all` opts into smoke
-tests; `--no-push` wins over automatic push), and `--skip-checks-if-ci-green`
-to skip local checks only when the latest CI-relevant commit on `origin/main`
-has a successful CI push run; uncertain status falls back to local checks.
-
 Releases ship only for Apple Silicon macOS (`.dmg`) and Windows x64 (NSIS
 `.exe`; `.msi` for stable versions). The repository version is the source of
 truth: `just release 0.1.0-beta.1` checks that `main` is clean and current, runs
@@ -331,6 +326,13 @@ with `SHA256SUMS` and build provenance. Review the draft and publish it by
 hand. "Run workflow" on the Release workflow builds an unpublished test build
 from any pushed branch; it goes straight to packaging (the branch already ran
 CI) unless **checks** is ticked, and signs the macOS app only with **sign**.
+
+For a run without prompts, `just release <version> --yes` (`--check-all` opts
+into the smoke tests; `--no-push` wins over the automatic push).
+`--skip-checks-if-ci-green` skips the local checks only when the latest
+CI-relevant commit on `origin/main` has a successful CI push run, or, for a
+`release: v…` commit, a successful Release run on its tag. Anything uncertain
+falls back to the local checks.
 
 Both paths reuse the packaged NSIS artifact in a separate GitHub-hosted Windows
 desktop job: silent install, fresh-profile launch, UI Automation main-window
