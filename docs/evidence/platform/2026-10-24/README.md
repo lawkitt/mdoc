@@ -10,7 +10,7 @@ item. Layout follows the [2026-10-23 dry run](../2026-10-23-dry-run/README.md).
 | Target | Checklist | Pass | Fail | Pending | Unavailable |
 | --- | --- | --- | --- | --- | --- |
 | Apple Silicon macOS | [macos.md](macos.md) | 58 | 1 | 14 | 10 |
-| Windows x64 | `windows.md` (run by the T3 session; not pushed yet) | – | – | – | – |
+| Windows x64 | not run on rc.1 (see below) | – | – | – | – |
 | **Total** | | 58 | 1 | 14 | 10 |
 
 - **Build:** draft GitHub Release `v0.2.0-rc.1`, tag commit `c3dc4ff`
@@ -30,8 +30,12 @@ item. Layout follows the [2026-10-23 dry run](../2026-10-23-dry-run/README.md).
   Mac. The setup cards (S1, S4) were checked on the clean profile; then the
   installed models (Standard pseudonymization, English OCR) were **copied from
   the maintainer's profile** for the popup, theme and clipboard rows.
-  Real-download rows (S2–S5) are covered by the Windows run.
+  Real-download rows (S2–S5) were meant for the Windows run, which did not
+  run on rc.1; they stay open for the rc.2 Windows run.
 - **Linux:** compiles in CI (`lint (ubuntu)`); no runtime checks.
+- **Windows x64:** not run on rc.1. The T3 Codex session on `windows` had no
+  desktop tool on 2026-10-24 (computer-use pipe unavailable), so it stopped
+  before installing. The full Windows checklist runs on 0.2.0-rc.2.
 - **Windows 10:** not checked.
 
 ## Fail rows
@@ -49,7 +53,7 @@ passes in R2.
 
 - **D2:** no 1× external display at hand.
 - **S2, S3, S4, S5:** no model download on the Mac (slow network, by
-  agreement); covered by the Windows run. S4's OCR consent card and S5's
+  agreement); left for the rc.2 Windows run. S4's OCR consent card and S5's
   Installed state (with copied models) were seen.
 - **K3–K7:** no Japanese input source, and the maintainer does not run the
   Japanese rows (ADR 0057).
