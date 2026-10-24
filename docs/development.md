@@ -327,6 +327,14 @@ hand. "Run workflow" on the Release workflow builds an unpublished test build
 from any pushed branch; it goes straight to packaging (the branch already ran
 CI) unless **checks** is ticked, and signs the macOS app only with **sign**.
 
+Both paths reuse the packaged NSIS artifact in a separate GitHub-hosted Windows
+desktop job: silent install, fresh-profile launch, UI Automation main-window
+check, screenshot, clean quit and uninstall. The `installed-windows-desktop`
+artifacts (`-startup` and `-wrong-title`) contain screenshots, UIA evidence and
+the log. An impossible-title case proves startup failures fail and keep evidence.
+The job gates draft releases; it never installs on a fleet machine. This smoke
+establishes startup only, not the manual platform acceptance checklist.
+
 ### macOS signing
 
 Signed builds are Developer ID signed and notarized
