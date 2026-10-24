@@ -740,8 +740,8 @@ pub struct EditorState {
     /// start; any other caret move or edit drops it.
     upstream_caret: Option<(usize, u64)>,
     /// The in-cell x that Up/Down through a table cell's rows keep, with the
-    /// caret offset and content generation it is valid for (like
-    /// `upstream_caret`, any other move or an edit drops it).
+    /// caret offset and content generation it is valid for. Only a vertical
+    /// step sets it; any other caret move, a click or an edit drops it.
     cell_goal: Option<(usize, u64, Pixels)>,
     /// Spans to underline (misspellings, etc.), set by the host via
     /// [`Self::set_diagnostics`].
@@ -1999,6 +1999,7 @@ impl EditorState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.cell_goal = None;
         if self.annotation_revision == self.content_gen
             && !event.modifiers.shift
             && event.click_count == 1
@@ -3150,6 +3151,7 @@ impl EditorState {
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
         self.upstream_caret = None;
+        self.cell_goal = None;
         // A deliberate caret move ends the current typing/deleting run and the
         // vertical-movement goal column.
         self.last_edit = EditKind::Other;
@@ -3173,9 +3175,10 @@ impl EditorState {
     }
 
     /// Give the caret, where it is now, upstream (`true`) or the default
-    /// downstream affinity.
+    /// downstream affinity. Drops the cell goal: a vertical step restores it.
     fn set_upstream(&mut self, upstream: bool) {
         self.upstream_caret = upstream.then_some((self.cursor_offset(), self.content_gen));
+        self.cell_goal = None;
     }
 
     /// Extend a mouse selection to `offset`: by characters, or after a
@@ -3201,6 +3204,7 @@ impl EditorState {
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.upstream_caret = None;
+        self.cell_goal = None;
         if self.selection_reversed {
             self.selected_range.start = offset;
         } else {

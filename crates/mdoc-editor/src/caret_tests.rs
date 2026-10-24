@@ -573,8 +573,18 @@ fn table_editor<'a>(
 fn shift_down_selects_through_a_cells_rows(cx: &mut gpui::TestAppContext) {
     let (editor, cx, source, start) = table_editor(cx, "one<br>two", 0);
     let two = source.find("two").unwrap();
+    let top = |editor: &Entity<EditorState>, cx: &mut gpui::VisualTestContext| {
+        cx.update(|window, cx| {
+            editor.update(cx, |e, _| e.table_caret_bounds(window).unwrap().top())
+        })
+    };
+    let first_top = top(&editor, cx);
     press("shift-down", cx);
     assert_eq!(selection(&editor, cx), start..two);
+    // Autoscroll follows the selection's head in the cell's second row.
+    let line_h = editor.read_with(cx, |e, _| e.font_size * LINE_HEIGHT_RATIO);
+    let moved = top(&editor, cx) - first_top;
+    assert!((f32::from(moved - line_h)).abs() < 0.5, "{moved:?}");
     press("shift-up", cx);
     assert_eq!(selection(&editor, cx), start..start);
 }
@@ -602,6 +612,25 @@ fn a_cells_rows_keep_the_goal_column_and_report_their_bounds(cx: &mut gpui::Test
     let moved = top(&editor, cx) - first_top;
     assert!((f32::from(moved - line_h * 2.)).abs() < 0.5, "{moved:?}");
     assert!(start < third);
+}
+
+#[gpui::test]
+fn a_click_resets_a_cells_goal_column(cx: &mut gpui::TestAppContext) {
+    let (editor, cx, source, _) = table_editor(cx, "abcdefghij<br>x<br>abcdefghij", 8);
+    let after_x = source.find("x<br>").unwrap() + 1;
+    let third = source.rfind("abcdefghij").unwrap();
+    press("down", cx);
+    assert_eq!(selection(&editor, cx), after_x..after_x);
+    // Clicking where the caret already is makes its column the new goal.
+    let at =
+        cx.update(|window, cx| editor.update(cx, |e, _| e.table_caret_bounds(window).unwrap()));
+    cx.simulate_click(
+        point(at.left() + px(1.), at.center().y),
+        gpui::Modifiers::none(),
+    );
+    assert_eq!(selection(&editor, cx), after_x..after_x);
+    press("down", cx);
+    assert_eq!(selection(&editor, cx), third + 1..third + 1);
 }
 
 #[gpui::test]

@@ -357,13 +357,10 @@ impl EditorState {
             .map(|(offset, upstream)| (offset, upstream, x))
     }
 
-    /// Window-space bounds of the caret in a table cell, as painted — the
-    /// caret's own row geometry ([`Self::bounds_for_offset`]) is the raw
-    /// `| … |` line's, not the cell's.
+    /// Window-space bounds of the caret (or a selection's head) in a table
+    /// cell, as painted — the caret's own row geometry
+    /// ([`Self::bounds_for_offset`]) is the raw `| … |` line's, not the cell's.
     pub(crate) fn table_caret_bounds(&self, window: &mut Window) -> Option<Bounds<Pixels>> {
-        if !self.selected_range.is_empty() {
-            return None;
-        }
         let bounds = self.last_bounds?;
         let (row, col) = self.row_col(self.cursor_offset());
         let t = self.table_rows.get(row).and_then(Option::as_ref)?;
