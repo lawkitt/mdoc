@@ -1,6 +1,10 @@
 # CI only: never run an installer or capture the maintainer's desktop.
 [CmdletBinding()]
-param()
+param(
+    [string] $ExpectedWindowTitle = 'mdoc',
+    [ValidateRange(1, 120)]
+    [int] $StartupTimeoutSeconds = 60
+)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows') {
@@ -33,6 +37,30 @@ function Run-Installer([string] $exe, [string] $arguments) {
     if ($process.ExitCode -ne 0) { throw "Installer failed ($($process.ExitCode)): $exe" }
 }
 
+function Save-UiaEvidence {
+    try {
+        $lines = [System.Collections.Generic.List[string]]::new()
+        if ($app) {
+            $condition = [System.Windows.Automation.PropertyCondition]::new(
+                [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)
+            $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
+                [System.Windows.Automation.TreeScope]::Children, $condition)
+            foreach ($item in $windows) {
+                $state = $item.Current
+                $lines.Add("Window: Name=$($state.Name) PID=$($state.ProcessId) Role=$($state.ControlType.ProgrammaticName) Offscreen=$($state.IsOffscreen) Bounds=$($state.BoundingRectangle)")
+                foreach ($control in $item.FindAll([System.Windows.Automation.TreeScope]::Descendants,
+                    [System.Windows.Automation.Condition]::TrueCondition)) {
+                    $lines.Add("  Role=$($control.Current.ControlType.ProgrammaticName) Name=$($control.Current.Name)")
+                }
+            }
+        }
+        if ($lines.Count -eq 0) { $lines.Add('No UI Automation windows found for the launched process (or no process was launched).') }
+        $lines | Out-File (Join-Path $evidence.FullName 'uia.txt')
+    } catch {
+        "UI Automation evidence unavailable: $_" | Out-File (Join-Path $evidence.FullName 'uia.txt')
+    }
+}
+
 $app = $null
 $passed = $false
 $screenReady = $false
@@ -57,7 +85,7 @@ try {
     Write-Host "Installed executable: $exe"
     Get-FileHash -Algorithm SHA256 -LiteralPath $exe | Format-List
     $app = Start-Process -FilePath $exe -PassThru
-    $deadline = [DateTime]::UtcNow.AddSeconds(60)
+    $deadline = [DateTime]::UtcNow.AddSeconds($StartupTimeoutSeconds)
     $window = $null
     do {
         if ($app.HasExited) { throw "Installed mdoc exited before showing its main window ($($app.ExitCode))." }
@@ -68,7 +96,7 @@ try {
         foreach ($candidate in $windows) {
             $state = $candidate.Current
             if ($state.ControlType -eq [System.Windows.Automation.ControlType]::Window -and
-                $state.Name -eq 'mdoc' -and -not $state.IsOffscreen -and
+                $state.Name -eq $ExpectedWindowTitle -and -not $state.IsOffscreen -and
                 $state.BoundingRectangle.Width -gt 100 -and $state.BoundingRectangle.Height -gt 100) {
                 $window = $candidate
                 break
@@ -76,15 +104,10 @@ try {
         }
         if (-not $window) { Start-Sleep -Milliseconds 500 }
     } while (-not $window -and [DateTime]::UtcNow -lt $deadline)
-    if (-not $window) { throw 'Installed mdoc did not expose a visible UI Automation main window titled mdoc within 60 seconds.' }
+    if (-not $window) { throw "Installed mdoc did not expose a visible UI Automation main window titled $ExpectedWindowTitle within $StartupTimeoutSeconds seconds." }
     # Give the first frame time to present, then record both UIA and pixels.
     Start-Sleep -Seconds 2
-    $window.Current | Format-List Name, ProcessId, ControlType, IsOffscreen, BoundingRectangle |
-        Out-File (Join-Path $evidence.FullName 'uia-window.txt')
-    $window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
-        [System.Windows.Automation.Condition]::TrueCondition) | ForEach-Object {
-            "Role=$($_.Current.ControlType.ProgrammaticName) Name=$($_.Current.Name)"
-        } | Out-File (Join-Path $evidence.FullName 'uia-controls.txt')
+    Save-UiaEvidence
     Save-Screen 'main-window'
     if (-not $app.CloseMainWindow()) { throw 'Could not request a clean main-window close.' }
     if (-not $app.WaitForExit(15000)) { throw 'Installed mdoc did not quit cleanly within 15 seconds.' }
@@ -96,6 +119,7 @@ try {
     throw
 } finally {
     try {
+        if (-not $passed) { Save-UiaEvidence }
         if (-not $passed -and $screenReady) { Save-Screen 'failure' }
     } catch {
         "Screen capture failed: $_" | Out-File (Join-Path $evidence.FullName 'capture-error.txt')

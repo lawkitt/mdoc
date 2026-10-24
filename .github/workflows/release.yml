@@ -169,11 +169,15 @@ jobs:
           if-no-files-found: error
 
   installed-windows:
-    name: installed Windows desktop smoke
+    name: installed Windows desktop smoke (${{ matrix.scenario }})
     needs: [package]
     if: ${{ !cancelled() && needs.package.result == 'success' }}
     runs-on: windows-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [startup, wrong-title]
     permissions:
       contents: read
     steps:
@@ -186,11 +190,29 @@ jobs:
           path: dist
       - name: Install, launch, inspect, capture, quit and uninstall
         shell: pwsh
-        run: scripts/ci-installed-windows.ps1
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        run: |
+          if ($env:SCENARIO -eq 'startup') {
+            ./scripts/ci-installed-windows.ps1
+          } else {
+            # An impossible title must fail, retain UIA diagnostics, and uninstall.
+            pwsh -NoProfile -File scripts/ci-installed-windows.ps1 -ExpectedWindowTitle 'mdoc-intentionally-wrong-title' -StartupTimeoutSeconds 10
+            if ($LASTEXITCODE -eq 0) { throw 'Wrong-title startup unexpectedly passed.' }
+            $failure = Get-Content installed-windows-evidence/failure.txt -Raw
+            if ($failure -notmatch 'did not expose a visible UI Automation main window') {
+              throw "Negative case failed for an unexpected reason: $failure"
+            }
+            $uia = Get-Content installed-windows-evidence/uia.txt -Raw
+            if ($uia -notmatch 'Window: Name=mdoc PID=') { throw "Missing failure UIA window: $uia" }
+            if (Get-Process mdoc -ErrorAction SilentlyContinue) { throw 'Negative case left mdoc running.' }
+            if (Test-Path (Join-Path $env:RUNNER_TEMP 'mdoc-installed-smoke/mdoc.exe')) { throw 'Negative case did not uninstall.' }
+            $global:LASTEXITCODE = 0
+          }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: installed-windows-desktop
+          name: installed-windows-desktop-${{ matrix.scenario }}
           path: installed-windows-evidence/*
           if-no-files-found: error
 
