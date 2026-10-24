@@ -808,6 +808,41 @@ fn table_occurrence_popup_uses_exact_painted_word_in_both_themes(cx: &mut gpui::
 }
 
 #[gpui::test]
+fn chrome_history_fallback_does_not_take_alias_field_keys(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    cx.update(|_, cx| crate::bind_app_keys(cx));
+    let source = "Павлова Марина Сергеевна · Павлова М.С.";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        app.apply_all_pii(&PiiApplyAll, window, cx);
+        app.reveal_replacement(initials, window, cx);
+        app.pii
+            .mapping
+            .alias
+            .update(cx, |input, cx| input.set_value("DRAFT_ALIAS".into(), cx));
+        window.focus(&app.pii.mapping.alias.read(cx).focus_handle(cx), cx);
+    });
+    cx.run_until_parked();
+    let text = cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned());
+    for chord in if cfg!(target_os = "macos") {
+        vec!["cmd-z", "cmd-shift-z"]
+    } else {
+        vec!["ctrl-z", "ctrl-shift-z", "ctrl-y"]
+    } {
+        cx.simulate_keystrokes(chord);
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            assert_eq!(app.read(cx).editor.read(cx).text(), text);
+            assert_eq!(
+                app.read(cx).pii.mapping.alias.read(cx).value(),
+                "DRAFT_ALIAS"
+            );
+        });
+    }
+}
+
+#[gpui::test]
 fn external_source_edit_discards_unconfirmed_mapping_draft(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С.";

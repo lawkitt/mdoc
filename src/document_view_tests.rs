@@ -2049,6 +2049,8 @@ fn find_and_replace_fit_beside_replacements_at_minimum_window_size(cx: &mut Test
 #[gpui::test]
 fn replace_all_skips_formatting_and_one_undo_reverts_it(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
+    // The chrome fallback must not override Find/Replace's explicit binding.
+    cx.update(|_, cx| bind_app_keys(cx));
     let source = "hi **there**. hi there. Hi there.";
     open_replace(&app, source, "hi there", "yo", cx);
     assert!(cx.update(|_, cx| app.read(cx).search.replace_open));
