@@ -7,15 +7,10 @@ Plain paragraph with **bold**, *italic*, and ~~struck~~ runs.
 ## Lists
 
 1. First numbered
-
 2. Second numbered
-
    - a) Alpha sub one
-
    - b) Alpha sub two
-
-        - i. Roman sub sub
-
+     - i. Roman sub sub
 3. Third numbered
 
 Interrupting paragraph between lists.
@@ -23,13 +18,9 @@ Interrupting paragraph between lists.
 4. Fourth, continuing the count
 
 - IV. Roman starting at four
-
 - I. Roman five
-
 - Bullet one
-
 - Bullet two
-
   - Nested bullet
 
 ## Table

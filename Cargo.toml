@@ -33,8 +33,8 @@ gpui_platform = { package = "gpui-pre-platform", version = "0.3", features = ["f
 regex = "1"
 # Exact: structured-rule predictions are frozen against the corpus (ADR 0017).
 presidio-analyzer = { version = "=0.1.11", default-features = false }
-anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "97d21d1f46086d84478da072ba1fdfa210461c80" }
-pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "1baba87892a929e64d08069cb223b4a312f755cf", features = ["ocr"] }
+anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "cd905101e2d8322e0f249dafd78cc782402bcce5" }
+pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "d28ce2914a15e0100d049cd5c72493a6d6695a72", features = ["ocr"] }
 # App data lives under data_local_dir / cache_dir (settings, session, cases,
 # models, updates, crash report); a bump must keep those paths (ADR 0053).
 dirs = "7"
