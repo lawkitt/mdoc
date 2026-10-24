@@ -20,7 +20,12 @@ H18).
 - **Landing:** a region takes focus on the control last focused in it
   (however focus left it), otherwise its first control; the editor gets its
   caret back. Regions follow what is drawn: in a narrow window only the
-  shown pane of Markdown and Original takes part.
+  shown pane of Markdown and Original takes part. A sidebar tab is
+  remembered as the tab, not its row: F6 into the sidebar lands on that tab
+  in the layout drawn now, the expanded list or the collapsed rail (which
+  opens its reveal), even if the sidebar was collapsed or expanded since. A
+  closed tab, or one folded into its case, falls back to the region's first
+  control.
 - **Tab / ⇧Tab** move to the next / previous control in window order, with a
   visible focus ring, across region edges. The document's notices strip
   (with the narrow-window pane switch), the find bar and the view switcher
@@ -58,8 +63,8 @@ H18).
 - Every control is reachable and can be activated by keyboard alone on both
   platforms, without a screen reader or Full Keyboard Access.
 - Tests cover the F6 order with and without the optional regions, return to
-  the last focused control, Tab across region edges in both sidebar layouts,
-  and the sidebar list keys.
+  the last focused control (a tab across a sidebar collapse and expand), Tab
+  across region edges in both sidebar layouts, and the sidebar list keys.
 
 ## Consequences
 
@@ -67,4 +72,5 @@ Checklist rows A4 and H18 drop the 0.1.0 exception and check F6 regions.
 
 Code: `Workspace::cycle_region` and `DocumentView::focus_regions`; tests in
 `workspace_tests.rs` (`f6_*`, `tab_from_home_*`, `tab_moves_between_regions_*`,
-`sidebar_tab_list_*`).
+`sidebar_tab_list_*`); `Workspace::tab_row_in_layout` maps a remembered tab
+row to the drawn layout.

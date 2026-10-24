@@ -4,6 +4,11 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **F6 finds your tab in the collapsed sidebar.** F6 into the sidebar returns
+  to the tab that last had focus, in the expanded list or the collapsed rail,
+  even after collapsing or expanding the sidebar; before, the rail landed on
+  Search.
+
 - **Open hints name every format.** Home and a new tab list each format mdoc
   opens: PDF, Word, Excel, PowerPoint, OpenDocument, RTF, EPUB, CSV and
   Markdown, not just PDF, DOCX and Markdown. The unsupported-format message

@@ -3338,7 +3338,7 @@ impl Workspace {
             .region_last
             .iter()
             .find(|(r, _)| *r == region)
-            .map(|(_, focus)| focus.clone())
+            .map(|(_, focus)| self.tab_row_in_layout(focus, cx))
             .filter(|focus| *focus != region && self.region_holds(&region, focus, window, cx));
         if single {
             window.focus(&region, cx);
@@ -3351,6 +3351,36 @@ impl Workspace {
                 window.focus(&region, cx);
             }
         }
+    }
+
+    /// A remembered sidebar tab row, as the row of the same tab in the layout
+    /// drawn now: the expanded list (or the rail's open reveal) or the
+    /// collapsed rail. Each layout has its own handles, and only the drawn
+    /// one can take focus (ADR 0062). Any other focus is returned unchanged.
+    fn tab_row_in_layout(&self, focus: &gpui::FocusHandle, cx: &App) -> gpui::FocusHandle {
+        let tab = [&self.sidebar_row_focus, &self.compact_row_focus]
+            .iter()
+            .find_map(|rows| {
+                rows.borrow()
+                    .iter()
+                    .find(|(_, row)| *row == focus)
+                    .map(|(id, _)| *id)
+            });
+        let Some(tab) = tab else {
+            return focus.clone();
+        };
+        // The rail's row opens the reveal and hands focus to the list's row,
+        // so the tab must be in the list too (a folded case member is not).
+        let listed = self.listed_tabs(cx).contains(&tab);
+        let rows = if self.sidebar_visible || self.reveal == Reveal::Shown {
+            &self.sidebar_row_focus
+        } else {
+            &self.compact_row_focus
+        };
+        listed
+            .then(|| rows.borrow().get(&tab).cloned())
+            .flatten()
+            .unwrap_or_else(|| focus.clone())
     }
 
     /// The region holding focus. Comments sit inside the preview: the
