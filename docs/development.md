@@ -229,7 +229,7 @@ mdoc-renders/
     home.png ...
 ```
 
-Both themes cover Home, a document, Review, the mention popup, model setup
+Both themes cover Home, a document and its ⋯ menu, Review, the mention popup, model setup
 consent, Settings, the dictionary, command palette, Find and Replace,
 before/after, Open Case, case rename/categories, the Keychain explainer preview,
 confirmations for case deletion, mapping retention, unsaved changes and model

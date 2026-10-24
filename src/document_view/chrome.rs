@@ -412,6 +412,25 @@ impl DocumentView {
             .into_any_element()
     }
 
+    /// Why Copy for AI and Paste AI reply are off, or `None` when they
+    /// work. The menu shows it and screen readers hear it.
+    pub(crate) fn alias_actions_reason(&self) -> Option<&'static str> {
+        if self.source_only {
+            Some("Convert the document to Markdown first.")
+        } else if !self.can_copy_markdown() {
+            Some("Available once the document has loaded.")
+        } else if self.has_applied_aliases() {
+            None
+        } else if self.pii.review.variants().is_empty() {
+            Some("Pseudonymize the document first.")
+        } else if self.pii.review.remaining() > 0 {
+            Some("Apply replacements first.")
+        } else {
+            // Every proposal was kept as the original.
+            Some("No names in this document are replaced.")
+        }
+    }
+
     fn more_menu(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let theme = self.theme.get();
         let modifier = |mac: &'static str, other: &'static str| {
@@ -423,7 +442,8 @@ impl DocumentView {
         };
         let copy = self.can_copy_markdown() && !self.source_only;
         let has_text = copy && !self.editor.read(cx).text().is_empty();
-        let aliases = copy && self.has_applied_aliases();
+        let alias_reason = self.alias_actions_reason();
+        let aliases = copy && alias_reason.is_none();
         let spelling_on = !self.spelling_control_off() && !self.spelling.off_here;
         let misspelled = self.editor.read(cx).diagnostics().len();
         // A menu choice hands focus back to the document first, so the action
@@ -535,23 +555,33 @@ impl DocumentView {
                             .on_click(cx.listener(guard(has_text, || Box::new(CopyMarkdown)))),
                         )
                         .child(
-                            row(
+                            ui::menu_row_because(
                                 "more-copy-for-ai",
-                                "Copy for AI".into(),
+                                "Copy for AI",
                                 None,
                                 None,
+                                theme,
                                 aliases,
+                                alias_reason.map(Into::into),
                             )
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "more-copy-for-ai".into())
+                            })
                             .on_click(cx.listener(guard(aliases, || Box::new(CopyForAi)))),
                         )
                         .child(
-                            row(
+                            ui::menu_row_because(
                                 "more-paste-reply",
-                                "Paste AI reply…".into(),
+                                "Paste AI reply…",
                                 Some(modifier("⌥⇧⌘V", "Ctrl+Alt+Shift+V")),
                                 None,
+                                theme,
                                 aliases,
+                                alias_reason.map(Into::into),
                             )
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "more-paste-reply".into())
+                            })
                             .on_click(cx.listener(guard(aliases, || Box::new(PasteAiResponse)))),
                         )
                         .child(ui::menu_divider(theme))

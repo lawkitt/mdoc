@@ -15,6 +15,7 @@ use std::{
 const SCREENS: &[&str] = &[
     "home",
     "document",
+    "more-menu",
     "review",
     "mention-popup",
     "setup-consent",

@@ -77,15 +77,7 @@ impl DocumentView {
         {
             return Default::default();
         }
-        let start = source[..range.start]
-            .char_indices()
-            .rev()
-            .nth(30)
-            .map_or(0, |(i, _)| i);
-        let end = source[range.end..]
-            .char_indices()
-            .nth(45)
-            .map_or(source.len(), |(i, _)| range.end + i);
+        let (start, end) = snippet_bounds(source, range);
         fn clean(value: &str) -> String {
             static TAGS: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
             let value = TAGS
@@ -1249,5 +1241,128 @@ pub(super) fn scope_keys(scope: Scope, key: &str) -> String {
         Scope::Mention => key.to_string(),
         Scope::Wording => format!("{modifier}{key}"),
         Scope::Entity => format!("⇧{modifier}{key}"),
+    }
+}
+
+/// The context shown around a mention: about 30 characters before it and 45
+/// after. A cut that would split a word moves to the nearest space inside
+/// that span instead, so a snippet never starts or ends mid-word.
+pub(super) fn snippet_bounds(source: &str, range: &Range<usize>) -> (usize, usize) {
+    // Inside an unclosed HTML tag such as `<span style=…>`: the cleanup
+    // can't remove half a tag. Looks back at most 256 bytes.
+    let in_tag = |at: usize| {
+        let mut from = at.saturating_sub(256);
+        while !source.is_char_boundary(from) {
+            from -= 1;
+        }
+        let before = &source[from..at];
+        before
+            .rfind('<')
+            .is_some_and(|open| before.rfind('>').is_none_or(|close| close < open))
+    };
+    // Cut only next to whitespace outside tags: contractions ("can't"),
+    // hyphens, accents and Markdown markers ("**") stay with their word.
+    let start_ok =
+        |at: usize| at == 0 || (source[..at].ends_with(char::is_whitespace) && !in_tag(at));
+    let end_ok = |at: usize| {
+        at == source.len() || (source[at..].starts_with(char::is_whitespace) && !in_tag(at))
+    };
+    let mut start = source[..range.start]
+        .char_indices()
+        .rev()
+        .nth(30)
+        .map_or(0, |(i, _)| i);
+    if !start_ok(start) {
+        start = source[start..range.start]
+            .char_indices()
+            .map(|(i, c)| start + i + c.len_utf8())
+            .find(|&at| start_ok(at))
+            .map_or(range.start, |at| at.min(range.start));
+    }
+    let mut end = source[range.end..]
+        .char_indices()
+        .nth(45)
+        .map_or(source.len(), |(i, _)| range.end + i);
+    if !end_ok(end) {
+        end = source[range.end..end]
+            .char_indices()
+            .rev()
+            .map(|(i, _)| range.end + i)
+            .find(|&at| end_ok(at))
+            .unwrap_or(range.end);
+    }
+    (start, end)
+}
+
+#[cfg(test)]
+mod snippet_tests {
+    use super::snippet_bounds;
+
+    fn snippet(source: &str, word: &str) -> String {
+        let at = source.find(word).unwrap();
+        let (start, end) = snippet_bounds(source, &(at..at + word.len()));
+        source[start..end].to_owned()
+    }
+
+    /// Both ends of `text` sit at whitespace or the ends of `source`.
+    fn assert_whole_words(source: &str, text: &str) {
+        let at = source.find(text).unwrap();
+        let end = at + text.len();
+        assert!(
+            at == 0 || source[..at].ends_with(char::is_whitespace),
+            "{text:?}"
+        );
+        assert!(
+            end == source.len() || source[end..].starts_with(char::is_whitespace),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn snippets_cut_at_word_boundaries() {
+        let source = "Agreement between Maya Bennett, known to colleagues as Mia, and the \
+                      Employer, signed in Springfield on the first day of the month.";
+        let text = snippet(source, "Mia");
+        // 30 characters back would start at "ennett"; the snippet starts at
+        // the next word instead.
+        assert_eq!(
+            text,
+            "known to colleagues as Mia, and the Employer, signed in Springfield on"
+        );
+        assert_whole_words(source, &text);
+    }
+
+    #[test]
+    fn short_text_and_unbroken_runs_keep_the_mention() {
+        assert_eq!(snippet("Call Mia today.", "Mia"), "Call Mia today.");
+        // A run without spaces is dropped rather than shown cut.
+        let run = "x".repeat(80);
+        let source = format!("{run}Mia{run}");
+        assert_eq!(snippet(&source, "Mia"), "Mia");
+        // A decomposed accent is part of its word, not a break in it.
+        // 30 characters back from "Mia" falls just after the accent.
+        let source = "The cafe\u{301}teria was visited yesterday by Mia.";
+        assert_eq!(snippet(source, "Mia"), "was visited yesterday by Mia.");
+        // Apostrophes and Markdown markers belong to their word.
+        let source = "The client can't disclose personal details to Mia.";
+        assert_whole_words(source, &snippet(source, "Mia"));
+        let source = "The cafe**teria** was visited today by Mia.";
+        let text = snippet(source, "Mia");
+        assert!(
+            !text.starts_with("teria") && !text.starts_with("**"),
+            "{text}"
+        );
+        assert_whole_words(source, &text);
+        // A space inside an HTML tag is not a place to cut.
+        let source =
+            "Mia visited the cafe<span style=\"color:red\">teria</span> yesterday and signed.";
+        let text = snippet(source, "Mia");
+        assert!(!text.contains("<span"), "{text}");
+        assert_whole_words(source, &text);
+        // Cyrillic, multi-byte boundaries.
+        let source = "Договор между Павловой Мариной Сергеевной, далее Заказчик, и Исполнителем по настоящему договору.";
+        let text = snippet(source, "Заказчик");
+        assert!(text.contains("Заказчик"));
+        assert_whole_words(source, &text);
     }
 }

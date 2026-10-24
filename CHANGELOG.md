@@ -4,6 +4,13 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Whole words in mention snippets; disabled actions say why.** The
+  Replacements panel's snippets now start and end at whole words instead of
+  mid-word ("ennett, known to…"). In the ⋯ menu, a disabled Copy for AI or
+  Paste AI reply shows why under its name ("Pseudonymize the document
+  first.", "Apply replacements first."), and screen readers announce the
+  same reason.
+
 - **The locked-cases notice waits until it matters.** Opening a plain
   document no longer pops "Saved cases are locked" over its preview; the
   notice stays behind the Notices bell. It still opens by itself when a tab
