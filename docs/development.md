@@ -29,6 +29,8 @@ The full list is under [Recipes](#recipes).
 - [Architecture decisions](adr/): accepted behavior and its rationale.
 - [Evidence](evidence/): measurements that current work still compares against.
 - [Privacy and limitations](privacy.md).
+- [Release runs](release-run.md): standing rules for cutting an RC and running
+  its platform acceptance in parallel on the fleet.
 
 ### Writing ADRs
 
@@ -305,12 +307,15 @@ skill) read this section for mdoc's needs.
   runs detection on CPU.
 - **Lane worktrees.** A worktree's `target/` reaches about 30 GiB and a cold
   `just lint` + `just test` takes about 4.5 minutes on `windows`, so workers
-  reuse lanes instead of a new worktree per task: two on `windows`, one on
-  `wsl`. Each task starts with `git switch -c <machine>/<topic> origin/main`.
+  reuse lanes instead of a new worktree per task: `windows-lane-1` and
+  `windows-lane-2` on `windows`, `wsl-lane-1` on `wsl`. Each task starts with
+  `git switch -c <machine>/<topic> origin/main`.
   Retire other worktrees with `just retire-worktree <path>` once merged.
-- **Native checks stay manual.** Dispatched agents build and install; the
-  maintainer runs the [acceptance](platform-acceptance.md) rows that need the
-  machine (see [ADR 0057](adr/0057-native-platform-acceptance.md)).
+- **Native checks.** The [acceptance](platform-acceptance.md) checklist runs
+  by computer use (see [ADR 0057](adr/0057-native-platform-acceptance.md));
+  rows that need a physical keyboard, speech, passwords or system settings
+  stay with the maintainer.
+- **Release runs** follow [release-run.md](release-run.md).
 
 ## Releasing
 
