@@ -33,6 +33,7 @@ const SCREENS: &[&str] = &[
     "confirm-unsaved",
     "confirm-remove-model",
     "model-comparison",
+    "conversion-failed",
     "restored-reply",
 ];
 

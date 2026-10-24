@@ -188,8 +188,7 @@ fn main() {
             std::process::exit(2);
         };
         let output = PathBuf::from(output);
-        if let Err(error) = docx_preview::run_worker(&PathBuf::from(input), &output) {
-            let _ = std::fs::write(output.with_extension("error"), error.to_string());
+        if docx_preview::run_worker_reporting(&PathBuf::from(input), &output).is_err() {
             std::process::exit(1);
         }
         return;

@@ -76,11 +76,6 @@ UI and accessibility polish from the 2026-10-22 UX review and the 0.2.0
 acceptance runs; none needs a design decision. Merges to main as each is
 done; 0.2.0 ships from rc.2 regardless. Items are in priority order.
 
-2. **[UI] Plain error states.** A corrupt DOCX shows "invalid ZIP" with a
-   Retry that cannot help; an unsupported format says "Preview unavailable"
-   twice ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
-   *Done when:* each case shows one plain message, and Retry only where a
-   retry can succeed.
 3. **[UI] Locked-cases notice where it matters.** "Saved cases are locked"
    opens on its own over a plain document's preview ([UX review](docs/evidence/ux-review/2026-10-22/README.md),
    [ADR 0043](docs/adr/0043-deferred-keychain-access.md)).
