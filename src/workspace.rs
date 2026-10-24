@@ -2981,6 +2981,22 @@ impl Render for Workspace {
                     view.update(cx, |view, cx| view.apply_all_pii(action, window, cx));
                 }
             }))
+            .on_action(cx.listener(|this, action: &mdoc_editor::Undo, window, cx| {
+                if let Some(view) = this.history_document(window, cx) {
+                    view.update(cx, |view, cx| {
+                        view.editor
+                            .update(cx, |editor, cx| editor.undo(action, window, cx));
+                    });
+                }
+            }))
+            .on_action(cx.listener(|this, action: &mdoc_editor::Redo, window, cx| {
+                if let Some(view) = this.history_document(window, cx) {
+                    view.update(cx, |view, cx| {
+                        view.editor
+                            .update(cx, |editor, cx| editor.redo(action, window, cx));
+                    });
+                }
+            }))
             // Home's clipboard actions need a document; documents handle them first.
             .on_action(cx.listener(|this, action: &PasteAiResponse, window, cx| {
                 if let Some(view) = this.clipboard_document("Restore AI reply", window, cx) {
@@ -3272,6 +3288,25 @@ impl Workspace {
             regions.extend(view.read(cx).focus_regions(cx));
         }
         regions
+    }
+
+    /// The visible document owns chrome undo, unless a field or modal surface
+    /// owns focus. Deeper editor/popup handlers run before this fallback.
+    fn history_document(&self, window: &Window, cx: &App) -> Option<Entity<DocumentView>> {
+        if self.showing_home(cx)
+            || self.settings.read(cx).open
+            || self.cases.list_open
+            || self.cases.explainer
+            || self.cases.categories_open.is_some()
+            || self.shell.palette.is_some()
+            || window
+                .context_stack()
+                .iter()
+                .any(|context| context.contains("TextInput"))
+        {
+            return None;
+        }
+        self.active_view()
     }
 
     /// F6 / Shift+F6: leave the focused region for the next one, landing on

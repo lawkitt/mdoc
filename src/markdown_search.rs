@@ -705,7 +705,7 @@ impl Render for SearchInput {
             .flex_1()
             .min_w_0()
             .overflow_hidden()
-            .key_context(self.key_context)
+            .key_context(format!("TextInput {}", self.key_context))
             .track_focus(&self.focus_handle(cx))
             .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::backspace))
