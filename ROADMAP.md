@@ -79,11 +79,6 @@ done; 0.2.0 ships from rc.2 regardless. Items are in priority order.
 1. **[UI] Format hints.** Home and Open say "PDF, DOCX or Markdown", but mdoc
    also converts DOC, ODT and XLS/XLSX ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
    *Done when:* every hint names each supported format, from one list.
-2. **[UI] Plain error states.** A corrupt DOCX shows "invalid ZIP" with a
-   Retry that cannot help; an unsupported format says "Preview unavailable"
-   twice ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
-   *Done when:* each case shows one plain message, and Retry only where a
-   retry can succeed.
 3. **[UI] Locked-cases notice where it matters.** "Saved cases are locked"
    opens on its own over a plain document's preview ([UX review](docs/evidence/ux-review/2026-10-22/README.md),
    [ADR 0043](docs/adr/0043-deferred-keychain-access.md)).

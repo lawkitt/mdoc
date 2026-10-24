@@ -77,7 +77,7 @@ impl SidebarStatus {
             loading: view.loading || view.preview.loading,
             queued: view.preview.queued || view.auto_convert_pending,
             importing: view.job.busy(),
-            error: view.error.is_some() || view.preview.retryable || view.ocr_required.is_some(),
+            error: view.error.is_some() || view.preview.failed || view.ocr_required.is_some(),
             pseudonymized: view.pseudonymized(),
             recognized: view.recognized(),
         }
@@ -2094,7 +2094,7 @@ impl Workspace {
                 let running = view.is_some_and(|v| v.loading || v.job.busy() || v.preview.loading);
                 let busy = running || view.is_some_and(|v| v.preview.queued);
                 let error = view.is_some_and(|v| {
-                    v.error.is_some() || v.preview.retryable || v.ocr_required.is_some()
+                    v.error.is_some() || v.preview.failed || v.ocr_required.is_some()
                 });
                 let pseudonymized = view.is_some_and(|v| v.pseudonymized());
                 let recognized = view.is_some_and(|v| v.recognized());

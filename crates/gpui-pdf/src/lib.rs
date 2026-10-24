@@ -611,6 +611,9 @@ pub struct PdfView {
     /// A terminal read/parse failure — the viewer renders this message
     /// instead of sitting on "Loading PDF…" forever.
     load_error: Option<SharedString>,
+    /// The failure was reading the file, so it can change; a parse failure
+    /// cannot.
+    load_error_retryable: bool,
     on_close: Option<CloseFn>,
     /// `(width, height)` in points per page — drives page-slot sizing.
     dims: Vec<(f32, f32)>,
@@ -698,7 +701,7 @@ impl PdfView {
                 Err(e) => {
                     log::error!("read pdf: {e}");
                     let _ = this.update(cx, |this, cx| {
-                        this.fail_load(format!("Couldn’t read the file: {e}"), cx);
+                        this.fail_load(format!("Couldn’t read the file: {e}"), true, cx);
                     });
                     return;
                 }
@@ -715,7 +718,7 @@ impl PdfView {
                     }
                     Err(LoadError::Other(e)) => {
                         log::error!("parse pdf: {e}");
-                        this.fail_load(format!("Couldn’t open the PDF: {e}"), cx);
+                        this.fail_load(format!("Couldn’t open the PDF: {e}"), false, cx);
                     }
                 }
             });
@@ -737,6 +740,7 @@ impl PdfView {
             bytes: None,
             locked: false,
             load_error: None,
+            load_error_retryable: false,
             on_close: None,
             dims: Vec::new(),
             pages: Vec::new(),
@@ -839,8 +843,9 @@ impl PdfView {
 
     /// Record a terminal load failure (the message renders in the viewer) and
     /// tell the host.
-    fn fail_load(&mut self, msg: String, cx: &mut Context<Self>) {
+    fn fail_load(&mut self, msg: String, retryable: bool, cx: &mut Context<Self>) {
         self.load_error = Some(msg.into());
+        self.load_error_retryable = retryable;
         cx.emit(PdfEvent::LoadFailed);
         cx.notify();
     }
@@ -848,6 +853,12 @@ impl PdfView {
     /// The terminal read/parse failure shown in place of the viewer, if any.
     pub fn load_error(&self) -> Option<&SharedString> {
         self.load_error.as_ref()
+    }
+
+    /// Whether the load failed reading the file (a later attempt may
+    /// succeed) rather than parsing it (it fails the same way every time).
+    pub fn load_error_retryable(&self) -> bool {
+        self.load_error_retryable
     }
 
     /// Customize active load feedback without changing parsing or page scheduling.

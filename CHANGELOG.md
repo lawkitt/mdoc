@@ -4,6 +4,15 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Plain error messages.** A damaged DOCX or PDF now says so in one
+  sentence ("This DOCX is damaged or incomplete, so it can't be previewed.")
+  instead of a technical error, and Retry shows only when trying again can
+  help, such as a file that moved or a preview that timed out. A format
+  without a preview says so once, and a failed conversion states its reason
+  on the card instead of pointing to a separate notice. When every page of a
+  PDF needs text recognition, the card says "All pages" instead of "Some
+  pages".
+
 - **Undo works from the toolbar.** Undo and Redo reach the active document
   after clicking Apply and from other document chrome, including Ctrl+Y on
   Windows. Text fields keep their existing shortcut behavior.

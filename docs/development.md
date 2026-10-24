@@ -233,7 +233,8 @@ Both themes cover Home, a document, Review, the mention popup, model setup
 consent, Settings, the dictionary, command palette, Find and Replace,
 before/after, Open Case, case rename/categories, the Keychain explainer preview,
 confirmations for case deletion, mapping retention, unsaved changes and model
-removal, model comparison, and a restored AI reply. The legal review uses
+removal, model comparison, a damaged DOCX's failed conversion and preview,
+and a restored AI reply. The legal review uses
 `pseudonymization/corpus.json` annotations as deterministic proposals; Restore
 uses the captured `restore/claude-en` fixture. No detector runs. Platform file
 pickers and the OS Keychain password prompt are outside this app-owned set.

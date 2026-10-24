@@ -69,6 +69,8 @@ pub(crate) struct DocumentView {
     /// External files over the empty page: whether any is supported (ADR 0028).
     pub(crate) file_drag: Option<bool>,
     pub(crate) ocr_required: Option<Vec<u32>>,
+    /// Every page of the PDF needs recognition, so the card says "all".
+    pub(crate) ocr_all_pages: bool,
     pub(crate) import_permit: Option<Arc<import_session::ImportPermit>>,
     pub(crate) conversion_source: Option<PathBuf>,
     pub(crate) import_busy: Arc<AtomicBool>,
@@ -296,6 +298,7 @@ impl DocumentView {
             blank_disposable: false,
             file_drag: None,
             ocr_required: None,
+            ocr_all_pages: false,
             import_permit: None,
             conversion_source: None,
             import_busy: dependencies.import_busy,
@@ -626,6 +629,7 @@ impl DocumentView {
                 self.source_only = false;
                 self.generated_unedited = self.automatic_import;
                 self.ocr_required = None;
+                self.ocr_all_pages = false;
                 self.ocr_error = None;
                 self.ocr_failure = None;
                 self.recognition_signals = None;
@@ -660,8 +664,7 @@ impl DocumentView {
                 } else {
                     self.preview.attachment = Some(imported.source.clone());
                     self.preview.source = Some(imported.source);
-                    self.preview.message =
-                        Some("Source preview unavailable for this imported format.".into());
+                    self.preview.message = Some(preview::NO_PREVIEW.into());
                 }
                 self.scroll.set_offset(gpui::point(px(0.), px(0.)));
             }
@@ -837,8 +840,9 @@ impl DocumentView {
                     }
                 }
                 Err(import::ImportError::Message(error)) => self.error = Some(error),
-                Err(import::ImportError::NeedsOcr(path, pages, text)) => {
+                Err(import::ImportError::NeedsOcr(path, pages, text, page_count)) => {
                     self.observe_recognition(&path, text);
+                    self.ocr_all_pages = pages.len() as u32 >= page_count;
                     self.ocr_required = Some(pages);
                     self.await_ocr(path, cx)
                 }
@@ -1102,23 +1106,28 @@ impl DocumentView {
                 } else {
                     ui::card_title(title).into_any_element()
                 })
-                .when(self.error.is_some() && !busy, |v| {
-                    v.child(ui::card_text(
-                        "The notice below explains what went wrong.",
-                        theme,
-                    ))
+                .when_some(self.error.clone().filter(|_| !busy), |v, error| {
+                    v.child(ui::card_text(error, theme))
                 })
                 .into_any_element();
         };
         let count = pages.len();
         let card = card
-            .child(ui::card_title(if count == 0 { "Text recognition needs your attention" } else { "Some pages need text recognition" }))
-            .when(count > 0, |v| v.child(ui::card_text(format!(
-                "{count} {} no usable text ({}). Recognition reads {} on this computer; the original stays in the preview.",
-                if count == 1 { "page has" } else { "pages have" },
-                ui::page_ranges(&pages, 8),
-                if count == 1 { "it" } else { "them" },
-            ), theme)));
+            .child(ui::card_title(if count == 0 { "Text recognition needs your attention" } else { self.ocr_pages_title() }))
+            .when(count > 0, |v| v.child(ui::card_text(if self.ocr_all_pages {
+                format!(
+                    "{} usable text. Recognition reads {} on this computer; the original stays in the preview.",
+                    if count == 1 { "The page has no" } else { "No page has" },
+                    if count == 1 { "it" } else { "them" },
+                )
+            } else {
+                format!(
+                    "{count} {} no usable text ({}). Recognition reads {} on this computer; the original stays in the preview.",
+                    if count == 1 { "page has" } else { "pages have" },
+                    ui::page_ranges(&pages, 8),
+                    if count == 1 { "it" } else { "them" },
+                )
+            }, theme)));
         if !ocr::SUPPORTED {
             return card
                 .child(ui::card_text(
@@ -1335,6 +1344,48 @@ impl DocumentView {
             .into_any_element()
     }
 
+    /// "All pages…" when the whole PDF is scanned, "Some pages…" otherwise.
+    fn ocr_pages_title(&self) -> &'static str {
+        match (self.ocr_all_pages, self.ocr_required.as_ref().map(Vec::len)) {
+            (true, Some(1)) => "This page needs text recognition",
+            (true, _) => "All pages need text recognition",
+            (false, _) => "Some pages need text recognition",
+        }
+    }
+
+    /// The preview pane without a page: progress, or one plain message with
+    /// Retry only when another attempt can succeed.
+    fn preview_status(&self, theme: Theme) -> gpui::AnyElement {
+        if self.preview.loading {
+            return ui::activity("preview-activity", "Preparing preview…", theme)
+                .into_any_element();
+        }
+        let message = if self.preview.queued {
+            "Waiting to prepare preview…".to_string()
+        } else {
+            self.preview
+                .message
+                .clone()
+                .unwrap_or_else(|| "No preview".into())
+        };
+        div()
+            .id("preview-status")
+            .when(cfg!(test), |v| v.debug_selector(|| "preview-status".into()))
+            .max_w(px(360.))
+            .px_6()
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_3()
+            .text_center()
+            .text_size(px(14.))
+            .child(message)
+            .when(!self.preview.queued && self.preview.retryable, |v| {
+                v.child(button("Retry", RetryPreview, theme))
+            })
+            .into_any_element()
+    }
+
     fn notice(
         &self,
         id: &'static str,
@@ -1461,10 +1512,15 @@ impl DocumentView {
                     }
                     this.preview.loading = false;
                     this.preview.retryable = result.is_err();
-                    this.preview.message = Some(match result {
-                        Ok(()) => "Preview unavailable for this format.".into(),
-                        Err(error) => format!("Could not open source: {error}"),
-                    });
+                    this.preview.failed = result.is_err();
+                    this.preview.message = Some(
+                        if result.is_ok() {
+                            preview::NO_PREVIEW
+                        } else {
+                            preview::UNREADABLE_SOURCE
+                        }
+                        .into(),
+                    );
                     cx.notify();
                 });
             })
@@ -2021,19 +2077,13 @@ impl Render for DocumentView {
             self.notice(
                 "ocr-notice",
                 "Text recognition required",
-                "Some pages need text recognition.".into(),
+                format!("{}.", self.ocr_pages_title()),
                 false,
                 cx,
             )
         });
         let preview_notice = self.preview.message.clone().map(|detail| {
-            self.notice(
-                "preview-notice",
-                "Preview",
-                detail,
-                self.preview.retryable,
-                cx,
-            )
+            self.notice("preview-notice", "Preview", detail, self.preview.failed, cx)
         });
         let setup_notice = match &self.ocr_state {
             OcrState::Failed(error) if !self.setup_error_dismissed => {
@@ -2045,16 +2095,33 @@ impl Render for DocumentView {
             .clipboard_notice
             .clone()
             .map(|detail| self.notice("clipboard-notice", "Clipboard", detail, false, cx));
-        let error_notice = self
-            .error
-            .clone()
-            .map(|detail| self.notice("error-notice", "Needs attention", detail, true, cx));
         let width = self.chrome_width(window);
         let content_width = (width - f32::from(self.replacements_panel_width(window))).max(1.);
         let narrow_preview = self.preview.visible && content_width < 620.;
         let show_original = self.preview.visible && (!narrow_preview || self.original_selected);
         let show_markdown = !narrow_preview || !self.original_selected;
         self.panes_drawn.set((show_markdown, show_original));
+        // The conversion card states a conversion error itself, and the OCR
+        // card its recognition error; a notice would only repeat it.
+        let card_shows_error = self.source_only
+            && show_markdown
+            && !self.job.busy()
+            && !self.auto_convert_pending
+            && (self.ocr_required.is_none()
+                || ocr::SUPPORTED
+                    && self.error.as_ref().is_some_and(|error| {
+                        [self.ocr_failure.as_ref(), self.ocr_error.as_ref()].contains(&Some(error))
+                            || matches!(&self.ocr_state, OcrState::Failed(e) if e == error)
+                    }));
+        // The OCR setup notice may already say the same thing.
+        let setup_says_error = !self.setup_error_dismissed
+            && !(show_markdown && self.source_only && self.ocr_required.is_some())
+            && matches!(&self.ocr_state, OcrState::Failed(e) if Some(e) == self.error.as_ref());
+        let error_notice = self
+            .error
+            .clone()
+            .filter(|_| !card_shows_error && !setup_says_error)
+            .map(|detail| self.notice("error-notice", "Needs attention", detail, true, cx));
         let minimum = (280. / content_width.max(620.)).min(0.5);
         let split = self
             .preview
@@ -2132,7 +2199,7 @@ impl Render for DocumentView {
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = true; cx.notify(); }))))
                 .when(show_original && self.preview.pdf.is_none(), |row| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
                     .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
-                    .child(if self.preview.loading { ui::activity("preview-activity", "Preparing preview…", theme).into_any_element() } else { div().child(if self.preview.queued { "Waiting to prepare preview…" } else { "Preview unavailable" }).into_any_element() }).when_some(self.preview.message.clone(), |v, message| v.child(self.notice("preview-notice", "Preview", message, self.preview.retryable, cx)))))
+                    .child(self.preview_status(theme))))
                 .when_some(self.preview.pdf.clone().filter(|_| show_original), |row, pdf| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(div().track_focus(&self.comments_region).child(comments)))

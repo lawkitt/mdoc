@@ -30,6 +30,14 @@ struct PendingPreview {
     _subscription: Subscription,
 }
 
+/// The preview pane's message when the source can't be read, for example
+/// because it moved; Retry can succeed once it is back.
+pub(super) const UNREADABLE_SOURCE: &str =
+    "mdoc could not read this file. Check that it is still there.";
+
+/// The preview pane's message for a format it can't show.
+pub(super) const NO_PREVIEW: &str = "No preview for this format. mdoc previews PDF and DOCX files.";
+
 #[derive(Default)]
 pub(super) struct PreviewState {
     pub split_ratio: Option<f32>,
@@ -45,6 +53,9 @@ pub(super) struct PreviewState {
     pub message: Option<String>,
     pub loading: bool,
     pub retryable: bool,
+    /// The last request failed. Unlike `retryable`, this includes failures
+    /// another attempt can't fix; the sidebar's warning follows it.
+    pub failed: bool,
     pub source: Option<PathBuf>,
     cancel: Option<Arc<AtomicBool>>,
     pub generation: u64,
@@ -64,6 +75,7 @@ impl PreviewState {
         self.generation = self.generation.wrapping_add(1);
         self.message = None;
         self.retryable = false;
+        self.failed = false;
         self.queued = false;
     }
 
@@ -82,7 +94,9 @@ impl PreviewState {
         self.loading && self.generation == generation
     }
 
-    fn fail(&mut self, generation: u64, message: String) -> bool {
+    /// Ends the current request with one plain `message`; Retry shows only
+    /// when `retryable`, that is, when another attempt can succeed.
+    fn fail(&mut self, generation: u64, message: String, retryable: bool) -> bool {
         if !self.is_current(generation) {
             return false;
         }
@@ -90,7 +104,8 @@ impl PreviewState {
         self.pending = None;
         self.loading = false;
         self.queued = false;
-        self.retryable = true;
+        self.retryable = retryable;
+        self.failed = true;
         self.message = Some(message);
         true
     }
@@ -114,6 +129,7 @@ impl PreviewState {
         self.queued = false;
         self.attachment = self.source.clone();
         self.retryable = false;
+        self.failed = false;
         self.message = pending
             .docx
             .as_ref()
@@ -253,12 +269,19 @@ impl DocumentView {
             if !this.preview.is_current(generation) {
                 return;
             }
-            if let Some(error) = pdf.read(cx).load_error() {
-                this.preview.fail(generation, error.to_string());
+            if pdf.read(cx).load_error().is_some() {
+                let retryable = pdf.read(cx).load_error_retryable();
+                let message = if retryable {
+                    UNREADABLE_SOURCE
+                } else {
+                    "This PDF is damaged or incomplete, so it can't be previewed."
+                };
+                this.preview.fail(generation, message.into(), retryable);
             } else if pdf.read(cx).is_locked() {
                 this.preview.fail(
                     generation,
-                    "This PDF is password-protected. Open an unlocked copy to view it here.".into(),
+                    "This PDF is password-protected. Open an unlocked copy to preview it.".into(),
+                    false,
                 );
             } else if pdf.read(cx).is_loaded() {
                 this.preview
@@ -328,7 +351,8 @@ impl DocumentView {
                         this.load_preview(preview.pdf_path.clone(), Some(preview), window, cx)
                     }
                     Err(error) => {
-                        this.preview.fail(generation, error.to_string());
+                        this.preview
+                            .fail(generation, error.plain_message(), error.retryable());
                     }
                 }
                 cx.notify();
@@ -364,14 +388,14 @@ mod tests {
         preview.cancel = Some(cancel.clone());
         let current = preview.begin("new.docx".into());
         assert!(cancel.load(Ordering::Relaxed));
-        assert!(!preview.fail(old, "stale".into()));
+        assert!(!preview.fail(old, "stale".into(), true));
         assert!(preview.is_current(current));
         assert!(preview.message.is_none());
         assert_eq!(preview.source, Some("new.docx".into()));
-        assert!(preview.fail(current, "retry me".into()));
+        assert!(preview.fail(current, "retry me".into(), true));
         assert!(preview.retryable);
         assert!(!preview.loading);
-        assert!(!preview.fail(current, "duplicate".into()));
+        assert!(!preview.fail(current, "duplicate".into(), true));
         assert_eq!(preview.message.as_deref(), Some("retry me"));
     }
 
