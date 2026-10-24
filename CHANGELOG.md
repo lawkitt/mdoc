@@ -4,6 +4,15 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Plain error messages.** A damaged DOCX or PDF now says so in one
+  sentence ("This DOCX is damaged or incomplete, so it can't be previewed.")
+  instead of a technical error, and Retry shows only when trying again can
+  help, such as a file that moved or a preview that timed out. A format
+  without a preview says so once, and a failed conversion states its reason
+  on the card instead of pointing to a separate notice. When every page of a
+  PDF needs text recognition, the card says "All pages" instead of "Some
+  pages".
+
 - **F6 finds your tab in the collapsed sidebar.** F6 into the sidebar returns
   to the tab that last had focus, in the expanded list or the collapsed rail,
   even after collapsing or expanding the sidebar; before, the rail landed on

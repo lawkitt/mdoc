@@ -762,9 +762,9 @@ fn pdf_preview_does_not_change_markdown_search(cx: &mut TestAppContext) {
 
     assert!(cx.update(|_, cx| app.read(cx).search.open));
     assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 1);
-    assert!(
-        cx.update(|_, cx| app.read(cx).preview.pdf.is_some() || app.read(cx).preview.retryable)
-    );
+    assert!(cx.update(
+        |_, cx| app.read(cx).preview.pdf.is_some() || app.read(cx).preview.message.is_some()
+    ));
 }
 
 #[gpui::test]
@@ -847,9 +847,10 @@ fn pdf_open_keeps_markdown_and_close_pdf_restores_editor(cx: &mut TestAppContext
     cx.simulate_input("keep me");
     app.update_in(cx, |app, window, cx| app.open_path(path, window, cx));
     cx.run_until_parked();
-    assert!(
-        cx.update(|_, cx| { app.read(cx).preview.pdf.is_none() && app.read(cx).preview.retryable })
-    );
+    assert!(cx.update(|_, cx| {
+        let preview = &app.read(cx).preview;
+        preview.pdf.is_none() && !preview.retryable && preview.message.is_some()
+    }));
     assert_eq!(
         cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
         "keep me"
@@ -964,6 +965,7 @@ fn inline_ocr_wait_preserves_current_edits(cx: &mut TestAppContext) {
                 "scan.pdf".into(),
                 vec![1],
                 Vec::new(),
+                1,
             )),
         );
         app.resume_import(window, cx);
@@ -1036,6 +1038,7 @@ fn recognition_choice_and_setup_survive_a_settings_change(cx: &mut TestAppContex
                 "scan.pdf".into(),
                 vec![1],
                 Vec::new(),
+                1,
             )),
         );
         app.resume_import(window, cx);
@@ -1424,6 +1427,44 @@ fn failed_docx_preview_keeps_retry_source(cx: &mut TestAppContext) {
     cx.dispatch_action(RetryPreview);
     cx.run_until_parked();
     assert!(cx.update(|_, cx| app.read(cx).preview.retryable));
+}
+
+#[gpui::test]
+fn damaged_or_unpreviewable_sources_show_one_message_without_retry(cx: &mut TestAppContext) {
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import");
+    let dir = tempfile::tempdir().unwrap();
+    let damaged_pdf = dir.path().join("damaged.pdf");
+    std::fs::write(&damaged_pdf, b"%PDF-1.7 not really").unwrap();
+    let (app, cx) = boot(cx);
+    for (source, message) in [
+        (
+            fixtures.join("truncated--errors.docx"),
+            "This DOCX is damaged or incomplete, so it can't be previewed.",
+        ),
+        (
+            damaged_pdf,
+            "This PDF is damaged or incomplete, so it can't be previewed.",
+        ),
+    ] {
+        app.update_in(cx, |app, window, cx| app.open_path(source, window, cx));
+        cx.run_until_parked();
+        cx.update(|_, cx| {
+            let app = app.read(cx);
+            assert!(app.preview.pdf.is_none());
+            assert!(!app.preview.retryable, "{message}");
+            assert!(app.preview.failed, "{message}");
+            assert_eq!(app.preview.message.as_deref(), Some(message));
+        });
+    }
+    app.update_in(cx, |app, window, cx| {
+        app.open_source(fixtures.join("sheet.xlsx"), window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        assert!(!app.preview.retryable && !app.preview.failed);
+        assert_eq!(app.preview.message.as_deref(), Some(preview::NO_PREVIEW));
+    });
 }
 
 #[gpui::test]

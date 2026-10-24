@@ -83,9 +83,9 @@ pub struct Imported {
 
 #[derive(Debug)]
 pub enum ImportError {
-    /// Pages needing recognition, and the languages the PDF's own text
-    /// layer suggests (`recognition::text_languages`).
-    NeedsOcr(PathBuf, Vec<u32>, Vec<crate::recognition::Language>),
+    /// Pages needing recognition, the languages the PDF's own text layer
+    /// suggests (`recognition::text_languages`), and the PDF's page count.
+    NeedsOcr(PathBuf, Vec<u32>, Vec<crate::recognition::Language>, u32),
     Message(String),
     /// The OCR runtime or models failed; the shared OCR state needs repair.
     OcrFailed(String),
@@ -196,9 +196,7 @@ fn convert_pdf(
     if bytes.len() as u64 > MAX_PDF_BYTES {
         return Err("This PDF exceeds the 256 MiB import limit.".into());
     }
-    let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(|e| {
-        format!("Could not import PDF. If password-protected, import an unlocked copy: {e}")
-    })?;
+    let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_message)?;
     check_cancel(cancel)?;
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
@@ -206,6 +204,7 @@ fn convert_pdf(
             source,
             native.pages_recommended_for_ocr.clone(),
             crate::recognition::text_languages(&native.markdown),
+            native.page_count,
         ));
     }
     let (result, used_ocr) = if !skip_ocr && let Some(installed) = installed {
@@ -279,13 +278,31 @@ fn convert_pdf(
     })
 }
 
+/// A plain sentence for a PDF the native text pass could not read.
+fn pdf_message(error: pdf_inspector::vision::OcrPipelineError) -> String {
+    use pdf_inspector::{PdfError, vision::OcrPipelineError};
+    match error {
+        OcrPipelineError::Pdf(PdfError::Encrypted) => {
+            "This PDF is password-protected. Import an unlocked copy.".into()
+        }
+        OcrPipelineError::Pdf(PdfError::Io(error)) => format!("Could not read document: {error}"),
+        OcrPipelineError::Pdf(
+            PdfError::Parse(_) | PdfError::InvalidStructure | PdfError::NotAPdf(_),
+        ) => DAMAGED.into(),
+        other => format!("Could not import PDF: {other}"),
+    }
+}
+
+const DAMAGED: &str =
+    "This document could not be converted because its contents are damaged or incomplete.";
+
 fn message(error: anydoc::ConvertError) -> String {
     use anydoc::ConvertError;
     match error {
         ConvertError::NeedsOcr { .. } => "This PDF requires OCR. Run text recognition in another application, then import it again.".into(),
         ConvertError::Encrypted => "This document is password-protected. Import an unlocked copy.".into(),
         ConvertError::Unsupported(_) => format!("This format is not supported. Choose a {} file.", supported_formats()),
-        ConvertError::Malformed { .. } | ConvertError::MissingPart { .. } => "This document could not be converted because its contents are damaged or incomplete.".into(),
+        ConvertError::Malformed { .. } | ConvertError::MissingPart { .. } => DAMAGED.into(),
         ConvertError::ResourceLimit { .. } => "This document exceeds the converter’s resource limits. Try importing a smaller document.".into(),
         ConvertError::Io(error) => format!("Could not read document: {error}"),
         other => format!("Could not import document: {other}"),
@@ -322,6 +339,18 @@ mod tests {
                 assert_eq!(FORMAT_NAMES[format_family(format)], family, "{extension}");
             }
         }
+    }
+
+    #[test]
+    fn damaged_documents_get_one_plain_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let pdf = dir.path().join("damaged.pdf");
+        std::fs::write(&pdf, b"%PDF-1.7 not really").unwrap();
+        assert_eq!(convert(&pdf).unwrap_err(), DAMAGED);
+        assert_eq!(
+            convert(&fixture("truncated--errors.docx")).unwrap_err(),
+            DAMAGED
+        );
     }
 
     fn fixture(name: &str) -> PathBuf {
@@ -435,7 +464,7 @@ mod tests {
     #[test]
     fn scan_reports_the_languages_its_text_layer_suggests() {
         use crate::recognition::ENGLISH;
-        let Err(ImportError::NeedsOcr(_, pages, text)) =
+        let Err(ImportError::NeedsOcr(_, pages, text, _)) =
             prepare(&fixture("handmade-partly-scanned.pdf"), None, false)
         else {
             panic!("needs OCR");
@@ -445,7 +474,7 @@ mod tests {
             .join("tests/fixtures/ocr-qualification/russian.pdf");
         assert!(matches!(
             prepare(&raster, None, false),
-            Err(ImportError::NeedsOcr(_, _, text)) if text.is_empty()
+            Err(ImportError::NeedsOcr(_, _, text, _)) if text.is_empty()
         ));
     }
 
