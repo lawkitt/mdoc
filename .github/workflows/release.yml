@@ -171,6 +171,7 @@ jobs:
   installed-windows:
     name: installed Windows desktop smoke
     needs: [package]
+    if: ${{ !cancelled() && needs.package.result == 'success' }}
     runs-on: windows-latest
     timeout-minutes: 10
     permissions:
