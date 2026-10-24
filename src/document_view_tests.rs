@@ -2113,6 +2113,24 @@ fn replace_moves_past_the_replacement_and_skips_formatting(cx: &mut TestAppConte
 }
 
 #[gpui::test]
+fn stepping_after_a_skip_brings_the_counter_back(cx: &mut TestAppContext) {
+    // ADR 0064: the live counter, not a stale replace result, follows Next.
+    let (app, cx) = boot(cx);
+    open_replace(&app, "**c**at cat cat", "cat", "cats", cx);
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let status = |cx: &mut VisualTestContext| cx.update(|_, cx| app.read(cx).search.status.clone());
+    assert_eq!(status(cx).as_deref(), Some("Skipped: crosses formatting"));
+    let before = cx.update(|_, cx| app.read(cx).search.active);
+    app.update_in(cx, |app, window, cx| {
+        app.find_next_markdown(&FindNextMarkdown, window, cx)
+    });
+    cx.run_until_parked();
+    assert_eq!(status(cx), None);
+    assert_ne!(cx.update(|_, cx| app.read(cx).search.active), before);
+}
+
+#[gpui::test]
 fn whole_word_and_match_case_toggle_from_the_keyboard(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     open_replace(&app, "Cat cat category", "cat", "", cx);
@@ -2361,5 +2379,35 @@ fn an_open_already_resolving_waits_for_a_dialog_raised_meanwhile(cx: &mut TestAp
     assert_eq!(
         cx.update(|_, cx| opened.read(cx).editor.read(cx).text().to_owned()),
         "later"
+    );
+}
+
+#[test]
+fn find_counter_speaks_its_position() {
+    // ADR 0064: the counter shows "14 / 16" and screen readers read words.
+    let spoken = |empty, searching, active, matches| {
+        let (shown, spoken) = find_counter(empty, searching, active, matches);
+        (shown, spoken.to_string())
+    };
+    assert_eq!(
+        spoken(false, false, Some(13), 16),
+        ("14 / 16".into(), "Match 14 of 16".into())
+    );
+    assert_eq!(
+        spoken(false, false, None, 1),
+        ("0 / 1".into(), "1 match".into())
+    );
+    assert_eq!(
+        spoken(false, false, None, 3),
+        ("0 / 3".into(), "3 matches".into())
+    );
+    assert_eq!(
+        spoken(false, false, None, 0),
+        ("0 matches".into(), "No matches".into())
+    );
+    assert_eq!(spoken(false, true, None, 0).1, "Searching…");
+    assert_eq!(
+        spoken(true, false, None, 0),
+        ("0 / 0".into(), "No search".into())
     );
 }

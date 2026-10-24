@@ -1647,6 +1647,34 @@ const fn chord(mac: &'static str, other: &'static str) -> &'static str {
     }
 }
 
+/// The find bar's counter: what it shows ("14 / 16") and what a screen reader
+/// says ("Match 14 of 16"), ADR 0064.
+pub(crate) fn find_counter(
+    empty_query: bool,
+    searching: bool,
+    active: Option<usize>,
+    matches: usize,
+) -> (String, gpui::SharedString) {
+    if empty_query {
+        ("0 / 0".into(), "No search".into())
+    } else if searching {
+        ("Searching…".into(), "Searching…".into())
+    } else if matches == 0 {
+        ("0 matches".into(), "No matches".into())
+    } else {
+        let position = active.map_or(0, |index| index + 1);
+        let spoken = if position == 0 {
+            format!(
+                "{matches} {}",
+                if matches == 1 { "match" } else { "matches" }
+            )
+        } else {
+            ui::position_announcement("Match", position, matches)
+        };
+        (format!("{position} / {matches}"), spoken.into())
+    }
+}
+
 fn toggled(on: bool) -> gpui::Toggled {
     if on {
         gpui::Toggled::True
@@ -1767,19 +1795,12 @@ impl Render for DocumentView {
             .focus_handle(cx)
             .is_focused(window);
         let query = self.markdown_search.read(cx).value().to_owned();
-        let count = if query.is_empty() {
-            "0 / 0".to_owned()
-        } else if self.search.task.is_some() {
-            "Searching…".to_owned()
-        } else if self.search.matches.is_empty() {
-            "0 matches".to_owned()
-        } else {
-            format!(
-                "{} / {}",
-                self.search.active.map_or(0, |index| index + 1),
-                self.search.matches.len()
-            )
-        };
+        let (count, spoken_count) = find_counter(
+            query.is_empty(),
+            self.search.task.is_some(),
+            self.search.active,
+            self.search.matches.len(),
+        );
         let navigation_disabled = self.search.matches.is_empty();
         let replace_focused = self
             .markdown_replace
@@ -1850,8 +1871,14 @@ impl Render for DocumentView {
         .on_click(cx.listener(|this, _, window, cx| {
             this.toggle_markdown_whole_word(&ToggleMarkdownWholeWord, window, cx)
         }));
-        let count = div()
-            .id("markdown-search-count")
+        // One live node for the count, "Searching…" and replace results, so
+        // each change is announced (ADR 0063, ADR 0064).
+        let status = self.search.status.clone();
+        let spoken_count = match (&status, self.search.task.is_some()) {
+            (Some(status), false) => status.clone(),
+            _ => spoken_count,
+        };
+        let count = ui::live_text("markdown-search-count", spoken_count)
             .when(cfg!(test), |v| {
                 v.debug_selector(|| "markdown-search-count".into())
             })
@@ -1861,15 +1888,16 @@ impl Render for DocumentView {
             .text_size(px(12.))
             .text_color(palette.header_muted)
             .child(if self.search.task.is_some() {
-                ui::activity("search-activity", count, theme).into_any_element()
-            } else if let Some(status) = self.search.status.clone() {
-                // Replace results are announced (ADR 0063).
                 div()
-                    .id("markdown-replace-status")
-                    .role(gpui::Role::Status)
-                    .aria_label(status.clone())
-                    .child(status)
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .min_w_0()
+                    .child(ui::spinner("search-activity", theme))
+                    .child(div().min_w_0().child(count))
                     .into_any_element()
+            } else if let Some(status) = status {
+                div().child(status).into_any_element()
             } else {
                 div().child(count).into_any_element()
             });
