@@ -313,3 +313,233 @@ fn cmd_left_on_a_wrapped_right_to_left_paragraph_stays_on_its_row(cx: &mut gpui:
         assert_eq!(row(&editor, cx), first, "{key}");
     }
 }
+
+/// The wrap boundaries of logical line `row` (display columns, which are
+/// source offsets on a line without hidden markers).
+fn boundaries(
+    editor: &Entity<EditorState>,
+    cx: &mut gpui::VisualTestContext,
+    row: usize,
+) -> Vec<usize> {
+    editor.read_with(cx, |e, _| wrap_indices(&e.wrapped[row]).collect())
+}
+
+/// The caret's drawn top-left, from the same geometry the paint uses.
+fn caret_at(editor: &Entity<EditorState>, cx: &mut gpui::VisualTestContext) -> Point<Pixels> {
+    editor.read_with(cx, |e, _| {
+        e.bounds_for_offset(e.cursor_offset()).unwrap().origin
+    })
+}
+
+/// One unspaced word of 600 letters, then a short one: rows break inside it.
+fn mid_word_source() -> String {
+    format!("{} tail", "x".repeat(600))
+}
+
+#[gpui::test]
+fn cmd_right_reaches_the_end_of_a_row_that_broke_inside_a_word(cx: &mut gpui::TestAppContext) {
+    let source = mid_word_source();
+    let (editor, cx) = mac_editor(cx, &source, 0);
+    let b = boundaries(&editor, cx, 0);
+    assert!(b.len() >= 2, "{b:?}");
+    let row0 = caret_at(&editor, cx);
+    press("cmd-right", cx);
+    // After the row's last character, not one short of it, and still drawn
+    // on the first row.
+    assert_eq!(selection(&editor, cx), b[0]..b[0]);
+    let end = caret_at(&editor, cx);
+    assert_eq!(end.y, row0.y);
+    let before_last = editor.read_with(cx, |e, _| e.bounds_for_offset(b[0] - 1).unwrap().origin);
+    assert!(end.x > before_last.x, "{end:?} {before_last:?}");
+    // Again: it stays. ⌘← and ⇧⌘← work from there on that row.
+    press("cmd-right", cx);
+    assert_eq!(selection(&editor, cx), b[0]..b[0]);
+    press("cmd-shift-left", cx);
+    assert_eq!(selection(&editor, cx), 0..b[0]);
+    press("cmd-right", cx);
+    press("cmd-left", cx);
+    assert_eq!(selection(&editor, cx), 0..0);
+    // ⇧⌘→ selects to the row's end with the head on that row.
+    press("cmd-shift-right", cx);
+    assert_eq!(selection(&editor, cx), 0..b[0]);
+    assert!(editor.read_with(cx, |e, _| e.caret_upstream()));
+}
+
+#[gpui::test]
+fn a_caret_on_a_wrap_boundary_draws_by_its_affinity(cx: &mut gpui::TestAppContext) {
+    let source = mid_word_source();
+    let (editor, cx) = mac_editor(cx, &source, 0);
+    let b = boundaries(&editor, cx, 0);
+    let row0 = caret_at(&editor, cx);
+    // Placed there (downstream, the default): the start of the next row.
+    editor.update(cx, |e, cx| e.set_cursor(b[0], cx));
+    let down = caret_at(&editor, cx);
+    assert!(down.y > row0.y, "{down:?}");
+    assert_eq!(down.x, row0.x);
+    // → from the row's end steps into the next row; ← from it back into
+    // the first.
+    editor.update(cx, |e, cx| e.set_cursor(0, cx));
+    press("cmd-right", cx);
+    press("right", cx);
+    assert_eq!(selection(&editor, cx), b[0] + 1..b[0] + 1);
+    assert_eq!(caret_at(&editor, cx).y, down.y);
+    press("cmd-right", cx);
+    press("left", cx);
+    press("cmd-right", cx);
+    press("cmd-left", cx);
+    assert_eq!(selection(&editor, cx), b[0]..b[0]);
+    // ⌘← on the second row lands on its start: the same offset, downstream.
+    assert_eq!(caret_at(&editor, cx), down);
+}
+
+#[gpui::test]
+fn up_and_down_keep_their_row_across_mid_word_wraps(cx: &mut gpui::TestAppContext) {
+    let source = mid_word_source();
+    let (editor, cx) = mac_editor(cx, &source, 0);
+    let b = boundaries(&editor, cx, 0);
+    let top = |cx: &mut gpui::VisualTestContext| caret_at(&editor, cx).y;
+    let row_h = editor.read_with(cx, |e, _| e.line_h(0));
+    let row0 = top(cx);
+    // From a row's end, down and up go to the ends of the rows next to it.
+    press("cmd-right", cx);
+    press("down", cx);
+    assert_eq!(selection(&editor, cx), b[1]..b[1]);
+    assert_eq!(top(cx), row0 + row_h);
+    press("down", cx);
+    assert_eq!(selection(&editor, cx), b[2]..b[2]);
+    assert_eq!(top(cx), row0 + row_h * 2.);
+    press("up", cx);
+    press("up", cx);
+    assert_eq!(selection(&editor, cx), b[0]..b[0]);
+    assert_eq!(top(cx), row0);
+    // From a row's start, down goes to the next row's start: the same
+    // boundary offsets, drawn below them.
+    press("cmd-left", cx);
+    press("down", cx);
+    assert_eq!(selection(&editor, cx), b[0]..b[0]);
+    assert_eq!(top(cx), row0 + row_h);
+    press("down", cx);
+    assert_eq!(selection(&editor, cx), b[1]..b[1]);
+    assert_eq!(top(cx), row0 + row_h * 2.);
+    // ⇧↓ from a row's end keeps the head at the next row's end.
+    press("up", cx);
+    press("up", cx);
+    press("cmd-right", cx);
+    press("shift-down", cx);
+    assert_eq!(selection(&editor, cx), b[0]..b[1]);
+    assert_eq!(top(cx), row0 + row_h);
+}
+
+#[gpui::test]
+fn home_and_end_span_the_paragraph_across_wraps(cx: &mut gpui::TestAppContext) {
+    let source = format!("before\n{}\nafter", mid_word_source());
+    let start = "before\n".len();
+    let end = start + mid_word_source().len();
+    for mac in [true, false] {
+        cx.update(|cx| {
+            cx.clear_key_bindings();
+            cx.bind_keys(key_bindings(mac))
+        });
+        let (editor, vcx) = cx.add_window_view(EditorState::new);
+        editor.update_in(vcx, |e, window, cx| {
+            e.set_text(&source, cx);
+            e.set_cursor(start + 300, cx);
+            e.focus(window, cx);
+        });
+        press("end", vcx);
+        assert_eq!(selection(&editor, vcx), end..end, "mac {mac}");
+        press("home", vcx);
+        assert_eq!(selection(&editor, vcx), start..start, "mac {mac}");
+        // From a row's end with upstream affinity too.
+        if mac {
+            press("cmd-right", vcx);
+            assert!(editor.read_with(vcx, |e, _| e.caret_upstream()));
+            press("home", vcx);
+            assert_eq!(selection(&editor, vcx), start..start);
+            press("cmd-right", vcx);
+            press("end", vcx);
+            assert_eq!(selection(&editor, vcx), end..end);
+            assert!(!editor.read_with(vcx, |e, _| e.caret_upstream()));
+        }
+    }
+}
+
+#[gpui::test]
+fn a_click_past_a_rows_end_keeps_the_caret_on_that_row(cx: &mut gpui::TestAppContext) {
+    let source = mid_word_source();
+    let (editor, cx) = mac_editor(cx, &source, source.len());
+    let b = boundaries(&editor, cx, 0);
+    let (origin, row_h, width) = editor.read_with(cx, |e, _| {
+        let bounds = e.last_bounds.unwrap();
+        (bounds.origin, e.line_h(0), bounds.size.width)
+    });
+    // Past the first row's end: its wrap boundary, upstream.
+    cx.simulate_click(
+        point(origin.x + width - px(1.), origin.y + row_h / 2.),
+        gpui::Modifiers::none(),
+    );
+    assert_eq!(selection(&editor, cx), b[0]..b[0]);
+    assert!(editor.read_with(cx, |e, _| e.caret_upstream()));
+    assert_eq!(caret_at(&editor, cx).y, origin.y);
+    // At the second row's start: the same offset, downstream.
+    cx.simulate_click(
+        point(origin.x, origin.y + row_h * 1.5),
+        gpui::Modifiers::none(),
+    );
+    assert_eq!(selection(&editor, cx), b[0]..b[0]);
+    assert!(!editor.read_with(cx, |e, _| e.caret_upstream()));
+    assert_eq!(caret_at(&editor, cx).y, origin.y + row_h);
+}
+
+#[gpui::test]
+fn up_and_down_walk_a_table_cells_own_rows(cx: &mut gpui::TestAppContext) {
+    let long = "Payment is due after the services are provided. ".repeat(12);
+    let long = long.trim_end();
+    let source =
+        format!("| A | B |\n| --- | --- |\n| {long} | x |\n| one<br>two | y |\nclosing line");
+    let cell = source.find("Payment").unwrap();
+    let (editor, cx) = mac_editor(cx, &source, cell);
+    editor.update(cx, |e, cx| {
+        e.set_markdown_style(markdown_syntax::search_style(), cx)
+    });
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    let in_long = |at: usize| at >= cell && at <= cell + long.len();
+    let y = |editor: &Entity<EditorState>, cx: &mut gpui::VisualTestContext| {
+        editor.read_with(cx, |e, _| e.caret_table_cell_pos().unwrap().0)
+    };
+    // Down moves through the wrapped cell's rows before leaving it.
+    let mut stops = vec![cell];
+    loop {
+        press("down", cx);
+        let at = selection(&editor, cx).start;
+        if !in_long(at) {
+            break;
+        }
+        assert!(at > *stops.last().unwrap(), "{stops:?} then {at}");
+        stops.push(at);
+    }
+    assert!(
+        stops.len() >= 3,
+        "the cell wraps into several rows: {stops:?}"
+    );
+    // Then the next table row's cell, through its `<br>` lines.
+    let one = source.find("one").unwrap();
+    let two = source.find("two").unwrap();
+    assert_eq!(selection(&editor, cx).start, one);
+    assert_eq!(y(&editor, cx), 3);
+    press("down", cx);
+    assert_eq!(selection(&editor, cx).start, two);
+    press("down", cx);
+    let closing = source.find("closing").unwrap();
+    assert!(selection(&editor, cx).start >= closing);
+    // Up retraces the rows: the `<br>` line above, then the long cell's last
+    // row at the same x.
+    editor.update(cx, |e, cx| e.set_cursor(two, cx));
+    press("up", cx);
+    assert_eq!(selection(&editor, cx).start, one);
+    press("up", cx);
+    assert_eq!(selection(&editor, cx).start, *stops.last().unwrap());
+}

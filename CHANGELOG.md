@@ -12,6 +12,14 @@ All notable changes to **mdoc** are documented here.
   including the model choices in Settings, show the source repository and
   license beside the download size.
 
+- **The caret keeps its row at a soft wrap.** On a row that wrapped inside a
+  word (a long URL, unspaced text), ⌘→ now goes after the row's last
+  character instead of stopping one short, and the caret stays drawn at the
+  end of that row. Up and Down from there keep to the ends of the rows, and a
+  click past a row's end puts the caret there too. Up and Down also step
+  through the rows of a table cell whose text wraps or has `<br>` lines
+  before moving to the next table row.
+
 - **Windows offscreen screen and Tab evidence.** `just headless-renders`
   now renders both themes through DirectWrite and a software DirectX device,
   without creating native windows. The Windows test gate checks the same PNG,
