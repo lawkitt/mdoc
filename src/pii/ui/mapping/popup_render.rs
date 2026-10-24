@@ -633,14 +633,25 @@ impl DocumentView {
                                         })),
                                 )
                                 .child(
-                                    div()
-                                        .flex_shrink_0()
-                                        .when(cfg!(test), |v| {
-                                            v.debug_selector(|| "direct-position".into())
-                                        })
-                                        .text_size(px(11.))
-                                        .text_color(palette.header_muted)
-                                        .child(format!("{}/{}", index + 1, mentions.len())),
+                                    crate::ui::live_text(
+                                        "direct-position",
+                                        crate::ui::position_announcement(
+                                            "Mention",
+                                            index + 1,
+                                            mentions.len(),
+                                        ),
+                                    )
+                                    .flex_shrink_0()
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "direct-position".into())
+                                    })
+                                    .text_size(px(11.))
+                                    .text_color(palette.header_muted)
+                                    .child(format!(
+                                        "{}/{}",
+                                        index + 1,
+                                        mentions.len()
+                                    )),
                                 )
                                 .child(
                                     self.popup_control("direct-next", "›", true, cx)
