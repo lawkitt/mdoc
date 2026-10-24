@@ -40,8 +40,9 @@ run.
 ## Cutting the RC
 
 - Before the RC: `ROADMAP.md` "Current status" is up to date (ADR 0059).
-- `just release <version>`, confirming the push. Once the non-interactive
-  flags exist (ROADMAP), use them instead of answering prompts by piping input.
+- `just release <version> --yes --skip-checks-if-ci-green`: no prompts, and
+  no local checks when `main`'s CI is green (see [Releasing](development.md#releasing)).
+  Never answer the prompts by piping input.
 - The GitHub Release stays a **draft**; only the maintainer publishes. Check
   that the `.dmg` and the NSIS `.exe` are on the draft. If CI fails: fix, cut
   the RC again, and say so in the report.
