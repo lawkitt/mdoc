@@ -407,6 +407,9 @@ impl DocumentView {
                         )
                         .child(
                             settings_ui::control("pii-setup-cancel", "Cancel", theme, true)
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "pii-setup-cancel".into())
+                                })
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.close_replacements(window, cx)
                                 })),

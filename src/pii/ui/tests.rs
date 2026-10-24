@@ -23,6 +23,7 @@ fn scan_proposes_without_applying_until_explicit_apply(cx: &mut gpui::TestAppCon
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         let (generation, identity, revision) = install_scan(app, cx);
+        assert!(!app.pseudonymized(), "a running scan is not a result");
         app.complete_pii_scan(
             generation,
             identity,
@@ -39,6 +40,7 @@ fn scan_proposes_without_applying_until_explicit_apply(cx: &mut gpui::TestAppCon
         assert_eq!(app.editor.read(cx).revision(), revision);
         assert_eq!(app.pii.review.remaining(), 1);
         assert!(app.pii.mapping.open);
+        assert!(app.pseudonymized());
     });
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
@@ -245,10 +247,32 @@ fn failed_cancelled_stale_and_superseded_scans_do_not_edit(cx: &mut gpui::TestAp
                 if case == 3 { "Betty" } else { "Alice" }
             );
             assert_eq!(app.pii.review.remaining(), 0);
+            assert!(!app.pseudonymized(), "rejected scans do not count");
             app.pii.cancel();
         });
         cx.run_until_parked();
     }
+}
+#[gpui::test]
+fn manual_replacements_count_without_a_scan_or_open_review(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view_tests::boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("Alice", cx));
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        app.pii
+            .review
+            .add_manual("Alice", 0..5, Category::Person)
+            .unwrap();
+        assert!(app.pii.scans.is_empty());
+        assert!(!app.pii.reviewing);
+        assert!(app.pseudonymized(), "a manual proposal is replacement data");
+        app.apply_replacements(cx);
+        assert!(!app.pii.review.applied().is_empty());
+        assert!(app.pseudonymized(), "applied aliases retain the status");
+    });
 }
 #[gpui::test]
 fn header_pseudonymize_scans_once_and_the_panel_toggle_hides_the_review(

@@ -926,6 +926,10 @@ impl Render for Panel {
                 || self.threshold.read(cx).value().parse::<f32>().ok()
                     != Some(current.pseudonymization.threshold)
         });
+        let ocr_note = self.section_note(
+            "Reads scanned pages in English and Russian.",
+            Model::Ocr(self.draft.ocr.model),
+        );
         div().id("settings-overlay").absolute().inset_0().p_4().flex().items_center().justify_center().occlude().bg(gpui::Hsla { a: 0.35, ..p.bg })
             // A press on the backdrop closes Settings like other overlays;
             // presses inside the dialog stop before reaching it.
@@ -967,7 +971,8 @@ impl Render for Panel {
                 .when(self.dictionary.is_none(), |v| v.child(div().id("settings-scroll").when(cfg!(test), |v| v.debug_selector(|| "settings-scroll".into())).track_scroll(&self.scroll).overflow_y_scroll().min_h_0().flex_1().px_4().pb_3()
                     .child(div().flex().flex_col().gap_2()
                         .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Text recognition"))
-                        .child(div().text_size(px(11.)).text_color(p.header_muted).child(self.section_note("Reads scanned pages. English is supported now; more languages will follow.", Model::Ocr(self.draft.ocr.model))))
+                        .child(div().text_size(px(11.)).text_color(p.header_muted).child(ocr_note.clone())
+                            .when(cfg!(test), |v| v.debug_selector(move || ocr_note.clone())))
                         .child(div().id("ocr-models").role(gpui::Role::RadioGroup).aria_label("Text recognition").flex().flex_col().gap_2()
                             .children(OcrModel::ALL.into_iter().map(|m| self.row(Model::Ocr(m), cx)))))
                     .child(div().flex().flex_col().gap_2().mt_4()
@@ -1019,6 +1024,33 @@ impl Render for Panel {
 mod tests {
     use super::*;
     use gpui::TestAppContext;
+    #[gpui::test]
+    fn text_recognition_note_matches_the_offered_languages(cx: &mut TestAppContext) {
+        let (panel, cx) = cx.add_window_view(|_, cx| {
+            Panel::new(Store::new(), Rc::new(Cell::new(Theme::default())), cx)
+        });
+        cx.simulate_resize(size(px(800.), px(2400.)));
+        for model in OcrModel::ALL {
+            panel.update(cx, |panel, cx| {
+                panel.open = true;
+                panel.draft.ocr.model = model;
+                panel.pending.fill(Default::default());
+                panel.statuses.fill(Status::Missing);
+                cx.notify();
+            });
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            assert!(
+                cx.debug_bounds("Reads scanned pages in English and Russian.")
+                    .is_some()
+            );
+        }
+        assert_eq!(OcrModel::V6Small.title(), "English");
+        assert_eq!(OcrModel::Cyrillic.title(), "English & Russian");
+    }
+
     #[gpui::test]
     fn all_download_choices_show_source_and_license_without_details(cx: &mut TestAppContext) {
         let (panel, cx) = cx.add_window_view(|_, cx| {
