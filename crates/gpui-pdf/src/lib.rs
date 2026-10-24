@@ -408,6 +408,111 @@ fn page_tone(themed: Option<&ThemedPages>) -> PageTone {
     themed.map_or(PageTone::Original, |t| PageTone::themed(t.paper, t.ink))
 }
 
+gpui::actions!(
+    pdf_view,
+    [
+        /// Next item in the toolbar's More menu (Tab, ↓).
+        MenuNext,
+        /// Previous item in the More menu (⇧Tab, ↑).
+        MenuPrevious,
+        /// Close the More menu and return to its button (Esc).
+        MenuClose
+    ]
+);
+
+/// Keys for the toolbar's More menu: Tab and the arrows stay inside it and
+/// Esc closes it. Call once at startup; the menu's context is deeper than a
+/// host's own Tab bindings, so these win while it has focus.
+pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys([
+        gpui::KeyBinding::new("tab", MenuNext, Some("PdfMenu")),
+        gpui::KeyBinding::new("down", MenuNext, Some("PdfMenu")),
+        gpui::KeyBinding::new("shift-tab", MenuPrevious, Some("PdfMenu")),
+        gpui::KeyBinding::new("up", MenuPrevious, Some("PdfMenu")),
+        gpui::KeyBinding::new("escape", MenuClose, Some("PdfMenu")),
+    ]);
+}
+
+/// Toolbar tools in drawn order. At narrow widths the ones that do not fit
+/// move into the More menu, so the toolbar keeps one row.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum Tool {
+    Outline,
+    Prev,
+    Page,
+    Next,
+    ZoomOut,
+    ZoomReset,
+    ZoomIn,
+    FitWidth,
+    FitPage,
+    Tone,
+    Find,
+    /// The More button itself (measured like a tool, never in the menu).
+    More,
+}
+
+impl Tool {
+    const ORDER: [Tool; 11] = [
+        Tool::Outline,
+        Tool::Prev,
+        Tool::Page,
+        Tool::Next,
+        Tool::ZoomOut,
+        Tool::ZoomReset,
+        Tool::ZoomIn,
+        Tool::FitWidth,
+        Tool::FitPage,
+        Tool::Tone,
+        Tool::Find,
+    ];
+    /// Kept in the row first: where you are, fitting the page, paging.
+    const PRIORITY: [Tool; 11] = [
+        Tool::Page,
+        Tool::FitWidth,
+        Tool::Prev,
+        Tool::Next,
+        Tool::ZoomReset,
+        Tool::ZoomOut,
+        Tool::ZoomIn,
+        Tool::Find,
+        Tool::FitPage,
+        Tool::Tone,
+        Tool::Outline,
+    ];
+
+    /// A width to plan with before the tool has been drawn once.
+    fn default_width(self) -> f32 {
+        match self {
+            Tool::Page => 78.,
+            Tool::ZoomReset => 44.,
+            Tool::Find => 30.,
+            _ => 24.,
+        }
+    }
+
+    fn menu_id(self) -> &'static str {
+        match self {
+            Tool::Outline => "pdf-more-outline",
+            Tool::Prev => "pdf-more-prev",
+            Tool::Page => "pdf-more-page",
+            Tool::Next => "pdf-more-next",
+            Tool::ZoomOut => "pdf-more-zoom-out",
+            Tool::ZoomReset => "pdf-more-zoom-reset",
+            Tool::ZoomIn => "pdf-more-zoom-in",
+            Tool::FitWidth => "pdf-more-fit-width",
+            Tool::FitPage => "pdf-more-fit-page",
+            Tool::Tone => "pdf-more-page-tone",
+            Tool::Find => "pdf-more-find",
+            Tool::More => "pdf-more",
+        }
+    }
+}
+
+/// Toolbar spacing, shared by the layout and its width plan.
+const TOOL_GAP: f32 = 4.;
+const TOOLBAR_PAD_X: f32 = 8.;
+
 /// Automatic zoom-to-fit modes — see [`PdfView::fit_width`] / [`PdfView::fit_page`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FitMode {
@@ -420,6 +525,9 @@ pub enum FitMode {
 /// Smallest / largest zoom the viewer allows.
 const MIN_ZOOM: f32 = 0.5;
 const MAX_ZOOM: f32 = 3.0;
+/// The smallest zoom a fit mode may choose, so Fit width fits the page in a
+/// narrow pane; manual zoom stops at [`MIN_ZOOM`] (or the fitted zoom, if lower).
+const FIT_MIN_ZOOM: f32 = 0.1;
 /// Multiplicative step for one zoom-in / zoom-out.
 const ZOOM_STEP: f32 = 1.25;
 /// Smallest / largest render-quality multiplier the viewer honors.
@@ -653,6 +761,19 @@ pub struct PdfView {
     outline: Vec<OutlineItem>,
     /// Whether the table-of-contents panel is open.
     toc_open: bool,
+    /// Last drawn width of each toolbar tool and of the toolbar, which decide
+    /// what fits in its one row.
+    tool_widths: Rc<std::cell::RefCell<std::collections::HashMap<Tool, f32>>>,
+    toolbar_width: Rc<std::cell::Cell<f32>>,
+    /// The More menu holding the tools that do not fit; it keeps focus while
+    /// open (Tab, ↑/↓ inside; Esc back to More).
+    more_open: bool,
+    more_focus: FocusHandle,
+    more_bounds: Rc<std::cell::Cell<Bounds<Pixels>>>,
+    menu_focus: std::collections::HashMap<Tool, FocusHandle>,
+    /// The smallest zoom a manual step may reach: [`MIN_ZOOM`], or the last
+    /// fitted or restored zoom if lower, so zooming out can undo a zoom in.
+    zoom_floor: f32,
     /// Per-page clickable link annotations (internal page jumps + external URIs),
     /// extracted once on load. Overlaid as transparent click targets on each page.
     links: Vec<Vec<PdfLink>>,
@@ -760,6 +881,16 @@ impl PdfView {
             focus: cx.focus_handle(),
             outline: Vec::new(),
             toc_open: false,
+            tool_widths: Default::default(),
+            toolbar_width: Default::default(),
+            more_open: false,
+            zoom_floor: MIN_ZOOM,
+            more_focus: cx.focus_handle().tab_stop(true),
+            more_bounds: Default::default(),
+            menu_focus: Tool::ORDER
+                .iter()
+                .map(|tool| (*tool, cx.focus_handle()))
+                .collect(),
             links: Vec::new(),
             form_fields: Vec::new(),
             page_text: std::collections::HashMap::new(),
@@ -1178,15 +1309,23 @@ impl PdfView {
 
     /// Set the zoom factor (clamped), keeping the current page in view. Visible pages
     /// re-render crisp at the new scale; their current bitmaps stay on screen
-    /// (rescaled) until the fresh ones land, so nothing blanks.
+    /// (rescaled) until the fresh ones land, so nothing blanks. Takes any zoom
+    /// a fit could reach, so a restored position keeps its zoom.
     pub fn set_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
-        // A manual zoom takes over from any active fit mode.
         self.fit = None;
-        self.apply_zoom(zoom, cx);
+        self.apply_zoom(zoom, FIT_MIN_ZOOM, cx);
+        self.zoom_floor = MIN_ZOOM.min(self.zoom);
     }
 
-    fn apply_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
-        let z = zoom.clamp(MIN_ZOOM, MAX_ZOOM);
+    /// A manual zoom (buttons, ⌘±/⌘0): takes over from any active fit mode.
+    /// Below 50% only a fit or a restore goes; zooming out stops there.
+    fn step_zoom(&mut self, zoom: f32, cx: &mut Context<Self>) {
+        self.fit = None;
+        self.apply_zoom(zoom, self.zoom_floor, cx);
+    }
+
+    fn apply_zoom(&mut self, zoom: f32, min: f32, cx: &mut Context<Self>) {
+        let z = zoom.clamp(min, MAX_ZOOM);
         if (z - self.zoom).abs() < 0.001 {
             return;
         }
@@ -1251,22 +1390,23 @@ impl PdfView {
                 (avail_h / (PAGE_WIDTH * (ph / pw))).min(avail_w / PAGE_WIDTH)
             }
         };
-        self.apply_zoom(zoom, cx);
+        self.apply_zoom(zoom, FIT_MIN_ZOOM, cx);
+        self.zoom_floor = MIN_ZOOM.min(self.zoom);
     }
 
     /// Zoom in one step.
     pub(crate) fn zoom_in(&mut self, cx: &mut Context<Self>) {
-        self.set_zoom(self.zoom * ZOOM_STEP, cx);
+        self.step_zoom(self.zoom * ZOOM_STEP, cx);
     }
 
     /// Zoom out one step.
     pub(crate) fn zoom_out(&mut self, cx: &mut Context<Self>) {
-        self.set_zoom(self.zoom / ZOOM_STEP, cx);
+        self.step_zoom(self.zoom / ZOOM_STEP, cx);
     }
 
     /// Reset zoom to 100%.
     pub(crate) fn reset_zoom(&mut self, cx: &mut Context<Self>) {
-        self.set_zoom(1.0, cx);
+        self.step_zoom(1.0, cx);
     }
 
     /// Scroll so page `index` (0-based, clamped) is at the top of the viewport.
@@ -1484,6 +1624,431 @@ impl PdfView {
     ) -> gpui::Stateful<gpui::Div> {
         header_control(id, label, &(self.style)())
             .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+    }
+
+    /// The tools this document offers, in drawn order.
+    fn available_tools(&self, style: &PdfStyle) -> Vec<Tool> {
+        Tool::ORDER
+            .into_iter()
+            .filter(|tool| match tool {
+                Tool::Outline => self.has_outline(),
+                Tool::Tone => style.themed_pages.is_some(),
+                _ => true,
+            })
+            .collect()
+    }
+
+    /// Split `available` into the tools drawn in the row and those in the
+    /// More menu, from the widths drawn last frame. Drawn order is kept;
+    /// `Tool::PRIORITY` decides which stay.
+    fn toolbar_layout(&self, available: &[Tool]) -> (Vec<Tool>, Vec<Tool>) {
+        let room = self.toolbar_width.get() - 2. * TOOLBAR_PAD_X;
+        let widths = self.tool_widths.borrow();
+        let width = |tool: Tool| widths.get(&tool).copied().unwrap_or(tool.default_width());
+        let all = available.iter().map(|t| width(*t)).sum::<f32>()
+            + TOOL_GAP * available.len().saturating_sub(1) as f32;
+        // Before the first layout everything is drawn, and measured.
+        if room <= 0. || all <= room + 0.5 {
+            return (available.to_vec(), Vec::new());
+        }
+        let mut left = room - width(Tool::More);
+        let mut kept = Vec::new();
+        for tool in Tool::PRIORITY.into_iter().filter(|t| available.contains(t)) {
+            let need = width(tool) + TOOL_GAP;
+            if need <= left + 0.5 {
+                left -= need;
+                kept.push(tool);
+            }
+        }
+        available
+            .iter()
+            .copied()
+            .partition(|tool| kept.contains(tool))
+    }
+
+    /// A tool's menu label: its name, with the zoom where it helps.
+    fn tool_label(&self, tool: Tool) -> SharedString {
+        match tool {
+            Tool::Outline => "Document outline".into(),
+            Tool::Prev => "Previous page".into(),
+            Tool::Page => "Go to page…".into(),
+            Tool::Next => "Next page".into(),
+            Tool::ZoomOut => "Zoom out".into(),
+            Tool::ZoomReset => {
+                format!("Reset zoom ({}%)", (self.zoom * 100.0).round() as i32).into()
+            }
+            Tool::ZoomIn => "Zoom in".into(),
+            Tool::FitWidth => "Fit width".into(),
+            Tool::FitPage => "Fit page".into(),
+            Tool::Tone => self.tone_label().into(),
+            Tool::Find => "Find".into(),
+            Tool::More => "More preview tools".into(),
+        }
+    }
+
+    fn tone_label(&self) -> &'static str {
+        if self.original_paper {
+            "Show dark pages"
+        } else {
+            "Show original paper"
+        }
+    }
+
+    /// Whether a toggle tool is on (`None` for plain actions).
+    fn tool_on(&self, tool: Tool) -> Option<bool> {
+        match tool {
+            Tool::Outline => Some(self.toc_open),
+            Tool::FitWidth => Some(self.fit == Some(FitMode::Width)),
+            Tool::FitPage => Some(self.fit == Some(FitMode::Page)),
+            Tool::Tone => Some(self.original_paper),
+            Tool::Find => Some(self.search_open),
+            _ => None,
+        }
+    }
+
+    /// What a tool does, from the row or the More menu.
+    fn run_tool(&mut self, tool: Tool, window: &mut Window, cx: &mut Context<Self>) {
+        match tool {
+            Tool::Outline => self.toggle_toc(cx),
+            Tool::Prev => self.prev_page(cx),
+            Tool::Page => {
+                self.page_input.get_or_insert_with(String::new);
+                window.focus(&self.focus, cx);
+                cx.notify();
+            }
+            Tool::Next => self.next_page(cx),
+            Tool::ZoomOut => self.zoom_out(cx),
+            Tool::ZoomReset => self.reset_zoom(cx),
+            Tool::ZoomIn => self.zoom_in(cx),
+            Tool::FitWidth => self.fit_width(cx),
+            Tool::FitPage => self.fit_page(cx),
+            Tool::Tone => self.set_original_paper(!self.original_paper, cx),
+            Tool::Find => self.toggle_search(window, cx),
+            Tool::More => {}
+        }
+    }
+
+    /// A tool as a toolbar control.
+    fn tool_control(
+        &self,
+        tool: Tool,
+        total: usize,
+        current: usize,
+        style: &PdfStyle,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let on = |c: gpui::Stateful<gpui::Div>| {
+            if self.tool_on(tool) == Some(true) {
+                c.bg(style.placeholder_bg)
+            } else {
+                c
+            }
+        };
+        let action =
+            move |this: &mut Self,
+                  _: &gpui::ClickEvent,
+                  window: &mut Window,
+                  cx: &mut Context<Self>| { this.run_tool(tool, window, cx) };
+        match tool {
+            Tool::Page => self
+                .page_counter(total, current, style, cx)
+                .into_any_element(),
+            Tool::Outline => on(self.control("pdf-toc", "≡"))
+                .aria_label("Document outline")
+                .on_click(cx.listener(action))
+                .tooltip(self.tip("Table of contents"))
+                .into_any_element(),
+            Tool::Prev => self
+                .control("pdf-prev", "‹")
+                .aria_label("Previous page")
+                .on_click(cx.listener(action))
+                .tooltip(self.tip("Previous page (PageUp)"))
+                .into_any_element(),
+            Tool::Next => self
+                .control("pdf-next", "›")
+                .aria_label("Next page")
+                .on_click(cx.listener(action))
+                .tooltip(self.tip("Next page (PageDown)"))
+                .into_any_element(),
+            Tool::ZoomOut => self
+                .control("pdf-zoom-out", "−")
+                .aria_label("Zoom out")
+                .on_click(cx.listener(action))
+                .tooltip(self.tip("Zoom out (⌘−)"))
+                .into_any_element(),
+            Tool::ZoomReset => self
+                .control(
+                    "pdf-zoom-reset",
+                    format!("{}%", (self.zoom * 100.0).round() as i32),
+                )
+                .aria_label("Reset zoom")
+                .on_click(cx.listener(action))
+                .tooltip(self.tip("Reset zoom (⌘0)"))
+                .into_any_element(),
+            Tool::ZoomIn => self
+                .control("pdf-zoom-in", "+")
+                .aria_label("Zoom in")
+                .on_click(cx.listener(action))
+                .tooltip(self.tip("Zoom in (⌘+)"))
+                .into_any_element(),
+            Tool::FitWidth => on(self.control("pdf-fit-width", "↔"))
+                .aria_label("Fit width")
+                .on_click(cx.listener(action))
+                .tooltip(self.tip("Fit width"))
+                .into_any_element(),
+            Tool::FitPage => on(self.control("pdf-fit-page", "⤢"))
+                .aria_label("Fit page")
+                .on_click(cx.listener(action))
+                .tooltip(self.tip("Fit page"))
+                .into_any_element(),
+            Tool::Tone => on(self.control("pdf-page-tone", "◐"))
+                .aria_label(self.tone_label())
+                .on_click(cx.listener(action))
+                .tooltip(self.tip(self.tone_label()))
+                .into_any_element(),
+            // No shortcut: the host's ⌘F finds in the Markdown.
+            Tool::Find => on(self.control("pdf-find", "🔍"))
+                .aria_label("Find")
+                .on_click(cx.listener(action))
+                .tooltip(self.tip("Find in source"))
+                .into_any_element(),
+            Tool::More => div().into_any_element(),
+        }
+    }
+
+    /// Click-to-edit page counter: shows "N / total", or the typed digits
+    /// while editing (Enter jumps, Esc cancels — handled in `on_key_down`).
+    fn page_counter(
+        &self,
+        total: usize,
+        current: usize,
+        style: &PdfStyle,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        let counter_label = match &self.page_input {
+            Some(buf) if !buf.is_empty() => format!("{buf} / {total}"),
+            Some(_) => format!("⌷ / {total}"),
+            None => format!("{} / {total}", current + 1),
+        };
+        let editing = self.page_input.is_some();
+        div()
+            .id("pdf-page-counter")
+            .when(cfg!(test), |v| {
+                v.debug_selector(|| "pdf-page-counter".into())
+            })
+            .flex_shrink_0()
+            .role(gpui::Role::Button)
+            .aria_label("Go to page")
+            .key_context("PdfControl")
+            .tab_index(0)
+            .focus_visible(|s| s.bg(style.placeholder_bg))
+            .min_w(px(78.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .px(px(8.0))
+            .py(px(1.0))
+            .rounded(px(4.0))
+            .border_1()
+            .border_color(if editing {
+                style.header_fg
+            } else {
+                style.border
+            })
+            .text_color(style.header_muted)
+            .cursor_pointer()
+            .hover(|s| s.bg(style.placeholder_bg))
+            .child(counter_label)
+            .on_click(cx.listener(|this, _, window, cx| this.run_tool(Tool::Page, window, cx)))
+            .tooltip(self.tip("Go to page (⌘⌥G)"))
+    }
+
+    /// The More button, with its menu of `overflow` below it while open.
+    fn more_control(
+        &self,
+        overflow: &[Tool],
+        style: &PdfStyle,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let first = overflow.first().copied();
+        let bounds = self.more_bounds.clone();
+        let button = self
+            .control("pdf-more", "⋯")
+            .track_focus(&self.more_focus)
+            .aria_label("More preview tools")
+            .aria_expanded(self.more_open)
+            .when(self.more_open, |c| c.bg(style.placeholder_bg))
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.more_open = !this.more_open;
+                if this.more_open
+                    && let Some(handle) = first.and_then(|t| this.menu_focus.get(&t))
+                {
+                    window.focus(handle, cx);
+                }
+                cx.notify();
+            }))
+            .when(!self.more_open, |c| {
+                c.tooltip(self.tip("More preview tools"))
+            })
+            .child(
+                gpui::canvas(move |b, _, _| bounds.set(b), |_, _, _, _| {})
+                    .absolute()
+                    .inset_0(),
+            );
+        let menu = self.more_open.then(|| {
+            let more_bounds = self.more_bounds.clone();
+            let mut menu = div()
+                .id("pdf-more-menu")
+                .when(cfg!(test), |v| v.debug_selector(|| "pdf-more-menu".into()))
+                .role(gpui::Role::Menu)
+                .aria_label("More preview tools")
+                .key_context("PdfMenu")
+                .on_action(
+                    cx.listener(|this, _: &MenuNext, window, cx| this.step_more(false, window, cx)),
+                )
+                .on_action(cx.listener(|this, _: &MenuPrevious, window, cx| {
+                    this.step_more(true, window, cx)
+                }))
+                .on_action(
+                    cx.listener(|this, _: &MenuClose, window, cx| this.close_more(window, cx)),
+                )
+                .occlude()
+                .min_w(px(180.))
+                .py(px(4.))
+                .flex()
+                .flex_col()
+                .rounded(px(6.))
+                .border_1()
+                .border_color(style.border)
+                .bg(style.bg)
+                .shadow_md()
+                .text_size(px(12.))
+                .text_color(style.header_fg)
+                .on_mouse_down_out(cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                    // A press on More itself toggles the menu there.
+                    if !more_bounds.get().contains(&ev.position) {
+                        this.more_open = false;
+                        cx.notify();
+                    }
+                }));
+            for tool in overflow {
+                let tool = *tool;
+                let on = self.tool_on(tool);
+                let id = tool.menu_id();
+                let mut item = div()
+                    .id(id)
+                    .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
+                    .role(if on.is_some() {
+                        gpui::Role::MenuItemCheckBox
+                    } else {
+                        gpui::Role::MenuItem
+                    })
+                    .aria_label(self.tool_label(tool))
+                    .when_some(on, |v, on| {
+                        v.aria_toggled(if on {
+                            gpui::Toggled::True
+                        } else {
+                            gpui::Toggled::False
+                        })
+                    })
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .px(px(10.))
+                    .py(px(4.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(style.placeholder_bg))
+                    .focus_visible(|s| s.bg(style.placeholder_bg))
+                    .child(div().w(px(12.)).flex_shrink_0().child(if on == Some(true) {
+                        "✓"
+                    } else {
+                        ""
+                    }))
+                    .child(self.tool_label(tool))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.more_open = false;
+                        window.focus(&this.more_focus, cx);
+                        this.run_tool(tool, window, cx);
+                        cx.notify();
+                    }));
+                if let Some(handle) = self.menu_focus.get(&tool) {
+                    item = item.track_focus(handle);
+                }
+                menu = menu.child(item);
+            }
+            menu
+        });
+        div()
+            .relative()
+            .flex_shrink_0()
+            .child(button)
+            .children(menu.map(|menu| {
+                div().absolute().top_full().right_0().child(
+                    deferred(
+                        gpui::anchored()
+                            .snap_to_window()
+                            .child(div().pt_1().child(menu)),
+                    )
+                    .with_priority(3),
+                )
+            }))
+            .into_any_element()
+    }
+
+    /// A resize moved the focused menu item back to the row (or out of the
+    /// menu), or took More away: move focus to the menu's first item, or to
+    /// More if the menu is closed, or to the viewer once there is no More.
+    fn reconcile_menu_focus(
+        &mut self,
+        overflow: &[Tool],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let stranded = self.menu_focus.iter().any(|(tool, handle)| {
+            handle.is_focused(window) && !(self.more_open && overflow.contains(tool))
+        }) || (overflow.is_empty() && self.more_focus.is_focused(window));
+        if !stranded {
+            return;
+        }
+        let target = match overflow.first() {
+            None => self.focus.clone(),
+            Some(first) if self.more_open => self
+                .menu_focus
+                .get(first)
+                .unwrap_or(&self.more_focus)
+                .clone(),
+            Some(_) => self.more_focus.clone(),
+        };
+        window.focus(&target, cx);
+    }
+
+    /// Esc in the More menu: close it and return to More.
+    fn close_more(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.more_open = false;
+        window.focus(&self.more_focus, cx);
+        cx.notify();
+    }
+
+    /// Tab / ↓ (or ⇧Tab / ↑) inside the More menu, wrapping.
+    fn step_more(&mut self, backwards: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let style = (self.style)();
+        let available = self.available_tools(&style);
+        let (_, overflow) = self.toolbar_layout(&available);
+        let handles: Vec<_> = overflow
+            .iter()
+            .filter_map(|tool| self.menu_focus.get(tool).cloned())
+            .collect();
+        if handles.is_empty() {
+            return;
+        }
+        let n = handles.len();
+        let next = match handles.iter().position(|h| h.is_focused(window)) {
+            Some(i) if backwards => (i + n - 1) % n,
+            Some(i) => (i + 1) % n,
+            None if backwards => n - 1,
+            None => 0,
+        };
+        window.focus(&handles[next], cx);
     }
 
     /// Host-facing source identity, independent of a temporary PDF backing path.
@@ -1730,194 +2295,75 @@ impl Render for PdfView {
             slots.push(slot.into_any_element());
         }
 
-        // Click-to-edit page counter: shows "N / total", or the typed digits while
-        // editing (Enter jumps, Esc cancels — handled in `on_key_down`).
-        let counter_label = match &self.page_input {
-            Some(buf) if !buf.is_empty() => format!("{buf} / {total}"),
-            Some(_) => format!("⌷ / {total}"),
-            None => format!("{} / {total}", current + 1),
-        };
-        let editing = self.page_input.is_some();
-        let counter = div()
-            .id("pdf-page-counter")
-            .when(cfg!(test), |v| {
-                v.debug_selector(|| "pdf-page-counter".into())
-            })
-            .flex_shrink_0()
-            .role(gpui::Role::Button)
-            .aria_label("Go to page")
-            .key_context("PdfControl")
-            .tab_index(0)
-            .focus_visible(|s| s.bg(style.placeholder_bg))
-            .min_w(px(78.0))
+        // One row of tools at any width: what does not fit moves into the
+        // More menu, least needed first (see `Tool::PRIORITY`).
+        let available = self.available_tools(&style);
+        let (shown, overflow) = self.toolbar_layout(&available);
+        if overflow.is_empty() {
+            self.more_open = false;
+        }
+        self.reconcile_menu_focus(&overflow, window, cx);
+        let entity = cx.entity_id();
+        let mut measured = shown.clone();
+        if !overflow.is_empty() {
+            measured.push(Tool::More);
+        }
+        let widths = self.tool_widths.clone();
+        let mut row = div()
             .flex()
+            .flex_nowrap()
             .items_center()
-            .justify_center()
-            .px(px(8.0))
-            .py(px(1.0))
-            .rounded(px(4.0))
-            .border_1()
-            .border_color(if editing {
-                style.header_fg
-            } else {
-                style.border
-            })
-            .text_color(style.header_muted)
-            .cursor_pointer()
-            .hover(|s| s.bg(style.placeholder_bg))
-            .child(counter_label)
-            .on_click(cx.listener(|this, _, window, cx| {
-                this.page_input.get_or_insert_with(String::new);
-                window.focus(&this.focus, cx);
-                cx.notify();
-            }))
-            .tooltip(self.tip("Go to page (⌘⌥G)"));
-
-        // The table-of-contents toggle sits at the left, next to the title, since the
-        // panel opens on that side. Only shown when the PDF has an outline.
-        let toc_toggle = self.has_outline().then(|| {
-            let toc_bg = if self.toc_open {
-                style.placeholder_bg
-            } else {
-                Hsla { a: 0.0, ..style.bg }
-            };
-            self.control("pdf-toc", "≡")
-                .aria_label("Document outline")
-                .bg(toc_bg)
-                .on_click(cx.listener(|this, _, _window, cx| this.toggle_toc(cx)))
-                .tooltip(self.tip("Table of contents"))
-        });
-
-        // Keep each tool group intact; wrap groups instead of hiding tools.
-        let navigation = div()
-            .flex()
-            .items_center()
-            .gap_1()
-            .flex_shrink_0()
-            .children(toc_toggle)
-            .child(
-                self.control("pdf-prev", "‹")
-                    .aria_label("Previous page")
-                    .on_click(cx.listener(|this, _, _, cx| this.prev_page(cx)))
-                    .tooltip(self.tip("Previous page (PageUp)")),
-            )
-            .child(counter)
-            .child(
-                self.control("pdf-next", "›")
-                    .aria_label("Next page")
-                    .on_click(cx.listener(|this, _, _, cx| this.next_page(cx)))
-                    .tooltip(self.tip("Next page (PageDown)")),
-            );
-        let zoom = div()
-            .flex()
-            .items_center()
-            .gap_1()
-            .flex_shrink_0()
-            .child(
-                self.control("pdf-zoom-out", "−")
-                    .aria_label("Zoom out")
-                    .on_click(cx.listener(|this, _, _, cx| this.zoom_out(cx)))
-                    .tooltip(self.tip("Zoom out (⌘−)")),
-            )
-            .child(
-                self.control(
-                    "pdf-zoom-reset",
-                    format!("{}%", (self.zoom * 100.0).round() as i32),
-                )
-                .aria_label("Reset zoom")
-                .on_click(cx.listener(|this, _, _, cx| this.reset_zoom(cx)))
-                .tooltip(self.tip("Reset zoom (⌘0)")),
-            )
-            .child(
-                self.control("pdf-zoom-in", "+")
-                    .aria_label("Zoom in")
-                    .on_click(cx.listener(|this, _, _, cx| this.zoom_in(cx)))
-                    .tooltip(self.tip("Zoom in (⌘+)")),
-            );
-        let fit = div()
-            .flex()
-            .items_center()
-            .gap_1()
-            .flex_shrink_0()
-            .child({
-                let mut c = self
-                    .control("pdf-fit-width", "↔")
-                    .aria_label("Fit width")
-                    .on_click(cx.listener(|this, _, _, cx| this.fit_width(cx)))
-                    .tooltip(self.tip("Fit width"));
-                if self.fit == Some(FitMode::Width) {
-                    c = c.bg(style.placeholder_bg);
+            .gap(px(TOOL_GAP))
+            .min_w_0()
+            .on_children_prepainted(move |bounds, _, cx| {
+                let mut widths = widths.borrow_mut();
+                let mut changed = false;
+                for (tool, bounds) in measured.iter().zip(bounds) {
+                    let width = f32::from(bounds.size.width);
+                    if widths.get(tool).is_none_or(|old| (old - width).abs() > 0.5) {
+                        widths.insert(*tool, width);
+                        changed = true;
+                    }
                 }
-                c
-            })
-            .child({
-                let mut c = self
-                    .control("pdf-fit-page", "⤢")
-                    .aria_label("Fit page")
-                    .on_click(cx.listener(|this, _, _, cx| this.fit_page(cx)))
-                    .tooltip(self.tip("Fit page"));
-                if self.fit == Some(FitMode::Page) {
-                    c = c.bg(style.placeholder_bg);
+                drop(widths);
+                if changed {
+                    cx.notify(entity);
                 }
-                c
             });
+        for tool in &shown {
+            row = row.child(self.tool_control(*tool, total, current, &style, cx));
+        }
+        if !overflow.is_empty() {
+            row = row.child(self.more_control(&overflow, &style, cx));
+        }
+        let toolbar_width = self.toolbar_width.clone();
         let header = div()
             .id("pdf-toolbar")
             .when(cfg!(test), |v| v.debug_selector(|| "pdf-toolbar".into()))
+            .relative()
             .flex_shrink_0()
-            .px(px(8.))
+            .min_w_0()
+            .px(px(TOOLBAR_PAD_X))
             .py(px(6.))
             .border_b_1()
             .border_color(style.border)
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap_1()
             .text_size(px(12.))
             .text_color(style.header_fg)
-            .child(navigation)
-            .child(zoom)
-            .child(fit);
-
-        // Page tone toggle (ADR 0035): only when the style offers themed pages.
-        let header = header.when(style.themed_pages.is_some(), |header| {
-            let label = if self.original_paper {
-                "Show dark pages"
-            } else {
-                "Show original paper"
-            };
-            let bg = if self.original_paper {
-                style.placeholder_bg
-            } else {
-                Hsla { a: 0.0, ..style.bg }
-            };
-            header.child(
-                self.control("pdf-page-tone", "◐")
-                    .aria_label(label)
-                    .bg(bg)
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.set_original_paper(!this.original_paper, cx)
-                    }))
-                    .tooltip(self.tip(label)),
+            .child(
+                gpui::canvas(
+                    move |bounds, _, cx| {
+                        let width = f32::from(bounds.size.width);
+                        if (toolbar_width.get() - width).abs() > 0.5 {
+                            toolbar_width.set(width);
+                            cx.notify(entity);
+                        }
+                    },
+                    |_, _, _, _| {},
+                )
+                .absolute()
+                .inset_0(),
             )
-        });
-
-        // Find toggle (search): a magnifier that opens the find bar.
-        let header = {
-            let bg = if self.search_open {
-                style.placeholder_bg
-            } else {
-                Hsla { a: 0.0, ..style.bg }
-            };
-            header.child(
-                self.control("pdf-find", "🔍")
-                    .aria_label("Find")
-                    .bg(bg)
-                    .on_click(cx.listener(|this, _, window, cx| this.toggle_search(window, cx)))
-                    // No shortcut: the host's ⌘F finds in the Markdown.
-                    .tooltip(self.tip("Find in source")),
-            )
-        };
+            .child(row);
 
         let root = div()
             .track_focus(&self.focus)
@@ -2083,8 +2529,12 @@ impl Render for PdfView {
             // Query field with a caret. It's static: a blinking caret would need either a
             // focused text widget or a per-frame animation that re-renders the whole
             // viewer; the viewer captures keystrokes directly instead.
+            // In a narrow pane the bar spans it and the field takes what is
+            // left, so no part of the bar lies outside the pane.
+            let tight = pane_width > 0. && pane_width < 320.;
             let field = div()
-                .min_w(px(120.0))
+                .when(tight, |v| v.flex_1().min_w(px(40.0)))
+                .when(!tight, |v| v.min_w(px(120.0)))
                 .flex()
                 .flex_row()
                 .items_center()
@@ -2098,7 +2548,7 @@ impl Render for PdfView {
             };
             let field = if let Some(search_field) = &self.search_field {
                 field
-                    .w(px(160.0))
+                    .when(!tight, |v| v.w(px(160.0)))
                     .text_color(style.header_fg)
                     .child(search_field.view.clone())
             } else if has_query {
@@ -2113,13 +2563,16 @@ impl Render for PdfView {
             };
             root.child(deferred(
                 div()
+                    .id("pdf-find-bar")
+                    .when(cfg!(test), |v| v.debug_selector(|| "pdf-find-bar".into()))
                     .absolute()
                     .top(px(44.0))
-                    .right(px(12.0))
+                    .right(px(if tight { 8.0 } else { 12.0 }))
+                    .when(tight, |v| v.left(px(8.0)).overflow_hidden())
                     .flex()
                     .flex_row()
                     .items_center()
-                    .gap_2()
+                    .gap(px(if tight { 4.0 } else { 8.0 }))
                     .px(px(8.0))
                     .py(px(4.0))
                     .rounded(px(6.0))
@@ -2643,62 +3096,242 @@ mod scrolling_tests {
         assert!((note.center().y - name.center().y).abs() < px(2.));
     }
 
+    const ROW_TOOLS: [&str; 9] = [
+        "pdf-prev",
+        "pdf-page-counter",
+        "pdf-next",
+        "pdf-zoom-out",
+        "pdf-zoom-reset",
+        "pdf-zoom-in",
+        "pdf-fit-width",
+        "pdf-fit-page",
+        "pdf-find",
+    ];
+
+    /// The menu id for a row tool's selector.
+    fn menu_selector(row: &str) -> &'static str {
+        match row {
+            "pdf-prev" => "pdf-more-prev",
+            "pdf-page-counter" => "pdf-more-page",
+            "pdf-next" => "pdf-more-next",
+            "pdf-zoom-out" => "pdf-more-zoom-out",
+            "pdf-zoom-reset" => "pdf-more-zoom-reset",
+            "pdf-zoom-in" => "pdf-more-zoom-in",
+            "pdf-fit-width" => "pdf-more-fit-width",
+            "pdf-fit-page" => "pdf-more-fit-page",
+            "pdf-find" => "pdf-more-find",
+            _ => unreachable!(),
+        }
+    }
+
     #[gpui::test]
-    async fn narrow_toolbar_exposes_and_wraps_pdf_tools(cx: &mut gpui::TestAppContext) {
+    async fn narrow_toolbar_keeps_one_row_and_moves_the_rest_to_more(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let file = reference_pdf();
+        let path = file.path().to_path_buf();
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            PdfView::new(path, Rc::new(PdfStyle::default), Rc::new(|| 1.), cx)
+        });
+        cx.update(|_, cx| super::bind_keys(cx));
+        wait_for_load(&view, cx).await;
+        let mut overflowed_somewhere = false;
+        // 200 pt is narrower than the preview gets at the minimum window size.
+        for width in [200., 260., 320., 440., 900.] {
+            cx.simulate_resize(gpui::size(px(width), px(480.)));
+            draw(cx);
+            let toolbar = cx.debug_bounds("pdf-toolbar").unwrap();
+            let name = cx.debug_bounds("pdf-source-name").unwrap();
+            assert!(name.bottom() <= toolbar.top());
+            assert!(toolbar.size.height < px(40.), "one row at {width}");
+            let more = cx.debug_bounds("pdf-more");
+            let mut in_menu = Vec::new();
+            for selector in ROW_TOOLS {
+                match cx.debug_bounds(selector) {
+                    Some(bounds) => assert!(
+                        toolbar.contains(&bounds.origin)
+                            && toolbar.contains(&bounds.bottom_right())
+                            && bounds.right() <= px(width),
+                        "{selector} at {width}"
+                    ),
+                    None => in_menu.push(selector),
+                }
+            }
+            if in_menu.is_empty() {
+                assert!(more.is_none(), "no More without overflow at {width}");
+                continue;
+            }
+            overflowed_somewhere = true;
+            let more = more.expect("More holds what does not fit");
+            assert!(more.right() <= px(width));
+            // Every tool left out of the row is in the menu.
+            cx.simulate_click(more.center(), Default::default());
+            draw(cx);
+            assert!(cx.debug_bounds("pdf-more-menu").is_some());
+            for selector in &in_menu {
+                assert!(
+                    cx.debug_bounds(menu_selector(selector)).is_some(),
+                    "{selector} in More at {width}"
+                );
+            }
+            cx.simulate_keystrokes("escape");
+            draw(cx);
+            assert!(cx.debug_bounds("pdf-more-menu").is_none());
+            cx.update(|window, cx| {
+                assert!(
+                    view.read(cx).more_focus.is_focused(window),
+                    "Esc returns to More"
+                );
+            });
+        }
+        assert!(overflowed_somewhere);
+        assert!(cx.debug_bounds("pdf-find").is_some());
+        // The highlight tools are gone (ADR 0031).
+        for selector in ["pdf-mark", "pdf-area", "pdf-tools"] {
+            assert!(cx.debug_bounds(selector).is_none());
+        }
+
+        // At the narrowest, a menu item runs its tool and closes the menu.
+        cx.simulate_resize(gpui::size(px(200.), px(480.)));
+        draw(cx);
+        let more = cx.debug_bounds("pdf-more").unwrap();
+        cx.simulate_click(more.center(), Default::default());
+        draw(cx);
+        let fit = cx.debug_bounds("pdf-more-fit-page").unwrap();
+        cx.simulate_click(fit.center(), Default::default());
+        cx.run_until_parked();
+        draw(cx);
+        cx.update(|_, cx| assert_eq!(view.read(cx).fit_mode(), Some(FitMode::Page)));
+        assert!(cx.debug_bounds("pdf-more-menu").is_none());
+        // Tab stays inside the open menu; Esc closes it.
+        let more = cx.debug_bounds("pdf-more").unwrap();
+        cx.simulate_click(more.center(), Default::default());
+        draw(cx);
+        for _ in 0..12 {
+            cx.simulate_keystrokes("tab");
+            draw(cx);
+            cx.update(|window, cx| {
+                let view = view.read(cx);
+                assert!(
+                    view.menu_focus.values().any(|h| h.is_focused(window)),
+                    "Tab stays in More"
+                );
+            });
+        }
+        cx.simulate_keystrokes("escape");
+        draw(cx);
+        assert!(cx.debug_bounds("pdf-more-menu").is_none());
+        // Widening while an item has focus moves focus to what is still
+        // drawn: the menu's items while it is open, the viewer once More goes.
+        let more = cx.debug_bounds("pdf-more").unwrap();
+        cx.simulate_click(more.center(), Default::default());
+        draw(cx);
+        for width in [260., 320., 440., 900.] {
+            cx.simulate_resize(gpui::size(px(width), px(480.)));
+            draw(cx);
+            draw(cx);
+            let menu_open = cx.debug_bounds("pdf-more-menu").is_some();
+            cx.update(|window, cx| {
+                let view = view.read(cx);
+                let style = (view.style)();
+                let (_, overflow) = view.toolbar_layout(&view.available_tools(&style));
+                for (tool, handle) in &view.menu_focus {
+                    assert!(
+                        !handle.is_focused(window) || (menu_open && overflow.contains(tool)),
+                        "{tool:?} keeps focus out of the menu at {width}"
+                    );
+                }
+                if overflow.is_empty() {
+                    assert!(view.focus.is_focused(window), "viewer focused at {width}");
+                }
+            });
+            if menu_open {
+                cx.simulate_keystrokes("tab");
+                draw(cx);
+                cx.update(|window, cx| {
+                    let view = view.read(cx);
+                    assert!(
+                        view.menu_focus.values().any(|h| h.is_focused(window)),
+                        "Tab stays in More at {width}"
+                    );
+                });
+            }
+        }
+        // The same once More itself goes, with focus on it.
+        cx.simulate_resize(gpui::size(px(200.), px(480.)));
+        draw(cx);
+        let more = cx.debug_bounds("pdf-more").unwrap();
+        cx.simulate_click(more.center(), Default::default());
+        draw(cx);
+        cx.simulate_keystrokes("escape");
+        draw(cx);
+        cx.update(|window, cx| assert!(view.read(cx).more_focus.is_focused(window)));
+        cx.simulate_resize(gpui::size(px(900.), px(480.)));
+        draw(cx);
+        draw(cx);
+        assert!(cx.debug_bounds("pdf-more").is_none());
+        cx.update(|window, cx| assert!(view.read(cx).focus.is_focused(window)));
+        cx.simulate_resize(gpui::size(px(200.), px(480.)));
+        draw(cx);
+        {
+            let find = cx.debug_bounds("pdf-more").unwrap();
+            cx.simulate_click(find.center(), Default::default());
+            draw(cx);
+            let find = cx.debug_bounds("pdf-more-find").unwrap();
+            cx.simulate_click(find.center(), Default::default());
+            cx.run_until_parked();
+            cx.update(|_, cx| assert!(view.read(cx).search_open));
+            // The find bar stays inside the narrow pane.
+            draw(cx);
+            let bar = cx.debug_bounds("pdf-find-bar").unwrap();
+            let close = cx.debug_bounds("pdf-find-close").unwrap();
+            assert!(bar.left() >= px(0.) && bar.right() <= px(200.), "{bar:?}");
+            assert!(close.right() <= bar.right());
+        }
+    }
+
+    #[gpui::test]
+    async fn fit_width_fits_the_page_in_a_narrow_pane(cx: &mut gpui::TestAppContext) {
         let file = reference_pdf();
         let path = file.path().to_path_buf();
         let (view, cx) = cx.add_window_view(|_, cx| {
             PdfView::new(path, Rc::new(PdfStyle::default), Rc::new(|| 1.), cx)
         });
         wait_for_load(&view, cx).await;
-        for width in [320., 440., 900.] {
+        view.update(cx, |view, cx| view.fit_width(cx));
+        for width in [900., 320., 200.] {
             cx.simulate_resize(gpui::size(px(width), px(480.)));
             draw(cx);
-            let toolbar = cx.debug_bounds("pdf-toolbar").unwrap();
-            let name = cx.debug_bounds("pdf-source-name").unwrap();
-            assert!(name.bottom() <= toolbar.top());
-            for selector in [
-                "pdf-prev",
-                "pdf-page-counter",
-                "pdf-next",
-                "pdf-zoom-out",
-                "pdf-zoom-reset",
-                "pdf-zoom-in",
-                "pdf-fit-width",
-                "pdf-fit-page",
-            ] {
-                let bounds = cx.debug_bounds(selector).unwrap();
+            cx.update(|_, cx| {
+                let view = view.read(cx);
+                let viewport = f32::from(view.scroll.bounds().size.width);
                 assert!(
-                    toolbar.contains(&bounds.origin) && toolbar.contains(&bounds.bottom_right()),
-                    "{selector} at {width}"
+                    view.page_width() <= viewport,
+                    "page {} in {viewport} at {width}",
+                    view.page_width()
                 );
-            }
-            assert!(cx.debug_bounds("pdf-find").is_some());
-            // The highlight tools are gone (ADR 0031).
-            for selector in ["pdf-mark", "pdf-area"] {
-                assert!(cx.debug_bounds(selector).is_none());
-            }
-            assert!(cx.debug_bounds("pdf-tools").is_none());
-            assert!(toolbar.bottom() < px(150.));
+                assert_eq!(view.fit_mode(), Some(FitMode::Width));
+            });
         }
-        cx.simulate_resize(gpui::size(px(320.), px(480.)));
-        draw(cx);
-        let fit = cx.debug_bounds("pdf-fit-page").unwrap();
-        cx.simulate_click(fit.center(), Default::default());
-        cx.run_until_parked();
-        cx.update(|_, cx| assert_eq!(view.read(cx).fit_mode(), Some(FitMode::Page)));
-        draw(cx);
-        let zoom = cx.debug_bounds("pdf-zoom-in").unwrap();
-        cx.simulate_click(zoom.center(), Default::default());
-        cx.run_until_parked();
-        cx.update(|_, cx| assert_eq!(view.read(cx).fit_mode(), None));
-        {
-            draw(cx);
-            let find = cx.debug_bounds("pdf-find").unwrap();
-            cx.simulate_click(find.center(), Default::default());
-            cx.run_until_parked();
-            cx.update(|_, cx| assert!(view.read(cx).search_open));
-        }
+        // Below 50% only a fit goes: zooming out keeps the fitted zoom,
+        // zooming in leaves the fit, and zooming out again undoes it.
+        let fitted = cx.update(|_, cx| view.read(cx).zoom);
+        assert!(fitted < MIN_ZOOM);
+        view.update(cx, |view, cx| view.zoom_out(cx));
+        cx.update(|_, cx| assert_eq!(view.read(cx).zoom, fitted));
+        view.update(cx, |view, cx| view.zoom_in(cx));
+        let zoomed = cx.update(|_, cx| view.read(cx).zoom);
+        assert!(zoomed > fitted);
+        view.update(cx, |view, cx| view.zoom_out(cx));
+        cx.update(|_, cx| assert!((view.read(cx).zoom - fitted).abs() < 0.001));
+        // A restored position keeps a zoom below 50%, and zooming out stops there.
+        view.update(cx, |view, cx| {
+            view.set_zoom(1.0, cx);
+            view.set_zoom(zoomed, cx);
+        });
+        cx.update(|_, cx| assert!((view.read(cx).zoom - zoomed).abs() < 0.001));
+        view.update(cx, |view, cx| view.zoom_out(cx));
+        cx.update(|_, cx| assert!((view.read(cx).zoom - zoomed).abs() < 0.001));
     }
 
     #[gpui::test]

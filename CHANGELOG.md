@@ -4,6 +4,12 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **The source preview fits narrow windows.** Its toolbar stays on one row
+  down to the minimum window size; tools without room move into a ⋯ menu
+  that works from the keyboard. Fit width now fits the page at any width
+  instead of stopping at 50%, and the preview's find bar stays inside the
+  pane.
+
 - **Plain error messages.** A damaged DOCX or PDF now says so in one
   sentence ("This DOCX is damaged or incomplete, so it can't be previewed.")
   instead of a technical error, and Retry shows only when trying again can
