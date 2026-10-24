@@ -4,6 +4,11 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Open hints name every format.** Home and a new tab list each format mdoc
+  opens: PDF, Word, Excel, PowerPoint, OpenDocument, RTF, EPUB, CSV and
+  Markdown, not just PDF, DOCX and Markdown. The unsupported-format message
+  uses the same list.
+
 - **Undo works from the toolbar.** Undo and Redo reach the active document
   after clicking Apply and from other document chrome, including Ctrl+Y on
   Windows. Text fields keep their existing shortcut behavior.

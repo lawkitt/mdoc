@@ -64,9 +64,16 @@ impl DocumentView {
                         .on_click(cx.listener(|this, _, window, cx| this.open(&Open, window, cx))),
                 )
                 .child(
-                    div().text_size(px(12.)).text_color(p.header_muted).child(
-                        "PDF, DOCX or Markdown · select several to open each in its own tab",
-                    ),
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .text_center()
+                        .px_4()
+                        .text_size(px(12.))
+                        .text_color(p.header_muted)
+                        .child(crate::import::supported_formats())
+                        .child("Select several to open each in its own tab"),
                 )
                 .child(
                     div()
