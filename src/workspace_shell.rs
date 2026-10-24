@@ -43,7 +43,8 @@ pub(crate) fn bind_keys(cx: &mut App) {
 
 pub(super) struct ShellState {
     pub recents: Recents,
-    /// Notices counted last frame: a new one opens the popover once.
+    /// Notices that open the popover by themselves, counted last frame: a
+    /// new one opens it once.
     pub notice_count: usize,
     pub palette: Option<Palette>,
     /// Files dragged over the window while Home shows: how many are droppable.
@@ -1203,9 +1204,13 @@ impl Workspace {
             .find(|tab| tab.id == self.active)
             .is_some_and(|tab| !self.is_placeholder(tab, cx));
         if !real {
+            // The notice opens even over an earlier one; check quietly whether
+            // locked cases belong in it.
+            self.load_cases(window, cx);
             self.notice = Some(format!(
                 "{action} works from a pseudonymized document. Open one, or open a case, first."
             ));
+            self.title.notices_open.set(true);
             cx.notify();
             return None;
         }

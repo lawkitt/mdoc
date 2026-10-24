@@ -95,6 +95,7 @@ impl DocumentView {
                 "This tab has no names to replace yet. Pseudonymize a document or open a case first."
                     .into(),
             );
+            cx.emit(crate::workspace::TabEvent::MappingMissing);
             cx.notify();
             return;
         }
@@ -137,6 +138,7 @@ impl DocumentView {
                  Apply replacements, copy the text for the AI, then paste its reply here."
                     .into(),
             );
+            cx.emit(crate::workspace::TabEvent::MappingMissing);
             cx.notify();
             return;
         }

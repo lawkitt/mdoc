@@ -4460,8 +4460,8 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
             &[3; 32],
         )));
     });
-    // The notices popover closed with the dialog; the header's bell reopens it.
-    click_toolbar(cx, "header-notices");
+    // The declined action waits: the notices popover reopens on Try again.
+    assert!(cx.debug_bounds("notices-popover").is_some());
     let unlock = cx.debug_bounds("unlock-cases").unwrap();
     cx.simulate_click(unlock.center(), Default::default());
     draw(cx);
@@ -4664,6 +4664,10 @@ fn a_member_opened_by_hand_offers_unlock_and_gets_its_mapping(cx: &mut TestAppCo
     draw(cx);
     let view = active(&tabs, cx);
     cx.update(|_, cx| assert!(view.read(cx).case.is_none()));
+    // Nothing marks it as a member yet, so the notice waits behind the bell
+    // (ADR 0043); the bell still offers Unlock.
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    click_toolbar(cx, "header-notices");
     let unlock = cx
         .debug_bounds("unlock-cases")
         .expect("locked cases offer Unlock even without a tagged tab");
@@ -4816,6 +4820,82 @@ fn notices_wait_behind_the_header_bell(cx: &mut TestAppContext) {
     draw(cx);
     assert!(cx.debug_bounds("header-notices").is_none());
     assert!(cx.debug_bounds("notices-popover").is_none());
+}
+
+#[gpui::test]
+fn locked_cases_notice_opens_only_when_a_locked_case_is_needed(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let plain = dir.path().join("plain.md");
+    std::fs::write(&plain, "Nothing to restore here.").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Err(crate::cases::KEY_DENIED.into()));
+        tabs.open_paths(vec![plain], window, cx);
+    });
+    cx.run_until_parked();
+    draw(cx);
+    draw(cx);
+    // A plain document: the notice waits behind the bell (ADR 0043).
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.cases.locked);
+        assert_eq!(tabs.title.notices.get(), 1);
+        assert!(!tabs.title.notices_open.get());
+    });
+    assert!(cx.debug_bounds("header-notices").is_some());
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    // Pasting an AI reply into a tab without a mapping needs the locked
+    // cases: the notice opens.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 replied.".into()));
+    cx.dispatch_action(crate::PasteAiResponse);
+    draw(cx);
+    assert!(cx.debug_bounds("notices-popover").is_some());
+    assert!(cx.debug_bounds("unlock-cases").is_some());
+}
+
+#[gpui::test]
+fn restore_from_home_shows_unlock_over_an_earlier_notice(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update(cx, |tabs, cx| {
+        tabs.stage_case_key(Err(crate::cases::KEY_DENIED.into()));
+        // An earlier notice the user closed without dismissing.
+        tabs.notice = Some("The clipboard has no text.".into());
+        cx.notify();
+    });
+    draw(cx);
+    tabs.update(cx, |tabs, cx| {
+        tabs.title.notices_open.set(false);
+        cx.notify();
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    tabs.update_in(cx, |_, window, cx| {
+        window.dispatch_action(Box::new(crate::PasteAiResponse), cx)
+    });
+    draw(cx);
+    cx.update(|_, cx| assert!(tabs.read(cx).cases.locked));
+    assert!(cx.debug_bounds("notices-popover").is_some());
+    assert!(cx.debug_bounds("unlock-cases").is_some());
+}
+
+#[gpui::test]
+fn restore_from_a_blank_tab_looks_for_locked_cases(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Err(crate::cases::KEY_DENIED.into()));
+        tabs.new_tab(window, cx);
+    });
+    cx.simulate_input("PERSON_1 wrote back.");
+    draw(cx);
+    cx.update(|_, cx| assert!(!tabs.read(cx).cases.locked, "nothing looked yet"));
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 replied.".into()));
+    cx.dispatch_action(crate::PasteAiResponse);
+    draw(cx);
+    cx.update(|_, cx| assert!(tabs.read(cx).cases.locked));
+    assert!(cx.debug_bounds("unlock-cases").is_some());
 }
 
 /// Public synthetic input through the real editor/review/case host. Timings are
