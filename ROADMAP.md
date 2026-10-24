@@ -103,11 +103,6 @@ done; 0.2.0 ships from rc.2 regardless. Items are in priority order.
    [ADR 0062](docs/adr/0062-keyboard-reach.md)).
    *Done when:* F6 into the rail focuses the last-focused tab, in both sidebar
    layouts, and ADR 0062 says so.
-7. **[UI] Narrow windows.** At ~575 pt the preview toolbar wraps to two rows
-   and Fit width stops at 50%, clipping the page ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
-   *Done when:* the toolbar keeps one row down to the minimum window size and
-   Fit width fits the page at any width.
-
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier

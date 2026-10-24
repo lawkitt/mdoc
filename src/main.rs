@@ -272,6 +272,7 @@ fn main() {
         workspace::bind_shell_keys(cx);
         settings_ui::bind_keys(cx);
         ui::bind_keys(cx);
+        gpui_pdf::bind_keys(cx);
         cx.bind_keys([KeyBinding::new(
             "escape",
             comparison_ui::CloseComparison,

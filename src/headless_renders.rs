@@ -481,6 +481,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             bind_shell_keys(cx);
             settings_ui::bind_keys(cx);
             ui::bind_keys(cx);
+            gpui_pdf::bind_keys(cx);
             bind_markdown_search_keys(cx);
             bind_app_keys(cx);
             bind_app_actions(cx);
