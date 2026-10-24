@@ -18,6 +18,7 @@ const SCREENS: &[&str] = &[
     "review",
     "mention-popup",
     "setup-consent",
+    "setup-consent-fp32",
     "settings",
     "dictionary",
     "command-palette",
