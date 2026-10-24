@@ -204,6 +204,16 @@ fn scenarios(
     let mut records = vec![d.capture(out, "home")?];
     let view = document(d, path)?;
     records.push(d.capture(out, "document")?);
+    // Nothing is pseudonymized yet: Copy for AI says why it is off.
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            v.more_open = true;
+            window.focus(&v.more_menu_focus, cx);
+            cx.notify();
+        })
+    })?;
+    records.push(d.capture(out, "more-menu")?);
+    d.change(|_, window, cx| view.update(cx, |v, cx| v.close_more(window, cx)))?;
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
             // A Tab in the editor edits text. Restore the fixture before review.

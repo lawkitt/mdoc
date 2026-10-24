@@ -932,6 +932,35 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
 }
 
 #[gpui::test]
+fn disabled_copy_for_ai_says_why(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    let view = active(&tabs, cx);
+    cx.simulate_input("Maya Bennett signed.");
+    click_toolbar(cx, "header-more");
+    draw(cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).alias_actions_reason(),
+            Some("Pseudonymize the document first.")
+        );
+    });
+    // The reason sits under the label, so the row is taller than Copy
+    // Markdown's.
+    let disabled = cx.debug_bounds("more-copy-for-ai").unwrap();
+    let enabled = cx.debug_bounds("more-copy-markdown").unwrap();
+    assert!(disabled.size.height > enabled.size.height);
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("kept".into()));
+    click_toolbar(cx, "more-copy-for-ai");
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("kept")
+        );
+    });
+}
+
+#[gpui::test]
 fn copy_markdown_button_is_inert_while_markdown_is_empty(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));

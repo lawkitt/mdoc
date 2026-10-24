@@ -76,11 +76,6 @@ UI and accessibility polish from the 2026-10-22 UX review and the 0.2.0
 acceptance runs; none needs a design decision. Merges to main as each is
 done; 0.2.0 ships from rc.2 regardless. Items are in priority order.
 
-4. **[UI] Snippets and disabled reasons.** Replacements panel snippets start
-   mid-word; the ⋯ menu's disabled Copy for AI gives no reason
-   ([UX review](docs/evidence/ux-review/2026-10-22/README.md)).
-   *Done when:* snippets cut at word boundaries and the disabled item says why.
-
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
