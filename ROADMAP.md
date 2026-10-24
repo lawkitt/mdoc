@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-23 (latest: 0.1.4); accepted
+This roadmap lists open work as of 2026-10-24 (latest: 0.1.5); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
@@ -27,6 +27,10 @@ replacements (#102), keeps Quit available during model setup (#103), adds
 recognition-language choice on the OCR card and fixes a crypto dependency
 advisory. Its build was never published; 0.1.4 (same day) ships the same
 changes.
+0.1.5 (2026-10-23) makes Tab move between regions, makes Home's Recents and
+Cases rows keyboard-operable, keeps the Keychain explainer's Continue
+reachable, and adds expand/collapse all identities, Go to heading and WCAG
+contrast checks.
 
 ## 0.1.x patches
 
