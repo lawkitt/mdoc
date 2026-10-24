@@ -197,6 +197,16 @@ impl EditorState {
         position: Point<Pixels>,
         window: &mut Window,
     ) -> Option<usize> {
+        self.table_hit(position, window).map(|(offset, _)| offset)
+    }
+
+    /// [`Self::table_offset_at`], and whether the offset ends a wrapped row
+    /// of the cell (the caret's upstream affinity, ADR 0061).
+    pub(crate) fn table_hit(
+        &self,
+        position: Point<Pixels>,
+        window: &mut Window,
+    ) -> Option<(usize, bool)> {
         if self.wrapped.is_empty() || self.table_rows.iter().all(Option::is_none) {
             return None;
         }
@@ -246,27 +256,7 @@ impl EditorState {
         let cell = cell.min(t.cells.len().saturating_sub(1));
         let cx = col_offset(&t.col_widths, t.cells.len(), cell, t.rtl);
         let content = t.cells.get(cell)?;
-        let cw = cell_span_width(&t.col_widths, t.cells.len(), cell);
-        let cf = cell_font(&font, t.is_header);
-        let avail = (cw - pad * 2.).max(px(8.));
-        let align = t.aligns.get(cell).cloned();
-        let rtl = t.rtl;
-        // Each `<br>` line aligns on its own, as the paint does. Alignment shifts
-        // only unwrapped content (a wrapped line fills its width).
-        let align_off = move |full_w: Pixels| {
-            if full_w > avail {
-                px(0.)
-            } else {
-                match align {
-                    Some(markdown_syntax::Align::Center) => (avail - full_w).max(px(0.)) / 2.,
-                    Some(markdown_syntax::Align::Right) => (avail - full_w).max(px(0.)),
-                    // Unaligned cells follow the table's direction — same rule the
-                    // paint uses, so the hit-test matches what's on screen.
-                    _ if rtl => (avail - full_w).max(px(0.)),
-                    _ => px(0.),
-                }
-            }
-        };
+        let (cf, avail, align_off) = cell_layout(t, cell, &font);
         // In-cell y: from the row's top, minus the cell's constant 6px top pad
         // (`table_row_h` = line height + 12, text centered → 6 above).
         let pad_y = px(6.);
@@ -274,9 +264,174 @@ impl EditorState {
             (rel.x - cx - pad).max(px(0.)),
             rel.y - self.line_tops[row] - pad_y,
         );
-        let in_cell =
+        let (in_cell, upstream) =
             cell_offset_for_point(content, target, avail, align_off, &cf, font_size, window);
-        Some(self.line_starts()[row] + t.cell_ranges.get(cell)?.start + in_cell)
+        Some((
+            self.line_starts()[row] + t.cell_ranges.get(cell)?.start + in_cell,
+            upstream,
+        ))
+    }
+
+    /// Up/Down through the caret cell's own visual rows — its wrapped text and
+    /// `<br>` lines — at `goal`, the in-cell x a run of moves keeps, or else
+    /// the caret's x: the offset on the adjacent row, its affinity and the x
+    /// used. From the cell's first / last row, the same column's cell on the
+    /// adjacent table row (skipping the separator), on its nearest row at
+    /// that x. `None` at the table's edge (the move then leaves the table)
+    /// and from a wrapped line holding right-to-left text, whose rows gpui
+    /// does not lay out in reading order.
+    pub(crate) fn table_move_visual(
+        &self,
+        dir: i32,
+        goal: Option<Pixels>,
+        window: &mut Window,
+    ) -> Option<(usize, bool, Pixels)> {
+        let (row, col) = self.row_col(self.cursor_offset());
+        let t = self.table_rows.get(row).and_then(Option::as_ref)?;
+        if t.is_separator || t.cell_ranges.is_empty() || t.col_widths.is_empty() {
+            return None;
+        }
+        let cell = table_cell_at(t, col);
+        let content = t.cells.get(cell)?;
+        let range = t.cell_ranges.get(cell)?;
+        let font = self
+            .paint_font
+            .clone()
+            .unwrap_or_else(|| window.text_style().font());
+        let line_h = self.font_size * LINE_HEIGHT_RATIO;
+        let (cf, avail, align_off) = cell_layout(t, cell, &font);
+        let lines = shape_cell_lines(
+            window,
+            content,
+            &cf,
+            self.font_size,
+            Some(avail),
+            Hsla::default(),
+        );
+        let rows: usize = lines.iter().map(|line| line.rows).sum::<usize>().max(1);
+        let in_cell = col.saturating_sub(range.start).min(content.len());
+        let (x, caret_row) = if lines.is_empty() {
+            (px(0.), 0)
+        } else {
+            let (index, above) = cell_line_at(&lines, in_cell);
+            let CellLine {
+                line: wl,
+                map,
+                range: line_range,
+                ..
+            } = lines.get(index)?;
+            let display = map
+                .partition_point(|&offset| offset < in_cell)
+                .min(map.len().saturating_sub(1));
+            let wrapped = !wl.wrap_boundaries().is_empty();
+            let pos = if crate::syntax::contains_rtl(&content[line_range.clone()]) {
+                if wrapped {
+                    return None;
+                }
+                // The caret's x as painted (`table_caret_pos`).
+                let bidi = gpui_bidi::map_of_wrapped(wl, map.len().saturating_sub(1));
+                point(px(bidi.x_for_index(display)), px(0.))
+            } else {
+                cell_line_pos(wl, display, line_h, self.caret_upstream())?
+            };
+            let caret_row = above + ((pos.y / line_h).round() as usize);
+            (align_off(wl.width()) + pos.x, caret_row)
+        };
+        let x = goal.unwrap_or(x);
+        let target_row = caret_row as i64 + dir as i64;
+        if (0..rows as i64).contains(&target_row) {
+            return self
+                .cell_hit_at(row, cell, x, Some(target_row as usize), window)
+                .map(|(offset, upstream)| (offset, upstream, x));
+        }
+        // The same column on the adjacent table row.
+        let mut r = row as i64 + dir as i64;
+        loop {
+            let nt = self.table_rows.get(usize::try_from(r).ok()?)?.as_ref()?;
+            if !nt.is_separator && !nt.cell_ranges.is_empty() {
+                break;
+            }
+            r += dir as i64;
+        }
+        self.cell_hit_at(r as usize, cell, x, (dir < 0).then_some(usize::MAX), window)
+            .map(|(offset, upstream)| (offset, upstream, x))
+    }
+
+    /// Window-space bounds of the caret (or a selection's head) in a table
+    /// cell, as painted — the caret's own row geometry
+    /// ([`Self::bounds_for_offset`]) is the raw `| … |` line's, not the cell's.
+    pub(crate) fn table_caret_bounds(&self, window: &mut Window) -> Option<Bounds<Pixels>> {
+        let bounds = self.last_bounds?;
+        let (row, col) = self.row_col(self.cursor_offset());
+        let t = self.table_rows.get(row).and_then(Option::as_ref)?;
+        if t.is_separator {
+            return None;
+        }
+        let font = self
+            .paint_font
+            .clone()
+            .unwrap_or_else(|| window.text_style().font());
+        let (x, y_off, ..) = table_caret_pos(
+            t,
+            col,
+            self.table_left(t, row, &bounds),
+            &font,
+            self.font_size,
+            window,
+            self.caret_upstream(),
+        )?;
+        let top = bounds.top() + self.line_tops.get(row).copied()? + px(6.) + y_off;
+        let line_h = self.font_size * LINE_HEIGHT_RATIO;
+        Some(Bounds::from_corners(point(x, top), point(x, top + line_h)))
+    }
+
+    /// The offset at in-cell `x` on visual row `row_in_cell` (clamped to the
+    /// cell's last; `None`: the first) of table row `row`'s cell `cell`
+    /// (clamped to the row's last), and its affinity.
+    fn cell_hit_at(
+        &self,
+        row: usize,
+        cell: usize,
+        x: Pixels,
+        row_in_cell: Option<usize>,
+        window: &mut Window,
+    ) -> Option<(usize, bool)> {
+        let t = self.table_rows.get(row).and_then(Option::as_ref)?;
+        let cell = cell.min(t.cell_ranges.len().checked_sub(1)?);
+        let content = t.cells.get(cell)?;
+        let font = self
+            .paint_font
+            .clone()
+            .unwrap_or_else(|| window.text_style().font());
+        let line_h = self.font_size * LINE_HEIGHT_RATIO;
+        let (cf, avail, align_off) = cell_layout(t, cell, &font);
+        let rows: usize = shape_cell_lines(
+            window,
+            content,
+            &cf,
+            self.font_size,
+            Some(avail),
+            Hsla::default(),
+        )
+        .iter()
+        .map(|line| line.rows)
+        .sum::<usize>()
+        .max(1);
+        let target_row = row_in_cell.unwrap_or(0).min(rows - 1);
+        let target = point(x, line_h * (target_row as f32 + 0.5));
+        let (offset, upstream) = cell_offset_for_point(
+            content,
+            target,
+            avail,
+            align_off,
+            &cf,
+            self.font_size,
+            window,
+        );
+        Some((
+            self.line_starts()[row] + t.cell_ranges[cell].start + offset,
+            upstream,
+        ))
     }
 
     /// Whether the caret is currently inside an editable table cell (not the
@@ -1453,6 +1608,55 @@ pub(crate) fn table_row_wrap_rows(
 
 /// The cell a source column `col` (line-local) falls in for a table row — clamped
 /// to the nearest cell when `col` is in a pipe/space between cells.
+/// A cell's font, text width and per-line alignment offset, as painted.
+/// Each `<br>` line aligns on its own; alignment shifts only unwrapped
+/// content (a wrapped line fills its width).
+fn cell_layout(
+    t: &TableRow,
+    cell: usize,
+    font: &Font,
+) -> (Font, Pixels, impl Fn(Pixels) -> Pixels) {
+    let pad = px(TABLE_CELL_PAD);
+    let cw = cell_span_width(&t.col_widths, t.cells.len(), cell);
+    let avail = (cw - pad * 2.).max(px(8.));
+    let align = t.aligns.get(cell).cloned();
+    let rtl = t.rtl;
+    let align_off = move |full_w: Pixels| {
+        if full_w > avail {
+            px(0.)
+        } else {
+            match align {
+                Some(markdown_syntax::Align::Center) => (avail - full_w).max(px(0.)) / 2.,
+                Some(markdown_syntax::Align::Right) => (avail - full_w).max(px(0.)),
+                // Unaligned cells follow the table's direction — same rule the
+                // paint uses, so the hit-test matches what's on screen.
+                _ if rtl => (avail - full_w).max(px(0.)),
+                _ => px(0.),
+            }
+        }
+    };
+    (cell_font(font, t.is_header), avail, align_off)
+}
+
+/// A caret's position in one shaped cell line with affinity: on a wrap
+/// boundary, the upper row's end upstream, else the lower row's start.
+fn cell_line_pos(
+    wl: &WrappedLine,
+    display: usize,
+    line_h: Pixels,
+    upstream: bool,
+) -> Option<Point<Pixels>> {
+    if !upstream
+        && let Some(k) = wl
+            .wrap_boundaries()
+            .iter()
+            .position(|w| wl.unwrapped_layout.runs[w.run_ix].glyphs[w.glyph_ix].index == display)
+    {
+        return Some(point(px(0.), line_h * (k + 1) as f32));
+    }
+    wl.position_for_index(display, line_h)
+}
+
 fn table_cell_at(t: &TableRow, col: usize) -> usize {
     t.cell_ranges
         .iter()
@@ -1470,6 +1674,7 @@ pub(crate) fn table_caret_pos(
     font: &Font,
     font_size: Pixels,
     window: &mut Window,
+    upstream: bool,
 ) -> Option<(Pixels, Pixels, usize, usize)> {
     if t.cell_ranges.is_empty() {
         return None;
@@ -1506,9 +1711,7 @@ pub(crate) fn table_caret_pos(
     let display_offset = source_map
         .partition_point(|&offset| offset < in_line)
         .min(source_map.len().saturating_sub(1));
-    let mut pos = wl
-        .position_for_index(display_offset, line_h)
-        .unwrap_or_default();
+    let mut pos = cell_line_pos(wl, display_offset, line_h, upstream).unwrap_or_default();
     pos.y += line_h * above as f32;
     let wrapped = !wl.wrap_boundaries().is_empty();
     // A cell holding right-to-left text needs the same index↔x map the rest of
@@ -1545,7 +1748,7 @@ fn cell_offset_for_point(
     font: &Font,
     font_size: Pixels,
     window: &mut Window,
-) -> usize {
+) -> (usize, bool) {
     let line_h = font_size * LINE_HEIGHT_RATIO;
     let lines = shape_cell_lines(
         window,
@@ -1573,25 +1776,28 @@ fn cell_offset_for_point(
         ..
     }) = found
     else {
-        return 0;
+        return (0, false);
     };
     let target = point((target.x - align(wl.width())).max(px(0.)), target.y - top);
     if wl.wrap_boundaries().is_empty() && crate::syntax::contains_rtl(&content[range.clone()]) {
         // Same reason as the caret above, in reverse.
         let map = gpui_bidi::map_of_wrapped(wl, source_map.len().saturating_sub(1));
-        return source_map[map
-            .index_for_x(f32::from(target.x))
-            .min(source_map.len() - 1)];
+        return (
+            source_map[map
+                .index_for_x(f32::from(target.x))
+                .min(source_map.len() - 1)],
+            false,
+        );
     }
-    match wl.closest_index_for_position(
-        point(
-            target.x,
-            target.y.max(px(0.)).min(wl.size(line_h).height - px(1.)),
-        ),
-        line_h,
-    ) {
-        Ok(i) | Err(i) => source_map[i.min(source_map.len() - 1)],
-    }
+    let y = target.y.max(px(0.)).min(wl.size(line_h).height - px(1.));
+    let (Ok(i) | Err(i)) = wl.closest_index_for_position(point(target.x, y), line_h);
+    // Past a wrapped row's end: that row's wrap boundary, kept on the row.
+    let row = (f32::from(y) / f32::from(line_h).max(1.0)).floor().max(0.) as usize;
+    let ends_row = wl
+        .wrap_boundaries()
+        .get(row)
+        .is_some_and(|w| wl.unwrapped_layout.runs[w.run_ix].glyphs[w.glyph_ix].index == i);
+    (source_map[i.min(source_map.len() - 1)], ends_row)
 }
 
 /// Paint a table row as a grid (W4c): a top border (+ bottom on the last row),

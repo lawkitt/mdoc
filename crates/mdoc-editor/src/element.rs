@@ -1118,10 +1118,10 @@ impl Element for EditorElement {
                             }
                         };
                         let pa = (a >= first_start && a <= last_end)
-                            .then(|| table_caret_pos(t, a, tleft, &font, font_size, window))
+                            .then(|| table_caret_pos(t, a, tleft, &font, font_size, window, true))
                             .flatten();
                         let pb = (b >= first_start && b <= last_end)
-                            .then(|| table_caret_pos(t, b, tleft, &font, font_size, window))
+                            .then(|| table_caret_pos(t, b, tleft, &font, font_size, window, true))
                             .flatten();
                         match (pa, pb) {
                             // Both ends inside the SAME (possibly wrapped)
@@ -1594,6 +1594,7 @@ impl Element for EditorElement {
                                 &font,
                                 font_size,
                                 window,
+                                true,
                             )
                             .map(|(_, y, ..)| y)
                         } else {
@@ -1866,6 +1867,7 @@ impl Element for EditorElement {
                     &font,
                     font_size,
                     window,
+                    editor.caret_upstream(),
                 )
             {
                 // Top pad + the wrap row's y (0 for unwrapped cells).
@@ -1876,9 +1878,10 @@ impl Element for EditorElement {
                 );
                 (Some(c), Vec::new())
             } else {
+                let upstream = editor.caret_upstream();
                 let p = wrapped
                     .get(row)
-                    .and_then(|l| line_pos(l, bidi(row), disp_col(row, col), lh))
+                    .and_then(|l| caret_line_pos(l, bidi(row), disp_col(row, col), lh, upstream))
                     .unwrap_or_default();
                 let inset = row_x(row);
                 // A row can be taller than its text — grown to fit an inline

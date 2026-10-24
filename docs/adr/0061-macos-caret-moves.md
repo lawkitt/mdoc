@@ -1,6 +1,7 @@
 # macOS caret moves
 
-Status: Accepted, 2026-10-22.
+Status: Accepted, 2026-10-22. Soft wraps revised 2026-10-24 (caret
+affinity).
 
 ## Problem
 
@@ -20,9 +21,17 @@ under `cfg!(target_os = "macos")`, so tests on other platforms never saw them.
   ⌘← / ⌘→ go to the caret stops painted furthest left / right (an RTL row's
   logical end / start); ⌘⌫ still deletes to the start in reading order.
 - **Soft wraps.** ⌘→ on a wrapped row stops before the space the row broke
-  at. A row that broke inside a word (a long URL, unspaced CJK) stops before
-  its last character: the editor has no caret affinity, so the wrap offset
-  itself draws on the next row.
+  at. On a row that broke inside a word (a long URL, unspaced CJK) it goes
+  after the last character, onto the wrap offset with *upstream* affinity.
+- **Caret affinity.** A caret on a wrap offset draws at the start of the
+  row below (downstream, the default) or at the end of the row above
+  (upstream). Upstream comes only from ⌘→, Up/Down whose goal is past a
+  row's end, and a click past a row's end; any other move or an edit drops
+  it. Bidi rows ignore affinity (they keep their own rows).
+- **Table cells.** Up/Down, with or without ⇧, step through a cell's own
+  visual rows (wrapped text, `<br>` lines) at a kept x before moving to the
+  same column of the next table row, which they enter at that x. A wrapped
+  line holding right-to-left text is not stepped through.
 - **⌘↑ / ⌘↓** go to the document start / end (`DocumentStart`,
   `DocumentEnd`, which reveal nothing).
 - **⇧** with each of the four extends the selection.
@@ -37,7 +46,8 @@ under `cfg!(target_os = "macos")`, so tests on other platforms never saw them.
 
 - Tests cover each move and deletion, with and without ⇧, on the macOS
   keymap, including a wrapped line, a row broken inside a word, a list item,
-  a table cell and an RTL line (`caret_tests.rs`).
+  a table cell and an RTL line, and affinity: drawing, Up/Down, clicks and
+  a wrapped or `<br>` table cell (`caret_tests.rs`).
 - In the mention popup ⌘-arrows keep stepping to the first / last mention
   ([ADR 0055](0055-stable-compact-mention-popup.md)); the editor's moves apply
   only with the editor focused.

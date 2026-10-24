@@ -734,6 +734,15 @@ pub struct EditorState {
     /// The target x for vertical (Up/Down) movement, so the caret keeps its
     /// column across short lines. `Some` only during a run of Up/Down.
     goal_x: Option<Pixels>,
+    /// Upstream caret affinity (ADR 0061): the caret offset and content
+    /// generation it was set for. A caret on a soft-wrap boundary draws at
+    /// the upper row's end while this matches, else at the lower row's
+    /// start; any other caret move or edit drops it.
+    upstream_caret: Option<(usize, u64)>,
+    /// The in-cell x that Up/Down through a table cell's rows keep, with the
+    /// caret offset and content generation it is valid for. Only a vertical
+    /// step sets it; any other caret move, a click or an edit drops it.
+    cell_goal: Option<(usize, u64, Pixels)>,
     /// Spans to underline (misspellings, etc.), set by the host via
     /// [`Self::set_diagnostics`].
     diagnostics: Vec<Diagnostic>,
@@ -939,6 +948,8 @@ impl EditorState {
             last_edit: EditKind::Other,
             last_edit_keystroke: false,
             goal_x: None,
+            upstream_caret: None,
+            cell_goal: None,
             diagnostics: Vec::new(),
             markdown_style: None,
             menu: None,
@@ -1548,7 +1559,14 @@ impl EditorState {
         let (row, col) = self.row_col(offset);
         let lh = self.line_h(row);
         let line = self.wrapped.get(row)?;
-        let p = line_pos(line, self.bidi_map(row), self.display_col(row, col), lh)?;
+        let upstream = offset == self.cursor_offset() && self.caret_upstream();
+        let p = caret_line_pos(
+            line,
+            self.bidi_map(row),
+            self.display_col(row, col),
+            lh,
+            upstream,
+        )?;
         let top = bounds.top() + self.line_tops.get(row).copied().unwrap_or(px(0.)) + p.y;
         let x = bounds.left() + p.x + self.row_origin_x(row);
         Some(Bounds::from_corners(point(x, top), point(x, top + lh)))
@@ -1606,35 +1624,75 @@ impl EditorState {
         self.move_to(off, cx);
     }
 
-    fn up(&mut self, _: &Up, _: &mut Window, cx: &mut Context<Self>) {
-        // In a table, step cell-to-cell keeping the column; at the table's edge
-        // `table_move_vertical` returns `None` and a normal move exits the table.
-        if self.caret_in_table()
-            && let Some(off) = self.table_move_vertical(-1)
-        {
-            self.move_to(off, cx);
+    fn up(&mut self, _: &Up, window: &mut Window, cx: &mut Context<Self>) {
+        self.caret_vertical(-1, window, cx);
+    }
+
+    fn down(&mut self, _: &Down, window: &mut Window, cx: &mut Context<Self>) {
+        self.caret_vertical(1, window, cx);
+    }
+
+    /// Up/Down. In a table, first through the caret cell's own visual rows
+    /// (wrapped text, `<br>` lines), then cell-to-cell keeping the column; at
+    /// the table's edge `table_move_vertical` returns `None` and a normal move
+    /// exits the table.
+    fn caret_vertical(&mut self, dir: i32, window: &mut Window, cx: &mut Context<Self>) {
+        let step = self.vertical_step(dir, window);
+        if step.goal.is_none() && !step.keeps_goal {
+            self.move_to(step.offset, cx);
             return;
         }
-        let off = self.move_vertical(-1);
         // Set the caret directly (not via `move_to`) to keep the goal column.
-        self.selected_range = off..off;
+        self.selected_range = step.offset..step.offset;
+        self.finish_vertical_step(&step);
         self.last_edit = EditKind::Other;
         cx.emit(EditorEvent::SelectionChanged);
         cx.notify();
     }
 
-    fn down(&mut self, _: &Down, _: &mut Window, cx: &mut Context<Self>) {
-        if self.caret_in_table()
-            && let Some(off) = self.table_move_vertical(1)
-        {
-            self.move_to(off, cx);
-            return;
+    /// Where Up/Down take the caret (or a selection's head): through a table
+    /// cell's own rows, then the next table row, else the next visual row.
+    fn vertical_step(&mut self, dir: i32, window: &mut Window) -> VerticalStep {
+        if self.caret_in_table() {
+            let goal = self
+                .cell_goal
+                .filter(|&(at, generation, _)| {
+                    at == self.cursor_offset() && generation == self.content_gen
+                })
+                .map(|(.., x)| x);
+            if let Some((offset, upstream, x)) = self.table_move_visual(dir, goal, window) {
+                self.goal_x = None;
+                return VerticalStep {
+                    offset,
+                    upstream,
+                    goal: Some(x),
+                    keeps_goal: false,
+                };
+            }
+            if let Some(offset) = self.table_move_vertical(dir) {
+                return VerticalStep {
+                    offset,
+                    upstream: false,
+                    goal: None,
+                    keeps_goal: false,
+                };
+            }
         }
-        let off = self.move_vertical(1);
-        self.selected_range = off..off;
-        self.last_edit = EditKind::Other;
-        cx.emit(EditorEvent::SelectionChanged);
-        cx.notify();
+        let (offset, upstream) = self.move_vertical(dir);
+        VerticalStep {
+            offset,
+            upstream,
+            goal: None,
+            keeps_goal: true,
+        }
+    }
+
+    /// After the caret has moved to `step.offset`: its affinity and cell goal.
+    fn finish_vertical_step(&mut self, step: &VerticalStep) {
+        self.set_upstream(step.upstream);
+        self.cell_goal = step
+            .goal
+            .map(|x| (self.cursor_offset(), self.content_gen, x));
     }
 
     fn select_left(&mut self, _: &SelectLeft, _: &mut Window, cx: &mut Context<Self>) {
@@ -1649,14 +1707,22 @@ impl EditorState {
         self.select_to(off, cx);
     }
 
-    fn select_up(&mut self, _: &SelectUp, _: &mut Window, cx: &mut Context<Self>) {
-        let off = self.move_vertical(-1);
-        self.select_to(off, cx);
+    fn select_up(&mut self, _: &SelectUp, window: &mut Window, cx: &mut Context<Self>) {
+        self.select_vertical(-1, window, cx);
     }
 
-    fn select_down(&mut self, _: &SelectDown, _: &mut Window, cx: &mut Context<Self>) {
-        let off = self.move_vertical(1);
-        self.select_to(off, cx);
+    fn select_down(&mut self, _: &SelectDown, window: &mut Window, cx: &mut Context<Self>) {
+        self.select_vertical(1, window, cx);
+    }
+
+    /// ⇧Up/Down: the selection's head moves as the caret would.
+    fn select_vertical(&mut self, dir: i32, window: &mut Window, cx: &mut Context<Self>) {
+        let step = self.vertical_step(dir, window);
+        if step.goal.is_none() && !step.keeps_goal {
+            self.goal_x = None;
+        }
+        self.select_to(step.offset, cx);
+        self.finish_vertical_step(&step);
     }
 
     fn select_all(&mut self, _: &SelectAll, _: &mut Window, cx: &mut Context<Self>) {
@@ -1705,18 +1771,15 @@ impl EditorState {
 
     /// The display-column span of the visual (wrapped) row holding display
     /// column `dcol` of logical line `row`; the whole line before a layout.
-    fn visual_row_span(&self, row: usize, dcol: usize) -> (usize, usize) {
+    /// A column on a wrap boundary belongs to the row below, or with
+    /// `upstream` affinity to the row above.
+    fn visual_row_span(&self, row: usize, dcol: usize, upstream: bool) -> (usize, usize) {
         let full = self.display_col(row, self.line_end(row) - self.line_starts()[row]);
         let Some(line) = self.wrapped.get(row) else {
             return (0, full);
         };
-        let bounds: Vec<usize> = line
-            .wrap_boundaries
-            .iter()
-            .map(|w| line.unwrapped_layout.runs[w.run_ix].glyphs[w.glyph_ix].index)
-            .collect();
-        // A caret at a boundary draws at the next row's start, so it belongs there.
-        let k = bounds.partition_point(|b| *b <= dcol);
+        let bounds: Vec<usize> = wrap_indices(line).collect();
+        let k = bounds.partition_point(|b| *b < dcol || (!upstream && *b == dcol));
         let start = k.checked_sub(1).map_or(0, |i| bounds[i]);
         (start, bounds.get(k).copied().unwrap_or(full))
     }
@@ -1786,7 +1849,8 @@ impl EditorState {
             }
             return left;
         }
-        let (vstart, _) = self.visual_row_span(row, self.display_col(row, col));
+        let (vstart, _) =
+            self.visual_row_span(row, self.display_col(row, col), self.caret_upstream());
         if vstart == 0 {
             // The first row; display column 0 can sit after a hidden marker.
             return start + if plen > 0 && col > plen { plen } else { 0 };
@@ -1794,33 +1858,45 @@ impl EditorState {
         start + self.source_col(row, vstart)
     }
 
-    /// ⌘→ target: the caret's visual row end. A soft-wrapped row ends before
-    /// the space it broke at, or before its last character when it broke
-    /// inside a word, so the caret stays on that row. In a table, the cell's
-    /// end; on a bidi row, its visual right edge.
-    fn visual_line_end(&self) -> usize {
+    /// ⌘→ target and its affinity: the caret's visual row end. A row that
+    /// soft-wrapped at a space ends before the space; one that broke inside a
+    /// word ends after its last character, on the wrap boundary with
+    /// upstream affinity so the caret stays on that row. In a table, the
+    /// cell's end; on a bidi row, its visual right edge.
+    fn visual_line_end(&self) -> (usize, bool) {
         if let Some(cell) = self.caret_table_cell() {
-            return cell.end;
+            return (cell.end, false);
         }
         let (row, col) = self.row_col(self.cursor_offset());
         if let Some((_, right)) = self.bidi_row_edges(row, col) {
-            return right;
+            return (right, false);
         }
         let start = self.line_starts()[row];
         let line_end = self.line_end(row);
-        let (vstart, vend) = self.visual_row_span(row, self.display_col(row, col));
+        let (vstart, vend) =
+            self.visual_row_span(row, self.display_col(row, col), self.caret_upstream());
         let full = self.display_col(row, line_end - start);
         let mut dend = vend;
+        let mut upstream = false;
         if vend < full
             && let Some(line) = self.wrapped.get(row)
             && let Some(c) = line.text[..vend.min(line.text.len())].chars().next_back()
         {
-            // Without caret affinity, the wrap offset itself draws on the
-            // next row: step back one visible character (past hidden
-            // markers, which take no display columns).
-            dend = (vend - c.len_utf8()).max(vstart);
+            if c.is_whitespace() {
+                // Step back over the break space (past hidden markers,
+                // which take no display columns).
+                dend = (vend - c.len_utf8()).max(vstart);
+            } else {
+                upstream = true;
+            }
         }
-        (start + self.source_col(row, dend)).clamp(start + col, line_end)
+        let end = (start + self.source_col(row, dend)).clamp(start + col, line_end);
+        if end == start + col {
+            // Already there (also after a click past a space-broken row's
+            // end): the caret keeps its row.
+            return (end, self.caret_upstream());
+        }
+        (end, upstream && end < line_end)
     }
 
     fn line_start(&mut self, _: &LineStart, _: &mut Window, cx: &mut Context<Self>) {
@@ -1829,8 +1905,9 @@ impl EditorState {
     }
 
     fn line_end_action(&mut self, _: &LineEnd, _: &mut Window, cx: &mut Context<Self>) {
-        let off = self.visual_line_end();
+        let (off, upstream) = self.visual_line_end();
         self.move_to(off, cx);
+        self.set_upstream(upstream);
     }
 
     fn select_to_line_start(
@@ -1846,8 +1923,9 @@ impl EditorState {
 
     fn select_to_line_end(&mut self, _: &SelectToLineEnd, _: &mut Window, cx: &mut Context<Self>) {
         self.goal_x = None;
-        let off = self.visual_line_end();
+        let (off, upstream) = self.visual_line_end();
         self.select_to(off, cx);
+        self.set_upstream(upstream);
     }
 
     /// ⌘⌫: delete back to the visual line's start, or the selection. At the
@@ -1921,6 +1999,7 @@ impl EditorState {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.cell_goal = None;
         if self.annotation_revision == self.content_gen
             && !event.modifiers.shift
             && event.click_count == 1
@@ -2140,9 +2219,7 @@ impl EditorState {
         }
         // A click on a table cell drops the caret inside the cell, not in the raw
         // `| … |` source.
-        let offset = self
-            .table_offset_at(event.position, window)
-            .unwrap_or_else(|| self.index_for_mouse_position(event.position));
+        let (offset, upstream) = self.caret_hit(event.position, window);
         self.menu = None;
         self.table_menu = None;
         self.image_menu = None;
@@ -2182,6 +2259,7 @@ impl EditorState {
                 } else {
                     self.move_to(offset, cx);
                 }
+                self.set_upstream(upstream);
                 self.start_drag_autoscroll(window, cx);
             }
         }
@@ -2303,10 +2381,11 @@ impl EditorState {
             return;
         }
         if self.is_selecting {
-            let offset = self
-                .table_offset_at(event.position, window)
-                .unwrap_or_else(|| self.index_for_mouse_position(event.position));
+            let (offset, upstream) = self.caret_hit(event.position, window);
             self.drag_select_to(offset, cx);
+            if self.word_drag.is_none() {
+                self.set_upstream(upstream);
+            }
             return;
         }
         // While the right-click menu is open it owns the pointer — don't let the
@@ -3071,6 +3150,8 @@ impl EditorState {
 
     fn move_to(&mut self, offset: usize, cx: &mut Context<Self>) {
         self.selected_range = offset..offset;
+        self.upstream_caret = None;
+        self.cell_goal = None;
         // A deliberate caret move ends the current typing/deleting run and the
         // vertical-movement goal column.
         self.last_edit = EditKind::Other;
@@ -3085,6 +3166,19 @@ impl EditorState {
         } else {
             self.selected_range.end
         }
+    }
+
+    /// Whether the caret has upstream affinity: on a soft-wrap boundary it
+    /// belongs to the row above (ADR 0061).
+    pub(crate) fn caret_upstream(&self) -> bool {
+        self.upstream_caret == Some((self.cursor_offset(), self.content_gen))
+    }
+
+    /// Give the caret, where it is now, upstream (`true`) or the default
+    /// downstream affinity. Drops the cell goal: a vertical step restores it.
+    fn set_upstream(&mut self, upstream: bool) {
+        self.upstream_caret = upstream.then_some((self.cursor_offset(), self.content_gen));
+        self.cell_goal = None;
     }
 
     /// Extend a mouse selection to `offset`: by characters, or after a
@@ -3109,6 +3203,8 @@ impl EditorState {
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
+        self.upstream_caret = None;
+        self.cell_goal = None;
         if self.selection_reversed {
             self.selected_range.start = offset;
         } else {
@@ -3131,7 +3227,10 @@ impl EditorState {
         let Some(scroll) = self.autoscroll.clone() else {
             return;
         };
-        let Some(caret) = self.bounds_for_offset(self.cursor_offset()) else {
+        let Some(caret) = self
+            .table_caret_bounds(window)
+            .or_else(|| self.bounds_for_offset(self.cursor_offset()))
+        else {
             return;
         };
         let viewport = scroll.bounds();
@@ -3203,11 +3302,12 @@ impl EditorState {
         }
         // Hit-test against the last paint, shifted by this step's scroll.
         let at = point(mouse.x, mouse.y - (offset.y - before));
-        let target = self
-            .table_offset_at(at, window)
-            .unwrap_or_else(|| self.index_for_mouse_position(at));
+        let (target, upstream) = self.caret_hit(at, window);
         if target != self.cursor_offset() {
             self.drag_select_to(target, cx);
+            if self.word_drag.is_none() {
+                self.set_upstream(upstream);
+            }
         }
         true
     }
@@ -3273,23 +3373,30 @@ impl EditorState {
     }
 
     /// Offset one *visual* row up/down from the caret, preserving the goal column
-    /// (x) across the run. Falls back to logical-line movement before the first
-    /// paint (when no wrapped layout is cached yet).
-    fn move_vertical(&mut self, dir: i32) -> usize {
+    /// (x) across the run, and whether it ends its row (upstream affinity: the
+    /// goal is past the end of a row that broke inside a word). Falls back to
+    /// logical-line movement before the first paint (when no wrapped layout is
+    /// cached yet).
+    fn move_vertical(&mut self, dir: i32) -> (usize, bool) {
         if self.wrapped.is_empty() {
-            return self.vertical_offset(dir);
+            return (self.vertical_offset(dir), false);
         }
         let (row, col) = self.row_col(self.cursor_offset());
         let cur_lh = self.line_h(row);
         if cur_lh <= px(0.) {
-            return self.vertical_offset(dir);
+            return (self.vertical_offset(dir), false);
         }
-        let Some(cur) = self
-            .wrapped
-            .get(row)
-            .and_then(|l| line_pos(l, self.bidi_map(row), self.display_col(row, col), cur_lh))
-        else {
-            return self.vertical_offset(dir);
+        let upstream = self.caret_upstream();
+        let Some(cur) = self.wrapped.get(row).and_then(|l| {
+            caret_line_pos(
+                l,
+                self.bidi_map(row),
+                self.display_col(row, col),
+                cur_lh,
+                upstream,
+            )
+        }) else {
+            return (self.vertical_offset(dir), false);
         };
         let global_y = self.line_tops[row] + cur.y;
         // The goal column is the caret's *visual* x, so it carries an RTL row's
@@ -3310,12 +3417,12 @@ impl EditorState {
             global_y - px(1.)
         };
         if target_y < px(0.) {
-            return 0;
+            return (0, false);
         }
         let last = self.wrapped.len() - 1;
         let total = self.line_tops[last] + self.line_h(last) * self.row_span(last) as f32;
         if target_y >= total {
-            return self.visible_end();
+            return (self.visible_end(), false);
         }
         let mut trow = last;
         for i in 0..self.wrapped.len() {
@@ -3370,7 +3477,7 @@ impl EditorState {
                         trow = n;
                         break;
                     }
-                    None => return self.cursor_offset(),
+                    None => return (self.cursor_offset(), upstream),
                 }
             }
         }
@@ -3378,13 +3485,14 @@ impl EditorState {
             (goal - self.rtl_shift(trow)).max(px(0.)),
             (target_y - self.line_tops[trow]).max(px(0.)),
         );
-        let col = line_index_at(
-            &self.wrapped[trow],
-            self.bidi_map(trow),
-            rel,
-            self.line_h(trow),
-        );
-        self.line_starts()[trow] + self.source_col(trow, col)
+        let lh = self.line_h(trow);
+        let col = line_index_at(&self.wrapped[trow], self.bidi_map(trow), rel, lh);
+        let ends_row =
+            self.bidi_map(trow).is_none() && ends_wrapped_row(&self.wrapped[trow], col, rel.y, lh);
+        (
+            self.line_starts()[trow] + self.source_col(trow, col),
+            ends_row,
+        )
     }
 
     /// The end of the next word at/after `offset` (⌥→ on macOS).
@@ -3688,11 +3796,18 @@ impl EditorState {
     }
 
     fn index_for_mouse_position(&self, position: Point<Pixels>) -> usize {
+        self.text_hit(position).0
+    }
+
+    /// The offset a click at `position` names, and whether it is the end of
+    /// a soft-wrapped row (a click past a row's last character gives the
+    /// caret upstream affinity there).
+    fn text_hit(&self, position: Point<Pixels>) -> (usize, bool) {
         if self.content.is_empty() || self.wrapped.is_empty() {
-            return 0;
+            return (0, false);
         }
         let Some(bounds) = self.last_bounds.as_ref() else {
-            return 0;
+            return (0, false);
         };
         let rel = point(position.x - bounds.left(), position.y - bounds.top());
         // Which logical line, by the vertical band each occupies (variable height).
@@ -3707,17 +3822,24 @@ impl EditorState {
         // An inline-image row: clicking it puts the caret at the line start (the
         // line then shows its source — "raw on caret"), not a text column.
         if self.widget_rows.get(row).copied().unwrap_or(false) {
-            return self.line_starts()[row];
+            return (self.line_starts()[row], false);
         }
         let x = (rel.x - self.row_origin_x(row)).max(px(0.));
         let line_rel = point(x, rel.y - self.line_tops[row]);
-        let col = line_index_at(
-            &self.wrapped[row],
-            self.bidi_map(row),
-            line_rel,
-            self.line_h(row),
-        );
-        self.line_starts()[row] + self.source_col(row, col)
+        let lh = self.line_h(row);
+        let col = line_index_at(&self.wrapped[row], self.bidi_map(row), line_rel, lh);
+        let ends_row = self.bidi_map(row).is_none()
+            && ends_wrapped_row(&self.wrapped[row], col, line_rel.y, lh);
+        (
+            self.line_starts()[row] + self.source_col(row, col),
+            ends_row,
+        )
+    }
+
+    /// [`Self::text_hit`] through a table cell first, as clicks resolve.
+    fn caret_hit(&self, position: Point<Pixels>, window: &mut Window) -> (usize, bool) {
+        self.table_hit(position, window)
+            .unwrap_or_else(|| self.text_hit(position))
     }
 
     /// Map a display byte column on `row` back to its source column. Identity
@@ -5058,6 +5180,50 @@ fn line_pos(
         }
         None => line.position_for_index(dcol, lh),
     }
+}
+
+/// Where an Up/Down move goes ([`EditorState::vertical_step`]).
+struct VerticalStep {
+    offset: usize,
+    upstream: bool,
+    /// The in-cell x kept through a table cell's rows.
+    goal: Option<Pixels>,
+    /// Whether the editor's goal column carries on (a visual-row move).
+    keeps_goal: bool,
+}
+
+/// [`line_pos`] for a caret with affinity: gpui draws a soft-wrap boundary
+/// at the end of the row above, which is upstream; downstream (the default)
+/// it draws at the start of the row below. Bidi rows keep their own rows.
+fn caret_line_pos(
+    line: &WrappedLine,
+    rtl: Option<&RtlRow>,
+    dcol: usize,
+    lh: Pixels,
+    upstream: bool,
+) -> Option<Point<Pixels>> {
+    if rtl.is_none()
+        && !upstream
+        && let Some(k) = wrap_indices(line).position(|b| b == dcol)
+    {
+        return Some(point(px(0.), lh * (k + 1) as f32));
+    }
+    line_pos(line, rtl, dcol, lh)
+}
+
+/// The display columns where a wrapped line's rows after the first start.
+fn wrap_indices(line: &WrappedLine) -> impl Iterator<Item = usize> + '_ {
+    line.wrap_boundaries
+        .iter()
+        .map(|w| line.unwrapped_layout.runs[w.run_ix].glyphs[w.glyph_ix].index)
+}
+
+/// Whether display column `dcol`, hit at row-local `y`, is the end of the
+/// row `y` is on: the wrap boundary below it, which only upstream affinity
+/// keeps on that row.
+fn ends_wrapped_row(line: &WrappedLine, dcol: usize, y: Pixels, lh: Pixels) -> bool {
+    let k = (f32::from(y) / f32::from(lh).max(1.0)).floor().max(0.) as usize;
+    wrap_indices(line).nth(k) == Some(dcol)
 }
 
 /// The display column a click at row-local `p` names — the inverse of

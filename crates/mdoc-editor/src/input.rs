@@ -16,7 +16,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use super::{
     Backspace, Bold, Code, Copy, Cut, Delete, EditorEvent, EditorState, Indent, Italic, LineBreak,
     Newline, Outdent, Paste, Redo, ShowCharacterPalette, Strike, TAB_INDENT, Underline, Undo,
-    caret_off_marker_line, line_pos, markdown_syntax,
+    caret_line_pos, caret_off_marker_line, line_pos, markdown_syntax,
 };
 
 /// Cap on undo history (full snapshots) to bound memory.
@@ -1339,7 +1339,9 @@ impl EntityInputHandler for EditorState {
         let lh = self.line_h(row);
         let line = self.wrapped.get(row)?;
         let map = self.bidi_map(row);
-        let p = line_pos(line, map, self.display_col(row, col), lh)?;
+        // The caret's own position draws by its affinity.
+        let upstream = range.start == self.cursor_offset() && self.caret_upstream();
+        let p = caret_line_pos(line, map, self.display_col(row, col), lh, upstream)?;
         let top = bounds.top() + self.line_tops.get(row).copied().unwrap_or(px(0.)) + p.y;
         let x = bounds.left() + p.x + self.row_origin_x(row);
         // Span the whole range when it stays on one wrap row (the common IME
