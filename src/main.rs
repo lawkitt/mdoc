@@ -3,15 +3,11 @@
     all(target_os = "windows", not(debug_assertions)),
     windows_subsystem = "windows"
 )]
-mod app_paths;
-mod cases;
 mod comment_panel;
 mod comparison;
 mod comparison_ui;
 mod confirm_dialog;
 mod crash;
-mod document;
-mod document_session;
 mod document_view;
 mod docx_preview;
 mod images;
@@ -21,17 +17,15 @@ mod markdown_search;
 mod menus;
 mod model_download;
 mod model_work;
+mod models;
 mod ocr;
 #[cfg(test)]
 mod perf_tests;
 mod pii;
 mod preview;
-mod recents;
 mod recognition;
 mod search_session;
 mod self_test;
-mod session_store;
-mod settings;
 mod settings_ui;
 mod single_instance;
 mod spelling;

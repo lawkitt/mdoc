@@ -6,7 +6,6 @@ use super::{
 };
 use crate::{
     bind_app_keys, comparison, comparison_ui,
-    document::Document,
     document_view::{DocumentView, bind_markdown_search_keys},
     markdown_search,
     pii::{
@@ -14,14 +13,15 @@ use crate::{
         ui::{PiiApplyAll, PiiClosePopup},
     },
     search_session::CloseMarkdownSearch,
-    session_store::Session,
-    settings, settings_ui, style, ui,
+    settings_ui, ui,
 };
 use gpui::{
     Context, Entity, Focusable, HeadlessAppContext, KeyBinding, Keystroke, PromptLevel, Window,
     prelude::*, px, size,
 };
 use image::ImageEncoder;
+use mdoc_store::session_store::ThemeChoice;
+use mdoc_store::{document::Document, session_store::Session, settings};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -477,21 +477,20 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     // Refuse existing output, so stale pictures cannot masquerade as a successful run.
     std::fs::create_dir(out).map_err(|e| format!("create {}: {e}", out.display()))?;
     let profile = tempfile::tempdir().map_err(|e| e.to_string())?;
-    crate::app_paths::isolate(profile.path().to_path_buf())?;
-    let data_directory = crate::app_paths::data_local_dir().ok_or("missing data directory")?;
-    let cache_directory = crate::app_paths::cache_dir().ok_or("missing cache directory")?;
+    mdoc_store::app_paths::isolate(profile.path().to_path_buf()).map_err(|e| e.to_string())?;
+    let data_directory = mdoc_store::app_paths::data_local_dir().ok_or("missing data directory")?;
+    let cache_directory = mdoc_store::app_paths::cache_dir().ok_or("missing cache directory")?;
     if !data_directory.starts_with(profile.path()) || !cache_directory.starts_with(profile.path()) {
         return Err("headless profile escaped temporary directory".into());
     }
     // Exercise both OS-key entry points before building app state. Both must
     // refuse without touching the OS key store or any profile file.
     let cases = data_directory.join("mdoc/cases");
-    let key_error = "OS case keys are disabled in headless renders";
     for result in [
-        crate::cases::Store::open(cases.clone()).map(|_| ()),
-        crate::cases::Store::open_quietly(cases).map(|_| ()),
+        mdoc_store::cases::Store::open(cases.clone()).map(|_| ()),
+        mdoc_store::cases::Store::open_quietly(cases).map(|_| ()),
     ] {
-        if result.err().as_deref() != Some(key_error) {
+        if !matches!(result, Err(mdoc_store::cases::CaseError::KeysDisabled)) {
             return Err("OS case-key guard is not active".into());
         }
     }
@@ -513,10 +512,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     let path = profile.path().join("Services Agreement.md");
     std::fs::write(&path, text).map_err(|e| e.to_string())?;
     let mut screens = Vec::new();
-    for (theme, tag) in [
-        (style::ThemeChoice::Light, "light"),
-        (style::ThemeChoice::Dark, "dark"),
-    ] {
+    for (theme, tag) in [(ThemeChoice::Light, "light"), (ThemeChoice::Dark, "dark")] {
         let mut cx = HeadlessAppContext::with_platform(text_system.clone(), Arc::new(()), || {
             #[cfg(target_os = "macos")]
             {
@@ -552,11 +548,11 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             .open_window(size(px(WIDTH), px(HEIGHT)), |window, cx| {
                 cx.new(|cx| {
                     let mut workspace = Workspace::empty(window, cx);
-                    let store = crate::cases::Store::with_key(
+                    let store = mdoc_store::cases::Store::with_key(
                         profile.path().join(tag).join("cases"),
                         &[3; 32],
                     );
-                    let case = crate::cases::Case::new("Public fixture".into(), &[], None);
+                    let case = mdoc_store::cases::Case::new("Public fixture".into(), &[], None);
                     store.save(&case).expect("temporary fixture case");
                     workspace.use_case_store(store);
                     workspace.restore(

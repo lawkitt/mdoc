@@ -2,9 +2,10 @@
 use crate::{
     document_view::DocumentView,
     pii::{self, detector},
-    settings, settings_ui,
+    settings_ui,
 };
 use gpui::Context;
+use mdoc_store::settings;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -34,7 +35,7 @@ impl DocumentView {
         let config = match self.preferences.borrow().snapshot() {
             Ok(p) => p.pseudonymization,
             Err(e) => {
-                self.pii.error = Some(e);
+                self.pii.error = Some(e.to_string());
                 cx.notify();
                 return;
             }

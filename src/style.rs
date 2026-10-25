@@ -1,6 +1,7 @@
 use gpui::{Hsla, font, hsla, rgb};
 use gpui_pdf::{PageOverlays, PdfStyle, ThemedPages};
 use mdoc_editor::SyntaxStyle;
+use mdoc_store::session_store::ThemeChoice;
 
 /// The unified title-bar row (ADR 0048): the content card's top margin and
 /// header height, and the traffic lights centred on that header.
@@ -38,44 +39,29 @@ pub enum Theme {
     Light,
 }
 
-/// What the user picked at the foot of the sidebar (ADR 0048). System follows
-/// the OS appearance; the resolved [`Theme`] is what everything paints with.
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum ThemeChoice {
-    #[default]
-    System,
-    Light,
-    Dark,
+/// The resolved [`Theme`] for the sidebar's pick (ADR 0048): System follows
+/// the OS appearance.
+pub fn resolve(choice: ThemeChoice, appearance: gpui::WindowAppearance) -> Theme {
+    match choice {
+        ThemeChoice::Light => Theme::Light,
+        ThemeChoice::Dark => Theme::Dark,
+        ThemeChoice::System => match appearance {
+            gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight => Theme::Light,
+            _ => Theme::Dark,
+        },
+    }
 }
 
-impl ThemeChoice {
-    pub fn next(self) -> Self {
-        match self {
-            Self::System => Self::Light,
-            Self::Light => Self::Dark,
-            Self::Dark => Self::System,
-        }
-    }
+/// The sidebar dot of a case with this hue (degrees).
+pub fn case_color(hue: u32) -> Hsla {
+    hsla(hue as f32 / 360., 0.55, 0.55, 1.)
+}
 
-    pub fn resolve(self, appearance: gpui::WindowAppearance) -> Theme {
-        match self {
-            Self::Light => Theme::Light,
-            Self::Dark => Theme::Dark,
-            Self::System => match appearance {
-                gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight => {
-                    Theme::Light
-                }
-                _ => Theme::Dark,
-            },
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::System => "Theme: System",
-            Self::Light => "Theme: Light",
-            Self::Dark => "Theme: Dark",
-        }
+pub fn theme_label(choice: ThemeChoice) -> &'static str {
+    match choice {
+        ThemeChoice::System => "Theme: System",
+        ThemeChoice::Light => "Theme: Light",
+        ThemeChoice::Dark => "Theme: Dark",
     }
 }
 

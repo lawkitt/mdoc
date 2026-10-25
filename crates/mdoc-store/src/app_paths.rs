@@ -14,13 +14,20 @@ static SANDBOX: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
     feature = "headless-renders",
     any(target_os = "macos", target_os = "windows")
 ))]
-pub(crate) fn isolate(path: PathBuf) -> Result<(), String> {
-    SANDBOX
-        .set(path)
-        .map_err(|_| "profile already initialized".into())
+pub fn isolate(path: PathBuf) -> Result<(), AlreadyIsolated> {
+    SANDBOX.set(path).map_err(|_| AlreadyIsolated)
 }
 
-pub(crate) fn data_local_dir() -> Option<PathBuf> {
+#[cfg(all(
+    debug_assertions,
+    feature = "headless-renders",
+    any(target_os = "macos", target_os = "windows")
+))]
+#[derive(Debug, thiserror::Error)]
+#[error("profile already initialized")]
+pub struct AlreadyIsolated;
+
+pub fn data_local_dir() -> Option<PathBuf> {
     #[cfg(all(
         debug_assertions,
         feature = "headless-renders",
@@ -32,7 +39,7 @@ pub(crate) fn data_local_dir() -> Option<PathBuf> {
     dirs::data_local_dir()
 }
 
-pub(crate) fn cache_dir() -> Option<PathBuf> {
+pub fn cache_dir() -> Option<PathBuf> {
     #[cfg(all(
         debug_assertions,
         feature = "headless-renders",
@@ -44,7 +51,7 @@ pub(crate) fn cache_dir() -> Option<PathBuf> {
     dirs::cache_dir()
 }
 
-pub(crate) fn isolated() -> bool {
+pub fn isolated() -> bool {
     #[cfg(all(
         debug_assertions,
         feature = "headless-renders",

@@ -1,15 +1,15 @@
 use super::*;
 use crate::{
-    document::Document,
     document_view::{CopyMarkdown, DocumentView},
     pii::{
         self, Category, Review,
         ui::{PiiAddCandidate, PiiApplyAll, PiiConfirm, Pseudonymize},
     },
-    settings, settings_ui,
+    settings_ui,
     style::Theme,
 };
 use gpui::{App, Context, Entity, Focusable, Window, px};
+use mdoc_store::{document::Document, settings};
 use std::{
     ops::Range,
     sync::{Arc, atomic::AtomicBool},
@@ -596,7 +596,11 @@ fn missing_model_asks_first_and_resumes_only_after_this_setup(cx: &mut gpui::Tes
         });
         draw(cx);
         let model = settings::Model::Pii(model);
-        let label = format!("{}: {}", model.name(), model.attribution_label());
+        let label = format!(
+            "{}: {}",
+            model.name(),
+            crate::models::attribution_label(model)
+        );
         let bounds = cx
             .debug_bounds(Box::leak(label.into_boxed_str()))
             .expect("PII source and license");

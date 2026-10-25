@@ -2,11 +2,7 @@ use crate::{
     document_view::{Save, SaveAs},
     markdown_search::SearchInput,
     model_download::{self, Pending, Progress},
-    model_work, ocr, pii,
-    settings::{
-        Model, OcrConfig, OcrModel, PiiConfig, PiiModel, Preferences, Shared, SpellingConfig,
-        UpdatesConfig, save,
-    },
+    model_work, models, ocr, pii,
     style::{self, Theme},
     ui, updater,
     workspace::{Close, Import, New, NextTab, Open, PreviousTab},
@@ -15,9 +11,13 @@ use gpui::{
     AnyElement, App, Context, Entity, FocusHandle, Focusable, KeyBinding, MouseButton, PromptLevel,
     Window, actions, div, prelude::*, px,
 };
+use mdoc_store::settings::{
+    Model, OcrConfig, OcrModel, PiiConfig, PiiModel, Preferences, Shared, SpellingConfig,
+    UpdatesConfig, save,
+};
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
-mod dictionary;
+pub(crate) mod dictionary;
 
 actions!(
     model_settings,
@@ -195,7 +195,7 @@ impl Panel {
             shared,
             statuses: vec![Status::Unknown; Model::ALL.len()],
             ocr_installations: Vec::new(),
-            pending: Model::ALL.map(Model::pending).to_vec(),
+            pending: Model::ALL.map(models::pending).to_vec(),
             threshold: field(
                 "Detection threshold",
                 &draft.pseudonymization.threshold.to_string(),
@@ -231,7 +231,7 @@ impl Panel {
             return;
         }
         self.draft = self.shared.borrow().current.clone().unwrap_or_default();
-        self.error = self.shared.borrow().error.clone();
+        self.error = self.shared.borrow().error.as_ref().map(ToString::to_string);
         self.update_fields(cx);
         self.previous = window.focused(cx);
         self.open = true;
@@ -359,7 +359,7 @@ impl Panel {
         let task = cx.background_executor().spawn(async move {
             let _permit = permit;
             let mut installed = Vec::new();
-            let pending = Model::ALL.map(Model::pending).to_vec();
+            let pending = Model::ALL.map(models::pending).to_vec();
             let statuses = Model::ALL
                 .into_iter()
                 .map(|model| {
@@ -413,21 +413,20 @@ impl Panel {
         if self.applying {
             return;
         }
-        let parsed = (|| {
-            self.draft.ocr.minimum_confidence = self
-                .confidence
-                .read(cx)
-                .value()
-                .parse()
-                .map_err(|_| "OCR confidence must be a number from 0 to 1.")?;
-            self.draft.pseudonymization.threshold = self
-                .threshold
-                .read(cx)
-                .value()
-                .parse()
-                .map_err(|_| "Detection threshold must be a number from 0 to 1.")?;
-            self.draft.validate()
-        })();
+        let parsed =
+            (|| {
+                self.draft.ocr.minimum_confidence = self
+                    .confidence
+                    .read(cx)
+                    .value()
+                    .parse()
+                    .map_err(|_| "OCR confidence must be a number from 0 to 1.".to_string())?;
+                self.draft.pseudonymization.threshold =
+                    self.threshold.read(cx).value().parse().map_err(|_| {
+                        "Detection threshold must be a number from 0 to 1.".to_string()
+                    })?;
+                self.draft.validate().map_err(|e| e.to_string())
+            })();
         if let Err(e) = parsed {
             self.error = Some(e);
             cx.notify();
@@ -537,7 +536,7 @@ impl Panel {
             let _ = this.update(cx, |this, cx| {
                 let index = Self::index(model);
                 // Runtimes are shared, so any setup can change every model's size.
-                this.pending = Model::ALL.map(Model::pending).to_vec();
+                this.pending = Model::ALL.map(models::pending).to_vec();
                 this.statuses[index] = match &result {
                     Ok(_) if remove => Status::Missing,
                     Ok(_) => Status::Ready,
@@ -823,7 +822,11 @@ impl Panel {
             || (matches!(status, Status::Unknown) && !checking && pending.total() > 0);
         let removable = idle && !matches!(status, Status::Missing | Status::Unknown);
         let bytes = match model {
-            Model::Ocr(m) => m.manifest().artifacts.iter().map(|a| a.size).sum::<u64>(),
+            Model::Ocr(m) => ocr::manifest::for_model(m)
+                .artifacts
+                .iter()
+                .map(|a| a.size)
+                .sum::<u64>(),
             Model::Pii(m) => pii::detector::manifest_for(m)
                 .files
                 .iter()
@@ -849,13 +852,13 @@ impl Panel {
             .border_1().border_color(if selected { accent } else { palette.border }).rounded_md()
             .when(selected, |v| v.bg(gpui::Hsla { a: 0.05, ..accent }))
             .child(div().flex().flex_wrap().items_center().gap_2().p_2()
-                .child(div().id(("select-model", index)).role(gpui::Role::RadioButton).aria_label(model.title()).aria_toggled(if selected { gpui::Toggled::True } else { gpui::Toggled::False }).focus_visible(|s| s.bg(palette.placeholder_bg)).key_context("UiControl").tab_index(0).tab_stop(selectable).flex().flex_1().flex_basis(px(220.)).min_w(px(200.)).items_center().gap_3()
+                .child(div().id(("select-model", index)).role(gpui::Role::RadioButton).aria_label(models::title(model)).aria_toggled(if selected { gpui::Toggled::True } else { gpui::Toggled::False }).focus_visible(|s| s.bg(palette.placeholder_bg)).key_context("UiControl").tab_index(0).tab_stop(selectable).flex().flex_1().flex_basis(px(220.)).min_w(px(200.)).items_center().gap_3()
                     .when(selectable, |v| v.cursor_pointer())
                     .when(!selectable, |v| v.opacity(0.5))
                     .child(div().text_color(if selected { accent } else { palette.header_muted }).child(if selected { "●" } else { "○" }))
                     .child(div().flex().flex_col().flex_1().min_w_0().gap_1()
                         .child(div().flex().items_center().gap_2().min_w_0()
-                            .child(div().text_size(px(13.)).text_ellipsis().child(model.title()))
+                            .child(div().text_size(px(13.)).text_ellipsis().child(models::title(model)))
                             .when(model.recommended(), |v| v.child(div().flex_shrink_0().px_1().rounded_sm().text_size(px(10.)).text_color(accent).border_1().border_color(gpui::Hsla { a: 0.5, ..accent }).child("Recommended"))))
                         .child(div().text_size(px(11.)).text_color(palette.header_muted).child(match note {
                             Some(note) => format!("{} · {note}", model.summary()),
@@ -883,11 +886,11 @@ impl Panel {
             .when_some(self.progress_of(model), |v, state| v.child(div().px_3().pb_3().child(ui::setup_progress(("model-progress", index), &state, self.cancelling(), theme))))
             .when(self.details == Some(model), |v| {
                 let (revision, path) = match model {
-                    Model::Ocr(m) => (m.manifest().revision.to_string(), ocr::root().map(|root| ocr::model_root(&root, m))),
+                    Model::Ocr(m) => (ocr::manifest::for_model(m).revision.to_string(), ocr::root().map(|root| ocr::model_root(&root, m))),
                     Model::Pii(m) => (pii::detector::manifest_for(m).revision, pii::detector::root_for(m)),
                 };
                 let evidence = match model { Model::Ocr(m) => m.evidence(), Model::Pii(m) => m.evidence() };
-                let (_, license) = model.source_and_license();
+                let (_, license) = models::source_and_license(model);
                 let mut details = div().flex().flex_col().gap_2().px_3().pb_3().min_w_0().text_size(px(11.)).text_color(palette.header_muted)
                     .child(div().text_color(palette.header_fg).child(format!("{} · {} MB", model.name(), model_download::megabytes(bytes))))
                     .child(evidence)
@@ -1032,13 +1035,13 @@ impl Render for Panel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::Store;
     use gpui::TestAppContext;
     use gpui::size;
+    use mdoc_store::settings::Store;
     #[gpui::test]
     fn text_recognition_note_matches_the_offered_languages(cx: &mut TestAppContext) {
         let (panel, cx) = cx.add_window_view(|_, cx| {
-            Panel::new(Store::new(), Rc::new(Cell::new(Theme::default())), cx)
+            Panel::new(Store::in_memory(), Rc::new(Cell::new(Theme::default())), cx)
         });
         cx.simulate_resize(size(px(800.), px(2400.)));
         for model in OcrModel::ALL {
@@ -1058,14 +1061,14 @@ mod tests {
                     .is_some()
             );
         }
-        assert_eq!(OcrModel::V6Small.title(), "English");
-        assert_eq!(OcrModel::Cyrillic.title(), "English & Russian");
+        assert_eq!(ocr::title(OcrModel::V6Small), "English");
+        assert_eq!(ocr::title(OcrModel::Cyrillic), "English & Russian");
     }
 
     #[gpui::test]
     fn all_download_choices_show_source_and_license_without_details(cx: &mut TestAppContext) {
         let (panel, cx) = cx.add_window_view(|_, cx| {
-            Panel::new(Store::new(), Rc::new(Cell::new(Theme::default())), cx)
+            Panel::new(Store::in_memory(), Rc::new(Cell::new(Theme::default())), cx)
         });
         cx.simulate_resize(size(px(800.), px(2400.)));
         panel.update(cx, |panel, cx| {
@@ -1079,7 +1082,7 @@ mod tests {
             window.draw(cx).clear(cx);
         });
         for model in Model::ALL {
-            let label = format!("{}: {}", model.name(), model.attribution_label());
+            let label = format!("{}: {}", model.name(), models::attribution_label(model));
             assert!(
                 cx.debug_bounds(Box::leak(label.clone().into_boxed_str()))
                     .is_some(),
@@ -1092,7 +1095,7 @@ mod tests {
         cx.update(bind_keys);
         cx.update(ui::bind_keys);
         let (panel, cx) = cx.add_window_view(|_, cx| {
-            Panel::new(Store::new(), Rc::new(Cell::new(Theme::default())), cx)
+            Panel::new(Store::in_memory(), Rc::new(Cell::new(Theme::default())), cx)
         });
         cx.simulate_resize(size(px(640.), px(480.)));
         panel.update_in(cx, |p, window, cx| {
@@ -1133,7 +1136,7 @@ mod tests {
 
     #[gpui::test]
     fn update_choices_save_immediately_and_an_update_offers_its_release(cx: &mut TestAppContext) {
-        let shared = Store::new();
+        let shared = Store::in_memory();
         let (panel, cx) = cx.add_window_view(|_, cx| {
             Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
         });
@@ -1238,7 +1241,7 @@ mod tests {
     }
     #[gpui::test]
     fn apply_is_explicit_and_close_discards_draft(cx: &mut TestAppContext) {
-        let shared = Store::new();
+        let shared = Store::in_memory();
         let theme = Rc::new(Cell::new(Theme::default()));
         let (panel, cx) = cx.add_window_view(|_, cx| Panel::new(shared.clone(), theme, cx));
         panel.update_in(cx, |panel, w, cx| {
@@ -1260,7 +1263,7 @@ mod tests {
     }
     #[gpui::test]
     fn model_choices_save_immediately_and_failures_revert(cx: &mut TestAppContext) {
-        let shared = Store::new();
+        let shared = Store::in_memory();
         let (panel, cx) = cx.add_window_view(|_, cx| {
             Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
         });
@@ -1299,7 +1302,7 @@ mod tests {
     }
     #[gpui::test]
     fn failed_apply_preserves_active_defaults(cx: &mut TestAppContext) {
-        let shared = Store::new();
+        let shared = Store::in_memory();
         let dir = tempfile::tempdir().unwrap();
         let invalid = dir.path().join("not-a-directory");
         std::fs::write(&invalid, b"blocked").unwrap();

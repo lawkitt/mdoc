@@ -2,11 +2,12 @@
 //! Failure preserves the displayed preview; committing releases old PDF data
 //! before deleting its temporary DOCX backing file.
 use crate::{
-    comment_panel, document_view::DocumentView, docx_preview, markdown_search, session_store,
-    style::Theme, workspace,
+    comment_panel, document_view::DocumentView, docx_preview, markdown_search, style::Theme,
+    workspace,
 };
 use gpui::{App, Context, Entity, Focusable, Subscription, Window, actions, prelude::*};
 use gpui_pdf::PdfView;
+use mdoc_store::session_store;
 use std::{
     cell::Cell,
     path::PathBuf,

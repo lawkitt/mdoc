@@ -117,7 +117,7 @@ pub fn file(url: &str, size: u64, sha: &str, path: &Path, progress: &Progress) -
 
 /// GET with manually followed redirects, each hop checked by [`allowed`].
 fn get(url: &str) -> Result<ureq::http::Response<ureq::Body>, String> {
-    if crate::app_paths::isolated() {
+    if mdoc_store::app_paths::isolated() {
         return Err("network is disabled in headless renders".into());
     }
     let agent = ureq::Agent::new_with_config(

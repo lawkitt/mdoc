@@ -1,0 +1,45 @@
+[package]
+name = "mdoc-store"
+version = "0.1.0"
+edition = "2024"
+description = "GUI-free app storage: paths, documents, session, recents, settings, saved cases and crash-report masking (ADR 0069)."
+license = "GPL-3.0-or-later"
+publish = false
+repository = "https://github.com/lawkitt/mdoc"
+
+[features]
+# The dev renderer's profile sandbox (app_paths::isolate); see the app's feature.
+headless-renders = []
+
+[dependencies]
+# App data lives under data_local_dir / cache_dir (settings, session, cases,
+# models, updates, crash report); a bump must keep those paths (ADR 0053).
+dirs = "7"
+# canonicalize without Windows verbatim (`\\?\`) prefixes in user-visible paths.
+dunce = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+url = "2"
+mdoc-pii = { path = "../mdoc-pii" }
+mdoc-spell = { path = "../mdoc-spell" }
+# Saved cases (ADR 0041): AES-256-GCM files, the key held by the OS.
+aes-gcm = "0.11"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = { version = "3", features = ["OSX_10_15"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Pure-Rust D-Bus (zbus): no system libdbus needed.
+secret-service = { version = "5", default-features = false, features = ["rt-async-io-crypto-rust"] }
+
+[target.'cfg(windows)'.dependencies]
+# Saved-case keys use Windows data protection (DPAPI).
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+] }
+
+[lints.clippy]
+wildcard_imports = "deny"

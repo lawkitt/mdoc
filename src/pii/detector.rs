@@ -147,19 +147,33 @@ pub struct Artifact {
     pub sha256: String,
     pub url: String,
 }
-pub fn manifest_for(model: crate::settings::PiiModel) -> Manifest {
+pub fn manifest_for(model: mdoc_store::settings::PiiModel) -> Manifest {
     let source = match model {
-        crate::settings::PiiModel::Fp16 => {
+        mdoc_store::settings::PiiModel::Fp16 => {
             include_str!("../../resources/pseudonymization-model.json")
         }
-        crate::settings::PiiModel::Fp32 => {
+        mdoc_store::settings::PiiModel::Fp32 => {
             include_str!("../../resources/pseudonymization-fp32-model.json")
         }
     };
     serde_json::from_str(source).expect("pinned model manifest")
 }
-pub fn root_for(model: crate::settings::PiiModel) -> Result<PathBuf, String> {
-    crate::app_paths::data_local_dir()
+pub fn precision(model: mdoc_store::settings::PiiModel) -> gliner2_rs::Precision {
+    match model {
+        mdoc_store::settings::PiiModel::Fp16 => gliner2_rs::Precision::Fp16,
+        mdoc_store::settings::PiiModel::Fp32 => gliner2_rs::Precision::Fp32,
+    }
+}
+/// Attribution for exactly the files setup offers, including ONNX exports.
+pub fn source_and_license(model: mdoc_store::settings::PiiModel) -> (String, String) {
+    let manifest = manifest_for(model);
+    (
+        format!("Hugging Face · {}", manifest.repository),
+        manifest.license,
+    )
+}
+pub fn root_for(model: mdoc_store::settings::PiiModel) -> Result<PathBuf, String> {
+    mdoc_store::app_paths::data_local_dir()
         .map(|root| {
             root.join(format!(
                 "mdoc/pseudonymization/{}-{}",
@@ -171,7 +185,7 @@ pub fn root_for(model: crate::settings::PiiModel) -> Result<PathBuf, String> {
 }
 /// Bytes setup still needs for `model`, including the shared ONNX Runtime.
 /// Tests always report a full download.
-pub fn pending(model: crate::settings::PiiModel) -> crate::model_download::Pending {
+pub fn pending(model: mdoc_store::settings::PiiModel) -> crate::model_download::Pending {
     let root = root_for(model).ok().filter(|_| !cfg!(test));
     let files = manifest_for(model).files;
     let missing: Vec<u64> = files
@@ -189,7 +203,7 @@ pub fn pending(model: crate::settings::PiiModel) -> crate::model_download::Pendi
         runtime: crate::ocr::onnx_runtime_pending(),
     }
 }
-fn verify_model(root: &Path, model: crate::settings::PiiModel) -> Result<(), String> {
+fn verify_model(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), String> {
     for artifact in manifest_for(model).files {
         crate::model_download::verify(
             &root.join(&artifact.path),
@@ -200,7 +214,7 @@ fn verify_model(root: &Path, model: crate::settings::PiiModel) -> Result<(), Str
     Ok(())
 }
 pub fn setup_config(
-    config: &crate::settings::PiiConfig,
+    config: &mdoc_store::settings::PiiConfig,
     progress: &crate::model_download::Progress,
 ) -> Result<(), String> {
     if !SUPPORTED {
@@ -247,19 +261,19 @@ pub fn setup_config(
     check_engine(&root, config.model)?;
     progress.check()
 }
-fn check_engine(root: &Path, model: crate::settings::PiiModel) -> Result<(), String> {
+fn check_engine(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), String> {
     verify_model(root, model)?;
     crate::ocr::load_onnx_runtime(&crate::ocr::onnx_runtime(false)?)?;
     let _engine = SpanEngine::new(
         SpanConfig::new(root)
-            .with_precision(model.precision())
+            .with_precision(precision(model))
             .with_execution(ExecutionMode::Standard)
             .with_intra_threads(4),
     )
     .map_err(|e| e.to_string())?;
     Ok(())
 }
-pub fn check_reserved(model: crate::settings::PiiModel) -> Result<bool, String> {
+pub fn check_reserved(model: mdoc_store::settings::PiiModel) -> Result<bool, String> {
     if !SUPPORTED || cfg!(test) {
         return Ok(false);
     }
@@ -270,7 +284,7 @@ pub fn check_reserved(model: crate::settings::PiiModel) -> Result<bool, String> 
     check_engine(&root, model)?;
     Ok(true)
 }
-pub fn remove_model(model: crate::settings::PiiModel) -> Result<(), String> {
+pub fn remove_model(model: mdoc_store::settings::PiiModel) -> Result<(), String> {
     let _permit = crate::model_work::Permit::acquire_for("removing pseudonymization model")?;
     let root = root_for(model)?;
     if root.exists() {
@@ -297,7 +311,7 @@ fn checkpoint(cancel: &AtomicBool, started: Instant) -> Result<(), String> {
 pub fn scan_config(
     source: &str,
     cancel: &AtomicBool,
-    config: &crate::settings::PiiConfig,
+    config: &mdoc_store::settings::PiiConfig,
 ) -> Result<Vec<Detection>, String> {
     let _permit = crate::model_work::Permit::acquire_for("pseudonymization scanning")?;
     scan_reserved(source, cancel, config)
@@ -305,9 +319,9 @@ pub fn scan_config(
 pub fn scan_reserved(
     source: &str,
     cancel: &AtomicBool,
-    config: &crate::settings::PiiConfig,
+    config: &mdoc_store::settings::PiiConfig,
 ) -> Result<Vec<Detection>, String> {
-    if !crate::settings::unit_interval(config.threshold) {
+    if !mdoc_store::settings::unit_interval(config.threshold) {
         return Err("Detection threshold must be finite and between 0 and 1.".into());
     }
     if !SUPPORTED {
@@ -328,7 +342,7 @@ fn scan_in(
     cancel: &AtomicBool,
     root: &Path,
     runtime: PathBuf,
-    config: &crate::settings::PiiConfig,
+    config: &mdoc_store::settings::PiiConfig,
 ) -> Result<Vec<Detection>, String> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(
@@ -358,7 +372,7 @@ fn scan_in(
     let windows = bounded_windows(source, &transformer, &tasks, cancel, started)?;
     let mut engine = SpanEngine::new(
         SpanConfig::new(root)
-            .with_precision(config.model.precision())
+            .with_precision(precision(config.model))
             .with_execution(ExecutionMode::Standard)
             .with_intra_threads(4),
     )
@@ -469,13 +483,13 @@ mod tests {
     #[test]
     fn resource_guards_reject_before_opening_any_model_and_deadlines_reject_partial_work() {
         let source = "x".repeat(MAX_SOURCE_BYTES + 1);
-        for model in crate::settings::PiiModel::ALL {
+        for model in mdoc_store::settings::PiiModel::ALL {
             let result = scan_in(
                 &source,
                 &AtomicBool::new(false),
                 Path::new("missing-test-model"),
                 PathBuf::from("missing-runtime"),
-                &crate::settings::PiiConfig {
+                &mdoc_store::settings::PiiConfig {
                     model,
                     ..Default::default()
                 },
@@ -507,7 +521,7 @@ mod tests {
             &AtomicBool::new(false),
             &root,
             crate::ocr::onnx_runtime(false).unwrap(),
-            &crate::settings::PiiConfig::default(),
+            &mdoc_store::settings::PiiConfig::default(),
         )
         .unwrap();
         assert!(!detected.is_empty());
@@ -539,7 +553,7 @@ mod tests {
                 &cancel,
                 &root,
                 crate::ocr::onnx_runtime(false).unwrap(),
-                &crate::settings::PiiConfig::default(),
+                &mdoc_store::settings::PiiConfig::default(),
             );
             assert_eq!(result.unwrap_err(), "Scan cancelled.");
         });
@@ -553,7 +567,7 @@ mod tests {
                 &AtomicBool::new(true),
                 &root,
                 crate::ocr::onnx_runtime(false).unwrap(),
-                &crate::settings::PiiConfig::default(),
+                &mdoc_store::settings::PiiConfig::default(),
             )
             .is_err()
         );

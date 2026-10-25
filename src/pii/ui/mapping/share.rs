@@ -4,7 +4,7 @@ use super::Selection;
 use crate::{
     document_view::{CopyMarkdown, DocumentView, SaveAs},
     pii::ui::{APPLIED_ID, CopyForAi, KEPT_ID},
-    ui,
+    style, ui,
     workspace::PasteAiResponse,
 };
 use gpui::{AnyElement, App, Context, Window, div, prelude::*, px};
@@ -188,7 +188,7 @@ impl DocumentView {
                             .flex()
                             .items_center()
                             .gap_2()
-                            .child(div().size(px(8.)).rounded_full().bg(link.color()))
+                            .child(div().size(px(8.)).rounded_full().bg(style::case_color(link.hue())))
                             .child(div().flex_1().truncate().child(link.name.clone()))
                             .child(note("saved".into()))
                             .into_any_element(),

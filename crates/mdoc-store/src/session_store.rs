@@ -15,6 +15,26 @@ pub enum PreviewFit {
     Manual,
 }
 
+/// What the user picked at the foot of the sidebar (ADR 0048). System follows
+/// the OS appearance; the app resolves it to the theme everything paints with.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ThemeChoice {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemeChoice {
+    pub fn next(self) -> Self {
+        match self {
+            Self::System => Self::Light,
+            Self::Light => Self::Dark,
+            Self::Dark => Self::System,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TabRecord {
@@ -47,7 +67,7 @@ pub struct Session {
     pub collapsed_cases: Vec<String>,
     /// The sidebar's System / Light / Dark pick (ADR 0048).
     #[serde(default)]
-    pub theme_choice: crate::style::ThemeChoice,
+    pub theme_choice: ThemeChoice,
 }
 impl Default for Session {
     fn default() -> Self {

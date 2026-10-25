@@ -4,7 +4,6 @@
 use super::{Event, Panel, quiet_control};
 use crate::{
     markdown_search::{self, SearchInput},
-    settings::{Store, valid_word},
     style::{self, Theme},
     ui,
 };
@@ -12,9 +11,31 @@ use gpui::{
     AnyElement, App, Context, Entity, Focusable, KeyBinding, UniformListScrollHandle, Window,
     actions, div, prelude::*, px, uniform_list,
 };
+use mdoc_store::settings::{Shared, Store, valid_word};
 use std::{rc::Rc, time::Duration};
 
 actions!(model_settings, [AddDictionaryWord]);
+
+/// Replace the user's words and save them in the background. Returns
+/// `false` (changing nothing) when the list is full.
+pub(crate) fn set_words(
+    shared: &Shared,
+    words: std::collections::BTreeSet<String>,
+    cx: &mut App,
+) -> bool {
+    let write = match Store::set_words(shared, words) {
+        Ok(Some(write)) => write,
+        Ok(None) => return true,
+        Err(_) => return false,
+    };
+    let task = cx.background_executor().spawn(async move { write.run() });
+    let shared = shared.clone();
+    cx.spawn(async move |_| {
+        shared.borrow_mut().words.error = task.await.err();
+    })
+    .detach();
+    true
+}
 
 /// How long "Removed … · Undo" stays offered.
 const UNDO_WINDOW: Duration = Duration::from_secs(6);
@@ -114,7 +135,7 @@ impl Panel {
     fn insert_word(&mut self, word: String, cx: &mut Context<Self>) -> bool {
         let mut words = (*self.shared.borrow().words.words).clone();
         words.insert(word);
-        let saved = Store::set_words(&self.shared, words, cx);
+        let saved = set_words(&self.shared, words, cx);
         if saved {
             // Open documents re-read the dictionary when they render.
             cx.emit(Event::Applied);
@@ -127,7 +148,7 @@ impl Panel {
         if !words.remove(word) {
             return;
         }
-        Store::set_words(&self.shared, words, cx);
+        set_words(&self.shared, words, cx);
         cx.emit(Event::Applied);
         if let Some(view) = &mut self.dictionary {
             let timer = cx.spawn(async move |this, cx| {
@@ -197,7 +218,7 @@ impl Panel {
                 div()
                     .text_size(px(11.))
                     .text_color(style::markdown_style(theme).alert_warning)
-                    .child(e)
+                    .child(e.to_string())
             }))
             .into_any_element()
     }

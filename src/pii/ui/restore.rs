@@ -26,7 +26,7 @@ pub(crate) struct RestoredReply {
     pub identities: Vec<ExportedIdentity>,
     pub source_name: String,
     /// The source tab's case: the reply joins it (ADR 0041 #16).
-    pub case: Option<crate::cases::CaseLink>,
+    pub case: Option<mdoc_store::cases::CaseLink>,
 }
 
 pub(crate) struct RestoreState {

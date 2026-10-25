@@ -2,10 +2,11 @@
 //! per-document line cache, the session-only per-document switch, the toolbar
 //! indicator and next/previous navigation. Checking and suggestions never run
 //! on the UI thread; it only copies the text and the PII ranges.
-use crate::{document_view::DocumentView, settings};
+use crate::document_view::DocumentView;
 use gpui::{App, Context, Focusable, Window, actions, px};
 use mdoc_editor::{Diagnostic, EditorState};
 use mdoc_spell::{Accepted, Exclusions, LineCache, Options, Speller};
+use mdoc_store::settings;
 use std::{collections::HashSet, ops::Range, sync::Arc, time::Duration};
 actions!(
     mdoc,
@@ -107,7 +108,7 @@ impl DocumentView {
             ADD_TO_DICTIONARY => {
                 let mut words = (*self.preferences.borrow().words.words).clone();
                 words.insert(word.clone());
-                if !settings::Store::set_words(&self.preferences, words, cx) {
+                if !crate::settings_ui::dictionary::set_words(&self.preferences, words, cx) {
                     cx.notify();
                     return;
                 }
@@ -336,7 +337,8 @@ impl DocumentView {
 mod scheduling_tests {
     use super::*;
     use crate::document_view::tests::boot;
-    use crate::{cases, pii, style::Theme};
+    use crate::{pii, style::Theme};
+    use mdoc_store::cases;
 
     #[gpui::test]
     fn typing_captures_only_one_snapshot_after_the_debounce(cx: &mut gpui::TestAppContext) {

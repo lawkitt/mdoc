@@ -1,8 +1,9 @@
 //! A tab's link to its saved case (ADR 0041): mapping changes are saved after
 //! a short pause, and a reopened member document gets its mapping back.
 use super::DocumentView;
-use crate::{cases, pii::restore::ExportedIdentity, workspace};
+use crate::{pii::restore::ExportedIdentity, workspace};
 use gpui::Context;
+use mdoc_store::cases;
 
 impl DocumentView {
     /// Ask the workspace to save this tab's mapping into its case, once

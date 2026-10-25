@@ -2,11 +2,11 @@
 //! stored as one AES-256-GCM file per case in app data. The key is held by the
 //! OS (macOS Keychain, Windows data protection); there is no plaintext
 //! fallback. Originals never reach the session manifest.
-use crate::pii::{Category, restore::ExportedIdentity};
 use aes_gcm::{
     Aes256Gcm, KeyInit,
     aead::{Aead, Generate, Nonce, Payload},
 };
+use mdoc_pii::{Category, restore::ExportedIdentity};
 use serde::{Deserialize, Serialize};
 use std::{
     io::{self, Write},
@@ -14,8 +14,55 @@ use std::{
     sync::Arc,
 };
 
-/// The error when the user declines the macOS Keychain dialog (ADR 0043).
-pub const KEY_DENIED: &str = "Saved cases need Keychain access.";
+#[derive(Debug, thiserror::Error)]
+pub enum CaseError {
+    /// The user declined the macOS Keychain dialog (ADR 0043).
+    #[error("Saved cases need Keychain access.")]
+    KeyDenied,
+    /// A Keychain call failed; the OS error, as macOS words it.
+    #[error("Could not read the case key from the Keychain: {0}")]
+    KeychainRead(String),
+    #[error("Could not store the case key in the Keychain: {0}")]
+    KeychainStore(String),
+    #[error("The case key in the Keychain is damaged.")]
+    KeychainDamaged,
+    /// Windows: the DPAPI-sealed key file.
+    #[error("Could not read the case key: {0}")]
+    KeyRead(io::Error),
+    #[error("Could not store the case key: {0}")]
+    KeyWrite(io::Error),
+    #[error("The case key is damaged.")]
+    KeyDamaged,
+    #[error("Windows data protection could not open the case key.")]
+    DataProtection,
+    /// Linux: no usable Secret Service; its error, as the service words it.
+    #[error(
+        "Saved cases need a Secret Service keyring (GNOME Keyring or KWallet), which is not available: {0}"
+    )]
+    KeyringUnavailable(String),
+    #[error("Could not store the case key in the keyring: {0}")]
+    KeyringStore(String),
+    #[error("The case key in the keyring is damaged.")]
+    KeyringDamaged,
+    #[error(
+        "Saved cases need the macOS Keychain, Windows data protection or a Secret Service keyring, so they are not available on this system."
+    )]
+    NoKeyStore,
+    #[error("OS case keys are disabled in headless renders")]
+    KeysDisabled,
+    #[error("No folder for app data on this system.")]
+    NoAppData,
+    #[error("Invalid case id.")]
+    InvalidId,
+    #[error("Could not read the case: {0}")]
+    Read(io::Error),
+    #[error("The case file is not a case or is damaged.")]
+    NotACase,
+    #[error("The case file is damaged or was saved with a different key.")]
+    WrongKey,
+    #[error("The case file is damaged.")]
+    Damaged,
+}
 
 /// File header: magic and format version, also authenticated with the case id.
 const MAGIC: &[u8; 9] = b"MDOCCASE1";
@@ -77,10 +124,9 @@ impl CaseLink {
             name: case.name.clone(),
         }
     }
-    /// A stable colour for the case's sidebar dot.
-    pub fn color(&self) -> gpui::Hsla {
-        let hue = u32::from_str_radix(&self.id[..6], 16).unwrap_or(0) % 360;
-        gpui::hsla(hue as f32 / 360., 0.55, 0.55, 1.)
+    /// A stable hue in degrees (0..360) for the case's sidebar dot.
+    pub fn hue(&self) -> u32 {
+        u32::from_str_radix(&self.id[..6], 16).unwrap_or(0) % 360
     }
 }
 
@@ -210,16 +256,16 @@ impl Store {
     }
     /// Open the store without any OS dialog: `None` when the key can only be
     /// read after the macOS password dialog (ADR 0043).
-    pub fn open_quietly(dir: PathBuf) -> Result<Option<Self>, String> {
+    pub fn open_quietly(dir: PathBuf) -> Result<Option<Self>, CaseError> {
         if crate::app_paths::isolated() {
-            return Err("OS case keys are disabled in headless renders".into());
+            return Err(CaseError::KeysDisabled);
         }
         Ok(key::load_quietly(&dir)?.map(|key| Self::with_key(dir, &key)))
     }
     /// Open the store, creating the OS-held key on first use.
-    pub fn open(dir: PathBuf) -> Result<Self, String> {
+    pub fn open(dir: PathBuf) -> Result<Self, CaseError> {
         if crate::app_paths::isolated() {
-            return Err("OS case keys are disabled in headless renders".into());
+            return Err(CaseError::KeysDisabled);
         }
         let key = key::load_or_create(&dir)?;
         Ok(Self::with_key(dir, &key))
@@ -276,19 +322,18 @@ impl Store {
         written.insert(case.id.clone(), case.revision);
         Ok(())
     }
-    pub fn load(&self, id: &str) -> Result<Case, String> {
+    pub fn load(&self, id: &str) -> Result<Case, CaseError> {
         if !Self::valid_id(id) {
-            return Err("Invalid case id.".into());
+            return Err(CaseError::InvalidId);
         }
         let path = self.path(id);
-        let bytes = read_limited(&path).map_err(|e| format!("Could not read the case: {e}"))?;
+        let bytes = read_limited(&path).map_err(CaseError::Read)?;
         let body = bytes
             .strip_prefix(MAGIC.as_slice())
             .filter(|b| b.len() > NONCE)
-            .ok_or("The case file is not a case or is damaged.")?;
+            .ok_or(CaseError::NotACase)?;
         let (nonce, sealed) = body.split_at(NONCE);
-        let nonce = <&Nonce<Aes256Gcm>>::try_from(nonce)
-            .map_err(|_| "The case file is not a case or is damaged.")?;
+        let nonce = <&Nonce<Aes256Gcm>>::try_from(nonce).map_err(|_| CaseError::NotACase)?;
         let plain = self
             .cipher
             .decrypt(
@@ -298,11 +343,10 @@ impl Store {
                     aad: &Self::aad(id),
                 },
             )
-            .map_err(|_| "The case file is damaged or was saved with a different key.")?;
-        let case: Case =
-            serde_json::from_slice(&plain).map_err(|_| "The case file is damaged.".to_string())?;
+            .map_err(|_| CaseError::WrongKey)?;
+        let case: Case = serde_json::from_slice(&plain).map_err(|_| CaseError::Damaged)?;
         if case.id != id {
-            return Err("The case file is damaged.".into());
+            return Err(CaseError::Damaged);
         }
         Ok(case)
     }
@@ -366,7 +410,7 @@ fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
 
 /// The 256-bit case key, created once and held by the operating system.
 mod key {
-    use super::{Generate, Path};
+    use super::{CaseError, Generate, Path};
     #[cfg(windows)]
     use std::io::{self, Write};
 
@@ -435,21 +479,21 @@ mod key {
     /// never asks: `None` when reading it would show the macOS password
     /// dialog, e.g. for a new build or after "Allow Once" (ADR 0043).
     #[cfg(target_os = "macos")]
-    pub fn load_quietly(_: &Path) -> Result<Option<[u8; 32]>, String> {
+    pub fn load_quietly(_: &Path) -> Result<Option<[u8; 32]>, CaseError> {
         load(true)
     }
     #[cfg(not(target_os = "macos"))]
-    pub fn load_quietly(dir: &Path) -> Result<Option<[u8; 32]>, String> {
+    pub fn load_quietly(dir: &Path) -> Result<Option<[u8; 32]>, CaseError> {
         load_or_create(dir).map(Some)
     }
 
     #[cfg(target_os = "macos")]
-    pub fn load_or_create(_: &Path) -> Result<[u8; 32], String> {
+    pub fn load_or_create(_: &Path) -> Result<[u8; 32], CaseError> {
         Ok(load(false)?.expect("only a quiet read is refused"))
     }
 
     #[cfg(target_os = "macos")]
-    fn load(quiet: bool) -> Result<Option<[u8; 32]>, String> {
+    fn load(quiet: bool) -> Result<Option<[u8; 32]>, CaseError> {
         match keychain() {
             Keychain::Release => login_or_create(SERVICE, quiet),
             Keychain::Dev => login_or_create(DEV_SERVICE, quiet),
@@ -457,9 +501,7 @@ mod key {
                 // Missing entitlement (errSecMissingEntitlement): a profile
                 // without keychain access; behave like a build without one.
                 Err(-34018) => login_or_create(SERVICE, quiet),
-                Err(e) => Err(format!(
-                    "Could not read the case key from the Keychain: {e}"
-                )),
+                Err(e) => Err(CaseError::KeychainRead(e.to_string())),
                 Ok(Some(key)) => Ok(Some(key)),
                 // Not there yet: move the login-keychain key over (the one
                 // dialog, behind the explainer), or create a new one only
@@ -470,9 +512,7 @@ mod key {
                         Login::MayAsk => return Ok(None),
                         Login::Missing => (fresh(), false),
                     };
-                    protected::write(&key).map_err(|e| {
-                        format!("Could not store the case key in the Keychain: {e}")
-                    })?;
+                    protected::write(&key).map_err(|e| CaseError::KeychainStore(e.to_string()))?;
                     if moved {
                         forget_legacy();
                     }
@@ -497,36 +537,34 @@ mod key {
     /// treating errSecAuthFailed as denied is how beta.7 fell through to a
     /// loud read at launch (ADR 0045).
     #[cfg(target_os = "macos")]
-    fn login(service: &str, quiet: bool) -> Result<Login, String> {
+    fn login(service: &str, quiet: bool) -> Result<Login, CaseError> {
         use security_framework::{
             os::macos::keychain::SecKeychain, passwords::get_generic_password,
         };
         let _quiet = quiet
             .then(SecKeychain::disable_user_interaction)
             .transpose()
-            .map_err(|e| format!("Could not read the case key from the Keychain: {e}"))?;
+            .map_err(|e| CaseError::KeychainRead(e.to_string()))?;
         match get_generic_password(service, ACCOUNT) {
             Ok(bytes) => bytes
                 .try_into()
                 .map(Login::Key)
-                .map_err(|_| "The case key in the Keychain is damaged.".to_string()),
+                .map_err(|_| CaseError::KeychainDamaged),
             // errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled
             // with dialogs off: reading would show the dialog.
             Err(e) if quiet && matches!(e.code(), -25308 | -25293 | -128) => Ok(Login::MayAsk),
             // errSecUserCanceled, errSecAuthFailed: the dialog was declined.
-            Err(e) if matches!(e.code(), -128 | -25293) => Err(super::KEY_DENIED.into()),
+            Err(e) if matches!(e.code(), -128 | -25293) => Err(CaseError::KeyDenied),
             // errSecItemNotFound
             Err(e) if e.code() == -25300 => Ok(Login::Missing),
-            Err(e) => Err(format!(
-                "Could not read the case key from the Keychain: {e}"
-            )),
+            Err(e) => Err(CaseError::KeychainRead(e.to_string())),
         }
     }
 
     /// The login-keychain key, created on first use; `None` when reading or
     /// creating it would show the dialog.
     #[cfg(target_os = "macos")]
-    fn login_or_create(service: &str, quiet: bool) -> Result<Option<[u8; 32]>, String> {
+    fn login_or_create(service: &str, quiet: bool) -> Result<Option<[u8; 32]>, CaseError> {
         use security_framework::{
             os::macos::keychain::SecKeychain, passwords::set_generic_password,
         };
@@ -537,13 +575,13 @@ mod key {
                 let _quiet = quiet
                     .then(SecKeychain::disable_user_interaction)
                     .transpose()
-                    .map_err(|e| format!("Could not store the case key in the Keychain: {e}"))?;
+                    .map_err(|e| CaseError::KeychainStore(e.to_string()))?;
                 let key = fresh();
                 match set_generic_password(service, ACCOUNT, &key) {
                     Ok(()) => Ok(Some(key)),
                     // A locked keychain: creating it needs the dialog too.
                     Err(e) if quiet && e.code() == -25308 => Ok(None),
-                    Err(e) => Err(format!("Could not store the case key in the Keychain: {e}")),
+                    Err(e) => Err(CaseError::KeychainStore(e.to_string())),
                 }
             }
         }
@@ -589,12 +627,12 @@ mod key {
     }
 
     #[cfg(windows)]
-    pub fn load_or_create(dir: &Path) -> Result<[u8; 32], String> {
+    pub fn load_or_create(dir: &Path) -> Result<[u8; 32], CaseError> {
         let path = dir.join("key.dpapi");
         match std::fs::read(&path) {
             Ok(sealed) => dpapi::unprotect(&sealed)?
                 .try_into()
-                .map_err(|_| "The case key is damaged.".to_string()),
+                .map_err(|_| CaseError::KeyDamaged),
             Err(e) if e.kind() == io::ErrorKind::NotFound => {
                 let key = fresh();
                 let sealed = dpapi::protect(&key)?;
@@ -606,10 +644,10 @@ mod key {
                         file.persist(&path).map_err(|e| e.error)?;
                         Ok(())
                     })
-                    .map_err(|e| format!("Could not store the case key: {e}"))?;
+                    .map_err(CaseError::KeyWrite)?;
                 Ok(key)
             }
-            Err(e) => Err(format!("Could not read the case key: {e}")),
+            Err(e) => Err(CaseError::KeyRead(e)),
         }
     }
 
@@ -617,15 +655,10 @@ mod key {
     /// pure-Rust D-Bus connection. Without one, cases stay off; there is no
     /// plaintext fallback.
     #[cfg(target_os = "linux")]
-    pub fn load_or_create(_: &Path) -> Result<[u8; 32], String> {
+    pub fn load_or_create(_: &Path) -> Result<[u8; 32], CaseError> {
         use secret_service::{EncryptionType, blocking::SecretService};
         use std::collections::HashMap;
-        let unavailable = |e: secret_service::Error| {
-            format!(
-                "Saved cases need a Secret Service keyring (GNOME Keyring or KWallet), \
-                 which is not available: {e}"
-            )
-        };
+        let unavailable = |e: secret_service::Error| CaseError::KeyringUnavailable(e.to_string());
         let service = SecretService::connect(EncryptionType::Dh).map_err(unavailable)?;
         let collection = service.get_default_collection().map_err(unavailable)?;
         collection.ensure_unlocked().map_err(unavailable)?;
@@ -641,7 +674,7 @@ mod key {
                 .get_secret()
                 .map_err(unavailable)?
                 .try_into()
-                .map_err(|_| "The case key in the keyring is damaged.".to_string());
+                .map_err(|_| CaseError::KeyringDamaged);
         }
         let key = fresh();
         collection
@@ -652,17 +685,13 @@ mod key {
                 false,
                 "application/octet-stream",
             )
-            .map_err(|e| format!("Could not store the case key in the keyring: {e}"))?;
+            .map_err(|e| CaseError::KeyringStore(e.to_string()))?;
         Ok(key)
     }
 
     #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
-    pub fn load_or_create(_: &Path) -> Result<[u8; 32], String> {
-        Err(
-            "Saved cases need the macOS Keychain, Windows data protection or a \
-             Secret Service keyring, so they are not available on this system."
-                .into(),
-        )
+    pub fn load_or_create(_: &Path) -> Result<[u8; 32], CaseError> {
+        Err(CaseError::NoKeyStore)
     }
 
     #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
@@ -672,13 +701,14 @@ mod key {
 
     #[cfg(windows)]
     mod dpapi {
+        use super::CaseError;
         use windows_sys::Win32::{
             Foundation::LocalFree,
             Security::Cryptography::{
                 CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptProtectData, CryptUnprotectData,
             },
         };
-        fn run(input: &[u8], protect: bool) -> Result<Vec<u8>, String> {
+        fn run(input: &[u8], protect: bool) -> Result<Vec<u8>, CaseError> {
             let blob_in = CRYPT_INTEGER_BLOB {
                 cbData: input.len() as u32,
                 pbData: input.as_ptr() as *mut u8,
@@ -713,7 +743,7 @@ mod key {
                 }
             };
             if ok == 0 || blob_out.pbData.is_null() {
-                return Err("Windows data protection could not open the case key.".into());
+                return Err(CaseError::DataProtection);
             }
             // SAFETY: DPAPI returned cbData bytes at pbData.
             let bytes = unsafe {
@@ -723,10 +753,10 @@ mod key {
             unsafe { LocalFree(blob_out.pbData as _) };
             Ok(bytes)
         }
-        pub fn protect(input: &[u8]) -> Result<Vec<u8>, String> {
+        pub fn protect(input: &[u8]) -> Result<Vec<u8>, CaseError> {
             run(input, true)
         }
-        pub fn unprotect(input: &[u8]) -> Result<Vec<u8>, String> {
+        pub fn unprotect(input: &[u8]) -> Result<Vec<u8>, CaseError> {
             run(input, false)
         }
     }

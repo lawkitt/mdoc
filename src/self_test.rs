@@ -17,7 +17,7 @@ pub fn run(pdf: &Path, expected: &Path) -> Result<(), String> {
     let storage = tempfile::tempdir().map_err(|e| e.to_string())?;
     let installed = crate::ocr::install_config_in(
         storage.path(),
-        &crate::settings::OcrConfig::default(),
+        &mdoc_store::settings::OcrConfig::default(),
         &crate::model_download::Progress::default(),
     )?;
     let cancel = std::sync::atomic::AtomicBool::new(false);

@@ -3,13 +3,16 @@
 //! mapping back, rename, remove, delete, and the Open Case list.
 use super::{TabDrag, Workspace};
 use crate::{
-    cases::{Case, CaseLink, Store},
     document_view::{DocumentView, Next},
-    markdown_search, pii, session_store, style, ui,
+    markdown_search, pii, style, ui,
 };
 use gpui::{
     AnyElement, App, Context, Entity, Focusable, KeyBinding, PromptLevel, Window, div, prelude::*,
     px,
+};
+use mdoc_store::{
+    cases::{Case, CaseError, CaseLink, Store},
+    session_store,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -113,14 +116,14 @@ pub(super) struct CaseState {
     pub(super) test_may_ask: bool,
     /// What opening the key yields in tests: a store, or an error.
     #[cfg(test)]
-    pub(super) test_open: Option<Result<Store, String>>,
+    pub(super) test_open: Option<Result<Store, CaseError>>,
 }
 
 type AfterUnlock = Box<dyn FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>)>;
 
 impl Workspace {
     /// The store, opening the OS-held key on first use.
-    pub(super) fn case_store(&mut self) -> Result<Arc<Store>, String> {
+    pub(super) fn case_store(&mut self) -> Result<Arc<Store>, CaseError> {
         if let Some(store) = &self.cases.store {
             return Ok(store.clone());
         }
@@ -129,7 +132,7 @@ impl Workspace {
             self.test_open()
         } else {
             Store::default_dir()
-                .ok_or_else(|| "No folder for app data on this system.".to_string())
+                .ok_or(CaseError::NoAppData)
                 .and_then(Store::open)
         };
         let store = Arc::new(open?);
@@ -137,20 +140,20 @@ impl Workspace {
         Ok(store)
     }
     #[cfg(test)]
-    fn test_open(&mut self) -> Result<Store, String> {
+    fn test_open(&mut self) -> Result<Store, CaseError> {
         self.cases
             .test_open
             .take()
-            .unwrap_or_else(|| Err("Saved cases are not set up in this test.".into()))
+            .unwrap_or(Err(CaseError::NoKeyStore))
     }
     #[cfg(not(test))]
-    fn test_open(&mut self) -> Result<Store, String> {
+    fn test_open(&mut self) -> Result<Store, CaseError> {
         unreachable!()
     }
     /// Opening the key will ask (as on a Mac that has not allowed mdoc yet)
     /// and then yield `open`.
     #[cfg(test)]
-    pub(super) fn stage_case_key(&mut self, open: Result<Store, String>) {
+    pub(super) fn stage_case_key(&mut self, open: Result<Store, CaseError>) {
         self.cases.store = None;
         self.cases.loaded = false;
         self.cases.test_may_ask = true;
@@ -251,7 +254,7 @@ impl Workspace {
             Err(error) => {
                 // Declined: Try again still owes the user the action they
                 // asked for; Not now cancels it.
-                if error == crate::cases::KEY_DENIED {
+                if matches!(error, CaseError::KeyDenied) {
                     self.cases.then = then;
                 }
                 self.key_failed(error);
@@ -287,13 +290,13 @@ impl Workspace {
     }
     /// A declined dialog keeps members locked behind Try again; other errors
     /// are reported as before.
-    fn key_failed(&mut self, error: String) {
-        if error == crate::cases::KEY_DENIED {
+    fn key_failed(&mut self, error: CaseError) {
+        if matches!(error, CaseError::KeyDenied) {
             self.cases.denied = true;
             // The action the user asked for is waiting: show Try again.
             self.title.notices_open.set(true);
         } else {
-            self.notice = Some(error);
+            self.notice = Some(error.to_string());
         }
     }
     /// The banner for members waiting on the key, or a declined dialog.
@@ -702,7 +705,7 @@ impl Workspace {
         }
         let category = pii::detector::guess_category(term, 0..term.len());
         let alias = case.next_alias(category);
-        case.identities.push(crate::cases::StoredIdentity {
+        case.identities.push(mdoc_store::cases::StoredIdentity {
             alias,
             previous: Vec::new(),
             category: category.token().into(),
@@ -878,7 +881,7 @@ impl Workspace {
         let store = match self.case_store() {
             Ok(store) => store,
             Err(error) => {
-                self.case_write_failed(case, error, cx);
+                self.case_write_failed(case, error.to_string(), cx);
                 self.resume_case_quit(cx);
                 return;
             }
@@ -1327,7 +1330,7 @@ impl Workspace {
                     .size(px(8.))
                     .flex_shrink_0()
                     .rounded_full()
-                    .bg(link.color()),
+                    .bg(style::case_color(link.hue())),
             )
             .child(match renaming {
                 Some(input) => div()
@@ -1690,7 +1693,7 @@ impl Workspace {
                             .size(px(8.))
                             .flex_shrink_0()
                             .rounded_full()
-                            .bg(link.color()),
+                            .bg(style::case_color(link.hue())),
                     )
                     .child(
                         div()

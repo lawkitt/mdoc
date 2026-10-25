@@ -17,9 +17,10 @@ use crate::{
     document_view::DocumentView,
     pii::detector,
     pii::{Category, IdentitySnapshot, Review, tracking::ReplacementPlan},
-    settings, settings_ui,
+    settings_ui,
 };
 use gpui::{App, Context, FocusHandle, Focusable, Hsla, KeyBinding, Pixels, Window, actions, px};
+use mdoc_store::settings;
 use std::{
     cell::Cell,
     ops::Range,
@@ -560,7 +561,7 @@ impl DocumentView {
         let config = match self.preferences.borrow().snapshot() {
             Ok(p) => p.pseudonymization,
             Err(e) => {
-                self.pii.error = Some(e);
+                self.pii.error = Some(e.to_string());
                 cx.notify();
                 return;
             }

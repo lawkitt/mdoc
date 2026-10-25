@@ -611,7 +611,7 @@ fn updates_dir() -> Option<PathBuf> {
     if cfg!(test) {
         return None;
     }
-    crate::app_paths::cache_dir().map(|d| d.join("io.github.lawkitt.mdoc/updates"))
+    mdoc_store::app_paths::cache_dir().map(|d| d.join("io.github.lawkitt.mdoc/updates"))
 }
 
 /// Update facts that outlive a launch: the dismissed banner version and the
@@ -637,7 +637,7 @@ impl Record {
         if cfg!(test) {
             return None;
         }
-        crate::app_paths::data_local_dir().map(|d| d.join("mdoc/update.json"))
+        mdoc_store::app_paths::data_local_dir().map(|d| d.join("mdoc/update.json"))
     }
     fn load() -> Self {
         Self::path()
@@ -692,7 +692,7 @@ fn newest(
 /// Blocking; call from a background task. `/releases/latest` already excludes
 /// drafts and pre-releases; the list endpoint is needed when they count.
 fn fetch(include_prereleases: bool) -> Result<Vec<Release>, String> {
-    if crate::app_paths::isolated() {
+    if mdoc_store::app_paths::isolated() {
         return Err("network is disabled in headless renders".into());
     }
     if cfg!(test) {

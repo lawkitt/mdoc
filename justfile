@@ -26,10 +26,11 @@ deny:
     cargo deny --locked check
 
 # Cargo.lock must match Cargo.toml (ADR 0053); no `#[path]` under src/ (ADR 0069);
-# then clippy with warnings as errors
+# no GPUI under the GUI-free crates (ADR 0069); then clippy with warnings as errors
 lint:
     cargo metadata --locked --format-version 1 > /dev/null
     if grep -rnE --include='*.rs' '#\[path[[:space:]]*=' src; then echo 'error: #[path] under src/; use a folder module (ADR 0069)' >&2; exit 1; fi
+    scripts/gui-free.sh
     cargo clippy --workspace --all-targets --features headless-renders -- -D warnings
 
 # Workspace tests
