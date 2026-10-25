@@ -177,7 +177,7 @@ impl Workspace {
                 let view = view.read(cx);
                 view.lifecycle.blank_disposable()
                     && view.session.document.path.is_none()
-                    && view.preview.source.is_none()
+                    && view.preview.source().is_none()
                     && view.editor.read(cx).text().is_empty()
             })
     }
@@ -219,8 +219,8 @@ impl Workspace {
             .document
             .path
             .as_ref()
-            .or(view.preview.attachment.as_ref())
-            .or(view.preview.source.as_ref());
+            .or(view.preview.attachment())
+            .or(view.preview.source());
         let opened = self.tabs.note_recent(id, path);
         if let Some(path) = path {
             let pseudonymized = view.pseudonymized();

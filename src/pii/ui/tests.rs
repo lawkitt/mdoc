@@ -2033,7 +2033,7 @@ fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext)
     });
     cx.simulate_input("Carol");
     cx.run_until_parked();
-    let matches = cx.update(|_, cx| app.read(cx).search.matches.len());
+    let matches = cx.update(|_, cx| app.read(cx).search.matches().len());
     assert!(matches >= 1);
     let applied_count = cx.update(|_, cx| app.read(cx).pii.review.applied().len());
     cx.dispatch_action(crate::search_session::ReplaceAllMarkdown);
@@ -2043,7 +2043,7 @@ fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext)
         applied
     );
     assert_eq!(
-        cx.update(|_, cx| app.read(cx).search.status.clone())
+        cx.update(|_, cx| app.read(cx).search.status().cloned())
             .as_deref(),
         Some(format!("Replaced 0 · skipped {applied_count} (alias)").as_str())
     );
@@ -2054,7 +2054,7 @@ fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext)
         applied
     );
     assert_eq!(
-        cx.update(|_, cx| app.read(cx).search.status.clone())
+        cx.update(|_, cx| app.read(cx).search.status().cloned())
             .as_deref(),
         Some("Skipped: alias, change it in Replacements")
     );

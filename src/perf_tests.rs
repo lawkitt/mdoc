@@ -219,10 +219,10 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
         eprintln!("HOST_PERF {name} search_burst_and_paint_ms={burst_ms:.3}");
         cx.update(|_, cx| {
             let app = app.read(cx);
-            assert!(app.search.task.is_none());
+            assert!(!app.search.running());
             let expected =
                 SearchIndex::from_markdown(app.editor.read(cx).text()).find("alpha", false);
-            assert_eq!(app.search.matches, expected, "latest query must finish");
+            assert_eq!(app.search.matches(), expected, "latest query must finish");
         });
         let mut highlights = Vec::new();
         for _ in 0..7 {
@@ -238,7 +238,7 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
         cx.simulate_input("the");
         cx.run_until_parked();
         draw(cx);
-        let common = cx.update(|_, cx| app.read(cx).search.matches.len());
+        let common = cx.update(|_, cx| app.read(cx).search.matches().len());
         let mut frames = Vec::new();
         for _ in 0..12 {
             let mut started = Instant::now();
@@ -297,12 +297,12 @@ fn host_performance_matrix(cx: &mut TestAppContext) {
         );
         let (old_pdf, old_comments, old_temp) = cx.update(|_, cx| {
             let preview = &app.read(cx).preview;
-            assert!(!preview.loading);
-            assert!(!preview.retryable, "preview must load, not silently fail");
+            assert!(!preview.loading());
+            assert!(!preview.retryable(), "preview must load, not silently fail");
             (
-                preview.pdf.as_ref().unwrap().downgrade(),
-                preview.comment_panel.as_ref().map(Entity::downgrade),
-                preview.docx.as_ref().map(|docx| docx.pdf_path.clone()),
+                preview.pdf().unwrap().downgrade(),
+                preview.comment_panel().map(Entity::downgrade),
+                preview.docx().map(|docx| docx.pdf_path.clone()),
             )
         });
         cx.dispatch_action(FindMarkdown);
@@ -358,12 +358,12 @@ fn local_preview_performance(cx: &mut TestAppContext) {
         let (pdf, backing) = cx.update(|_, cx| {
             let preview = &app.read(cx).preview;
             assert!(
-                !preview.loading && !preview.retryable,
+                !preview.loading() && !preview.retryable(),
                 "local preview failed"
             );
             (
-                preview.pdf.as_ref().unwrap().downgrade(),
-                preview.docx.as_ref().map(|docx| docx.pdf_path.clone()),
+                preview.pdf().unwrap().downgrade(),
+                preview.docx().map(|docx| docx.pdf_path.clone()),
             )
         });
         app.update_in(cx, |app, window, cx| app.close_preview(window, cx));

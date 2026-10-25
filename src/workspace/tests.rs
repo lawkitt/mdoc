@@ -161,28 +161,28 @@ fn pseudonymization_mappings_survive_switches_and_end_with_the_tab(cx: &mut Test
     let first = active(&tabs, cx);
     let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     first.update(cx, |view, cx| {
-        view.pii.reviewing = true;
+        view.pii.set_reviewing(true);
         let id = view
             .pii
-            .review
+            .review_mut()
             .add_manual("Alice Alice", 0..5, Category::Person)
             .unwrap();
-        view.pii.review.keep(id, None);
+        view.pii.review_mut().keep(id, None);
         view.review_changed(cx);
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
     cx.run_until_parked();
     let second = active(&tabs, cx);
-    cx.update(|_, cx| assert!(second.read(cx).pii.review.variants().is_empty()));
+    cx.update(|_, cx| assert!(second.read(cx).pii.review().variants().is_empty()));
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(first_id, window, cx));
     cx.update(|_, cx| {
         let view = first.read(cx);
-        let group = &view.pii.review.variants()[0];
+        let group = &view.pii.review().variants()[0];
         assert_eq!(
             (group.original.as_ref(), group.replacement.as_str()),
             ("Alice", "PERSON_1")
         );
-        assert_eq!(view.pii.review.remaining(), 0);
+        assert_eq!(view.pii.review().remaining(), 0);
     });
     let weak = first.downgrade();
     drop(first);
@@ -851,7 +851,7 @@ fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
         assert!(tabs.notices.message().unwrap().contains("unknown.bin"));
         assert!(!source.read(cx).lifecycle.source_only());
         assert!(!source.read(cx).dirty(cx));
-        assert!(source.read(cx).preview.pdf.is_some());
+        assert!(source.read(cx).preview.pdf().is_some());
         assert!(!source.read(cx).editor.read(cx).text().is_empty());
         assert_eq!(original.read(cx).editor.read(cx).text(), "keep edits");
         tabs.tabs.active()
@@ -901,12 +901,12 @@ fn source_only_manifest_restores_multiple_sources_and_missing_source_is_retryabl
     tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
     cx.run_until_parked();
     let view = active(&tabs, cx);
-    cx.update(|_, cx| assert!(view.read(cx).preview.retryable));
+    cx.update(|_, cx| assert!(view.read(cx).preview.retryable()));
     std::fs::write(csv, "name,count\napples,2\n").unwrap();
     cx.dispatch_action(RetryPreview);
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert!(!view.read(cx).preview.retryable);
+        assert!(!view.read(cx).preview.retryable());
         assert!(!view.read(cx).dirty(cx));
     });
 }
@@ -922,7 +922,7 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
-    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf().cloned().unwrap());
     view.update(cx, |view, _| {
         view.ocr_state = OcrState::Ready(ocr::Installed {
             config: mdoc_store::settings::OcrConfig::default(),
@@ -948,7 +948,7 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
         assert!(view.dirty(cx));
         assert!(view.editor.read(cx).text().contains("Readable page three"));
         assert!(view.session.warning.as_ref().unwrap().contains("2, 5"));
-        assert_eq!(view.preview.pdf.as_ref(), Some(&pdf));
+        assert_eq!(view.preview.pdf(), Some(&pdf));
         assert!(!view.import.slot_busy());
         assert_eq!(tabs.read(cx).tabs.len(), 1);
         assert!(
@@ -1060,7 +1060,7 @@ fn toolbar_settings_opens_and_closes_without_editor_focus(cx: &mut TestAppContex
         tabs.read(cx).settings.clone()
     });
     active(&tabs, cx).update(cx, |view, cx| {
-        view.pii.reviewing = true;
+        view.pii.set_reviewing(true);
         cx.notify();
     });
     click_toolbar(cx, "Settings");
@@ -1273,10 +1273,10 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
-    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf().cloned().unwrap());
     click_toolbar(cx, "header-source");
     cx.update(|window, cx| {
-        assert!(!view.read(cx).preview.visible);
+        assert!(!view.read(cx).preview.visible());
         assert!(
             view.read(cx)
                 .editor
@@ -1287,14 +1287,14 @@ fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     });
     click_toolbar(cx, "header-source");
     cx.update(|_, cx| {
-        assert!(view.read(cx).preview.visible);
-        assert_eq!(view.read(cx).preview.pdf.as_ref(), Some(&pdf));
+        assert!(view.read(cx).preview.visible());
+        assert_eq!(view.read(cx).preview.pdf(), Some(&pdf));
     });
     cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
     click_toolbar(cx, "header-source");
     cx.update(|_, cx| {
-        assert!(!view.read(cx).preview.visible);
-        assert_eq!(view.read(cx).preview.attachment.as_ref(), Some(&path));
+        assert!(!view.read(cx).preview.visible());
+        assert_eq!(view.read(cx).preview.attachment(), Some(&path));
     });
 }
 
@@ -1313,9 +1313,9 @@ fn detached_header_routes_preview_and_document_shortcuts(cx: &mut TestAppContext
             cx.notify();
         });
         click_toolbar(cx, "header-source");
-        cx.update(|_, cx| assert!(!view.read(cx).preview.visible));
+        cx.update(|_, cx| assert!(!view.read(cx).preview.visible()));
         click_toolbar(cx, "header-source");
-        cx.update(|_, cx| assert!(view.read(cx).preview.visible));
+        cx.update(|_, cx| assert!(view.read(cx).preview.visible()));
         click_toolbar(cx, "header-more");
         let zoom = cx.update(|_, cx| view.read(cx).zoom);
         cx.dispatch_action(ZoomIn);
@@ -1334,7 +1334,7 @@ fn preview_find_types_through_text_input(cx: &mut TestAppContext) {
     tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
     cx.run_until_parked();
     let view = active(&tabs, cx);
-    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf().cloned().unwrap());
     // The find button's action; Mod+F opens the Markdown find.
     pdf.update_in(cx, |pdf, window, cx| pdf.toggle_search(window, cx));
     cx.run_until_parked();
@@ -1508,25 +1508,25 @@ fn paired_preview_hides_reopens_and_failed_replacement_preserves_attachment(
         view.open_path(pdf.clone(), window, cx)
     });
     cx.run_until_parked();
-    let entity = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    let entity = cx.update(|_, cx| view.read(cx).preview.pdf().cloned().unwrap());
     cx.dispatch_action(TogglePreview);
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert!(!view.read(cx).preview.visible);
-        assert_eq!(view.read(cx).preview.attachment.as_ref(), Some(&pdf));
+        assert!(!view.read(cx).preview.visible());
+        assert_eq!(view.read(cx).preview.attachment(), Some(&pdf));
         assert!(view.read(cx).session.document.path.is_none());
     });
     cx.dispatch_action(TogglePreview);
     cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(view.read(cx).preview.pdf.as_ref(), Some(&entity)));
+    cx.update(|_, cx| assert_eq!(view.read(cx).preview.pdf(), Some(&entity)));
     view.update_in(cx, |view, window, cx| {
         view.open_path(base.join("missing.pdf"), window, cx)
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert_eq!(view.read(cx).preview.pdf.as_ref(), Some(&entity));
-        assert_eq!(view.read(cx).preview.attachment.as_ref(), Some(&pdf));
-        assert!(view.read(cx).preview.retryable);
+        assert_eq!(view.read(cx).preview.pdf(), Some(&entity));
+        assert_eq!(view.read(cx).preview.attachment(), Some(&pdf));
+        assert!(view.read(cx).preview.retryable());
     });
 }
 
@@ -1565,7 +1565,7 @@ fn snapshot_keeps_saved_pairs_and_omits_unsaved_buffers(cx: &mut TestAppContext)
                 .unwrap()
                 .read(cx)
                 .preview
-                .pdf
+                .pdf()
                 .is_none()
         );
     });
@@ -1638,14 +1638,14 @@ fn queued_docx_jobs_are_serial_and_closed_tabs_cannot_receive_results(cx: &mut T
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert!(tabs.docx_queue.idle());
-        assert!(first.read(cx).preview.pdf.is_some());
-        assert!(tabs.active_view().unwrap().read(cx).preview.pdf.is_some());
+        assert!(first.read(cx).preview.pdf().is_some());
+        assert!(tabs.active_view().unwrap().read(cx).preview.pdf().is_some());
     });
     let (weak, backing) = cx.update(|_, cx| {
         let view = first.read(cx);
         (
-            view.preview.pdf.as_ref().unwrap().downgrade(),
-            view.preview.docx.as_ref().unwrap().pdf_path.clone(),
+            view.preview.pdf().unwrap().downgrade(),
+            view.preview.docx().unwrap().pdf_path.clone(),
         )
     });
     drop(first);
@@ -1751,15 +1751,15 @@ fn retained_search_selection_and_preview_position_survive_switch(cx: &mut TestAp
     cx.run_until_parked();
     let first = active(&tabs, cx);
     let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    let count = cx.update(|_, cx| first.read(cx).search.matches.len());
+    let count = cx.update(|_, cx| first.read(cx).search.matches().len());
     let cursor = cx.update(|_, cx| first.read(cx).editor.read(cx).cursor());
     cx.dispatch_action(New);
     cx.run_until_parked();
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(id, window, cx));
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert!(first.read(cx).search.open);
-        assert_eq!(first.read(cx).search.matches.len(), count);
+        assert!(first.read(cx).search.open());
+        assert_eq!(first.read(cx).search.matches().len(), count);
         assert_eq!(first.read(cx).markdown_search.read(cx).value(), "alpha");
         assert_eq!(first.read(cx).editor.read(cx).cursor(), cursor);
     });
@@ -1789,7 +1789,7 @@ fn checkpoint_serializes_latest_state_and_restores_pdf_position(cx: &mut TestApp
     );
     let view = active(&tabs, cx);
     cx.update(|_, cx| {
-        let pdf = view.read(cx).preview.pdf.as_ref().unwrap().read(cx);
+        let pdf = view.read(cx).preview.pdf().unwrap().read(cx);
         assert_eq!(pdf.reading_position(), (0, 1.5));
     });
     tabs.update_in(cx, |tabs, window, cx| {
@@ -1912,7 +1912,7 @@ fn closing_queued_conversion_rejects_it_without_affecting_other_tabs(cx: &mut Te
                 .unwrap()
                 .read(cx)
                 .preview
-                .source
+                .source()
                 .is_none()
         );
     });
@@ -2068,8 +2068,8 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
             let view = tabs.read(cx).active_view().unwrap();
             let view = view.read(cx);
             (
-                view.preview.pdf.as_ref().unwrap().downgrade(),
-                view.preview.docx.as_ref().unwrap().pdf_path.clone(),
+                view.preview.pdf().unwrap().downgrade(),
+                view.preview.docx().unwrap().pdf_path.clone(),
             )
         });
         tabs.update_in(cx, |tabs, window, cx| tabs.remove(id, window, cx));
@@ -2157,8 +2157,7 @@ fn pdf_preview_refits_when_sidebar_changes(cx: &mut TestAppContext) {
     let wide = cx.update(|_, cx| {
         view.read(cx)
             .preview
-            .pdf
-            .as_ref()
+            .pdf()
             .unwrap()
             .read(cx)
             .reading_position()
@@ -2169,8 +2168,7 @@ fn pdf_preview_refits_when_sidebar_changes(cx: &mut TestAppContext) {
     let narrow = cx.update(|_, cx| {
         view.read(cx)
             .preview
-            .pdf
-            .as_ref()
+            .pdf()
             .unwrap()
             .read(cx)
             .reading_position()
@@ -2185,8 +2183,7 @@ fn pdf_preview_refits_when_sidebar_changes(cx: &mut TestAppContext) {
     let expanded = cx.update(|_, cx| {
         view.read(cx)
             .preview
-            .pdf
-            .as_ref()
+            .pdf()
             .unwrap()
             .read(cx)
             .reading_position()
@@ -2216,7 +2213,7 @@ fn restored_pdf_keeps_auto_fit_and_manual_zoom_remains_manual(cx: &mut TestAppCo
     );
     cx.simulate_resize(size(px(1400.), px(850.)));
     let view = active(&tabs, cx);
-    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    let pdf = cx.update(|_, cx| view.read(cx).preview.pdf().cloned().unwrap());
     cx.update(|_, cx| {
         assert_eq!(pdf.read(cx).fit_mode(), Some(gpui_pdf::FitMode::Width));
         assert_eq!(
@@ -2341,7 +2338,7 @@ fn automatic_conversion_is_disposable_until_edited_but_can_be_saved(cx: &mut Tes
         assert!(view.read(cx).lifecycle.generated_unedited());
         assert!(!view.read(cx).dirty(cx));
         assert!(!view.read(cx).editor.read(cx).text().is_empty());
-        assert!(view.read(cx).preview.pdf.is_some());
+        assert!(view.read(cx).preview.pdf().is_some());
         let snapshot = tabs.read(cx).snapshot(cx);
         assert!(snapshot.tabs[0].source_only);
         assert_eq!(snapshot.tabs[0].attachment.as_ref(), Some(&source));
@@ -2779,7 +2776,7 @@ fn markdown_scrollbar_drags_without_changing_preview_scroll(cx: &mut TestAppCont
         }
     };
     draw(cx);
-    let preview = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
+    let preview = cx.update(|_, cx| view.read(cx).preview.pdf().cloned().unwrap());
     let before = cx.update(|_, cx| preview.read(cx).reading_position());
     let thumb = cx
         .debug_bounds("markdown-scrollbar")
@@ -2871,7 +2868,7 @@ fn narrow_original_switch_and_divider_preserve_source_and_session(cx: &mut TestA
         gpui::MouseButton::Left,
         Default::default(),
     );
-    let ratio = cx.update(|_, cx| view.read(cx).preview.split_ratio.unwrap());
+    let ratio = cx.update(|_, cx| view.read(cx).preview.split_ratio().unwrap());
     assert!(ratio > 0.5);
     cx.simulate_resize(size(px(640.), px(480.)));
     cx.update(|window, cx| {
@@ -2919,8 +2916,8 @@ fn narrow_original_switch_and_divider_preserve_source_and_session(cx: &mut TestA
         let v = view.read(cx);
         assert_eq!(v.editor.read(cx).text(), source);
         assert_eq!(v.editor.read(cx).revision(), revision);
-        assert_eq!(v.preview.split_ratio, Some(ratio));
-        assert!(v.preview.visible);
+        assert_eq!(v.preview.split_ratio(), Some(ratio));
+        assert!(v.preview.visible());
     });
     let snapshot = tabs.update(cx, |tabs, cx| tabs.snapshot(cx));
     let decoded: Session = serde_json::from_slice(&serde_json::to_vec(&snapshot).unwrap()).unwrap();
@@ -3163,8 +3160,8 @@ fn cancelled_pseudonymization_setup_does_not_tag_recents(cx: &mut TestAppContext
     click_toolbar(cx, "Pseudonymize");
     cx.update(|_, cx| {
         let view = view.read(cx);
-        assert!(view.pii.setup);
-        assert!(view.pii.reviewing);
+        assert!(view.pii.setup());
+        assert!(view.pii.reviewing());
         assert!(!view.pseudonymized());
         assert!(!tabs.read(cx).shell.recents.files[0].pseudonymized);
     });
@@ -3172,7 +3169,7 @@ fn cancelled_pseudonymization_setup_does_not_tag_recents(cx: &mut TestAppContext
     click_toolbar(cx, "sidebar-home");
     assert!(cx.debug_bounds("home-recent-0").is_some());
     cx.update(|_, cx| {
-        assert!(!view.read(cx).pii.setup);
+        assert!(!view.read(cx).pii.setup());
         assert!(!view.read(cx).pseudonymized());
         // Both the visible tag and the row's accessibility name use this flag.
         assert!(!tabs.read(cx).shell.recents.files[0].pseudonymized);
@@ -3180,8 +3177,8 @@ fn cancelled_pseudonymization_setup_does_not_tag_recents(cx: &mut TestAppContext
 
     // A completed scan counts even with no candidates, and survives closing review.
     view.update(cx, |view, cx| {
-        view.pii.scans.push(settings::PiiConfig::default());
-        view.pii.reviewing = false;
+        view.pii.add_scan(settings::PiiConfig::default());
+        view.pii.set_reviewing(false);
         cx.notify();
     });
     cx.run_until_parked();
@@ -3476,14 +3473,14 @@ fn spelling_menu_item_switches_the_document(cx: &mut TestAppContext) {
     // Spelling lives in the header's ⋯ menu (ADR 0048).
     more(cx, "more-spelling");
     cx.update(|_, cx| {
-        assert!(view.read(cx).spelling.off_here);
+        assert!(view.read(cx).spelling.off_here());
         assert!(!view.read(cx).more_open);
         assert!(view.read(cx).editor.read(cx).diagnostics().is_empty());
     });
     more(cx, "more-spelling");
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert!(!view.read(cx).spelling.off_here);
+        assert!(!view.read(cx).spelling.off_here());
         assert!(!view.read(cx).editor.read(cx).diagnostics().is_empty());
     });
 }
@@ -3565,13 +3562,13 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
     let first = active(&tabs, cx);
     let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     first.update_in(cx, |view, window, cx| {
-        view.pii.reviewing = true;
+        view.pii.set_reviewing(true);
         view.pii
-            .review
+            .review_mut()
             .add_manual(source, 0..12, Category::Person)
             .unwrap();
         view.pii
-            .review
+            .review_mut()
             .add_manual(source, 17..38, Category::Organization)
             .unwrap();
         view.apply_all_pii(&PiiApplyAll, window, cx);
@@ -3603,7 +3600,7 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
         );
         assert_eq!(view.display_name(), "Restored – contract.md");
         assert!(view.dirty(cx), "a restored reply is unsaved work");
-        assert_eq!(view.pii.review.remaining(), 3);
+        assert_eq!(view.pii.review().remaining(), 3);
         assert_eq!(view.unresolved_tokens(cx).len(), 1);
         assert_eq!(
             first.read(cx).editor.read(cx).text(),
@@ -3694,13 +3691,13 @@ fn applied_document<'a>(
         if view.case.link().is_some() {
             return;
         }
-        view.pii.reviewing = true;
+        view.pii.set_reviewing(true);
         view.pii
-            .review
+            .review_mut()
             .add_manual(source, 0..12, Category::Person)
             .unwrap();
         view.pii
-            .review
+            .review_mut()
             .add_manual(source, 17..38, Category::Organization)
             .unwrap();
         view.apply_all_pii(&PiiApplyAll, window, cx);
@@ -3748,12 +3745,12 @@ fn chrome_history_undoes_toolbar_apply_and_redoes_without_editor_focus(cx: &mut 
     key(cx, undo);
     cx.update(|_, cx| {
         assert_eq!(view.read(cx).editor.read(cx).text(), source);
-        assert_eq!(view.read(cx).pii.review.remaining(), 2);
+        assert_eq!(view.read(cx).pii.review().remaining(), 2);
     });
     key(cx, redo);
     cx.update(|_, cx| {
         assert_eq!(view.read(cx).editor.read(cx).text(), applied);
-        assert_eq!(view.read(cx).pii.review.remaining(), 0);
+        assert_eq!(view.read(cx).pii.review().remaining(), 0);
     });
     if !cfg!(target_os = "macos") {
         key(cx, undo);
@@ -3851,7 +3848,14 @@ fn unsaved_mapping_is_absent_after_session_restore(cx: &mut TestAppContext) {
             "PERSON_1 met ORG_1."
         );
         assert!(reopened.read(cx).case.link().is_none());
-        assert!(reopened.read(cx).pii.review.active_identities().is_empty());
+        assert!(
+            reopened
+                .read(cx)
+                .pii
+                .review()
+                .active_identities()
+                .is_empty()
+        );
     });
 }
 
@@ -3914,8 +3918,11 @@ fn a_saved_case_is_encrypted_named_and_listed_in_the_sidebar(cx: &mut TestAppCon
     // Renaming an alias in the tab reaches the case, keeping the old alias.
     let view = active(&tabs, cx);
     view.update(cx, |view, cx| {
-        let anna = view.pii.review.applied()[0].step.identity;
-        view.pii.review.rename_identity(anna, "BUYER").unwrap();
+        let anna = view.pii.review().applied()[0].step.identity;
+        view.pii
+            .review_mut()
+            .rename_identity(anna, "BUYER")
+            .unwrap();
         view.review_changed(cx);
     });
     cx.executor()
@@ -4059,7 +4066,7 @@ fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
         assert_eq!(view.case.link().map(|l| l.name.as_str()), Some("Petrova"));
         let applied: Vec<_> = view
             .pii
-            .review
+            .review()
             .applied()
             .iter()
             .map(|a| a.step.before.to_string())
@@ -4079,7 +4086,7 @@ fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
     assert!(store.load(&case.id).is_err());
     cx.update(|_, cx| {
         assert!(view.read(cx).case.link().is_none());
-        assert_eq!(view.read(cx).pii.review.applied().len(), 2);
+        assert_eq!(view.read(cx).pii.review().applied().len(), 2);
         assert!(
             tabs.read(cx)
                 .snapshot(cx)
@@ -4200,11 +4207,11 @@ fn open_applied(
     cx.run_until_parked();
     let view = active(tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        view.pii.reviewing = true;
+        view.pii.set_reviewing(true);
         for (original, category) in names {
             let start = text.find(original).unwrap();
             view.pii
-                .review
+                .review_mut()
                 .add_manual(text, start..start + original.len(), *category)
                 .unwrap();
         }
@@ -4265,7 +4272,7 @@ fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext
             "PERSON_2 wrote to Anna Petrova.",
             "Boris takes the next free number"
         );
-        assert_eq!(view.pii.review.remaining(), 1, "Anna is proposed");
+        assert_eq!(view.pii.review().remaining(), 1, "Anna is proposed");
         let tabs = tabs.read(cx);
         assert!(
             tabs.notices
@@ -4296,7 +4303,7 @@ fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext
             .unwrap()
     });
     first_view.update(cx, |view, cx| {
-        let anna = view.pii.review.identity_by_alias("PERSON_1").unwrap();
+        let anna = view.pii.review().identity_by_alias("PERSON_1").unwrap();
         view.retag_identities(&[(anna, "BUYER".into(), Person, true)], cx)
             .unwrap();
     });
@@ -4373,7 +4380,7 @@ fn a_term_added_to_the_case_is_proposed_in_every_member(cx: &mut TestAppContext)
                 .any(|i| i.originals == ["Project Bluebird"])
         );
         let view = view.read(cx);
-        assert_eq!(view.pii.review.remaining(), 1, "the new term is proposed");
+        assert_eq!(view.pii.review().remaining(), 1, "the new term is proposed");
         assert_eq!(view.case.names().len(), 2);
     });
 }
@@ -4900,7 +4907,7 @@ fn a_docx_source_notes_its_approximate_preview_without_a_notice(cx: &mut TestApp
     // real notices (README media decision 9; ADR 0048 names the pane Source).
     cx.update(|_, cx| {
         let view = tabs.read(cx).active_view().unwrap();
-        let pdf = view.read(cx).preview.pdf.clone().unwrap();
+        let pdf = view.read(cx).preview.pdf().cloned().unwrap();
         let pdf = pdf.read(cx);
         assert_eq!(pdf.display_name(), Some("Source · comments.docx"));
         assert_eq!(
@@ -5106,7 +5113,9 @@ fn review_host_performance(cx: &mut TestAppContext) {
     );
     report("review_plain_layout", &mut samples);
     plain_view.read_with(cx, |view, _| {
-        assert!(view.pii.review.candidates().is_empty() && view.pii.review.applied().is_empty());
+        assert!(
+            view.pii.review().candidates().is_empty() && view.pii.review().applied().is_empty()
+        );
     });
     let first = open_applied(&tabs, cx, dir.path(), "first.md", &text, &wordings);
     let first_view = active(&tabs, cx);
@@ -5157,13 +5166,13 @@ fn review_host_performance(cx: &mut TestAppContext) {
         );
         first_view.read_with(cx, |view, _| {
             assert_eq!(
-                view.pii.review.candidates().len() + view.pii.review.applied().len(),
+                view.pii.review().candidates().len() + view.pii.review().applied().len(),
                 mentions
             );
             if phase == "proposed_panel" {
-                assert_eq!(view.pii.review.candidates().len(), mentions);
+                assert_eq!(view.pii.review().candidates().len(), mentions);
             } else {
-                assert_eq!(view.pii.review.applied().len(), mentions);
+                assert_eq!(view.pii.review().applied().len(), mentions);
             }
             assert_eq!(view.compare.is_some(), phase == "before_after");
             assert!(
@@ -5175,7 +5184,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
     let start = Instant::now();
     first_view.update_in(cx, |view, window, cx| {
         view.close_compare(window, cx);
-        let id = view.pii.review.identity_by_alias("PERSON_1").unwrap();
+        let id = view.pii.review().identity_by_alias("PERSON_1").unwrap();
         view.retag_identities(&[(id, "CLIENT".into(), Category::Person, true)], cx)
             .unwrap();
     });
@@ -5204,7 +5213,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
             assert!(
                 view.read(cx)
                     .pii
-                    .review
+                    .review()
                     .identity_by_alias("CLIENT")
                     .is_some()
             );
@@ -5254,7 +5263,7 @@ fn case_quit_failure_can_cancel_without_losing_mappings(cx: &mut TestAppContext)
                 .unwrap()
                 .read(cx)
                 .pii
-                .review
+                .review()
                 .applied()
                 .len(),
             2

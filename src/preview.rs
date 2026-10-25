@@ -60,29 +60,179 @@ pub(super) const NO_PREVIEW: &str = "No preview for this format. mdoc previews P
 
 #[derive(Default)]
 pub(super) struct PreviewState {
-    pub split_ratio: Option<f32>,
-    pub visible: bool,
-    pub queued: bool,
+    split_ratio: Option<f32>,
+    visible: bool,
+    queued: bool,
     /// Committed attachment; source is the current request/retry target.
-    pub attachment: Option<PathBuf>,
-    pub restore_position: Option<(usize, f32, session_store::PreviewFit)>,
-    pub pdf: Option<Entity<PdfView>>,
-    pub docx: Option<docx_preview::DocxPreview>,
-    pub comment_panel: Option<Entity<comment_panel::CommentPanel>>,
+    attachment: Option<PathBuf>,
+    restore_position: Option<(usize, f32, session_store::PreviewFit)>,
+    pdf: Option<Entity<PdfView>>,
+    docx: Option<docx_preview::DocxPreview>,
+    comment_panel: Option<Entity<comment_panel::CommentPanel>>,
     pending: Option<PendingPreview>,
-    pub message: Option<String>,
-    pub loading: bool,
-    pub retryable: bool,
+    message: Option<String>,
+    loading: bool,
+    retryable: bool,
     /// The last request failed. Unlike `retryable`, this includes failures
     /// another attempt can't fix; the sidebar's warning follows it.
-    pub failed: bool,
-    pub source: Option<PathBuf>,
+    failed: bool,
+    source: Option<PathBuf>,
     cancel: Option<Arc<AtomicBool>>,
-    pub generation: u64,
+    generation: u64,
     subscription: Option<Subscription>,
 }
 
 impl PreviewState {
+    pub(super) fn split_ratio(&self) -> Option<f32> {
+        self.split_ratio
+    }
+
+    pub(super) fn visible(&self) -> bool {
+        self.visible
+    }
+
+    /// A DOCX job waits for the preview worker.
+    pub(super) fn queued(&self) -> bool {
+        self.queued
+    }
+
+    /// The committed attachment; `source` is the current request.
+    pub(super) fn attachment(&self) -> Option<&PathBuf> {
+        self.attachment.as_ref()
+    }
+
+    pub(super) fn source(&self) -> Option<&PathBuf> {
+        self.source.as_ref()
+    }
+
+    pub(super) fn pdf(&self) -> Option<&Entity<PdfView>> {
+        self.pdf.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(super) fn docx(&self) -> Option<&docx_preview::DocxPreview> {
+        self.docx.as_ref()
+    }
+
+    pub(super) fn comment_panel(&self) -> Option<&Entity<comment_panel::CommentPanel>> {
+        self.comment_panel.as_ref()
+    }
+
+    /// The pane's one plain message, if any.
+    pub(super) fn message(&self) -> Option<&String> {
+        self.message.as_ref()
+    }
+
+    pub(super) fn loading(&self) -> bool {
+        self.loading
+    }
+
+    /// Another attempt can succeed, so Retry shows.
+    pub(super) fn retryable(&self) -> bool {
+        self.retryable
+    }
+
+    /// The last request failed; the sidebar's warning follows it.
+    pub(super) fn failed(&self) -> bool {
+        self.failed
+    }
+
+    pub(super) fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// A tab's preview as its session record saved it.
+    pub(super) fn restore(
+        &mut self,
+        attachment: Option<PathBuf>,
+        visible: bool,
+        split_ratio: Option<f32>,
+        position: Option<(usize, f32, session_store::PreviewFit)>,
+    ) {
+        self.source = attachment.clone();
+        self.attachment = attachment;
+        self.visible = visible;
+        self.split_ratio = split_ratio;
+        self.restore_position = position;
+    }
+
+    /// Show `path` as the tab's source before anything loads it.
+    pub(super) fn show_source(&mut self, path: PathBuf) {
+        self.source = Some(path.clone());
+        self.attachment = Some(path);
+        self.visible = true;
+    }
+
+    /// `path` has no preview: the pane says so.
+    pub(super) fn no_preview(&mut self, path: PathBuf) {
+        self.attachment = Some(path.clone());
+        self.source = Some(path);
+        self.message = Some(NO_PREVIEW.into());
+    }
+
+    /// A source without a preview was checked for `generation`; it is
+    /// `readable` or not. False when a newer request replaced it.
+    pub(super) fn checked(&mut self, generation: u64, readable: bool) -> bool {
+        if self.generation != generation {
+            return false;
+        }
+        self.loading = false;
+        self.retryable = !readable;
+        self.failed = !readable;
+        self.message = Some(
+            if readable {
+                NO_PREVIEW
+            } else {
+                UNREADABLE_SOURCE
+            }
+            .into(),
+        );
+        true
+    }
+
+    pub(super) fn show(&mut self) {
+        self.visible = true;
+    }
+
+    /// Hide the pane; returns whether it was showing.
+    pub(super) fn hide(&mut self) -> bool {
+        std::mem::take(&mut self.visible)
+    }
+
+    pub(super) fn clear_message(&mut self) {
+        self.message = None;
+    }
+
+    /// The split between Markdown and the original was dragged.
+    pub(super) fn set_split(&mut self, ratio: f32) {
+        self.split_ratio = Some(ratio.clamp(0.25, 0.75));
+    }
+
+    /// Show `source` as failed with `message`, for renders of failure states.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(super) fn show_failure(&mut self, source: PathBuf, message: String) {
+        self.show_source(source);
+        self.retryable = false;
+        self.failed = true;
+        self.message = Some(message);
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_visible(&mut self, visible: bool) {
+        self.visible = visible;
+    }
+
+    /// Pretend a request for `source` is loading.
+    #[cfg(test)]
+    pub(super) fn set_loading(&mut self, source: PathBuf) {
+        self.source = Some(source);
+        self.loading = true;
+    }
+
     fn cancel_job(&mut self) {
         if let Some(cancel) = self.cancel.take() {
             cancel.store(true, Ordering::Relaxed);

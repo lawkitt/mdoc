@@ -542,7 +542,7 @@ fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
             cx.simulate_resize(gpui::size(px(width), px(height)));
             let identity = app.update(cx, |app, cx| {
                 app.theme.set(theme);
-                app.preview.visible = preview;
+                app.preview.set_visible(preview);
                 app.original_selected = preview;
                 let (full, _) = seed(
                     app,

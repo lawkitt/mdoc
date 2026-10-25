@@ -172,13 +172,13 @@ impl SidebarStatus {
     fn of(view: &DocumentView) -> Self {
         Self {
             path: view.session.document.path.clone(),
-            source: view.preview.source.clone(),
+            source: view.preview.source().cloned(),
             dirty: view.lifecycle.dirty(),
-            loading: view.lifecycle.loading() || view.preview.loading,
-            queued: view.preview.queued || view.import.auto_pending(),
+            loading: view.lifecycle.loading() || view.preview.loading(),
+            queued: view.preview.queued() || view.import.auto_pending(),
             importing: view.import.busy(),
             error: view.error.is_some()
-                || view.preview.failed
+                || view.preview.failed()
                 || view.import.ocr_required().is_some(),
             pseudonymized: view.pseudonymized(),
             recognized: view.recognized(),
@@ -716,7 +716,7 @@ impl Workspace {
         let mut protected: Vec<_> = [
             view.read(cx).session.document.path.clone(),
             view.read(cx).session.source.clone(),
-            view.read(cx).preview.attachment.clone(),
+            view.read(cx).preview.attachment().cloned(),
         ]
         .into_iter()
         .flatten()
@@ -726,8 +726,8 @@ impl Workspace {
                 let source = view
                     .read(cx)
                     .preview
-                    .attachment
-                    .clone()
+                    .attachment()
+                    .cloned()
                     .or_else(|| view.read(cx).session.source.clone());
                 let Some(source) = source else {
                     self.notices
@@ -906,13 +906,14 @@ impl Workspace {
                         })
                     }),
             );
-            view.preview.attachment = record.attachment.clone();
-            view.preview.source = record.attachment.clone();
-            view.preview.visible = record.preview_visible;
-            view.preview.split_ratio = record.preview_split;
-            view.preview.restore_position = record
-                .preview_zoom
-                .map(|zoom| (record.preview_page, zoom, record.preview_fit));
+            view.preview.restore(
+                record.attachment.clone(),
+                record.preview_visible,
+                record.preview_split,
+                record
+                    .preview_zoom
+                    .map(|zoom| (record.preview_page, zoom, record.preview_fit)),
+            );
             view
         });
         let events = cx.subscribe_in(&view, window, move |this, _, event, window, cx| {
@@ -988,7 +989,7 @@ impl Workspace {
                             view.scroll
                                 .set_offset(gpui::point(px(0.), px(record.scroll_y.min(0.))));
                             if record.preview_visible
-                                && view.preview.generation == 0
+                                && view.preview.generation() == 0
                                 && let Some(path) = record.attachment
                             {
                                 view.open_path(path, window, cx);
@@ -1229,8 +1230,8 @@ impl Workspace {
                                 view.session
                                     .source
                                     .as_ref()
-                                    .or(view.preview.attachment.as_ref())
-                                    .or(view.preview.source.as_ref())
+                                    .or(view.preview.attachment())
+                                    .or(view.preview.source())
                             })
                             .or(tab.record().attachment.as_ref());
                         source == Some(&path)
@@ -1276,7 +1277,7 @@ impl Workspace {
                             view.lifecycle.blank_disposable()
                                 && view.editor.read(cx).text().is_empty()
                                 && view.session.document.path.is_none()
-                                && view.preview.source.is_none()
+                                && view.preview.source().is_none()
                         })
                 })
                 .map(|tab| tab.id())
@@ -1662,7 +1663,7 @@ impl Workspace {
                     view.lifecycle.source_only() || view.lifecycle.generated_unedited();
                 record.blank = !record.source_only
                     && view.session.document.path.is_none()
-                    && view.preview.source.is_none()
+                    && view.preview.source().is_none()
                     && view.editor.read(cx).text().is_empty();
                 record.blank_disposable = record.blank && view.lifecycle.blank_disposable();
                 // A document still waiting to join its folder's case keeps it.
@@ -1678,12 +1679,12 @@ impl Workspace {
                 }
                 record.attachment = view
                     .preview
-                    .attachment
-                    .clone()
-                    .or_else(|| view.preview.source.clone());
-                record.preview_visible = view.preview.visible;
-                record.preview_split = view.preview.split_ratio;
-                if let Some(pdf) = &view.preview.pdf {
+                    .attachment()
+                    .cloned()
+                    .or_else(|| view.preview.source().cloned());
+                record.preview_visible = view.preview.visible();
+                record.preview_split = view.preview.split_ratio();
+                if let Some(pdf) = view.preview.pdf() {
                     let (page, zoom) = pdf.read(cx).reading_position();
                     record.preview_page = page;
                     record.preview_zoom = Some(zoom);
@@ -2008,11 +2009,12 @@ impl Workspace {
                     source,
                 } = labels[index].clone();
                 let dirty = view.is_some_and(|v| v.lifecycle.dirty());
-                let running = view
-                    .is_some_and(|v| v.lifecycle.loading() || v.import.busy() || v.preview.loading);
-                let busy = running || view.is_some_and(|v| v.preview.queued);
+                let running = view.is_some_and(|v| {
+                    v.lifecycle.loading() || v.import.busy() || v.preview.loading()
+                });
+                let busy = running || view.is_some_and(|v| v.preview.queued());
                 let error = view.is_some_and(|v| {
-                    v.error.is_some() || v.preview.failed || v.import.ocr_required().is_some()
+                    v.error.is_some() || v.preview.failed() || v.import.ocr_required().is_some()
                 });
                 let pseudonymized = view.is_some_and(|v| v.pseudonymized());
                 let recognized = view.is_some_and(|v| v.recognized());
@@ -2712,7 +2714,7 @@ fn tab_label(tab: &Tab, cx: &App) -> TabLabel {
         |path| path.is_some(),
     );
     let source = view
-        .and_then(|v| v.preview.attachment.as_ref().or(v.preview.source.as_ref()))
+        .and_then(|v| v.preview.attachment().or(v.preview.source()))
         .or(tab.record().attachment.as_ref())
         .cloned();
     let identity = if saved {

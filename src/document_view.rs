@@ -302,7 +302,7 @@ impl DocumentView {
             &markdown_search,
             window,
             |this, _, event, window, cx| match event {
-                markdown_search::SearchInputEvent::Changed if this.search.open => {
+                markdown_search::SearchInputEvent::Changed if this.search.open() => {
                     this.refresh_markdown_search(SearchRefresh::Query, true, window, cx);
                 }
                 _ => {}
@@ -391,7 +391,7 @@ impl DocumentView {
             return false;
         }
         self.session.dirty(self.editor.read(cx).text())
-            || (self.session.document.path.is_none() && self.preview.attachment.is_some())
+            || (self.session.document.path.is_none() && self.preview.attachment().is_some())
     }
 
     /// A Markdown tab with no content and no source shows the empty page (ADR 0028).
@@ -400,8 +400,8 @@ impl DocumentView {
             && !self.lifecycle.unavailable()
             && !self.lifecycle.source_only()
             && self.session.source.is_none()
-            && self.preview.source.is_none()
-            && self.preview.attachment.is_none()
+            && self.preview.source().is_none()
+            && self.preview.attachment().is_none()
             && self.editor.read(cx).text().is_empty()
     }
 
@@ -440,9 +440,9 @@ impl DocumentView {
 
     /// This tab has a completed scan or replacement data, not just an open review.
     pub(crate) fn pseudonymized(&self) -> bool {
-        !self.pii.scans.is_empty()
-            || !self.pii.review.variants().is_empty()
-            || !self.pii.review.applied().is_empty()
+        !self.pii.scans().is_empty()
+            || !self.pii.review().variants().is_empty()
+            || !self.pii.review().applied().is_empty()
     }
     /// The Markdown came from OCR.
     pub(crate) fn recognized(&self) -> bool {
@@ -528,8 +528,7 @@ impl DocumentView {
     pub(crate) fn display_name(&self) -> String {
         if self.lifecycle.source_only() {
             self.preview
-                .source
-                .as_ref()
+                .source()
                 .and_then(|path| path.file_name())
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "Source".into())
@@ -545,9 +544,7 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         self.lifecycle.show_source();
-        self.preview.source = Some(path.clone());
-        self.preview.attachment = Some(path.clone());
-        self.preview.visible = true;
+        self.preview.show_source(path.clone());
         self.open_path(path, window, cx);
         if self.active {
             window.focus(&self.focus, cx);
@@ -619,8 +616,8 @@ impl DocumentView {
             Next::Import(imported) => {
                 let automatic = self.import.imported();
                 self.lifecycle.converted(automatic);
-                let retain_preview = self.preview.source.as_ref() == Some(&imported.source)
-                    && (self.preview.pdf.is_some() || self.preview.loading);
+                let retain_preview = self.preview.source() == Some(&imported.source)
+                    && (self.preview.pdf().is_some() || self.preview.loading());
                 self.session
                     .import(imported.source.clone(), imported.warning);
                 self.session.ocr_configuration = imported.ocr_configuration;
@@ -639,18 +636,16 @@ impl DocumentView {
                 }
                 self.error = None;
                 if !retain_preview {
-                    self.preview.message = None;
+                    self.preview.clear_message();
                 }
                 if retain_preview {
-                    self.preview.visible = true;
+                    self.preview.show();
                 } else if imported.is_pdf {
                     self.open_pdf(imported.source, window, cx);
                 } else if imported.is_docx {
                     self.open_docx(imported.source, window, cx);
                 } else {
-                    self.preview.attachment = Some(imported.source.clone());
-                    self.preview.source = Some(imported.source);
-                    self.preview.message = Some(preview::NO_PREVIEW.into());
+                    self.preview.no_preview(imported.source);
                 }
                 self.scroll.set_offset(gpui::point(px(0.), px(0.)));
             }
@@ -667,7 +662,7 @@ impl DocumentView {
         {
             return;
         }
-        let effect = self.import.convert_by_hand(self.preview.source.clone());
+        let effect = self.import.convert_by_hand(self.preview.source().cloned());
         self.carry_out_import(effect, window, cx);
     }
 
@@ -953,7 +948,7 @@ impl DocumentView {
     }
 
     pub(crate) fn try_auto_convert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let effect = self.import.auto_convert(self.preview.source.clone());
+        let effect = self.import.auto_convert(self.preview.source().cloned());
         self.carry_out_import(effect, window, cx);
     }
 
@@ -1267,16 +1262,16 @@ impl DocumentView {
     /// The preview pane without a page: progress, or one plain message with
     /// Retry only when another attempt can succeed.
     fn preview_status(&self, theme: Theme) -> gpui::AnyElement {
-        if self.preview.loading {
+        if self.preview.loading() {
             return ui::activity("preview-activity", "Preparing preview…", theme)
                 .into_any_element();
         }
-        let message = if self.preview.queued {
+        let message = if self.preview.queued() {
             "Waiting to prepare preview…".to_string()
         } else {
             self.preview
-                .message
-                .clone()
+                .message()
+                .cloned()
                 .unwrap_or_else(|| "No preview".into())
         };
         div()
@@ -1291,7 +1286,7 @@ impl DocumentView {
             .text_center()
             .text_size(px(14.))
             .child(message)
-            .when(!self.preview.queued && self.preview.retryable, |v| {
+            .when(!self.preview.queued() && self.preview.retryable(), |v| {
                 v.child(button("Retry", RetryPreview, theme))
             })
             .into_any_element()
@@ -1346,7 +1341,7 @@ impl DocumentView {
                             .text_color(palette.header_muted)
                             .child(detail),
                     )
-                    .when(id == "preview-notice" && self.preview.retryable, |v| {
+                    .when(id == "preview-notice" && self.preview.retryable(), |v| {
                         v.child(button("Retry", RetryPreview, theme))
                     })
                     .when(id == "ocr-notice", |v| {
@@ -1376,7 +1371,7 @@ impl DocumentView {
                                 match id {
                                     "import-notice" => this.session.warning = None,
                                     "ocr-notice" => this.import.dismiss_ocr_notice(),
-                                    "preview-notice" => this.preview.message = None,
+                                    "preview-notice" => this.preview.clear_message(),
                                     "setup-notice" => this.import.dismiss_setup_error(),
                                     "clipboard-notice" => this.clipboard_notice = None,
                                     _ => this.error = None,
@@ -1420,21 +1415,9 @@ impl DocumentView {
             cx.spawn_in(window, async move |this, cx| {
                 let result = task.await;
                 let _ = this.update(cx, |this, cx| {
-                    if this.preview.generation != generation {
-                        return;
+                    if this.preview.checked(generation, result.is_ok()) {
+                        cx.notify();
                     }
-                    this.preview.loading = false;
-                    this.preview.retryable = result.is_err();
-                    this.preview.failed = result.is_err();
-                    this.preview.message = Some(
-                        if result.is_ok() {
-                            preview::NO_PREVIEW
-                        } else {
-                            preview::UNREADABLE_SOURCE
-                        }
-                        .into(),
-                    );
-                    cx.notify();
                 });
             })
             .detach();
@@ -1739,9 +1722,9 @@ impl DocumentView {
         if self.replacements_open() && self.can_copy_markdown() {
             regions.push((self.replacements_focus(), false));
         }
-        if self.preview.visible && original {
+        if self.preview.visible() && original {
             regions.push((self.preview_region.clone(), false));
-            if self.preview.comment_panel.is_some() {
+            if self.preview.comment_panel().is_some() {
                 regions.push((self.comments_region.clone(), false));
             }
         }
@@ -1783,11 +1766,11 @@ impl Render for DocumentView {
         let query = self.markdown_search.read(cx).value().to_owned();
         let (count, spoken_count) = find_counter(
             query.is_empty(),
-            self.search.task.is_some(),
-            self.search.active,
-            self.search.matches.len(),
+            self.search.running(),
+            self.search.active(),
+            self.search.matches().len(),
         );
-        let navigation_disabled = self.search.matches.is_empty();
+        let navigation_disabled = self.search.matches().is_empty();
         let replace_focused = self
             .markdown_replace
             .read(cx)
@@ -1815,7 +1798,7 @@ impl Render for DocumentView {
         };
         let replace_toggle = search_bar_button(
             "markdown-search-replace-toggle",
-            if self.search.replace_open {
+            if self.search.replace_open() {
                 "⌄"
             } else {
                 "›"
@@ -1825,7 +1808,7 @@ impl Render for DocumentView {
             theme,
         )
         .w(px(20.))
-        .aria_expanded(self.search.replace_open)
+        .aria_expanded(self.search.replace_open())
         .on_click(cx.listener(|this, _, window, cx| this.toggle_markdown_replace(window, cx)));
         let match_case = search_bar_button(
             "markdown-search-match-case",
@@ -1834,8 +1817,8 @@ impl Render for DocumentView {
             chord("⌥⌘C", "Alt+C"),
             theme,
         )
-        .aria_toggled(toggled(self.search.match_case))
-        .when(self.search.match_case, |view| {
+        .aria_toggled(toggled(self.search.match_case()))
+        .when(self.search.match_case(), |view| {
             view.bg(palette.placeholder_bg)
                 .text_color(theme.search_accent())
         })
@@ -1849,8 +1832,8 @@ impl Render for DocumentView {
             chord("⌥⌘W", "Alt+W"),
             theme,
         )
-        .aria_toggled(toggled(self.search.whole_word))
-        .when(self.search.whole_word, |view| {
+        .aria_toggled(toggled(self.search.whole_word()))
+        .when(self.search.whole_word(), |view| {
             view.bg(palette.placeholder_bg)
                 .text_color(theme.search_accent())
         })
@@ -1859,8 +1842,8 @@ impl Render for DocumentView {
         }));
         // One live node for the count, "Searching…" and replace results, so
         // each change is announced (ADR 0063, ADR 0064).
-        let status = self.search.status.clone();
-        let spoken_count = match (&status, self.search.task.is_some()) {
+        let status = self.search.status().cloned();
+        let spoken_count = match (&status, self.search.running()) {
             (Some(status), false) => status.clone(),
             _ => spoken_count,
         };
@@ -1873,7 +1856,7 @@ impl Render for DocumentView {
             .px_2()
             .text_size(px(12.))
             .text_color(palette.header_muted)
-            .child(if self.search.task.is_some() {
+            .child(if self.search.running() {
                 div()
                     .flex()
                     .items_center()
@@ -1930,7 +1913,7 @@ impl Render for DocumentView {
         .on_click(cx.listener(|this, _, window, cx| {
             this.close_markdown_search(&CloseMarkdownSearch, window, cx)
         }));
-        let replace_row = self.search.replace_open.then(|| {
+        let replace_row = self.search.replace_open().then(|| {
             div()
                 .id("markdown-replace-row")
                 .flex()
@@ -2042,8 +2025,14 @@ impl Render for DocumentView {
                 cx,
             )
         });
-        let preview_notice = self.preview.message.clone().map(|detail| {
-            self.notice("preview-notice", "Preview", detail, self.preview.failed, cx)
+        let preview_notice = self.preview.message().cloned().map(|detail| {
+            self.notice(
+                "preview-notice",
+                "Preview",
+                detail,
+                self.preview.failed(),
+                cx,
+            )
         });
         let setup_notice = match &self.ocr_state {
             OcrState::Failed(error) if !self.import.setup_error_dismissed() => {
@@ -2057,8 +2046,8 @@ impl Render for DocumentView {
             .map(|detail| self.notice("clipboard-notice", "Clipboard", detail, false, cx));
         let width = self.chrome_width(window);
         let content_width = (width - f32::from(self.replacements_panel_width(window))).max(1.);
-        let narrow_preview = self.preview.visible && content_width < 620.;
-        let show_original = self.preview.visible && (!narrow_preview || self.original_selected);
+        let narrow_preview = self.preview.visible() && content_width < 620.;
+        let show_original = self.preview.visible() && (!narrow_preview || self.original_selected);
         let show_markdown = !narrow_preview || !self.original_selected;
         self.panes_drawn.set((show_markdown, show_original));
         // The conversion card states a conversion error itself, and the OCR
@@ -2087,7 +2076,7 @@ impl Render for DocumentView {
         let minimum = (280. / content_width.max(620.)).min(0.5);
         let split = self
             .preview
-            .split_ratio
+            .split_ratio()
             .unwrap_or(0.5)
             .clamp(minimum, 1. - minimum);
         let measured_bounds = self.view_bounds.clone();
@@ -2104,7 +2093,7 @@ impl Render for DocumentView {
                     let panel = this.replacements_panel_width(window);
                     let width = f32::from(bounds.size.width - panel).max(1.);
                     let ratio = f32::from(event.position.x - bounds.left() - panel) / width;
-                    this.preview.split_ratio = Some(ratio.clamp(0.25, 0.75));
+                    this.preview.set_split(ratio);
                     cx.notify();
                 }
             }))
@@ -2135,7 +2124,7 @@ impl Render for DocumentView {
                 .when(!self.lifecycle.source_only() && show_markdown, |row| row.child(div().relative().flex().flex_1().min_w_0().h_full().flex().flex_col().text_size(px(16. * self.zoom))
                     .child({ let column = self.switcher.column.clone(); gpui::canvas(move |bounds, _, _| column.set(bounds), |_, _, _, _| {}).absolute().inset_0() })
                     .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| this.switcher_pointer(event.position, cx)))
-                    .when(self.search.open, |column| column.child(search_bar))
+                    .when(self.search.open(), |column| column.child(search_bar))
                     .child(if self.lifecycle.loading() || self.lifecycle.unavailable() {
                         div().p_6().child(if self.lifecycle.loading() { ui::activity("markdown-loading", "Loading Markdown…", theme).into_any_element() } else { div().child("Markdown unavailable").into_any_element() })
                             .when(self.lifecycle.unavailable(), |view| view.child(button("Retry", RetryDocument, theme))).into_any_element()
@@ -2157,14 +2146,14 @@ impl Render for DocumentView {
                 .children(self.replacements_panel(window, cx))
                 .when(self.lifecycle.source_only() && show_markdown, |row| row.child(div().id("conversion-pane").flex_1().min_w_0().p_6().flex().items_center().justify_center().overflow_y_scroll()
                     .child(self.conversion_card(window, cx))))
-                .when(self.preview.visible && !narrow_preview, |row| row.child(div().id("preview-divider").when(cfg!(test), |v| v.debug_selector(|| "preview-divider".into())).w(px(6.)).h_full().flex_shrink_0().cursor(gpui::CursorStyle::ResizeLeftRight).bg(palette.border)
+                .when(self.preview.visible() && !narrow_preview, |row| row.child(div().id("preview-divider").when(cfg!(test), |v| v.debug_selector(|| "preview-divider".into())).w(px(6.)).h_full().flex_shrink_0().cursor(gpui::CursorStyle::ResizeLeftRight).bg(palette.border)
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = true; cx.notify(); }))))
-                .when(show_original && self.preview.pdf.is_none(), |row| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
+                .when(show_original && self.preview.pdf().is_none(), |row| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).h_full().border_l_1().border_color(palette.border)
                     .flex().flex_col().items_center().justify_center().text_color(palette.header_muted)
                     .child(self.preview_status(theme))))
-                .when_some(self.preview.pdf.clone().filter(|_| show_original), |row, pdf| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
+                .when_some(self.preview.pdf().cloned().filter(|_| show_original), |row, pdf| row.child(div().track_focus(&self.preview_region).when(!narrow_preview, |v| v.w(px(content_width * (1. - split)))).when(narrow_preview, |v| v.flex_1()).flex_shrink_0().min_w_0().h_full().flex().flex_col().border_l_1().border_color(palette.border)
                     .child(div().flex_1().min_h_0().child(if pdf.read(cx).is_locked() { div().p_6().child("This PDF is password-protected. Open an unlocked copy to view it here.").into_any_element() } else { pdf.into_any_element() }))
-                    .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(div().track_focus(&self.comments_region).child(comments)))
+                    .when_some(self.preview.comment_panel().cloned(), |pane, comments| pane.child(div().track_focus(&self.comments_region).child(comments)))
                     .children(preview_notice)))
 )
             .children(setup_notice.filter(|_| !(show_markdown && self.lifecycle.source_only() && self.import.ocr_required().is_some()))).children(error_notice)

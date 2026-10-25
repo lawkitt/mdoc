@@ -436,7 +436,8 @@ impl Workspace {
             let view = view.read(cx);
             view.case.link().is_none()
                 && view.can_copy_markdown()
-                && (!view.pii.review.applied().is_empty() || !view.pii.review.variants().is_empty())
+                && (!view.pii.review().applied().is_empty()
+                    || !view.pii.review().variants().is_empty())
         })
     }
     /// Save this tab's mapping as a new case named after the document.
@@ -457,7 +458,7 @@ impl Workspace {
             let name = name.strip_suffix(".md").unwrap_or(&name).to_string();
             (
                 name,
-                v.pii.review.export_identities(),
+                v.pii.review().export_identities(),
                 v.session.document.path.clone(),
             )
         };
@@ -593,7 +594,7 @@ impl Workspace {
             };
             (
                 link,
-                v.pii.review.export_identities(),
+                v.pii.review().export_identities(),
                 v.session.document.path.clone(),
             )
         };
@@ -1796,7 +1797,7 @@ impl Workspace {
         };
         let at_risk = {
             let v = view.read(cx);
-            !v.pii.review.applied().is_empty()
+            !v.pii.review().applied().is_empty()
                 && v.case
                     .link()
                     .is_none_or(|l| self.case_coordinator.failed(&l.id))
