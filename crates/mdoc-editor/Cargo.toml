@@ -47,3 +47,6 @@ mdoc-spell = { path = "../mdoc-spell" }
 # A runnable, standalone demo window: `cargo run -p mdoc-editor --example demo`.
 [[example]]
 name = "demo"
+
+[lints]
+workspace = true

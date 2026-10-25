@@ -1,7 +1,13 @@
 //! Table machinery: WYSIWYG table geometry, hit-testing, editing commands, and
 //! painting — split from `lib.rs`.
 
-use super::*;
+use crate::markdown_syntax;
+use crate::{CellAlign, ColEdit, EditorState, LINE_HEIGHT_RATIO, TableRow};
+use gpui::{
+    App, BorderStyle, Bounds, Context, Corners, Edges, Font, Hitbox, Hsla, PaintQuad, Pixels,
+    Point, SharedString, TextRun, Window, WrappedLine, fill, hsla, point, px, size,
+};
+use std::ops::Range;
 
 impl EditorState {
     /// The table-affordance region the pointer is in — `(table index, 0 = in the
@@ -1974,13 +1980,56 @@ pub(crate) fn paint_table_pill(
 /// applies each frame; release writes it into the marker's `cols=` list.
 #[derive(Clone)]
 pub(crate) struct TableColResize {
-    pub(crate) header_row: usize,
-    pub(crate) col: usize,
-    pub(crate) start_x: Pixels,
-    pub(crate) orig: f32,
-    pub(crate) width: f32,
+    header_row: usize,
+    col: usize,
+    start_x: Pixels,
+    orig: f32,
+    width: f32,
     /// Display widths at the start of the drag, after viewport fitting.
-    pub(crate) widths: std::rc::Rc<Vec<Pixels>>,
+    widths: std::rc::Rc<Vec<Pixels>>,
+}
+
+impl TableColResize {
+    /// A drag of column `col`'s border in the table at `header_row`, grabbed
+    /// at `start_x` while the column was `width` wide.
+    pub(crate) fn start(
+        header_row: usize,
+        col: usize,
+        start_x: Pixels,
+        width: f32,
+        widths: std::rc::Rc<Vec<Pixels>>,
+    ) -> Self {
+        Self {
+            header_row,
+            col,
+            start_x,
+            orig: width,
+            width,
+            widths,
+        }
+    }
+
+    /// The pointer moved to `x`: the grab width plus the travel, floored so
+    /// the column can't vanish.
+    pub(crate) fn track(&mut self, x: Pixels) {
+        self.width = (self.orig + f32::from(x - self.start_x)).max(24.);
+    }
+
+    pub(crate) fn header_row(&self) -> usize {
+        self.header_row
+    }
+
+    pub(crate) fn col(&self) -> usize {
+        self.col
+    }
+
+    pub(crate) fn width(&self) -> f32 {
+        self.width
+    }
+
+    pub(crate) fn widths(&self) -> &[Pixels] {
+        &self.widths
+    }
 }
 
 /// A column-resize grip: a slim band over one column's right border in the

@@ -5,7 +5,7 @@
 //! Host-agnostic — depends only on `gpui` (+ `unicode-segmentation`); no
 //! `gpui-component`. Built directly on gpui's text primitives: an
 //! [`EntityInputHandler`] for keyboard + IME input, `shape_line` for per-line
-//! text shaping, and a custom [`Element`] that lays out + paints the lines,
+//! text shaping, and a custom [`Element`](gpui::Element) that lays out + paints the lines,
 //! cursor, and selection. The editor **auto-grows** to its content height (no
 //! inner scrollbar), so a host can stack many editors in one scroll view.
 //! Editing fundamentals: cursor/selection, undo/redo, IME, soft-wrap,
@@ -31,13 +31,11 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use gpui::{
-    App, AvailableSpace, BorderStyle, Bounds, Context, Corners, CursorStyle, Edges, Element,
-    ElementId, ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle,
-    Focusable, Font, FontWeight, GlobalElementId, Hitbox, HitboxBehavior, Hsla, InspectorElementId,
-    InteractiveElement, IntoElement, KeyBinding, LayoutId, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PaintQuad, ParentElement, PathBuilder, Pixels, Point, Render,
-    RenderImage, ScrollHandle, SharedString, StatefulInteractiveElement, Style, Styled, Task,
-    TextRun, Window, WrappedLine, actions, div, fill, hsla, point, px, relative, rgb, rgba, size,
+    App, Bounds, Context, CursorStyle, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
+    Font, FontWeight, Hitbox, Hsla, InteractiveElement, IntoElement, KeyBinding, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, ParentElement, PathBuilder, Pixels, Point,
+    Render, RenderImage, ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Task,
+    TextRun, Window, WrappedLine, actions, div, point, px, rgb, rgba, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -58,10 +56,10 @@ use mdoc_history::{HistoryChange, SourceEdit};
 mod transactions;
 
 mod tables;
-use tables::*;
+use tables::{TableColResize, TableThumb};
 
 mod element;
-use element::*;
+use element::EditorElement;
 
 /// Key context the editing actions are scoped to (so they only fire while an
 /// editor is focused).
@@ -2205,14 +2203,13 @@ impl EditorState {
             let Some(table) = self.table_rows.get(header_row).and_then(Option::as_ref) else {
                 return;
             };
-            self.table_col_resize = Some(TableColResize {
-                widths: std::rc::Rc::new(table.col_widths.clone()),
+            self.table_col_resize = Some(TableColResize::start(
                 header_row,
                 col,
-                start_x: event.position.x,
-                orig: width,
+                event.position.x,
                 width,
-            });
+                std::rc::Rc::new(table.col_widths.clone()),
+            ));
             self.is_selecting = false;
             cx.notify();
             return;
@@ -2357,12 +2354,8 @@ impl EditorState {
         // While dragging a table column's border, track the pointer: the new
         // width is the grab width plus the travel, floored so the column can't
         // vanish. Shaping applies it live (see `table_column_widths`).
-        if let Some(resize) = self.table_col_resize.as_ref() {
-            let dx = f32::from(event.position.x - resize.start_x);
-            let width = (resize.orig + dx).max(24.);
-            if let Some(r) = self.table_col_resize.as_mut() {
-                r.width = width;
-            }
+        if let Some(resize) = self.table_col_resize.as_mut() {
+            resize.track(event.position.x);
             cx.notify();
             return;
         }
@@ -5559,7 +5552,7 @@ mod tests {
             editor.set_markdown_style(markdown_syntax::search_style(), cx);
         });
         fn columns(
-            editor: &Entity<EditorState>,
+            editor: &gpui::Entity<EditorState>,
             cx: &mut gpui::VisualTestContext,
         ) -> std::rc::Rc<Vec<Vec<Pixels>>> {
             cx.update(|window, cx| {
@@ -5746,7 +5739,7 @@ mod tests {
             editor.update(cx, |e, _| {
                 let bounds = e.last_bounds.unwrap();
                 let top = bounds.top() + e.line_tops[2] + px(6.) + line_h * 1.5;
-                let x = bounds.left() + px(TABLE_GUTTER) + px(TABLE_CELL_PAD) + px(1.);
+                let x = bounds.left() + px(TABLE_GUTTER) + px(tables::TABLE_CELL_PAD) + px(1.);
                 e.table_offset_at(point(x, top), window)
             })
         });

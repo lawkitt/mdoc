@@ -1,6 +1,12 @@
 //! Document-local identities. Policy history shares immutable values and follows
 //! editor history; typing never clones the mapping index. Nothing is serialized.
-use super::*;
+use super::{Category, Review, exact_boundary, intersects, safe_span, valid_replacement};
+use crate::syntax::protected_syntax;
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+    sync::Arc,
+};
 
 #[derive(Clone, Debug)]
 pub struct Identity {
@@ -778,6 +784,7 @@ impl Review {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Detection, Recognizer};
 
     #[test]
     #[ignore = "20,000 identity policy history storage; excludes editor layout and source matching"]

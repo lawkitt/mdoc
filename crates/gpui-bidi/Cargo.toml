@@ -19,3 +19,6 @@ gpui.workspace = true
 # to the other run and carries a misleading index — so the levels come from the
 # text. Already in the tree (via lopdf/usvg), so this adds nothing to the build.
 unicode-bidi = { version = "0.3", default-features = false, features = ["hardcoded-data"] }
+
+[lints]
+workspace = true

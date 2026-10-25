@@ -10,3 +10,6 @@ repository = "https://github.com/lawkitt/mdoc"
 # Deliberately dependency-free: models that follow editor history (such as
 # mdoc-pii) can consume transactions without depending on gpui.
 [dependencies]
+
+[lints]
+workspace = true

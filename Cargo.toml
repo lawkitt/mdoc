@@ -14,6 +14,11 @@ exclude = ["vendor"]
 members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-history", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell", "crates/mdoc-store", "crates/mdoc-import", "crates/mdoc-detect"]
 resolver = "2"
 
+# Module dependencies stay visible (ADR 0069): every workspace crate denies
+# glob imports; `use super::*` in test modules stays allowed.
+[workspace.lints.clippy]
+wildcard_imports = "deny"
+
 [features]
 # The entry point and runner are additionally gated by debug_assertions.
 headless-renders = ["mdoc-store/headless-renders", "gpui/test-support", "gpui_platform/test-support", "dep:gpui_windows", "gpui_windows/test-support"]
@@ -76,10 +81,8 @@ windows-sys = { version = "0.61", features = [
 [build-dependencies]
 embed-resource = "3"
 
-# Module dependencies stay visible (ADR 0069). The workspace crates adopt this
-# in phase P5; `use super::*` in test modules stays allowed.
-[lints.clippy]
-wildcard_imports = "deny"
+[lints]
+workspace = true
 
 # Lean debug information (ADR 0050): workspace crates keep line tables, so
 # backtraces still show file and line; dependencies keep none. The test profile
