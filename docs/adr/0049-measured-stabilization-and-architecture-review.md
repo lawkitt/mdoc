@@ -1,6 +1,7 @@
 # Measured stabilization and architectural review
 
-Status: Accepted, 2026-10-16. The broader ownership projects are ROADMAP work.
+Status: Accepted, 2026-10-16. Amended by [ADR 0069](0069-app-architecture-and-code-ownership.md),
+which defines the case-coordination and document-lifecycle projects.
 
 ## Problem
 

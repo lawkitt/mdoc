@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-24 (latest: 0.1.5; 0.2.0-rc.2 tagged); accepted
+This roadmap lists open work as of 2026-10-25 (latest: 0.1.5; 0.2.0-rc.3 tagged); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
@@ -35,6 +35,12 @@ contrast checks.
 fixed by #123); Windows did not run
 ([evidence](docs/evidence/platform/2026-10-24/README.md)). 0.2.0-rc.2 adds the
 rc.1 should-fix items and goes to the Windows run; 0.2.0 ships from it.
+
+**Refactoring freeze (from 2026-10-25).** Until the architecture refactoring
+ends ([ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md), phase P5),
+only refactoring lands on `main`: no features and no bug fixes. 0.2.0 ships
+from rc.3 if it passes the Windows run; otherwise the next release is cut from
+`main` after P5 with full acceptance on both platforms.
 
 ## 0.1.x patches
 
@@ -73,8 +79,8 @@ affinity) shipped in 0.2.0-rc.2.
 ## 0.3.0
 
 UI and accessibility polish from the 2026-10-22 UX review and the 0.2.0
-acceptance runs; none needs a design decision. Merges to main as each is
-done; 0.2.0 ships from rc.2 regardless. Items are in priority order.
+acceptance runs; none needs a design decision. Merges to main after the
+refactoring freeze ends. Items are in priority order.
 
 ## Later
 
@@ -123,6 +129,8 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   besides per-case categories. *From Anoni 0.86.1.*
 - **[UI]** Theme as a System / Light / Dark segmented control in Settings;
   the sidebar button cycles without showing the choices. *From Anoni 0.86.1.*
+- **[Engineering]** Refactor `scripts/` (24 shell scripts) after the
+  architecture refactoring ([ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md)).
 
 ## Ongoing tracks
 
@@ -134,9 +142,13 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 
 ## Engineering
 
-- **Architecture refactoring** ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)):
-  case coordination and document lifecycle as separate, incremental projects,
-  each boundary defined before implementation.
+- **Architecture refactoring** ([ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md)):
+  P1 explicit imports and folders per owner; P2 `mdoc-store`, `mdoc-detect`,
+  `mdoc-import`; P3 Workspace owners, ending with `CaseCoordinator`; P4
+  DocumentView owners; P5 editor and gpui-pdf module hygiene. Each PR passes
+  `just check`; each phase ends with a headless-renders comparison.
+  *Done when:* P5 merges, the ADR's owner list is complete and the `just lint`
+  guardrails are on.
 - **Build-cache check** ([ADR 0050](docs/adr/0050-rust-build-cache-growth.md)):
   `just disk` read 38.5 GiB on 2026-10-23, over the ~30 GiB threshold; evaluate
   `sccache` against a periodic `cargo clean --workspace`.

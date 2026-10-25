@@ -4,7 +4,7 @@ Status: Accepted, 2026-10-08. Superseded in part by
 [ADR 0019](0019-simpler-pseudonymization-ui.md) and later UI ADRs (review
 surfaces, copy actions) and [ADR 0041](0041-cases-and-ai-response-restoration.md)
 (cases persist mappings across documents). Amended by
-[ADR 0053](0053-short-and-inflected-name-variants.md) (surname forms are
+[ADR 0068](0068-short-and-inflected-name-variants.md) (surname forms are
 proposed).
 
 ## Decision
@@ -22,7 +22,7 @@ proposed).
   candidates; initials and conservative Russian inflections suggest person links
   that always need confirmation. Title + surname, a bare surname and its
   Russian case forms are proposed as variants of their own and offered under
-  Same as… (ADR 0053); none of these, OCR resemblance or proximity establishes
+  Same as… (ADR 0068); none of these, OCR resemblance or proximity establishes
   identity or ownership. Organization shorthand, OCR
   variants, affiliation and party-block ownership need evidence first.
 - **Corrections**: rename, category correction (also repairing applied
