@@ -116,5 +116,7 @@ Owners extracted so far:
 - `Sidebar` (`src/workspace/sidebar.rs`): expanded or collapsed, the
   rail's reveal and its timers, OS files dragged over it, and the list's
   roving Tab stop.
+- `TabSet` (`src/workspace/tab_set.rs`): the tabs in sidebar order with
+  their ids, records and views, the active tab, and whether Home shows.
 
 References: [interview](../design/codebase-refactoring.md).

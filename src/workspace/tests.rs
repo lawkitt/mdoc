@@ -159,7 +159,7 @@ fn pseudonymization_mappings_survive_switches_and_end_with_the_tab(cx: &mut Test
     });
     cx.run_until_parked();
     let first = active(&tabs, cx);
-    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     first.update(cx, |view, cx| {
         view.pii.reviewing = true;
         let id = view
@@ -209,7 +209,7 @@ fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
     });
     cx.run_until_parked();
     let first = active(&tabs, cx);
-    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     first.update(cx, |view, _| {
         view.ocr_state = OcrState::Ready(ocr::Installed {
             config: mdoc_store::settings::OcrConfig::default(),
@@ -241,7 +241,7 @@ fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
     first.update_in(cx, |view, window, cx| view.ocr_action(true, window, cx));
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert_ne!(tabs.read(cx).active, first_id);
+        assert_ne!(tabs.read(cx).tabs.active(), first_id);
         assert!(!first.read(cx).source_only);
         assert!(
             first
@@ -333,7 +333,7 @@ fn pii_download_retains_card_focus(cx: &mut TestAppContext) {
 fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
     let (tabs, _, cancel, cx) = setup_download_card(cx, model);
     // A separate dirty tab must still get the normal unsaved-changes prompt.
-    let setup_tab = cx.update(|_, cx| tabs.read(cx).active);
+    let setup_tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     cx.simulate_input("Unsaved draft");
     tabs.update_in(cx, |tabs, window, cx| tabs.activate(setup_tab, window, cx));
@@ -361,11 +361,7 @@ fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
         tabs.read(cx)
             .tabs
             .iter()
-            .filter(|tab| {
-                tab.view
-                    .as_ref()
-                    .is_some_and(|view| view.read(cx).dirty(cx))
-            })
+            .filter(|tab| tab.view().is_some_and(|view| view.read(cx).dirty(cx)))
             .count()
     });
     // The keyboard path also works without focus; Discard completes shutdown.
@@ -772,7 +768,7 @@ fn ocr_setup_ending_after_its_tab_closed_clears_installing(cx: &mut TestAppConte
     let (tabs, cx) = boot(cx, Session::default());
     let view = open_scan(&tabs, fixtures.join("english.pdf"), cx);
     tabs.update(cx, |tabs, cx| tabs.set_ocr(OcrState::Installing, cx));
-    let id = cx.update(|_, cx| tabs.read(cx).active);
+    let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(id, window, cx));
     cx.run_until_parked();
     drop(view);
@@ -803,7 +799,7 @@ fn closing_source_rejects_conversion_even_when_view_is_retained(cx: &mut TestApp
     tabs.update_in(cx, |tabs, window, cx| {
         view.update(cx, |view, cx| view.import(&Import, window, cx));
         assert!(view.read(cx).job.busy());
-        tabs.close_tab(tabs.active, window, cx);
+        tabs.close_tab(tabs.tabs.active(), window, cx);
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
@@ -846,10 +842,10 @@ fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
     let source_id = cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert_eq!(tabs.tabs.len(), 4);
-        assert!(tabs.tabs[2].view.is_none());
-        assert!(tabs.tabs[3].view.is_none());
+        assert!(tabs.tabs[2].view().is_none());
+        assert!(tabs.tabs[3].view().is_none());
         assert_eq!(
-            tabs.tabs[2].record.markdown,
+            tabs.tabs[2].record().markdown,
             session_store::identity(&markdown)
         );
         assert!(tabs.notices.message().unwrap().contains("unknown.bin"));
@@ -858,7 +854,7 @@ fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
         assert!(source.read(cx).preview.pdf.is_some());
         assert!(!source.read(cx).editor.read(cx).text().is_empty());
         assert_eq!(original.read(cx).editor.read(cx).text(), "keep edits");
-        tabs.active
+        tabs.tabs.active()
     });
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_paths(vec![pdf, markdown], window, cx)
@@ -866,8 +862,8 @@ fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.len(), 4);
-        assert_eq!(tabs.read(cx).active, source_id);
-        assert!(tabs.read(cx).tabs[2].view.is_none());
+        assert_eq!(tabs.read(cx).tabs.active(), source_id);
+        assert!(tabs.read(cx).tabs[2].view().is_none());
     });
     cx.dispatch_action(Close);
     cx.run_until_parked();
@@ -899,7 +895,7 @@ fn source_only_manifest_restores_multiple_sources_and_missing_source_is_retryabl
     let (tabs, cx) = boot(cx, session_store::load(&manifest).unwrap());
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.len(), 2);
-        assert!(tabs.read(cx).tabs[1].view.is_none());
+        assert!(tabs.read(cx).tabs[1].view().is_none());
         assert_eq!(tabs.read(cx).snapshot(cx).tabs.len(), 2);
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
@@ -1404,14 +1400,14 @@ fn new_switch_reorder_and_close_preserve_live_editor_state(cx: &mut TestAppConte
     let first = active(&tabs, cx);
     cx.simulate_input("original **Markdown**");
     cx.run_until_parked();
-    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     cx.dispatch_action(New);
     cx.run_until_parked();
     let second = active(&tabs, cx);
     assert_ne!(first, second);
     cx.simulate_input("second document");
     cx.run_until_parked();
-    let second_id = cx.update(|_, cx| tabs.read(cx).active);
+    let second_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.reorder(first_id, second_id, cx);
         tabs.activate(first_id, window, cx);
@@ -1480,7 +1476,7 @@ fn restoration_is_lazy_and_missing_files_remain_retryable(cx: &mut TestAppContex
     let (tabs, cx) = boot(cx, session);
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert!(tabs.tabs[1].view.is_none());
+        assert!(tabs.tabs[1].view().is_none());
         let view = tabs.active_view().unwrap();
         assert_eq!(view.read(cx).editor.read(cx).cursor(), "Привет".len());
     });
@@ -1565,8 +1561,7 @@ fn snapshot_keeps_saved_pairs_and_omits_unsaved_buffers(cx: &mut TestAppContext)
         assert!(!serialized.contains("untitled secret"));
         assert!(
             tabs.read(cx).tabs[0]
-                .view
-                .as_ref()
+                .view()
                 .unwrap()
                 .read(cx)
                 .preview
@@ -1617,7 +1612,7 @@ fn quit_cancel_keeps_all_tabs_and_save_as_collision_never_overwrites(cx: &mut Te
         assert_eq!(
             tabs.tabs
                 .iter()
-                .filter(|tab| tab.view.as_ref().unwrap().read(cx).dirty(cx))
+                .filter(|tab| tab.view().unwrap().read(cx).dirty(cx))
                 .count(),
             2
         );
@@ -1630,7 +1625,7 @@ fn queued_docx_jobs_are_serial_and_closed_tabs_cannot_receive_results(cx: &mut T
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let source = base.join("tests/fixtures/docx-preview/comments.docx");
     let first = active(&tabs, cx);
-    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     // Admit both jobs in one update before the background executor runs.
     tabs.update_in(cx, |tabs, window, cx| {
         first.update(cx, |view, cx| view.open_docx(source.clone(), window, cx));
@@ -1675,7 +1670,7 @@ fn background_import_finishes_in_its_own_tab_without_stealing_focus(cx: &mut Tes
     cx.simulate_input("keep original");
     cx.run_until_parked();
     let original = active(&tabs, cx);
-    let id = cx.update(|_, cx| tabs.read(cx).active);
+    let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_path(source, window, cx);
     });
@@ -1687,7 +1682,7 @@ fn background_import_finishes_in_its_own_tab_without_stealing_focus(cx: &mut Tes
     });
     cx.run_until_parked();
     cx.update(|window, cx| {
-        assert_eq!(tabs.read(cx).active, id);
+        assert_eq!(tabs.read(cx).tabs.active(), id);
         assert!(
             original
                 .read(cx)
@@ -1697,7 +1692,7 @@ fn background_import_finishes_in_its_own_tab_without_stealing_focus(cx: &mut Tes
                 .is_focused(window)
         );
         assert_eq!(original.read(cx).editor.read(cx).text(), "keep original");
-        let imported = tabs.read(cx).tabs[1].view.as_ref().unwrap().read(cx);
+        let imported = tabs.read(cx).tabs[1].view().unwrap().read(cx);
         assert!(imported.editor.read(cx).text().contains("alpha"));
         assert!(imported.dirty(cx));
         assert!(!imported.job.busy());
@@ -1756,7 +1751,7 @@ fn retained_search_selection_and_preview_position_survive_switch(cx: &mut TestAp
     cx.simulate_input("alpha");
     cx.run_until_parked();
     let first = active(&tabs, cx);
-    let id = cx.update(|_, cx| tabs.read(cx).active);
+    let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let count = cx.update(|_, cx| first.read(cx).search.matches.len());
     let cursor = cx.update(|_, cx| first.read(cx).editor.read(cx).cursor());
     cx.dispatch_action(New);
@@ -1822,7 +1817,7 @@ fn checkpoint_serializes_latest_state_and_restores_pdf_position(cx: &mut TestApp
 fn closing_queued_conversion_rejects_it_without_affecting_other_tabs(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     let cancelled = Arc::new(AtomicBool::new(false));
-    let id = cx.update(|_, cx| tabs.read(cx).active);
+    let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.docx_running = Some((999, 1));
         let view = tabs.active_view().unwrap();
@@ -1913,7 +1908,7 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
         tabs.read(cx)
             .tabs
             .iter()
-            .map(|tab| tab.id)
+            .map(|tab| tab.id())
             .collect::<Vec<_>>()
     });
     cx.update(|_, cx| {
@@ -1921,7 +1916,7 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
             tabs.read(cx)
                 .tabs
                 .iter()
-                .filter(|tab| tab.view.is_some())
+                .filter(|tab| tab.view().is_some())
                 .count(),
             1
         )
@@ -2003,7 +1998,7 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
             tabs.open_path(docx.clone(), window, cx)
         });
         cx.run_until_parked();
-        let id = cx.update(|_, cx| tabs.read(cx).active);
+        let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
         draw(cx);
         let (weak, backing) = cx.update(|_, cx| {
             let view = tabs.read(cx).active_view().unwrap();
@@ -2183,7 +2178,7 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
     let file = dir.path().join("note.md");
     std::fs::write(&file, "note").unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
-    let placeholder = cx.update(|_, cx| tabs.read(cx).active);
+    let placeholder = cx.update(|_, cx| tabs.read(cx).tabs.active());
     // Rejected selections and canceled pickers cannot consume the placeholder.
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.finish_open(vec![(dir.path().join("bad.bin"), false)], None, window, cx)
@@ -2192,20 +2187,20 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
     cx.run_until_parked();
     cx.simulate_path_prompt_response(|_| None);
     cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).active, placeholder));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).tabs.active(), placeholder));
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_path(file.clone(), window, cx)
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.len(), 1);
-        assert_ne!(tabs.read(cx).active, placeholder);
+        assert_ne!(tabs.read(cx).tabs.active(), placeholder);
     });
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.close_tab(tabs.active, window, cx)
+        tabs.close_tab(tabs.tabs.active(), window, cx)
     });
     cx.run_until_parked();
-    let fallback = cx.update(|_, cx| tabs.read(cx).active);
+    let fallback = cx.update(|_, cx| tabs.read(cx).tabs.active());
     // From Home, New turns the placeholder into the tab (ADR 0048); a second
     // New adds another.
     tabs.update_in(cx, |tabs, window, cx| {
@@ -2224,22 +2219,23 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
             .all(|tab| tab.blank && !tab.blank_disposable)
     );
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.close_tab(tabs.active, window, cx)
+        tabs.close_tab(tabs.tabs.active(), window, cx)
     });
     cx.run_until_parked();
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.open_path(file.clone(), window, cx)
     });
     cx.run_until_parked();
-    cx.update(|_, cx| assert!(tabs.read(cx).tabs.iter().any(|tab| tab.id == fallback)));
+    cx.update(|_, cx| assert!(tabs.read(cx).tabs.contains(fallback)));
     // Restore both intentional blanks without deduplicating their empty paths.
     tabs.update_in(cx, |tabs, window, cx| {
         for tab in &tabs.tabs {
-            if let Some(view) = &tab.view {
+            if let Some(view) = tab.view() {
                 Workspace::release(view, window, cx);
             }
         }
         tabs.tabs.clear();
+        tabs.tab_subscriptions.clear();
         tabs.restore(session, window, cx);
         tabs.open_path(file, window, cx);
     });
@@ -2250,7 +2246,7 @@ fn placeholder_replacement_respects_explicit_new_and_survives_restart(cx: &mut T
 #[gpui::test]
 fn edited_then_emptied_placeholder_is_not_disposable(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
-    let id = cx.update(|_, cx| tabs.read(cx).active);
+    let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     cx.simulate_input("temporary text");
     cx.dispatch_action(mdoc_editor::Undo);
     cx.run_until_parked();
@@ -2263,7 +2259,7 @@ fn edited_then_emptied_placeholder_is_not_disposable(cx: &mut TestAppContext) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/text.pdf");
     tabs.update_in(cx, |tabs, window, cx| tabs.open_path(path, window, cx));
     cx.run_until_parked();
-    cx.update(|_, cx| assert!(tabs.read(cx).tabs.iter().any(|tab| tab.id == id)));
+    cx.update(|_, cx| assert!(tabs.read(cx).tabs.contains(id)));
 }
 
 #[gpui::test]
@@ -2339,21 +2335,21 @@ fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
     let first = active(&tabs, cx);
     cx.update(|_, cx| {
         assert!(first.read(cx).auto_convert_pending);
-        assert!(tabs.read(cx).tabs[1].view.is_none());
+        assert!(tabs.read(cx).tabs[1].view().is_none());
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
     cx.run_until_parked();
     let closed = active(&tabs, cx);
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.close_tab(tabs.active, window, cx)
+        tabs.close_tab(tabs.tabs.active(), window, cx)
     });
     cx.run_until_parked();
-    let selected = cx.update(|_, cx| tabs.read(cx).active);
+    let selected = cx.update(|_, cx| tabs.read(cx).tabs.active());
     drop(permit);
     tabs.update_in(cx, |tabs, window, cx| tabs.refresh_import(window, cx));
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).active, selected);
+        assert_eq!(tabs.read(cx).tabs.active(), selected);
         assert!(!first.read(cx).source_only);
         assert!(closed.read(cx).editor.read(cx).text().is_empty());
         assert!(closed.read(cx).import_cancel.load(Ordering::Relaxed));
@@ -2419,7 +2415,7 @@ fn keyboard_reveal_escape_restores_rail_control_and_closing_opener_keeps_focus_v
 ) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
-    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     cx.run_until_parked();
     collapse(&tabs, cx);
@@ -2474,7 +2470,7 @@ fn keyboard_reveal_escape_restores_rail_control_and_closing_opener_keeps_focus_v
 fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
-    let first = cx.update(|_, cx| tabs.read(cx).active);
+    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let second = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     cx.run_until_parked();
@@ -2485,7 +2481,7 @@ fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut Test
     // A click before hover intent activates without revealing.
     click_toolbar(cx, compact(first));
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).active, first);
+        assert_eq!(tabs.read(cx).tabs.active(), first);
         assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
     });
     // A pointer passing over the rail does not reveal.
@@ -2504,7 +2500,7 @@ fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut Test
     // Rows in the reveal activate and keep it open while the pointer is inside.
     click_toolbar(cx, row(second));
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).active, second);
+        assert_eq!(tabs.read(cx).tabs.active(), second);
         assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown);
         assert_eq!(tabs.read(cx).sidebar.choice(), Some(false));
     });
@@ -2520,7 +2516,7 @@ fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut Test
     wait(cx, 200);
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
-        assert_eq!(tabs.read(cx).active, second);
+        assert_eq!(tabs.read(cx).tabs.active(), second);
     });
     assert!(cx.debug_bounds("sidebar-reveal").is_none());
     // The reveal's toggle pins the sidebar open.
@@ -2647,7 +2643,7 @@ fn new_follows_the_last_document_and_context_close_holds_the_reveal(cx: &mut Tes
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
     draw(cx);
-    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let row = |id| Box::leak(format!("tab-{id}").into_boxed_str()) as &'static str;
     let compact = |id| Box::leak(format!("compact-tab-{id}").into_boxed_str()) as &'static str;
     // Expanded: a full-width row directly under the last document.
@@ -2660,7 +2656,7 @@ fn new_follows_the_last_document_and_context_close_holds_the_reveal(cx: &mut Tes
     draw(cx);
     let second_id = cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.len(), 2);
-        tabs.read(cx).active
+        tabs.read(cx).tabs.active()
     });
     assert!(cx.debug_bounds("sidebar-new").unwrap().top() > plus.top());
 
@@ -2878,7 +2874,7 @@ fn narrow_original_switch_and_divider_preserve_source_and_session(cx: &mut TestA
 fn unsaved_duplicate_names_keep_single_line_rows(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     draw(cx);
-    let first = cx.update(|_, cx| tabs.read(cx).active);
+    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let row = |id| Box::leak(format!("tab-{id}").into_boxed_str()) as &'static str;
     let single = cx.debug_bounds(row(first)).unwrap().size.height;
     let second = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
@@ -2921,14 +2917,7 @@ fn duplicate_names_show_distinguishing_parent_suffixes() {
 
 #[gpui::test]
 fn the_badge_names_the_source_until_saved_as_markdown(cx: &mut TestAppContext) {
-    let tab = |record: TabRecord| Tab {
-        id: 1,
-        record,
-        identity: None,
-        view: None,
-        recent_path: None,
-        subscriptions: Vec::new(),
-    };
+    let tab = |record: TabRecord| Tab::detached(1, record);
     let docx = PathBuf::from("/contracts/sample.docx");
     let conversion = tab(TabRecord {
         source_only: true,
@@ -2965,7 +2954,7 @@ fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
         }
         tabs.sidebar.choose(Some(false));
         cx.notify();
-        tabs.tabs.last().unwrap().id
+        tabs.tabs.last().unwrap().id()
     });
     draw(cx);
     let toggle = cx.update(|_, cx| tabs.read(cx).rail_toggle_focus.clone());
@@ -3013,7 +3002,7 @@ fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).active, last_id);
+        assert_eq!(tabs.read(cx).tabs.active(), last_id);
         assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
     });
 }
@@ -3041,11 +3030,10 @@ fn tab_names(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> Vec<String
             .tabs
             .iter()
             .map(|tab| {
-                tab.view
-                    .as_ref()
+                tab.view()
                     .map(|view| view.read(cx).display_name())
                     .unwrap_or_else(|| {
-                        tab.record
+                        tab.record()
                             .markdown
                             .file_name()
                             .unwrap()
@@ -3226,7 +3214,7 @@ fn sidebar_drop_opens_files_at_the_insertion_line(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     draw(cx);
-    let b_id = cx.update(|_, cx| tabs.read(cx).tabs[1].id);
+    let b_id = cx.update(|_, cx| tabs.read(cx).tabs[1].id());
     let row = cx
         .debug_bounds(Box::leak(format!("tab-{b_id}").into_boxed_str()))
         .unwrap();
@@ -3278,7 +3266,7 @@ fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     draw(cx);
-    let a_id = cx.update(|_, cx| tabs.read(cx).tabs[0].id);
+    let a_id = cx.update(|_, cx| tabs.read(cx).tabs[0].id());
     let row = cx
         .debug_bounds(Box::leak(format!("tab-{a_id}").into_boxed_str()))
         .unwrap();
@@ -3355,7 +3343,7 @@ fn the_refusal_shows_above_a_long_list(cx: &mut TestAppContext) {
     tabs.update_in(cx, |tabs, window, cx| tabs.open_paths(paths, window, cx));
     cx.run_until_parked();
     draw(cx);
-    let first = cx.update(|_, cx| tabs.read(cx).tabs[0].id);
+    let first = cx.update(|_, cx| tabs.read(cx).tabs[0].id());
     tabs.update(cx, |tabs, _| {
         tabs.sidebar_scroll.set_offset(gpui::point(px(0.), px(0.)))
     });
@@ -3510,7 +3498,7 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
     });
     cx.run_until_parked();
     let first = active(&tabs, cx);
-    let first_id = cx.update(|_, cx| tabs.read(cx).active);
+    let first_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     first.update_in(cx, |view, window, cx| {
         view.pii.reviewing = true;
         view.pii
@@ -3542,7 +3530,7 @@ fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut Test
     more(cx, "more-paste-reply");
     let restored = active(&tabs, cx);
     cx.update(|_, cx| {
-        assert_ne!(tabs.read(cx).active, first_id);
+        assert_ne!(tabs.read(cx).tabs.active(), first_id);
         let view = restored.read(cx);
         assert_eq!(
             view.editor.read(cx).text(),
@@ -3832,7 +3820,7 @@ fn home_clipboard_actions_use_the_active_documents_mapping(cx: &mut TestAppConte
 fn a_saved_case_is_encrypted_named_and_listed_in_the_sidebar(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
-    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     cx.update(|_, cx| assert!(tabs.read(cx).can_create_case(tab, cx)));
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
     cx.run_until_parked();
@@ -3871,7 +3859,7 @@ fn a_saved_case_is_encrypted_named_and_listed_in_the_sidebar(cx: &mut TestAppCon
 fn saving_an_unsaved_document_as_a_case_saves_the_markdown_first(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
-    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     // As a fresh conversion: Markdown never saved (#75).
     active(&tabs, cx).update(cx, |view, _| view.session.document.path = None);
     let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
@@ -3930,7 +3918,7 @@ fn shortcuts_work_right_after_share_save_as_case(cx: &mut TestAppContext) {
 fn a_long_case_name_keeps_the_categories_popup_close_button_inside(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
-    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
     cx.run_until_parked();
     tabs.update(cx, |tabs, cx| {
@@ -3990,7 +3978,7 @@ fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
             &[3; 32],
         ));
         tabs.restore(session, window, cx);
-        let restored = tabs.tabs.last().unwrap().id;
+        let restored = tabs.tabs.last().unwrap().id();
         tabs.activate(restored, window, cx);
     });
     cx.run_until_parked();
@@ -4035,7 +4023,7 @@ fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
 fn closing_an_unsaved_mapping_offers_to_save_it_once(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
-    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
     cx.run_until_parked();
     assert!(cx.has_pending_prompt());
@@ -4046,7 +4034,7 @@ fn closing_an_unsaved_mapping_offers_to_save_it_once(cx: &mut TestAppContext) {
         cx.simulate_prompt_answer("Discard");
         cx.run_until_parked();
     }
-    cx.update(|_, cx| assert!(tabs.read(cx).tabs.iter().all(|t| t.id != tab)));
+    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
     let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     assert_eq!(store.list().0.len(), 1);
 }
@@ -4055,7 +4043,7 @@ fn closing_an_unsaved_mapping_offers_to_save_it_once(cx: &mut TestAppContext) {
 fn closing_an_unsaved_conversion_as_a_case_saves_it_then_closes(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
-    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     active(&tabs, cx).update(cx, |view, _| view.session.document.path = None);
     tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
     cx.run_until_parked();
@@ -4065,7 +4053,7 @@ fn closing_an_unsaved_conversion_as_a_case_saves_it_then_closes(cx: &mut TestApp
     cx.simulate_new_path_selection(|_| Some(saved.clone()));
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
-    cx.update(|_, cx| assert!(tabs.read(cx).tabs.iter().all(|t| t.id != tab)));
+    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
     let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     let (cases, _) = store.list();
     assert_eq!(cases.len(), 1);
@@ -4076,7 +4064,7 @@ fn closing_an_unsaved_conversion_as_a_case_saves_it_then_closes(cx: &mut TestApp
 fn replies_join_the_source_case_and_save_as_moves_the_member(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
-    let source = cx.update(|_, cx| tabs.read(cx).active);
+    let source = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(source, window, cx));
     cx.run_until_parked();
     let case = cx.update(|_, cx| tabs.read(cx).cases.cases[0].id.clone());
@@ -4110,7 +4098,11 @@ fn replies_join_the_source_case_and_save_as_moves_the_member(cx: &mut TestAppCon
     let reply = active(&tabs, cx);
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert_eq!(tabs.tabs[1].id, tabs.active, "the reply follows its source");
+        assert_eq!(
+            tabs.tabs[1].id(),
+            tabs.tabs.active(),
+            "the reply follows its source"
+        );
         let link = reply.read(cx).case.clone().unwrap();
         assert_eq!(link.id, case);
         assert_eq!(
@@ -4148,7 +4140,7 @@ fn open_applied(
         view.apply_all_pii(&PiiApplyAll, window, cx);
     });
     cx.run_until_parked();
-    cx.update(|_, cx| tabs.read(cx).active)
+    cx.update(|_, cx| tabs.read(cx).tabs.active())
 }
 
 #[gpui::test]
@@ -4228,9 +4220,8 @@ fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext
     let first_view = cx.update(|_, cx| {
         tabs.read(cx)
             .tabs
-            .iter()
-            .find(|t| t.id == first)
-            .and_then(|t| t.view.clone())
+            .get(first)
+            .and_then(|t| t.view().cloned())
             .unwrap()
     });
     first_view.update(cx, |view, cx| {
@@ -4335,7 +4326,7 @@ fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     // Members join when their Markdown loads; activate the second too.
-    let ids: Vec<_> = cx.update(|_, cx| tabs.read(cx).tabs.iter().map(|t| t.id).collect());
+    let ids: Vec<_> = cx.update(|_, cx| tabs.read(cx).tabs.iter().map(|t| t.id()).collect());
     for id in &ids {
         tabs.update_in(cx, |tabs, window, cx| tabs.activate(*id, window, cx));
         cx.run_until_parked();
@@ -4348,7 +4339,7 @@ fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
         let names: Vec<_> = tabs
             .tabs
             .iter()
-            .filter_map(|t| t.view.as_ref())
+            .filter_map(|t| t.view())
             .map(|v| {
                 let v = v.read(cx);
                 assert_eq!(v.case.as_ref().unwrap().id, case.id);
@@ -4391,7 +4382,7 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
         );
     });
 
-    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
     cx.run_until_parked();
     let case = cx.update(|_, cx| tabs.read(cx).cases.cases[0].id.clone());
@@ -4442,7 +4433,7 @@ fn saved_case(dir: &std::path::Path) -> (mdoc_store::cases::Case, std::path::Pat
 fn saving_a_case_explains_the_keychain_before_asking(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
-    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     // Not now cancels: nothing is saved and the key is not read.
     tabs.update_in(cx, |tabs, window, cx| {
@@ -4491,7 +4482,7 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
         // The first attempt is declined, the second allowed.
         tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
         tabs.restore(session, window, cx);
-        let restored = tabs.tabs.last().unwrap().id;
+        let restored = tabs.tabs.last().unwrap().id();
         tabs.activate(restored, window, cx);
     });
     cx.run_until_parked();
@@ -4555,7 +4546,7 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
 fn try_again_after_a_declined_keychain_dialog_finishes_the_action(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
-    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
@@ -4583,7 +4574,7 @@ fn try_again_after_a_declined_keychain_dialog_finishes_the_action(cx: &mut TestA
 fn a_second_case_action_waits_with_the_first_for_the_keychain(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
-    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.stage_case_key(Ok(store()));
@@ -4605,7 +4596,7 @@ fn a_second_case_action_waits_with_the_first_for_the_keychain(cx: &mut TestAppCo
 fn the_keychain_explainer_is_modal_and_returns_keyboard_focus(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
-    let tab = cx.update(|_, cx| tabs.read(cx).active);
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let view = active(&tabs, cx);
     let before = view.update_in(cx, |view, window, cx| {
         let focus = view.editor.read(cx).focus_handle(cx);
@@ -4696,7 +4687,7 @@ fn locked_members_load_when_the_key_opens_without_a_dialog_later(cx: &mut TestAp
             &[3; 32],
         )));
         tabs.restore(session, window, cx);
-        let restored = tabs.tabs.last().unwrap().id;
+        let restored = tabs.tabs.last().unwrap().id();
         tabs.activate(restored, window, cx);
     });
     cx.run_until_parked();
@@ -5121,7 +5112,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
         let members: Vec<_> = tabs
             .tabs
             .iter()
-            .filter_map(|tab| tab.view.as_ref())
+            .filter_map(|tab| tab.view())
             .filter(|view| {
                 view.read(cx)
                     .case
@@ -5151,7 +5142,7 @@ fn case_quit_fixture<'a>(
     view.update_in(cx, |view, window, cx| view.write(path, None, window, cx));
     let id = tabs
         .update_in(cx, |tabs, window, cx| {
-            tabs.create_case(tabs.active, window, cx)
+            tabs.create_case(tabs.tabs.active(), window, cx)
         })
         .unwrap();
     cx.run_until_parked();
@@ -5490,7 +5481,7 @@ fn f6_into_the_collapsed_rail_returns_to_the_last_focused_tab(cx: &mut TestAppCo
     // ADR 0062: the rail lands on the tab that last had focus, not Search.
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
-    let first = cx.update(|_, cx| tabs.read(cx).active);
+    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     cx.run_until_parked();
     draw(cx);
@@ -5601,7 +5592,7 @@ fn sidebar_tab_list_moves_with_arrows_and_closes_with_backspace(cx: &mut TestApp
     // F6 into the sidebar lands on the list's one Tab stop: the active tab.
     tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
     draw(cx);
-    let active_id = cx.update(|_, cx| tabs.read(cx).active);
+    let active_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     assert_eq!(active_id, listed[2]);
     tabs.update_in(cx, |tabs, window, cx| {
         let focus = tabs
@@ -5939,14 +5930,14 @@ fn sidebar_case_actions_and_categories_work_without_a_pointer(cx: &mut TestAppCo
     view.update_in(cx, |view, window, cx| view.write(path, None, window, cx));
     let case = tabs
         .update_in(cx, |tabs, window, cx| {
-            tabs.create_case(tabs.active, window, cx)
+            tabs.create_case(tabs.tabs.active(), window, cx)
         })
         .unwrap();
     cx.run_until_parked();
     draw(cx);
     let row = cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        tabs.sidebar_row_focus.borrow()[&tabs.active].clone()
+        tabs.sidebar_row_focus.borrow()[&tabs.tabs.active()].clone()
     });
     cx.update(|window, cx| window.focus(&row, cx));
     key(cx, "shift-f10");
@@ -5971,7 +5962,7 @@ fn sidebar_case_actions_and_categories_work_without_a_pointer(cx: &mut TestAppCo
     assert!(cx.update(|_, cx| tabs.read(cx).cases.categories_open.is_none()));
     assert!(cx.update(|window, _| row.is_focused(window)));
     collapse(&tabs, cx);
-    let id = cx.update(|_, cx| tabs.read(cx).active);
+    let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let compact = compact_focus(&tabs, cx, id);
     cx.update(|window, cx| window.focus(&compact, cx));
     key(cx, "shift-f10");
