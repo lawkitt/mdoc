@@ -331,7 +331,7 @@ fn scenarios(
     d.change(|w, window, cx| w.show_case_list(window, cx))?;
     records.push(d.capture(out, "open-case")?);
     d.change(|w, window, cx| w.close_case_list(window, cx))?;
-    let id = d.change(|w, _, _| w.cases.cases[0].id.clone())?;
+    let id = d.change(|w, _, _| w.case_coordinator.cases()[0].id.clone())?;
     d.change(|w, window, cx| w.start_rename_case(id.clone(), window, cx))?;
     records.push(d.capture(out, "rename-case")?);
     d.key("escape")?;
@@ -357,7 +357,7 @@ fn scenarios(
     records.push(d.capture(out, "confirm-keep-mapping")?);
     d.key("escape")?;
     d.change(|w, window, cx| {
-        w.cases.asked.insert(w.tabs.active());
+        w.case_coordinator.note_asked(w.tabs.active());
         w.close_tab(w.tabs.active(), window, cx);
     })?;
     records.push(d.capture(out, "confirm-unsaved")?);

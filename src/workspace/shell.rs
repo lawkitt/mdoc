@@ -1005,7 +1005,7 @@ impl Workspace {
     fn home_cases(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let cases = &self.cases.cases;
+        let cases = &self.case_coordinator.cases();
         let mut list = div().flex().flex_col();
         if cases.is_empty() {
             return Some(
@@ -1479,7 +1479,7 @@ impl Workspace {
                 command: Command::Tab(tab.id()),
             });
         }
-        for case in &self.cases.cases {
+        for case in self.case_coordinator.cases() {
             rows.push(Row {
                 section: "Cases",
                 label: case.name.clone(),

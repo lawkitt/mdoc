@@ -3921,7 +3921,7 @@ fn a_long_case_name_keeps_the_categories_popup_close_button_inside(cx: &mut Test
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
     cx.run_until_parked();
     tabs.update(cx, |tabs, cx| {
-        let case = &mut tabs.cases.cases[0];
+        let case = &mut tabs.case_coordinator.cases_mut()[0];
         case.name = "Заявка_на_приемку_первой_партии_10000_единиц_и_ещё_немного".into();
         tabs.cases.categories_open = Some(case.id.clone());
         cx.notify();
@@ -4066,7 +4066,7 @@ fn replies_join_the_source_case_and_save_as_moves_the_member(cx: &mut TestAppCon
     let source = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(source, window, cx));
     cx.run_until_parked();
-    let case = cx.update(|_, cx| tabs.read(cx).cases.cases[0].id.clone());
+    let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
 
     // Save As: the case now names only the new path.
     let moved = dir.path().join("moved.md");
@@ -4081,7 +4081,7 @@ fn replies_join_the_source_case_and_save_as_moves_the_member(cx: &mut TestAppCon
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(
-            tabs.read(cx).cases.cases[0].members,
+            tabs.read(cx).case_coordinator.cases()[0].members,
             [session_store::identity(&moved)]
         );
     });
@@ -4164,7 +4164,7 @@ fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext
     );
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
     cx.run_until_parked();
-    let case = cx.update(|_, cx| tabs.read(cx).cases.cases[0].id.clone());
+    let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
     let second = open_applied(
         &tabs,
         cx,
@@ -4201,7 +4201,7 @@ fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext
                 .unwrap()
                 .contains("1 alias renumbered")
         );
-        let case = &tabs.cases.cases[0];
+        let case = &tabs.case_coordinator.cases()[0];
         assert!(case.identities.iter().any(|i| i.alias == "PERSON_2"));
     });
     second_view.update_in(cx, |view, window, cx| {
@@ -4294,7 +4294,7 @@ fn a_term_added_to_the_case_is_proposed_in_every_member(cx: &mut TestAppContext)
     let view = active(&tabs, cx);
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        let case = &tabs.cases.cases[0];
+        let case = &tabs.case_coordinator.cases()[0];
         assert!(
             case.identities
                 .iter()
@@ -4332,8 +4332,8 @@ fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
     }
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert_eq!(tabs.cases.cases.len(), 1);
-        let case = &tabs.cases.cases[0];
+        assert_eq!(tabs.case_coordinator.cases().len(), 1);
+        let case = &tabs.case_coordinator.cases()[0];
         assert_eq!(case.name, "Petrova v Northwind");
         let names: Vec<_> = tabs
             .tabs
@@ -4384,7 +4384,7 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
     cx.run_until_parked();
-    let case = cx.update(|_, cx| tabs.read(cx).cases.cases[0].id.clone());
+    let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
     tabs.update(cx, |tabs, cx| {
         tabs.toggle_case_category(&case, mdoc_pii::Category::Address, cx)
     });
@@ -4395,7 +4395,7 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
                 .case_skip
                 .contains(&mdoc_pii::Category::Address)
         );
-        assert_eq!(tabs.read(cx).cases.cases[0].skip, ["ADDRESS"]);
+        assert_eq!(tabs.read(cx).case_coordinator.cases()[0].skip, ["ADDRESS"]);
     });
     // Leaving the case ends its category switches for this tab.
     tabs.update_in(cx, |tabs, window, cx| {
@@ -4492,7 +4492,7 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         assert!(view.read(cx).case.is_none());
         let tabs = tabs.read(cx);
-        assert!(tabs.cases.locked && !tabs.cases.explainer);
+        assert!(tabs.case_coordinator.locked() && !tabs.cases.explainer);
         assert!(tabs.cases.test_open.is_some());
         assert_eq!(
             tabs.snapshot(cx).tabs.last().unwrap().case.as_deref(),
@@ -4509,7 +4509,7 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
     // Declined: still locked, and the bar offers Try again.
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert!(tabs.cases.denied);
+        assert!(tabs.case_coordinator.denied());
         assert_eq!(tabs.case_key_banner().map(|b| b.1), Some("Try again…"));
         assert_eq!(
             tabs.snapshot(cx).tabs.last().unwrap().case.as_deref(),
@@ -4691,7 +4691,9 @@ fn locked_members_load_when_the_key_opens_without_a_dialog_later(cx: &mut TestAp
     });
     cx.run_until_parked();
     let view = active(&tabs, cx);
-    cx.update(|_, cx| assert!(tabs.read(cx).cases.locked && view.read(cx).case.is_none()));
+    cx.update(|_, cx| {
+        assert!(tabs.read(cx).case_coordinator.locked() && view.read(cx).case.is_none())
+    });
     // The key became readable without a dialog (e.g. allowed elsewhere):
     // Open Case… opens it quietly and the locked member gets its mapping.
     tabs.update_in(cx, |tabs, window, cx| {
@@ -4701,7 +4703,7 @@ fn locked_members_load_when_the_key_opens_without_a_dialog_later(cx: &mut TestAp
     cx.run_until_parked();
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert!(!tabs.cases.locked && tabs.cases.list_open);
+        assert!(!tabs.case_coordinator.locked() && tabs.cases.list_open);
         assert_eq!(
             view.read(cx).case.as_ref().map(|l| l.name.as_str()),
             Some("Petrova")
@@ -4900,7 +4902,7 @@ fn locked_cases_notice_opens_only_when_a_locked_case_is_needed(cx: &mut TestAppC
     // A plain document: the notice waits behind the bell (ADR 0043).
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert!(tabs.cases.locked);
+        assert!(tabs.case_coordinator.locked());
         assert_eq!(tabs.title.notices.get(), 1);
         assert!(!tabs.title.notices_open.get());
     });
@@ -4936,7 +4938,7 @@ fn restore_from_home_shows_unlock_over_an_earlier_notice(cx: &mut TestAppContext
         window.dispatch_action(Box::new(crate::workspace::PasteAiResponse), cx)
     });
     draw(cx);
-    cx.update(|_, cx| assert!(tabs.read(cx).cases.locked));
+    cx.update(|_, cx| assert!(tabs.read(cx).case_coordinator.locked()));
     assert!(cx.debug_bounds("notices-popover").is_some());
     assert!(cx.debug_bounds("unlock-cases").is_some());
 }
@@ -4951,11 +4953,16 @@ fn restore_from_a_blank_tab_looks_for_locked_cases(cx: &mut TestAppContext) {
     });
     cx.simulate_input("PERSON_1 wrote back.");
     draw(cx);
-    cx.update(|_, cx| assert!(!tabs.read(cx).cases.locked, "nothing looked yet"));
+    cx.update(|_, cx| {
+        assert!(
+            !tabs.read(cx).case_coordinator.locked(),
+            "nothing looked yet"
+        )
+    });
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 replied.".into()));
     cx.dispatch_action(crate::workspace::PasteAiResponse);
     draw(cx);
-    cx.update(|_, cx| assert!(tabs.read(cx).cases.locked));
+    cx.update(|_, cx| assert!(tabs.read(cx).case_coordinator.locked()));
     assert!(cx.debug_bounds("unlock-cases").is_some());
 }
 
@@ -5032,7 +5039,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
     let first_view = active(&tabs, cx);
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
     cx.run_until_parked();
-    let case = tabs.read_with(cx, |tabs, _| tabs.cases.cases[0].id.clone());
+    let case = tabs.read_with(cx, |tabs, _| tabs.case_coordinator.cases()[0].id.clone());
     for name in ["second.md", "third.md"] {
         let member = open_applied(&tabs, cx, dir.path(), name, &text, &wordings);
         tabs.update_in(cx, |tabs, window, cx| {
@@ -5168,7 +5175,7 @@ fn case_quit_failure_can_cancel_without_losing_mappings(cx: &mut TestAppContext)
     cx.run_until_parked();
     tabs.read_with(cx, |tabs, cx| {
         assert!(!tabs.quit_flow.finishing() && !tabs.quit_flow.quitting());
-        assert_eq!(tabs.cases.cases[0].id, case);
+        assert_eq!(tabs.case_coordinator.cases()[0].id, case);
         assert_eq!(
             tabs.active_view()
                 .unwrap()
@@ -5320,7 +5327,7 @@ fn failed_write_of_a_removed_case_keeps_the_queue_moving(cx: &mut TestAppContext
     let other = mdoc_store::cases::Case::new("Other".into(), &[], None);
     let good = dir.path().join("good-store");
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.cases.cases.push(other.clone());
+        tabs.case_coordinator.cases_mut().push(other.clone());
         // The removed case's write is in flight against the blocked store;
         // the other case queues behind it and targets a writable one.
         tabs.toggle_case_category(&removed, mdoc_pii::Category::Person, cx);
@@ -5807,7 +5814,7 @@ fn the_open_case_list_takes_focus_traps_tab_and_gives_it_back(cx: &mut TestAppCo
             &[3; 32],
         )));
         tabs.cases.test_may_ask = false;
-        tabs.cases.cases.push(case);
+        tabs.case_coordinator.cases_mut().push(case);
         tabs.focus_active(window, cx);
     });
     draw(cx);
@@ -5867,7 +5874,7 @@ fn opening_a_case_with_enter_closes_the_list_and_focuses_its_document(cx: &mut T
             &[3; 32],
         )));
         tabs.cases.test_may_ask = false;
-        tabs.cases.cases.push(case);
+        tabs.case_coordinator.cases_mut().push(case);
         tabs.show_case_list(window, cx);
     });
     cx.run_until_parked();

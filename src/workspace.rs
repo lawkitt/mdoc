@@ -33,6 +33,7 @@ use std::{
     time::Duration,
 };
 
+mod case_coordinator;
 mod cases_ui;
 mod docx_queue;
 use docx_queue::{DocxEffect, DocxJob};
@@ -207,6 +208,7 @@ pub(super) struct Workspace {
     quit_flow: quit_flow::QuitFlow,
     session_writer: session_writer::SessionWriter<Session>,
     cases: cases_ui::CaseState,
+    case_coordinator: case_coordinator::CaseCoordinator<gpui::AnyWindowHandle>,
     /// The sidebar's theme pick; `theme` holds what it resolves to (ADR 0048).
     theme_choice: ThemeChoice,
     /// The theme button's tooltip reads the choice live.
@@ -369,6 +371,7 @@ impl Workspace {
             quit_flow: quit_flow::QuitFlow::default(),
             session_writer: session_writer::SessionWriter::new(None),
             cases: Default::default(),
+            case_coordinator: Default::default(),
             theme_choice: ThemeChoice::default(),
             theme_tip: Rc::default(),
             window_title: String::new(),
