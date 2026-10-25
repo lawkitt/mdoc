@@ -154,7 +154,7 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.source_only {
+        if self.lifecycle.source_only() {
             // Nothing to replace in a source-only tab: the chord opens the
             // preview's find, as ⌘F does there (ADR 0063).
             if !self.preview.visible {
@@ -181,7 +181,7 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         self.pii.dismiss_popup();
-        if self.source_only {
+        if self.lifecycle.source_only() {
             return;
         }
         // Search works in the editor (ADR 0042).

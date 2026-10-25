@@ -209,7 +209,7 @@ fn document(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>> {
             v.editor
                 .update(cx, |e, cx| e.set_text(document.saved.clone(), cx));
             v.session.replace(document);
-            v.blank_disposable = false;
+            v.lifecycle.keep_blank();
         });
         window.focus(&w.focus, cx);
         view
@@ -443,7 +443,7 @@ fn scenarios(
         w.new_tab(window, cx);
         w.active_view().unwrap().update(cx, |v, cx| {
             let source = PathBuf::from("Damaged agreement.docx");
-            v.source_only = true;
+            v.lifecycle.show_source();
             v.preview.source = Some(source.clone());
             v.preview.attachment = Some(source);
             v.preview.visible = true;

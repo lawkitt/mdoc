@@ -271,7 +271,7 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        if self.source_only {
+        if self.lifecycle.source_only() {
             return None;
         }
         let views = self.has_applied_aliases();

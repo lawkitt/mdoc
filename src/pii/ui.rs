@@ -497,7 +497,7 @@ impl DocumentView {
     pub(crate) fn crash_state(&self, cx: &App) -> String {
         let kind = if self.pii.restore.is_some() {
             "restored reply"
-        } else if self.source_only {
+        } else if self.lifecycle.source_only() {
             "source only"
         } else if self.preview.pdf.is_some() {
             "PDF"

@@ -131,7 +131,7 @@ impl DocumentView {
 
     /// The header's state-driven primary action (ADR 0048).
     fn primary(&self, cx: &App) -> Primary {
-        if self.source_only {
+        if self.lifecycle.source_only() {
             return if self.import.ocr_required().is_none()
                 && !self.import.auto_pending()
                 && !self.import.busy()
@@ -141,7 +141,7 @@ impl DocumentView {
                 Primary::None
             };
         }
-        if self.loading || self.unavailable || !self.can_copy_markdown() {
+        if self.lifecycle.loading() || self.lifecycle.unavailable() || !self.can_copy_markdown() {
             return Primary::None;
         }
         if self.pii.restore.is_some() {
@@ -247,14 +247,14 @@ impl DocumentView {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let has_preview = self.preview.pdf.is_some() || self.preview.source.is_some();
-        let reviewable = !self.source_only
+        let reviewable = !self.lifecycle.source_only()
             && self.pii.restore.is_none()
             && (self.pii.reviewing
                 || self.replacements_open()
                 || !self.pii.review.variants().is_empty()
                 || !self.pii.review.applied().is_empty());
         let name = self.display_name();
-        let dirty = self.dirty_cached;
+        let dirty = self.lifecycle.dirty();
         let crumb = div()
             .flex()
             .items_center()
@@ -425,7 +425,7 @@ impl DocumentView {
     /// Why Copy for AI and Paste AI reply are off, or `None` when they
     /// work. The menu shows it and screen readers hear it.
     pub(crate) fn alias_actions_reason(&self) -> Option<&'static str> {
-        if self.source_only {
+        if self.lifecycle.source_only() {
             Some("Convert the document to Markdown first.")
         } else if !self.can_copy_markdown() {
             Some("Available once the document has loaded.")
@@ -450,7 +450,7 @@ impl DocumentView {
                 other
             }
         };
-        let copy = self.can_copy_markdown() && !self.source_only;
+        let copy = self.can_copy_markdown() && !self.lifecycle.source_only();
         let has_text = copy && !self.editor.read(cx).text().is_empty();
         let alias_reason = self.alias_actions_reason();
         let aliases = copy && alias_reason.is_none();
@@ -463,7 +463,7 @@ impl DocumentView {
                    cx: &mut Context<Self>,
                    action: Box<dyn gpui::Action>| {
             this.more_open = false;
-            if this.source_only {
+            if this.lifecycle.source_only() {
                 window.focus(&this.focus, cx);
             } else {
                 window.focus(&this.editor.read(cx).focus_handle(cx), cx);
@@ -625,7 +625,7 @@ impl DocumentView {
                                 |this, _, window, cx| {
                                     // Focus back to the document, as other rows do.
                                     this.more_open = false;
-                                    if this.source_only {
+                                    if this.lifecycle.source_only() {
                                         window.focus(&this.focus, cx);
                                     } else {
                                         window.focus(&this.editor.read(cx).focus_handle(cx), cx);
@@ -686,7 +686,7 @@ impl DocumentView {
                                 if let Some(pdf) = &this.preview.pdf {
                                     window.focus(&pdf.read(cx).focus_handle(cx), cx);
                                 }
-                            } else if !this.source_only {
+                            } else if !this.lifecycle.source_only() {
                                 window.focus(&this.editor.read(cx).focus_handle(cx), cx);
                             }
                             cx.notify();

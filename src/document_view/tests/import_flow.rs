@@ -17,7 +17,7 @@ fn inline_ocr_skip_imports_native_content_and_keeps_page_warning(cx: &mut TestAp
     cx.run_until_parked();
     app.update_in(cx, |app, _, cx| {
         assert!(!app.import.busy());
-        assert!(!app.prompting);
+        assert!(!app.lifecycle.prompting());
         assert!(app.editor.read(cx).text().contains("Readable page three"));
         assert!(app.session.warning.as_ref().unwrap().contains("2, 5"));
         assert!(app.session.document.path.is_none());
@@ -47,7 +47,7 @@ fn inline_ocr_wait_preserves_current_edits(cx: &mut TestAppContext) {
     app.update_in(cx, |app, _, cx| {
         assert_eq!(app.editor.read(cx).text(), "keep edits");
         assert!(!app.import.busy());
-        assert!(!app.prompting);
+        assert!(!app.lifecycle.prompting());
         assert!(app.session.source.is_none());
     });
 }
@@ -63,7 +63,7 @@ fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut Tes
         assert!(matches!(&app.ocr_state, OcrState::Failed(error) if error.contains("download interrupted")));
         assert!(!app.import.busy());
         assert!(app.import.ocr_required().is_some());
-        assert!(!app.prompting);
+        assert!(!app.lifecycle.prompting());
     });
     assert!(!cx.has_pending_prompt());
     cx.run_until_parked();

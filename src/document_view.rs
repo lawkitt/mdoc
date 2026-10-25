@@ -35,6 +35,8 @@ use std::{
 
 mod case;
 mod chrome;
+mod document_lifecycle;
+use document_lifecycle::LifecycleEffect;
 mod import_flow;
 use import_flow::ImportEffect;
 #[cfg(test)]
@@ -113,13 +115,8 @@ pub(crate) struct DocumentView {
     /// closes first so it still learns when they end.
     background: Vec<gpui::Task<Background>>,
     pub(crate) active: bool,
-    pub(crate) dirty_cached: bool,
-    pub(crate) loading: bool,
-    pub(crate) load_generation: u64,
-    pub(crate) unavailable: bool,
-    pub(crate) source_only: bool,
-    pub(crate) generated_unedited: bool,
-    pub(crate) blank_disposable: bool,
+    /// Loading, availability, conversion, unsaved changes and dialogs.
+    pub(crate) lifecycle: document_lifecycle::DocumentLifecycle,
     /// External files over the empty page: whether any is supported (ADR 0028).
     pub(crate) file_drag: Option<bool>,
     pub(crate) preferences: settings::Shared,
@@ -165,7 +162,6 @@ pub(crate) struct DocumentView {
     /// Stable focus for a setup card's primary action or its in-progress Cancel.
     pub(crate) card_focus: gpui::FocusHandle,
     pub(crate) focus_card: bool,
-    pub(crate) prompting: bool,
     pub(crate) ocr_state: OcrState,
     /// Converting the source to Markdown, OCR consent and setup.
     pub(crate) import: import_flow::ImportFlow,
@@ -269,9 +265,9 @@ impl DocumentView {
                     this.pii_edited(cx);
                     this.schedule_spellcheck(true, cx);
                     this.schedule_case_save(cx);
-                    this.generated_unedited = false;
-                    this.blank_disposable = false;
-                    this.dirty_cached = this.dirty(cx);
+                    this.lifecycle.edited();
+                    let dirty = this.dirty(cx);
+                    this.lifecycle.set_dirty(dirty);
                     this.refresh_markdown_search(SearchRefresh::DocumentEdit, false, window, cx);
                     cx.notify();
                 }
@@ -329,13 +325,7 @@ impl DocumentView {
             closing: dependencies.closing,
             background: Vec::new(),
             active: true,
-            dirty_cached: false,
-            loading: false,
-            load_generation: 0,
-            unavailable: false,
-            source_only: false,
-            generated_unedited: false,
-            blank_disposable: false,
+            lifecycle: Default::default(),
             file_drag: None,
             preferences: dependencies.preferences,
             model_panel: dependencies.model_panel,
@@ -368,7 +358,6 @@ impl DocumentView {
             original_selected: false,
             card_focus: cx.focus_handle(),
             focus_card: false,
-            prompting: false,
             ocr_state: dependencies.ocr,
             import: import_flow::ImportFlow::new(
                 dependencies.import_busy,
@@ -398,7 +387,11 @@ impl DocumentView {
     }
 
     pub(crate) fn dirty(&self, cx: &App) -> bool {
-        if self.loading || self.unavailable || self.source_only || self.generated_unedited {
+        if self.lifecycle.loading()
+            || self.lifecycle.unavailable()
+            || self.lifecycle.source_only()
+            || self.lifecycle.generated_unedited()
+        {
             return false;
         }
         self.session.dirty(self.editor.read(cx).text())
@@ -407,9 +400,9 @@ impl DocumentView {
 
     /// A Markdown tab with no content and no source shows the empty page (ADR 0028).
     fn shows_empty_page(&self, cx: &App) -> bool {
-        !self.loading
-            && !self.unavailable
-            && !self.source_only
+        !self.lifecycle.loading()
+            && !self.lifecycle.unavailable()
+            && !self.lifecycle.source_only()
             && self.session.source.is_none()
             && self.preview.source.is_none()
             && self.preview.attachment.is_none()
@@ -417,7 +410,7 @@ impl DocumentView {
     }
 
     pub(crate) fn can_copy_markdown(&self) -> bool {
-        !self.loading && !self.unavailable && !self.source_only
+        !self.lifecycle.loading() && !self.lifecycle.unavailable() && !self.lifecycle.source_only()
     }
 
     pub(crate) fn copy_markdown(
@@ -537,7 +530,7 @@ impl DocumentView {
     }
 
     pub(crate) fn display_name(&self) -> String {
-        if self.source_only {
+        if self.lifecycle.source_only() {
             self.preview
                 .source
                 .as_ref()
@@ -555,7 +548,7 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.source_only = true;
+        self.lifecycle.show_source();
         self.preview.source = Some(path.clone());
         self.preview.attachment = Some(path.clone());
         self.preview.visible = true;
@@ -569,20 +562,21 @@ impl DocumentView {
     pub(crate) fn window_title(&self) -> String {
         format!(
             "{}{} — mdoc",
-            if self.dirty_cached { "• " } else { "" },
+            if self.lifecycle.dirty() { "• " } else { "" },
             self.display_name()
         )
     }
 
     pub(crate) fn request(&mut self, next: Next, window: &mut Window, cx: &mut Context<Self>) {
-        if self.prompting {
-            return;
+        let dirty = self.dirty(cx);
+        match self.lifecycle.request(dirty) {
+            Some(LifecycleEffect::Proceed) => {
+                self.proceed(next, window, cx);
+                return;
+            }
+            Some(LifecycleEffect::AskToSave) => {}
+            _ => return,
         }
-        if !self.dirty(cx) {
-            self.proceed(next, window, cx);
-            return;
-        }
-        self.prompting = true;
         // Save is the default, Discard ⌘D / Alt+D, Cancel Esc (ADR 0064).
         let question = format!("Save changes to “{}”?", self.display_name());
         let answer = window.prompt(
@@ -599,7 +593,7 @@ impl DocumentView {
         cx.spawn_in(window, async move |this, cx| {
             let answer = answer.await.ok();
             let _ = this.update_in(cx, |this, window, cx| {
-                this.prompting = false;
+                this.lifecycle.end_prompt();
                 match answer {
                     Some(0) => this.save(false, Some(next), window, cx),
                     Some(1) => this.proceed(next, window, cx),
@@ -627,8 +621,8 @@ impl DocumentView {
                 return;
             }
             Next::Import(imported) => {
-                self.source_only = false;
-                self.generated_unedited = self.import.imported();
+                let automatic = self.import.imported();
+                self.lifecycle.converted(automatic);
                 let retain_preview = self.preview.source.as_ref() == Some(&imported.source)
                     && (self.preview.pdf.is_some() || self.preview.loading);
                 self.session
@@ -641,7 +635,8 @@ impl DocumentView {
                 self.replace_images(self.save_directory(), window, cx);
                 self.editor
                     .update(cx, |editor, cx| editor.set_text(imported.markdown, cx));
-                self.dirty_cached = self.dirty(cx);
+                let dirty = self.dirty(cx);
+                self.lifecycle.set_dirty(dirty);
                 self.reset_markdown_search(cx);
                 if self.active {
                     window.focus(&self.editor.read(cx).focus_handle(cx), cx);
@@ -668,8 +663,8 @@ impl DocumentView {
     }
 
     pub(crate) fn import(&mut self, _: &Import, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.source_only
-            || self.prompting
+        if !self.lifecycle.source_only()
+            || self.lifecycle.prompting()
             || self.import.busy()
             || self.ocr_state.busy()
             || self.import.slot_busy()
@@ -759,9 +754,12 @@ impl DocumentView {
         }
         let generation = self.session.generation;
         let settings_model = self.settings_ocr_model();
-        let Some(effects) = self.import.resume(generation, self.prompting, |import| {
-            settings_model == Some(import.model(settings_model))
-        }) else {
+        let Some(effects) = self
+            .import
+            .resume(generation, self.lifecycle.prompting(), |import| {
+                settings_model == Some(import.model(settings_model))
+            })
+        else {
             return;
         };
         self.carry_out_import(effects, window, cx);
@@ -847,7 +845,7 @@ impl DocumentView {
     }
 
     fn setup_ocr(&mut self, _: &SetupOcr, window: &mut Window, cx: &mut Context<Self>) {
-        if self.prompting
+        if self.lifecycle.prompting()
             || self.import.busy()
             || self.ocr_state.busy()
             || self.import.slot_busy()
@@ -1416,7 +1414,7 @@ impl DocumentView {
             cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(vec![
                 path,
             ])));
-        } else if self.source_only {
+        } else if self.lifecycle.source_only() {
             let generation = self.begin_preview(path.clone());
             let task = cx.background_executor().spawn(async move {
                 std::fs::File::open(path)
@@ -1452,10 +1450,9 @@ impl DocumentView {
     }
 
     pub(crate) fn open(&mut self, _: &Open, window: &mut Window, cx: &mut Context<Self>) {
-        if self.prompting {
+        let Some(LifecycleEffect::AskForFiles) = self.lifecycle.open_files() else {
             return;
-        }
-        self.prompting = true;
+        };
         let paths = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -1465,7 +1462,7 @@ impl DocumentView {
         cx.spawn_in(window, async move |this, cx| {
             let result = paths.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.prompting = false;
+                this.lifecycle.end_prompt();
                 match result {
                     Ok(Ok(Some(paths))) => {
                         cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(paths)))
@@ -1489,21 +1486,28 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.prompting || self.loading || self.unavailable || self.source_only {
-            cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
-            return;
+        match self
+            .lifecycle
+            .save(save_as, self.session.document.path.is_some())
+        {
+            LifecycleEffect::CancelClose => {
+                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
+                return;
+            }
+            LifecycleEffect::Write => {
+                if let Some(path) = self.session.document.path.clone() {
+                    self.write(path, next, cx);
+                }
+                return;
+            }
+            _ => {}
         }
-        if !save_as && let Some(path) = self.session.document.path.clone() {
-            self.write(path, next, cx);
-            return;
-        }
-        self.prompting = true;
         let name = self.session.suggested_name();
         let path = cx.prompt_for_new_path(&self.save_directory(), Some(&name));
         cx.spawn_in(window, async move |this, cx| {
             let result = path.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.prompting = false;
+                this.lifecycle.end_prompt();
                 if let Ok(Ok(Some(mut path))) = result {
                     if path.extension().is_none() {
                         path.set_extension("md");
@@ -1553,9 +1557,7 @@ impl DocumentView {
         let old_directory = self.save_directory();
         match self.session.save(path, self.editor.read(cx).text()) {
             Ok(()) => {
-                self.generated_unedited = false;
-                self.blank_disposable = false;
-                self.dirty_cached = false;
+                self.lifecycle.saved();
                 cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Saved));
                 if old_directory != self.session.document.directory() {
                     self.replace_images(self.session.document.directory(), window, cx);
@@ -1731,9 +1733,9 @@ impl DocumentView {
         let (markdown, original) = self.panes_drawn.get();
         let mut regions = vec![(self.toolbar_region.clone(), false)];
         if markdown
-            && !self.source_only
-            && !self.loading
-            && !self.unavailable
+            && !self.lifecycle.source_only()
+            && !self.lifecycle.loading()
+            && !self.lifecycle.unavailable()
             && self.compare.is_none()
         {
             regions.push((self.editor.read(cx).focus_handle(cx), true));
@@ -2065,7 +2067,7 @@ impl Render for DocumentView {
         self.panes_drawn.set((show_markdown, show_original));
         // The conversion card states a conversion error itself, and the OCR
         // card its recognition error; a notice would only repeat it.
-        let card_shows_error = self.source_only
+        let card_shows_error = self.lifecycle.source_only()
             && show_markdown
             && !self.import.busy()
             && !self.import.auto_pending()
@@ -2077,7 +2079,9 @@ impl Render for DocumentView {
                     }));
         // The OCR setup notice may already say the same thing.
         let setup_says_error = !self.import.setup_error_dismissed()
-            && !(show_markdown && self.source_only && self.import.ocr_required().is_some())
+            && !(show_markdown
+                && self.lifecycle.source_only()
+                && self.import.ocr_required().is_some())
             && matches!(&self.ocr_state, OcrState::Failed(e) if Some(e) == self.error.as_ref());
         let error_notice = self
             .error
@@ -2125,20 +2129,20 @@ impl Render for DocumentView {
                 })))
             .when(!detached, |v| v.child(div().track_focus(&self.toolbar_region).key_context("ToolbarRegion").child(self.header(window, cx))))
             .child(div().track_focus(&self.controls_region).key_context("ToolbarRegion").flex().flex_col().flex_shrink_0()
-            .when(!self.source_only && self.import.busy(), |v| v.child(
+            .when(!self.lifecycle.source_only() && self.import.busy(), |v| v.child(
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) || self.import.setting_up() { "Setting up text recognition…" } else if self.import.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
             .children(import_notice).children(clipboard_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx))))
             .child(div().flex().flex_1().min_h_0()
-                .when(!self.source_only && show_markdown, |row| row.child(div().relative().flex().flex_1().min_w_0().h_full().flex().flex_col().text_size(px(16. * self.zoom))
+                .when(!self.lifecycle.source_only() && show_markdown, |row| row.child(div().relative().flex().flex_1().min_w_0().h_full().flex().flex_col().text_size(px(16. * self.zoom))
                     .child({ let column = self.switcher.column.clone(); gpui::canvas(move |bounds, _, _| column.set(bounds), |_, _, _, _| {}).absolute().inset_0() })
                     .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| this.switcher_pointer(event.position, cx)))
                     .when(self.search.open, |column| column.child(search_bar))
-                    .child(if self.loading || self.unavailable {
-                        div().p_6().child(if self.loading { ui::activity("markdown-loading", "Loading Markdown…", theme).into_any_element() } else { div().child("Markdown unavailable").into_any_element() })
-                            .when(self.unavailable, |view| view.child(button("Retry", RetryDocument, theme))).into_any_element()
+                    .child(if self.lifecycle.loading() || self.lifecycle.unavailable() {
+                        div().p_6().child(if self.lifecycle.loading() { ui::activity("markdown-loading", "Loading Markdown…", theme).into_any_element() } else { div().child("Markdown unavailable").into_any_element() })
+                            .when(self.lifecycle.unavailable(), |view| view.child(button("Retry", RetryDocument, theme))).into_any_element()
                     } else if let Some(compare) = self.compare_view(content_width, cx) {
                         compare
                     } else { div().relative().flex_1().min_w_0().min_h_0()
@@ -2152,10 +2156,10 @@ impl Render for DocumentView {
                                 // The mention bar scrolls with its mention (ADR 0055).
                                 .children(self.mention_popup_layer(window, cx))))
                         .child(markdown_scrollbar).children((empty_page && self.file_drag.is_some()).then(|| self.empty_page(cx))).into_any_element() })
-                    .children(self.view_switcher(window, cx).filter(|_| !self.loading && !self.unavailable))))
+                    .children(self.view_switcher(window, cx).filter(|_| !self.lifecycle.loading() && !self.lifecycle.unavailable()))))
                 // Replacements sit beside the text they describe, before Original.
                 .children(self.replacements_panel(window, cx))
-                .when(self.source_only && show_markdown, |row| row.child(div().id("conversion-pane").flex_1().min_w_0().p_6().flex().items_center().justify_center().overflow_y_scroll()
+                .when(self.lifecycle.source_only() && show_markdown, |row| row.child(div().id("conversion-pane").flex_1().min_w_0().p_6().flex().items_center().justify_center().overflow_y_scroll()
                     .child(self.conversion_card(window, cx))))
                 .when(self.preview.visible && !narrow_preview, |row| row.child(div().id("preview-divider").when(cfg!(test), |v| v.debug_selector(|| "preview-divider".into())).w(px(6.)).h_full().flex_shrink_0().cursor(gpui::CursorStyle::ResizeLeftRight).bg(palette.border)
                     .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _, _, cx| { this.split_dragging = true; cx.notify(); }))))
@@ -2167,7 +2171,7 @@ impl Render for DocumentView {
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(div().track_focus(&self.comments_region).child(comments)))
                     .children(preview_notice)))
 )
-            .children(setup_notice.filter(|_| !(show_markdown && self.source_only && self.import.ocr_required().is_some()))).children(error_notice)
+            .children(setup_notice.filter(|_| !(show_markdown && self.lifecycle.source_only() && self.import.ocr_required().is_some()))).children(error_notice)
             // The word popup anchors to the editor, hidden under before/after.
             .children(self.pii_popup(cx).filter(|_| self.compare.is_none()))
             .children(self.replacement_tip(window, cx).filter(|_| self.compare.is_none()));
@@ -2269,7 +2273,7 @@ impl Render for DocumentView {
             }))
             .on_action(cx.listener(|this, _: &ClosePdf, window, cx| {
                 this.toggle_preview(window, cx);
-                if this.source_only {
+                if this.lifecycle.source_only() {
                     window.focus(&this.focus, cx);
                 } else {
                     window.focus(&this.editor.read(cx).focus_handle(cx), cx);

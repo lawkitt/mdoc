@@ -218,8 +218,8 @@ impl Drop for PreviewState {
 impl DocumentView {
     pub(super) fn toggle_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.preview.visible = !self.preview.visible;
-        if !self.preview.visible && self.active && !self.loading && !self.unavailable {
-            if self.source_only {
+        if !self.preview.visible && self.active && self.lifecycle.ready() {
+            if self.lifecycle.source_only() {
                 window.focus(&self.focus, cx);
             } else {
                 window.focus(&self.editor.read(cx).focus_handle(cx), cx);
@@ -309,7 +309,8 @@ impl DocumentView {
             } else {
                 return;
             }
-            this.dirty_cached = this.dirty(cx);
+            let dirty = this.dirty(cx);
+            this.lifecycle.set_dirty(dirty);
             cx.notify();
         });
         self.preview.pending = Some(PendingPreview {

@@ -70,7 +70,11 @@ pub(crate) fn install_editor_hooks(editor: &mut EditorState, preferences: settin
 impl DocumentView {
     /// What this document checks now, or `None` when it checks nothing.
     fn spelling_options(&self) -> Option<Options> {
-        if self.spelling.off_here || self.source_only || self.loading || self.unavailable {
+        if self.spelling.off_here
+            || self.lifecycle.source_only()
+            || self.lifecycle.loading()
+            || self.lifecycle.unavailable()
+        {
             return None;
         }
         configured_options(&self.preferences)

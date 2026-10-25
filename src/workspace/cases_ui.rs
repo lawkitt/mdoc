@@ -378,7 +378,7 @@ impl Workspace {
         let (loaded, has_case) = {
             let v = view.read(cx);
             (
-                !v.loading && !v.unavailable && !v.source_only,
+                !v.lifecycle.loading() && !v.lifecycle.unavailable() && !v.lifecycle.source_only(),
                 v.case.is_some(),
             )
         };
