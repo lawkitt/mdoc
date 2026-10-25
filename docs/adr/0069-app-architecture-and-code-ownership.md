@@ -111,5 +111,7 @@ Owners extracted so far:
 
 - `Notices` (`src/workspace/notices.rs`): the session message and last
   run's crash report behind the header bell, and when the bell opens.
+- `FocusRegions` (`src/workspace/focus_regions.rs`): the window's F6
+  regions in order and each region's last focused control.
 
 References: [interview](../design/codebase-refactoring.md).

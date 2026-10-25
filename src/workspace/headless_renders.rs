@@ -582,7 +582,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             w.theme_choice = theme;
             w.apply_theme(window, cx);
             w.show_home(window, cx);
-            window.focus(&w.home_region, cx);
+            window.focus(w.focus_regions.home(), cx);
         })?;
         for mut record in scenarios(&mut d, &dir, &path, &detections)? {
             record["theme"] = json!(tag);
