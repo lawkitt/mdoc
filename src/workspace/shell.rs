@@ -58,9 +58,6 @@ pub(crate) fn bind_keys(cx: &mut App) {
 
 pub(super) struct ShellState {
     pub recents: Recents,
-    /// Notices that open the popover by themselves, counted last frame: a
-    /// new one opens it once.
-    pub notice_count: usize,
     pub palette: Option<Palette>,
     /// Files dragged over the window while Home shows: how many are droppable.
     pub drop: Option<usize>,
@@ -78,7 +75,6 @@ impl ShellState {
             } else {
                 Recents::default_path()
             }),
-            notice_count: 0,
             palette: None,
             drop: None,
             drop_generation: 0,
@@ -1210,7 +1206,7 @@ impl Workspace {
     pub(super) fn paste_as_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let text = cx.read_from_clipboard().and_then(|item| item.text());
         if text.as_deref().is_none_or(|t| t.trim().is_empty()) {
-            self.notice = Some("The clipboard has no text to paste.".into());
+            self.notices.post("The clipboard has no text to paste.");
             cx.notify();
             return;
         }
@@ -1234,10 +1230,10 @@ impl Workspace {
             // The notice opens even over an earlier one; check quietly whether
             // locked cases belong in it.
             self.load_cases(window, cx);
-            self.notice = Some(format!(
+            let effect = self.notices.post_now(format!(
                 "{action} works from a pseudonymized document. Open one, or open a case, first."
             ));
-            self.title.notices_open.set(true);
+            self.carry_out_notices(effect);
             cx.notify();
             return None;
         }

@@ -107,6 +107,9 @@ each from the phase that makes it true.
 - development.md's layout table is rewritten as each phase moves code.
 - CONTEXT.md defines owner, transition and effect.
 
-Owners extracted so far: none.
+Owners extracted so far:
+
+- `Notices` (`src/workspace/notices.rs`): the session message and last
+  run's crash report behind the header bell, and when the bell opens.
 
 References: [interview](../design/codebase-refactoring.md).
