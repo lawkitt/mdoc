@@ -350,11 +350,11 @@ fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
     );
     cx.dispatch_action(Quit);
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| tabs.read(cx).quitting.is_some()));
+    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert!(tabs.read(cx).quitting.is_none());
+        assert!(!tabs.read(cx).quit_flow.quitting());
         assert!(!progress.cancel.load(Ordering::Relaxed));
     });
     let dirty = cx.update(|_, cx| {
@@ -373,7 +373,7 @@ fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
         "ctrl-q"
     });
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| tabs.read(cx).quitting.is_some()));
+    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
     for _ in 0..dirty {
         cx.simulate_prompt_answer("Discard");
         cx.run_until_parked();
@@ -1608,7 +1608,7 @@ fn quit_cancel_keeps_all_tabs_and_save_as_collision_never_overwrites(cx: &mut Te
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
         assert_eq!(tabs.tabs.len(), 3);
-        assert!(tabs.quitting.is_none());
+        assert!(!tabs.quit_flow.quitting());
         assert_eq!(
             tabs.tabs
                 .iter()
@@ -2060,7 +2060,7 @@ fn failed_final_checkpoint_can_cancel_quit_without_losing_tabs(cx: &mut TestAppC
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.len(), 1);
-        assert!(!tabs.read(cx).finishing);
+        assert!(!tabs.read(cx).quit_flow.finishing());
         assert!(tabs.read(cx).notices.message().is_some());
     });
     assert_eq!(std::fs::read_to_string(parent_file).unwrap(), "preserve");
@@ -3909,7 +3909,7 @@ fn shortcuts_work_right_after_share_save_as_case(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert!(tabs.quitting.is_some() || tabs.finishing);
+        assert!(tabs.quit_flow.quitting() || tabs.quit_flow.finishing());
     });
 }
 
@@ -5167,7 +5167,7 @@ fn case_quit_failure_can_cancel_without_losing_mappings(cx: &mut TestAppContext)
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
     tabs.read_with(cx, |tabs, cx| {
-        assert!(!tabs.finishing && tabs.quitting.is_none());
+        assert!(!tabs.quit_flow.finishing() && !tabs.quit_flow.quitting());
         assert_eq!(tabs.cases.cases[0].id, case);
         assert_eq!(
             tabs.active_view()
@@ -5275,7 +5275,7 @@ fn abandoned_quit_does_not_block_later_case_saves(cx: &mut TestAppContext) {
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.session_writer
             .set_path(Some(parent_file.join("session.json")));
-        tabs.finishing = true;
+        tabs.quit_flow.settle([]);
         tabs.set_case_quit_window(Some(window.window_handle()));
         tabs.checkpoint(window, cx);
     });
@@ -5283,7 +5283,7 @@ fn abandoned_quit_does_not_block_later_case_saves(cx: &mut TestAppContext) {
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
     tabs.read_with(cx, |tabs, _| {
-        assert!(!tabs.finishing);
+        assert!(!tabs.quit_flow.finishing());
         assert!(!tabs.case_quit_pending());
     });
     // An ordinary failure afterwards is a notice, not a quit prompt.

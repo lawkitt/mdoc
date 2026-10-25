@@ -930,7 +930,7 @@ impl Workspace {
         self.cases.pending.entry(case.id.clone()).or_insert(case);
         // Only a quit still in progress owns the failure; an abandoned one
         // must not block ordinary saves behind an unanswered prompt.
-        if self.finishing && self.cases.quit_window.is_some() {
+        if self.quit_flow.finishing() && self.cases.quit_window.is_some() {
             self.cases.quit_error = Some(error);
         }
     }
@@ -942,7 +942,7 @@ impl Workspace {
         cx.defer(move |cx| {
             let _ = window.update(cx, |_, window, cx| {
                 let _ = entity.update(cx, |this, cx| {
-                    if this.finishing && this.cases.quit_window.is_some() {
+                    if this.quit_flow.finishing() && this.cases.quit_window.is_some() {
                         this.finish_quit(window, cx);
                     }
                 });
@@ -1005,8 +1005,7 @@ impl Workspace {
                         }
                         _ => {
                             this.cancel_case_quit();
-                            this.finishing = false;
-                            this.quitting = None;
+                            this.quit_flow.abandon();
                             crate::updater::cancel_restart(cx);
                             cx.notify();
                         }
