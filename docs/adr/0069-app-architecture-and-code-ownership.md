@@ -120,5 +120,7 @@ Owners extracted so far:
   their ids, records and views, the active tab, and whether Home shows.
 - `SessionWriter` (`src/workspace/session_writer.rs`): the tab list's saves
   to `session.json`, one at a time, with only the newest snapshot waiting.
+- `DocxQueue` (`src/workspace/docx_queue.rs`): DOCX conversions waiting
+  for the one worker, run one at a time, skipping cancelled or closed tabs.
 
 References: [interview](../design/codebase-refactoring.md).

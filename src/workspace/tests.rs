@@ -1637,8 +1637,7 @@ fn queued_docx_jobs_are_serial_and_closed_tabs_cannot_receive_results(cx: &mut T
     cx.run_until_parked();
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert!(tabs.docx_running.is_none());
-        assert!(tabs.docx_queue.is_empty());
+        assert!(tabs.docx_queue.idle());
         assert!(first.read(cx).preview.pdf.is_some());
         assert!(tabs.active_view().unwrap().read(cx).preview.pdf.is_some());
     });
@@ -1819,7 +1818,7 @@ fn closing_queued_conversion_rejects_it_without_affecting_other_tabs(cx: &mut Te
     let cancelled = Arc::new(AtomicBool::new(false));
     let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.docx_running = Some((999, 1));
+        tabs.docx_queue.occupy(999, 1);
         let view = tabs.active_view().unwrap();
         view.update(cx, |view, cx| {
             view.open_docx("queued.docx".into(), window, cx)
@@ -1836,8 +1835,7 @@ fn closing_queued_conversion_rejects_it_without_affecting_other_tabs(cx: &mut Te
         );
         tabs.remove(id, window, cx);
         tabs.docx_finished(999, 1, window, cx);
-        assert!(tabs.docx_queue.is_empty());
-        assert!(tabs.docx_running.is_none());
+        assert!(tabs.docx_queue.idle());
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
