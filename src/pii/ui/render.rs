@@ -1,6 +1,6 @@
 //! PII toolbar and popup routing. State stays in the parent controller.
 use super::{Popup, ReviewUi};
-use crate::{DocumentView, ui};
+use crate::{document_view::DocumentView, ui};
 use gpui::{AnyElement, App, Context, Window, div, prelude::*, px};
 
 impl ReviewUi {

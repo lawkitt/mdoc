@@ -3,9 +3,16 @@
 //! File, Edit, View and Window. Edit items use the editor's actions with their
 //! OS actions, so they also reach native Open/Save panels.
 
+use crate::{
+    document_view::{CopyMarkdown, Save, SaveAs, ToggleCompare, ZoomIn, ZoomOut, ZoomReset},
+    pii::ui::{CopyForAi, Pseudonymize},
+    search_session::{FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown},
+    workspace::{
+        Close, Import, New, NextTab, Open, OpenCase, PasteAiResponse, PreviousTab,
+        PseudonymizeClipboard, Quit, Settings, ToggleSidebar,
+    },
+};
 use gpui::{App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, actions};
-
-use crate::*;
 
 actions!(
     mdoc,

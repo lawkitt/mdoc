@@ -14,24 +14,61 @@ use scan::ScanJob;
 mod tests;
 
 use crate::{
-    DocumentView, PiiAddCandidate, PiiApplyAll, PiiClosePopup, PiiConfirm, PiiNextCandidate,
-    PiiPreviousCandidate, PiiReviewCandidate, Pseudonymize, markdown_search,
+    document_view::DocumentView,
     pii::detector,
-    pii::{self, Category, IdentitySnapshot, Review, tracking::ReplacementPlan},
-    settings, settings_ui, style,
+    pii::{Category, IdentitySnapshot, Review, tracking::ReplacementPlan},
+    settings, settings_ui,
 };
-use gpui::{
-    App, AppContext, Context, Entity, FocusHandle, Focusable, Hsla, KeyBinding, Pixels, Window, px,
-};
+use gpui::{App, Context, FocusHandle, Focusable, Hsla, KeyBinding, Pixels, Window, actions, px};
 use std::{
     cell::Cell,
     ops::Range,
     rc::Rc,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, atomic::Ordering},
 };
+actions!(
+    mdoc,
+    [
+        CopyForAi,
+        CloseCompare,
+        Pseudonymize,
+        PiiAddCandidate,
+        PiiReviewCandidate,
+        PiiNextCandidate,
+        PiiPreviousCandidate,
+        PiiConfirm,
+        PiiApplyAll,
+        PiiNextChoice,
+        PiiPreviousChoice,
+        PiiOpenChoice,
+        PiiClosePopup,
+        ExpandAllIdentities,
+        CollapseAllIdentities,
+        PanelUp,
+        PanelDown,
+        PanelFirst,
+        PanelLast,
+        PanelEnterList,
+        PanelEscape,
+        PanelMoveUp,
+        PanelMoveDown,
+        PanelToggle,
+        PanelOpen,
+        PanelExpand,
+        PanelCollapse,
+        PanelKeep,
+        ApplyThis,
+        ApplySame,
+        ApplyAll,
+        KeepThis,
+        KeepSame,
+        KeepAll,
+        PopupPreviousMention,
+        PopupNextMention,
+        PopupFirstMention,
+        PopupLastMention,
+    ]
+);
 
 /// The word popup edits the workspace selection; the chooser disambiguates
 /// several hidden fields that share one visual row.
@@ -183,9 +220,9 @@ pub(crate) fn bind_keys(cx: &mut App) {
     };
     cx.bind_keys(decision_bindings(modifier));
     cx.bind_keys([
-        KeyBinding::new("down", crate::PiiNextChoice, Some("PiiChooser")),
-        KeyBinding::new("up", crate::PiiPreviousChoice, Some("PiiChooser")),
-        KeyBinding::new("enter", crate::PiiOpenChoice, Some("PiiChooser")),
+        KeyBinding::new("down", crate::pii::ui::PiiNextChoice, Some("PiiChooser")),
+        KeyBinding::new("up", crate::pii::ui::PiiPreviousChoice, Some("PiiChooser")),
+        KeyBinding::new("enter", crate::pii::ui::PiiOpenChoice, Some("PiiChooser")),
         KeyBinding::new(&format!("{modifier}-shift-p"), Pseudonymize, None),
         KeyBinding::new("alt-enter", PiiReviewCandidate, Some("Editor")),
         KeyBinding::new("alt-down", PiiNextCandidate, Some("Editor")),
@@ -200,36 +237,44 @@ pub(crate) fn bind_keys(cx: &mut App) {
         KeyBinding::new("enter", PiiConfirm, Some("PseudonymReplacement")),
         // ← → step through the entity's mentions, ⌘← ⌘→ to its ends; the
         // alias field and menus keep their own arrows (ADR 0055).
-        KeyBinding::new("left", crate::PopupPreviousMention, Some(STEP)),
-        KeyBinding::new("right", crate::PopupNextMention, Some(STEP)),
-        KeyBinding::new("up", crate::PopupPreviousMention, Some(STEP)),
-        KeyBinding::new("down", crate::PopupNextMention, Some(STEP)),
+        KeyBinding::new("left", crate::pii::ui::PopupPreviousMention, Some(STEP)),
+        KeyBinding::new("right", crate::pii::ui::PopupNextMention, Some(STEP)),
+        KeyBinding::new("up", crate::pii::ui::PopupPreviousMention, Some(STEP)),
+        KeyBinding::new("down", crate::pii::ui::PopupNextMention, Some(STEP)),
         KeyBinding::new(
             &format!("{modifier}-up"),
-            crate::PopupFirstMention,
+            crate::pii::ui::PopupFirstMention,
             Some(STEP),
         ),
         KeyBinding::new(
             &format!("{modifier}-down"),
-            crate::PopupLastMention,
+            crate::pii::ui::PopupLastMention,
             Some(STEP),
         ),
         KeyBinding::new(
             &format!("{modifier}-left"),
-            crate::PopupFirstMention,
+            crate::pii::ui::PopupFirstMention,
             Some(STEP),
         ),
         KeyBinding::new(
             &format!("{modifier}-right"),
-            crate::PopupLastMention,
+            crate::pii::ui::PopupLastMention,
             Some(STEP),
         ),
         KeyBinding::new("escape", PiiClosePopup, Some("PseudonymReview")),
         // Esc leaves before/after, also from inside its read-only columns.
-        KeyBinding::new("escape", crate::CloseCompare, Some("CompareView")),
-        KeyBinding::new("escape", crate::CloseCompare, Some("CompareView > Editor")),
-        KeyBinding::new("escape", crate::PanelEscape, Some("IdentityPanel")),
-        KeyBinding::new("down", crate::PanelEnterList, Some("ReplacementSearch")),
+        KeyBinding::new("escape", crate::pii::ui::CloseCompare, Some("CompareView")),
+        KeyBinding::new(
+            "escape",
+            crate::pii::ui::CloseCompare,
+            Some("CompareView > Editor"),
+        ),
+        KeyBinding::new("escape", crate::pii::ui::PanelEscape, Some("IdentityPanel")),
+        KeyBinding::new(
+            "down",
+            crate::pii::ui::PanelEnterList,
+            Some("ReplacementSearch"),
+        ),
         // Document undo from anywhere in the replacements panel (ADR 0033).
         KeyBinding::new("cmd-z", mdoc_editor::Undo, Some("IdentityPanel")),
         KeyBinding::new("ctrl-z", mdoc_editor::Undo, Some("IdentityPanel")),
@@ -253,34 +298,50 @@ fn decision_bindings(modifier: &str) -> Vec<KeyBinding> {
     // The checklist (ADR 0048): Space ticks, Enter jumps to the mention,
     // →/← show and hide mentions, ⌫ keeps the original; ⌘↩ applies all.
     let mut bindings = vec![
-        KeyBinding::new("up", crate::PanelUp, Some(LIST)),
-        KeyBinding::new("down", crate::PanelDown, Some(LIST)),
-        KeyBinding::new(&format!("{modifier}-up"), crate::PanelFirst, Some(LIST)),
-        KeyBinding::new(&format!("{modifier}-down"), crate::PanelLast, Some(LIST)),
-        KeyBinding::new("alt-up", crate::PanelMoveUp, Some(LIST)),
-        KeyBinding::new("alt-down", crate::PanelMoveDown, Some(LIST)),
-        KeyBinding::new("alt-escape", crate::PanelEscape, Some("IdentityPanel")),
-        KeyBinding::new("space", crate::PanelToggle, Some(LIST)),
-        KeyBinding::new("enter", crate::PanelOpen, Some(LIST)),
-        KeyBinding::new("right", crate::PanelExpand, Some(LIST)),
-        KeyBinding::new("left", crate::PanelCollapse, Some(LIST)),
-        KeyBinding::new("backspace", crate::PanelKeep, Some(LIST)),
-        KeyBinding::new("delete", crate::PanelKeep, Some(LIST)),
+        KeyBinding::new("up", crate::pii::ui::PanelUp, Some(LIST)),
+        KeyBinding::new("down", crate::pii::ui::PanelDown, Some(LIST)),
+        KeyBinding::new(
+            &format!("{modifier}-up"),
+            crate::pii::ui::PanelFirst,
+            Some(LIST),
+        ),
+        KeyBinding::new(
+            &format!("{modifier}-down"),
+            crate::pii::ui::PanelLast,
+            Some(LIST),
+        ),
+        KeyBinding::new("alt-up", crate::pii::ui::PanelMoveUp, Some(LIST)),
+        KeyBinding::new("alt-down", crate::pii::ui::PanelMoveDown, Some(LIST)),
+        KeyBinding::new(
+            "alt-escape",
+            crate::pii::ui::PanelEscape,
+            Some("IdentityPanel"),
+        ),
+        KeyBinding::new("space", crate::pii::ui::PanelToggle, Some(LIST)),
+        KeyBinding::new("enter", crate::pii::ui::PanelOpen, Some(LIST)),
+        KeyBinding::new("right", crate::pii::ui::PanelExpand, Some(LIST)),
+        KeyBinding::new("left", crate::pii::ui::PanelCollapse, Some(LIST)),
+        KeyBinding::new("backspace", crate::pii::ui::PanelKeep, Some(LIST)),
+        KeyBinding::new("delete", crate::pii::ui::PanelKeep, Some(LIST)),
         KeyBinding::new(&format!("{modifier}-enter"), PiiApplyAll, None),
     ];
     // The mention bar: Enter applies in the selected scope and moves on,
     // Space unticks in it, ⌘↩ applies everything (ADR 0055).
     bindings.extend([
-        KeyBinding::new("enter", crate::ApplyThis, Some(POPUP)),
-        KeyBinding::new("space", crate::PanelKeep, Some(POPUP)),
+        KeyBinding::new("enter", crate::pii::ui::ApplyThis, Some(POPUP)),
+        KeyBinding::new("space", crate::pii::ui::PanelKeep, Some(POPUP)),
     ]);
     for key in ["backspace", "delete"] {
         bindings.extend([
-            KeyBinding::new(key, crate::KeepThis, Some(POPUP)),
-            KeyBinding::new(&format!("{modifier}-{key}"), crate::KeepSame, Some(POPUP)),
+            KeyBinding::new(key, crate::pii::ui::KeepThis, Some(POPUP)),
+            KeyBinding::new(
+                &format!("{modifier}-{key}"),
+                crate::pii::ui::KeepSame,
+                Some(POPUP),
+            ),
             KeyBinding::new(
                 &format!("{modifier}-shift-{key}"),
-                crate::KeepAll,
+                crate::pii::ui::KeepAll,
                 Some(POPUP),
             ),
         ]);

@@ -2,11 +2,20 @@
 //! notice; Paste AI Response opens the reply in a new tab with originals
 //! restored as proposals that keep their aliases. Unknown alias-shaped tokens
 //! are highlighted and can be assigned to an identity, never guessed.
-use super::*;
-use crate::{CopyForAi, PasteAiResponse, PseudonymizeClipboard, ui};
-use gpui::{AnyElement, anchored, deferred, div, prelude::*};
+use crate::{
+    document_view::DocumentView,
+    pii::{
+        self,
+        ui::{CopyForAi, PiiClosePopup},
+    },
+    ui,
+    workspace::{PasteAiResponse, PseudonymizeClipboard},
+};
+use gpui::{
+    AnyElement, App, Context, Focusable, Hsla, Window, anchored, deferred, div, prelude::*, px,
+};
 use pii::restore::{ExportedIdentity, RestoreMap};
-use std::collections::HashSet;
+use std::{collections::HashSet, ops::Range, sync::Arc};
 
 /// Unresolved-token annotations: bit 62 plus the token's start offset.
 pub(super) const UNRESOLVED_ID: u64 = 1 << 62;
@@ -471,23 +480,29 @@ impl DocumentView {
                         .flex()
                         .flex_col()
                         .gap_2()
-                        .on_action(cx.listener(|this, _: &crate::PiiNextChoice, _, cx| {
-                            this.step_unresolved_choice(false, cx)
-                        }))
-                        .on_action(cx.listener(|this, _: &crate::PiiPreviousChoice, _, cx| {
-                            this.step_unresolved_choice(true, cx)
-                        }))
-                        .on_action(cx.listener(|this, _: &crate::PiiOpenChoice, window, cx| {
-                            let selected = this
-                                .pii
-                                .restore
-                                .as_ref()
-                                .and_then(|s| s.popup.as_ref())
-                                .map(|(_, s)| *s);
-                            if let Some(selected) = selected {
-                                this.assign_unresolved(selected, window, cx);
-                            }
-                        }))
+                        .on_action(
+                            cx.listener(|this, _: &crate::pii::ui::PiiNextChoice, _, cx| {
+                                this.step_unresolved_choice(false, cx)
+                            }),
+                        )
+                        .on_action(cx.listener(
+                            |this, _: &crate::pii::ui::PiiPreviousChoice, _, cx| {
+                                this.step_unresolved_choice(true, cx)
+                            },
+                        ))
+                        .on_action(cx.listener(
+                            |this, _: &crate::pii::ui::PiiOpenChoice, window, cx| {
+                                let selected = this
+                                    .pii
+                                    .restore
+                                    .as_ref()
+                                    .and_then(|s| s.popup.as_ref())
+                                    .map(|(_, s)| *s);
+                                if let Some(selected) = selected {
+                                    this.assign_unresolved(selected, window, cx);
+                                }
+                            },
+                        ))
                         .on_action(cx.listener(|this, _: &PiiClosePopup, window, cx| {
                             this.close_unresolved(window, cx)
                         }))

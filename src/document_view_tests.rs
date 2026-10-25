@@ -1,6 +1,24 @@
-use super::*;
-use crate::search_session::map_edit_offset;
-use gpui::{TestAppContext, VisualTestContext};
+use crate::{
+    bind_app_keys,
+    document_view::{
+        ClosePdf, CopyMarkdown, DismissImportWarning, DocumentView, Next, OcrState, Save, SaveAs,
+        bind_markdown_search_keys, find_counter,
+    },
+    import, markdown_search, ocr,
+    pii::{self, ui::PiiApplyAll},
+    preview::{self, RetryPreview},
+    search_session::{
+        CloseMarkdownSearch, FindMarkdown, FindNextMarkdown, FindPreviousMarkdown,
+        FindReplaceMarkdown, ReplaceNextMarkdown, map_edit_offset,
+    },
+    session_store, settings, settings_ui,
+    spelling::{NextMisspelling, PreviousMisspelling, ToggleDocumentSpelling},
+    style::{self, Theme},
+    ui,
+    workspace::{self, Close, Import, New, Open},
+};
+use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
+use std::{path::PathBuf, sync::atomic::Ordering};
 
 pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);

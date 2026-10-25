@@ -1,4 +1,12 @@
-use super::*;
+use super::DocumentView;
+use crate::{
+    document_view::{CopyMarkdown, Save, SaveAs, TogglePreview},
+    pii::ui::{CopyForAi, PiiApplyAll},
+    spelling::ToggleDocumentSpelling,
+    style, ui,
+    workspace::{Close, Import, Open, PasteAiResponse},
+};
+use gpui::{App, Context, Focusable, Window, div, prelude::*, px};
 
 /// The document header's one filled button (ADR 0048).
 enum Primary {

@@ -4,7 +4,7 @@ mod structured;
 mod windows;
 use crate::pii::{Category, Detection};
 use gliner2_rs::{
-    Chunker, ExecutionMode, InferenceParams, SchemaTask, SpanConfig, SpanEngine,
+    ExecutionMode, InferenceParams, SchemaTask, SpanConfig, SpanEngine,
     processor::SchemaTransformer,
 };
 use serde::Deserialize;

@@ -1,10 +1,21 @@
 //! Word-anchored editor for the shared replacement workspace.
-use super::*;
-use gpui::{
-    Animation, AnimationExt, AnyElement, SharedString, anchored, deferred, div, prelude::*,
-    uniform_list,
+use super::{
+    Applying, MappingAction,
+    popup::{self, Scope, Step},
 };
-use std::time::Duration;
+use crate::{
+    document_view::DocumentView,
+    pii::{
+        self, Category,
+        ui::{APPLIED_ID, KEPT_ID, PiiClosePopup, PiiConfirm, Popup},
+    },
+    style,
+};
+use gpui::{
+    Animation, AnimationExt, AnyElement, App, Context, Focusable, Hsla, Pixels, SharedString,
+    Window, anchored, deferred, div, prelude::*, px, uniform_list,
+};
+use std::{ops::Range, sync::Arc, time::Duration};
 
 /// The quiet button look: a thin border, regular weight.
 fn secondary(
@@ -287,18 +298,24 @@ impl DocumentView {
                     cx.stop_propagation();
                 }),
             )
-            .on_action(cx.listener(|this, _: &crate::PiiNextChoice, _, cx| {
-                this.step_alias_choice(false, cx);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &crate::PiiPreviousChoice, _, cx| {
-                this.step_alias_choice(true, cx);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &crate::PiiOpenChoice, window, cx| {
-                this.open_alias_choice(window, cx);
-                cx.stop_propagation();
-            }))
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PiiNextChoice, _, cx| {
+                    this.step_alias_choice(false, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PiiPreviousChoice, _, cx| {
+                    this.step_alias_choice(true, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PiiOpenChoice, window, cx| {
+                    this.open_alias_choice(window, cx);
+                    cx.stop_propagation();
+                }),
+            )
             .on_action(cx.listener(|this, _: &PiiClosePopup, window, cx| {
                 this.escape_popup(window, cx);
                 cx.stop_propagation();
@@ -312,26 +329,26 @@ impl DocumentView {
                 this.redo_last_step(window, cx);
                 cx.stop_propagation();
             }))
-            .on_action(
-                cx.listener(|this, _: &crate::PopupPreviousMention, window, cx| {
+            .on_action(cx.listener(
+                |this, _: &crate::pii::ui::PopupPreviousMention, window, cx| {
                     this.step_identity_occurrence(Step::Previous, window, cx);
                     cx.stop_propagation();
-                }),
-            )
+                },
+            ))
             .on_action(
-                cx.listener(|this, _: &crate::PopupNextMention, window, cx| {
+                cx.listener(|this, _: &crate::pii::ui::PopupNextMention, window, cx| {
                     this.step_identity_occurrence(Step::Next, window, cx);
                     cx.stop_propagation();
                 }),
             )
             .on_action(
-                cx.listener(|this, _: &crate::PopupFirstMention, window, cx| {
+                cx.listener(|this, _: &crate::pii::ui::PopupFirstMention, window, cx| {
                     this.step_identity_occurrence(Step::First, window, cx);
                     cx.stop_propagation();
                 }),
             )
             .on_action(
-                cx.listener(|this, _: &crate::PopupLastMention, window, cx| {
+                cx.listener(|this, _: &crate::pii::ui::PopupLastMention, window, cx| {
                     this.step_identity_occurrence(Step::Last, window, cx);
                     cx.stop_propagation();
                 }),

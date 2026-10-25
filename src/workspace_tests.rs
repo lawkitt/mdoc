@@ -1,5 +1,34 @@
 use super::*;
-use gpui::{TestAppContext, VisualTestContext};
+use crate::{
+    bind_app_keys,
+    document_view::{
+        DocumentView, OcrState, Save, SaveAs, TogglePreview, ZoomIn, ZoomReset,
+        bind_markdown_search_keys,
+    },
+    import_session, markdown_search, ocr,
+    pii::ui::{PiiApplyAll, Pseudonymize},
+    preview::RetryPreview,
+    recognition,
+    search_session::FindMarkdown,
+    session_store::{self, Session, TabRecord},
+    settings, settings_ui,
+    style::{self, Theme},
+    ui,
+    workspace::{
+        Close, Import, New, Open, OpenCase, PasteAiResponse, PseudonymizeClipboard, Quit,
+        RetryDocument, Settings, ToggleSidebar, ToggleTheme,
+    },
+};
+use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
+use gpui_pdf::PdfView;
+use std::{
+    path::PathBuf,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 /// Boot with `session`; an empty session starts from an Untitled tab rather
 /// than Home (ADR 0048), as most tests type into it. See [`boot_home`].
@@ -4877,7 +4906,7 @@ fn locked_cases_notice_opens_only_when_a_locked_case_is_needed(cx: &mut TestAppC
     // Pasting an AI reply into a tab without a mapping needs the locked
     // cases: the notice opens.
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 replied.".into()));
-    cx.dispatch_action(crate::PasteAiResponse);
+    cx.dispatch_action(crate::workspace::PasteAiResponse);
     draw(cx);
     assert!(cx.debug_bounds("notices-popover").is_some());
     assert!(cx.debug_bounds("unlock-cases").is_some());
@@ -4901,7 +4930,7 @@ fn restore_from_home_shows_unlock_over_an_earlier_notice(cx: &mut TestAppContext
     draw(cx);
     assert!(cx.debug_bounds("notices-popover").is_none());
     tabs.update_in(cx, |_, window, cx| {
-        window.dispatch_action(Box::new(crate::PasteAiResponse), cx)
+        window.dispatch_action(Box::new(crate::workspace::PasteAiResponse), cx)
     });
     draw(cx);
     cx.update(|_, cx| assert!(tabs.read(cx).cases.locked));
@@ -4921,7 +4950,7 @@ fn restore_from_a_blank_tab_looks_for_locked_cases(cx: &mut TestAppContext) {
     draw(cx);
     cx.update(|_, cx| assert!(!tabs.read(cx).cases.locked, "nothing looked yet"));
     cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 replied.".into()));
-    cx.dispatch_action(crate::PasteAiResponse);
+    cx.dispatch_action(crate::workspace::PasteAiResponse);
     draw(cx);
     cx.update(|_, cx| assert!(tabs.read(cx).cases.locked));
     assert!(cx.debug_bounds("unlock-cases").is_some());

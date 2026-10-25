@@ -2,10 +2,15 @@
 //! per-document line cache, the session-only per-document switch, the toolbar
 //! indicator and next/previous navigation. Checking and suggestions never run
 //! on the UI thread; it only copies the text and the PII ranges.
-use super::*;
-use mdoc_editor::Diagnostic;
+use crate::{document_view::DocumentView, settings};
+use gpui::{App, Context, Focusable, Window, actions, px};
+use mdoc_editor::{Diagnostic, EditorState};
 use mdoc_spell::{Accepted, Exclusions, LineCache, Options, Speller};
-use std::{collections::HashSet, ops::Range, time::Duration};
+use std::{collections::HashSet, ops::Range, sync::Arc, time::Duration};
+actions!(
+    mdoc,
+    [NextMisspelling, PreviousMisspelling, ToggleDocumentSpelling,]
+);
 
 /// Pause after an edit before rechecking, so a word being typed isn't
 /// flagged halfway through.
@@ -331,6 +336,7 @@ impl DocumentView {
 mod scheduling_tests {
     use super::*;
     use crate::document_view_tests::boot;
+    use crate::{cases, pii, style::Theme};
 
     #[gpui::test]
     fn typing_captures_only_one_snapshot_after_the_debounce(cx: &mut gpui::TestAppContext) {

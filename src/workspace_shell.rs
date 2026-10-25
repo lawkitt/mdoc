@@ -1,9 +1,23 @@
 //! The window shell (ADR 0048): theme choice, the sidebar's top and foot,
 //! Home with its drop zone, and the ⌘K command palette.
-use super::*;
-use crate::markdown_search::{SearchInput, SearchInputEvent};
-use crate::recents::{self, Recents};
-use gpui::{AnyElement, Hsla, SharedString};
+use super::{Tab, Workspace};
+use crate::{
+    document_view::{CopyMarkdown, DocumentView, Save, SaveAs, ToggleCompare},
+    import,
+    markdown_search::{SearchInput, SearchInputEvent},
+    pii::ui::{CopyForAi, Pseudonymize},
+    recents::{self, Recents},
+    style::{self, Theme},
+    ui,
+    workspace::{
+        Close, New, Open, OpenCase, PasteAiResponse, PseudonymizeClipboard, Settings, ToggleSidebar,
+    },
+};
+use gpui::{
+    Animation, AnimationExt, AnyElement, App, Context, Entity, Focusable, Hsla, KeyBinding,
+    SharedString, Subscription, Window, actions, div, prelude::*, px,
+};
+use std::{path::PathBuf, time::Duration};
 
 actions!(
     mdoc_shell,

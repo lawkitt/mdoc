@@ -775,7 +775,7 @@ pub fn notice_bell(title: &crate::style::TitleBar, theme: Theme) -> Option<AnyEl
                 )
                 .when(cfg!(test), |v| v.debug_selector(|| "header-notices".into()))
                 .on_click(|_, window, cx| {
-                    window.dispatch_action(Box::new(crate::ToggleNotices), cx)
+                    window.dispatch_action(Box::new(crate::workspace::ToggleNotices), cx)
                 }),
             )
             .child(
@@ -884,7 +884,7 @@ fn caption_buttons(window: &Window, theme: Theme) -> Option<AnyElement> {
                         gpui::WindowControlArea::Min => window.minimize_window(),
                         gpui::WindowControlArea::Max => window.zoom_window(),
                         gpui::WindowControlArea::Close => {
-                            window.dispatch_action(Box::new(crate::Quit), cx)
+                            window.dispatch_action(Box::new(crate::workspace::Quit), cx)
                         }
                         gpui::WindowControlArea::Drag => {}
                     }

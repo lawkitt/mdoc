@@ -1,5 +1,14 @@
 //! Shared occurrence selection, explicit mutation scopes and draft lifecycle.
-use super::*;
+use super::{Applying, MappingAction, Selection};
+use crate::{
+    document_view::DocumentView,
+    pii::{
+        Category,
+        ui::{APPLIED_ID, KEPT_ID, PiiClosePopup},
+    },
+};
+use gpui::{App, Context, Focusable, Window, px};
+use std::{ops::Range, sync::Arc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::pii::ui) enum Scope {

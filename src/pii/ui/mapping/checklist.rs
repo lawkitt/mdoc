@@ -2,7 +2,10 @@
 //! Ticked means "will be replaced"; unticking keeps the originals as one undo
 //! step. Kept mentions come from the review's Keep decisions, so an entity
 //! stays listed, unticked, and undo brings its tick back.
-use super::*;
+use super::KeptName;
+use crate::{document_view::DocumentView, pii::ui::APPLIED_ID};
+use gpui::Context;
+use std::{ops::Range, sync::Arc};
 
 /// What a row's checkbox shows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

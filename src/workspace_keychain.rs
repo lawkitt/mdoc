@@ -2,8 +2,16 @@
 //! that may show the macOS password dialog, say why, and preview that dialog
 //! with a short, captioned animation below the text so the real one is
 //! expected, not suspicious, and the drawing is never taken for it.
-use super::*;
-use gpui::{Animation, AnimationExt, Hsla};
+use super::Workspace;
+use crate::{
+    style::{self, Theme},
+    ui,
+    workspace::{
+        Close, Import, New, NextTab, Open, OpenCase, PreviousTab, RetryDocument, Settings,
+        ToggleSidebar,
+    },
+};
+use gpui::{Animation, AnimationExt, AnyElement, App, Context, Hsla, Window, div, prelude::*, px};
 use std::{
     sync::{Arc, LazyLock},
     time::Duration,

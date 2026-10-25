@@ -3,10 +3,24 @@
 //! Replace, Replace all, Whole word and their keys follow the buffer search
 //! bar of Zed's `search` crate (https://github.com/zed-industries/zed),
 //! GPL-3.0-or-later; see THIRD-PARTY-LICENSES.html (ADR 0063).
-use super::*;
-use gpui::SharedString;
-use mdoc_editor::SearchOptions;
-use std::ops::Range;
+use crate::document_view::DocumentView;
+use gpui::{Context, Focusable, SharedString, Window, actions, px};
+use mdoc_editor::{SearchIndex, SearchMatch, SearchOptions};
+use std::{ops::Range, sync::Arc};
+actions!(
+    mdoc,
+    [
+        FindMarkdown,
+        FindReplaceMarkdown,
+        ReplaceNextMarkdown,
+        ReplaceAllMarkdown,
+        ToggleMarkdownWholeWord,
+        FindNextMarkdown,
+        FindPreviousMarkdown,
+        CloseMarkdownSearch,
+        ToggleMarkdownMatchCase,
+    ]
+);
 
 #[derive(Clone, Copy)]
 pub(super) enum SearchRefresh {

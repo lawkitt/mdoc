@@ -1,9 +1,32 @@
 //! Window-level tabs. Each initialized tab owns a retained document view;
 //! unopened session records allocate no editor, PDF, or conversion worker.
-use super::*;
-use crate::session_store::{Session, TabRecord};
-use gpui::{Animation, AnimationExt, AnyElement, EventEmitter};
-use std::{collections::VecDeque, time::Duration};
+use crate::{
+    comparison, comparison_ui,
+    document::{self, Document},
+    document_view::{DocumentView, DocumentViewDependencies, Next, OcrState, known_ocr_state},
+    import, model_work, ocr,
+    pii::{self, ui::PiiApplyAll},
+    session_store::{self, Session, TabRecord},
+    settings, settings_ui,
+    style::{self, Theme},
+    ui,
+};
+use gpui::{
+    Animation, AnimationExt, AnyElement, App, Bounds, Context, Entity, EventEmitter, Focusable,
+    PromptLevel, Subscription, Window, WindowBounds, WindowOptions, actions, div, prelude::*, px,
+    size,
+};
+use std::{
+    cell::Cell,
+    collections::VecDeque,
+    path::PathBuf,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 #[path = "workspace_cases.rs"]
 mod cases_ui;
@@ -23,6 +46,26 @@ pub(crate) use shell::bind_keys as bind_shell_keys;
 #[path = "workspace_actions.rs"]
 mod app_actions;
 pub(crate) use app_actions::bind as bind_app_actions;
+actions!(
+    mdoc,
+    [
+        New,
+        Open,
+        Import,
+        Settings,
+        Quit,
+        Close,
+        NextTab,
+        PreviousTab,
+        ToggleSidebar,
+        ToggleTheme,
+        ToggleNotices,
+        OpenCase,
+        RetryDocument,
+        PasteAiResponse,
+        PseudonymizeClipboard,
+    ]
+);
 
 pub(super) enum TabEvent {
     New,

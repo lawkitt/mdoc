@@ -1,8 +1,11 @@
 //! Panel keyboard, panel selection and shared decision keys (ADR 0033,
 //! ADR 0044).
-use super::panel::PanelItem;
-use super::*;
-use gpui::prelude::*;
+use super::{DropTarget, PanelCursor, PanelDrag, panel::PanelItem, popup::Scope};
+use crate::{
+    document_view::DocumentView,
+    pii::ui::{APPLIED_ID, KEPT_ID},
+};
+use gpui::{App, Context, Focusable, Window, prelude::*};
 
 impl DocumentView {
     /// Select a mention from the panel: the editor scrolls to and outlines it,
@@ -257,62 +260,80 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
         panel
-            .on_action(cx.listener(|this, _: &crate::PanelDown, window, cx| {
-                this.move_cursor(|i, n| Some((i + 1).min(n - 1)), window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &crate::PanelUp, window, cx| {
-                this.move_cursor(|i, _| i.checked_sub(1), window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &crate::PanelFirst, window, cx| {
-                this.move_cursor(|_, _| Some(0), window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &crate::PanelLast, window, cx| {
-                this.move_cursor(|_, n| Some(n - 1), window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &crate::PanelEnterList, window, cx| {
-                window.focus(&this.pii.mapping.focus, cx);
-                if this.pii.mapping.cursor.is_none() {
-                    this.move_cursor(|_, _| Some(0), window, cx);
-                }
-                cx.notify();
-            }))
             .on_action(
-                cx.listener(|this, _: &crate::PanelMoveUp, _, cx| this.step_key_move(false, cx)),
+                cx.listener(|this, _: &crate::pii::ui::PanelDown, window, cx| {
+                    this.move_cursor(|i, n| Some((i + 1).min(n - 1)), window, cx)
+                }),
             )
             .on_action(
-                cx.listener(|this, _: &crate::PanelMoveDown, _, cx| this.step_key_move(true, cx)),
+                cx.listener(|this, _: &crate::pii::ui::PanelUp, window, cx| {
+                    this.move_cursor(|i, _| i.checked_sub(1), window, cx)
+                }),
             )
-            .on_action(cx.listener(|this, _: &crate::PanelEscape, window, cx| {
-                cx.stop_propagation();
-                if this.close_panel_menu(window, cx) {
-                    return;
-                }
-                // Esc while ⌥ is held cancels a keyboard move.
-                if this.pii.mapping.key_moving {
-                    let mapping = &mut this.pii.mapping;
-                    mapping.key_moving = false;
-                    mapping.dragging = None;
-                    mapping.drop_target = None;
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PanelFirst, window, cx| {
+                    this.move_cursor(|_, _| Some(0), window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PanelLast, window, cx| {
+                    this.move_cursor(|_, n| Some(n - 1), window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PanelEnterList, window, cx| {
+                    window.focus(&this.pii.mapping.focus, cx);
+                    if this.pii.mapping.cursor.is_none() {
+                        this.move_cursor(|_, _| Some(0), window, cx);
+                    }
                     cx.notify();
-                    return;
-                }
-                // Esc in the list returns to search; from search it closes.
-                let search = this.pii.mapping.search.read(cx).focus_handle(cx);
-                if search.is_focused(window) {
-                    this.close_replacements(window, cx);
-                } else {
-                    window.focus(&search, cx);
-                    cx.notify();
-                }
-                cx.stop_propagation();
+                }),
+            )
+            .on_action(cx.listener(|this, _: &crate::pii::ui::PanelMoveUp, _, cx| {
+                this.step_key_move(false, cx)
             }))
-            .on_action(cx.listener(|this, _: &crate::PanelToggle, window, cx| {
-                this.panel_toggle(false, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &crate::PanelKeep, window, cx| {
-                this.panel_toggle(true, window, cx)
-            }))
-            .on_action(cx.listener(|this, _: &crate::PanelOpen, _, cx| {
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PanelMoveDown, _, cx| {
+                    this.step_key_move(true, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PanelEscape, window, cx| {
+                    cx.stop_propagation();
+                    if this.close_panel_menu(window, cx) {
+                        return;
+                    }
+                    // Esc while ⌥ is held cancels a keyboard move.
+                    if this.pii.mapping.key_moving {
+                        let mapping = &mut this.pii.mapping;
+                        mapping.key_moving = false;
+                        mapping.dragging = None;
+                        mapping.drop_target = None;
+                        cx.notify();
+                        return;
+                    }
+                    // Esc in the list returns to search; from search it closes.
+                    let search = this.pii.mapping.search.read(cx).focus_handle(cx);
+                    if search.is_focused(window) {
+                        this.close_replacements(window, cx);
+                    } else {
+                        window.focus(&search, cx);
+                        cx.notify();
+                    }
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PanelToggle, window, cx| {
+                    this.panel_toggle(false, window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PanelKeep, window, cx| {
+                    this.panel_toggle(true, window, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &crate::pii::ui::PanelOpen, _, cx| {
                 if let Some(PanelCursor::Header(id)) = this.pii.mapping.cursor
                     && let Some((annotation, _)) = this.identity_occurrences(id).into_iter().next()
                 {
@@ -321,25 +342,27 @@ impl DocumentView {
                     cx.notify();
                 }
             }))
-            .on_action(cx.listener(|this, _: &crate::PanelExpand, _, cx| {
+            .on_action(cx.listener(|this, _: &crate::pii::ui::PanelExpand, _, cx| {
                 if let Some(PanelCursor::Header(id)) = this.pii.mapping.cursor {
                     this.pii.mapping.expanded.insert(id);
                     cx.notify();
                 }
             }))
-            .on_action(cx.listener(|this, _: &crate::PanelCollapse, _, cx| {
-                let id = match this.pii.mapping.cursor {
-                    Some(PanelCursor::Header(id)) => Some(id),
-                    Some(PanelCursor::Mention(_)) => this.selected_entity(),
-                    None => None,
-                };
-                if let Some(id) = id {
-                    this.pii.mapping.expanded.remove(&id);
-                    this.pii.mapping.cursor = Some(PanelCursor::Header(id));
-                    this.pii.mapping.panel_selected = false;
-                    cx.notify();
-                }
-            }))
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PanelCollapse, _, cx| {
+                    let id = match this.pii.mapping.cursor {
+                        Some(PanelCursor::Header(id)) => Some(id),
+                        Some(PanelCursor::Mention(_)) => this.selected_entity(),
+                        None => None,
+                    };
+                    if let Some(id) = id {
+                        this.pii.mapping.expanded.remove(&id);
+                        this.pii.mapping.cursor = Some(PanelCursor::Header(id));
+                        this.pii.mapping.panel_selected = false;
+                        cx.notify();
+                    }
+                }),
+            )
     }
 
     /// The same decision keys in the popup, on its mention.
@@ -350,35 +373,49 @@ impl DocumentView {
     ) -> gpui::Stateful<gpui::Div> {
         popup
             // Enter applies in the shown scope and moves on (ADR 0055).
-            .on_action(cx.listener(|this, _: &crate::ApplyThis, window, cx| {
-                this.apply_and_advance(window, cx);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &crate::ApplySame, window, cx| {
-                this.decide(Scope::Wording, false, window, cx);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &crate::ApplyAll, window, cx| {
-                this.decide(Scope::Entity, false, window, cx);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &crate::KeepThis, window, cx| {
-                this.decide(Scope::Mention, true, window, cx);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &crate::KeepSame, window, cx| {
-                this.decide(Scope::Wording, true, window, cx);
-                cx.stop_propagation();
-            }))
-            .on_action(cx.listener(|this, _: &crate::KeepAll, window, cx| {
-                this.decide(Scope::Entity, true, window, cx);
-                cx.stop_propagation();
-            }))
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::ApplyThis, window, cx| {
+                    this.apply_and_advance(window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::ApplySame, window, cx| {
+                    this.decide(Scope::Wording, false, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::ApplyAll, window, cx| {
+                    this.decide(Scope::Entity, false, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::KeepThis, window, cx| {
+                    this.decide(Scope::Mention, true, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::KeepSame, window, cx| {
+                    this.decide(Scope::Wording, true, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::KeepAll, window, cx| {
+                    this.decide(Scope::Entity, true, window, cx);
+                    cx.stop_propagation();
+                }),
+            )
             // Space toggles the bar's ☑ Replace, in the selected scope.
-            .on_action(cx.listener(|this, _: &crate::PanelKeep, window, cx| {
-                this.toggle_replace(window, cx);
-                cx.stop_propagation();
-            }))
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::PanelKeep, window, cx| {
+                    this.toggle_replace(window, cx);
+                    cx.stop_propagation();
+                }),
+            )
     }
 
     /// What a keyboard move of the current row carries: a mention, or the

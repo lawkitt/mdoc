@@ -366,7 +366,9 @@ fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
 
 /// The 256-bit case key, created once and held by the operating system.
 mod key {
-    use super::*;
+    use super::{Generate, Path};
+    #[cfg(windows)]
+    use std::io::{self, Write};
 
     /// Which Keychain holds the key, decided once from this build's
     /// signature (ADR 0045).
