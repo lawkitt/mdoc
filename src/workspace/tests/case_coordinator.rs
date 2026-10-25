@@ -1,0 +1,1148 @@
+//! Saved cases across tabs: saving, joining, the Keychain and quitting (`CaseCoordinator`).
+use super::*;
+
+#[gpui::test]
+fn unsaved_mapping_is_absent_after_session_restore(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    // Saving Markdown retains alias tokens, but does not save their originals.
+    view.update(cx, |view, cx| view.write(path, None, cx));
+    cx.run_until_parked();
+    let manifest = dir.path().join("session.json");
+    cx.update(|_, cx| session_store::save(&manifest, &tabs.read(cx).snapshot(cx)).unwrap());
+    let json = std::fs::read_to_string(&manifest).unwrap();
+    assert!(!json.contains("Anna Petrova"));
+    assert!(!json.contains("Northwind Traders"));
+    let saved = session_store::load(&manifest).unwrap();
+    assert!(saved.tabs[0].case.is_none());
+    let restored = cx.update(|window, cx| {
+        cx.new(|cx| {
+            let mut restored = Workspace::empty(window, cx);
+            restored.use_case_store(mdoc_store::cases::Store::with_key(
+                dir.path().join("cases"),
+                &[3; 32],
+            ));
+            restored.restore(saved, window, cx);
+            restored
+        })
+    });
+    cx.run_until_parked();
+    let reopened = active(&restored, cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            reopened.read(cx).editor.read(cx).text(),
+            "PERSON_1 met ORG_1."
+        );
+        assert!(reopened.read(cx).case.link().is_none());
+        assert!(
+            reopened
+                .read(cx)
+                .pii
+                .review()
+                .active_identities()
+                .is_empty()
+        );
+    });
+}
+
+#[gpui::test]
+fn a_saved_case_is_encrypted_named_and_listed_in_the_sidebar(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    cx.update(|_, cx| assert!(tabs.read(cx).can_create_case(tab, cx)));
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
+    cx.run_until_parked();
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let (cases, _) = store.list();
+    assert_eq!(cases.len(), 1);
+    let case = &cases[0];
+    assert_eq!(case.name, "contract");
+    assert_eq!(case.members, [session_store::identity(&path)]);
+    assert_eq!(case.identities[0].alias, "PERSON_1");
+    assert_eq!(case.identities[0].originals, ["Anna Petrova"]);
+    draw(cx);
+    assert!(cx.debug_bounds("case-header").is_some());
+    cx.update(|_, cx| {
+        let session = tabs.read(cx).snapshot(cx);
+        assert_eq!(session.tabs[0].case.as_deref(), Some(case.id.as_str()));
+        assert!(!tabs.read(cx).can_create_case(tab, cx));
+    });
+
+    // Renaming an alias in the tab reaches the case, keeping the old alias.
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        let anna = view.pii.review().applied()[0].step.identity;
+        view.pii
+            .review_mut()
+            .rename_identity(anna, "BUYER")
+            .unwrap();
+        view.review_changed(cx);
+    });
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    cx.run_until_parked();
+    let saved = store.load(&case.id).unwrap();
+    assert_eq!(saved.identities[0].alias, "BUYER");
+    assert_eq!(saved.identities[0].previous, ["PERSON_1"]);
+}
+
+#[gpui::test]
+fn saving_an_unsaved_document_as_a_case_saves_the_markdown_first(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    // As a fresh conversion: Markdown never saved (#75).
+    active(&tabs, cx).update(cx, |view, _| view.session.document.path = None);
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    // Cancelling the save creates no case.
+    tabs.update_in(cx, |tabs, window, cx| {
+        assert!(tabs.create_case(tab, window, cx).is_none())
+    });
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| None);
+    cx.run_until_parked();
+    assert!(store().list().0.is_empty());
+    // Saving it lists the saved file in the new case.
+    let saved = dir.path().join("converted.md");
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
+    cx.run_until_parked();
+    cx.simulate_new_path_selection(|_| Some(saved.clone()));
+    cx.run_until_parked();
+    let (cases, _) = store().list();
+    assert_eq!(cases.len(), 1);
+    assert_eq!(cases[0].members, [session_store::identity(&saved)]);
+    assert!(saved.exists());
+}
+
+#[gpui::test]
+fn shortcuts_work_right_after_share_save_as_case(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    cx.update(|_, cx| crate::bind_app_keys(cx));
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.inspector_share = true;
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    let button = cx.debug_bounds("share-save-case").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| assert!(view.read(cx).case.link().is_some()));
+    // #79: Mod+Q reaches the workspace without clicking the editor first.
+    cx.simulate_keystrokes(if cfg!(target_os = "macos") {
+        "cmd-q"
+    } else {
+        "ctrl-q"
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.quit_flow.quitting() || tabs.quit_flow.finishing());
+    });
+}
+
+#[gpui::test]
+fn a_long_case_name_keeps_the_categories_popup_close_button_inside(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
+    cx.run_until_parked();
+    tabs.update(cx, |tabs, cx| {
+        let case = &mut tabs.case_coordinator.cases_mut()[0];
+        case.name = "Заявка_на_приемку_первой_партии_10000_единиц_и_ещё_немного".into();
+        tabs.cases.categories_open = Some(case.id.clone());
+        cx.notify();
+    });
+    draw(cx);
+    let panel = cx.debug_bounds("case-categories").unwrap();
+    let close = cx.debug_bounds("close-case-categories").unwrap();
+    assert!(
+        close.right() <= panel.right() && close.left() >= panel.left(),
+        "× {close:?} must stay inside the popup {panel:?}"
+    );
+}
+
+#[gpui::test]
+fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let path = dir.path().join("contract.md");
+    std::fs::write(&path, "PERSON_1 met ORG_1; PERSON_9 did not.").unwrap();
+    let case = mdoc_store::cases::Case::new(
+        "Petrova".into(),
+        &[
+            mdoc_pii::restore::ExportedIdentity {
+                alias: "PERSON_1".into(),
+                previous: vec![],
+                category: mdoc_pii::Category::Person,
+                custom: false,
+                originals: vec!["Anna Petrova".into()],
+            },
+            mdoc_pii::restore::ExportedIdentity {
+                alias: "ORG_1".into(),
+                previous: vec![],
+                category: mdoc_pii::Category::Organization,
+                custom: false,
+                originals: vec!["Northwind Traders Ltd".into()],
+            },
+        ],
+        Some(session_store::identity(&path)),
+    );
+    store.save(&case).unwrap();
+    let session = Session {
+        tabs: vec![TabRecord {
+            markdown: session_store::identity(&path),
+            case: Some(case.id.clone()),
+            ..TabRecord::default()
+        }],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ));
+        tabs.restore(session, window, cx);
+        let restored = tabs.tabs.last().unwrap().id();
+        tabs.activate(restored, window, cx);
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.case.link().map(|l| l.name.as_str()), Some("Petrova"));
+        let applied: Vec<_> = view
+            .pii
+            .review()
+            .applied()
+            .iter()
+            .map(|a| a.step.before.to_string())
+            .collect();
+        assert_eq!(applied, ["Anna Petrova", "Northwind Traders Ltd"]);
+        assert!(
+            view.has_applied_aliases(),
+            "Copy for AI and Paste AI Response apply"
+        );
+    });
+
+    // Deleting the case wipes it; the tab keeps its live mapping.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.forget_case(&case.id, window, cx)
+    });
+    cx.run_until_parked();
+    assert!(store.load(&case.id).is_err());
+    cx.update(|_, cx| {
+        assert!(view.read(cx).case.link().is_none());
+        assert_eq!(view.read(cx).pii.review().applied().len(), 2);
+        assert!(
+            tabs.read(cx)
+                .snapshot(cx)
+                .tabs
+                .iter()
+                .all(|t| t.case.is_none())
+        );
+    });
+}
+
+#[gpui::test]
+fn closing_an_unsaved_mapping_offers_to_save_it_once(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Save as Case");
+    cx.run_until_parked();
+    // The tab was edited, so the ordinary unsaved-changes question follows.
+    if cx.has_pending_prompt() {
+        cx.simulate_prompt_answer("Discard");
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    assert_eq!(store.list().0.len(), 1);
+}
+
+#[gpui::test]
+fn closing_an_unsaved_conversion_as_a_case_saves_it_then_closes(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    active(&tabs, cx).update(cx, |view, _| view.session.document.path = None);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Save as Case");
+    cx.run_until_parked();
+    let saved = dir.path().join("converted.md");
+    cx.simulate_new_path_selection(|_| Some(saved.clone()));
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let (cases, _) = store.list();
+    assert_eq!(cases.len(), 1);
+    assert_eq!(cases[0].members, [session_store::identity(&saved)]);
+}
+
+#[gpui::test]
+fn replies_join_the_source_case_and_save_as_moves_the_member(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    let source = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(source, window, cx));
+    cx.run_until_parked();
+    let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
+
+    // Save As: the case now names only the new path.
+    let moved = dir.path().join("moved.md");
+    std::fs::copy(&path, &moved).unwrap();
+    let view = active(&tabs, cx);
+    view.update(cx, |view, _| {
+        view.session.document.path = Some(session_store::identity(&moved))
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.event(source, &TabEvent::Save(SaveEvent::Saved), window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            tabs.read(cx).case_coordinator.cases()[0].members,
+            [session_store::identity(&moved)]
+        );
+    });
+
+    // A reply pasted from a case tab joins the case, right after its source.
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(source, window, cx));
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("PERSON_1 agrees.".into()));
+    view.update_in(cx, |view, window, cx| {
+        view.paste_ai_response(&PasteAiResponse, window, cx)
+    });
+    cx.run_until_parked();
+    let reply = active(&tabs, cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(
+            tabs.tabs[1].id(),
+            tabs.tabs.active(),
+            "the reply follows its source"
+        );
+        let link = reply.read(cx).case.link().cloned().unwrap();
+        assert_eq!(link.id, case);
+        assert_eq!(
+            reply.read(cx).editor.read(cx).text(),
+            "Anna Petrova agrees."
+        );
+    });
+}
+
+#[gpui::test]
+fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::{Organization, Person};
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met Northwind Ltd.",
+        &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
+    );
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
+    cx.run_until_parked();
+    let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
+    let second = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Boris Ivanov wrote to Anna Petrova.",
+        &[("Boris Ivanov", Person)],
+    );
+    let second_view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            second_view.read(cx).editor.read(cx).text(),
+            "PERSON_1 wrote to Anna Petrova."
+        )
+    });
+
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(second, &case, window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = second_view.read(cx);
+        assert_eq!(view.case.link().unwrap().id, case);
+        assert_eq!(
+            view.editor.read(cx).text(),
+            "PERSON_2 wrote to Anna Petrova.",
+            "Boris takes the next free number"
+        );
+        assert_eq!(view.pii.review().remaining(), 1, "Anna is proposed");
+        let tabs = tabs.read(cx);
+        assert!(
+            tabs.notices
+                .message()
+                .unwrap()
+                .contains("1 alias renumbered")
+        );
+        let case = &tabs.case_coordinator.cases()[0];
+        assert!(case.identities.iter().any(|i| i.alias == "PERSON_2"));
+    });
+    second_view.update_in(cx, |view, window, cx| {
+        view.apply_all_pii(&PiiApplyAll, window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            second_view.read(cx).editor.read(cx).text(),
+            "PERSON_2 wrote to PERSON_1."
+        )
+    });
+
+    // A rename in the first document reaches the second as its own edit.
+    let first_view = cx.update(|_, cx| {
+        tabs.read(cx)
+            .tabs
+            .get(first)
+            .and_then(|t| t.view().cloned())
+            .unwrap()
+    });
+    first_view.update(cx, |view, cx| {
+        let anna = view.pii.review().identity_by_alias("PERSON_1").unwrap();
+        view.retag_identities(&[(anna, "BUYER".into(), Person, true)], cx)
+            .unwrap();
+    });
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            first_view.read(cx).editor.read(cx).text(),
+            "BUYER met ORG_1."
+        );
+        assert_eq!(
+            second_view.read(cx).editor.read(cx).text(),
+            "PERSON_2 wrote to BUYER."
+        );
+    });
+    // Undo in the second document is its own step.
+    cx.update(|window, cx| {
+        window.focus(&second_view.read(cx).editor.read(cx).focus_handle(cx), cx)
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            second_view.read(cx).editor.read(cx).text(),
+            "PERSON_2 wrote to PERSON_1."
+        )
+    });
+
+    // Folding the case is remembered in the session.
+    tabs.update(cx, |tabs, _| {
+        tabs.cases.collapsed.insert(case.clone());
+    });
+    cx.update(|_, cx| {
+        assert_eq!(
+            tabs.read(cx).snapshot(cx).collapsed_cases,
+            std::slice::from_ref(&case)
+        )
+    });
+}
+
+#[gpui::test]
+fn a_term_added_to_the_case_is_proposed_in_every_member(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova hired Project Bluebird.",
+        &[("Anna Petrova", Person)],
+    );
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx));
+    cx.run_until_parked();
+    tabs.update(cx, |tabs, cx| {
+        tabs.add_case_term(first, "Project Bluebird", cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        let case = &tabs.case_coordinator.cases()[0];
+        assert!(
+            case.identities
+                .iter()
+                .any(|i| i.originals == ["Project Bluebird"])
+        );
+        let view = view.read(cx);
+        assert_eq!(view.pii.review().remaining(), 1, "the new term is proposed");
+        assert_eq!(view.case.names().len(), 2);
+    });
+}
+
+#[gpui::test]
+fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("Petrova v Northwind");
+    std::fs::create_dir_all(folder.join("drafts")).unwrap();
+    std::fs::write(folder.join("b.md"), "Second").unwrap();
+    std::fs::write(folder.join("a.md"), "First").unwrap();
+    std::fs::write(folder.join("notes.bin"), [0u8, 1, 2]).unwrap();
+    std::fs::write(folder.join(".draft.md"), "Hidden").unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ));
+        tabs.open_paths(vec![folder.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    // Members join when their Markdown loads; activate the second too.
+    let ids: Vec<_> = cx.update(|_, cx| tabs.read(cx).tabs.iter().map(|t| t.id()).collect());
+    for id in &ids {
+        tabs.update_in(cx, |tabs, window, cx| tabs.activate(*id, window, cx));
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.case_coordinator.cases().len(), 1);
+        let case = &tabs.case_coordinator.cases()[0];
+        assert_eq!(case.name, "Petrova v Northwind");
+        let names: Vec<_> = tabs
+            .tabs
+            .iter()
+            .filter_map(|t| t.view())
+            .map(|v| {
+                let v = v.read(cx);
+                assert_eq!(v.case.link().unwrap().id, case.id);
+                v.display_name()
+            })
+            .collect();
+        assert_eq!(
+            names,
+            ["a.md", "b.md"],
+            "sorted by name; unsupported skipped"
+        );
+        assert_eq!(case.members.len(), 2, "members are recorded as they join");
+        let notice = tabs.notices.message().unwrap();
+        assert!(notice.contains("1 subfolder") && notice.contains("1 hidden file"));
+    });
+}
+
+#[gpui::test]
+fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "Call Anna Petrova at Northwind Traders Ltd today.".into(),
+    ));
+    view.update_in(cx, |view, window, cx| {
+        view.pseudonymize_clipboard(&PseudonymizeClipboard, window, cx)
+    });
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().as_deref(),
+            Some("Call PERSON_1 at ORG_1 today.")
+        );
+        assert!(
+            view.read(cx)
+                .clipboard_notice
+                .as_deref()
+                .unwrap()
+                .contains("Replaced 2 names")
+        );
+    });
+
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
+    cx.run_until_parked();
+    let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Address, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(
+            view.read(cx)
+                .case
+                .skip()
+                .contains(&mdoc_pii::Category::Address)
+        );
+        assert_eq!(tabs.read(cx).case_coordinator.cases()[0].skip, ["ADDRESS"]);
+    });
+    // Leaving the case ends its category switches for this tab.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.remove_from_case(tab, window, cx)
+    });
+    cx.update(|_, cx| assert!(view.read(cx).case.skip().is_empty()));
+    // Before/after shows originals beside aliases.
+    view.update_in(cx, |view, window, cx| view.toggle_compare(window, cx));
+    draw(cx);
+    assert!(cx.debug_bounds("compare-view").is_some());
+}
+
+#[gpui::test]
+fn saving_a_case_explains_the_keychain_before_asking(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    // Not now cancels: nothing is saved and the key is not read.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(store()));
+        assert!(tabs.create_case(tab, window, cx).is_none());
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("keychain-explainer").is_some());
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    assert!(cx.debug_bounds("keychain-explainer").is_none());
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.cases.test_open.is_some() && !tabs.cases.explainer);
+    });
+    assert!(store().list().0.is_empty());
+    // Continue reads the key, then saves the case it was opened for.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(tab, window, cx);
+    });
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    assert!(cx.debug_bounds("keychain-explainer").is_none());
+    assert_eq!(store().list().0.len(), 1);
+    // The key is open now: later case actions do not explain again.
+    cx.update(|_, cx| assert!(tabs.read(cx).case_key_banner().is_none()));
+}
+
+#[gpui::test]
+fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (case, path) = saved_case(dir.path());
+    let session = Session {
+        tabs: vec![TabRecord {
+            markdown: session_store::identity(&path),
+            case: Some(case.id.clone()),
+            ..TabRecord::default()
+        }],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        // The first attempt is declined, the second allowed.
+        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
+        tabs.restore(session, window, cx);
+        let restored = tabs.tabs.last().unwrap().id();
+        tabs.activate(restored, window, cx);
+    });
+    cx.run_until_parked();
+    draw(cx);
+    // Nothing asked at launch: the member opened without its mapping, kept
+    // its case link, and the bar offers Unlock.
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert!(view.read(cx).case.link().is_none());
+        let tabs = tabs.read(cx);
+        assert!(tabs.case_coordinator.locked() && !tabs.cases.explainer);
+        assert!(tabs.cases.test_open.is_some());
+        assert_eq!(
+            tabs.snapshot(cx).tabs.last().unwrap().case.as_deref(),
+            Some(case.id.as_str())
+        );
+    });
+    let unlock = cx.debug_bounds("unlock-cases").unwrap();
+    cx.simulate_click(unlock.center(), Default::default());
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    // Declined: still locked, and the bar offers Try again.
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.case_coordinator.denied());
+        assert_eq!(tabs.case_key_banner().map(|b| b.1), Some("Try again…"));
+        assert_eq!(
+            tabs.snapshot(cx).tabs.last().unwrap().case.as_deref(),
+            Some(case.id.as_str())
+        );
+    });
+    tabs.update(cx, |tabs, _| {
+        tabs.cases.test_open = Some(Ok(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        )));
+    });
+    // The declined action waits: the notices popover reopens on Try again.
+    assert!(cx.debug_bounds("notices-popover").is_some());
+    let unlock = cx.debug_bounds("unlock-cases").unwrap();
+    cx.simulate_click(unlock.center(), Default::default());
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).case.link().map(|l| l.name.as_str()),
+            Some("Petrova")
+        );
+        assert!(tabs.read(cx).case_key_banner().is_none());
+    });
+    assert!(cx.debug_bounds("unlock-cases").is_none());
+}
+
+#[gpui::test]
+fn try_again_after_a_declined_keychain_dialog_finishes_the_action(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
+        tabs.create_case(tab, window, cx);
+    });
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    assert!(store().list().0.is_empty());
+    // Try again → Continue saves the case the user asked for.
+    tabs.update(cx, |tabs, _| tabs.cases.test_open = Some(Ok(store())));
+    let retry = cx.debug_bounds("unlock-cases").unwrap();
+    cx.simulate_click(retry.center(), Default::default());
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    assert_eq!(store().list().0.len(), 1);
+    cx.update(|_, cx| assert!(tabs.read(cx).case_key_banner().is_none()));
+}
+
+#[gpui::test]
+fn a_second_case_action_waits_with_the_first_for_the_keychain(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(store()));
+        tabs.create_case(tab, window, cx);
+        // Open Case… while the save waits, and the save requested again.
+        tabs.show_case_list(window, cx);
+        tabs.create_case(tab, window, cx);
+    });
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    // Both ran, in order, and the repeated save made no second case.
+    assert_eq!(store().list().0.len(), 1);
+    cx.update(|_, cx| assert!(tabs.read(cx).cases.list_open));
+}
+
+#[gpui::test]
+fn the_keychain_explainer_is_modal_and_returns_keyboard_focus(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let view = active(&tabs, cx);
+    let before = view.update_in(cx, |view, window, cx| {
+        let focus = view.editor.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        focus
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        )));
+        tabs.create_case(tab, window, cx);
+    });
+    draw(cx);
+    // Focus starts on Continue; Tab and Shift-Tab alternate between both
+    // buttons, never sticking on Not now (dry-run H18 / A4).
+    let continue_focused = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| tabs.read(cx).explainer_focus.is_focused(window))
+    };
+    assert!(continue_focused(cx), "Continue starts focused");
+    for (keys, on_continue) in [
+        ("tab", false),
+        ("tab", true),
+        ("tab", false),
+        ("shift-tab", true),
+        ("shift-tab", false),
+        ("shift-tab", true),
+    ] {
+        key(cx, keys);
+        assert_eq!(continue_focused(cx), on_continue, "{keys}");
+    }
+    // Tab and Shift-Tab stay on the dialog's buttons.
+    for keys in [
+        "tab",
+        "tab",
+        "tab",
+        "shift-tab",
+        "shift-tab",
+        "shift-tab",
+        "f6",
+        "shift-f6",
+    ] {
+        cx.simulate_keystrokes(keys);
+        draw(cx);
+        tabs.update_in(cx, |tabs, window, cx| {
+            assert!(tabs.explainer_group.contains_focused(window, cx), "{keys}");
+        });
+    }
+    // Window shortcuts and clicks stop at the dialog: no tab opens or closes.
+    let open = cx.update(|_, cx| tabs.read(cx).tabs.len());
+    let new_tab = cx
+        .debug_bounds("sidebar-new")
+        .expect("the sidebar's New tab button");
+    cx.simulate_click(new_tab.center(), Default::default());
+    cx.dispatch_action(Close);
+    cx.dispatch_action(New);
+    draw(cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.tabs.len(), open);
+        assert!(tabs.cases.explainer);
+    });
+    // Esc closes it and hands focus back to the editor.
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    tabs.update_in(cx, |tabs, window, _| {
+        assert!(!tabs.cases.explainer);
+        assert!(before.is_focused(window));
+    });
+}
+
+#[gpui::test]
+fn locked_members_load_when_the_key_opens_without_a_dialog_later(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (case, path) = saved_case(dir.path());
+    let session = Session {
+        tabs: vec![TabRecord {
+            markdown: session_store::identity(&path),
+            case: Some(case.id.clone()),
+            ..TabRecord::default()
+        }],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        )));
+        tabs.restore(session, window, cx);
+        let restored = tabs.tabs.last().unwrap().id();
+        tabs.activate(restored, window, cx);
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert!(tabs.read(cx).case_coordinator.locked() && view.read(cx).case.link().is_none())
+    });
+    // The key became readable without a dialog (e.g. allowed elsewhere):
+    // Open Case… opens it quietly and the locked member gets its mapping.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.cases.test_may_ask = false;
+        tabs.show_case_list(window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(!tabs.case_coordinator.locked() && tabs.cases.list_open);
+        assert_eq!(
+            view.read(cx).case.link().map(|l| l.name.as_str()),
+            Some("Petrova")
+        );
+    });
+}
+
+#[gpui::test]
+fn a_member_opened_by_hand_offers_unlock_and_gets_its_mapping(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, path) = saved_case(dir.path());
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        )));
+        // Opened from disk: no session record names its case.
+        tabs.open_paths(vec![path.clone()], window, cx);
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| assert!(view.read(cx).case.link().is_none()));
+    // Nothing marks it as a member yet, so the notice waits behind the bell
+    // (ADR 0043); the bell still offers Unlock.
+    assert!(cx.debug_bounds("notices-popover").is_none());
+    click_toolbar(cx, "header-notices");
+    let unlock = cx
+        .debug_bounds("unlock-cases")
+        .expect("locked cases offer Unlock even without a tagged tab");
+    cx.simulate_click(unlock.center(), Default::default());
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            view.read(cx).case.link().map(|l| l.name.as_str()),
+            Some("Petrova")
+        );
+    });
+}
+
+#[gpui::test]
+fn case_quit_failure_can_cancel_without_losing_mappings(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    tabs.read_with(cx, |tabs, cx| {
+        assert!(!tabs.quit_flow.finishing() && !tabs.quit_flow.quitting());
+        assert_eq!(tabs.case_coordinator.cases()[0].id, case);
+        assert_eq!(
+            tabs.active_view()
+                .unwrap()
+                .read(cx)
+                .pii
+                .review()
+                .applied()
+                .len(),
+            2
+        );
+    });
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("blocked-store")).unwrap(),
+        "keep this file"
+    );
+    // Cancelling retains the pending write; the next quit persists it.
+    std::fs::remove_file(dir.path().join("blocked-store")).unwrap();
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("blocked-store"), &[3; 32]);
+    assert!(!store.load(&case).unwrap().skip.is_empty());
+}
+
+#[gpui::test]
+fn case_quit_retry_saves_the_latest_pending_revision(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    // A newer mapping policy queued while recovery is open must win.
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Organization, cx)
+    });
+    std::fs::remove_file(dir.path().join("blocked-store")).unwrap();
+    cx.simulate_prompt_answer("Retry");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    let saved = mdoc_store::cases::Store::with_key(dir.path().join("blocked-store"), &[3; 32])
+        .load(&case)
+        .unwrap();
+    assert_eq!(saved.skip.len(), 2);
+}
+
+#[gpui::test]
+fn case_quit_can_explicitly_discard_a_failed_final_save(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Quit without saving mappings");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("blocked-store")).unwrap(),
+        "keep this file"
+    );
+}
+
+#[gpui::test]
+fn case_quit_store_open_failure_retains_work_for_retry(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::NoKeyStore));
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx);
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("retry-store"),
+            &[3; 32],
+        ))
+    });
+    cx.simulate_prompt_answer("Retry");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    let saved = mdoc_store::cases::Store::with_key(dir.path().join("retry-store"), &[3; 32])
+        .load(&case)
+        .unwrap();
+    assert_eq!(saved.skip.len(), 1);
+}
+
+#[gpui::test]
+fn abandoned_quit_does_not_block_later_case_saves(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    let blocked = dir.path().join("blocked-store");
+    std::fs::remove_file(&blocked).unwrap();
+    let parent_file = dir.path().join("not-a-directory");
+    std::fs::write(&parent_file, "preserve").unwrap();
+    // Waiting on final case saves when the tab-list write fails; Cancel
+    // abandons the quit.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.session_writer
+            .set_path(Some(parent_file.join("session.json")));
+        tabs.quit_flow.settle([]);
+        tabs.set_case_quit_window(Some(window.window_handle()));
+        tabs.checkpoint(window, cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    tabs.read_with(cx, |tabs, _| {
+        assert!(!tabs.quit_flow.finishing());
+        assert!(!tabs.case_quit_pending());
+    });
+    // An ordinary failure afterwards is a notice, not a quit prompt.
+    std::fs::write(&blocked, "keep this file").unwrap();
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
+    });
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    tabs.read_with(cx, |tabs, _| {
+        assert!(
+            tabs.notices
+                .message()
+                .is_some_and(|n| n.contains("Could not save the case"))
+        );
+        assert!(!tabs.case_quit_pending());
+    });
+    // The queue still drains once the store is writable again.
+    std::fs::remove_file(&blocked).unwrap();
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Organization, cx)
+    });
+    cx.run_until_parked();
+    let saved = mdoc_store::cases::Store::with_key(blocked, &[3; 32])
+        .load(&case)
+        .unwrap();
+    assert_eq!(saved.skip.len(), 2);
+}
+
+#[gpui::test]
+fn failed_write_of_a_removed_case_keeps_the_queue_moving(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, removed) = case_quit_fixture(cx, dir.path());
+    let other = mdoc_store::cases::Case::new("Other".into(), &[], None);
+    let good = dir.path().join("good-store");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.case_coordinator.cases_mut().push(other.clone());
+        // The removed case's write is in flight against the blocked store;
+        // the other case queues behind it and targets a writable one.
+        tabs.toggle_case_category(&removed, mdoc_pii::Category::Person, cx);
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(good.clone(), &[3; 32]));
+        tabs.toggle_case_category(&other.id, mdoc_pii::Category::Person, cx);
+        tabs.forget_case(&removed, window, cx);
+    });
+    cx.run_until_parked();
+    let saved = mdoc_store::cases::Store::with_key(good, &[3; 32])
+        .load(&other.id)
+        .unwrap();
+    assert_eq!(saved.skip.len(), 1);
+}
+
+#[gpui::test]
+fn case_quit_checks_edits_made_while_final_saves_are_pending(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    view.update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            let end = editor.text().len();
+            editor.replace_range(end..end, " New edit.", cx);
+        });
+    });
+    cx.run_until_parked();
+    std::fs::remove_file(dir.path().join("blocked-store")).unwrap();
+    cx.simulate_prompt_answer("Retry");
+    cx.run_until_parked();
+    assert!(
+        cx.has_pending_prompt(),
+        "the new Markdown edit needs its own save decision"
+    );
+    cx.simulate_prompt_answer("Save");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    assert!(
+        std::fs::read_to_string(dir.path().join("contract.md"))
+            .unwrap()
+            .ends_with(" New edit.")
+    );
+}
