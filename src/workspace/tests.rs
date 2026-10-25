@@ -1813,6 +1813,69 @@ fn checkpoint_serializes_latest_state_and_restores_pdf_position(cx: &mut TestApp
 }
 
 #[gpui::test]
+fn a_closed_tab_s_docx_job_ending_frees_the_worker(cx: &mut TestAppContext) {
+    // A closed document can't emit; the window waits on its running jobs.
+    let (tabs, cx) = boot(cx, Session::default());
+    let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+        tabs.docx_queue.occupy(id, 4);
+        let view = tabs
+            .tabs
+            .get(id)
+            .and_then(|tab| tab.view().cloned())
+            .unwrap();
+        view.update(cx, |view, cx| {
+            let docx = cx
+                .background_executor()
+                .spawn(async { crate::document_view::Background::Docx { generation: 4 } });
+            view.keep_background(docx);
+        });
+        tabs.remove(id, window, cx);
+        assert!(!tabs.docx_queue.idle(), "the job has not ended yet");
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(tabs.read(cx).docx_queue.idle()));
+}
+
+#[gpui::test]
+fn a_closed_tab_s_import_ending_starts_the_conversion_waiting_for_it(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import");
+    let permit = cx
+        .update(|_, cx| import_session::ImportPermit::acquire(&tabs.read(cx).import_busy).unwrap());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![base.join("text.pdf")], window, cx)
+    });
+    cx.run_until_parked();
+    let waiting = active(&tabs, cx);
+    cx.update(|_, cx| assert!(waiting.read(cx).auto_convert_pending));
+    // Another tab's import holds the slot; the tab closes before it ends.
+    let closed = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    tabs.update_in(cx, |tabs, window, cx| {
+        let view = tabs
+            .tabs
+            .get(closed)
+            .and_then(|tab| tab.view().cloned())
+            .unwrap();
+        view.update(cx, |view, cx| {
+            let import = cx.background_executor().spawn(async move {
+                drop(permit);
+                crate::document_view::Background::Import
+            });
+            view.keep_background(import);
+        });
+        tabs.remove(closed, window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(!waiting.read(cx).auto_convert_pending);
+        assert!(!waiting.read(cx).source_only, "the waiting PDF converted");
+        assert!(!tabs.read(cx).import_busy.load(Ordering::Relaxed));
+    });
+}
+
+#[gpui::test]
 fn closing_queued_conversion_rejects_it_without_affecting_other_tabs(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -1825,11 +1888,11 @@ fn closing_queued_conversion_rejects_it_without_affecting_other_tabs(cx: &mut Te
         });
         tabs.event(
             id,
-            &TabEvent::Docx {
+            &TabEvent::Docx(DocxEvent::Queue {
                 path: "queued.docx".into(),
                 generation: 1,
                 cancel: cancelled.clone(),
-            },
+            }),
             window,
             cx,
         );
@@ -3737,7 +3800,13 @@ fn chrome_history_targets_the_active_tab_and_leaves_home_and_settings_alone(
     key(cx, undo);
     cx.update(|_, cx| assert_eq!(second.read(cx).editor.read(cx).text(), "second"));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.activate(second.read(cx).owner.0, window, cx);
+        let id = tabs
+            .tabs
+            .iter()
+            .find(|tab| tab.view() == Some(&second))
+            .unwrap()
+            .id();
+        tabs.activate(id, window, cx);
         tabs.show_settings(window, cx);
     });
     cx.run_until_parked();
@@ -3751,7 +3820,7 @@ fn unsaved_mapping_is_absent_after_session_restore(cx: &mut TestAppContext) {
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
     let view = active(&tabs, cx);
     // Saving Markdown retains alias tokens, but does not save their originals.
-    view.update_in(cx, |view, window, cx| view.write(path, None, window, cx));
+    view.update(cx, |view, cx| view.write(path, None, cx));
     cx.run_until_parked();
     let manifest = dir.path().join("session.json");
     cx.update(|_, cx| session_store::save(&manifest, &tabs.read(cx).snapshot(cx)).unwrap());
@@ -4076,7 +4145,7 @@ fn replies_join_the_source_case_and_save_as_moves_the_member(cx: &mut TestAppCon
         view.session.document.path = Some(session_store::identity(&moved))
     });
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.event(source, &TabEvent::Saved, window, cx)
+        tabs.event(source, &TabEvent::Save(SaveEvent::Saved), window, cx)
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
@@ -5145,7 +5214,7 @@ fn case_quit_fixture<'a>(
 ) -> (Entity<Workspace>, &'a mut VisualTestContext, String) {
     let (tabs, cx, path) = applied_document(cx, dir, Session::default());
     let view = active(&tabs, cx);
-    view.update_in(cx, |view, window, cx| view.write(path, None, window, cx));
+    view.update(cx, |view, cx| view.write(path, None, cx));
     let id = tabs
         .update_in(cx, |tabs, window, cx| {
             tabs.create_case(tabs.tabs.active(), window, cx)
@@ -5934,7 +6003,7 @@ fn sidebar_case_actions_and_categories_work_without_a_pointer(cx: &mut TestAppCo
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
     let view = active(&tabs, cx);
-    view.update_in(cx, |view, window, cx| view.write(path, None, window, cx));
+    view.update(cx, |view, cx| view.write(path, None, cx));
     let case = tabs
         .update_in(cx, |tabs, window, cx| {
             tabs.create_case(tabs.tabs.active(), window, cx)

@@ -2,7 +2,9 @@
 //! unopened session records allocate no editor, PDF, or conversion worker.
 use crate::{
     comparison, comparison_ui,
-    document_view::{DocumentView, DocumentViewDependencies, Next, OcrState, known_ocr_state},
+    document_view::{
+        Background, DocumentView, DocumentViewDependencies, Next, OcrState, known_ocr_state,
+    },
     pii,
     pii::ui::PiiApplyAll,
     settings_ui,
@@ -47,6 +49,7 @@ pub(crate) mod headless_renders;
 mod keychain_ui;
 mod notices;
 mod quit_flow;
+pub(crate) use quit_flow::CloseWatch;
 use quit_flow::{QuitEffect, QuitEnd};
 mod session_writer;
 mod shell;
@@ -80,33 +83,74 @@ actions!(
     ]
 );
 
+/// How a document reaches the window: one channel, grouped by the owner
+/// that handles it (ADR 0069). The window commands a document through its
+/// methods; a document holds no handle to its window.
 pub(super) enum TabEvent {
+    Tabs(TabsEvent),
+    Close(CloseEvent),
+    Import(ImportEvent),
+    Docx(DocxEvent),
+    Save(SaveEvent),
+    Case(CaseEvent),
+    ToggleTheme,
+}
+
+/// Tabs to add (`TabSet`).
+pub(super) enum TabsEvent {
     New,
     Open(Vec<PathBuf>),
-    ImportState,
-    CloseRequested,
-    CloseResolved,
-    ToggleTheme,
-    Saved,
-    OcrState(OcrState),
-    CloseCancelled,
-    SaveConflict(u64),
-    Docx {
+    /// Open a copied AI reply in a new tab and restore its aliases (ADR 0041).
+    Restored(Arc<pii::ui::RestoredReply>),
+}
+
+/// Closing this tab, alone or in a quit (`QuitFlow`).
+pub(super) enum CloseEvent {
+    Requested,
+    Resolved,
+    Cancelled,
+}
+
+/// Conversions and OCR setup.
+pub(super) enum ImportEvent {
+    /// A conversion started or is waiting.
+    State,
+    /// A conversion ended; others waiting for the import slot may start.
+    Finished,
+    Ocr(OcrState),
+}
+
+/// The DOCX preview worker (`DocxQueue`).
+pub(super) enum DocxEvent {
+    Queue {
         path: PathBuf,
         generation: u64,
         cancel: Arc<AtomicBool>,
     },
-    /// Open a copied AI reply in a new tab and restore its aliases (ADR 0041).
-    Restored(Arc<pii::ui::RestoredReply>),
+    /// The job for `generation` ended; the worker is free.
+    Finished { generation: u64 },
+}
+
+/// Saving the document.
+pub(super) enum SaveEvent {
+    /// Save to `path` unless another tab has that file open, then go on
+    /// with `next`.
+    Write {
+        path: PathBuf,
+        next: Option<Next>,
+    },
+    Saved,
+}
+
+/// The tab's case (`CaseCoordinator`).
+pub(super) enum CaseEvent {
     /// The tab's mapping changed; save it into the tab's case.
-    CaseChanged,
+    Changed,
     /// Add a name to the tab's case before it appears (ADR 0041 #11).
-    AddCaseTerm(String),
+    AddTerm(String),
     /// Save the tab's mapping as a case, from the Inspector (ADR 0048, C),
     /// or once the document is saved; `close` closes the tab after.
-    CreateCase {
-        close: bool,
-    },
+    Create { close: bool },
     /// Restoring or pseudonymizing found no mapping in the tab; a locked
     /// case may hold it (ADR 0043).
     MappingMissing,
@@ -832,13 +876,12 @@ impl Workspace {
             return;
         }
         let record = self.tabs[index].record().clone();
-        let owner = cx.entity().downgrade();
         let theme = self.theme.clone();
         let import_busy = self.import_busy.clone();
         let view = cx.new(|cx| {
             let mut view = DocumentView::new(
                 DocumentViewDependencies {
-                    owner: (id, owner),
+                    closing: self.quit_flow.watch(),
                     preferences: self.preferences.clone(),
                     model_panel: self.settings.clone(),
                     theme,
@@ -1267,11 +1310,11 @@ impl Workspace {
             return;
         }
         match event {
-            TabEvent::New if !self.quit_flow.quitting() => {
+            TabEvent::Tabs(TabsEvent::New) if !self.quit_flow.quitting() => {
                 self.new_tab(window, cx);
             }
-            TabEvent::Open(paths) => self.open_paths(paths.clone(), window, cx),
-            TabEvent::Restored(reply) if !self.quit_flow.quitting() => {
+            TabEvent::Tabs(TabsEvent::Open(paths)) => self.open_paths(paths.clone(), window, cx),
+            TabEvent::Tabs(TabsEvent::Restored(reply)) if !self.quit_flow.quitting() => {
                 let reply = reply.clone();
                 let tab = self.new_tab(window, cx);
                 // The reply sits right after the tab it answers.
@@ -1285,14 +1328,14 @@ impl Workspace {
                     view.update(cx, |view, cx| view.start_restored(&reply, window, cx));
                 }
             }
-            TabEvent::ImportState => {
+            TabEvent::Import(ImportEvent::State) => {
                 self.refresh_import(window, cx);
                 // A converted document of a folder case joins it now.
                 self.attach_case(id, window, cx);
             }
-            TabEvent::CloseRequested => self.close_tab(id, window, cx),
-            TabEvent::OcrState(state) => self.set_ocr(state.clone(), cx),
-            TabEvent::Saved => {
+            TabEvent::Close(CloseEvent::Requested) => self.close_tab(id, window, cx),
+            TabEvent::Import(ImportEvent::Ocr(state)) => self.set_ocr(state.clone(), cx),
+            TabEvent::Save(SaveEvent::Saved) => {
                 let saved = self
                     .tabs
                     .get(id)
@@ -1303,8 +1346,8 @@ impl Workspace {
                 self.case_member_moved(id, previous, cx);
                 self.case_changed(id, cx);
             }
-            TabEvent::CaseChanged => self.case_changed(id, cx),
-            TabEvent::MappingMissing => {
+            TabEvent::Case(CaseEvent::Changed) => self.case_changed(id, cx),
+            TabEvent::Case(CaseEvent::MappingMissing) => {
                 // A quiet look: launch onto Home may not have checked yet.
                 self.load_cases(window, cx);
                 if self.case_key_banner().is_some() {
@@ -1312,20 +1355,22 @@ impl Workspace {
                     cx.notify();
                 }
             }
-            TabEvent::AddCaseTerm(term) => self.add_case_term(id, term, cx),
-            TabEvent::CreateCase { close: true } => self.save_case_and_close(id, window, cx),
-            TabEvent::CreateCase { close: false } => {
+            TabEvent::Case(CaseEvent::AddTerm(term)) => self.add_case_term(id, term, cx),
+            TabEvent::Case(CaseEvent::Create { close: true }) => {
+                self.save_case_and_close(id, window, cx)
+            }
+            TabEvent::Case(CaseEvent::Create { close: false }) => {
                 if self.can_create_case(id, cx) {
                     self.create_case(id, window, cx);
                 }
             }
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
-            TabEvent::CloseResolved => {
+            TabEvent::Close(CloseEvent::Resolved) => {
                 if let Some(effect) = self.quit_flow.resolved(id) {
                     self.carry_out_quit(effect, window, cx);
                 }
             }
-            TabEvent::CloseCancelled => {
+            TabEvent::Close(CloseEvent::Cancelled) => {
                 crate::updater::cancel_restart(cx);
                 self.quit_flow.cancel();
                 self.cancel_case_quit();
@@ -1342,8 +1387,14 @@ impl Workspace {
                     let _ = owner.update(cx, |this, cx| this.refresh_import(window, cx));
                 });
             }
-            TabEvent::SaveConflict(other) => {
-                let other = *other;
+            TabEvent::Save(SaveEvent::Write { path, next }) => {
+                let Some(other) = self.find_path(path, Some(id), cx) else {
+                    if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) {
+                        let (path, next) = (path.clone(), next.clone());
+                        view.update(cx, |view, cx| view.save_to(path, next, window, cx));
+                    }
+                    return;
+                };
                 let answer = window.prompt(
                     PromptLevel::Warning,
                     "That file is already open in another tab",
@@ -1358,12 +1409,17 @@ impl Workspace {
                     }
                 })
                 .detach();
+                self.event(id, &TabEvent::Close(CloseEvent::Cancelled), window, cx);
             }
-            TabEvent::Docx {
+            TabEvent::Import(ImportEvent::Finished) => self.refresh_import(window, cx),
+            TabEvent::Docx(DocxEvent::Finished { generation }) => {
+                self.docx_finished(id, *generation, window, cx);
+            }
+            TabEvent::Docx(DocxEvent::Queue {
                 path,
                 generation,
                 cancel,
-            } => {
+            }) => {
                 self.docx_queue.push(DocxJob {
                     id,
                     path: path.clone(),
@@ -1408,7 +1464,7 @@ impl Workspace {
         }
     }
 
-    pub fn docx_finished(
+    fn docx_finished(
         &mut self,
         id: u64,
         generation: u64,
@@ -1463,8 +1519,23 @@ impl Workspace {
         let Some(tab) = self.tabs.get(id) else {
             return;
         };
-        if let Some(view) = tab.view() {
-            Self::release(view, window, cx);
+        if let Some(view) = tab.view().cloned() {
+            // A closed document can't report its running jobs; their end
+            // still frees the import slot and the DOCX worker.
+            let background = view.update(cx, |view, _| view.take_background());
+            for task in background {
+                cx.spawn_in(window, async move |this, cx| {
+                    let done = task.await;
+                    let _ = this.update_in(cx, |this, window, cx| match done {
+                        Background::Import => this.refresh_import(window, cx),
+                        Background::Docx { generation } => {
+                            this.docx_finished(id, generation, window, cx)
+                        }
+                    });
+                })
+                .detach();
+            }
+            Self::release(&view, window, cx);
         }
         let Some((_, effect)) = self.tabs.remove(id) else {
             return;

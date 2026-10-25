@@ -108,7 +108,11 @@ pub(crate) struct DocumentView {
     /// Whether the last frame drew the Markdown and the original panes: a
     /// narrow window shows one of them (ADR 0062 skips the hidden one).
     panes_drawn: std::cell::Cell<(bool, bool)>,
-    pub(crate) owner: (u64, gpui::WeakEntity<workspace::Workspace>),
+    /// Whether the window is resolving a close or quit (read-only).
+    closing: workspace::CloseWatch,
+    /// Imports and DOCX jobs still running, handed to the window if the tab
+    /// closes first so it still learns when they end.
+    background: Vec<gpui::Task<Background>>,
     pub(crate) active: bool,
     pub(crate) dirty_cached: bool,
     pub(crate) loading: bool,
@@ -211,8 +215,15 @@ pub(crate) fn chooser_unavailable(error: &impl std::fmt::Display) -> String {
     format!("The file dialog could not open: {error}.{hint}")
 }
 
+/// A background job a document ran, as the window learns of its end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Background {
+    Import,
+    Docx { generation: u64 },
+}
+
 pub(crate) struct DocumentViewDependencies {
-    pub(crate) owner: (u64, gpui::WeakEntity<workspace::Workspace>),
+    pub(crate) closing: workspace::CloseWatch,
     pub(crate) preferences: settings::Shared,
     pub(crate) model_panel: Entity<settings_ui::Panel>,
     pub(crate) theme: Rc<Cell<Theme>>,
@@ -312,7 +323,9 @@ impl DocumentView {
                     {
                         cx.open_url(src);
                     } else if let Some(path) = document::local_path(src, &this.save_directory()) {
-                        cx.emit(workspace::TabEvent::Open(vec![path]));
+                        cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(vec![
+                            path,
+                        ])));
                     }
                 }
             });
@@ -338,7 +351,8 @@ impl DocumentView {
             more_menu_focus: cx.focus_handle(),
             more_bounds: Default::default(),
             panes_drawn: std::cell::Cell::new((true, false)),
-            owner: dependencies.owner,
+            closing: dependencies.closing,
+            background: Vec::new(),
             active: true,
             dirty_cached: false,
             loading: false,
@@ -658,7 +672,7 @@ impl DocumentView {
                     Some(0) => this.save(false, Some(next), window, cx),
                     Some(1) => this.proceed(next, window, cx),
                     _ => {
-                        cx.emit(workspace::TabEvent::CloseCancelled);
+                        cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
                     }
                 }
                 this.resume_import(window, cx);
@@ -671,11 +685,13 @@ impl DocumentView {
         self.copy_feedback = None;
         match next {
             Next::Close => {
-                cx.emit(workspace::TabEvent::CloseResolved);
+                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Resolved));
                 return;
             }
             Next::CreateCase { close } => {
-                cx.emit(workspace::TabEvent::CreateCase { close });
+                cx.emit(workspace::TabEvent::Case(workspace::CaseEvent::Create {
+                    close,
+                }));
                 return;
             }
             Next::Import(imported) => {
@@ -831,9 +847,8 @@ impl DocumentView {
             return;
         }
         self.conversion_source = Some(path.clone());
-        cx.emit(workspace::TabEvent::ImportState);
+        cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
         let cancel = self.import_cancel.clone();
-        let owner = self.owner.clone();
         self.error = None;
         self.ocr_error = None;
         let generation = self.session.generation;
@@ -842,26 +857,34 @@ impl DocumentView {
             drop(permit);
             result
         });
-        cx.spawn_in(window, async move |this, cx| {
+        let task = cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.job.complete(generation, result);
                 this.resume_import(window, cx);
+                cx.emit(workspace::TabEvent::Import(
+                    workspace::ImportEvent::Finished,
+                ));
             });
-            let (_, owner) = owner;
-            let _ = owner.update_in(cx, |owner, window, cx| owner.refresh_import(window, cx));
-        })
-        .detach();
+            Background::Import
+        });
+        self.keep_background(task);
         cx.notify();
     }
 
+    /// Keep a running job's task, dropping those that have ended.
+    pub(crate) fn keep_background(&mut self, task: gpui::Task<Background>) {
+        self.background.retain(|task| !task.is_ready());
+        self.background.push(task);
+    }
+
+    /// The tab is closing: its running jobs, for the window to wait on.
+    pub(crate) fn take_background(&mut self) -> Vec<gpui::Task<Background>> {
+        std::mem::take(&mut self.background)
+    }
+
     pub(crate) fn resume_import(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self
-            .owner
-            .1
-            .upgrade()
-            .is_some_and(|owner| owner.read(cx).resolving_close())
-        {
+        if self.closing.resolving() {
             return;
         }
         let generation = self.session.generation;
@@ -877,7 +900,9 @@ impl DocumentView {
                     let error = error.to_string();
                     if self.settings_ocr_model() == Some(self.recognition_model()) {
                         self.ocr_state = OcrState::Failed(error.clone());
-                        cx.emit(workspace::TabEvent::OcrState(self.ocr_state.clone()));
+                        cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::Ocr(
+                            self.ocr_state.clone(),
+                        )));
                     } else {
                         self.ocr_failure = Some(error.clone());
                     }
@@ -905,7 +930,7 @@ impl DocumentView {
         }
         if !self.job.busy() {
             self.import_permit = None;
-            cx.emit(workspace::TabEvent::ImportState);
+            cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
         }
         // A stale completion also clears the busy indicator.
         cx.notify();
@@ -977,7 +1002,9 @@ impl DocumentView {
             // Another model's setup shows only in this card's progress.
             if shared {
                 self.ocr_state = OcrState::Installing;
-                cx.emit(workspace::TabEvent::OcrState(self.ocr_state.clone()));
+                cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::Ocr(
+                    self.ocr_state.clone(),
+                )));
             }
             cx.notify();
         } else if self.job.has_ocr_continuation() {
@@ -1033,9 +1060,11 @@ impl DocumentView {
             self.import_permit = None;
         }
         if shared || claimed {
-            cx.emit(workspace::TabEvent::OcrState(self.ocr_state.clone()));
+            cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::Ocr(
+                self.ocr_state.clone(),
+            )));
         }
-        cx.emit(workspace::TabEvent::ImportState);
+        cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
         cx.notify();
     }
 
@@ -1051,7 +1080,7 @@ impl DocumentView {
         self.focus_card = true;
         self.job.finish();
         self.import_permit = None;
-        cx.emit(workspace::TabEvent::ImportState);
+        cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
         cx.notify();
     }
 
@@ -1551,7 +1580,9 @@ impl DocumentView {
             self.open_docx(path, window, cx);
             cx.notify();
         } else if document::is_markdown(&path) {
-            cx.emit(workspace::TabEvent::Open(vec![path]));
+            cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(vec![
+                path,
+            ])));
         } else if self.source_only {
             let generation = self.begin_preview(path.clone());
             let task = cx.background_executor().spawn(async move {
@@ -1603,7 +1634,9 @@ impl DocumentView {
             let _ = this.update_in(cx, |this, window, cx| {
                 this.prompting = false;
                 match result {
-                    Ok(Ok(Some(paths))) => cx.emit(workspace::TabEvent::Open(paths)),
+                    Ok(Ok(Some(paths))) => {
+                        cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(paths)))
+                    }
                     Ok(Err(error)) => {
                         this.error = Some(chooser_unavailable(&error));
                         cx.notify();
@@ -1624,11 +1657,11 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         if self.prompting || self.loading || self.unavailable || self.source_only {
-            cx.emit(workspace::TabEvent::CloseCancelled);
+            cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
             return;
         }
         if !save_as && let Some(path) = self.session.document.path.clone() {
-            self.write(path, next, window, cx);
+            self.write(path, next, cx);
             return;
         }
         self.prompting = true;
@@ -1647,18 +1680,18 @@ impl DocumentView {
                             "Save Markdown with a .md, .markdown, .mdown, or .txt extension."
                                 .into(),
                         );
-                        cx.emit(workspace::TabEvent::CloseCancelled);
+                        cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
                         cx.notify();
                         this.resume_import(window, cx);
                         return;
                     }
-                    this.write(path, next, window, cx);
+                    this.write(path, next, cx);
                 } else {
                     if let Ok(Err(error)) = &result {
                         this.error = Some(chooser_unavailable(error));
                         cx.notify();
                     }
-                    cx.emit(workspace::TabEvent::CloseCancelled);
+                    cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
                 }
                 this.resume_import(window, cx);
             });
@@ -1666,30 +1699,31 @@ impl DocumentView {
         .detach();
     }
 
-    pub(crate) fn write(
+    pub(crate) fn write(&mut self, path: PathBuf, next: Option<Next>, cx: &mut Context<Self>) {
+        // The window checks that no other tab has the file open, then calls
+        // `save_to`.
+        let path = session_store::identity(&path);
+        cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Write {
+            path,
+            next,
+        }));
+    }
+
+    /// Save to `path`, which no other tab has open, then go on with `next`.
+    pub(crate) fn save_to(
         &mut self,
         path: PathBuf,
         next: Option<Next>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let path = session_store::identity(&path);
-        let (id, owner) = &self.owner;
-        let other = owner
-            .upgrade()
-            .and_then(|owner| owner.read(cx).find_path(&path, Some(*id), cx));
-        if let Some(other) = other {
-            cx.emit(workspace::TabEvent::SaveConflict(other));
-            cx.emit(workspace::TabEvent::CloseCancelled);
-            return;
-        }
         let old_directory = self.save_directory();
         match self.session.save(path, self.editor.read(cx).text()) {
             Ok(()) => {
                 self.generated_unedited = false;
                 self.blank_disposable = false;
                 self.dirty_cached = false;
-                cx.emit(workspace::TabEvent::Saved);
+                cx.emit(workspace::TabEvent::Save(workspace::SaveEvent::Saved));
                 if old_directory != self.session.document.directory() {
                     self.replace_images(self.session.document.directory(), window, cx);
                 }
@@ -1700,7 +1734,7 @@ impl DocumentView {
             }
             Err(error) => {
                 self.error = Some(format!("Could not save: {error}"));
-                cx.emit(workspace::TabEvent::CloseCancelled);
+                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Cancelled));
             }
         }
         cx.notify();
@@ -1881,6 +1915,16 @@ impl DocumentView {
             }
         }
         regions
+    }
+}
+
+/// Jobs still running when a document goes without closing its tab (the
+/// window closing) keep running to their end, as before the one channel.
+impl Drop for DocumentView {
+    fn drop(&mut self) {
+        for task in self.background.drain(..) {
+            task.detach();
+        }
     }
 }
 
@@ -2241,7 +2285,7 @@ impl Render for DocumentView {
                 .on_drop(cx.listener(|this, drag: &gpui::ExternalPaths, window, cx| {
                     this.file_drag = None;
                     workspace::activate_for_drop(window, cx);
-                    cx.emit(workspace::TabEvent::Open(drag.paths().to_vec()));
+                    cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(drag.paths().to_vec())));
                     cx.notify();
                 })))
             .when(!detached, |v| v.child(div().track_focus(&self.toolbar_region).key_context("ToolbarRegion").child(self.header(window, cx))))
@@ -2378,14 +2422,16 @@ impl Render for DocumentView {
                 this.session.warning = None;
                 cx.notify();
             }))
-            .on_action(cx.listener(|_, _: &New, _, cx| cx.emit(workspace::TabEvent::New)))
+            .on_action(cx.listener(|_, _: &New, _, cx| {
+                cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::New))
+            }))
             .on_action(cx.listener(|this, _: &Save, window, cx| this.save(false, None, window, cx)))
             .on_action(
                 cx.listener(|this, _: &SaveAs, window, cx| this.save(true, None, window, cx)),
             )
-            .on_action(
-                cx.listener(|_, _: &Close, _, cx| cx.emit(workspace::TabEvent::CloseRequested)),
-            )
+            .on_action(cx.listener(|_, _: &Close, _, cx| {
+                cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Requested))
+            }))
             .on_action(cx.listener(|this, _: &ClosePdf, window, cx| {
                 this.toggle_preview(window, cx);
                 if this.source_only {

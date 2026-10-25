@@ -1,7 +1,13 @@
 //! Loaded preview and pending replacement have independent lifetimes.
 //! Failure preserves the displayed preview; committing releases old PDF data
 //! before deleting its temporary DOCX backing file.
-use crate::{comment_panel, document_view::DocumentView, markdown_search, style::Theme, workspace};
+use crate::{
+    comment_panel,
+    document_view::{Background, DocumentView},
+    markdown_search,
+    style::Theme,
+    workspace,
+};
 use gpui::{App, Context, Entity, Focusable, Subscription, Window, actions, prelude::*};
 use gpui_pdf::PdfView;
 use mdoc_import::docx_preview::{self, PreviewError};
@@ -329,11 +335,11 @@ impl DocumentView {
         let cancel = Arc::new(AtomicBool::new(false));
         self.preview.cancel = Some(cancel.clone());
         self.preview.queued = true;
-        cx.emit(workspace::TabEvent::Docx {
+        cx.emit(workspace::TabEvent::Docx(workspace::DocxEvent::Queue {
             path,
             generation,
             cancel,
-        });
+        }));
         cx.notify();
     }
 
@@ -346,7 +352,6 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         self.preview.queued = false;
-        let owner = self.owner.clone();
         let task = cx.background_executor().spawn(async move {
             // Headless UI tests cannot launch the test harness as a worker.
             if cfg!(test) {
@@ -355,11 +360,14 @@ impl DocumentView {
                 docx_preview::render_with_cancel(&path, cancel)
             }
         });
-        cx.spawn_in(window, async move |this, cx| {
+        let task = cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
-            let (id, owner) = owner;
-            let _ = owner.update_in(cx, |owner, window, cx| {
-                owner.docx_finished(id, generation, window, cx)
+            // The worker is free before this preview loads, as the window
+            // learns it first.
+            let _ = this.update(cx, |_, cx| {
+                cx.emit(workspace::TabEvent::Docx(workspace::DocxEvent::Finished {
+                    generation,
+                }))
             });
             let _ = this.update_in(cx, |this, window, cx| {
                 if !this.preview.is_current(generation) {
@@ -379,8 +387,9 @@ impl DocumentView {
                 }
                 cx.notify();
             });
-        })
-        .detach();
+            Background::Docx { generation }
+        });
+        self.keep_background(task);
         cx.notify();
     }
 
