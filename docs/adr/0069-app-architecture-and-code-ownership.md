@@ -118,5 +118,7 @@ Owners extracted so far:
   roving Tab stop.
 - `TabSet` (`src/workspace/tab_set.rs`): the tabs in sidebar order with
   their ids, records and views, the active tab, and whether Home shows.
+- `SessionWriter` (`src/workspace/session_writer.rs`): the tab list's saves
+  to `session.json`, one at a time, with only the newest snapshot waiting.
 
 References: [interview](../design/codebase-refactoring.md).
