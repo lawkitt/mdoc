@@ -1,12 +1,10 @@
 use super::{popup::Step, *};
 use crate::{
     document_view::DocumentView,
-    pii::{
-        self, Category, Review,
-        ui::{APPLIED_ID, KEPT_ID, PiiApplyAll},
-    },
+    pii::ui::{APPLIED_ID, KEPT_ID, PiiApplyAll},
 };
 use gpui::{Context, Entity, Focusable, px};
+use mdoc_pii::{Category, Review};
 use std::{ops::Range, sync::Arc};
 
 /// Text edits Apply would make for pending mentions.
@@ -31,11 +29,11 @@ fn seed(app: &mut DocumentView, source: &str, cx: &mut Context<DocumentView>) ->
         ("marina@example.invalid", Category::Email),
     ] {
         for (at, _) in source.match_indices(value) {
-            detections.push(pii::Detection {
+            detections.push(mdoc_pii::Detection {
                 range: at..at + value.len(),
                 category,
                 score: 0.9,
-                recognizer: pii::Recognizer::Model,
+                recognizer: mdoc_pii::Recognizer::Model,
             });
         }
     }
@@ -417,11 +415,11 @@ fn entity_rename_then_apply_covers_all_normalized_variants(cx: &mut gpui::TestAp
             .review
             .ingest(
                 source,
-                vec![pii::Detection {
+                vec![mdoc_pii::Detection {
                     range: start..source.len(),
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: pii::Recognizer::Model,
+                    recognizer: mdoc_pii::Recognizer::Model,
                 }],
             )
             .unwrap();
@@ -1945,11 +1943,11 @@ fn expanded_panel_projection_performance(cx: &mut gpui::TestAppContext) {
             .iter()
             .map(|name| {
                 let at = source.find(name).unwrap();
-                pii::Detection {
+                mdoc_pii::Detection {
                     range: at..at + name.len(),
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: pii::Recognizer::Model,
+                    recognizer: mdoc_pii::Recognizer::Model,
                 }
             })
             .collect();
@@ -1985,11 +1983,11 @@ fn seed_anna(app: &mut DocumentView, source: &str, cx: &mut Context<DocumentView
     app.pii.reviewing = true;
     let detections = source
         .match_indices("Anna")
-        .map(|(at, text)| pii::Detection {
+        .map(|(at, text)| mdoc_pii::Detection {
             range: at..at + text.len(),
             category: Category::Person,
             score: 0.9,
-            recognizer: pii::Recognizer::Model,
+            recognizer: mdoc_pii::Recognizer::Model,
         })
         .collect();
     app.pii.review.ingest(source, detections).unwrap();

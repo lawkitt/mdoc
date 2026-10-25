@@ -1,7 +1,6 @@
 //! What setup and Settings show for each downloadable model. Settings hold
 //! plain model IDs; each engine knows its own manifest, languages and
-//! downloads (ADR 0069), so these dispatch to the OCR and detector modules.
-use crate::pii::detector;
+//! downloads (ADR 0069), so these dispatch to the OCR module and `mdoc_detect`.
 use mdoc_import::{model_download::Pending, ocr};
 use mdoc_store::settings::Model;
 
@@ -25,7 +24,14 @@ pub fn pending(model: Model) -> Pending {
     match model {
         // Tests never read the real profile's installed models.
         Model::Ocr(m) => ocr::pending(ocr::root().ok().filter(|_| !cfg!(test)).as_deref(), m),
-        Model::Pii(m) => detector::pending(m),
+        Model::Pii(m) => mdoc_detect::pending(
+            m,
+            mdoc_detect::root_for(m)
+                .ok()
+                .filter(|_| !cfg!(test))
+                .as_deref(),
+            ocr::root().ok().filter(|_| !cfg!(test)).as_deref(),
+        ),
     }
 }
 
@@ -33,7 +39,7 @@ pub fn pending(model: Model) -> Pending {
 pub fn source_and_license(model: Model) -> (String, String) {
     match model {
         Model::Ocr(m) => ocr::source_and_license(m),
-        Model::Pii(m) => detector::source_and_license(m),
+        Model::Pii(m) => mdoc_detect::source_and_license(m),
     }
 }
 
@@ -55,7 +61,7 @@ mod tests {
             let (source, license) = source_and_license(model);
             match model {
                 Model::Pii(m) => {
-                    let manifest = detector::manifest_for(m);
+                    let manifest = mdoc_detect::manifest_for(m);
                     assert_eq!(
                         source,
                         "Hugging Face · jugaadsrl/gliner2-privacy-filter-PII-multi-onnx"

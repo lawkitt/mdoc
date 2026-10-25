@@ -3,7 +3,8 @@
 use crate::{
     comparison, comparison_ui,
     document_view::{DocumentView, DocumentViewDependencies, Next, OcrState, known_ocr_state},
-    pii::{self, ui::PiiApplyAll},
+    pii,
+    pii::ui::PiiApplyAll,
     settings_ui,
     style::{self, Theme},
     ui,

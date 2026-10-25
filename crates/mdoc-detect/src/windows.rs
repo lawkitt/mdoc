@@ -1,5 +1,5 @@
 //! Tokenizer-bounded model windows, including pathological-word rejection.
-use super::{MAX_INPUT_TOKENS, checkpoint};
+use super::{DetectError, MAX_INPUT_TOKENS, checkpoint};
 use gliner2_rs::{Chunker, SchemaTask, processor::SchemaTransformer};
 use std::{sync::atomic::AtomicBool, time::Instant};
 
@@ -9,11 +9,11 @@ pub(super) fn bounded_windows(
     tasks: &[SchemaTask],
     cancel: &AtomicBool,
     started: Instant,
-) -> Result<Vec<std::ops::Range<usize>>, String> {
+) -> Result<Vec<std::ops::Range<usize>>, DetectError> {
     let mut pending: Vec<_> = Chunker::new(128, 32)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| DetectError::Engine(e.to_string()))?
         .split(source)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| DetectError::Engine(e.to_string()))?
         .into_iter()
         .map(|chunk| chunk.byte_start..chunk.byte_end)
         .collect();
@@ -22,7 +22,7 @@ pub(super) fn bounded_windows(
         checkpoint(cancel, started)?;
         let record = transformer
             .transform(&source[range.clone()], tasks)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| DetectError::Engine(e.to_string()))?;
         if record.input_ids.len() <= MAX_INPUT_TOKENS {
             windows.push(range);
             continue;
@@ -32,14 +32,14 @@ pub(super) fn bounded_windows(
         // than truncate it or silently deliver partial detection coverage.
         let words = record.num_words();
         if words < 2 {
-            return Err("A source word exceeds the model token limit. Add selections manually; no partial scan was accepted.".into());
+            return Err(DetectError::WordTooLong);
         }
         let size = words.div_ceil(2);
         let overlap = (size / 4).min(size - 1);
         for chunk in Chunker::new(size, overlap)
-            .map_err(|e| e.to_string())?
+            .map_err(|e| DetectError::Engine(e.to_string()))?
             .split(&source[range.clone()])
-            .map_err(|e| e.to_string())?
+            .map_err(|e| DetectError::Engine(e.to_string()))?
         {
             pending.push(range.start + chunk.byte_start..range.start + chunk.byte_end);
         }

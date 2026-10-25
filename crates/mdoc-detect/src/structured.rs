@@ -1,6 +1,6 @@
 //! Selected structured recognizers. Declining a value never rejects model output.
 //! Heuristic rule evidence is ranked separately from model probabilities.
-use crate::pii::{Category, Detection, Recognizer};
+use mdoc_pii::{Category, Detection, Recognizer};
 use presidio_analyzer::{Pattern, PatternRecognizer, country, predefined};
 use regex::Regex;
 use std::sync::OnceLock;
@@ -287,7 +287,7 @@ mod tests {
         assert!(inn_valid("500100732259"));
         assert!(!inn_valid("500100732258"));
         let source = "ИНН: 7707083894";
-        let mut review = crate::pii::Review::default();
+        let mut review = mdoc_pii::Review::default();
         review
             .ingest(
                 source,

@@ -148,7 +148,7 @@ fn compact_focus(
 
 #[gpui::test]
 fn pseudonymization_mappings_survive_switches_and_end_with_the_tab(cx: &mut TestAppContext) {
-    use crate::pii::Category;
+    use mdoc_pii::Category;
     let dir = tempfile::tempdir().unwrap();
     let first_path = dir.path().join("first.md");
     let second_path = dir.path().join("second.md");
@@ -3498,7 +3498,7 @@ fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mu
 
 #[gpui::test]
 fn ai_reply_round_trip_restores_in_a_new_tab_and_reapplies_aliases(cx: &mut TestAppContext) {
-    use crate::pii::Category;
+    use mdoc_pii::Category;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("contract.md");
     let source = "Anna Petrova met Northwind Traders Ltd.";
@@ -3622,7 +3622,7 @@ fn applied_document<'a>(
     &'a mut VisualTestContext,
     std::path::PathBuf,
 ) {
-    use crate::pii::Category;
+    use mdoc_pii::Category;
     let path = dir.join("contract.md");
     let source = "Anna Petrova met Northwind Traders Ltd.";
     std::fs::write(&path, source).unwrap();
@@ -3957,17 +3957,17 @@ fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
     let case = mdoc_store::cases::Case::new(
         "Petrova".into(),
         &[
-            crate::pii::restore::ExportedIdentity {
+            mdoc_pii::restore::ExportedIdentity {
                 alias: "PERSON_1".into(),
                 previous: vec![],
-                category: crate::pii::Category::Person,
+                category: mdoc_pii::Category::Person,
                 custom: false,
                 originals: vec!["Anna Petrova".into()],
             },
-            crate::pii::restore::ExportedIdentity {
+            mdoc_pii::restore::ExportedIdentity {
                 alias: "ORG_1".into(),
                 previous: vec![],
-                category: crate::pii::Category::Organization,
+                category: mdoc_pii::Category::Organization,
                 custom: false,
                 originals: vec!["Northwind Traders Ltd".into()],
             },
@@ -4127,7 +4127,7 @@ fn open_applied(
     dir: &std::path::Path,
     name: &str,
     text: &str,
-    names: &[(&str, crate::pii::Category)],
+    names: &[(&str, mdoc_pii::Category)],
 ) -> u64 {
     let path = dir.join(name);
     std::fs::write(&path, text).unwrap();
@@ -4153,7 +4153,7 @@ fn open_applied(
 
 #[gpui::test]
 fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext) {
-    use crate::pii::Category::{Organization, Person};
+    use mdoc_pii::Category::{Organization, Person};
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
@@ -4278,7 +4278,7 @@ fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext
 
 #[gpui::test]
 fn a_term_added_to_the_case_is_proposed_in_every_member(cx: &mut TestAppContext) {
-    use crate::pii::Category::Person;
+    use mdoc_pii::Category::Person;
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update(cx, |tabs, _| {
@@ -4396,14 +4396,14 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let case = cx.update(|_, cx| tabs.read(cx).cases.cases[0].id.clone());
     tabs.update(cx, |tabs, cx| {
-        tabs.toggle_case_category(&case, crate::pii::Category::Address, cx)
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Address, cx)
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert!(
             view.read(cx)
                 .case_skip
-                .contains(&crate::pii::Category::Address)
+                .contains(&mdoc_pii::Category::Address)
         );
         assert_eq!(tabs.read(cx).cases.cases[0].skip, ["ADDRESS"]);
     });
@@ -4425,10 +4425,10 @@ fn saved_case(dir: &std::path::Path) -> (mdoc_store::cases::Case, std::path::Pat
     std::fs::write(&path, "PERSON_1 met Bob.").unwrap();
     let case = mdoc_store::cases::Case::new(
         "Petrova".into(),
-        &[crate::pii::restore::ExportedIdentity {
+        &[mdoc_pii::restore::ExportedIdentity {
             alias: "PERSON_1".into(),
             previous: vec![],
-            category: crate::pii::Category::Person,
+            category: mdoc_pii::Category::Person,
             custom: false,
             originals: vec!["Anna Petrova".into()],
         }],
@@ -4976,7 +4976,7 @@ fn restore_from_a_blank_tab_looks_for_locked_cases(cx: &mut TestAppContext) {
 #[ignore = "review/diagnostics/compare/case CPU matrix; run serially on an idle machine"]
 fn review_host_performance(cx: &mut TestAppContext) {
     use crate::perf_tests::{draw, report};
-    use crate::pii::Category;
+    use mdoc_pii::Category;
     use std::time::Instant;
     let stress = std::env::var("MDOC_PERF_STRESS").is_ok_and(|v| v == "1");
     let (entities, mentions) = if stress { (64, 20_000) } else { (16, 160) };
@@ -5170,7 +5170,7 @@ fn case_quit_failure_can_cancel_without_losing_mappings(cx: &mut TestAppContext)
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
     tabs.update(cx, |tabs, cx| {
-        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx)
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
     cx.run_until_parked();
@@ -5209,14 +5209,14 @@ fn case_quit_retry_saves_the_latest_pending_revision(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
     tabs.update(cx, |tabs, cx| {
-        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx)
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
     cx.run_until_parked();
     assert!(cx.has_pending_prompt());
     // A newer mapping policy queued while recovery is open must win.
     tabs.update(cx, |tabs, cx| {
-        tabs.toggle_case_category(&case, crate::pii::Category::Organization, cx)
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Organization, cx)
     });
     std::fs::remove_file(dir.path().join("blocked-store")).unwrap();
     cx.simulate_prompt_answer("Retry");
@@ -5233,7 +5233,7 @@ fn case_quit_can_explicitly_discard_a_failed_final_save(cx: &mut TestAppContext)
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
     tabs.update(cx, |tabs, cx| {
-        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx)
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
     cx.run_until_parked();
@@ -5253,7 +5253,7 @@ fn case_quit_store_open_failure_retains_work_for_retry(cx: &mut TestAppContext) 
     let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
     tabs.update(cx, |tabs, cx| {
         tabs.stage_case_key(Err(mdoc_store::cases::CaseError::NoKeyStore));
-        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx);
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx);
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
     cx.run_until_parked();
@@ -5299,7 +5299,7 @@ fn abandoned_quit_does_not_block_later_case_saves(cx: &mut TestAppContext) {
     // An ordinary failure afterwards is a notice, not a quit prompt.
     std::fs::write(&blocked, "keep this file").unwrap();
     tabs.update(cx, |tabs, cx| {
-        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx)
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
     });
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
@@ -5314,7 +5314,7 @@ fn abandoned_quit_does_not_block_later_case_saves(cx: &mut TestAppContext) {
     // The queue still drains once the store is writable again.
     std::fs::remove_file(&blocked).unwrap();
     tabs.update(cx, |tabs, cx| {
-        tabs.toggle_case_category(&case, crate::pii::Category::Organization, cx)
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Organization, cx)
     });
     cx.run_until_parked();
     let saved = mdoc_store::cases::Store::with_key(blocked, &[3; 32])
@@ -5333,9 +5333,9 @@ fn failed_write_of_a_removed_case_keeps_the_queue_moving(cx: &mut TestAppContext
         tabs.cases.cases.push(other.clone());
         // The removed case's write is in flight against the blocked store;
         // the other case queues behind it and targets a writable one.
-        tabs.toggle_case_category(&removed, crate::pii::Category::Person, cx);
+        tabs.toggle_case_category(&removed, mdoc_pii::Category::Person, cx);
         tabs.use_case_store(mdoc_store::cases::Store::with_key(good.clone(), &[3; 32]));
-        tabs.toggle_case_category(&other.id, crate::pii::Category::Person, cx);
+        tabs.toggle_case_category(&other.id, mdoc_pii::Category::Person, cx);
         tabs.forget_case(&removed, window, cx);
     });
     cx.run_until_parked();
@@ -5350,7 +5350,7 @@ fn case_quit_checks_edits_made_while_final_saves_are_pending(cx: &mut TestAppCon
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
     tabs.update(cx, |tabs, cx| {
-        tabs.toggle_case_category(&case, crate::pii::Category::Person, cx)
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
     cx.run_until_parked();

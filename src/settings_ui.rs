@@ -1,7 +1,7 @@
 use crate::{
     document_view::{Save, SaveAs},
     markdown_search::SearchInput,
-    models, pii,
+    models,
     style::{self, Theme},
     ui, updater,
     workspace::{Close, Import, New, NextTab, Open, PreviousTab},
@@ -381,7 +381,8 @@ impl Panel {
                             ready
                         })
                         .map_err(|e| e.to_string()),
-                        Model::Pii(m) => pii::detector::check_reserved(m),
+                        Model::Pii(_) if cfg!(test) => Ok(false),
+                        Model::Pii(m) => mdoc_detect::check_reserved(m).map_err(|e| e.to_string()),
                     };
                     if !ocr::SUPPORTED {
                         Status::Unavailable(
@@ -512,7 +513,7 @@ impl Panel {
                 if remove {
                     match model {
                         Model::Ocr(m) => ocr::remove_model(m).map_err(|e| e.to_string()),
-                        Model::Pii(m) => pii::detector::remove_model(m),
+                        Model::Pii(m) => mdoc_detect::remove_model(m).map_err(|e| e.to_string()),
                     }
                     .map(|_| None)
                 } else {
@@ -526,14 +527,15 @@ impl Panel {
                         )
                         .map(Some)
                         .map_err(|e| e.to_string()),
-                        Model::Pii(m) => pii::detector::setup_config(
+                        Model::Pii(m) => mdoc_detect::setup_config(
                             &PiiConfig {
                                 model: m,
                                 ..Default::default()
                             },
                             &progress,
                         )
-                        .map(|_| None),
+                        .map(|_| None)
+                        .map_err(|e| e.to_string()),
                     }
                 }
             }
@@ -834,7 +836,7 @@ impl Panel {
                 .iter()
                 .map(|a| a.size)
                 .sum::<u64>(),
-            Model::Pii(m) => pii::detector::manifest_for(m)
+            Model::Pii(m) => mdoc_detect::manifest_for(m)
                 .files
                 .iter()
                 .map(|a| a.bytes)
@@ -894,7 +896,7 @@ impl Panel {
             .when(self.details == Some(model), |v| {
                 let (revision, path) = match model {
                     Model::Ocr(m) => (ocr::manifest::for_model(m).revision.to_string(), ocr::root().map(|root| ocr::model_root(&root, m)).map_err(|e| e.to_string())),
-                    Model::Pii(m) => (pii::detector::manifest_for(m).revision, pii::detector::root_for(m)),
+                    Model::Pii(m) => (mdoc_detect::manifest_for(m).revision, mdoc_detect::root_for(m).map_err(|e| e.to_string())),
                 };
                 let evidence = match model { Model::Ocr(m) => m.evidence(), Model::Pii(m) => m.evidence() };
                 let (_, license) = models::source_and_license(model);
@@ -903,7 +905,7 @@ impl Panel {
                     .child(evidence)
                     .when_some(match status { Status::Damaged(e) | Status::Unavailable(e) => Some(e.clone()), _ => None }, |v, reason| v.child(reason));
                 if let Model::Pii(m) = model {
-                    let manifest = pii::detector::manifest_for(m);
+                    let manifest = mdoc_detect::manifest_for(m);
                     let export_url = format!("https://huggingface.co/{}/tree/{}", manifest.repository, manifest.revision);
                     details = details.child(m.description()).child(format!("Languages: {}", m.languages()))
                         .child(div().flex().flex_wrap().gap_2()

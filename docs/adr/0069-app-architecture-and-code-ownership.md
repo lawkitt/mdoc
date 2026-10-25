@@ -38,8 +38,8 @@ Two ADRs shared the number 0053.
   crate. Store types name no GPUI or app-style types.
 - **App layout.** One folder per owner (`src/workspace/`,
   `src/document_view/`, `src/pii/ui/`); no `#[path]`; no glob imports except
-  GPUI's trait prelude (`gpui::prelude::*`), `use super::*` in test modules
-  and `src/pii.rs`'s re-export of `mdoc-pii` until P2 reshapes that module.
+  GPUI's trait prelude (`gpui::prelude::*`) and `use super::*` in test
+  modules.
   Each feature declares its own `actions!` (all in the `mdoc` namespace, so
   action names don't change) and keybindings. The top level holds
   only startup and the shared UI kit.

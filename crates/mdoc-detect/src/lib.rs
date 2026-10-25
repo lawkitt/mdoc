@@ -2,12 +2,54 @@
 //! explicit setup. One bounded scan runs at a time; each scan drops its engine.
 mod structured;
 mod windows;
-use crate::pii::{Category, Detection};
 use gliner2_rs::{
     ExecutionMode, InferenceParams, SchemaTask, SpanConfig, SpanEngine,
     processor::SchemaTransformer,
 };
+use mdoc_pii::{Category, Detection};
 use serde::Deserialize;
+
+/// Why detection setup, its checks or a scan failed.
+#[derive(Debug, thiserror::Error)]
+pub enum DetectError {
+    #[error(transparent)]
+    Permit(#[from] mdoc_import::model_work::PermitError),
+    #[error(transparent)]
+    Download(#[from] mdoc_import::model_download::DownloadError),
+    #[error(transparent)]
+    Runtime(#[from] mdoc_import::ocr::SetupError),
+    #[error("Could not find local application storage.")]
+    NoStorage,
+    #[error("Automatic scanning is unavailable on this platform. Manual review is available.")]
+    SetupUnsupported,
+    #[error("Automatic scanning is unavailable on this platform.")]
+    ScanUnsupported,
+    #[error("Detection threshold must be finite and between 0 and 1.")]
+    InvalidThreshold,
+    #[error("Set up the experimental model before scanning.")]
+    NotSetUp,
+    #[error(
+        "Automatic scanning supports up to 2 MiB. Add selections manually in larger documents."
+    )]
+    TooLarge,
+    #[error("Another document is scanning. Retry when it finishes.")]
+    Busy,
+    #[error("Scan cancelled.")]
+    Cancelled,
+    #[error("Scan exceeded two minutes. Review a smaller document or add selections manually.")]
+    TooSlow,
+    #[error(
+        "A source word exceeds the model token limit. Add selections manually; no partial scan was accepted."
+    )]
+    WordTooLong,
+    #[error("Detector returned invalid source offsets; scan discarded.")]
+    InvalidOffsets,
+    /// GLiNER2 or its tokenizer failed, in its words.
+    #[error("{0}")]
+    Engine(String),
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+}
 use windows::bounded_windows;
 
 use std::{
@@ -150,10 +192,10 @@ pub struct Artifact {
 pub fn manifest_for(model: mdoc_store::settings::PiiModel) -> Manifest {
     let source = match model {
         mdoc_store::settings::PiiModel::Fp16 => {
-            include_str!("../../resources/pseudonymization-model.json")
+            include_str!("../../../resources/pseudonymization-model.json")
         }
         mdoc_store::settings::PiiModel::Fp32 => {
-            include_str!("../../resources/pseudonymization-fp32-model.json")
+            include_str!("../../../resources/pseudonymization-fp32-model.json")
         }
     };
     serde_json::from_str(source).expect("pinned model manifest")
@@ -172,7 +214,7 @@ pub fn source_and_license(model: mdoc_store::settings::PiiModel) -> (String, Str
         manifest.license,
     )
 }
-pub fn root_for(model: mdoc_store::settings::PiiModel) -> Result<PathBuf, String> {
+pub fn root_for(model: mdoc_store::settings::PiiModel) -> Result<PathBuf, DetectError> {
     mdoc_store::app_paths::data_local_dir()
         .map(|root| {
             root.join(format!(
@@ -181,17 +223,21 @@ pub fn root_for(model: mdoc_store::settings::PiiModel) -> Result<PathBuf, String
                 &manifest_for(model).revision[..8]
             ))
         })
-        .ok_or_else(|| "Could not find local application storage.".into())
+        .ok_or(DetectError::NoStorage)
 }
-/// Bytes setup still needs for `model`, including the shared ONNX Runtime.
-/// Tests always report a full download.
-pub fn pending(model: mdoc_store::settings::PiiModel) -> mdoc_import::model_download::Pending {
-    let root = root_for(model).ok().filter(|_| !cfg!(test));
+/// Bytes setup still needs for `model` under `root` (see [`root_for`]),
+/// including the shared ONNX Runtime under `ocr_root` (`ocr::root`). Without
+/// a root, everything is still to download.
+pub fn pending(
+    model: mdoc_store::settings::PiiModel,
+    root: Option<&Path>,
+    ocr_root: Option<&Path>,
+) -> mdoc_import::model_download::Pending {
     let files = manifest_for(model).files;
     let missing: Vec<u64> = files
         .iter()
         .filter(|file| {
-            root.as_ref().is_none_or(|root| {
+            root.is_none_or(|root| {
                 mdoc_import::model_download::missing(&root.join(&file.path), file.bytes)
             })
         })
@@ -201,39 +247,30 @@ pub fn pending(model: mdoc_store::settings::PiiModel) -> mdoc_import::model_down
         full: files.iter().map(|file| file.bytes).sum::<u64>()
             + mdoc_import::ocr::onnx_runtime_size(),
         model: missing.iter().sum(),
-        runtime: mdoc_import::ocr::onnx_runtime_pending(
-            mdoc_import::ocr::root()
-                .ok()
-                .filter(|_| !cfg!(test))
-                .as_deref(),
-        ),
+        runtime: mdoc_import::ocr::onnx_runtime_pending(ocr_root),
     }
 }
-fn verify_model(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), String> {
+fn verify_model(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), DetectError> {
     for artifact in manifest_for(model).files {
         mdoc_import::model_download::verify(
             &root.join(&artifact.path),
             artifact.bytes,
             &artifact.sha256,
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
     }
     Ok(())
 }
 pub fn setup_config(
     config: &mdoc_store::settings::PiiConfig,
     progress: &mdoc_import::model_download::Progress,
-) -> Result<(), String> {
+) -> Result<(), DetectError> {
     if !SUPPORTED {
-        return Err(
-            "Automatic scanning is unavailable on this platform. Manual review is available."
-                .into(),
-        );
+        return Err(DetectError::SetupUnsupported);
     }
-    let _permit = mdoc_import::model_work::Permit::acquire_for("installing pseudonymization model")
-        .map_err(|e| e.to_string())?;
+    let _permit =
+        mdoc_import::model_work::Permit::acquire_for("installing pseudonymization model")?;
     let root = root_for(config.model)?;
-    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&root)?;
     for artifact in manifest_for(config.model).files {
         mdoc_import::model_download::fetch(
             &artifact.url,
@@ -241,50 +278,53 @@ pub fn setup_config(
             &artifact.sha256,
             &root.join(&artifact.path),
             progress,
-        )
-        .map_err(|e| e.to_string())?;
+        )?;
     }
-    progress.check().map_err(|e| e.to_string())?;
-    mdoc_import::ocr::onnx_runtime_with_progress(progress).map_err(|e| e.to_string())?;
+    progress.check()?;
+    mdoc_import::ocr::onnx_runtime_with_progress(progress)?;
     let licenses = root.join("licenses");
-    fs::create_dir_all(&licenses).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&licenses)?;
     for (name, text) in [
         (
             "Apache-2.0.txt",
-            include_str!("../../resources/gliner2-license.txt"),
+            include_str!("../../../resources/gliner2-license.txt"),
         ),
         (
             "gliner2-NOTICE.txt",
-            include_str!("../../resources/gliner2-notice.txt"),
+            include_str!("../../../resources/gliner2-notice.txt"),
         ),
         (
             "Microsoft-MIT.txt",
-            include_str!("../../resources/pseudonymization-microsoft-license.txt"),
+            include_str!("../../../resources/pseudonymization-microsoft-license.txt"),
         ),
     ] {
-        fs::write(licenses.join(name), text).map_err(|e| e.to_string())?;
+        fs::write(licenses.join(name), text)?;
     }
-    fs::write(licenses.join("MODEL-NOTICE.txt"),format!("Experimental unmodified {}.\nExport: Jugaad s.r.l., e594898629d452e8311796f5f329c7edbeda907c, Apache-2.0.\nBase: Fastino GLiNER2 privacy PII, 1cb4166094dc58fa8d836429f060d6c95f62b495, Apache-2.0.\nEncoder: Microsoft mDeBERTa-v3-base, MIT.\nPinned model card retained in README.md. Shared ONNX notices: mdoc/ocr/v1/licenses/onnx.\n",config.model.name())).map_err(|e|e.to_string())?;
+    fs::write(
+        licenses.join("MODEL-NOTICE.txt"),
+        format!(
+            "Experimental unmodified {}.\nExport: Jugaad s.r.l., e594898629d452e8311796f5f329c7edbeda907c, Apache-2.0.\nBase: Fastino GLiNER2 privacy PII, 1cb4166094dc58fa8d836429f060d6c95f62b495, Apache-2.0.\nEncoder: Microsoft mDeBERTa-v3-base, MIT.\nPinned model card retained in README.md. Shared ONNX notices: mdoc/ocr/v1/licenses/onnx.\n",
+            config.model.name()
+        ),
+    )?;
     progress.phase("Checking runtime");
-    progress.check().map_err(|e| e.to_string())?;
+    progress.check()?;
     check_engine(&root, config.model)?;
-    progress.check().map_err(|e| e.to_string())
+    progress.check().map_err(DetectError::from)
 }
-fn check_engine(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), String> {
+fn check_engine(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), DetectError> {
     verify_model(root, model)?;
-    mdoc_import::ocr::onnx_runtime(false)
-        .and_then(|runtime| mdoc_import::ocr::load_onnx_runtime(&runtime))
-        .map_err(|e| e.to_string())?;
+    mdoc_import::ocr::load_onnx_runtime(&mdoc_import::ocr::onnx_runtime(false)?)?;
     let _engine = SpanEngine::new(
         SpanConfig::new(root)
             .with_precision(precision(model))
             .with_execution(ExecutionMode::Standard)
             .with_intra_threads(4),
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| DetectError::Engine(e.to_string()))?;
     Ok(())
 }
-pub fn check_reserved(model: mdoc_store::settings::PiiModel) -> Result<bool, String> {
+pub fn check_reserved(model: mdoc_store::settings::PiiModel) -> Result<bool, DetectError> {
     if !SUPPORTED || cfg!(test) {
         return Ok(false);
     }
@@ -295,25 +335,21 @@ pub fn check_reserved(model: mdoc_store::settings::PiiModel) -> Result<bool, Str
     check_engine(&root, model)?;
     Ok(true)
 }
-pub fn remove_model(model: mdoc_store::settings::PiiModel) -> Result<(), String> {
-    let _permit = mdoc_import::model_work::Permit::acquire_for("removing pseudonymization model")
-        .map_err(|e| e.to_string())?;
+pub fn remove_model(model: mdoc_store::settings::PiiModel) -> Result<(), DetectError> {
+    let _permit = mdoc_import::model_work::Permit::acquire_for("removing pseudonymization model")?;
     let root = root_for(model)?;
     if root.exists() {
-        fs::remove_dir_all(root).map_err(|e| e.to_string())?;
+        fs::remove_dir_all(root)?;
     }
     Ok(())
 }
 
-fn checkpoint(cancel: &AtomicBool, started: Instant) -> Result<(), String> {
+fn checkpoint(cancel: &AtomicBool, started: Instant) -> Result<(), DetectError> {
     if cancel.load(Ordering::Relaxed) {
-        return Err("Scan cancelled.".into());
+        return Err(DetectError::Cancelled);
     }
     if started.elapsed() > MAX_SCAN_TIME {
-        return Err(
-            "Scan exceeded two minutes. Review a smaller document or add selections manually."
-                .into(),
-        );
+        return Err(DetectError::TooSlow);
     }
     Ok(())
 }
@@ -324,28 +360,26 @@ pub fn scan_config(
     source: &str,
     cancel: &AtomicBool,
     config: &mdoc_store::settings::PiiConfig,
-) -> Result<Vec<Detection>, String> {
-    let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")
-        .map_err(|e| e.to_string())?;
+) -> Result<Vec<Detection>, DetectError> {
+    let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
     scan_reserved(source, cancel, config)
 }
 pub fn scan_reserved(
     source: &str,
     cancel: &AtomicBool,
     config: &mdoc_store::settings::PiiConfig,
-) -> Result<Vec<Detection>, String> {
+) -> Result<Vec<Detection>, DetectError> {
     if !mdoc_store::settings::unit_interval(config.threshold) {
-        return Err("Detection threshold must be finite and between 0 and 1.".into());
+        return Err(DetectError::InvalidThreshold);
     }
     if !SUPPORTED {
-        return Err("Automatic scanning is unavailable on this platform.".into());
+        return Err(DetectError::ScanUnsupported);
     }
     scan_in(
         source,
         cancel,
         &root_for(config.model)?,
-        mdoc_import::ocr::onnx_runtime(false)
-            .map_err(|_| "Set up the experimental model before scanning.".to_string())?,
+        mdoc_import::ocr::onnx_runtime(false).map_err(|_| DetectError::NotSetUp)?,
         config,
     )
 }
@@ -356,22 +390,16 @@ fn scan_in(
     root: &Path,
     runtime: PathBuf,
     config: &mdoc_store::settings::PiiConfig,
-) -> Result<Vec<Detection>, String> {
+) -> Result<Vec<Detection>, DetectError> {
     if source.len() > MAX_SOURCE_BYTES {
-        return Err(
-            "Automatic scanning supports up to 2 MiB. Add selections manually in larger documents."
-                .into(),
-        );
+        return Err(DetectError::TooLarge);
     }
     let started = Instant::now();
     checkpoint(cancel, started)?;
-    let _inference = INFERENCE
-        .try_lock()
-        .map_err(|_| "Another document is scanning. Retry when it finishes.".to_string())?;
-    verify_model(root, config.model)
-        .map_err(|_| "Set up the experimental model before scanning.".to_string())?;
+    let _inference = INFERENCE.try_lock().map_err(|_| DetectError::Busy)?;
+    verify_model(root, config.model).map_err(|_| DetectError::NotSetUp)?;
     checkpoint(cancel, started)?;
-    mdoc_import::ocr::load_onnx_runtime(&runtime).map_err(|e| e.to_string())?;
+    mdoc_import::ocr::load_onnx_runtime(&runtime)?;
     let tasks: Vec<_> = FAMILIES
         .iter()
         .map(|family| {
@@ -381,7 +409,7 @@ fn scan_in(
     let transformer = SchemaTransformer::from_tokenizer_file(
         &root.join(config.model.folder()).join("tokenizer.json"),
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| DetectError::Engine(e.to_string()))?;
     let windows = bounded_windows(source, &transformer, &tasks, cancel, started)?;
     let mut engine = SpanEngine::new(
         SpanConfig::new(root)
@@ -389,7 +417,7 @@ fn scan_in(
             .with_execution(ExecutionMode::Standard)
             .with_intra_threads(4),
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| DetectError::Engine(e.to_string()))?;
     let params = InferenceParams {
         threshold: config.threshold,
         flat_ner: true,
@@ -401,7 +429,7 @@ fn scan_in(
         let text = &source[range.clone()];
         let output = engine
             .extract_with(text, &tasks, &params)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| DetectError::Engine(e.to_string()))?;
         checkpoint(cancel, started)?;
         for entity in output.entities {
             let Some(category) = FAMILIES
@@ -414,13 +442,13 @@ fn scan_in(
             if text.get(entity.char_start..entity.char_end) != Some(entity.text.as_str())
                 || entity.char_start >= entity.char_end
             {
-                return Err("Detector returned invalid source offsets; scan discarded.".into());
+                return Err(DetectError::InvalidOffsets);
             }
             detections.push(Detection {
                 range: range.start + entity.char_start..range.start + entity.char_end,
                 category,
                 score: entity.score,
-                recognizer: crate::pii::Recognizer::Model,
+                recognizer: mdoc_pii::Recognizer::Model,
             });
         }
     }
@@ -508,7 +536,7 @@ mod tests {
                     ..Default::default()
                 },
             );
-            assert!(result.unwrap_err().contains("2 MiB"));
+            assert!(result.unwrap_err().to_string().contains("2 MiB"));
         }
         assert!(
             checkpoint(
@@ -516,18 +544,19 @@ mod tests {
                 Instant::now() - Duration::from_secs(121)
             )
             .unwrap_err()
+            .to_string()
             .contains("two minutes")
         );
-        assert_eq!(
-            checkpoint(&AtomicBool::new(true), Instant::now()).unwrap_err(),
-            "Scan cancelled."
-        );
+        assert!(matches!(
+            checkpoint(&AtomicBool::new(true), Instant::now()),
+            Err(DetectError::Cancelled)
+        ));
     }
     #[test]
     #[ignore = "requires preverified qualification cache and installed native runtime; no downloads"]
     fn experimental_model_offline_scan() {
-        let root =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join(".qualification/models/gliner2-pii-fp16");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.qualification/models/gliner2-pii-fp16");
         let source = "Alice Morgan represents Northbridge Legal Ltd. Анна Ёлкина подписала договор. Contact alice@example.invalid.\n".repeat(64);
         let started = Instant::now();
         let detected = scan_in(
@@ -569,7 +598,7 @@ mod tests {
                 mdoc_import::ocr::onnx_runtime(false).unwrap(),
                 &mdoc_store::settings::PiiConfig::default(),
             );
-            assert_eq!(result.unwrap_err(), "Scan cancelled.");
+            assert!(matches!(result, Err(DetectError::Cancelled)));
         });
         eprintln!(
             "active scan cancellation returned after {:.2}s; no partial result accepted",

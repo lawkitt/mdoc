@@ -5,16 +5,14 @@ use super::{
 };
 use crate::{
     document_view::DocumentView,
-    pii::{
-        self, Category,
-        ui::{APPLIED_ID, KEPT_ID, PiiClosePopup, PiiConfirm, Popup},
-    },
+    pii::ui::{APPLIED_ID, KEPT_ID, PiiClosePopup, PiiConfirm, Popup},
     style,
 };
 use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Focusable, Hsla, Pixels, SharedString,
     Window, anchored, deferred, div, prelude::*, px, uniform_list,
 };
+use mdoc_pii::Category;
 use std::{ops::Range, sync::Arc, time::Duration};
 
 /// The quiet button look: a thin border, regular weight.
@@ -841,7 +839,7 @@ impl DocumentView {
     /// Category correction: each category with the alias it would give.
     fn category_menu(
         &self,
-        identity: &pii::Identity,
+        identity: &mdoc_pii::Identity,
         selected_count: usize,
         mentions: usize,
         owner: Option<Option<String>>,
@@ -983,7 +981,7 @@ impl DocumentView {
     #[allow(clippy::too_many_arguments)]
     fn alias_menu(
         &self,
-        identity: &pii::Identity,
+        identity: &mdoc_pii::Identity,
         draft: &str,
         changed: bool,
         selected_count: usize,
@@ -1094,7 +1092,7 @@ impl DocumentView {
     /// The owner picker, opened from the category menu's "Belongs to…".
     fn owner_menu(
         &self,
-        identity: &pii::Identity,
+        identity: &mdoc_pii::Identity,
         id: u64,
         enabled: bool,
         cx: &mut Context<Self>,

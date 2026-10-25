@@ -1,14 +1,12 @@
 use super::*;
 use crate::{
     document_view::{CopyMarkdown, DocumentView},
-    pii::{
-        self, Category, Review,
-        ui::{PiiAddCandidate, PiiApplyAll, PiiConfirm, Pseudonymize},
-    },
+    pii::ui::{PiiAddCandidate, PiiApplyAll, PiiConfirm, Pseudonymize},
     settings_ui,
     style::Theme,
 };
 use gpui::{App, Context, Entity, Focusable, Window, px};
+use mdoc_pii::{Category, Review};
 use mdoc_store::{document::Document, settings};
 use std::{
     ops::Range,
@@ -43,11 +41,11 @@ fn scan_proposes_without_applying_until_explicit_apply(cx: &mut gpui::TestAppCon
             generation,
             identity,
             revision,
-            Ok(vec![pii::Detection {
+            Ok(vec![mdoc_pii::Detection {
                 range: 0..5,
                 category: Category::Person,
                 score: 0.9,
-                recognizer: crate::pii::Recognizer::Model,
+                recognizer: mdoc_pii::Recognizer::Model,
             }]),
             cx,
         );
@@ -167,23 +165,23 @@ fn scan_then_apply_is_one_undo_step_and_copy_is_explicit(cx: &mut gpui::TestAppC
             identity,
             revision,
             Ok(vec![
-                pii::Detection {
+                mdoc_pii::Detection {
                     range: 2..10,
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: crate::pii::Recognizer::Model,
+                    recognizer: mdoc_pii::Recognizer::Model,
                 },
-                pii::Detection {
+                mdoc_pii::Detection {
                     range: bob..bob + 3,
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: crate::pii::Recognizer::Model,
+                    recognizer: mdoc_pii::Recognizer::Model,
                 },
-                pii::Detection {
+                mdoc_pii::Detection {
                     range: mail..mail + 20,
                     category: Category::Email,
                     score: 0.9,
-                    recognizer: crate::pii::Recognizer::Model,
+                    recognizer: mdoc_pii::Recognizer::Model,
                 },
             ]),
             cx,
@@ -239,11 +237,11 @@ fn failed_cancelled_stale_and_superseded_scans_do_not_edit(cx: &mut gpui::TestAp
         cx.run_until_parked();
         app.update(cx, |app, cx| {
             let (generation, identity, revision) = install_scan(app, cx);
-            let mut result = Ok(vec![pii::Detection {
+            let mut result = Ok(vec![mdoc_pii::Detection {
                 range: 0..5,
                 category: Category::Person,
                 score: 0.9,
-                recognizer: crate::pii::Recognizer::Model,
+                recognizer: mdoc_pii::Recognizer::Model,
             }]);
             match case {
                 0 => result = Err("Partial scan rejected".into()),
@@ -667,11 +665,11 @@ fn cancelled_edited_and_replaced_document_results_are_rejected(cx: &mut gpui::Te
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice", cx));
         let result = || {
-            Ok(vec![pii::Detection {
+            Ok(vec![mdoc_pii::Detection {
                 range: 0..5,
                 category: Category::Person,
                 score: 0.9,
-                recognizer: crate::pii::Recognizer::Model,
+                recognizer: mdoc_pii::Recognizer::Model,
             }])
         };
         let identity = app.session.generation;
@@ -715,11 +713,11 @@ fn prepare_applied(app: &mut DocumentView, source: &str, cx: &mut Context<Docume
     let detections: Vec<_> = source
         .match_indices("Anna")
         .chain(source.match_indices("Bob"))
-        .map(|(at, text)| pii::Detection {
+        .map(|(at, text)| mdoc_pii::Detection {
             range: at..at + text.len(),
             category: Category::Person,
             score: 0.9,
-            recognizer: pii::Recognizer::Model,
+            recognizer: mdoc_pii::Recognizer::Model,
         })
         .collect();
     app.pii.review.ingest(source, detections).unwrap();
@@ -753,11 +751,11 @@ fn applied_highlights_restore_one_or_matching_originals_and_keep_survives_rescan
             .review
             .ingest(
                 "Anna PERSON_2 PERSON_1",
-                vec![pii::Detection {
+                vec![mdoc_pii::Detection {
                     range: 0..4,
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: pii::Recognizer::Model,
+                    recognizer: mdoc_pii::Recognizer::Model,
                 }],
             )
             .unwrap();
@@ -1095,11 +1093,11 @@ fn selection_replace_supersedes_partial_proposals_and_enter_applies(cx: &mut gpu
             generation,
             identity,
             revision,
-            Ok(vec![pii::Detection {
+            Ok(vec![mdoc_pii::Detection {
                 range: first..first + "Иван".len(),
                 category: Category::Person,
                 score: 0.9,
-                recognizer: crate::pii::Recognizer::Model,
+                recognizer: mdoc_pii::Recognizer::Model,
             }]),
             cx,
         );
@@ -1172,11 +1170,11 @@ fn unknown_wording_is_other_cued_and_cancel_reverts_addition_and_apply(
             generation,
             identity,
             revision,
-            Ok(vec![pii::Detection {
+            Ok(vec![mdoc_pii::Detection {
                 range: anna..anna + "Анна".len(),
                 category: Category::Person,
                 score: 0.9,
-                recognizer: crate::pii::Recognizer::Model,
+                recognizer: mdoc_pii::Recognizer::Model,
             }]),
             cx,
         );
@@ -1251,11 +1249,11 @@ fn decision_card_fits_the_mention_and_apply_settles_in(cx: &mut gpui::TestAppCon
             generation,
             identity,
             revision,
-            Ok(vec![pii::Detection {
+            Ok(vec![mdoc_pii::Detection {
                 range: anna..anna + "Анна".len(),
                 category: Category::Person,
                 score: 0.9,
-                recognizer: crate::pii::Recognizer::Model,
+                recognizer: mdoc_pii::Recognizer::Model,
             }]),
             cx,
         );
@@ -1363,11 +1361,11 @@ fn alias_click_shows_a_caret_and_new_alias_below_the_card_applies(cx: &mut gpui:
             let (generation, identity, revision) = install_scan(app, cx);
             let det = |text: &str, nth: usize, category| {
                 let at = source.match_indices(text).nth(nth).unwrap().0;
-                pii::Detection {
+                mdoc_pii::Detection {
                     range: at..at + text.len(),
                     category,
                     score: 0.9,
-                    recognizer: pii::Recognizer::Model,
+                    recognizer: mdoc_pii::Recognizer::Model,
                 }
             };
             app.complete_pii_scan(
@@ -1449,11 +1447,11 @@ fn renaming_an_alias_back_frees_its_old_name(cx: &mut gpui::TestAppContext) {
             let (generation, identity, revision) = install_scan(app, cx);
             let det = |text: &str, nth: usize, category| {
                 let at = source.match_indices(text).nth(nth).unwrap().0;
-                pii::Detection {
+                mdoc_pii::Detection {
                     range: at..at + text.len(),
                     category,
                     score: 0.9,
-                    recognizer: pii::Recognizer::Model,
+                    recognizer: mdoc_pii::Recognizer::Model,
                 }
             };
             app.complete_pii_scan(
@@ -1546,11 +1544,11 @@ fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
     cx.run_until_parked();
     app.update(cx, |app, cx| {
         let (generation, identity, revision) = install_scan(app, cx);
-        let det = |range| pii::Detection {
+        let det = |range| mdoc_pii::Detection {
             range,
             category: Category::Person,
             score: 0.9,
-            recognizer: pii::Recognizer::Model,
+            recognizer: mdoc_pii::Recognizer::Model,
         };
         app.complete_pii_scan(
             generation,
@@ -1613,11 +1611,11 @@ fn popup_delete_keeps_but_alias_field_backspace_edits(cx: &mut gpui::TestAppCont
             .review
             .ingest(
                 "Anna Bob",
-                vec![pii::Detection {
+                vec![mdoc_pii::Detection {
                     range: 0..4,
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: pii::Recognizer::Model,
+                    recognizer: mdoc_pii::Recognizer::Model,
                 }],
             )
             .unwrap();
@@ -1649,7 +1647,7 @@ fn popup_delete_keeps_but_alias_field_backspace_edits(cx: &mut gpui::TestAppCont
 
 #[gpui::test]
 fn unrecognized_placeholders_are_assigned_or_left_never_guessed(cx: &mut gpui::TestAppContext) {
-    use crate::pii::restore::ExportedIdentity;
+    use mdoc_pii::restore::ExportedIdentity;
     let (app, cx) = crate::document_view::tests::boot(cx);
     let reply = restore::RestoredReply {
         text: "PERSON_1 and PERSON_2 met PERSON_2 and ORG_5.".into(),
@@ -1711,7 +1709,7 @@ fn ai_notice_names_aliases_only() {
 
 #[gpui::test]
 fn homonyms_keep_their_own_aliases_through_restore_and_apply(cx: &mut gpui::TestAppContext) {
-    use crate::pii::restore::ExportedIdentity;
+    use mdoc_pii::restore::ExportedIdentity;
     let (app, cx) = crate::document_view::tests::boot(cx);
     let person = |alias: &str| ExportedIdentity {
         alias: alias.into(),
@@ -1752,11 +1750,11 @@ fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
     app.update(cx, |app, cx| {
         app.case_skip.insert(Category::Address);
         let (generation, identity, revision) = install_scan(app, cx);
-        let detection = |range, category| pii::Detection {
+        let detection = |range, category| mdoc_pii::Detection {
             range,
             category,
             score: 0.9,
-            recognizer: crate::pii::Recognizer::Model,
+            recognizer: mdoc_pii::Recognizer::Model,
         };
         app.complete_pii_scan(
             generation,

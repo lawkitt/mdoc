@@ -1,13 +1,10 @@
 //! Searchable replacement overview with inline occurrence context.
 use super::{DropTarget, MappingAction, PanelDrag, PanelFilter, PanelMenu, checklist::Tick};
-use crate::{
-    document_view::DocumentView,
-    pii::{Category, ui::APPLIED_ID},
-    settings_ui, style, ui,
-};
+use crate::{document_view::DocumentView, pii::ui::APPLIED_ID, settings_ui, style, ui};
 use gpui::{
     AnyElement, App, Context, Hsla, SharedString, Window, div, prelude::*, px, uniform_list,
 };
+use mdoc_pii::Category;
 use mdoc_store::settings;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},

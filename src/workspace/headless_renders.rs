@@ -7,11 +7,8 @@ use super::{
 use crate::{
     bind_app_keys, comparison, comparison_ui,
     document_view::{DocumentView, bind_markdown_search_keys},
-    markdown_search,
-    pii::{
-        self,
-        ui::{PiiApplyAll, PiiClosePopup},
-    },
+    markdown_search, pii,
+    pii::ui::{PiiApplyAll, PiiClosePopup},
     search_session::CloseMarkdownSearch,
     settings_ui, ui,
 };
@@ -171,7 +168,7 @@ impl Driver {
 
 /// Use the existing public annotation corpus directly, without a detector or
 /// model download. Offsets are UTF-8 byte ranges in the unmarked document.
-fn fixture() -> Result<(String, Vec<pii::Detection>)> {
+fn fixture() -> Result<(String, Vec<mdoc_pii::Detection>)> {
     let corpus: Value = serde_json::from_str(include_str!(
         "../../tests/fixtures/pseudonymization/corpus.json"
     ))
@@ -188,14 +185,14 @@ fn fixture() -> Result<(String, Vec<pii::Detection>)> {
         text.push_str(&annotated[end..whole.start()]);
         let start = text.len();
         text.push_str(&m[2]);
-        detections.push(pii::Detection {
+        detections.push(mdoc_pii::Detection {
             range: start..text.len(),
-            category: pii::Category::ALL
+            category: mdoc_pii::Category::ALL
                 .into_iter()
                 .find(|c| c.token() == &m[1])
                 .ok_or("unknown fixture category")?,
             score: 1.,
-            recognizer: pii::Recognizer::Model,
+            recognizer: mdoc_pii::Recognizer::Model,
         });
         end = whole.end();
     }
@@ -223,7 +220,7 @@ fn scenarios(
     d: &mut Driver,
     out: &Path,
     path: &Path,
-    detections: &[pii::Detection],
+    detections: &[mdoc_pii::Detection],
 ) -> Result<Vec<Value>> {
     let mut records = vec![d.capture(out, "home")?];
     let view = document(d, path)?;
@@ -417,11 +414,11 @@ fn scenarios(
     let identities = mapping
         .iter()
         .map(|identity| {
-            Ok(pii::restore::ExportedIdentity {
+            Ok(mdoc_pii::restore::ExportedIdentity {
                 alias: identity["alias"].as_str().ok_or("fixture alias")?.into(),
                 previous: vec![],
                 custom: false,
-                category: pii::Category::ALL
+                category: mdoc_pii::Category::ALL
                     .into_iter()
                     .find(|c| Some(c.token()) == identity["category"].as_str())
                     .ok_or("fixture category")?,

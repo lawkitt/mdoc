@@ -4,17 +4,14 @@
 //! are highlighted and can be assigned to an identity, never guessed.
 use crate::{
     document_view::DocumentView,
-    pii::{
-        self,
-        ui::{CopyForAi, PiiClosePopup},
-    },
+    pii::ui::{CopyForAi, PiiClosePopup},
     ui,
     workspace::{PasteAiResponse, PseudonymizeClipboard},
 };
 use gpui::{
     AnyElement, App, Context, Focusable, Hsla, Window, anchored, deferred, div, prelude::*, px,
 };
-use pii::restore::{ExportedIdentity, RestoreMap};
+use mdoc_pii::restore::{ExportedIdentity, RestoreMap};
 use std::{collections::HashSet, ops::Range, sync::Arc};
 
 /// Unresolved-token annotations: bit 62 plus the token's start offset.
