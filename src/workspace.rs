@@ -44,8 +44,10 @@ pub(crate) mod headless_renders;
 mod keychain_ui;
 mod notices;
 mod shell;
+mod sidebar;
 pub(crate) use cases_ui::{CancelCaseName, ConfirmCaseName, bind_keys as bind_case_keys};
 pub(crate) use shell::bind_keys as bind_shell_keys;
+use sidebar::{Reveal, SLIDE, SidebarEffect};
 mod app_actions;
 pub(crate) use app_actions::bind as bind_app_actions;
 actions!(
@@ -164,8 +166,6 @@ pub(super) struct Workspace {
     /// F6 regions the workspace owns, and the control last focused in each
     /// region when F6 left it (ADR 0062).
     focus_regions: focus_regions::FocusRegions<gpui::FocusHandle>,
-    /// The sidebar row the arrows last moved to: the list's one Tab stop.
-    sidebar_cursor: Option<u64>,
     /// The Open Case list holds focus while open, and gives it back on
     /// close; the notices popover takes Esc (ADR 0062).
     pub(super) case_list_focus: gpui::FocusHandle,
@@ -176,34 +176,8 @@ pub(super) struct Workspace {
     tabs: Vec<Tab>,
     active: u64,
     next_id: u64,
-    sidebar_visible: bool,
-    sidebar_choice: Option<bool>,
-    /// Bumped by explicit toggles so only they animate the sidebar width.
-    sidebar_generation: u64,
-    /// When the current toggle's slide ends (ADR 0048).
-    sidebar_slide: Option<std::time::Instant>,
-    reveal: Reveal,
-    reveal_generation: u64,
-    /// Opened by keyboard focus, so focus inside it also keeps it open.
-    reveal_keyboard: bool,
-    /// Pointer over (rail, reveal).
-    reveal_hover: (bool, bool),
-    /// The timer still allowed to open (`true`) or close (`false`) the reveal.
-    reveal_pending: Option<(bool, u64)>,
-    reveal_ticket: u64,
+    sidebar: sidebar::Sidebar<gpui::FocusHandle>,
     reveal_focus: gpui::FocusHandle,
-    /// The rail control that keyboard focus came from; Escape returns there.
-    reveal_return: Option<gpui::FocusHandle>,
-    /// A rail control focused by Escape that must not reveal again.
-    reveal_escaped: Option<gpui::FocusHandle>,
-    /// An OS file drag over the sidebar (ADR 0028): the row under the pointer
-    /// with the insertion index its half selects, the list under the pointer,
-    /// and the collapsed rail under the pointer.
-    file_drop_row: Option<(u64, usize)>,
-    file_drop_list: bool,
-    /// Files over the sidebar, none of which mdoc opens.
-    file_drop_refused: bool,
-    file_drag_rail: bool,
     rail_toggle_focus: gpui::FocusHandle,
     rail_new_focus: gpui::FocusHandle,
     panel_toggle_focus: gpui::FocusHandle,
@@ -364,7 +338,6 @@ impl Workspace {
         let mut this = Self {
             focus: cx.focus_handle(),
             focus_regions: focus_regions::FocusRegions::new(cx.focus_handle(), cx.focus_handle()),
-            sidebar_cursor: None,
             case_list_focus: cx.focus_handle(),
             case_list_return: None,
             case_categories_focus: cx.focus_handle(),
@@ -373,23 +346,8 @@ impl Workspace {
             tabs: Vec::new(),
             active: 0,
             next_id: 1,
-            sidebar_visible: true,
-            sidebar_choice: None,
-            sidebar_generation: 0,
-            sidebar_slide: None,
-            reveal: Reveal::Hidden,
-            reveal_generation: 0,
-            reveal_keyboard: false,
-            reveal_hover: (false, false),
-            reveal_pending: None,
-            reveal_ticket: 0,
+            sidebar: sidebar::Sidebar::default(),
             reveal_focus: cx.focus_handle(),
-            reveal_return: None,
-            reveal_escaped: None,
-            file_drop_row: None,
-            file_drop_list: false,
-            file_drop_refused: false,
-            file_drag_rail: false,
             rail_toggle_focus: cx.focus_handle().tab_stop(true),
             rail_new_focus: cx.focus_handle().tab_stop(true),
             panel_toggle_focus: cx.focus_handle().tab_stop(true),
@@ -841,8 +799,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.sidebar_visible = session.sidebar_visible;
-        self.sidebar_choice = session.sidebar_choice;
+        self.sidebar
+            .restore(session.sidebar_visible, session.sidebar_choice);
         self.theme_choice = session.theme_choice;
         self.apply_theme(window, cx);
         self.cases.collapsed = session.collapsed_cases.iter().cloned().collect();
@@ -1586,12 +1544,7 @@ impl Workspace {
     fn remove(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         self.sidebar_row_focus.borrow_mut().remove(&id);
         let removed_opener = self.compact_row_focus.borrow_mut().remove(&id);
-        let removed_reveal_opener =
-            removed_opener.is_some() && self.reveal_return == removed_opener;
-        let closed_reveal = self.reveal == Reveal::Shown && removed_reveal_opener;
-        if removed_reveal_opener {
-            self.reveal_return = None;
-        }
+        let closed_reveal = self.sidebar.forget_opener(removed_opener.as_ref());
         let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
             return;
         };
@@ -1721,8 +1674,8 @@ impl Workspace {
 
     fn snapshot(&self, cx: &App) -> Session {
         let mut session = Session {
-            sidebar_visible: self.sidebar_visible,
-            sidebar_choice: self.sidebar_choice,
+            sidebar_visible: self.sidebar.visible(),
+            sidebar_choice: self.sidebar.choice(),
             theme_choice: self.theme_choice,
             collapsed_cases: {
                 let mut ids: Vec<_> = self.cases.collapsed.iter().cloned().collect();
@@ -1893,128 +1846,95 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if panel {
-            self.reveal_hover.1 = hovered;
-        } else {
-            self.reveal_hover.0 = hovered;
-        }
-        self.update_reveal(window, cx);
+        let effect = self.sidebar.hover(panel, hovered);
+        self.carry_out_sidebar(effect, window, cx);
     }
 
-    /// Open or close the reveal for the pointer, or for OS files dragged over
-    /// the rail, which GPUI does not report as hover (ADR 0028).
-    fn update_reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.sidebar_visible {
-            return;
-        }
-        let pending = self.reveal_pending.map(|(open, _)| open);
-        let hovered = self.reveal_hover.0 || self.reveal_hover.1 || self.file_drag_rail;
-        match (hovered, self.reveal) {
-            (true, Reveal::Shown) => self.reveal_pending = None,
-            (true, Reveal::Hiding) => self.show_reveal(false, cx),
-            (true, Reveal::Hidden) if pending != Some(true) => {
-                self.schedule_reveal(true, window, cx)
+    fn carry_out_sidebar(
+        &mut self,
+        effect: Option<SidebarEffect>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match effect {
+            None => {}
+            Some(SidebarEffect::Repaint) => cx.notify(),
+            Some(SidebarEffect::EndSlide) => {
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(SLIDE + Duration::from_millis(16))
+                        .await;
+                    let _ = this.update(cx, |_, cx| cx.notify());
+                })
+                .detach();
             }
-            (false, Reveal::Shown) if pending != Some(false) => {
-                self.schedule_reveal(false, window, cx)
+            Some(SidebarEffect::Schedule { open, ticket }) => {
+                let delay = if open { REVEAL_DELAY } else { REVEAL_GRACE };
+                cx.spawn_in(window, async move |this, cx| {
+                    cx.background_executor().timer(delay).await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        if !this.sidebar.fire(open, ticket) {
+                            return;
+                        }
+                        if open {
+                            this.show_reveal(false, cx);
+                        } else if this.reveal_held(window, cx) {
+                            let effect = this.sidebar.schedule(false);
+                            this.carry_out_sidebar(Some(effect), window, cx);
+                        } else {
+                            let focused = this.reveal_focus.contains_focused(window, cx);
+                            this.dismiss_reveal(window, cx);
+                            if focused {
+                                this.focus_active(window, cx);
+                            }
+                        }
+                    });
+                })
+                .detach();
             }
-            (false, Reveal::Hidden) => self.reveal_pending = None,
-            _ => {}
+            Some(SidebarEffect::FinishHiding(generation)) => {
+                cx.spawn_in(window, async move |this, cx| {
+                    cx.background_executor().timer(SLIDE).await;
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        let effect = this.sidebar.finish_hiding(generation);
+                        this.carry_out_sidebar(effect, window, cx);
+                    });
+                })
+                .detach();
+                cx.notify();
+            }
         }
-    }
-
-    /// Open after hover intent, or close after the grace period. Only the most
-    /// recently scheduled timer acts.
-    fn schedule_reveal(&mut self, open: bool, window: &mut Window, cx: &mut Context<Self>) {
-        self.reveal_ticket += 1;
-        let ticket = self.reveal_ticket;
-        self.reveal_pending = Some((open, ticket));
-        let delay = if open { REVEAL_DELAY } else { REVEAL_GRACE };
-        cx.spawn_in(window, async move |this, cx| {
-            cx.background_executor().timer(delay).await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                if this.reveal_pending != Some((open, ticket)) {
-                    return;
-                }
-                this.reveal_pending = None;
-                if open {
-                    this.show_reveal(false, cx);
-                } else if this.reveal_held(window, cx) {
-                    this.schedule_reveal(false, window, cx);
-                } else {
-                    let focused = this.reveal_focus.contains_focused(window, cx);
-                    this.dismiss_reveal(window, cx);
-                    if focused {
-                        this.focus_active(window, cx);
-                    }
-                }
-            });
-        })
-        .detach();
     }
 
     /// A context menu, drag, the pointer, or keyboard focus keeps the reveal open.
     fn reveal_held(&self, window: &Window, cx: &App) -> bool {
         self.tab_menu.is_some()
             || cx.has_active_drag()
-            || self.reveal_hover.0
-            || self.reveal_hover.1
-            || (self.reveal_keyboard && self.reveal_focus.contains_focused(window, cx))
+            || self
+                .sidebar
+                .holds(|| self.reveal_focus.contains_focused(window, cx))
     }
 
     fn show_reveal(&mut self, keyboard: bool, cx: &mut Context<Self>) {
-        self.reveal_pending = None;
-        if self.reveal != Reveal::Shown {
-            self.reveal_generation += 1;
-            self.reveal = Reveal::Shown;
-            self.reveal_keyboard = keyboard;
-        }
+        self.sidebar.show(keyboard);
         cx.notify();
     }
 
     /// Slide the reveal back; it unmounts once the animation has finished.
     fn dismiss_reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.reveal_pending = None;
-        if self.reveal != Reveal::Shown {
-            return;
-        }
-        self.reveal_keyboard = false;
-        self.reveal_return = None;
-        self.reveal_generation += 1;
-        if cx.reduce_motion() {
-            self.reveal = Reveal::Hidden;
-            self.reveal_hover.1 = false;
-        } else {
-            self.reveal = Reveal::Hiding;
-            let generation = self.reveal_generation;
-            cx.spawn_in(window, async move |this, cx| {
-                cx.background_executor().timer(SLIDE).await;
-                let _ = this.update(cx, |this, cx| {
-                    if this.reveal == Reveal::Hiding && this.reveal_generation == generation {
-                        this.reveal = Reveal::Hidden;
-                        this.reveal_hover.1 = false;
-                        cx.notify();
-                    }
-                });
-            })
-            .detach();
-        }
-        cx.notify();
+        let effect = self.sidebar.dismiss(cx.reduce_motion());
+        self.carry_out_sidebar(effect, window, cx);
     }
 
     /// Keyboard focus on a rail control reveals the full list at once and moves
     /// focus to the matching control there; focus leaving the reveal closes it.
     fn reveal_for_keyboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.sidebar_visible {
+        if self.sidebar.visible() {
             return;
         }
-        if self
-            .reveal_escaped
-            .as_ref()
-            .is_some_and(|focus| !focus.is_focused(window))
-        {
-            self.reveal_escaped = None;
-        }
+        let may_open = self
+            .sidebar
+            .keyboard_may_open(|focus| focus.is_focused(window));
         let mut focused = [
             (&self.rail_toggle_focus, &self.panel_toggle_focus),
             (&self.rail_new_focus, &self.panel_new_focus),
@@ -2040,20 +1960,12 @@ impl Workspace {
             });
         }
         match focused {
-            Some((rail, panel))
-                if self.reveal != Reveal::Shown
-                    && self.reveal_escaped.is_none()
-                    && window.last_input_was_keyboard() =>
-            {
-                self.show_reveal(true, cx);
-                self.reveal_keyboard = true;
-                self.reveal_return = Some(rail);
+            Some((rail, panel)) if may_open && window.last_input_was_keyboard() => {
+                self.sidebar.open_for_keyboard(rail);
+                cx.notify();
                 window.defer(cx, move |window, cx| window.focus(&panel, cx));
             }
-            None if self.reveal == Reveal::Shown
-                && self.reveal_keyboard
-                && !self.reveal_held(window, cx) =>
-            {
+            None if self.sidebar.keyboard_reveal() && !self.reveal_held(window, cx) => {
                 self.dismiss_reveal(window, cx);
             }
             _ => {}
@@ -2062,22 +1974,12 @@ impl Workspace {
 
     /// Where files dropped on the document list would open (ADR 0028).
     fn file_drop_index(&self) -> Option<usize> {
-        if self.file_drop_refused {
-            return None;
-        }
-        self.file_drop_row
-            .map(|(_, index)| index)
-            .or(self.file_drop_list.then_some(self.tabs.len()))
+        self.sidebar.drop_index(self.tabs.len())
     }
 
     fn clear_file_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let rail = std::mem::take(&mut self.file_drag_rail);
-        self.file_drop_row = None;
-        self.file_drop_list = false;
-        self.file_drop_refused = false;
-        if rail {
-            self.update_reveal(window, cx);
-        }
+        let effect = self.sidebar.clear_drag();
+        self.carry_out_sidebar(effect, window, cx);
         cx.notify();
     }
 
@@ -2118,14 +2020,15 @@ impl Workspace {
     fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
-        let expanded = self.sidebar_visible;
-        let revealed = !expanded && self.reveal != Reveal::Hidden;
+        let expanded = self.sidebar.visible();
+        let revealed = !expanded && self.sidebar.reveal() != Reveal::Hidden;
         let home = self.showing_home(cx);
         let mut compact_rows = Vec::with_capacity(self.tabs.len());
         // One Tab stop for the list: the active tab, else the first listed.
         let listed = self.listed_tabs(cx);
         let roving = self
-            .sidebar_cursor
+            .sidebar
+            .cursor()
             .filter(|id| listed.contains(id))
             .or_else(|| {
                 listed
@@ -2429,21 +2332,17 @@ impl Workspace {
                             v.border_t_2().border_color(accent)
                         })
                         .on_drag_move(cx.listener(
-                            move |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                            move |this,
+                                  event: &gpui::DragMoveEvent<gpui::ExternalPaths>,
+                                  window,
+                                  cx| {
                                 let position = event.event.position;
                                 let row = event.bounds.contains(&position).then(|| {
                                     let lower = position.y > event.bounds.center().y;
                                     (id, index + usize::from(lower))
                                 });
-                                if row.is_some() && this.file_drop_row != row {
-                                    this.file_drop_row = row;
-                                    cx.notify();
-                                } else if row.is_none()
-                                    && this.file_drop_row.is_some_and(|(row, _)| row == id)
-                                {
-                                    this.file_drop_row = None;
-                                    cx.notify();
-                                }
+                                let effect = this.sidebar.drag_over_row(id, row);
+                                this.carry_out_sidebar(effect, window, cx);
                             },
                         ))
                         .on_drop(cx.listener(move |this, drag: &TabDrag, _, cx| {
@@ -2516,10 +2415,7 @@ impl Workspace {
         // The full list, either pinned open or revealed over the editor. Its
         // width is fixed so animations clip it rather than reflow it.
         // A collapse slides the full list away over the content (ADR 0048).
-        let sliding = self
-            .sidebar_slide
-            .is_some_and(|until| std::time::Instant::now() < until)
-            && !cx.reduce_motion();
+        let sliding = self.sidebar.sliding(std::time::Instant::now()) && !cx.reduce_motion();
         let collapsing = sliding && !expanded && !revealed;
         let mut panel = (expanded || revealed || collapsing).then(|| {
             div()
@@ -2529,14 +2425,11 @@ impl Workspace {
                 .flex()
                 .flex_col()
                 .on_drag_move(cx.listener(
-                    |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, _, cx| {
+                    |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, window, cx| {
                         let over = event.bounds.contains(&event.event.position);
                         let refused = over && !openable_drag(event.drag(cx));
-                        if this.file_drop_list != over || this.file_drop_refused != refused {
-                            this.file_drop_list = over;
-                            this.file_drop_refused = refused;
-                            cx.notify();
-                        }
+                        let effect = this.sidebar.drag_over_list(over, refused);
+                        this.carry_out_sidebar(effect, window, cx);
                     },
                 ))
                 .can_drop(can_drop_files)
@@ -2550,7 +2443,7 @@ impl Workspace {
                 ))
                 .child(self.sidebar_nav(cx))
                 // Above the scrolling list, so it shows however long it is.
-                .when(self.file_drop_refused, |v| {
+                .when(self.sidebar.drop_refused(), |v| {
                     v.child(
                         div()
                             .when(cfg!(test), |v| v.debug_selector(|| "drop-refused".into()))
@@ -2589,7 +2482,7 @@ impl Workspace {
                             .overflow_hidden()
                             .child(div().w(px(PANEL_WIDTH)).h_full().child(list))
                             .with_animation(
-                                ("sidebar-open", self.sidebar_generation),
+                                ("sidebar-open", self.sidebar.generation()),
                                 Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
                                 |v, delta| v.w(px(RAIL_WIDTH + (PANEL_WIDTH - RAIL_WIDTH) * delta)),
                             ),
@@ -2702,10 +2595,8 @@ impl Workspace {
                 .on_drag_move(cx.listener(
                     |this, event: &gpui::DragMoveEvent<gpui::ExternalPaths>, window, cx| {
                         let over = event.bounds.contains(&event.event.position);
-                        if this.file_drag_rail != over {
-                            this.file_drag_rail = over;
-                            this.update_reveal(window, cx);
-                        }
+                        let effect = this.sidebar.drag_over_rail(over);
+                        this.carry_out_sidebar(effect, window, cx);
                     },
                 ))
                 .can_drop(can_drop_files)
@@ -2716,7 +2607,7 @@ impl Workspace {
                 ))
             });
         if revealed && let Some(panel) = panel.take() {
-            let (from, to) = if self.reveal == Reveal::Shown {
+            let (from, to) = if self.sidebar.reveal() == Reveal::Shown {
                 (RAIL_WIDTH, PANEL_WIDTH)
             } else {
                 (PANEL_WIDTH, RAIL_WIDTH)
@@ -2745,10 +2636,10 @@ impl Workspace {
                         this.hover_sidebar(true, *hovered, window, cx)
                     }))
                     .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                        match this.reveal_return.clone() {
+                        match this.sidebar.opener().cloned() {
                             Some(focus) => {
                                 window.focus(&focus, cx);
-                                this.reveal_escaped = Some(focus);
+                                this.sidebar.escape_to(focus);
                             }
                             None => this.focus_active(window, cx),
                         }
@@ -2756,7 +2647,7 @@ impl Workspace {
                     }))
                     .child(panel)
                     .with_animation(
-                        ("sidebar-reveal", self.reveal_generation),
+                        ("sidebar-reveal", self.sidebar.reveal_generation()),
                         Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
                         move |v, delta| v.w(px(from + (to - from) * delta)),
                     ),
@@ -2775,7 +2666,7 @@ impl Workspace {
                     .bg(theme.sidebar_bg())
                     .child(div().w(px(PANEL_WIDTH)).h_full().child(list))
                     .with_animation(
-                        ("sidebar-close", self.sidebar_generation),
+                        ("sidebar-close", self.sidebar.generation()),
                         Animation::new(SLIDE).with_easing(gpui::ease_out_quint()),
                         |v, delta| v.w(px(PANEL_WIDTH - (PANEL_WIDTH - RAIL_WIDTH) * delta)),
                     ),
@@ -2791,16 +2682,6 @@ const RAIL_WIDTH: f32 = 44.;
 const PANEL_WIDTH: f32 = 240.;
 const REVEAL_DELAY: Duration = Duration::from_millis(200);
 const REVEAL_GRACE: Duration = Duration::from_millis(300);
-const SLIDE: Duration = Duration::from_millis(150);
-
-/// The collapsed rail's hover reveal of the full document list (ADR 0027).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Reveal {
-    Hidden,
-    Shown,
-    /// Sliding back; unmounted when the animation ends.
-    Hiding,
-}
 
 /// A small mark on a sidebar tab for work done in it (OCR, pseudonymization).
 fn tab_badge(icon: ui::Icon, color: gpui::Hsla) -> gpui::Svg {
@@ -2920,16 +2801,11 @@ fn disambiguating_parent(path: &std::path::Path, peers: &[PathBuf]) -> Option<St
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.sidebar_visible = self.sidebar_choice.unwrap_or(true);
+        self.sidebar.settle();
         self.note_region_focus(window, cx);
         self.reveal_for_keyboard(window, cx);
         // A finished or abandoned OS drag leaves no insertion line or reveal.
-        if !cx.has_active_drag()
-            && (self.file_drag_rail
-                || self.file_drop_list
-                || self.file_drop_refused
-                || self.file_drop_row.is_some())
-        {
+        if !cx.has_active_drag() && self.sidebar.dragging() {
             self.clear_file_drag(window, cx);
         }
         let theme = self.theme.get();
@@ -2968,7 +2844,7 @@ impl Render for Workspace {
                     .unwrap_or_default()
             },
             self.tabs.len(),
-            if self.sidebar_choice.unwrap_or(true) {
+            if self.sidebar.choice().unwrap_or(true) {
                 "expanded"
             } else {
                 "collapsed"
@@ -2982,8 +2858,8 @@ impl Render for Workspace {
         ));
         // Collapsed, headers join the title row: they leave room for the
         // traffic lights and the expand toggle that sit in it (ADR 0048).
-        self.title.detached.set(!self.sidebar_visible);
-        self.title.inset.set(if self.sidebar_visible {
+        self.title.detached.set(!self.sidebar.visible());
+        self.title.inset.set(if self.sidebar.visible() {
             0.
         } else {
             (style::TRAFFIC_LIGHT_INSET + 32. + 12. - RAIL_WIDTH - 16.).max(0.)
@@ -3190,7 +3066,7 @@ impl Render for Workspace {
             )
             // Collapsed: the expand toggle sits right of the traffic lights in
             // the title row, before the document header (ADR 0048).
-            .when(!self.sidebar_visible, |v| {
+            .when(!self.sidebar.visible(), |v| {
                 v.child(
                     div()
                         .absolute()
@@ -3200,7 +3076,7 @@ impl Render for Workspace {
                             &self
                                 .rail_toggle_focus
                                 .clone()
-                                .tab_stop(self.reveal == Reveal::Hidden),
+                                .tab_stop(self.sidebar.reveal() == Reveal::Hidden),
                             false,
                             theme,
                         )),
@@ -3233,8 +3109,8 @@ impl Workspace {
             .h_full()
             // Expanded: one margin all round. Collapsed: the view's header
             // fills the title row and it draws its own card below (ADR 0048).
-            .when(self.sidebar_visible, |v| v.p(px(style::CARD_MARGIN)))
-            .when(!self.sidebar_visible, |v| {
+            .when(self.sidebar.visible(), |v| v.p(px(style::CARD_MARGIN)))
+            .when(!self.sidebar.visible(), |v| {
                 v.pr(px(style::CARD_MARGIN)).pb(px(style::CARD_MARGIN))
             })
             .child(
@@ -3243,7 +3119,7 @@ impl Workspace {
                     .size_full()
                     .flex()
                     .flex_col()
-                    .when(self.sidebar_visible, |v| ui::card_surface(v, theme))
+                    .when(self.sidebar.visible(), |v| ui::card_surface(v, theme))
                     .when(home, |v| {
                         v.on_drop(
                             cx.listener(|this, paths: &gpui::ExternalPaths, window, cx| {
@@ -3437,7 +3313,7 @@ impl Workspace {
         // The rail's row opens the reveal and hands focus to the list's row,
         // so the tab must be in the list too (a folded case member is not).
         let listed = self.listed_tabs(cx).contains(&tab);
-        let rows = if self.sidebar_visible || self.reveal == Reveal::Shown {
+        let rows = if self.sidebar.visible() || self.sidebar.reveal() == Reveal::Shown {
             &self.sidebar_row_focus
         } else {
             &self.compact_row_focus
@@ -3609,7 +3485,7 @@ impl Workspace {
         };
         let next = index.saturating_add_signed(delta).min(listed.len() - 1);
         if let Some(focus) = rows.get(&listed[next]) {
-            self.sidebar_cursor = Some(listed[next]);
+            self.sidebar.set_cursor(Some(listed[next]));
             window.focus(focus, cx);
             cx.notify();
         }
@@ -3629,7 +3505,7 @@ impl Workspace {
         if self.tabs.iter().all(|tab| tab.id != id)
             && let Some(focus) = neighbour.and_then(|n| rows.get(&n))
         {
-            self.sidebar_cursor = neighbour;
+            self.sidebar.set_cursor(neighbour);
             window.focus(focus, cx);
         }
         cx.notify();

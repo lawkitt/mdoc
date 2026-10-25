@@ -101,8 +101,7 @@ fn draw(cx: &mut VisualTestContext) {
 
 fn collapse(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
     tabs.update(cx, |tabs, cx| {
-        tabs.sidebar_visible = false;
-        tabs.sidebar_choice = Some(false);
+        tabs.sidebar.restore(false, Some(false));
         cx.notify();
     });
     draw(cx);
@@ -125,7 +124,7 @@ fn hover(cx: &mut VisualTestContext, position: gpui::Point<gpui::Pixels>) {
 fn reveal_by_hover(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
     hover(cx, gpui::point(px(20.), px(400.)));
     wait(cx, 250);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
 }
 
 /// Keyboard focus on a rail control reveals the list at its matching control.
@@ -1802,8 +1801,7 @@ fn checkpoint_serializes_latest_state_and_restores_pdf_position(cx: &mut TestApp
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.session_path = Some(path.clone());
         tabs.checkpoint(window, cx);
-        tabs.sidebar_visible = false;
-        tabs.sidebar_choice = Some(false);
+        tabs.sidebar.restore(false, Some(false));
         tabs.checkpoint(window, cx);
     });
     cx.run_until_parked();
@@ -2079,8 +2077,7 @@ fn pdf_preview_refits_when_sidebar_changes(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
     tabs.update(cx, |tabs, cx| {
-        tabs.sidebar_visible = false;
-        tabs.sidebar_choice = Some(false);
+        tabs.sidebar.restore(false, Some(false));
         cx.notify();
     });
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.pdf");
@@ -2370,7 +2367,7 @@ fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
 #[gpui::test]
 fn sidebar_default_and_explicit_choice_survive_document_count_changes(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
-    cx.update(|_, cx| assert!(tabs.read(cx).sidebar_visible));
+    cx.update(|_, cx| assert!(tabs.read(cx).sidebar.visible()));
     tabs.update_in(cx, |tabs, window, cx| {
         for _ in 0..3 {
             tabs.new_tab(window, cx);
@@ -2390,7 +2387,7 @@ fn sidebar_default_and_explicit_choice_survive_document_count_changes(cx: &mut T
         })
     });
     cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(restored.read(cx).sidebar_choice, Some(false)));
+    cx.update(|_, cx| assert_eq!(restored.read(cx).sidebar.choice(), Some(false)));
     click_toolbar(cx, "sidebar-toggle");
     tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     cx.run_until_parked();
@@ -2411,7 +2408,7 @@ fn sidebar_default_and_explicit_choice_survive_document_count_changes(cx: &mut T
         })
     });
     cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(legacy.read(cx).sidebar_choice, None));
+    cx.update(|_, cx| assert_eq!(legacy.read(cx).sidebar.choice(), None));
     let legacy = cx.update(|_, cx| legacy.read(cx).snapshot(cx));
     assert!(legacy.sidebar_choice.is_none());
 }
@@ -2430,36 +2427,36 @@ fn keyboard_reveal_escape_restores_rail_control_and_closing_opener_keeps_focus_v
     reveal_by_keyboard(cx, &opener);
     cx.update(|window, cx| {
         let tabs = tabs.read(cx);
-        assert_eq!(tabs.reveal, Reveal::Shown);
+        assert_eq!(tabs.sidebar.reveal(), Reveal::Shown);
         assert!(tabs.sidebar_row_focus.borrow()[&first_id].is_focused(window));
-        assert_eq!(tabs.sidebar_choice, Some(false), "a reveal never pins");
+        assert_eq!(tabs.sidebar.choice(), Some(false), "a reveal never pins");
     });
     cx.simulate_keystrokes("escape");
     draw(cx);
     cx.update(|window, cx| {
-        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
+        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
         assert!(tabs.read(cx).compact_row_focus.borrow()[&first_id].is_focused(window));
     });
     // Escape's target stays put rather than revealing again.
     draw(cx);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Hidden));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden));
     // The toggle reveals too, at the reveal's own toggle.
     let toggle = cx.update(|_, cx| tabs.read(cx).rail_toggle_focus.clone());
     reveal_by_keyboard(cx, &toggle);
     cx.update(|window, cx| {
-        assert_eq!(tabs.read(cx).reveal, Reveal::Shown);
+        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown);
         assert!(tabs.read(cx).panel_toggle_focus.is_focused(window));
     });
     cx.simulate_keystrokes("escape");
     draw(cx);
     reveal_by_keyboard(cx, &opener);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
     tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(first_id, window, cx));
     cx.run_until_parked();
     draw(cx);
     cx.update(|window, cx| {
-        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
-        assert!(tabs.read(cx).reveal_return.is_none());
+        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
+        assert!(tabs.read(cx).sidebar.opener().is_none());
         assert!(
             tabs.read(cx)
                 .active_view()
@@ -2489,12 +2486,12 @@ fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut Test
     click_toolbar(cx, compact(first));
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).active, first);
-        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
+        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
     });
     // A pointer passing over the rail does not reveal.
     hover(cx, gpui::point(px(850.), px(500.)));
     wait(cx, 250);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Hidden));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden));
 
     reveal_by_hover(&tabs, cx);
     let overlay = cx.debug_bounds("sidebar-reveal").unwrap();
@@ -2508,21 +2505,21 @@ fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut Test
     click_toolbar(cx, row(second));
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).active, second);
-        assert_eq!(tabs.read(cx).reveal, Reveal::Shown);
-        assert_eq!(tabs.read(cx).sidebar_choice, Some(false));
+        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown);
+        assert_eq!(tabs.read(cx).sidebar.choice(), Some(false));
     });
     // Leaving starts a grace period that re-entering cancels.
     hover(cx, gpui::point(px(850.), px(500.)));
     wait(cx, 200);
     hover(cx, gpui::point(px(100.), px(400.)));
     wait(cx, 400);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
     hover(cx, gpui::point(px(850.), px(500.)));
     wait(cx, 200);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
     wait(cx, 200);
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
+        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
         assert_eq!(tabs.read(cx).active, second);
     });
     assert!(cx.debug_bounds("sidebar-reveal").is_none());
@@ -2530,9 +2527,9 @@ fn collapsed_entries_activate_directly_and_hover_reveals_full_list(cx: &mut Test
     reveal_by_hover(&tabs, cx);
     click_toolbar(cx, "sidebar-toggle");
     cx.update(|_, cx| {
-        assert!(tabs.read(cx).sidebar_visible);
-        assert_eq!(tabs.read(cx).sidebar_choice, Some(true));
-        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
+        assert!(tabs.read(cx).sidebar.visible());
+        assert_eq!(tabs.read(cx).sidebar.choice(), Some(true));
+        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
     });
 }
 
@@ -2605,7 +2602,7 @@ fn document_header_keeps_its_actions_in_a_narrow_window_in_both_themes(cx: &mut 
             for source_only in [false, true] {
                 tabs.update(cx, |tabs, cx| {
                     tabs.theme.set(theme);
-                    tabs.sidebar_choice = Some(expanded);
+                    tabs.sidebar.choose(Some(expanded));
                     cx.notify();
                 });
                 view.update(cx, |view, cx| {
@@ -2686,7 +2683,7 @@ fn new_follows_the_last_document_and_context_close_holds_the_reveal(cx: &mut Tes
     let close = cx.debug_bounds("context-close-tab").unwrap();
     hover(cx, close.center());
     wait(cx, 1000);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
     cx.simulate_click(close.center(), Default::default());
     cx.run_until_parked();
     cx.update(|_, cx| {
@@ -2695,7 +2692,7 @@ fn new_follows_the_last_document_and_context_close_holds_the_reveal(cx: &mut Tes
     });
     hover(cx, gpui::point(px(850.), px(500.)));
     wait(cx, 1000);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Hidden));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden));
 }
 
 #[gpui::test]
@@ -2966,7 +2963,7 @@ fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
         for _ in 0..19 {
             tabs.new_tab(window, cx);
         }
-        tabs.sidebar_choice = Some(false);
+        tabs.sidebar.choose(Some(false));
         cx.notify();
         tabs.tabs.last().unwrap().id
     });
@@ -3017,7 +3014,7 @@ fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).active, last_id);
-        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
+        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
     });
 }
 
@@ -3288,13 +3285,13 @@ fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
     // No insertion line: the list says the files can't be opened.
     drag_files(cx, std::slice::from_ref(&unknown), row.center());
     cx.update(|_, cx| {
-        assert!(tabs.read(cx).file_drop_refused);
+        assert!(tabs.read(cx).sidebar.drop_refused());
         assert_eq!(tabs.read(cx).file_drop_index(), None);
     });
     drop_files(cx, row.center());
     assert_eq!(tab_names(&tabs, cx), ["a.md"]);
     cx.update(|_, cx| {
-        assert!(!tabs.read(cx).file_drop_refused);
+        assert!(!tabs.read(cx).sidebar.drop_refused());
         assert!(
             tabs.read(cx).notices.message().is_none(),
             "nothing to report"
@@ -3305,7 +3302,7 @@ fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
     let b = dir.path().join("b.md");
     std::fs::write(&b, "x").unwrap();
     drag_files(cx, &[b.clone(), unknown.clone()], row.center());
-    cx.update(|_, cx| assert!(!tabs.read(cx).file_drop_refused));
+    cx.update(|_, cx| assert!(!tabs.read(cx).sidebar.drop_refused()));
     drop_files(cx, row.center());
     cx.update(|_, cx| {
         let notice = tabs.read(cx).notices.message().unwrap().to_owned();
@@ -3392,7 +3389,7 @@ fn file_drag_over_collapsed_rail_reveals_the_list(cx: &mut TestAppContext) {
     let rail = gpui::point(px(20.), px(400.));
     drag_files(cx, std::slice::from_ref(&b), rail);
     wait(cx, 250);
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
     let list = gpui::point(px(120.), px(400.));
     cx.simulate_event(gpui::FileDropEvent::Pending { position: list });
     draw(cx);
@@ -3400,12 +3397,12 @@ fn file_drag_over_collapsed_rail_reveals_the_list(cx: &mut TestAppContext) {
     drop_files(cx, list);
     assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
     // The reveal behaves as for hover: it closes once the pointer leaves.
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).reveal, Reveal::Shown));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Shown));
     hover(cx, gpui::point(px(600.), px(400.)));
     wait(cx, 350);
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).reveal, Reveal::Hidden);
-        assert_eq!(tabs.read(cx).sidebar_choice, Some(false));
+        assert_eq!(tabs.read(cx).sidebar.reveal(), Reveal::Hidden);
+        assert_eq!(tabs.read(cx).sidebar.choice(), Some(false));
     });
 }
 
@@ -4814,14 +4811,14 @@ fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("command-palette").is_none());
     cx.update(|_, cx| assert!(tabs.read(cx).shell.palette.is_none()));
     // View actions without a menu bar on Windows are in the palette too.
-    let visible = tabs.read_with(cx, |tabs, _| tabs.sidebar_visible);
+    let visible = tabs.read_with(cx, |tabs, _| tabs.sidebar.visible());
     cx.simulate_keystrokes("secondary-k");
     draw(cx);
     cx.simulate_input("toggle sidebar");
     draw(cx);
     cx.simulate_keystrokes("enter");
     draw(cx);
-    tabs.read_with(cx, |tabs, _| assert_eq!(tabs.sidebar_visible, !visible));
+    tabs.read_with(cx, |tabs, _| assert_eq!(tabs.sidebar.visible(), !visible));
 }
 
 #[gpui::test]
@@ -5526,8 +5523,7 @@ fn f6_into_the_collapsed_rail_returns_to_the_last_focused_tab(cx: &mut TestAppCo
     key(cx, "f6");
     assert!(editor_focused(&tabs, cx));
     tabs.update(cx, |tabs, cx| {
-        tabs.sidebar_visible = true;
-        tabs.sidebar_choice = Some(true);
+        tabs.sidebar.restore(true, Some(true));
         cx.notify();
     });
     draw(cx);
