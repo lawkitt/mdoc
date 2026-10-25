@@ -1748,7 +1748,9 @@ fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        app.case_skip.insert(Category::Address);
+        let mut skip = app.case.skip().clone();
+        skip.insert(Category::Address);
+        app.case.set_skip(skip);
         let (generation, identity, revision) = install_scan(app, cx);
         let detection = |range, category| mdoc_pii::Detection {
             range,

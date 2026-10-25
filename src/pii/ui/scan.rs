@@ -94,7 +94,7 @@ impl DocumentView {
         self.pii.mapping.show();
         let source = self.editor.read(cx).text().to_owned();
         // A case can switch categories off (ADR 0041 #31); scans skip them.
-        let skip = self.case_skip.clone();
+        let skip = self.case.skip().clone();
         let result = result.map(|mut detections| {
             detections.retain(|d| !skip.contains(&d.category));
             detections

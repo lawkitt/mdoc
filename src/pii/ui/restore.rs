@@ -91,8 +91,8 @@ impl DocumentView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let identities = if self.case.is_some() {
-            self.case_names.clone()
+        let identities = if self.case.link().is_some() {
+            self.case.names().to_vec()
         } else {
             self.pii.review.export_identities()
         };
@@ -118,7 +118,7 @@ impl DocumentView {
         }
         let source = self
             .case
-            .as_ref()
+            .link()
             .map_or_else(|| "this document".to_string(), |l| format!("“{}”", l.name));
         self.clipboard_notice = Some(match count {
             0 => format!("No names from {source} were found in the clipboard. It is unchanged."),
@@ -168,7 +168,7 @@ impl DocumentView {
                 text,
                 identities,
                 source_name: stem,
-                case: self.case.clone(),
+                case: self.case.link().cloned(),
             })),
         ));
     }
@@ -180,7 +180,7 @@ impl DocumentView {
         cx: &mut Context<Self>,
     ) {
         self.session.name = Some(format!("Restored – {}.md", reply.source_name));
-        self.case = reply.case.clone();
+        self.case.attach(reply.case.clone());
         self.lifecycle.keep_blank();
         self.editor
             .update(cx, |editor, cx| editor.set_text(reply.text.clone(), cx));

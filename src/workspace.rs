@@ -1666,7 +1666,7 @@ impl Workspace {
                     && view.editor.read(cx).text().is_empty();
                 record.blank_disposable = record.blank && view.lifecycle.blank_disposable();
                 // A document still waiting to join its folder's case keeps it.
-                if let Some(link) = &view.case {
+                if let Some(link) = view.case.link() {
                     record.case = Some(link.id.clone());
                 }
                 if let Some(path) = &view.session.document.path {
@@ -2311,7 +2311,7 @@ impl Workspace {
             };
             let link = self.tabs[index]
                 .view()
-                .and_then(|v| v.read(cx).case.clone());
+                .and_then(|v| v.read(cx).case.link().cloned());
             let id = link.as_ref().map(|l| l.id.clone());
             // Tabs without a case gather under "Open".
             if link.is_none() && previous.as_ref() != Some(&None) {
@@ -2324,7 +2324,7 @@ impl Workspace {
                     .skip(index)
                     .take_while(|t| {
                         t.view()
-                            .and_then(|v| v.read(cx).case.as_ref().map(|l| l.id.clone()))
+                            .and_then(|v| v.read(cx).case.link().map(|l| l.id.clone()))
                             == id
                     })
                     .count();
@@ -3386,7 +3386,7 @@ impl Workspace {
             .iter()
             .filter(|tab| !self.is_placeholder(tab, cx))
             .filter(|tab| {
-                let case = tab.view().and_then(|v| v.read(cx).case.as_ref());
+                let case = tab.view().and_then(|v| v.read(cx).case.link());
                 tab.id() == self.tabs.active()
                     || !case.is_some_and(|link| self.cases.collapsed.contains(&link.id))
             })
