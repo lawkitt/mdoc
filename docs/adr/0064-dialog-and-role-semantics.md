@@ -23,7 +23,7 @@ mention popup's counter ("4/6") were not in the accessibility tree at all.
 - **Close buttons** are named "Close <tab title>", using the same
   disambiguated title as the tab.
 - **Unsaved changes** use an in-app dialog built like the Keychain explainer
-  (`src/workspace_keychain.rs`), not the platform prompt. The role, name and
+  (`src/workspace/keychain_ui.rs`), not the platform prompt. The role, name and
   focus are then ours and identical on every platform; it is no longer a
   native macOS sheet.
 - **Every platform prompt goes.** All `window.prompt` call sites (unsaved

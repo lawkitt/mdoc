@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn rendering_copy_removes_comment_markup_without_changing_source_text() {
-        let bytes = include_bytes!("../tests/fixtures/docx-preview/comments.docx");
+        let bytes = include_bytes!("../../tests/fixtures/docx-preview/comments.docx");
         let (copy, comments) = prepare(bytes).unwrap();
         assert_eq!(comments.len(), 4);
         let mut zip = ZipArchive::new(Cursor::new(copy.unwrap())).unwrap();
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn no_comments_keeps_original_render_input() {
         let (copy, comments) = prepare(include_bytes!(
-            "../tests/fixtures/docx-preview/coverage.docx"
+            "../../tests/fixtures/docx-preview/coverage.docx"
         ))
         .unwrap();
         assert!(copy.is_none());

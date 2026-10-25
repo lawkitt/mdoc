@@ -173,7 +173,7 @@ impl Driver {
 /// model download. Offsets are UTF-8 byte ranges in the unmarked document.
 fn fixture() -> Result<(String, Vec<pii::Detection>)> {
     let corpus: Value = serde_json::from_str(include_str!(
-        "../tests/fixtures/pseudonymization/corpus.json"
+        "../../tests/fixtures/pseudonymization/corpus.json"
     ))
     .map_err(|e| e.to_string())?;
     let annotated = corpus[0]["annotated"]
@@ -411,7 +411,7 @@ fn scenarios(
         .map_err(|e| e.to_string())?;
     d.window = workspace_window;
     let mapping: Vec<Value> = serde_json::from_str(include_str!(
-        "../tests/fixtures/restore/claude-en/identities.json"
+        "../../tests/fixtures/restore/claude-en/identities.json"
     ))
     .map_err(|e| e.to_string())?;
     let identities = mapping
@@ -435,7 +435,7 @@ fn scenarios(
         })
         .collect::<Result<Vec<_>>>()?;
     let reply = pii::ui::RestoredReply {
-        text: include_str!("../tests/fixtures/restore/claude-en/reply.md").into(),
+        text: include_str!("../../tests/fixtures/restore/claude-en/reply.md").into(),
         identities,
         source_name: "Claude public EN fixture".into(),
         case: None,

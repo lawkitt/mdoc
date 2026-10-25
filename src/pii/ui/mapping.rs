@@ -155,7 +155,6 @@ pub(super) enum DropTarget {
 }
 
 #[cfg(test)]
-#[path = "mapping_tests.rs"]
 mod tests;
 /// Replacements panel and word-popup state. Every transition is a method here.
 pub(super) struct MappingUi {

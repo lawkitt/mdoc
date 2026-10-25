@@ -72,6 +72,6 @@ H18).
 Checklist rows A4 and H18 drop the 0.1.0 exception and check F6 regions.
 
 Code: `Workspace::cycle_region` and `DocumentView::focus_regions`; tests in
-`workspace_tests.rs` (`f6_*`, `tab_from_home_*`, `tab_moves_between_regions_*`,
-`sidebar_tab_list_*`); `Workspace::tab_row_in_layout` maps a remembered tab
-row to the drawn layout.
+`src/workspace/tests.rs` (`f6_*`, `tab_from_home_*`,
+`tab_moves_between_regions_*`, `sidebar_tab_list_*`);
+`Workspace::tab_row_in_layout` maps a remembered tab row to the drawn layout.

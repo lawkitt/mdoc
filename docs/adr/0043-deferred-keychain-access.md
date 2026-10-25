@@ -37,7 +37,7 @@ that created it, so ad-hoc and dev builds prompt each other.
    Otherwise it waits behind the bell, so it never covers a plain document's
    preview unasked. A member opened by hand cannot be told from a plain
    document until cases unlock; its notice waits behind the bell too.
-4. **Explainer before the system dialog** (`src/workspace_keychain.rs`), in the
+4. **Explainer before the system dialog** (`src/workspace/keychain_ui.rs`), in the
    standard dialog style (ADR 0015). Title "mdoc will ask for Keychain access":
    saved cases are encrypted with a key in the Mac's Keychain; macOS will ask for
    the login password, which mdoc never sees; choose **Always Allow**.

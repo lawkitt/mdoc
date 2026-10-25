@@ -847,9 +847,12 @@ impl Workspace {
             .relative()
             .w(px(160.))
             .h(px(112.))
-            .child(layer(include_bytes!("../resources/ui/drop-page.svg"), ink))
             .child(layer(
-                include_bytes!("../resources/ui/drop-bars.svg"),
+                include_bytes!("../../resources/ui/drop-page.svg"),
+                ink,
+            ))
+            .child(layer(
+                include_bytes!("../../resources/ui/drop-bars.svg"),
                 if active {
                     accent
                 } else {
@@ -860,10 +863,13 @@ impl Workspace {
                 },
             ))
             .child(layer(
-                include_bytes!("../resources/ui/drop-disc.svg"),
+                include_bytes!("../../resources/ui/drop-disc.svg"),
                 if active { accent } else { p.header_fg },
             ))
-            .child(layer(include_bytes!("../resources/ui/drop-lock.svg"), p.bg));
+            .child(layer(
+                include_bytes!("../../resources/ui/drop-lock.svg"),
+                p.bg,
+            ));
         let illustration = if active {
             illustration
                 .with_animation(
@@ -986,7 +992,7 @@ impl Workspace {
                     .tooltip(style::tooltip(detail, theme))
                     .child(
                         gpui::svg()
-                            .data(include_bytes!("../resources/ui/lock.svg"))
+                            .data(include_bytes!("../../resources/ui/lock.svg"))
                             .size(px(13.))
                             .text_color(p.header_muted),
                     )

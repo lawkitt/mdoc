@@ -94,19 +94,19 @@ dependency forks.
 | Location | Responsibility |
 | --- | --- |
 | `src/main.rs` | Application startup, menus, key bindings and window creation |
-| `src/workspace.rs` | The window shell: document sidebar, tab identity, admission, scheduling and session persistence |
-| `src/document_view.rs`, `src/document_view/chrome.rs` | One tab's document view: editor, source preview, import/OCR state, actions and toolbar chrome |
+| `src/workspace.rs`, `src/workspace/` | The window shell: document sidebar, tab identity, admission, scheduling and session persistence |
+| `src/document_view.rs`, `src/document_view/` | One tab's document view: editor, source preview, import/OCR state, actions and toolbar chrome |
 | `src/document.rs`, `src/document_session.rs` | Atomic saves, external-change checks, accepted document identity and provenance |
 | `src/session_store.rs` | Paths and view metadata restoration; no document text |
 | `src/import.rs`, `src/import_session.rs`, `src/ocr.rs` | Library integration, pending jobs, explicit verified setup and offline OCR |
 | `src/recognition.rs` | Recognition languages: a document's default list, its reason and the keyboard input-source signal ([ADR 0066](adr/0066-recognition-language-defaults.md)) |
 | `src/preview.rs`, `src/docx_preview.rs` | Preview ownership and supervised local DOCX worker |
-| `src/docx_comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
+| `src/docx_preview/comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
 | `src/markdown_search.rs`, `src/search_session.rs` | Markdown find controls and revision-aware search scheduling |
 | `src/pii.rs`, `src/pii/detector*`, `src/pii/ui*` | Pseudonymization: offline detection/setup, scan/edit controller, Replacements panel and word popup, UI regression tests |
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
-| `src/document_view_tests.rs`, `src/workspace_tests.rs`, `src/perf_tests.rs` | Headless flows, ownership/lifetime checks, and opt-in performance measurements |
-| `src/headless_renders.rs`, `tests/headless_renders.rs` | Dev-only offscreen screen/Tab evidence and the output contract test |
+| `src/document_view/tests.rs`, `src/workspace/tests.rs`, `src/perf_tests.rs` | Headless flows, ownership/lifetime checks, and opt-in performance measurements |
+| `src/workspace/headless_renders.rs`, `tests/headless_renders.rs` | Dev-only offscreen screen/Tab evidence and the output contract test |
 | `crates/mdoc-editor` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |
 | `crates/mdoc-pii`, `crates/mdoc-history` | GUI-free pseudonymization review model and the plain edit transactions it follows |
 | `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |

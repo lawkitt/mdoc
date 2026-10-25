@@ -1,7 +1,13 @@
 // Exercise the shipping worker rather than the headless UI test adapter.
-#[allow(dead_code)]
-#[path = "../src/docx_preview.rs"]
-mod docx_preview;
+// An inline `#[path]` directory module, so docx_preview.rs resolves its own
+// child modules from src/docx_preview/ as it does in the binary.
+#[path = "../src"]
+mod src {
+    #[allow(dead_code)]
+    pub mod docx_preview;
+}
+
+use src::docx_preview;
 
 use docx_preview::{PreviewError, render_with_executable};
 use std::{

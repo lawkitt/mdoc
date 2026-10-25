@@ -13,8 +13,6 @@ mod crash;
 mod document;
 mod document_session;
 mod document_view;
-#[cfg(test)]
-mod document_view_tests;
 mod docx_preview;
 mod images;
 mod import;
