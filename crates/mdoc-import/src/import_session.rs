@@ -9,7 +9,7 @@ use std::sync::{
 
 /// Held by both the tab and its worker, including while OCR dialogs are open.
 /// Closing a tab cannot admit new work until its synchronous worker exits.
-pub(super) struct ImportPermit(Arc<AtomicBool>);
+pub struct ImportPermit(Arc<AtomicBool>);
 
 impl ImportPermit {
     pub fn acquire(busy: &Arc<AtomicBool>) -> Option<Arc<Self>> {
@@ -26,20 +26,19 @@ impl Drop for ImportPermit {
 }
 
 #[derive(Default)]
-pub(super) struct ImportSession {
+pub struct ImportSession {
     busy: bool,
     recognizing: bool,
     pending: Option<(u64, Result<import::Imported, import::ImportError>)>,
     ocr_continuation: Option<(u64, PathBuf)>,
 }
 
-pub(super) enum ImportCompletion {
+pub enum ImportCompletion {
     Stale,
     Ready(Result<import::Imported, import::ImportError>),
 }
 
 impl ImportSession {
-    #[cfg(test)]
     pub fn has_pending(&self) -> bool {
         self.pending.is_some()
     }
@@ -137,7 +136,7 @@ mod tests {
     fn completion_waits_for_dialog_and_refuses_second_job() {
         let mut session = ImportSession::default();
         assert!(session.begin(true));
-        session.complete(7, Err("conversion failed".into()));
+        session.complete(7, Err(crate::import::ImportError::Damaged));
         assert!(!session.begin(false));
         assert!(session.recognizing);
         assert!(session.take_ready(7, true).is_none());
@@ -156,7 +155,7 @@ mod tests {
     fn stale_completion_releases_job_without_returning_result() {
         let mut session = ImportSession::default();
         assert!(session.begin(false));
-        session.complete(1, Err("old failure".into()));
+        session.complete(1, Err(crate::import::ImportError::Damaged));
         assert!(matches!(
             session.take_ready(2, false),
             Some(ImportCompletion::Stale)

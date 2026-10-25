@@ -11,7 +11,7 @@ publish = false
 [workspace]
 # Upstream code with one Linux glyph-offset correction; not a workspace crate.
 exclude = ["vendor"]
-members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-history", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell", "crates/mdoc-store"]
+members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-history", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell", "crates/mdoc-store", "crates/mdoc-import"]
 resolver = "2"
 
 [features]
@@ -33,20 +33,13 @@ gpui_platform = { package = "gpui-pre-platform", version = "0.3", features = ["f
 regex = "1"
 # Exact: structured-rule predictions are frozen against the corpus (ADR 0017).
 presidio-analyzer = { version = "=0.1.11", default-features = false }
-anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "cd905101e2d8322e0f249dafd78cc782402bcce5" }
 pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "d28ce2914a15e0100d049cd5c72493a6d6695a72", features = ["ocr"] }
 # App data lives under data_local_dir / cache_dir (settings, session, cases,
 # models, updates, crash report); a bump must keep those paths (ADR 0053).
 dirs = "7"
 sha2 = "0.11"
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
-tar = "0.4"
-flate2 = "1"
-# Exact: DOCX preview rendering changes between releases; bump by hand (ADR 0053).
-docxide-pdf = { version = "=0.18.0", default-features = false }
-zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 thiserror = "2"
-roxmltree = "0.21"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Update check (src/updater.rs, ADR 0038): release tags compared by SemVer.
@@ -59,6 +52,7 @@ mdoc-editor = { path = "crates/mdoc-editor" }
 mdoc-pii = { path = "crates/mdoc-pii" }
 mdoc-spell = { path = "crates/mdoc-spell" }
 mdoc-store = { path = "crates/mdoc-store" }
+mdoc-import = { path = "crates/mdoc-import" }
 gpui-pdf = { path = "crates/gpui-pdf" }
 tempfile = "3"
 url = "2"
@@ -66,15 +60,11 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 unicode-segmentation = "1"
 # Exact: the pinned GLiNER2 export must load unchanged (ADR 0002).
 gliner2-rs = { version = "=0.9.6", default-features = false }
-# Exact: pre-release API, matched to the downloaded ONNX Runtime 1.27.0 (src/ocr.rs).
-ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
-# Probe the ONNX Runtime before ort sees it (ocr::load_onnx_runtime); ort's own version.
-libloading = "0.9"
 
 [target.'cfg(windows)'.dependencies]
 gpui_windows = { package = "gpui-pre-windows", version = "=0.3.2", optional = true }
 # Single-instance launch (src/single_instance.rs) uses the pipe, session and
-# foreground features; recognition defaults read the keyboard layouts.
+# foreground features.
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
@@ -83,7 +73,6 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Pipes",
     "Win32_System_RemoteDesktop",
     "Win32_System_Threading",
-    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
 
@@ -224,6 +213,9 @@ include = ["packaging/windows/wix/main.wxs"]
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+# tests/docx_worker.rs inspects the worker's DOCX package.
+roxmltree = "0.21"
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 # PDF rasterization is CPU-heavy. Keep application/editor code debuggable while
 # avoiding unoptimized pixel/vector loops during `cargo run` and tests.

@@ -1,12 +1,13 @@
 use crate::{
     comparison::{self, Config, Input, ResultRecord},
-    markdown_search, model_work,
+    markdown_search,
     settings_ui::{self, control},
     style::{self, Theme},
     ui,
     workspace::{self, Close, Quit, Settings},
 };
 use gpui::{App, Context, Entity, FocusHandle, Focusable, Window, actions, div, prelude::*, px};
+use mdoc_import::model_work;
 use mdoc_store::{
     document,
     settings::{self, Model, OcrConfig, OcrModel, PiiConfig, PiiModel, Preferences},
@@ -159,7 +160,7 @@ impl View {
         let configs = match configs {
             Ok(c) => c,
             Err(e) => {
-                self.error = Some(e);
+                self.error = Some(e.to_string());
                 cx.notify();
                 return;
             }
@@ -185,7 +186,7 @@ impl View {
         let permit = match model_work::Permit::acquire_for("model comparison") {
             Ok(p) => p,
             Err(e) => {
-                self.error = Some(e);
+                self.error = Some(e.to_string());
                 cx.notify();
                 return;
             }

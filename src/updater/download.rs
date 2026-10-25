@@ -68,7 +68,7 @@ pub fn text(url: &str) -> Result<String, String> {
         .with_config()
         .limit(1 << 20)
         .read_to_string()
-        .map_err(|e| crate::model_download::download_error(url, e))
+        .map_err(|e| mdoc_import::model_download::download_error(url, e).to_string())
 }
 
 /// Download `url` to `path`, failing unless it is exactly `size` bytes with
@@ -87,7 +87,7 @@ pub fn file(url: &str, size: u64, sha: &str, path: &Path, progress: &Progress) -
         }
         let n = input
             .read(&mut buf)
-            .map_err(|_| crate::model_download::unreachable(url))?;
+            .map_err(|_| mdoc_import::model_download::unreachable(url).to_string())?;
         if n == 0 {
             break;
         }
@@ -144,7 +144,7 @@ fn get(url: &str) -> Result<ureq::http::Response<ureq::Body>, String> {
                 ),
             )
             .call()
-            .map_err(|e| crate::model_download::download_error(&url, e))?;
+            .map_err(|e| mdoc_import::model_download::download_error(&url, e).to_string())?;
         if !response.status().is_redirection() {
             return Ok(response);
         }

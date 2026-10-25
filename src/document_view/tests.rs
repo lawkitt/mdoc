@@ -4,7 +4,7 @@ use crate::{
         ClosePdf, CopyMarkdown, DismissImportWarning, DocumentView, Next, OcrState, Save, SaveAs,
         bind_markdown_search_keys, find_counter,
     },
-    import, markdown_search, ocr,
+    markdown_search,
     pii::{self, ui::PiiApplyAll},
     preview::{self, RetryPreview},
     search_session::{
@@ -18,6 +18,7 @@ use crate::{
     workspace::{self, Close, Import, New, Open},
 };
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
+use mdoc_import::{import, ocr};
 use mdoc_store::{session_store, settings};
 use std::{path::PathBuf, sync::atomic::Ordering};
 
@@ -1048,7 +1049,7 @@ fn set_default_ocr(app: &DocumentView, model: mdoc_store::settings::OcrModel) {
 /// Settings change, and setup never leaves the shared state Installing.
 #[gpui::test]
 fn recognition_choice_and_setup_survive_a_settings_change(cx: &mut TestAppContext) {
-    use crate::recognition::{ENGLISH, RUSSIAN};
+    use mdoc_import::recognition::{ENGLISH, RUSSIAN};
     use mdoc_store::settings::OcrModel;
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
@@ -1133,7 +1134,9 @@ fn ocr_runtime_failure_enables_setup_retry(cx: &mut TestAppContext) {
     app.update_in(cx, |app, window, cx| {
         app.job.complete(
             app.session.generation,
-            Err(import::ImportError::OcrFailed("runtime missing".into())),
+            Err(import::ImportError::OcrFailed(import::OcrFailure::Engine(
+                "runtime missing".into(),
+            ))),
         );
         app.resume_import(window, cx);
         assert!(
@@ -1148,17 +1151,15 @@ fn ocr_runtime_failure_enables_setup_retry(cx: &mut TestAppContext) {
 fn ocr_without_text_stays_with_its_document(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
-        app.ocr_state = OcrState::Ready(crate::ocr::Installed {
+        app.ocr_state = OcrState::Ready(mdoc_import::ocr::Installed {
             config: mdoc_store::settings::OcrConfig::default(),
             models: "models".into(),
             pdfium: "pdfium".into(),
             onnx: "onnx".into(),
         });
         app.conversion_source = Some("scan.pdf".into());
-        app.job.complete(
-            app.session.generation,
-            Err(import::ImportError::OcrNoText("no usable text".into())),
-        );
+        app.job
+            .complete(app.session.generation, Err(import::ImportError::OcrNoText));
         app.resume_import(window, cx);
         assert!(matches!(app.ocr_state, OcrState::Ready(_)));
         assert!(app.ocr_error.as_ref().unwrap().contains("no usable text"));
@@ -1371,11 +1372,16 @@ fn import_failure_and_stale_completion_keep_current_document(cx: &mut TestAppCon
     cx.simulate_input("keep edits");
     app.update_in(cx, |app, window, cx| {
         assert!(app.job.begin(false));
-        app.job
-            .complete(app.session.generation, Err("requires OCR".into()));
+        app.job.complete(
+            app.session.generation,
+            Err(import::ImportError::ConverterNeedsOcr),
+        );
         app.resume_import(window, cx);
         assert_eq!(app.editor.read(cx).text(), "keep edits");
-        assert_eq!(app.error.as_deref(), Some("requires OCR"));
+        assert_eq!(
+            app.error,
+            Some(import::ImportError::ConverterNeedsOcr.to_string())
+        );
         let generation = app.session.generation;
         let mut replacement = converted(path);
         replacement.markdown = "other".into();
@@ -1588,7 +1594,7 @@ fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
     let mut failures = Vec::new();
     for file in files {
         let source = base.join("tests/fixtures/docx-preview").join(&file);
-        let imported = import::convert(&source).unwrap();
+        let imported = crate::test_support::convert(&source).unwrap();
         let path = dir
             .path()
             .join(std::path::Path::new(&file).with_extension("md"));
@@ -1757,7 +1763,7 @@ fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mu
         });
         assert!(pdf.upgrade().is_none());
         assert!(comments.upgrade().is_none());
-        assert!(crate::docx_preview::removed(&backing));
+        assert!(crate::test_support::removed(&backing));
         let pdf = cx.update(|_, cx| app.read(cx).preview.pdf.as_ref().unwrap().downgrade());
         app.update_in(cx, |app, window, cx| {
             app.close_preview(window, cx);

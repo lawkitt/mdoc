@@ -9,27 +9,22 @@ mod comparison_ui;
 mod confirm_dialog;
 mod crash;
 mod document_view;
-mod docx_preview;
 mod images;
-mod import;
-mod import_session;
 mod markdown_search;
 mod menus;
-mod model_download;
-mod model_work;
 mod models;
-mod ocr;
 #[cfg(test)]
 mod perf_tests;
 mod pii;
 mod preview;
-mod recognition;
 mod search_session;
 mod self_test;
 mod settings_ui;
 mod single_instance;
 mod spelling;
 mod style;
+#[cfg(test)]
+mod test_support;
 mod ui;
 mod updater;
 mod workspace;
@@ -38,6 +33,7 @@ use document_view::{
     Save, SaveAs, ToggleCompare, ZoomIn, ZoomOut, ZoomReset, bind_markdown_search_keys,
 };
 use gpui::{App, Bounds, KeyBinding, WindowBounds, WindowOptions, prelude::*, px, size};
+use mdoc_import::docx_preview;
 use spelling::{NextMisspelling, PreviousMisspelling};
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 use workspace::{
@@ -146,7 +142,7 @@ fn main() {
     });
     application.run(move |cx: &mut App| {
         cx.on_app_quit(|cx| {
-            model_work::shutdown();
+            mdoc_import::model_work::shutdown();
             // Blocking on purpose: GPUI waits only briefly for async quit
             // work, and a staged update must be swapped in before exit.
             updater::apply_at_quit(cx);

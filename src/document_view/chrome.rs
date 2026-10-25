@@ -80,7 +80,7 @@ impl DocumentView {
                         .px_4()
                         .text_size(px(12.))
                         .text_color(p.header_muted)
-                        .child(crate::import::supported_formats())
+                        .child(mdoc_import::import::supported_formats())
                         .child("Select several to open each in its own tab"),
                 )
                 .child(

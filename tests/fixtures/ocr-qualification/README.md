@@ -12,7 +12,7 @@ the `.txt` files and checks that PDF bytes remain unchanged.
 
 No models or native runtimes are checked into the repository. The current model
 manifest lives in the pinned pdf-inspector fork, and runtime URLs/digests live in
-`src/ocr.rs`; Cargo.toml/Cargo.lock hold the dependency revisions. See the
+`crates/mdoc-import/src/ocr.rs`; Cargo.toml/Cargo.lock hold the dependency revisions. See the
 [OCR ADR](../../../docs/adr/0004-explicit-offline-ocr-with-qualified-models.md)
 for the integration decision.
 
@@ -62,7 +62,7 @@ downloads the pinned runtime/model artifacts into throwaway storage, validates
 loading, checks EN/RU text, and verifies unchanged source bytes:
 
 ```sh
-cargo test -p mdoc --bin mdoc setup_and_offline_english_russian_smoke -- --ignored --nocapture
+cargo test -p mdoc-import --lib setup_and_offline_english_russian_smoke -- --ignored --nocapture
 ```
 
 Ordinary workspace tests do not download models. Do not copy raw outputs from

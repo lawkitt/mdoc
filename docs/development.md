@@ -97,11 +97,11 @@ dependency forks.
 | `src/workspace.rs`, `src/workspace/` | The window shell: document sidebar, tab identity, admission, scheduling and session persistence |
 | `src/document_view.rs`, `src/document_view/` | One tab's document view: editor, source preview, import/OCR state, actions and toolbar chrome |
 | `crates/mdoc-store` | GUI-free storage: app paths, atomic document saves and document identity, the session manifest, recents, settings types and files, encrypted saved cases, crash-report masking |
-| `src/import.rs`, `src/import_session.rs`, `src/ocr.rs` | Library integration, pending jobs, explicit verified setup and offline OCR |
+| `crates/mdoc-import` | GUI-free import: library integration and pending jobs (`import`, `import_session`), explicit verified setup and offline OCR (`ocr`), model downloads and the one-at-a-time model permit, and the supervised DOCX preview worker (`docx_preview`; its entry point stays in `src/main.rs`) |
 | `src/models.rs` | What setup and Settings show for each downloadable model, from the engine that owns it |
-| `src/recognition.rs` | Recognition languages: a document's default list, its reason and the keyboard input-source signal ([ADR 0066](adr/0066-recognition-language-defaults.md)) |
-| `src/preview.rs`, `src/docx_preview.rs` | Preview ownership and supervised local DOCX worker |
-| `src/docx_preview/comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
+| `crates/mdoc-import/src/recognition.rs` | Recognition languages: a document's default list, its reason and the keyboard input-source signal ([ADR 0066](adr/0066-recognition-language-defaults.md)) |
+| `src/preview.rs` | Preview ownership |
+| `crates/mdoc-import/src/docx_preview/comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
 | `src/markdown_search.rs`, `src/search_session.rs` | Markdown find controls and revision-aware search scheduling |
 | `src/pii.rs`, `src/pii/detector*`, `src/pii/ui*` | Pseudonymization: offline detection/setup, scan/edit controller, Replacements panel and word popup, UI regression tests |
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
@@ -113,7 +113,7 @@ dependency forks.
 | `src/updater.rs` | Detection-only GitHub Releases update check ([ADR 0038](adr/0038-update-check.md)) |
 | `src/spelling.rs`, `crates/mdoc-spell` | Spellcheck: background checks, toolbar indicator and navigation; GUI-free EN/RU engine with bundled dictionaries ([ADR 0036](adr/0036-bundled-spellcheck.md)) |
 
-Cargo.toml and Cargo.lock define dependency revisions; `src/ocr.rs` defines
+Cargo.toml and Cargo.lock define dependency revisions; `crates/mdoc-import/src/ocr.rs` defines
 runtime URLs/digests, and the pinned pdf-inspector manifest defines OCR model
 artifacts. Avoid copying these into another configuration. Cargo.lock must be
 what cargo resolves from Cargo.toml; `just lint` fails otherwise. Change a

@@ -1,7 +1,6 @@
 //! Explicit host CPU measurements, not display latency or visual acceptance.
 use crate::{
     document_view::tests::{boot, close_document, open_document},
-    import,
     search_session::{CloseMarkdownSearch, FindMarkdown, FindNextMarkdown},
 };
 use gpui::{Entity, TestAppContext, VisualTestContext, px};
@@ -86,7 +85,7 @@ pub(crate) fn contract_markdown() -> String {
 pub(crate) fn legal_opinion_markdown() -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/docx-preview/legal-opinion.docx");
-    import::convert(&path).unwrap().markdown
+    crate::test_support::convert(&path).unwrap().markdown
 }
 
 pub(super) fn rss_kib() -> Option<u64> {

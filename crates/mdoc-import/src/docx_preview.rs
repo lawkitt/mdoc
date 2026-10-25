@@ -46,16 +46,6 @@ impl Drop for DocxPreview {
 // A replacement waits for the obsolete worker to be killed and reaped.
 static WORKER: Mutex<()> = Mutex::new(());
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
-/// Whether a closed preview's file is gone, allowing for the cleanup thread
-/// (slow on Windows CI runners).
-#[cfg(test)]
-pub fn removed(path: &Path) -> bool {
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    while path.exists() && std::time::Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
-    }
-    !path.exists()
-}
 static CLEANUPS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Called off-thread by GPUI's graceful-quit hook after windows are dropped.
@@ -103,28 +93,6 @@ pub enum PreviewError {
 }
 
 impl PreviewError {
-    /// The one sentence the preview pane shows. The `Display` text keeps the
-    /// technical detail for tests and diagnostics.
-    pub fn plain_message(&self) -> String {
-        match self {
-            Self::InputTooLarge => "This DOCX is too large to preview. Previews take files up to 50 MB.".into(),
-            Self::MacrosNotSupported => "DOCX files with macros can't be previewed.".into(),
-            Self::Encrypted => "This DOCX is password-protected. Open an unlocked copy to preview it.".into(),
-            Self::TrackedChangesNotSupported => "DOCX files with tracked changes can't be previewed. Accept or reject the changes in Word first.".into(),
-            Self::NestedArchive => "This DOCX contains other packed files, so it can't be previewed.".into(),
-            Self::Package(_) => "This DOCX is damaged or incomplete, so it can't be previewed.".into(),
-            Self::Render(_) => "The preview could not be drawn.".into(),
-            Self::Rejected => "The preview can't draw this DOCX.".into(),
-            Self::Timeout => "The preview took longer than 30 seconds and was stopped.".into(),
-            Self::Cancelled => "The preview was cancelled.".into(),
-            Self::TemporaryStorage(_) => "mdoc could not create temporary files for the preview.".into(),
-            Self::Read(_) => "mdoc could not read this file. Check that it is still there.".into(),
-        }
-    }
-
-    /// Whether trying again can give a different result: a timeout, a worker
-    /// that failed, or a file system problem. The document's own content
-    /// fails the same way every time.
     /// The worker's error file: a kind tag, a tab, then the `Display` text,
     /// so the supervisor can tell a damaged document from a failed worker.
     fn report(&self) -> String {
@@ -170,6 +138,9 @@ impl PreviewError {
         }
     }
 
+    /// Whether trying again can give a different result: a timeout, a worker
+    /// that failed, or a file system problem. The document's own content
+    /// fails the same way every time.
     pub fn retryable(&self) -> bool {
         matches!(
             self,
@@ -178,10 +149,10 @@ impl PreviewError {
     }
 }
 
-// Headless UI tests cannot launch the Rust test harness as an app worker.
-// Integration tests exercise the real executable and supervisor separately.
-#[cfg(test)]
-pub fn render_with_cancel(
+/// Render in this process instead of a supervised worker. Headless UI tests
+/// cannot launch the Rust test harness as an app worker; integration tests
+/// exercise the real executable and supervisor separately.
+pub fn render_in_process(
     path: &Path,
     cancelled: Arc<AtomicBool>,
 ) -> Result<DocxPreview, PreviewError> {
@@ -189,7 +160,7 @@ pub fn render_with_cancel(
     render_direct(path)
 }
 
-#[cfg(not(test))]
+/// Render in a supervised worker: this executable, run as the DOCX worker.
 pub fn render_with_cancel(
     path: &Path,
     cancelled: Arc<AtomicBool>,
@@ -292,7 +263,6 @@ pub fn run_worker_reporting(input: &Path, output: &Path) -> Result<(), PreviewEr
     })
 }
 
-#[cfg(test)]
 fn render_direct(path: &Path) -> Result<DocxPreview, PreviewError> {
     let directory = tempdir().map_err(|error| PreviewError::TemporaryStorage(error.to_string()))?;
     let pdf_path = directory.path().join("preview.pdf");
@@ -546,7 +516,10 @@ mod tests {
             let back = PreviewError::from_report(&error.report());
             assert_eq!(back.to_string(), error.to_string());
             assert_eq!(back.retryable(), error.retryable(), "{error}");
-            assert_eq!(back.plain_message(), error.plain_message());
+            assert_eq!(
+                std::mem::discriminant(&back),
+                std::mem::discriminant(&error)
+            );
         }
         assert!(matches!(
             PreviewError::from_report("an older worker's text"),
@@ -759,7 +732,8 @@ mod tests {
 
     #[test]
     fn renders_representative_docx_to_a_owned_pdf() {
-        let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/text.docx");
+        let source =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/import/text.docx");
         let preview = render_for_test(&source).unwrap();
         assert!(preview.pdf_path.is_file());
         assert!(std::fs::metadata(&preview.pdf_path).unwrap().len() > 0);

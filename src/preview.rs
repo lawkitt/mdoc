@@ -1,12 +1,10 @@
 //! Loaded preview and pending replacement have independent lifetimes.
 //! Failure preserves the displayed preview; committing releases old PDF data
 //! before deleting its temporary DOCX backing file.
-use crate::{
-    comment_panel, document_view::DocumentView, docx_preview, markdown_search, style::Theme,
-    workspace,
-};
+use crate::{comment_panel, document_view::DocumentView, markdown_search, style::Theme, workspace};
 use gpui::{App, Context, Entity, Focusable, Subscription, Window, actions, prelude::*};
 use gpui_pdf::PdfView;
+use mdoc_import::docx_preview::{self, PreviewError};
 use mdoc_store::session_store;
 use std::{
     cell::Cell,
@@ -349,9 +347,14 @@ impl DocumentView {
     ) {
         self.preview.queued = false;
         let owner = self.owner.clone();
-        let task = cx
-            .background_executor()
-            .spawn(async move { docx_preview::render_with_cancel(&path, cancel) });
+        let task = cx.background_executor().spawn(async move {
+            // Headless UI tests cannot launch the test harness as a worker.
+            if cfg!(test) {
+                docx_preview::render_in_process(&path, cancel)
+            } else {
+                docx_preview::render_with_cancel(&path, cancel)
+            }
+        });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let (id, owner) = owner;
@@ -367,8 +370,11 @@ impl DocumentView {
                         this.load_preview(preview.pdf_path.clone(), Some(preview), window, cx)
                     }
                     Err(error) => {
-                        this.preview
-                            .fail(generation, error.plain_message(), error.retryable());
+                        this.preview.fail(
+                            generation,
+                            docx_message(&error).into(),
+                            error.retryable(),
+                        );
                     }
                 }
                 cx.notify();
@@ -389,6 +395,35 @@ impl DocumentView {
         {
             self.open_path(path, window, cx);
         }
+    }
+}
+
+/// The one sentence the preview pane shows for a failed DOCX preview. The
+/// error's `Display` text keeps the technical detail for tests and diagnostics.
+pub(crate) fn docx_message(error: &PreviewError) -> &'static str {
+    match error {
+        PreviewError::InputTooLarge => {
+            "This DOCX is too large to preview. Previews take files up to 50 MB."
+        }
+        PreviewError::MacrosNotSupported => "DOCX files with macros can't be previewed.",
+        PreviewError::Encrypted => {
+            "This DOCX is password-protected. Open an unlocked copy to preview it."
+        }
+        PreviewError::TrackedChangesNotSupported => {
+            "DOCX files with tracked changes can't be previewed. Accept or reject the changes in Word first."
+        }
+        PreviewError::NestedArchive => {
+            "This DOCX contains other packed files, so it can't be previewed."
+        }
+        PreviewError::Package(_) => "This DOCX is damaged or incomplete, so it can't be previewed.",
+        PreviewError::Render(_) => "The preview could not be drawn.",
+        PreviewError::Rejected => "The preview can't draw this DOCX.",
+        PreviewError::Timeout => "The preview took longer than 30 seconds and was stopped.",
+        PreviewError::Cancelled => "The preview was cancelled.",
+        PreviewError::TemporaryStorage(_) => {
+            "mdoc could not create temporary files for the preview."
+        }
+        PreviewError::Read(_) => "mdoc could not read this file. Check that it is still there.",
     }
 }
 

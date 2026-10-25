@@ -29,6 +29,6 @@ current document. Setup can finish globally, but document continuation remains
 generation-scoped. Percentage progress and immediate cancellation are not
 promised by synchronous converter calls. Image-only DOCX OCR is not implemented.
 
-The exact pins/digests belong in Cargo.toml, Cargo.lock, src/ocr.rs, and the fork
+The exact pins/digests belong in Cargo.toml, Cargo.lock, crates/mdoc-import/src/ocr.rs, and the fork
 manifest. [Fixture qualification](../../tests/fixtures/ocr-qualification/README.md)
 retains the useful historical evidence and reproduction instructions.

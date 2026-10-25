@@ -11,22 +11,21 @@
 use std::path::Path;
 
 pub fn run(pdf: &Path, expected: &Path) -> Result<(), String> {
-    if !crate::ocr::SUPPORTED {
+    if !mdoc_import::ocr::SUPPORTED {
         return Err("The self-test needs Apple Silicon macOS or Windows x64.".into());
     }
     let storage = tempfile::tempdir().map_err(|e| e.to_string())?;
-    let installed = crate::ocr::install_config_in(
+    let installed = mdoc_import::ocr::install_config_in(
         storage.path(),
         &mdoc_store::settings::OcrConfig::default(),
-        &crate::model_download::Progress::default(),
-    )?;
+        &mdoc_import::model_download::Progress::default(),
+    )
+    .map_err(|e| e.to_string())?;
     let cancel = std::sync::atomic::AtomicBool::new(false);
-    let imported = crate::import::prepare_cancellable(pdf, Some(&installed), false, &cancel)
+    let imported = mdoc_import::import::prepare_cancellable(pdf, Some(&installed), false, &cancel)
         .map_err(|e| match e {
-            crate::import::ImportError::Message(m)
-            | crate::import::ImportError::OcrFailed(m)
-            | crate::import::ImportError::OcrNoText(m) => m,
-            crate::import::ImportError::NeedsOcr(..) => "OCR did not run.".into(),
+            mdoc_import::import::ImportError::NeedsOcr(..) => "OCR did not run.".into(),
+            other => other.to_string(),
         })?;
     if imported.ocr_configuration.is_none() {
         return Err("The document converted without OCR.".into());

@@ -1,5 +1,6 @@
 //! Immutable local QA input. These results never enter the document/review owners.
-use crate::{ocr, pii};
+use crate::pii;
+use mdoc_import::ocr;
 use mdoc_store::settings::{OcrConfig, PiiConfig};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -74,7 +75,7 @@ impl Config {
     pub fn identity(&self) -> serde_json::Value {
         match self {
             Self::Ocr(c) => {
-                let m = crate::ocr::manifest::for_model(c.model);
+                let m = mdoc_import::ocr::manifest::for_model(c.model);
                 serde_json::json!({"model":m.id,"revision":m.revision,"mode":"Force","runtime":"ONNX Runtime 1.27.0","renderer":"PDFium native-v7988","artifacts":m.artifacts.iter().map(|a|serde_json::json!({"file":a.filename,"sha256":a.sha256})).collect::<Vec<_>>()})
             }
             Self::Pii(c) => {
@@ -180,7 +181,7 @@ pub fn run(
                 )
             }
             (Input::Pdf(bytes), Config::Ocr(c)) => {
-                let installed = ocr::installed_config(c)?;
+                let installed = ocr::installed_config(c).map_err(|e| e.to_string())?;
                 let mut options = installed.options();
                 options.page_numbers = pages.clone();
                 options.retain_recognition = true;
@@ -264,10 +265,10 @@ mod tests {
     #[test]
     #[ignore = "explicit verified model download and runtime load; set MDOC_MODEL"]
     fn settings_model_setup_probe() {
-        let progress = crate::model_download::Progress::default();
+        let progress = mdoc_import::model_download::Progress::default();
         match probe_model() {
             mdoc_store::settings::Model::Ocr(model) => {
-                crate::ocr::install_config(
+                mdoc_import::ocr::install_config(
                     &OcrConfig {
                         model,
                         ..Default::default()
@@ -291,7 +292,7 @@ mod tests {
     #[test]
     #[ignore = "actual installed models, no download; set MDOC_MODEL and MDOC_REPORT; run with network denied"]
     fn settings_model_offline_probe() {
-        let _permit = crate::model_work::Permit::acquire().unwrap();
+        let _permit = mdoc_import::model_work::Permit::acquire().unwrap();
         let model = probe_model();
         let mut records = Vec::new();
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ocr-qualification");

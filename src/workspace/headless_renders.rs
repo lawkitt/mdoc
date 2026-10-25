@@ -453,7 +453,10 @@ fn scenarios(
             v.preview.retryable = false;
             v.preview.failed = true;
             v.preview.message = Some(
-                crate::docx_preview::PreviewError::Package("invalid ZIP".into()).plain_message(),
+                crate::preview::docx_message(&mdoc_import::docx_preview::PreviewError::Package(
+                    "invalid ZIP".into(),
+                ))
+                .to_string(),
             );
             v.error = Some(
                 "This document could not be converted because its contents are damaged or incomplete."
@@ -494,14 +497,17 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             return Err("OS case-key guard is not active".into());
         }
     }
-    let network_probe = crate::model_download::fetch(
+    let network_probe = mdoc_import::model_download::fetch(
         "https://invalid.invalid/headless-network-probe",
         1,
         "",
         &profile.path().join("never-downloaded"),
-        &crate::model_download::Progress::default(),
+        &mdoc_import::model_download::Progress::default(),
     );
-    if network_probe.err().as_deref() != Some("network is disabled in headless renders") {
+    if !matches!(
+        network_probe,
+        Err(mdoc_import::model_download::DownloadError::NetworkDisabled)
+    ) {
         return Err("network guard is not active".into());
     }
     #[cfg(target_os = "macos")]

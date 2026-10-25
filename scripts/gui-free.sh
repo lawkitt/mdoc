@@ -5,7 +5,7 @@
 # makes it GUI-free.
 source "$(dirname "$0")/lib.sh"
 
-crates=(mdoc-store mdoc-pii mdoc-history mdoc-spell)
+crates=(mdoc-store mdoc-import mdoc-pii mdoc-history mdoc-spell)
 failed=0
 for crate in "${crates[@]}"; do
   found=$(cargo tree --locked -p "$crate" --all-features -e normal,build --target all --prefix none --format '{p}' |

@@ -1,6 +1,15 @@
 //! Admission is retained by the worker, even after its UI has cancelled/closed.
 use std::sync::{Condvar, Mutex};
 
+/// Why model work could not start.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum PermitError {
+    #[error("The application is shutting down.")]
+    ShuttingDown,
+    #[error("Another model job is running. Retry when it finishes.")]
+    Busy,
+}
+
 #[derive(Default)]
 struct State {
     busy: bool,
@@ -36,10 +45,10 @@ pub struct Permit {
     admission: &'static Admission,
 }
 impl Permit {
-    pub fn acquire() -> Result<Self, String> {
+    pub fn acquire() -> Result<Self, PermitError> {
         Self::acquire_from(&ADMISSION)
     }
-    pub fn acquire_for(label: &'static str) -> Result<Self, String> {
+    pub fn acquire_for(label: &'static str) -> Result<Self, PermitError> {
         let permit = Self::acquire()?;
         ADMISSION
             .state
@@ -48,13 +57,13 @@ impl Permit {
             .label = Some(label);
         Ok(permit)
     }
-    fn acquire_from(admission: &'static Admission) -> Result<Self, String> {
+    fn acquire_from(admission: &'static Admission) -> Result<Self, PermitError> {
         let mut state = admission.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.stopping {
-            return Err("The application is shutting down.".into());
+            return Err(PermitError::ShuttingDown);
         }
         if state.busy {
-            return Err("Another model job is running. Retry when it finishes.".into());
+            return Err(PermitError::Busy);
         }
         state.busy = true;
         state.label = Some("model processing");

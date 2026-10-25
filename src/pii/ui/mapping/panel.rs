@@ -353,7 +353,7 @@ impl DocumentView {
         let pending = model.map_or_else(Default::default, |m| {
             panel.pending[settings_ui::Panel::index(m)]
         });
-        let idle = panel.working.is_none() && !crate::model_work::busy();
+        let idle = panel.working.is_none() && !mdoc_import::model_work::busy();
         let error = self.pii.error.clone();
         let primary = if !needs_setup {
             "Pseudonymize"
