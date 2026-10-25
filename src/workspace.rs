@@ -28,10 +28,7 @@ use std::{
     collections::VecDeque,
     path::PathBuf,
     rc::Rc,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 
@@ -178,9 +175,11 @@ impl SidebarStatus {
             source: view.preview.source.clone(),
             dirty: view.dirty_cached,
             loading: view.loading || view.preview.loading,
-            queued: view.preview.queued || view.auto_convert_pending,
-            importing: view.job.busy(),
-            error: view.error.is_some() || view.preview.failed || view.ocr_required.is_some(),
+            queued: view.preview.queued || view.import.auto_pending(),
+            importing: view.import.busy(),
+            error: view.error.is_some()
+                || view.preview.failed
+                || view.import.ocr_required().is_some(),
             pseudonymized: view.pseudonymized(),
             recognized: view.recognized(),
         }
@@ -896,12 +895,14 @@ impl Workspace {
             view.active = id == self.tabs.active();
             view.source_only = record.source_only;
             view.blank_disposable = record.blank_disposable;
-            view.auto_convert_pending = record.source_only
-                && record.attachment.as_ref().is_some_and(|path| {
-                    path.extension().is_some_and(|ext| {
-                        ext.eq_ignore_ascii_case("pdf") || ext.eq_ignore_ascii_case("docx")
-                    })
-                });
+            view.import.queue_auto(
+                record.source_only
+                    && record.attachment.as_ref().is_some_and(|path| {
+                        path.extension().is_some_and(|ext| {
+                            ext.eq_ignore_ascii_case("pdf") || ext.eq_ignore_ascii_case("docx")
+                        })
+                    }),
+            );
             view.loading = !record.markdown.as_os_str().is_empty();
             view.preview.attachment = record.attachment.clone();
             view.preview.source = record.attachment.clone();
@@ -1504,9 +1505,8 @@ impl Workspace {
 
     fn release(view: &Entity<DocumentView>, window: &mut Window, cx: &mut App) {
         view.update(cx, |view, cx| {
-            view.import_cancel.store(true, Ordering::Relaxed);
             view.session.generation = view.session.generation.wrapping_add(1);
-            view.import_permit = None;
+            view.import.cancel();
             view.close_preview(window, cx);
             view.images.release(window, cx);
         });
@@ -2010,10 +2010,11 @@ impl Workspace {
                     source,
                 } = labels[index].clone();
                 let dirty = view.is_some_and(|v| v.dirty_cached);
-                let running = view.is_some_and(|v| v.loading || v.job.busy() || v.preview.loading);
+                let running =
+                    view.is_some_and(|v| v.loading || v.import.busy() || v.preview.loading);
                 let busy = running || view.is_some_and(|v| v.preview.queued);
                 let error = view.is_some_and(|v| {
-                    v.error.is_some() || v.preview.failed || v.ocr_required.is_some()
+                    v.error.is_some() || v.preview.failed || v.import.ocr_required().is_some()
                 });
                 let pseudonymized = view.is_some_and(|v| v.pseudonymized());
                 let recognized = view.is_some_and(|v| v.recognized());

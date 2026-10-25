@@ -20,7 +20,7 @@ use gpui::{
     Subscription, Window, actions, div, prelude::*, px,
 };
 use mdoc_editor::{EditorEvent, EditorState};
-use mdoc_import::{import, import_session, model_work, ocr, recognition};
+use mdoc_import::{import, model_work, ocr, recognition};
 use mdoc_store::{
     cases,
     document::{self, Document},
@@ -30,14 +30,13 @@ use std::{
     cell::Cell,
     path::PathBuf,
     rc::Rc,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, atomic::AtomicBool},
 };
 
 mod case;
 mod chrome;
+mod import_flow;
+use import_flow::ImportEffect;
 #[cfg(test)]
 pub(crate) mod tests;
 actions!(
@@ -119,19 +118,10 @@ pub(crate) struct DocumentView {
     pub(crate) load_generation: u64,
     pub(crate) unavailable: bool,
     pub(crate) source_only: bool,
-    pub(crate) auto_convert_pending: bool,
-    pub(crate) automatic_import: bool,
     pub(crate) generated_unedited: bool,
     pub(crate) blank_disposable: bool,
     /// External files over the empty page: whether any is supported (ADR 0028).
     pub(crate) file_drag: Option<bool>,
-    pub(crate) ocr_required: Option<Vec<u32>>,
-    /// Every page of the PDF needs recognition, so the card says "all".
-    pub(crate) ocr_all_pages: bool,
-    pub(crate) import_permit: Option<Arc<import_session::ImportPermit>>,
-    pub(crate) conversion_source: Option<PathBuf>,
-    pub(crate) import_busy: Arc<AtomicBool>,
-    pub(crate) import_cancel: Arc<AtomicBool>,
     pub(crate) preferences: settings::Shared,
     pub(crate) model_panel: Entity<settings_ui::Panel>,
     pub(crate) theme: Rc<Cell<Theme>>,
@@ -171,29 +161,14 @@ pub(crate) struct DocumentView {
     pub(crate) view_bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
     pub(crate) split_dragging: bool,
     pub(crate) original_selected: bool,
-    pub(crate) ocr_notice_dismissed: bool,
-    pub(crate) setup_error_dismissed: bool,
     /// The card's primary action takes focus once when OCR consent appears.
     /// Stable focus for a setup card's primary action or its in-progress Cancel.
     pub(crate) card_focus: gpui::FocusHandle,
     pub(crate) focus_card: bool,
     pub(crate) prompting: bool,
-    pub(crate) job: import_session::ImportSession,
     pub(crate) ocr_state: OcrState,
-    /// This document's last OCR run recognized nothing; OCR itself still works.
-    pub(crate) ocr_error: Option<String>,
-    /// Setup or a run of this document's OCR model failed, when that is not
-    /// the Settings model (whose state `ocr_state` shares with every tab).
-    pub(crate) ocr_failure: Option<String>,
-    /// What detection saw when the card appeared (ADR 0065).
-    pub(crate) recognition_signals: Option<recognition::Signals>,
-    /// Recognition languages picked on the card, for this document only.
-    pub(crate) recognition_pick: Option<recognition::Choice>,
-    /// Keyboard input source languages; tests inject their own.
-    pub(crate) input_languages: fn() -> Vec<recognition::Language>,
-    /// The model this tab is setting up, and whether it put the shared
-    /// `ocr_state` into Installing (it must replace that state on finish).
-    pub(crate) ocr_setup: Option<(settings::OcrModel, bool)>,
+    /// Converting the source to Markdown, OCR consent and setup.
+    pub(crate) import: import_flow::ImportFlow,
     pub(crate) markdown_search: Entity<markdown_search::SearchInput>,
     /// The Replace row's field; its text stays with the tab (ADR 0063).
     pub(crate) markdown_replace: Entity<markdown_search::SearchInput>,
@@ -359,17 +334,9 @@ impl DocumentView {
             load_generation: 0,
             unavailable: false,
             source_only: false,
-            auto_convert_pending: false,
-            automatic_import: false,
             generated_unedited: false,
             blank_disposable: false,
             file_drag: None,
-            ocr_required: None,
-            ocr_all_pages: false,
-            import_permit: None,
-            conversion_source: None,
-            import_busy: dependencies.import_busy,
-            import_cancel: Arc::new(AtomicBool::new(false)),
             preferences: dependencies.preferences,
             model_panel: dependencies.model_panel,
             theme: dependencies.theme,
@@ -399,19 +366,14 @@ impl DocumentView {
             view_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
             split_dragging: false,
             original_selected: false,
-            ocr_notice_dismissed: false,
             card_focus: cx.focus_handle(),
             focus_card: false,
-            setup_error_dismissed: false,
             prompting: false,
-            job: import_session::ImportSession::default(),
             ocr_state: dependencies.ocr,
-            ocr_error: None,
-            ocr_failure: None,
-            recognition_signals: None,
-            recognition_pick: None,
-            input_languages: dependencies.input_languages,
-            ocr_setup: None,
+            import: import_flow::ImportFlow::new(
+                dependencies.import_busy,
+                dependencies.input_languages,
+            ),
             markdown_search,
             markdown_replace,
             search: search_session::SearchSession::default(),
@@ -510,36 +472,12 @@ impl DocumentView {
     /// This document's recognition languages: the card's pick, else the
     /// detected default with its reason (ADR 0065).
     pub(crate) fn recognition_choice(&self) -> recognition::Choice {
-        if let Some(pick) = &self.recognition_pick {
-            return pick.clone();
-        }
-        self.recognition_default()
-    }
-
-    fn recognition_default(&self) -> recognition::Choice {
-        let fallback = self.settings_ocr_model().unwrap_or_default();
-        recognition::detect(
-            &self.recognition_signals.clone().unwrap_or_default(),
-            &mdoc_import::ocr::offered(),
-            mdoc_import::ocr::languages(fallback),
-        )
+        self.import.choice(self.settings_ocr_model())
     }
 
     /// The bundle that reads this document's recognition languages.
     pub(crate) fn recognition_model(&self) -> settings::OcrModel {
-        mdoc_import::ocr::plan(&self.recognition_choice().languages).0
-    }
-
-    /// Gather detection signals for `path` once its card appears.
-    fn observe_recognition(&mut self, path: &std::path::Path, text: Vec<recognition::Language>) {
-        self.recognition_signals = Some(recognition::Signals {
-            text,
-            file_name: path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            input_sources: (self.input_languages)(),
-        });
+        self.import.model(self.settings_ocr_model())
     }
 
     /// Pick recognition languages on the card. The pick holds until the
@@ -550,16 +488,10 @@ impl DocumentView {
         languages: Vec<recognition::Language>,
         cx: &mut Context<Self>,
     ) {
-        if self.job.busy() || self.ocr_state.busy() {
+        if self.import.busy() || self.ocr_state.busy() {
             return;
         }
-        let detected = self.recognition_default();
-        self.recognition_pick = Some(if detected.languages == languages {
-            detected
-        } else {
-            recognition::Choice::picked(languages)
-        });
-        self.ocr_failure = None;
+        self.import.pick(languages, self.settings_ocr_model());
         cx.notify();
     }
 
@@ -582,7 +514,7 @@ impl DocumentView {
                 OcrState::Failed(_) => return None,
                 _ => {}
             }
-        } else if self.ocr_failure.is_some() {
+        } else if self.import.ocr_failure().is_some() {
             return None;
         }
         self.model_panel
@@ -696,13 +628,7 @@ impl DocumentView {
             }
             Next::Import(imported) => {
                 self.source_only = false;
-                self.generated_unedited = self.automatic_import;
-                self.ocr_required = None;
-                self.ocr_all_pages = false;
-                self.ocr_error = None;
-                self.ocr_failure = None;
-                self.recognition_signals = None;
-                self.recognition_pick = None;
+                self.generated_unedited = self.import.imported();
                 let retain_preview = self.preview.source.as_ref() == Some(&imported.source)
                     && (self.preview.pdf.is_some() || self.preview.loading);
                 self.session
@@ -744,47 +670,25 @@ impl DocumentView {
     pub(crate) fn import(&mut self, _: &Import, window: &mut Window, cx: &mut Context<Self>) {
         if !self.source_only
             || self.prompting
-            || self.job.busy()
+            || self.import.busy()
             || self.ocr_state.busy()
-            || self.import_busy.load(Ordering::Relaxed)
+            || self.import.slot_busy()
         {
             return;
         }
-        self.automatic_import = false;
-        self.auto_convert_pending = false;
-        if let Some(path) = self.preview.source.clone() {
-            self.start_import(path, window, cx);
-        }
+        let effect = self.import.convert_by_hand(self.preview.source.clone());
+        self.carry_out_import(effect, window, cx);
     }
 
+    /// Convert `path` as Convert would.
+    #[cfg(test)]
     pub(crate) fn start_import(
         &mut self,
         path: PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.start_import_run(path, false, false, window, cx);
-    }
-
-    fn start_import_mode(
-        &mut self,
-        path: PathBuf,
-        skip_ocr: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.start_import_run(path, skip_ocr, !skip_ocr, window, cx);
-    }
-
-    fn start_import_run(
-        &mut self,
-        path: PathBuf,
-        skip_ocr: bool,
-        allow_ocr: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.start_import_with(path, skip_ocr, allow_ocr, None, window, cx);
+        self.start_import_with(path, false, false, None, window, cx);
     }
 
     /// `ready` is the installation a finished setup checked, with the
@@ -834,42 +738,8 @@ impl DocumentView {
             cx.notify();
             return;
         }
-        if self.job.busy() {
-            return;
-        }
-        if self.import_permit.is_none() {
-            self.import_permit = import_session::ImportPermit::acquire(&self.import_busy);
-        }
-        let Some(permit) = self.import_permit.clone() else {
-            return;
-        };
-        if !self.job.begin(installed.is_some()) {
-            return;
-        }
-        self.conversion_source = Some(path.clone());
-        cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
-        let cancel = self.import_cancel.clone();
-        self.error = None;
-        self.ocr_error = None;
-        let generation = self.session.generation;
-        let task = cx.background_executor().spawn(async move {
-            let result = import::prepare_cancellable(&path, installed.as_ref(), skip_ocr, &cancel);
-            drop(permit);
-            result
-        });
-        let task = cx.spawn_in(window, async move |this, cx| {
-            let result = task.await;
-            let _ = this.update_in(cx, |this, window, cx| {
-                this.job.complete(generation, result);
-                this.resume_import(window, cx);
-                cx.emit(workspace::TabEvent::Import(
-                    workspace::ImportEvent::Finished,
-                ));
-            });
-            Background::Import
-        });
-        self.keep_background(task);
-        cx.notify();
+        let effect = self.import.begin(path, installed, skip_ocr);
+        self.carry_out_import(effect, window, cx);
     }
 
     /// Keep a running job's task, dropping those that have ended.
@@ -888,59 +758,99 @@ impl DocumentView {
             return;
         }
         let generation = self.session.generation;
-        let Some(completion) = self.job.take_ready(generation, self.prompting) else {
+        let settings_model = self.settings_ocr_model();
+        let Some(effects) = self.import.resume(generation, self.prompting, |import| {
+            settings_model == Some(import.model(settings_model))
+        }) else {
             return;
         };
-        if let import_session::ImportCompletion::Ready(result) = completion {
-            match result {
-                Ok(imported) => {
-                    self.request(Next::Import(imported), window, cx);
-                }
-                Err(import::ImportError::OcrFailed(error)) => {
-                    let error = error.to_string();
-                    if self.settings_ocr_model() == Some(self.recognition_model()) {
-                        self.ocr_state = OcrState::Failed(error.clone());
-                        cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::Ocr(
-                            self.ocr_state.clone(),
-                        )));
-                    } else {
-                        self.ocr_failure = Some(error.clone());
-                    }
-                    self.error = Some(error);
-                    if let Some(path) = self.conversion_source.clone() {
-                        self.await_ocr(path, cx);
-                    }
-                }
-                Err(error @ import::ImportError::OcrNoText) => {
-                    let error = error.to_string();
-                    self.ocr_error = Some(error.clone());
-                    self.error = Some(error);
-                    if let Some(path) = self.conversion_source.clone() {
-                        self.await_ocr(path, cx);
-                    }
-                }
-                Err(import::ImportError::NeedsOcr(path, pages, text, page_count)) => {
-                    self.observe_recognition(&path, text);
-                    self.ocr_all_pages = pages.len() as u32 >= page_count;
-                    self.ocr_required = Some(pages);
-                    self.await_ocr(path, cx)
-                }
-                Err(error) => self.error = Some(error.to_string()),
-            }
-        }
-        if !self.job.busy() {
-            self.import_permit = None;
-            cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
-        }
+        self.carry_out_import(effects, window, cx);
         // A stale completion also clears the busy indicator.
         cx.notify();
     }
 
+    fn carry_out_import(
+        &mut self,
+        effects: impl IntoIterator<Item = ImportEffect>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        for effect in effects {
+            match effect {
+                ImportEffect::Convert {
+                    path,
+                    skip_ocr,
+                    allow_ocr,
+                } => self.start_import_with(path, skip_ocr, allow_ocr, None, window, cx),
+                ImportEffect::ConvertWith { path, installed } => {
+                    self.start_import_with(path, false, true, Some(installed), window, cx);
+                }
+                ImportEffect::Run {
+                    path,
+                    installed,
+                    skip_ocr,
+                    permit,
+                    cancel,
+                } => {
+                    cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
+                    self.error = None;
+                    let generation = self.session.generation;
+                    let task = cx.background_executor().spawn(async move {
+                        let result = import::prepare_cancellable(
+                            &path,
+                            installed.as_ref(),
+                            skip_ocr,
+                            &cancel,
+                        );
+                        drop(permit);
+                        result
+                    });
+                    let task = cx.spawn_in(window, async move |this, cx| {
+                        let result = task.await;
+                        let _ = this.update_in(cx, |this, window, cx| {
+                            this.import.complete(generation, result);
+                            this.resume_import(window, cx);
+                            cx.emit(workspace::TabEvent::Import(
+                                workspace::ImportEvent::Finished,
+                            ));
+                        });
+                        Background::Import
+                    });
+                    self.keep_background(task);
+                    cx.notify();
+                }
+                ImportEffect::SetUp => self.begin_ocr_setup(window, cx),
+                ImportEffect::Request(imported) => {
+                    self.request(Next::Import(imported), window, cx);
+                }
+                ImportEffect::SharedOcrReady(installed) => {
+                    self.ocr_state = OcrState::Ready(installed);
+                }
+                ImportEffect::SharedOcrFailed(error) => {
+                    self.ocr_state = OcrState::Failed(error);
+                }
+                ImportEffect::SharedOcrKnown => {
+                    self.ocr_state = self.known_settings_ocr_state(cx);
+                }
+                ImportEffect::SharedOcrChanged => {
+                    cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::Ocr(
+                        self.ocr_state.clone(),
+                    )));
+                }
+                ImportEffect::Error(error) => self.error = Some(error),
+                ImportEffect::FocusCard => self.focus_card = true,
+                ImportEffect::State => {
+                    cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
+                }
+            }
+        }
+    }
+
     fn setup_ocr(&mut self, _: &SetupOcr, window: &mut Window, cx: &mut Context<Self>) {
         if self.prompting
-            || self.job.busy()
+            || self.import.busy()
             || self.ocr_state.busy()
-            || self.import_busy.load(Ordering::Relaxed)
+            || self.import.slot_busy()
             || !ocr::SUPPORTED
         {
             return;
@@ -968,17 +878,16 @@ impl DocumentView {
             }
         };
         let shared = self.settings_ocr_model() == Some(config.model);
-        self.ocr_failure = None;
-        self.ocr_setup = None;
+        self.import.begin_setup();
         let panel = self.model_panel.clone();
         // The inline consent continuation remains document-owned. Settings downloads never create one.
-        if self.job.has_ocr_continuation() {
+        if self.import.setting_up() {
             let config = config.clone();
             let subscription =
                 cx.subscribe_in(&panel, window, move |this, _, event, window, cx| {
                     if let settings_ui::Event::Finished(settings::Model::Ocr(model), result) = event
                         && *model == config.model
-                        && this.job.has_ocr_continuation()
+                        && this.import.setting_up()
                     {
                         match result {
                             Ok(Some(installed)) => {
@@ -998,7 +907,7 @@ impl DocumentView {
             panel.working == Some(settings::Model::Ocr(config.model))
         });
         if started {
-            self.ocr_setup = Some((config.model, shared));
+            self.import.setup_started(config.model, shared);
             // Another model's setup shows only in this card's progress.
             if shared {
                 self.ocr_state = OcrState::Installing;
@@ -1007,7 +916,7 @@ impl DocumentView {
                 )));
             }
             cx.notify();
-        } else if self.job.has_ocr_continuation() {
+        } else if self.import.setting_up() {
             self.finish_ocr_setup(
                 Err("Another model job is running. Retry when it finishes.".into()),
                 window,
@@ -1022,118 +931,36 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let (model, claimed) = self.ocr_setup.take().unwrap_or_else(|| {
-            let model = match &result {
-                Ok(installed) => installed.config.model,
-                Err(_) => self.recognition_model(),
-            };
-            (model, self.settings_ocr_model() == Some(model))
-        });
-        // Only the Settings model's outcome is shared with every tab; the
-        // Settings panel keeps any other model's installation. Settings may
-        // have changed during setup: a tab that set the shared state to
-        // Installing replaces it either way.
-        let shared = self.settings_ocr_model() == Some(model);
-        match &result {
-            Ok(installed) if shared => self.ocr_state = OcrState::Ready(installed.clone()),
-            Err(error) if shared => self.ocr_state = OcrState::Failed(error.clone()),
-            Err(error) => self.ocr_failure = Some(error.clone()),
-            Ok(_) => {}
-        }
-        if claimed && !shared {
-            self.ocr_state = self.known_settings_ocr_state(cx);
-        }
-        match result {
-            Ok(installed) => {
-                if let Some(path) = self.job.resume_after_setup(self.session.generation) {
-                    self.start_import_with(path, false, true, Some(installed), window, cx);
-                }
-            }
-            Err(_) => {
-                self.job.finish();
-                if let Some(path) = self.job.resume_after_setup(self.session.generation) {
-                    self.await_ocr(path, cx);
-                }
-            }
-        }
-        if !self.job.busy() {
-            self.import_permit = None;
-        }
-        if shared || claimed {
-            cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::Ocr(
-                self.ocr_state.clone(),
-            )));
-        }
-        cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
-        cx.notify();
-    }
-
-    // Consent lives in the source pane. Waiting for a decision must not hold
-    // the global conversion slot or interrupt another tab with a modal dialog.
-    fn await_ocr(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        if self.recognition_signals.is_none() {
-            self.observe_recognition(&path, Vec::new());
-        }
-        self.conversion_source = Some(path);
-        self.ocr_required.get_or_insert_with(Vec::new);
-        self.ocr_notice_dismissed = false;
-        self.focus_card = true;
-        self.job.finish();
-        self.import_permit = None;
-        cx.emit(workspace::TabEvent::Import(workspace::ImportEvent::State));
+        let effects =
+            self.import
+                .finish_setup(result, self.session.generation, self.settings_ocr_model());
+        self.carry_out_import(effects, window, cx);
         cx.notify();
     }
 
     pub(crate) fn ocr_action(&mut self, skip: bool, window: &mut Window, cx: &mut Context<Self>) {
-        if self.job.busy()
-            || self.import_busy.load(Ordering::Relaxed)
-            || self.ocr_state.busy()
-            || self.ocr_required.is_none()
-        {
-            return;
-        }
-        let Some(path) = self.conversion_source.clone() else {
-            return;
-        };
-        self.automatic_import = false;
-        if !skip && self.recognition_pick.is_none() {
-            // Running OCR keeps this choice: a Settings change during
-            // setup or recognition no longer moves it.
-            self.recognition_pick = Some(self.recognition_default());
-        }
-        if skip {
-            self.start_import_mode(path, skip, window, cx);
-        } else if self.installed_for(self.recognition_model(), cx).is_some() {
-            self.start_import_mode(path, false, window, cx);
-        } else if ocr::SUPPORTED {
-            if model_work::busy() || self.model_panel.read(cx).working.is_some() {
-                self.error = Some("Another model job is running. Retry when it finishes.".into());
-                cx.notify();
-                return;
-            }
-            self.import_permit = import_session::ImportPermit::acquire(&self.import_busy);
-            if self.import_permit.is_none() {
-                return;
-            }
-            self.job.defer_for_setup(self.session.generation, path);
-            self.begin_ocr_setup(window, cx);
+        // Recognizing freezes the languages the card shows, so this is the
+        // model it will use.
+        let installed = self.installed_for(self.recognition_model(), cx).is_some();
+        let model_busy = model_work::busy() || self.model_panel.read(cx).working.is_some();
+        let effect = self.import.consent(
+            skip,
+            self.ocr_state.busy(),
+            self.settings_ocr_model(),
+            self.session.generation,
+            installed,
+            model_busy,
+        );
+        let error = matches!(effect, Some(ImportEffect::Error(_)));
+        self.carry_out_import(effect, window, cx);
+        if error {
+            cx.notify();
         }
     }
 
     pub(crate) fn try_auto_convert(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.auto_convert_pending
-            || self.job.busy()
-            || self.import_busy.load(Ordering::Relaxed)
-            || self.import_cancel.load(Ordering::Relaxed)
-        {
-            return;
-        }
-        let Some(path) = self.preview.source.clone() else {
-            return;
-        };
-        self.automatic_import = true;
-        self.auto_convert_pending = false;
-        self.start_import(path, window, cx);
+        let effect = self.import.auto_convert(self.preview.source.clone());
+        self.carry_out_import(effect, window, cx);
     }
 
     /// The Markdown pane before conversion: one card that changes in place
@@ -1165,17 +992,17 @@ impl DocumentView {
                     .text_ellipsis()
                     .child(self.display_name()),
             );
-        let Some(pages) = self.ocr_required.clone() else {
-            let (title, busy) = if self.job.busy() {
+        let Some(pages) = self.import.ocr_required().map(<[u32]>::to_vec) else {
+            let (title, busy) = if self.import.busy() {
                 (
-                    if self.job.recognizing() {
+                    if self.import.recognizing() {
                         "Recognizing text…"
                     } else {
                         "Converting to Markdown…"
                     },
                     true,
                 )
-            } else if self.auto_convert_pending {
+            } else if self.import.auto_pending() {
                 ("Waiting to convert…", true)
             } else if self.error.is_some() {
                 ("Conversion could not be completed", false)
@@ -1198,7 +1025,7 @@ impl DocumentView {
         let count = pages.len();
         let card = card
             .child(ui::card_title(if count == 0 { "Text recognition needs your attention" } else { self.ocr_pages_title() }))
-            .when(count > 0, |v| v.child(ui::card_text(if self.ocr_all_pages {
+            .when(count > 0, |v| v.child(ui::card_text(if self.import.ocr_all_pages() {
                 format!(
                     "{} usable text. Recognition reads {} on this computer; the original stays in the preview.",
                     if count == 1 { "The page has no" } else { "No page has" },
@@ -1228,7 +1055,7 @@ impl DocumentView {
                 )
                 .into_any_element();
         }
-        if self.job.recognizing() {
+        if self.import.recognizing() {
             return card
                 .child(ui::activity(
                     "recognition-activity",
@@ -1273,13 +1100,16 @@ impl DocumentView {
                 )
                 .into_any_element();
         }
-        let disabled =
-            self.job.busy() || self.import_busy.load(Ordering::Relaxed) || self.ocr_state.busy();
+        let disabled = self.import.busy() || self.import.slot_busy() || self.ocr_state.busy();
         let failed = match &self.ocr_state {
             OcrState::Failed(error) if shared => Some(error.clone()),
-            _ => self.ocr_failure.clone().or_else(|| self.ocr_error.clone()),
+            _ => self
+                .import
+                .ocr_failure()
+                .cloned()
+                .or_else(|| self.import.ocr_error().cloned()),
         };
-        let primary = if ready && self.ocr_error.is_none() {
+        let primary = if ready && self.import.ocr_error().is_none() {
             "Run OCR"
         } else if failed.is_some() {
             "Retry"
@@ -1430,7 +1260,10 @@ impl DocumentView {
 
     /// "All pages…" when the whole PDF is scanned, "Some pages…" otherwise.
     fn ocr_pages_title(&self) -> &'static str {
-        match (self.ocr_all_pages, self.ocr_required.as_ref().map(Vec::len)) {
+        match (
+            self.import.ocr_all_pages(),
+            self.import.ocr_required().map(<[u32]>::len),
+        ) {
             (true, Some(1)) => "This page needs text recognition",
             (true, _) => "All pages need text recognition",
             (false, _) => "Some pages need text recognition",
@@ -1548,9 +1381,9 @@ impl DocumentView {
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 match id {
                                     "import-notice" => this.session.warning = None,
-                                    "ocr-notice" => this.ocr_notice_dismissed = true,
+                                    "ocr-notice" => this.import.dismiss_ocr_notice(),
                                     "preview-notice" => this.preview.message = None,
-                                    "setup-notice" => this.setup_error_dismissed = true,
+                                    "setup-notice" => this.import.dismiss_setup_error(),
                                     "clipboard-notice" => this.clipboard_notice = None,
                                     _ => this.error = None,
                                 }
@@ -2200,7 +2033,9 @@ impl Render for DocumentView {
             .warning
             .clone()
             .map(|detail| self.notice("import-notice", "Review conversion", detail, false, cx));
-        let ocr_notice = (self.ocr_required.is_some() && !self.ocr_notice_dismissed).then(|| {
+        let ocr_notice = (self.import.ocr_required().is_some()
+            && !self.import.ocr_notice_dismissed())
+        .then(|| {
             self.notice(
                 "ocr-notice",
                 "Text recognition required",
@@ -2213,7 +2048,7 @@ impl Render for DocumentView {
             self.notice("preview-notice", "Preview", detail, self.preview.failed, cx)
         });
         let setup_notice = match &self.ocr_state {
-            OcrState::Failed(error) if !self.setup_error_dismissed => {
+            OcrState::Failed(error) if !self.import.setup_error_dismissed() => {
                 Some(self.notice("setup-notice", "OCR setup", error.clone(), true, cx))
             }
             _ => None,
@@ -2232,17 +2067,17 @@ impl Render for DocumentView {
         // card its recognition error; a notice would only repeat it.
         let card_shows_error = self.source_only
             && show_markdown
-            && !self.job.busy()
-            && !self.auto_convert_pending
-            && (self.ocr_required.is_none()
+            && !self.import.busy()
+            && !self.import.auto_pending()
+            && (self.import.ocr_required().is_none()
                 || ocr::SUPPORTED
                     && self.error.as_ref().is_some_and(|error| {
-                        [self.ocr_failure.as_ref(), self.ocr_error.as_ref()].contains(&Some(error))
+                        [self.import.ocr_failure(), self.import.ocr_error()].contains(&Some(error))
                             || matches!(&self.ocr_state, OcrState::Failed(e) if e == error)
                     }));
         // The OCR setup notice may already say the same thing.
-        let setup_says_error = !self.setup_error_dismissed
-            && !(show_markdown && self.source_only && self.ocr_required.is_some())
+        let setup_says_error = !self.import.setup_error_dismissed()
+            && !(show_markdown && self.source_only && self.import.ocr_required().is_some())
             && matches!(&self.ocr_state, OcrState::Failed(e) if Some(e) == self.error.as_ref());
         let error_notice = self
             .error
@@ -2290,8 +2125,8 @@ impl Render for DocumentView {
                 })))
             .when(!detached, |v| v.child(div().track_focus(&self.toolbar_region).key_context("ToolbarRegion").child(self.header(window, cx))))
             .child(div().track_focus(&self.controls_region).key_context("ToolbarRegion").flex().flex_col().flex_shrink_0()
-            .when(!self.source_only && self.job.busy(), |v| v.child(
-                ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) || self.job.has_ocr_continuation() { "Setting up text recognition…" } else if self.job.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
+            .when(!self.source_only && self.import.busy(), |v| v.child(
+                ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) || self.import.setting_up() { "Setting up text recognition…" } else if self.import.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
             .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
             .children(import_notice).children(clipboard_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))
@@ -2332,7 +2167,7 @@ impl Render for DocumentView {
                     .when_some(self.preview.comment_panel.clone(), |pane, comments| pane.child(div().track_focus(&self.comments_region).child(comments)))
                     .children(preview_notice)))
 )
-            .children(setup_notice.filter(|_| !(show_markdown && self.source_only && self.ocr_required.is_some()))).children(error_notice)
+            .children(setup_notice.filter(|_| !(show_markdown && self.source_only && self.import.ocr_required().is_some()))).children(error_notice)
             // The word popup anchors to the editor, hidden under before/after.
             .children(self.pii_popup(cx).filter(|_| self.compare.is_none()))
             .children(self.replacement_tip(window, cx).filter(|_| self.compare.is_none()));

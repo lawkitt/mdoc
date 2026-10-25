@@ -128,5 +128,8 @@ Owners extracted so far:
 - `CaseCoordinator` (`src/workspace/case_coordinator.rs`, ADR 0049 case
   coordination): the saved cases and their key, one write at a time with
   each case's latest revision waiting, and the quit's wait for those writes.
+- `ImportFlow` (`src/document_view/import_flow.rs`): a tab's conversion to
+  Markdown and its hold on the import slot, automatic conversion, and OCR
+  consent, recognition languages and setup on the conversion card.
 
 References: [interview](../design/codebase-refactoring.md).
