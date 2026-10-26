@@ -14,7 +14,7 @@ pub(crate) fn bind(cx: &mut App) {
             .update(cx, |panel, cx| panel.show_updates(window, cx));
     });
     app_action::<New>(cx, |this, window, cx| {
-        if this.ready && this.quitting.is_none() {
+        if this.ready && !this.quit_flow.quitting() {
             this.new_tab(window, cx);
         }
     });

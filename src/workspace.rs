@@ -45,6 +45,8 @@ mod focus_regions;
 pub(crate) mod headless_renders;
 mod keychain_ui;
 mod notices;
+mod quit_flow;
+use quit_flow::{QuitEffect, QuitEnd};
 mod session_writer;
 mod shell;
 use session_writer::SessionEffect;
@@ -202,12 +204,7 @@ pub(super) struct Workspace {
     tab_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
     import_busy: Arc<AtomicBool>,
     docx_queue: docx_queue::DocxQueue,
-    quitting: Option<VecDeque<u64>>,
-    quit_active: Option<u64>,
-    closing_tab: Option<u64>,
-    finishing: bool,
-    /// Histories whose save/discard decisions have already been resolved, by tab.
-    quit_checked: std::collections::HashMap<u64, u64>,
+    quit_flow: quit_flow::QuitFlow,
     session_writer: session_writer::SessionWriter<Session>,
     cases: cases_ui::CaseState,
     /// The sidebar's theme pick; `theme` holds what it resolves to (ADR 0048).
@@ -369,11 +366,7 @@ impl Workspace {
             tab_menu: None,
             import_busy: Arc::new(AtomicBool::new(false)),
             docx_queue: docx_queue::DocxQueue::default(),
-            quitting: None,
-            quit_active: None,
-            closing_tab: None,
-            finishing: false,
-            quit_checked: std::collections::HashMap::new(),
+            quit_flow: quit_flow::QuitFlow::default(),
             session_writer: session_writer::SessionWriter::new(None),
             cases: Default::default(),
             theme_choice: ThemeChoice::default(),
@@ -646,7 +639,7 @@ impl Workspace {
             .update(cx, |panel, cx| panel.close(window, cx));
         self.quit(window, cx);
         // Quitting can't start now (a prompt is open): don't relaunch later.
-        if self.quitting.is_none() && !self.finishing {
+        if self.quit_flow.may_quit() {
             crate::updater::cancel_restart(cx);
         }
     }
@@ -976,7 +969,7 @@ impl Workspace {
     }
 
     fn activate(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if self.finishing || !self.tabs.contains(id) {
+        if self.quit_flow.finishing() || !self.tabs.contains(id) {
             return;
         }
         if let Some(old) = self.active_view() {
@@ -1115,7 +1108,7 @@ impl Workspace {
             self.open_after_prompt(window, cx);
             return;
         }
-        if self.quitting.is_some() || self.finishing {
+        if !self.quit_flow.may_quit() {
             return;
         }
         let requested = paths.clone();
@@ -1161,7 +1154,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.quitting.is_some() || self.finishing {
+        if !self.quit_flow.may_quit() {
             return;
         }
         // Anchor on a tab, not an index: tabs may close while paths resolve.
@@ -1252,7 +1245,7 @@ impl Workspace {
     }
 
     pub fn refresh_import(&self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.resolving_close() || self.finishing {
+        if self.resolving_close() || self.quit_flow.finishing() {
             return;
         }
         for tab in &self.tabs {
@@ -1271,11 +1264,11 @@ impl Workspace {
             return;
         }
         match event {
-            TabEvent::New if self.quitting.is_none() => {
+            TabEvent::New if !self.quit_flow.quitting() => {
                 self.new_tab(window, cx);
             }
             TabEvent::Open(paths) => self.open_paths(paths.clone(), window, cx),
-            TabEvent::Restored(reply) if self.quitting.is_none() => {
+            TabEvent::Restored(reply) if !self.quit_flow.quitting() => {
                 let reply = reply.clone();
                 let tab = self.new_tab(window, cx);
                 // The reply sits right after the tab it answers.
@@ -1325,19 +1318,14 @@ impl Workspace {
             }
             TabEvent::ToggleTheme => self.cycle_theme(window, cx),
             TabEvent::CloseResolved => {
-                if self.quitting.is_some() {
-                    self.continue_quit(window, cx);
-                } else if self.closing_tab == Some(id) {
-                    self.closing_tab = None;
-                    self.remove(id, window, cx);
+                if let Some(effect) = self.quit_flow.resolved(id) {
+                    self.carry_out_quit(effect, window, cx);
                 }
             }
             TabEvent::CloseCancelled => {
                 crate::updater::cancel_restart(cx);
-                self.quitting = None;
+                self.quit_flow.cancel();
                 self.cancel_case_quit();
-                self.quit_active = None;
-                self.closing_tab = None;
                 let views: Vec<_> = self
                     .tabs
                     .iter()
@@ -1400,7 +1388,7 @@ impl Workspace {
     }
 
     pub fn resolving_close(&self) -> bool {
-        self.quitting.is_some() || self.closing_tab.is_some()
+        self.quit_flow.resolving()
     }
 
     fn pump_docx(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1429,7 +1417,7 @@ impl Workspace {
     }
 
     fn close_tab(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if self.quitting.is_some() || self.closing_tab.is_some() || self.finishing {
+        if !self.quit_flow.may_close() {
             return;
         }
         if !self.tabs.contains(id) || !self.confirm_mapping_close(id, window, cx) {
@@ -1448,9 +1436,8 @@ impl Workspace {
             if view.read(cx).prompting {
                 return;
             }
-            self.closing_tab = Some(id);
-            self.activate(id, window, cx);
-            view.update(cx, |view, cx| view.request(Next::Close, window, cx));
+            let effect = self.quit_flow.close(id);
+            self.carry_out_quit(effect, window, cx);
         } else {
             self.remove(id, window, cx);
         }
@@ -1492,7 +1479,7 @@ impl Workspace {
     }
 
     pub(super) fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.ready || self.quitting.is_some() || self.finishing {
+        if !self.ready || !self.quit_flow.may_quit() {
             return;
         }
         if self
@@ -1502,43 +1489,42 @@ impl Workspace {
         {
             return;
         }
-        self.closing_tab = None;
-        self.quit_active = Some(self.tabs.active());
-        self.quitting = Some(
-            self.tabs
-                .iter()
-                .filter(|tab| tab.view().is_some_and(|view| view.read(cx).dirty(cx)))
-                .map(|tab| tab.id())
-                .collect(),
-        );
-        self.continue_quit(window, cx);
+        let dirty = self
+            .tabs
+            .iter()
+            .filter(|tab| tab.view().is_some_and(|view| view.read(cx).dirty(cx)))
+            .map(|tab| tab.id())
+            .collect();
+        let effect = self.quit_flow.quit(self.tabs.active(), dirty);
+        self.carry_out_quit(effect, window, cx);
     }
 
-    fn continue_quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(queue) = &mut self.quitting else {
-            return;
-        };
-        if let Some(id) = queue.pop_front() {
-            self.activate(id, window, cx);
-            if let Some(view) = self.active_view() {
-                view.update(cx, |view, cx| view.request(Next::Close, window, cx));
+    fn carry_out_quit(&mut self, effect: QuitEffect, window: &mut Window, cx: &mut Context<Self>) {
+        match effect {
+            QuitEffect::Resolve(id) => {
+                self.activate(id, window, cx);
+                if let Some(view) = self.active_view() {
+                    view.update(cx, |view, cx| view.request(Next::Close, window, cx));
+                }
             }
-        } else {
-            if let Some(active) = self.quit_active.take() {
-                self.activate(active, window, cx);
+            QuitEffect::Settle { restore } => {
+                if let Some(active) = restore {
+                    self.activate(active, window, cx);
+                }
+                let histories: Vec<_> = self
+                    .tabs
+                    .iter()
+                    .filter_map(|tab| {
+                        Some((tab.id(), tab.view()?.read(cx).editor.read(cx).history_id()))
+                    })
+                    .collect();
+                self.quit_flow.settle(histories);
+                self.checkpoint(window, cx);
+                if !self.session_writer.writing() {
+                    self.finish_quit(window, cx);
+                }
             }
-            self.quit_checked = self
-                .tabs
-                .iter()
-                .filter_map(|tab| {
-                    Some((tab.id(), tab.view()?.read(cx).editor.read(cx).history_id()))
-                })
-                .collect();
-            self.finishing = true;
-            self.checkpoint(window, cx);
-            if !self.session_writer.writing() {
-                self.finish_quit(window, cx);
-            }
+            QuitEffect::Remove(id) => self.remove(id, window, cx),
         }
     }
 
@@ -1550,22 +1536,21 @@ impl Workspace {
                 let view = tab.view()?.read(cx);
                 (view.dirty(cx)
                     && self
-                        .quit_checked
-                        .get(&tab.id())
-                        .is_none_or(|history| *history != view.editor.read(cx).history_id()))
+                        .quit_flow
+                        .changed_since(tab.id(), view.editor.read(cx).history_id()))
                 .then_some(tab.id())
             })
             .collect();
-        if !changed.is_empty() {
-            self.finishing = false;
-            self.quitting = Some(changed);
-            self.cancel_case_quit();
-            self.continue_quit(window, cx);
-            return;
-        }
-        self.finishing = true;
-        if self.flush_cases(window, cx) {
-            self.close_window(window, cx);
+        match self.quit_flow.end(changed) {
+            QuitEnd::Ask(effect) => {
+                self.cancel_case_quit();
+                self.carry_out_quit(effect, window, cx);
+            }
+            QuitEnd::Close => {
+                if self.flush_cases(window, cx) {
+                    self.close_window(window, cx);
+                }
+            }
         }
     }
 
@@ -1681,9 +1666,7 @@ impl Workspace {
                     Err(error) => {
                         this.session_writer.failed();
                         this.notices.post(format!("Could not save session: {error}"));
-                        let was_quitting = this.finishing;
-                        this.finishing = false;
-                        this.quitting = None;
+                        let was_quitting = this.quit_flow.abandon();
                         this.cancel_case_quit();
                         if was_quitting {
                             let answer = window.prompt(PromptLevel::Warning,
@@ -1702,7 +1685,7 @@ impl Workspace {
                         return;
                     }
                 }
-                if this.finishing && !this.session_writer.writing() {
+                if this.quit_flow.finishing() && !this.session_writer.writing() {
                     this.finish_quit(window, cx);
                 }
             });
@@ -1711,7 +1694,7 @@ impl Workspace {
     }
 
     fn cycle(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.quitting.is_some() || self.tabs.is_empty() {
+        if self.quit_flow.quitting() || self.tabs.is_empty() {
             return;
         }
         if let Some(TabsEffect::Activate(next)) = self.tabs.cycle(delta) {
@@ -1898,13 +1881,13 @@ impl Workspace {
         // A drop from Finder leaves mdoc in the background; what it opens
         // (a dialog among them) needs the keyboard.
         activate_for_drop(window, cx);
-        if self.quitting.is_none() {
+        if !self.quit_flow.quitting() {
             self.open_paths_at(paths.paths().to_vec(), at, window, cx);
         }
     }
 
     fn reorder(&mut self, from: u64, to: u64, cx: &mut Context<Self>) {
-        if self.quitting.is_some() {
+        if self.quit_flow.quitting() {
             return;
         }
         if let Some(TabsEffect::Repaint) = self.tabs.reorder(from, to) {
@@ -2088,7 +2071,7 @@ impl Workspace {
                             })
                         })
                         .on_click(cx.listener(move |this, _, window, cx| {
-                            if this.quitting.is_none() {
+                            if !this.quit_flow.quitting() {
                                 this.activate(id, window, cx);
                             }
                         }))
@@ -2202,7 +2185,7 @@ impl Workspace {
                                 })),
                         )
                         .on_click(cx.listener(move |this, _, window, cx| {
-                            if this.quitting.is_none() {
+                            if !this.quit_flow.quitting() {
                                 this.activate(id, window, cx);
                             }
                         }))

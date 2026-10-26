@@ -122,5 +122,8 @@ Owners extracted so far:
   to `session.json`, one at a time, with only the newest snapshot waiting.
 - `DocxQueue` (`src/workspace/docx_queue.rs`): DOCX conversions waiting
   for the one worker, run one at a time, skipping cancelled or closed tabs.
+- `QuitFlow` (`src/workspace/quit_flow.rs`): closing a tab with unsaved
+  changes and quitting: which tab is asked next, the final save, and when
+  the window may close.
 
 References: [interview](../design/codebase-refactoring.md).
