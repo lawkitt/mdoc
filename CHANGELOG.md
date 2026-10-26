@@ -4,6 +4,8 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+## [0.2.0] - 2026-10-26
+
 Polish from the 2026-10-22 UX review and the code laid out by owner: plain
 error messages, Find and the source preview fit small windows, and screen
 readers and the keyboard reach more of the app.
