@@ -2,6 +2,7 @@
 
 Status: Accepted, 2026-10-16. Amends [ADR 0018](0018-document-local-identity-review.md)
 (surname alone); applies [ADR 0051](0051-roadmap-structure-and-stable-scope.md).
+Numbered 0053 until 2026-10-25, when that number proved shared ([ADR 0069](0069-app-architecture-and-code-ownership.md)).
 
 ## Problem
 

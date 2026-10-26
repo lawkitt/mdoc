@@ -73,8 +73,23 @@ while retaining dependency artifacts. Use `cargo clean` for a full reset;
 the next build will be cold. Cleanup is manual; no automatic size limit applies.
 See [Cargo clean](https://doc.rust-lang.org/cargo/commands/cargo-clean.html).
 
-Keep the current app/reusable-crate layout. Extract ownership only for a concrete
-problem; conversion and OCR algorithm changes belong in the dependency forks.
+[ADR 0069](adr/0069-app-architecture-and-code-ownership.md) sets the layout
+and ownership rules; the refactoring it phases is moving code, and this table
+follows each move. Conversion and OCR algorithm changes belong in the
+dependency forks.
+
+**Where code goes:**
+
+- New state goes into an owner with private fields, never onto `Workspace` or
+  `DocumentView` unless it is view state (focus handles, scroll, hover).
+- A state machine is a plain struct whose transitions are synchronous,
+  GPUI-free and return that owner's effect enum; the view carries effects out.
+- Logic that needs no GPUI goes into a GUI-free crate (`mdoc-store`,
+  `mdoc-import`, `mdoc-detect`, `mdoc-pii`, …), with typed errors.
+- A document reaches the window only through `TabEvent`; the window calls
+  document methods. No glob imports outside test modules (except
+  `gpui::prelude::*`), no `#[path]`; actions and keybindings live with the
+  feature that handles them.
 
 | Location | Responsibility |
 | --- | --- |

@@ -697,7 +697,7 @@ impl Review {
     }
     /// Propose title + surname, the bare surname and its Russian case forms of
     /// each full person name outside existing mentions, as variants of their
-    /// own that Same as… offers to link (ADR 0053). A word that is also a
+    /// own that Same as… offers to link (ADR 0068). A word that is also a
     /// known first name is never proposed.
     pub(super) fn discover_short_variants(&mut self, source: &str) {
         static WORD: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();

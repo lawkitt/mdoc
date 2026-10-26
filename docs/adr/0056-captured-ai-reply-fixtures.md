@@ -20,7 +20,7 @@ must-fix).
   table and fictional-data footer, and a DOCX built by `make-demo-docx.py`:
   employer ООО «Северный двор» (Санкт-Петербург), employee Павлова Марина
   Сергеевна (also "Марина" and "Мариша"), her husband Павлов Дмитрий Андреевич
-  (a shared surname, so inflected short forms per ADR 0053 occur), adviser
+  (a shared surname, so inflected short forms per ADR 0068 occur), adviser
   Шахова Ирина Олеговна of «Елагин и партнёры», an email at the reserved
   `example.com` (not `example.ru`, which is not reserved), an invented phone
   (`+7 900 000-00-00`), a claim before a районный суд. The RU captures use it;

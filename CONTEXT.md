@@ -147,7 +147,7 @@ macOS builds move it to the data protection keychain, which never asks
 **Variant proposal**: a suggested link between a shorter or inflected form
 ("Ms Raman", "Raman's", "Рамана") and a known identity. Always reviewed, never
 linked automatically; a first name alone is not proposed
-([ADR 0053](docs/adr/0053-short-and-inflected-name-variants.md)).
+([ADR 0068](docs/adr/0068-short-and-inflected-name-variants.md)).
 
 **Merge hint**: a dismissible suggestion in the Replacements panel to link two
 identities that very likely name the same subject. Never applied automatically;
@@ -304,6 +304,29 @@ dialogs keep it inside ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
 
 **Document view**: one tab's editor, source preview, search, import/OCR and
 pseudonymization state. Code: `document_view::DocumentView`. Avoid calling this workspace.
+
+## Code structure
+
+**Owner**: the one place that holds a piece of state and changes it, with
+private fields; other code calls its methods ([ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md)).
+A state machine owner is a plain struct (`QuitFlow`, `SessionWriter`,
+`DocxQueue`, `CaseCoordinator`, `DocumentLifecycle`, `ImportFlow` …); a region
+that renders and takes focus on its own may be a GPUI entity. Avoid Manager,
+Controller or Service in owner names.
+
+**Transition**: a named, synchronous, GPUI-free method on an owner that
+changes its state in response to one input.
+
+**Effect**: what a transition asks its GPUI view to do (spawn a task, show a
+prompt, emit an event), as a variant of that owner's own effect enum.
+
+**Case coordination**: the window-level owner (`CaseCoordinator`) of case
+state, the case key and case saves across tabs. Distinct from a tab's
+**case link** (`CaseLink`), its own membership and pending save.
+
+**Document lifecycle**: a document view's loading, generation, availability,
+conversion and dirty state (`DocumentLifecycle`). Distinct from file-level
+**document session** (accepted identity, provenance, external-change checks).
 
 ## Releases
 

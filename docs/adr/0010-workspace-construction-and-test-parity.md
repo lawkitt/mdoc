@@ -1,7 +1,8 @@
 # Construct document workspaces with their production dependencies
 
 Status: Accepted, 2026-10-05. Its "keep reusable crates and features" scope is
-superseded by [ADR 0029](0029-codebase-cleanup-charter.md).
+superseded by [ADR 0029](0029-codebase-cleanup-charter.md). Amended by
+[ADR 0069](0069-app-architecture-and-code-ownership.md): GUI-free crates are allowed.
 
 ## Problem
 
@@ -14,7 +15,7 @@ paths and made tests differ from the shipped app.
 
 - Workspace requires its tab owner and shared dependencies (settings, model
   panel, theme, import admission, OCR status) at construction. No trait
-  hierarchy, service container or new crate.
+  hierarchy or service container.
 - Standalone fallbacks are removed; New/Open/Close, theme and Settings route
   through the tab shell. Document-owned import consent and completion stay.
 - UI tests boot through Tabs and assert on the active Workspace. Fixtures may
