@@ -217,6 +217,12 @@ pub(super) struct MappingUi {
     pub(super) focus: FocusHandle,
     /// The header's expand/collapse-all toggle.
     pub(super) expand_all_focus: FocusHandle,
+    /// The popup's open category or owner menu, which holds focus while
+    /// open (ADR 0062).
+    pub(super) popup_menu_focus: FocusHandle,
+    /// The panel's filter button and its menu, likewise.
+    pub(super) filter_focus: FocusHandle,
+    pub(super) filter_menu_focus: FocusHandle,
 }
 impl MappingUi {
     pub(super) fn invalidate_source_edit(&mut self, cx: &mut Context<DocumentView>) {
@@ -447,6 +453,9 @@ impl MappingUi {
             list_scroll: gpui::UniformListScrollHandle::new(),
             focus: cx.focus_handle(),
             expand_all_focus: cx.focus_handle().tab_stop(true),
+            popup_menu_focus: cx.focus_handle(),
+            filter_focus: cx.focus_handle().tab_stop(true),
+            filter_menu_focus: cx.focus_handle(),
         }
     }
 }

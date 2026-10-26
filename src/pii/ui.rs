@@ -312,6 +312,10 @@ pub(crate) fn bind_keys(cx: &mut App) {
             crate::pii::ui::PopupLastMention,
             Some(STEP),
         ),
+        // In the popup's and panel's menus ↑ ↓ move between rows, like Tab
+        // (ADR 0062).
+        KeyBinding::new("up", crate::ui::PreviousControl, Some("PiiMenu")),
+        KeyBinding::new("down", crate::ui::NextControl, Some("PiiMenu")),
         KeyBinding::new("escape", PiiClosePopup, Some("PseudonymReview")),
         // Esc leaves before/after, also from inside its read-only columns.
         KeyBinding::new("escape", crate::pii::ui::CloseCompare, Some("CompareView")),

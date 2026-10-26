@@ -1512,6 +1512,173 @@ fn escape_closes_a_panel_menu_before_the_popup(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
+fn the_category_and_filter_menus_take_keyboard_focus(cx: &mut gpui::TestAppContext) {
+    // #167: each menu takes focus when it opens, Tab and the arrows stay in
+    // it (the popup does not step mentions), and Esc gives focus back to its
+    // button (ADR 0062).
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова Марина Сергеевна";
+    let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let range = app.pii.review.variant(full).unwrap().mentions[0].clone();
+        let annotation = app.pii.review.annotation_id(full, &range).unwrap();
+        app.activate_annotation(annotation, window, cx);
+    });
+    cx.run_until_parked();
+    let click = |cx: &mut gpui::VisualTestContext, selector: &'static str| {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        let at = cx.debug_bounds(selector).unwrap().center();
+        cx.simulate_click(at, Default::default());
+        cx.run_until_parked();
+    };
+    let key = |cx: &mut gpui::VisualTestContext, keys: &str| {
+        cx.simulate_keystrokes(keys);
+        cx.run_until_parked();
+    };
+    let in_popup_menu = |cx: &mut gpui::VisualTestContext| {
+        app.update_in(cx, |app, window, cx| {
+            app.pii.mapping.pickers.category
+                && app
+                    .pii
+                    .mapping
+                    .popup_menu_focus
+                    .contains_focused(window, cx)
+        })
+    };
+    let mention = app.read_with(cx, |app, _| app.active_annotation());
+
+    click(cx, "direct-category");
+    assert!(in_popup_menu(cx));
+    for keys in ["down", "tab", "tab", "shift-tab", "up"] {
+        key(cx, keys);
+        assert!(in_popup_menu(cx), "{keys}");
+    }
+    assert_eq!(app.read_with(cx, |app, _| app.active_annotation()), mention);
+    key(cx, "escape");
+    app.update_in(cx, |app, window, cx| {
+        assert!(!app.pii.mapping.pickers.category && app.pii.popup.is_some());
+        assert!(
+            app.pii
+                .popup_control_focus("direct-category", cx)
+                .is_focused(window)
+        );
+    });
+    // Enter on a row chooses it and hands focus back to the popup.
+    click(cx, "direct-category");
+    let before = app.read_with(cx, |app, _| {
+        app.pii
+            .review
+            .variant_identity(full)
+            .and_then(|id| app.pii.review.identity(id))
+            .map(|i| i.category)
+    });
+    key(cx, "down");
+    keyboard_click(cx);
+    app.update_in(cx, |app, window, cx| {
+        assert!(!app.pii.mapping.pickers.category);
+        assert_ne!(
+            app.pii
+                .review
+                .variant_identity(full)
+                .and_then(|id| app.pii.review.identity(id))
+                .map(|i| i.category),
+            before
+        );
+        assert!(app.pii.focus.contains_focused(window, cx));
+    });
+
+    // A press elsewhere in the popup closes the menu, so ↓ is the popup's
+    // again rather than reaching it under an open menu.
+    click(cx, "direct-category");
+    assert!(in_popup_menu(cx));
+    click(cx, "direct-alias");
+    app.read_with(cx, |app, _| {
+        assert!(!app.pii.mapping.pickers.category && app.pii.popup.is_some());
+    });
+
+    // A row's context menu opens over the open picker, and Esc closes them
+    // top first (#92).
+    click(cx, "direct-category");
+    assert!(in_popup_menu(cx));
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let row = cx
+        .debug_bounds(Box::leak(format!("identity-{initials}").into_boxed_str()))
+        .unwrap()
+        .center();
+    cx.simulate_mouse_down(row, gpui::MouseButton::Right, Default::default());
+    cx.simulate_mouse_up(row, gpui::MouseButton::Right, Default::default());
+    cx.run_until_parked();
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.panel_menu.is_some() && app.pii.mapping.pickers.category);
+    });
+    key(cx, "escape");
+    app.read_with(cx, |app, _| {
+        assert!(app.pii.mapping.panel_menu.is_none() && app.pii.mapping.pickers.category);
+    });
+    assert!(in_popup_menu(cx));
+    key(cx, "escape");
+    app.update_in(cx, |app, window, cx| {
+        assert!(!app.pii.mapping.pickers.category && app.pii.popup.is_some());
+        assert!(
+            app.pii
+                .popup_control_focus("direct-category", cx)
+                .is_focused(window)
+        );
+    });
+
+    click(cx, "replacement-filter");
+    let filter_row = |cx: &mut gpui::VisualTestContext, label: &str| {
+        let id = gpui::SharedString::from(format!("replacement-filter-{label}"));
+        app.update_in(cx, |app, window, cx| {
+            app.pii.mapping.panel_menu == Some(PanelMenu::Filter)
+                && app.pii.popup_control_focus(id, cx).is_focused(window)
+        })
+    };
+    assert!(filter_row(cx, "All"));
+    key(cx, "down");
+    assert!(filter_row(cx, "To replace"));
+    key(cx, "tab");
+    assert!(filter_row(cx, "Applied"));
+    key(cx, "shift-tab");
+    key(cx, "up");
+    assert!(filter_row(cx, "All"));
+    key(cx, "down");
+    keyboard_click(cx);
+    app.update_in(cx, |app, window, _| {
+        assert!(app.pii.mapping.filter == PanelFilter::Proposed);
+        assert!(app.pii.mapping.panel_menu.is_none());
+        assert!(app.pii.mapping.focus.is_focused(window));
+    });
+    click(cx, "replacement-filter");
+    assert!(filter_row(cx, "To replace"));
+    key(cx, "escape");
+    app.update_in(cx, |app, window, _| {
+        assert!(app.pii.mapping.panel_menu.is_none());
+        assert!(app.pii.mapping.filter_focus.is_focused(window));
+    });
+}
+
+/// A keyboard click: Enter's key down and up on the focused control.
+fn keyboard_click(cx: &mut gpui::VisualTestContext) {
+    cx.update(|window, cx| {
+        use gpui::InputEvent;
+        let keystroke = gpui::Keystroke::parse("enter").unwrap();
+        window.dispatch_event(
+            gpui::KeyDownEvent {
+                keystroke: keystroke.clone(),
+                is_held: false,
+                prefer_character_input: false,
+            }
+            .to_platform_input(),
+            cx,
+        );
+        window.dispatch_event(gpui::KeyUpEvent { keystroke }.to_platform_input(), cx);
+    });
+    cx.run_until_parked();
+}
+
+#[gpui::test]
 fn panel_groups_expand_independently_filter_and_edit_from_rows(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
