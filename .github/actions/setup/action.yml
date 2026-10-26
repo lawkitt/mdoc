@@ -28,6 +28,9 @@ runs:
       uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
       with:
         shared-key: ${{ inputs.cache-key }}
+        # Only main saves (ADR 0070): every other ref restores main's cache, so
+        # a stack of PRs can't evict it from the 10 GB repository limit.
+        save-if: ${{ github.ref == 'refs/heads/main' }}
         # Keep the cache when a later step fails so a rerun isn't a cold build.
         cache-on-failure: true
 

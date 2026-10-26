@@ -1,6 +1,7 @@
 # CI and release pipeline
 
-Status: Accepted, 2026-10-10. Signing amended by [ADR 0039](0039-macos-signing-and-notarization.md).
+Status: Accepted, 2026-10-10. Signing amended by [ADR 0039](0039-macos-signing-and-notarization.md);
+CI jobs and cache amended by [ADR 0070](0070-ci-speed-and-script-hygiene.md).
 
 ## Problem
 
@@ -20,8 +21,9 @@ than the repository. Nothing lets local development run the same checks as CI.
   The README calls those platforms "builds from source, unsupported".
 - **No Nix**: the flake and its workflow are removed.
 - **CI** runs on pushes to `main` and on PRs: fmt, deny, clippy `-D warnings`
-  and `cargo test --workspace` on macos-26 and windows-latest, plus the Ubuntu
-  lint job. Direct pushes to `main` remain; no branch protection yet. The
+  and `cargo test --workspace` on macos-26 and windows-latest (clippy and tests
+  as parallel jobs, [ADR 0070](0070-ci-speed-and-script-hygiene.md)), plus the
+  Ubuntu lint job. Direct pushes to `main` remain; no branch protection yet. The
   `release: v…` commit pushed with a tag is skipped on `main`: the tag's
   Release run tests that commit.
 - **Release** runs on `v*` tags (manual dispatch builds without publishing): CI
