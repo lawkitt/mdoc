@@ -262,6 +262,6 @@ for flag in --yes --check-all --skip-checks-if-ci-green --no-push --help; do
 done
 if bash scripts/release.sh 0.2.0-rc.3 --typo >"$tmp/error" 2>&1; then fail 'unknown flag accepted'; fi
 contains "$tmp/error" 'unknown flag: --typo'
-[ ! -e "$CHECK_LOG" ] && [ ! -e "$PUSH_LOG" ] || fail 'help/invalid flags had side effects'
+[[ ! -e $CHECK_LOG && ! -e $PUSH_LOG ]] || fail 'help/invalid flags had side effects'
 echo 'ok: help and unknown flags'
 echo 'release script tests passed'
