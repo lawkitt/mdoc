@@ -1,8 +1,7 @@
 //! Commands whose availability must not depend on a focused element.
-use super::{Reveal, SLIDE, Workspace};
+use super::Workspace;
 use crate::workspace::{New, Open, OpenCase, Quit, Settings, ToggleSidebar, ToggleTheme};
 use gpui::{App, Context, Window};
-use std::time::Duration;
 
 pub(crate) fn bind(cx: &mut App) {
     app_action::<Quit>(cx, |this, window, cx| this.quit(window, cx));
@@ -27,29 +26,15 @@ pub(crate) fn bind(cx: &mut App) {
     });
     app_action::<ToggleTheme>(cx, |this, window, cx| this.cycle_theme(window, cx));
     app_action::<ToggleSidebar>(cx, |this, window, cx| {
-        this.sidebar_visible = !this.sidebar_visible;
-        this.sidebar_choice = Some(this.sidebar_visible);
-        this.sidebar_generation += 1;
-        // Only the sidebar layer animates; one repaint ends it.
-        this.sidebar_slide = Some(std::time::Instant::now() + SLIDE);
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(SLIDE + Duration::from_millis(16))
-                .await;
-            let _ = this.update(cx, |_, cx| cx.notify());
-        })
-        .detach();
-        this.reveal = Reveal::Hidden;
-        this.reveal_pending = None;
-        this.reveal_hover = (false, false);
-        this.reveal_keyboard = false;
-        this.reveal_return = None;
+        let effect = this.sidebar.toggle(std::time::Instant::now());
+        this.carry_out_sidebar(Some(effect), window, cx);
         // Keep keyboard focus on the toggle that replaces the clicked one.
-        if this.sidebar_visible && this.rail_toggle_focus.is_focused(window) {
+        let visible = this.sidebar.visible();
+        if visible && this.rail_toggle_focus.is_focused(window) {
             window.focus(&this.panel_toggle_focus, cx);
-        } else if !this.sidebar_visible && this.panel_toggle_focus.is_focused(window) {
+        } else if !visible && this.panel_toggle_focus.is_focused(window) {
             window.focus(&this.rail_toggle_focus, cx);
-            this.reveal_escaped = Some(this.rail_toggle_focus.clone());
+            this.sidebar.escape_to(this.rail_toggle_focus.clone());
         }
         cx.notify();
     });

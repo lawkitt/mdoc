@@ -113,5 +113,8 @@ Owners extracted so far:
   run's crash report behind the header bell, and when the bell opens.
 - `FocusRegions` (`src/workspace/focus_regions.rs`): the window's F6
   regions in order and each region's last focused control.
+- `Sidebar` (`src/workspace/sidebar.rs`): expanded or collapsed, the
+  rail's reveal and its timers, OS files dragged over it, and the list's
+  roving Tab stop.
 
 References: [interview](../design/codebase-refactoring.md).
