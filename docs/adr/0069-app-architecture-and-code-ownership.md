@@ -125,5 +125,8 @@ Owners extracted so far:
 - `QuitFlow` (`src/workspace/quit_flow.rs`): closing a tab with unsaved
   changes and quitting: which tab is asked next, the final save, and when
   the window may close.
+- `CaseCoordinator` (`src/workspace/case_coordinator.rs`, ADR 0049 case
+  coordination): the saved cases and their key, one write at a time with
+  each case's latest revision waiting, and the quit's wait for those writes.
 
 References: [interview](../design/codebase-refactoring.md).

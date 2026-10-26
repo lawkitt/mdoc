@@ -1,7 +1,10 @@
 //! Saved cases in the window (ADR 0041, phase 2): create a case from a tab's
 //! mapping, save changes in the background, give reopened members their
 //! mapping back, rename, remove, delete, and the Open Case list.
-use super::{TabDrag, Workspace};
+use super::{
+    TabDrag, Workspace,
+    case_coordinator::{CaseEffect, CaseLoad, Flush, KeyWait},
+};
 use crate::{
     document_view::{DocumentView, Next},
     markdown_search, style, ui,
@@ -14,11 +17,7 @@ use mdoc_store::{
     cases::{Case, CaseError, CaseLink, Store},
     session_store,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 gpui::actions!(cases, [ConfirmCaseName, CancelCaseName]);
 
@@ -77,27 +76,8 @@ impl DroppedFolder {
 
 #[derive(Default)]
 pub(super) struct CaseState {
-    store: Option<Arc<Store>>,
-    /// Every readable case, once loaded.
-    pub(super) cases: Vec<Case>,
-    loaded: bool,
-    loading: bool,
-    /// Latest unsaved state per case; one write runs at a time.
-    pending: HashMap<String, Case>,
-    /// The case being written now.
-    writing: Option<Case>,
-    /// The window waiting for its last case revisions before closing.
-    quit_window: Option<gpui::AnyWindowHandle>,
-    quit_error: Option<String>,
-    quit_prompting: bool,
-    /// Cases whose last write failed; kept pending for the next attempt.
-    failed: HashSet<String>,
-    /// Tabs to close once their new case is safely written.
-    close_after: HashMap<String, u64>,
     pub(super) renaming: Option<(String, Entity<markdown_search::SearchInput>)>,
     pub(super) list_open: bool,
-    /// Tabs whose close already asked about their unsaved mapping.
-    pub(super) asked: HashSet<u64>,
     /// Cases whose member rows are folded under their header.
     pub(super) collapsed: HashSet<String>,
     /// The case whose category switches are shown.
@@ -106,11 +86,6 @@ pub(super) struct CaseState {
     pub(super) explainer: bool,
     /// What runs once the explainer's Continue opened the key.
     then: Option<AfterUnlock>,
-    /// Case members wait for an explicit unlock: the key was not read at
-    /// launch because reading it may ask for the Mac password.
-    pub(super) locked: bool,
-    /// The last macOS Keychain dialog was declined.
-    pub(super) denied: bool,
     /// Stands in for "reading the key may ask" in tests.
     #[cfg(test)]
     pub(super) test_may_ask: bool,
@@ -124,7 +99,7 @@ type AfterUnlock = Box<dyn FnOnce(&mut Workspace, &mut Window, &mut Context<Work
 impl Workspace {
     /// The store, opening the OS-held key on first use.
     pub(super) fn case_store(&mut self) -> Result<Arc<Store>, CaseError> {
-        if let Some(store) = &self.cases.store {
+        if let Some(store) = self.case_coordinator.store() {
             return Ok(store.clone());
         }
         // Tests inject a store; they never reach the real key or app data.
@@ -136,7 +111,7 @@ impl Workspace {
                 .and_then(Store::open)
         };
         let store = Arc::new(open?);
-        self.cases.store = Some(store.clone());
+        self.case_coordinator.open(store.clone());
         Ok(store)
     }
     #[cfg(test)]
@@ -154,8 +129,7 @@ impl Workspace {
     /// and then yield `open`.
     #[cfg(test)]
     pub(super) fn stage_case_key(&mut self, open: Result<Store, CaseError>) {
-        self.cases.store = None;
-        self.cases.loaded = false;
+        self.case_coordinator.reopen(None);
         self.cases.test_may_ask = true;
         self.cases.test_open = Some(open);
     }
@@ -168,14 +142,13 @@ impl Workspace {
         )
     ))]
     pub(super) fn use_case_store(&mut self, store: Store) {
-        self.cases.store = Some(Arc::new(store));
-        self.cases.loaded = false;
+        self.case_coordinator.reopen(Some(Arc::new(store)));
     }
     /// Whether reading the key now would show the macOS password dialog.
     /// The key is read with dialogs off first, so a read that needs no
     /// dialog just opens the store (ADR 0043).
     fn key_may_ask(&mut self) -> bool {
-        if self.cases.store.is_some() {
+        if self.case_coordinator.store().is_some() {
             return false;
         }
         #[cfg(test)]
@@ -190,7 +163,7 @@ impl Workspace {
         };
         match Store::open_quietly(dir) {
             Ok(Some(store)) => {
-                self.cases.store = Some(Arc::new(store));
+                self.case_coordinator.open(Arc::new(store));
                 false
             }
             Ok(None) => true,
@@ -245,7 +218,7 @@ impl Workspace {
         let then = self.cases.then.take();
         match self.case_store() {
             Ok(_) => {
-                self.cases.denied = false;
+                self.case_coordinator.deny(false);
                 self.resume_locked(window, cx);
                 if let Some(then) = then {
                     then(self, window, cx);
@@ -265,8 +238,7 @@ impl Workspace {
     /// Once the store is open, members left locked at launch load and get
     /// their mappings, however the key became readable.
     fn resume_locked(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.cases.store.is_some() && std::mem::take(&mut self.cases.locked) {
-            self.cases.loaded = false;
+        if let Some(CaseLoad::Load) = self.case_coordinator.unlock() {
             self.load_cases(window, cx);
         }
     }
@@ -292,7 +264,7 @@ impl Workspace {
     /// are reported as before.
     fn key_failed(&mut self, error: CaseError) {
         if matches!(error, CaseError::KeyDenied) {
-            self.cases.denied = true;
+            self.case_coordinator.deny(true);
             // The action the user asked for is waiting: show Try again.
             self.carry_out_notices(self.notices.show_locked_cases());
         } else {
@@ -301,50 +273,48 @@ impl Workspace {
     }
     /// The banner for members waiting on the key, or a declined dialog.
     pub(super) fn case_key_banner(&self) -> Option<(&'static str, &'static str)> {
-        if self.cases.store.is_some() {
-            return None;
-        }
-        if self.cases.denied {
-            return Some((
+        Some(match self.case_coordinator.key_wait()? {
+            KeyWait::Denied => (
                 "Saved cases need Keychain access to open their replacements.",
                 "Try again…",
-            ));
-        }
-        // Any opened document may be a member: a manually opened one is only
-        // matched to its case by path, which needs the cases loaded.
-        self.cases.locked.then_some((
-            "Saved cases are locked. Unlock them to restore replacements in their documents.",
-            "Unlock…",
-        ))
+            ),
+            // Any opened document may be a member: a manually opened one is
+            // only matched to its case by path, which needs the cases loaded.
+            KeyWait::Locked => (
+                "Saved cases are locked. Unlock them to restore replacements in their documents.",
+                "Unlock…",
+            ),
+        })
     }
     /// Whether the locked-cases notice should open by itself: the key was
     /// declined after an action, or an open tab belongs to a case whose
     /// mapping is locked. Otherwise it waits behind the bell (ADR 0043).
     pub(super) fn case_key_needed(&self) -> bool {
         self.case_key_banner().is_some()
-            && (self.cases.denied || self.tabs.iter().any(|tab| tab.record().case.is_some()))
+            && (self.case_coordinator.denied()
+                || self.tabs.iter().any(|tab| tab.record().case.is_some()))
     }
     /// Read every case in the background, then attach loaded member tabs.
     /// Nothing touches the key until a cases folder exists, and launch never
     /// shows the Mac password dialog: it reads the key with dialogs off and
     /// otherwise leaves members locked (ADR 0043, ADR 0045).
     pub(super) fn load_cases(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.cases.loaded || self.cases.loading || self.cases.locked {
+        if !self.case_coordinator.may_load() {
             return;
         }
-        let store = match &self.cases.store {
-            Some(store) => store.clone(),
+        let store = match self.case_coordinator.store().cloned() {
+            Some(store) => store,
             None => {
                 let exists = Store::default_dir().is_some_and(|d| d.exists());
                 // A cases folder: the key exists, but launch only reads it
                 // when that needs no dialog.
                 if (exists || cfg!(test)) && self.key_may_ask() {
-                    self.cases.locked = true;
+                    self.case_coordinator.lock();
                     cx.notify();
                     return;
                 }
                 if !exists || cfg!(test) {
-                    self.cases.loaded = true;
+                    self.case_coordinator.mark_loaded();
                     return;
                 }
                 // On macOS the quiet read has opened the store by now, so this
@@ -354,7 +324,7 @@ impl Workspace {
                     Ok(store) => store,
                     Err(error) => {
                         // Stay unloaded so members keep their case link.
-                        self.cases.locked = true;
+                        self.case_coordinator.lock();
                         self.key_failed(error);
                         cx.notify();
                         return;
@@ -362,19 +332,14 @@ impl Workspace {
                 }
             }
         };
-        self.cases.loading = true;
+        let CaseLoad::List = self.case_coordinator.begin_load() else {
+            return;
+        };
         let task = cx.background_executor().spawn(async move { store.list() });
         cx.spawn_in(window, async move |this, cx| {
             let (cases, failed) = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.cases.loading = false;
-                this.cases.loaded = true;
-                // Keep cases created while loading.
-                for case in cases {
-                    if !this.cases.cases.iter().any(|c| c.id == case.id) {
-                        this.cases.cases.push(case);
-                    }
-                }
+                this.case_coordinator.finish_load(cases);
                 if !failed.is_empty() {
                     this.notices.post(format!(
                         "{} saved {} could not be opened. {} damaged or saved with another key.",
@@ -398,7 +363,7 @@ impl Workspace {
     }
     /// After a member document loads, give it its case's mapping.
     pub(super) fn attach_case(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.cases.loaded {
+        if !self.case_coordinator.loaded() {
             self.load_cases(window, cx);
             return;
         }
@@ -420,7 +385,7 @@ impl Workspace {
         if !loaded || has_case {
             return;
         }
-        let case = self.cases.cases.iter().find(|case| {
+        let case = self.case_coordinator.cases().iter().find(|case| {
             wanted.as_deref() == Some(case.id.as_str())
                 || identity.as_ref().is_some_and(|p| case.members.contains(p))
         });
@@ -443,12 +408,11 @@ impl Workspace {
                     .as_deref()
                     .map(session_store::identity);
                 if let Some(path) = path
-                    && let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == case_id)
-                    && !case.members.contains(&path)
+                    && let Some(((), effect)) = self.case_coordinator.edit(&case_id, |case| {
+                        (!case.members.contains(&path)).then(|| case.members.push(path))
+                    })
                 {
-                    case.members.push(path);
-                    let case = case.clone();
-                    self.enqueue_case(case, cx);
+                    self.carry_out_cases(effect.into_iter().collect(), cx);
                 }
             }
             None if wanted.is_some() => {
@@ -528,8 +492,8 @@ impl Workspace {
         );
         let link = CaseLink::of(&case);
         let case_id = case.id.clone();
-        self.cases.cases.insert(0, case.clone());
-        self.enqueue_case(case, cx);
+        let effect = self.case_coordinator.create(case);
+        self.carry_out_cases(effect.into_iter().collect(), cx);
         view.update(cx, |view, cx| {
             view.case = Some(link.clone());
             cx.notify();
@@ -593,8 +557,8 @@ impl Workspace {
         self.resume_locked(window, cx);
         let case = Case::new(folder.name.clone(), &[], None);
         let case_id = case.id.clone();
-        self.cases.cases.insert(0, case.clone());
-        self.enqueue_case(case, cx);
+        let effect = self.case_coordinator.create(case);
+        self.carry_out_cases(effect.into_iter().collect(), cx);
         let mut joined = Vec::new();
         for path in &folder.files {
             let Some(tab) = self.tabs.iter().find(|t| {
@@ -633,35 +597,37 @@ impl Workspace {
                 v.session.document.path.clone(),
             )
         };
-        let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == link.id) else {
+        let Some(((renames, added, exported), effect)) =
+            self.case_coordinator.edit(&link.id, |case| {
+                let before = case.clone();
+                case.merge(&identities);
+                if let Some(path) = path.as_deref().map(session_store::identity)
+                    && !case.members.contains(&path)
+                {
+                    case.members.push(path);
+                }
+                if *case == before {
+                    return None;
+                }
+                // Renamed or recategorized identities, by the alias they had.
+                let renames: Vec<_> = before
+                    .identities
+                    .iter()
+                    .zip(&case.identities)
+                    .filter(|(old, new)| old.alias != new.alias || old.category != new.category)
+                    .filter_map(|(old, _)| {
+                        let index = case.identities.iter().position(|n| n.names(&old.alias))?;
+                        Some((old.alias.clone(), case.exported_one(index)?))
+                    })
+                    .collect();
+                let added = case.identities.len() > before.identities.len();
+                Some((renames, added, case.exported()))
+            })
+        else {
             return;
         };
-        let before = case.clone();
-        case.merge(&identities);
-        if let Some(path) = path.as_deref().map(session_store::identity)
-            && !case.members.contains(&path)
-        {
-            case.members.push(path);
-        }
-        if *case == before {
-            return;
-        }
-        // Renamed or recategorized identities, by the alias they had.
-        let renames: Vec<_> = before
-            .identities
-            .iter()
-            .zip(&case.identities)
-            .filter(|(old, new)| old.alias != new.alias || old.category != new.category)
-            .filter_map(|(old, _)| {
-                let index = case.identities.iter().position(|n| n.names(&old.alias))?;
-                Some((old.alias.clone(), case.exported_one(index)?))
-            })
-            .collect();
-        let added = case.identities.len() > before.identities.len();
-        let exported = case.exported();
         view.update(cx, |view, _| view.case_names = exported.clone());
-        let case = case.clone();
-        self.enqueue_case(case, cx);
+        self.carry_out_cases(effect.into_iter().collect(), cx);
         if renames.is_empty() && !added {
             return;
         }
@@ -688,29 +654,29 @@ impl Workspace {
         let Some(link) = view.read(cx).case.clone() else {
             return;
         };
-        let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == link.id) else {
+        let Some((exported, effect)) = self.case_coordinator.edit(&link.id, |case| {
+            if term.is_empty()
+                || case
+                    .identities
+                    .iter()
+                    .any(|i| i.originals.iter().any(|o| o == term))
+            {
+                return None;
+            }
+            let category = mdoc_detect::guess_category(term, 0..term.len());
+            let alias = case.next_alias(category);
+            case.identities.push(mdoc_store::cases::StoredIdentity {
+                alias,
+                previous: Vec::new(),
+                category: category.token().into(),
+                custom: false,
+                originals: vec![term.to_string()],
+            });
+            Some(case.exported())
+        }) else {
             return;
         };
-        if term.is_empty()
-            || case
-                .identities
-                .iter()
-                .any(|i| i.originals.iter().any(|o| o == term))
-        {
-            return;
-        }
-        let category = mdoc_detect::guess_category(term, 0..term.len());
-        let alias = case.next_alias(category);
-        case.identities.push(mdoc_store::cases::StoredIdentity {
-            alias,
-            previous: Vec::new(),
-            category: category.token().into(),
-            custom: false,
-            originals: vec![term.to_string()],
-        });
-        let exported = case.exported();
-        let case = case.clone();
-        self.enqueue_case(case, cx);
+        self.carry_out_cases(effect.into_iter().collect(), cx);
         for tab in &self.tabs {
             if let Some(view) = tab.view()
                 && view.read(cx).case.as_ref().is_some_and(|l| l.id == link.id)
@@ -741,7 +707,7 @@ impl Workspace {
         if view.read(cx).case.is_some() {
             self.remove_from_case(id, window, cx);
         }
-        let Some(case) = self.cases.cases.iter().find(|c| c.id == case_id) else {
+        let Some(case) = self.case_coordinator.case(case_id) else {
             return;
         };
         let link = CaseLink::of(case);
@@ -846,103 +812,69 @@ impl Workspace {
         if current.as_ref() == Some(&previous) {
             return;
         }
-        if let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == link.id)
-            && case.members.contains(&previous)
-        {
-            case.members.retain(|m| *m != previous);
-            let case = case.clone();
-            self.enqueue_case(case, cx);
+        if let Some(((), effect)) = self.case_coordinator.edit(&link.id, |case| {
+            case.members
+                .contains(&previous)
+                .then(|| case.members.retain(|m| *m != previous))
+        }) {
+            self.carry_out_cases(effect.into_iter().collect(), cx);
         }
-    }
-    fn enqueue_case(&mut self, mut case: Case, cx: &mut Context<Self>) {
-        if let Some(stored) = self.cases.cases.iter_mut().find(|c| c.id == case.id) {
-            stored.revision += 1;
-            case.revision = stored.revision;
-        }
-        self.cases.pending.insert(case.id.clone(), case);
-        self.pump_cases(cx);
     }
     fn pump_cases(&mut self, cx: &mut Context<Self>) {
-        if self.cases.writing.is_some() || self.cases.quit_error.is_some() {
-            return;
-        }
-        let Some(id) = self.cases.pending.keys().next().cloned() else {
-            return;
-        };
-        let case = self.cases.pending.remove(&id).unwrap();
-        let store = match self.case_store() {
-            Ok(store) => store,
-            Err(error) => {
-                self.case_write_failed(case, error.to_string(), cx);
-                self.resume_case_quit(cx);
-                return;
-            }
-        };
-        self.cases.writing = Some(case.clone());
-        let task = cx
-            .background_executor()
-            .spawn(async move { store.save(&case) });
-        cx.spawn(async move |this, cx| {
-            let result = task.await;
-            let _ = this.update(cx, |this, cx| {
-                let Some(case) = this.cases.writing.take() else {
-                    return;
-                };
-                match result {
-                    Ok(()) => {
-                        this.cases.failed.remove(&case.id);
-                        if !this.cases.pending.contains_key(&case.id)
-                            && let Some(tab) = this.cases.close_after.remove(&case.id)
-                        {
-                            this.close_after_save(tab, cx);
+        let effect = self.case_coordinator.pump();
+        self.carry_out_cases(effect.into_iter().collect(), cx);
+    }
+    fn carry_out_cases(
+        &mut self,
+        effects: Vec<CaseEffect<gpui::AnyWindowHandle>>,
+        cx: &mut Context<Self>,
+    ) {
+        for effect in effects {
+            match effect {
+                CaseEffect::Write(case) => {
+                    let store = match self.case_store() {
+                        Ok(store) => store,
+                        Err(error) => {
+                            let effects = self
+                                .case_coordinator
+                                .written(Err(error.to_string()), self.quit_flow.finishing());
+                            self.carry_out_cases(effects.unwrap_or_default(), cx);
+                            continue;
                         }
-                        this.pump_cases(cx);
-                    }
-                    Err(error) => {
-                        this.case_write_failed(case, error.to_string(), cx);
-                    }
+                    };
+                    let task = cx
+                        .background_executor()
+                        .spawn(async move { store.save(&case) });
+                    cx.spawn(async move |this, cx| {
+                        let result = task.await;
+                        let _ = this.update(cx, |this, cx| {
+                            let finishing = this.quit_flow.finishing();
+                            let Some(effects) = this
+                                .case_coordinator
+                                .written(result.map_err(|error| error.to_string()), finishing)
+                            else {
+                                return;
+                            };
+                            this.carry_out_cases(effects, cx);
+                            cx.notify();
+                        });
+                    })
+                    .detach();
                 }
-                this.resume_case_quit(cx);
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-    /// The caller resumes a quit in progress (`resume_case_quit`) once.
-    fn case_write_failed(&mut self, case: Case, error: String, cx: &mut Context<Self>) {
-        if !self.cases.cases.iter().any(|current| current.id == case.id) {
-            // Removed while writing: nothing to retry, but release its close
-            // and keep the rest of the queue moving.
-            self.cases.failed.remove(&case.id);
-            if let Some(tab) = self.cases.close_after.remove(&case.id) {
-                self.cases.asked.remove(&tab);
+                CaseEffect::CloseTab(tab) => self.close_after_save(tab, cx),
+                CaseEffect::WriteFailed(error) => self
+                    .notices
+                    .post(format!("Could not save the case: {error}")),
+                CaseEffect::ResumeQuit(window) => self.resume_case_quit(window, cx),
             }
-            self.pump_cases(cx);
-            return;
-        }
-        self.notices
-            .post(format!("Could not save the case: {error}"));
-        self.cases.failed.insert(case.id.clone());
-        if let Some(tab) = self.cases.close_after.remove(&case.id) {
-            self.cases.asked.remove(&tab);
-        }
-        // A later revision already queued must win over the failed one.
-        self.cases.pending.entry(case.id.clone()).or_insert(case);
-        // Only a quit still in progress owns the failure; an abandoned one
-        // must not block ordinary saves behind an unanswered prompt.
-        if self.quit_flow.finishing() && self.cases.quit_window.is_some() {
-            self.cases.quit_error = Some(error);
         }
     }
-    fn resume_case_quit(&self, cx: &mut Context<Self>) {
-        let Some(window) = self.cases.quit_window else {
-            return;
-        };
+    fn resume_case_quit(&self, window: gpui::AnyWindowHandle, cx: &mut Context<Self>) {
         let entity = cx.entity().downgrade();
         cx.defer(move |cx| {
             let _ = window.update(cx, |_, window, cx| {
                 let _ = entity.update(cx, |this, cx| {
-                    if this.quit_flow.finishing() && this.cases.quit_window.is_some() {
+                    if this.quit_flow.finishing() && this.case_coordinator.quit_window().is_some() {
                         this.finish_quit(window, cx);
                     }
                 });
@@ -963,68 +895,60 @@ impl Workspace {
     }
     #[cfg(test)]
     pub(super) fn set_case_quit_window(&mut self, window: Option<gpui::AnyWindowHandle>) {
-        self.cases.quit_window = window;
+        self.case_coordinator.set_quit_window(window);
     }
     #[cfg(test)]
     pub(super) fn case_quit_pending(&self) -> bool {
-        self.cases.quit_window.is_some() || self.cases.quit_error.is_some()
+        self.case_coordinator.quit_pending()
     }
     pub(super) fn cancel_case_quit(&mut self) {
-        self.cases.quit_window = None;
-        self.cases.quit_error = None;
-        self.cases.quit_prompting = false;
+        self.case_coordinator.cancel_quit();
     }
     /// Final saves use the normal async queue. Re-read members on completion
     /// too: edits made while a write ran must reach their latest revision.
     pub(super) fn flush_cases(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if self.cases.quit_prompting {
-            return false;
-        }
-        self.cases.quit_window = Some(window.window_handle());
-        if let Some(error) = self.cases.quit_error.clone() {
-            self.cases.quit_prompting = true;
-            let answer = window.prompt(
+        match self.case_coordinator.flush(window.window_handle()) {
+            Flush::Prompting => return false,
+            Flush::Collect => {}
+            Flush::Ask(error) => {
+                let answer = window.prompt(
                 PromptLevel::Warning,
                 "Could not save replacement mappings",
                 Some(&format!("{error}\nYour mappings are still available in this window. Retry saving, cancel quitting, or quit without the latest mappings.")),
                 &["Retry", "Cancel", "Quit without saving mappings"], cx,
             );
-            cx.spawn_in(window, async move |this, cx| {
-                let answer = answer.await.ok();
-                let _ = this.update_in(cx, |this, window, cx| {
-                    this.cases.quit_prompting = false;
-                    this.cases.quit_error = None;
-                    match answer {
-                        Some(0) => {
-                            this.pump_cases(cx);
-                            this.finish_quit(window, cx);
+                cx.spawn_in(window, async move |this, cx| {
+                    let answer = answer.await.ok();
+                    let _ = this.update_in(cx, |this, window, cx| {
+                        this.case_coordinator.answered();
+                        match answer {
+                            Some(0) => {
+                                this.pump_cases(cx);
+                                this.finish_quit(window, cx);
+                            }
+                            Some(2) => {
+                                this.case_coordinator.give_up();
+                                this.close_window(window, cx);
+                            }
+                            _ => {
+                                this.cancel_case_quit();
+                                this.quit_flow.abandon();
+                                crate::updater::cancel_restart(cx);
+                                cx.notify();
+                            }
                         }
-                        Some(2) => {
-                            this.cases.quit_window = None;
-                            this.close_window(window, cx);
-                        }
-                        _ => {
-                            this.cancel_case_quit();
-                            this.quit_flow.abandon();
-                            crate::updater::cancel_restart(cx);
-                            cx.notify();
-                        }
-                    }
-                });
-            })
-            .detach();
-            return false;
+                    });
+                })
+                .detach();
+                return false;
+            }
         }
         let ids: Vec<_> = self.tabs.iter().map(|t| t.id()).collect();
         for id in ids {
             self.case_changed(id, cx);
         }
         self.pump_cases(cx);
-        if self.cases.writing.is_some() || !self.cases.pending.is_empty() {
-            return false;
-        }
-        self.cases.quit_window = None;
-        true
+        self.case_coordinator.flushed()
     }
     /// Leave the case: the tab keeps its live mapping, the case keeps its
     /// identities (ADR 0041 #25).
@@ -1053,13 +977,14 @@ impl Workspace {
             .as_deref()
             .map(session_store::identity);
         self.tabs.set_case(id, None);
-        if let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == link.id)
-            && let Some(path) = path
-            && case.members.contains(&path)
+        if let Some(path) = path
+            && let Some(((), effect)) = self.case_coordinator.edit(&link.id, |case| {
+                case.members
+                    .contains(&path)
+                    .then(|| case.members.retain(|m| *m != path))
+            })
         {
-            case.members.retain(|m| *m != path);
-            let case = case.clone();
-            self.enqueue_case(case, cx);
+            self.carry_out_cases(effect.into_iter().collect(), cx);
         }
         self.checkpoint(window, cx);
         cx.notify();
@@ -1071,13 +996,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(name) = self
-            .cases
-            .cases
-            .iter()
-            .find(|c| c.id == case_id)
-            .map(|c| c.name.clone())
-        else {
+        let Some(name) = self.case_coordinator.case(&case_id).map(|c| c.name.clone()) else {
             return;
         };
         let answer = window.prompt(
@@ -1107,8 +1026,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.cases.pending.remove(case_id);
-        self.cases.cases.retain(|c| c.id != case_id);
+        self.case_coordinator.delete(case_id);
         self.tabs.forget_case(case_id);
         for tab in &self.tabs {
             if let Some(view) = tab.view() {
@@ -1147,13 +1065,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(name) = self
-            .cases
-            .cases
-            .iter()
-            .find(|c| c.id == case_id)
-            .map(|c| c.name.clone())
-        else {
+        let Some(name) = self.case_coordinator.case(&case_id).map(|c| c.name.clone()) else {
             return;
         };
         let input = cx.new(|cx| {
@@ -1173,10 +1085,11 @@ impl Workspace {
         };
         let name = input.read(cx).value().trim().to_string();
         if save && !name.is_empty() {
-            if let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == case_id) {
+            if let Some(((), effect)) = self.case_coordinator.edit(&case_id, |case| {
                 case.name = name.clone();
-                let case = case.clone();
-                self.enqueue_case(case, cx);
+                Some(())
+            }) {
+                self.carry_out_cases(effect.into_iter().collect(), cx);
             }
             for view in self.tabs.iter().filter_map(|t| t.view().cloned()) {
                 view.update(cx, |view, cx| {
@@ -1194,7 +1107,7 @@ impl Workspace {
     pub(super) fn open_case(&mut self, case_id: &str, window: &mut Window, cx: &mut Context<Self>) {
         // Focus goes back first; opening a document then takes it.
         self.close_case_list(window, cx);
-        let Some(case) = self.cases.cases.iter().find(|c| c.id == case_id) else {
+        let Some(case) = self.case_coordinator.case(case_id) else {
             return;
         };
         let existing: Vec<_> = case
@@ -1377,18 +1290,18 @@ impl Workspace {
         category: mdoc_pii::Category,
         cx: &mut Context<Self>,
     ) {
-        let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == case_id) else {
+        let Some((skip, effect)) = self.case_coordinator.edit(case_id, |case| {
+            let token = category.token().to_string();
+            if case.skip.contains(&token) {
+                case.skip.retain(|s| *s != token);
+            } else {
+                case.skip.push(token);
+            }
+            Some(case.skipped())
+        }) else {
             return;
         };
-        let token = category.token().to_string();
-        if case.skip.contains(&token) {
-            case.skip.retain(|s| *s != token);
-        } else {
-            case.skip.push(token);
-        }
-        let skip = case.skipped();
-        let case = case.clone();
-        self.enqueue_case(case, cx);
+        self.carry_out_cases(effect.into_iter().collect(), cx);
         for view in self.tabs.iter().filter_map(|t| t.view().cloned()) {
             view.update(cx, |view, cx| {
                 if view.case.as_ref().is_some_and(|l| l.id == case_id) {
@@ -1411,7 +1324,7 @@ impl Workspace {
     /// The categories a case detects, as switches.
     pub(super) fn case_categories(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let case_id = self.cases.categories_open.clone()?;
-        let case = self.cases.cases.iter().find(|c| c.id == case_id)?;
+        let case = self.case_coordinator.case(&case_id)?;
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let skip = case.skipped();
@@ -1555,8 +1468,8 @@ impl Workspace {
             .tab_view(tab)
             .is_some_and(|v| v.read(cx).can_copy_markdown());
         let moves: Vec<AnyElement> = if movable {
-            self.cases
-                .cases
+            self.case_coordinator
+                .cases()
                 .iter()
                 .filter(|c| link.as_ref().is_none_or(|l| l.id != c.id))
                 .take(5)
@@ -1653,8 +1566,8 @@ impl Workspace {
             .filter_map(|t| t.view()?.read(cx).case.as_ref().map(|l| l.id.clone()))
             .collect();
         let rows: Vec<AnyElement> = self
-            .cases
-            .cases
+            .case_coordinator
+            .cases()
             .iter()
             .map(|case| {
                 let link = CaseLink::of(case);
@@ -1839,7 +1752,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.cases.asked.remove(&id);
+        self.case_coordinator.forget_asked(id);
         if self.save_before_case(id, true, window, cx) {
             return;
         }
@@ -1850,8 +1763,8 @@ impl Workspace {
             return;
         }
         if let Some(case) = self.create_case(id, window, cx) {
-            self.cases.asked.insert(id);
-            self.cases.close_after.insert(case, id);
+            self.case_coordinator.note_asked(id);
+            self.case_coordinator.close_after(case, id);
         }
     }
 
@@ -1900,16 +1813,16 @@ impl Workspace {
             !v.pii.review.applied().is_empty()
                 && v.case
                     .as_ref()
-                    .is_none_or(|l| self.cases.failed.contains(&l.id))
+                    .is_none_or(|l| self.case_coordinator.failed(&l.id))
         };
         if !ask
             || !at_risk
-            || self.cases.asked.contains(&id)
+            || self.case_coordinator.asked(id)
             || cfg!(not(any(target_os = "macos", windows, target_os = "linux")))
         {
             return true;
         }
-        self.cases.asked.insert(id);
+        self.case_coordinator.note_asked(id);
         self.activate(id, window, cx);
         let answer = window.prompt(
             PromptLevel::Info,
@@ -1928,7 +1841,7 @@ impl Workspace {
                 Some(0) => this.save_case_and_close(id, window, cx),
                 Some(1) => this.close_tab(id, window, cx),
                 _ => {
-                    this.cases.asked.remove(&id);
+                    this.case_coordinator.forget_asked(id);
                 }
             });
         })
