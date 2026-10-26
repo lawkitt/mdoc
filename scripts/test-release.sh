@@ -10,7 +10,7 @@ REAL_GIT=$(type -P git)
 mkdir -p "$tmp/bin" "$tmp/repo"
 export GH_LOG="$tmp/gh.log" CHECK_LOG="$tmp/check.log" PUSH_LOG="$tmp/push.log"
 export PROMPT_LOG="$tmp/prompt.log"
-cat > "$tmp/bin/gh" <<'EOF'
+cat >"$tmp/bin/gh" <<'EOF'
 #!/usr/bin/env bash
 set -eu
 printf '%s\n' "$@" > "$GH_LOG"
@@ -45,7 +45,7 @@ case "$GH_RESULT" in
   *) exit 92 ;;
 esac
 EOF
-cat > "$tmp/bin/git" <<'EOF'
+cat >"$tmp/bin/git" <<'EOF'
 #!/usr/bin/env bash
 if [ "${1:-}" = push ]; then
   printf '%s\n' "$*" >> "$PUSH_LOG"
@@ -53,11 +53,11 @@ if [ "${1:-}" = push ]; then
 fi
 exec "$REAL_GIT" "$@"
 EOF
-cat > "$tmp/bin/just" <<'EOF'
+cat >"$tmp/bin/just" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$CHECK_LOG"
 EOF
-cat > "$tmp/bin/cargo" <<'EOF'
+cat >"$tmp/bin/cargo" <<'EOF'
 #!/usr/bin/env bash
 # Minimal workspace fixture: model cargo update's local-package version bump.
 [ "$*" = 'update --workspace --quiet' ] || exit 93
@@ -68,7 +68,10 @@ chmod +x "$tmp/bin/gh" "$tmp/bin/git" "$tmp/bin/just" "$tmp/bin/cargo"
 export PATH="$tmp/bin:$PATH"
 export GH_RESULT=green GH_RUN_SHA GH_RELEASE_RESULT=missing GH_RELEASE_TAG=none
 
-fail() { echo "FAIL: $*" >&2; exit 1; }
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
 contains() { grep -F -- "$2" "$1" >/dev/null || fail "missing '$2' in $1"; }
 commit() {
   git add .
@@ -76,12 +79,12 @@ commit() {
   git update-ref refs/remotes/origin/main HEAD
 }
 green() {
-  release_ci_green > "$tmp/result" || fail "expected green: $(cat "$tmp/result")"
+  release_ci_green >"$tmp/result" || fail "expected green: $(cat "$tmp/result")"
   contains "$tmp/result" "$GH_RUN_SHA"
   contains "$tmp/result" 'https://github.com/example/mdoc/actions/runs/42'
 }
 local_checks() {
-  if release_ci_green > "$tmp/result"; then fail 'unexpected green'; fi
+  if release_ci_green >"$tmp/result"; then fail 'unexpected green'; fi
   contains "$tmp/result" "$1"
 }
 
@@ -95,11 +98,11 @@ git config core.autocrlf false
 mkdir -p scripts resources .github/workflows
 cp "$root/scripts/"{release.sh,release-ci.sh,lib.sh,set-version.sh} scripts/
 cp "$root/.github/workflows/ci.yml" .github/workflows/
-printf '[package]\nname = "mdoc"\nversion = "0.1.0"\nedition = "2021"\n' > Cargo.toml
-printf '[[package]]\nname = "mdoc"\nversion = "0.1.0"\n' > Cargo.lock
-printf '<key>CFBundleVersion</key>\n<string>0.1.0</string>\n<key>CFBundleShortVersionString</key>\n<string>0.1.0</string>\n' > resources/Info.plist
-printf '## Unreleased\n\n- Test release.\n' > CHANGELOG.md
-printf 'base\n' > code.rs
+printf '[package]\nname = "mdoc"\nversion = "0.1.0"\nedition = "2021"\n' >Cargo.toml
+printf '[[package]]\nname = "mdoc"\nversion = "0.1.0"\n' >Cargo.lock
+printf '<key>CFBundleVersion</key>\n<string>0.1.0</string>\n<key>CFBundleShortVersionString</key>\n<string>0.1.0</string>\n' >resources/Info.plist
+printf '## Unreleased\n\n- Test release.\n' >CHANGELOG.md
+printf 'base\n' >code.rs
 commit base
 source scripts/release-ci.sh
 GH_RUN_SHA=$(git rev-parse HEAD)
@@ -121,15 +124,14 @@ echo 'ok: failed, pending, absent, unauthenticated and wrong-event runs fall bac
 
 # Exercise every ignored path, including root and nested Markdown.
 mkdir -p docs build nested .github/workflows
-for path in README.md nested/readme.md LICENSE .gitignore .editorconfig \
-  build/appicon.svg scripts/make-icon.sh docs/plain.txt \
-  .github/workflows/actionlint.yml .github/dependabot.yml; do
-  printf 'ignored\n' > "$path"
+for path in README.md nested/readme.md LICENSE .gitignore build/appicon.svg \
+  docs/plain.txt .github/workflows/actionlint.yml .github/dependabot.yml; do
+  printf 'ignored\n' >"$path"
 done
 commit ignored
 green
 echo 'ok: only-ignored later commits reuse the relevant green run'
-printf 'changed\n' >> code.rs
+printf 'changed\n' >>code.rs
 commit relevant
 local_checks 'no CI push run'
 GH_RUN_SHA=$(git rev-parse HEAD)
@@ -139,7 +141,7 @@ GH_RESULT=green
 echo 'ok: later relevant commit never reuses older green CI'
 
 git switch --quiet -c side
-printf 'side\n' >> code.rs
+printf 'side\n' >>code.rs
 git add code.rs
 git commit --quiet -m side
 git switch --quiet main
@@ -151,7 +153,7 @@ green
 echo 'ok: merge changes are CI-relevant'
 
 # ci.yml skips the release commit on main; its tag's Release run counts.
-printf '[package]\nname = "mdoc"\nversion = "0.1.1"\nedition = "2021"\n' > Cargo.toml
+printf '[package]\nname = "mdoc"\nversion = "0.1.1"\nedition = "2021"\n' >Cargo.toml
 commit 'release: v0.1.1'
 GH_RUN_SHA=$(git rev-parse HEAD)
 GH_RESULT=skipped
@@ -166,15 +168,15 @@ GH_RELEASE_RESULT=failed
 local_checks 'conclusion=failure'
 GH_RELEASE_RESULT=green
 release_green() {
-  release_ci_green > "$tmp/result" || fail "expected green: $(cat "$tmp/result")"
+  release_ci_green >"$tmp/result" || fail "expected green: $(cat "$tmp/result")"
   contains "$tmp/result" "$GH_RUN_SHA is release commit v0.1.1"
   contains "$tmp/result" 'https://github.com/example/mdoc/actions/runs/43'
 }
 release_green
-printf 'docs\n' > docs/after-release.md
+printf 'docs\n' >docs/after-release.md
 commit 'docs after release'
 release_green
-printf 'x\n' >> code.rs
+printf 'x\n' >>code.rs
 commit 'fix skipped by CI'
 GH_RUN_SHA=$(git rev-parse HEAD)
 local_checks 'was skipped'
@@ -183,18 +185,21 @@ echo 'ok: a release commit skipped by CI uses its tag'"'"'s Release run'
 
 mkdir "$tmp/empty"
 # shellcheck disable=SC2123 # an empty PATH is the point
-( PATH="$tmp/empty"; if release_ci_green > "$tmp/result"; then fail 'unexpected green without gh'; fi )
+(
+  PATH="$tmp/empty"
+  if release_ci_green >"$tmp/result"; then fail 'unexpected green without gh'; fi
+)
 contains "$tmp/result" 'gh is unavailable'
 echo 'ok: gh unavailable'
 
 # A malformed ignore list cannot silently accept a partial list.
 awk '/^    paths-ignore: &ignored$/ { print; print "      - unquoted"; next } { print }' \
-  "$root/.github/workflows/ci.yml" > .github/workflows/ci.yml
+  "$root/.github/workflows/ci.yml" >.github/workflows/ci.yml
 local_checks 'cannot read push paths-ignore'
 cp "$root/.github/workflows/ci.yml" .github/workflows/ci.yml
 
 # Count prompts even with EOF: simply piping /dev/null could hide a prompt.
-cat > "$tmp/bash-env" <<'EOF'
+cat >"$tmp/bash-env" <<'EOF'
 read() {
   local arg
   for arg in "$@"; do
@@ -215,8 +220,8 @@ release_case() {
   git config tag.gpgsign false
   git config core.autocrlf false
   rm -f "$CHECK_LOG" "$PUSH_LOG" "$PROMPT_LOG"
-  printf '%s' "${ANSWERS:-}" > "$tmp/answers"
-  bash scripts/release.sh 0.2.0-rc.3 "$@" > "$tmp/release-output" < "$tmp/answers"
+  printf '%s' "${ANSWERS:-}" >"$tmp/answers"
+  bash scripts/release.sh 0.2.0-rc.3 "$@" >"$tmp/release-output" <"$tmp/answers"
   [ "$(git log -1 --format=%s)" = 'release: v0.2.0-rc.3' ] || fail 'release commit missing'
   [ "$(git rev-parse 'v0.2.0-rc.3^{commit}')" = "$(git rev-parse HEAD)" ] || fail 'tag missing'
   [ -z "$(git status --porcelain)" ] || fail 'dirty release tree'
@@ -226,7 +231,7 @@ release_case() {
   if [ "${EXPECTED_PROMPTS:-0}" = 0 ]; then
     [ ! -e "$PROMPT_LOG" ] || fail 'unexpected prompt'
   else
-    [ "$(wc -l < "$PROMPT_LOG" | tr -d '[:space:]')" = "$EXPECTED_PROMPTS" ] || fail 'missing interactive prompts'
+    [ "$(wc -l <"$PROMPT_LOG" | tr -d '[:space:]')" = "$EXPECTED_PROMPTS" ] || fail 'missing interactive prompts'
   fi
 }
 release_case --yes --skip-checks-if-ci-green --no-push
@@ -251,11 +256,11 @@ echo 'ok: unflagged release retains both interactive prompts'
 
 cd "$tmp/repo"
 rm -f "$CHECK_LOG" "$PUSH_LOG" "$PROMPT_LOG"
-bash scripts/release.sh --help > "$tmp/help"
+bash scripts/release.sh --help >"$tmp/help"
 for flag in --yes --check-all --skip-checks-if-ci-green --no-push --help; do
   contains "$tmp/help" "$flag"
 done
-if bash scripts/release.sh 0.2.0-rc.3 --typo > "$tmp/error" 2>&1; then fail 'unknown flag accepted'; fi
+if bash scripts/release.sh 0.2.0-rc.3 --typo >"$tmp/error" 2>&1; then fail 'unknown flag accepted'; fi
 contains "$tmp/error" 'unknown flag: --typo'
 [ ! -e "$CHECK_LOG" ] && [ ! -e "$PUSH_LOG" ] || fail 'help/invalid flags had side effects'
 echo 'ok: help and unknown flags'

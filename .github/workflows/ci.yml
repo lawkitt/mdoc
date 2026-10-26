@@ -11,9 +11,7 @@ on:
       - "**/*.md"
       - "LICENSE"
       - ".gitignore"
-      - ".editorconfig"
       - "build/appicon.svg"
-      - "scripts/make-icon.sh"
       - "docs/**"
       - ".github/workflows/actionlint.yml"
       - ".github/dependabot.yml"
@@ -39,7 +37,8 @@ concurrency:
 
 jobs:
   # Linux isn't shipped, but its cfg code must keep compiling. Formatting and
-  # cargo-deny are platform-independent, so they live here too.
+  # cargo-deny are platform-independent, so they live here too, as does the
+# script lint (ADR 0070).
   lint-linux:
     name: lint (ubuntu)
     # The release commit that `just release` pushes with its tag is tested by
@@ -56,7 +55,7 @@ jobs:
 
       - uses: ./.github/actions/setup
         with:
-          tools: just cargo-deny
+          tools: just cargo-deny shfmt
 
       # gpui's compile-time pkg-config deps (xkbcommon, wayland, x11/xcb) and
       # font-kit's fontconfig/freetype.
@@ -71,6 +70,7 @@ jobs:
 
       - run: just fmt-check
       - run: just deny
+      - run: just lint-scripts
       - run: just lint
 
   # The shipped targets: clippy and the full test suite, as parallel jobs so

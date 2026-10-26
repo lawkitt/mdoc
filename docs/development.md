@@ -186,7 +186,8 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | Recipe | What it does |
 | --- | --- |
 | `just setup` / `just doctor` | Install / check the pinned toolchain and tools |
-| `just check` | `fmt-check`, `deny`, `lint`, `test` — the CI gate |
+| `just check` | `fmt-check`, `deny`, `lint-scripts`, `lint`, `test` — the CI gate |
+| `just lint-scripts` | `shellcheck` and `shfmt -d` over `scripts/` |
 | `just smoke-ocr` | Downloads the pinned OCR runtime and recognizes the EN/RU fixtures (release gate) |
 | `just smoke-models [--download]` | Default OCR and pseudonymization models through setup and offline paths |
 | `just check-all` | `check` + both smoke recipes |
@@ -202,6 +203,18 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 
 Heavy, download and machine-dependent tests run only through these recipes, on
 the Apple Silicon Mac and the Windows x64 PC.
+
+### Shell scripts
+
+Recipes stay one command; anything longer is a Bash script in `scripts/`
+([ADR 0070](adr/0070-ci-speed-and-script-hygiene.md)). Each starts with
+`#!/usr/bin/env bash` and a `# Usage:` comment, then sources `scripts/lib.sh`,
+which sets `-euo pipefail`, moves to the repository root and provides `die`,
+`platform`, `confirm` and `load_tools`. Scripts run in Git Bash on Windows;
+a script that says so in its header (`release-ci.sh`) stays Bash 3.2
+compatible for macOS's `/bin/bash`. `just lint-scripts` runs
+`shellcheck` and `shfmt`, whose style (two-space indent, indented `case`
+branches) lives in `.editorconfig`; `shfmt -w scripts` applies it.
 
 <a id="headless-screen-renders-macos"></a>
 

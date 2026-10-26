@@ -35,7 +35,10 @@ open "$app"
 echo "launched $(basename "$app"); watching for a Keychain dialog for 15 s"
 
 dialog() {
-  pgrep -xq SecurityAgent || { echo 0; return; }
+  pgrep -xq SecurityAgent || {
+    echo 0
+    return
+  }
   osascript -e 'tell application "System Events" to count windows of process "SecurityAgent"' \
     2>/dev/null || echo unknown
 }

@@ -1,0 +1,7 @@
+# shfmt reads its style from here (ADR 0070); `just lint-scripts` checks it.
+root = true
+
+[*.sh]
+indent_style = space
+indent_size = 2
+switch_case_indent = true
