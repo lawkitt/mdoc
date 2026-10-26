@@ -5,10 +5,9 @@ use crate::{
         DocumentView, OcrState, Save, SaveAs, TogglePreview, ZoomIn, ZoomReset,
         bind_markdown_search_keys,
     },
-    import_session, markdown_search, ocr,
+    markdown_search,
     pii::ui::{PiiApplyAll, Pseudonymize},
     preview::RetryPreview,
-    recognition,
     search_session::FindMarkdown,
     settings_ui,
     style::{self, Theme},
@@ -20,6 +19,7 @@ use crate::{
 };
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
 use gpui_pdf::PdfView;
+use mdoc_import::{import_session, ocr, recognition};
 use mdoc_store::session_store::ThemeChoice;
 use mdoc_store::{
     session_store::{self, Session, TabRecord},
@@ -492,7 +492,10 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
     });
     draw(cx);
     cx.update(|_, cx| assert!(view.read(cx).ocr_required.is_some()));
-    assert_eq!(crate::ocr::title(settings::OcrModel::V6Small), "English");
+    assert_eq!(
+        mdoc_import::ocr::title(settings::OcrModel::V6Small),
+        "English"
+    );
     for selector in [
         "ocr-language-hint",
         "conversion-card",
@@ -504,7 +507,7 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
     }
     for model in settings::OcrModel::ALL {
         view.update(cx, |view, cx| {
-            view.pick_recognition(crate::ocr::languages(model).to_vec(), cx);
+            view.pick_recognition(mdoc_import::ocr::languages(model).to_vec(), cx);
         });
         draw(cx);
         let model = settings::Model::Ocr(model);
@@ -521,7 +524,7 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
     }
     view.update(cx, |view, cx| {
         view.pick_recognition(
-            crate::ocr::languages(settings::OcrModel::V6Small).to_vec(),
+            mdoc_import::ocr::languages(settings::OcrModel::V6Small).to_vec(),
             cx,
         );
     });
@@ -1655,7 +1658,7 @@ fn queued_docx_jobs_are_serial_and_closed_tabs_cannot_receive_results(cx: &mut T
     drop(first);
     tabs.update_in(cx, |tabs, window, cx| tabs.remove(first_id, window, cx));
     cx.run_until_parked();
-    assert!(crate::docx_preview::removed(&backing));
+    assert!(crate::test_support::removed(&backing));
     cx.update(|_, _| {
         assert!(
             weak.upgrade().is_none(),
@@ -2015,7 +2018,7 @@ fn tabs_host_performance(cx: &mut TestAppContext) {
         tabs.update_in(cx, |tabs, window, cx| tabs.remove(id, window, cx));
         cx.run_until_parked();
         assert!(weak.upgrade().is_none());
-        assert!(crate::docx_preview::removed(&backing));
+        assert!(crate::test_support::removed(&backing));
         eprintln!(
             "TABS_PERF close_cycle={cycle} rss_kib={:?}",
             crate::perf_tests::rss_kib()

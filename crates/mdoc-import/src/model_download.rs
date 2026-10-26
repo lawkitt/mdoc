@@ -3,13 +3,51 @@
 use sha2::{Digest, Sha256};
 use std::{
     fs::File,
-    io::{Read, Write},
+    io::{self, Read, Write},
     path::Path,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
+/// Why a download or its verification failed.
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum DownloadError {
+    #[error("Download cancelled.")]
+    Cancelled,
+    #[error("Artifact size mismatch. Repair setup.")]
+    SizeMismatch,
+    #[error("Artifact integrity check failed. Repair setup.")]
+    Integrity,
+    #[error("network is disabled in headless renders")]
+    NetworkDisabled,
+    #[error("Invalid artifact path")]
+    InvalidPath,
+    #[error("Artifact download exceeded its pinned size.")]
+    Oversize,
+    /// Lookup, connection, timeout and dropped-transfer errors alike.
+    #[error("Couldn't reach {host}. Check your internet connection, then Retry.")]
+    Unreachable { host: String },
+    /// On managed networks this usually means a proxy or firewall.
+    #[error(
+        "Couldn't make a secure connection to {host}. A proxy or firewall on this network may be blocking it."
+    )]
+    Tls { host: String },
+    #[error("{host} answered the download with HTTP {code}. Retry later.")]
+    Status { host: String, code: u16 },
+    #[error("Couldn't download from {host}: {message}")]
+    Other { host: String, message: String },
+    #[error("{0}")]
+    Io(Arc<io::Error>),
+    #[error("{0}")]
+    Persist(Arc<tempfile::PersistError>),
+}
+impl From<io::Error> for DownloadError {
+    fn from(error: io::Error) -> Self {
+        Self::Io(Arc::new(error))
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct State {
     pub phase: String,
@@ -76,9 +114,9 @@ pub struct Progress {
     pub state: Arc<Mutex<State>>,
 }
 impl Progress {
-    pub fn check(&self) -> Result<(), String> {
+    pub fn check(&self) -> Result<(), DownloadError> {
         if self.cancel.load(Ordering::Relaxed) {
-            Err("Download cancelled.".into())
+            Err(DownloadError::Cancelled)
         } else {
             Ok(())
         }
@@ -87,15 +125,15 @@ impl Progress {
         self.state.lock().unwrap().phase = phase.into();
     }
 }
-pub fn verify(path: &Path, bytes: u64, sha: &str) -> Result<(), String> {
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
-    if file.metadata().map_err(|e| e.to_string())?.len() != bytes {
-        return Err("Artifact size mismatch. Repair setup.".into());
+pub fn verify(path: &Path, bytes: u64, sha: &str) -> Result<(), DownloadError> {
+    let mut file = File::open(path)?;
+    if file.metadata()?.len() != bytes {
+        return Err(DownloadError::SizeMismatch);
     }
     let mut digest = Sha256::new();
     let mut buf = [0; 65536];
     loop {
-        let n = file.read(&mut buf).map_err(|e| e.to_string())?;
+        let n = file.read(&mut buf)?;
         if n == 0 {
             break;
         }
@@ -108,7 +146,7 @@ pub fn verify(path: &Path, bytes: u64, sha: &str) -> Result<(), String> {
         .collect::<String>()
         != sha
     {
-        return Err("Artifact integrity check failed. Repair setup.".into());
+        return Err(DownloadError::Integrity);
     }
     Ok(())
 }
@@ -118,17 +156,17 @@ pub fn fetch(
     sha: &str,
     path: &Path,
     progress: &Progress,
-) -> Result<(), String> {
+) -> Result<(), DownloadError> {
     if mdoc_store::app_paths::isolated() {
-        return Err("network is disabled in headless renders".into());
+        return Err(DownloadError::NetworkDisabled);
     }
     progress.check()?;
     progress.phase("Verifying");
     if verify(path, bytes, sha).is_ok() {
         return Ok(());
     }
-    let parent = path.parent().ok_or("Invalid artifact path")?;
-    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let parent = path.parent().ok_or(DownloadError::InvalidPath)?;
+    std::fs::create_dir_all(parent)?;
     {
         let mut state = progress.state.lock().unwrap();
         state.phase = format!(
@@ -146,7 +184,7 @@ pub fn fetch(
     );
     let mut response = agent.get(url).call().map_err(|e| download_error(url, e))?;
     let mut input = response.body_mut().as_reader();
-    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
     let mut buf = [0; 65536];
     let mut total = 0;
     loop {
@@ -158,17 +196,18 @@ pub fn fetch(
         }
         total += n as u64;
         if total > bytes {
-            return Err("Artifact download exceeded its pinned size.".into());
+            return Err(DownloadError::Oversize);
         }
-        file.write_all(&buf[..n]).map_err(|e| e.to_string())?;
+        file.write_all(&buf[..n])?;
         progress.state.lock().unwrap().received = total;
     }
     progress.phase("Verifying");
-    file.flush().map_err(|e| e.to_string())?;
+    file.flush()?;
     verify(file.path(), bytes, sha)?;
     progress.check()?;
-    file.as_file().sync_all().map_err(|e| e.to_string())?;
-    file.persist(path).map_err(|e| e.to_string())?;
+    file.as_file().sync_all()?;
+    file.persist(path)
+        .map_err(|e| DownloadError::Persist(Arc::new(e)))?;
     let mut state = progress.state.lock().unwrap();
     state.done += bytes;
     state.received = 0;
@@ -179,30 +218,25 @@ pub fn fetch(
 /// dropped-transfer errors all mean "no usable network"; the raw resolver text
 /// ("failed to lookup address information …") helps nobody. TLS failures are
 /// kept apart: on managed networks they usually mean a proxy or firewall.
-pub(crate) fn download_error(url: &str, error: ureq::Error) -> String {
+pub fn download_error(url: &str, error: ureq::Error) -> DownloadError {
     use ureq::Error;
+    let host = host(url);
     match error {
         Error::Io(_)
         | Error::Timeout(_)
         | Error::HostNotFound
         | Error::ConnectionFailed
-        | Error::BodyStalled => unreachable(url),
-        Error::Tls(_) | Error::Rustls(_) => format!(
-            "Couldn't make a secure connection to {}. A proxy or firewall on this network may be blocking it.",
-            host(url)
-        ),
-        Error::StatusCode(code) => format!(
-            "{} answered the download with HTTP {code}. Retry later.",
-            host(url)
-        ),
-        other => format!("Couldn't download from {}: {other}", host(url)),
+        | Error::BodyStalled => DownloadError::Unreachable { host },
+        Error::Tls(_) | Error::Rustls(_) => DownloadError::Tls { host },
+        Error::StatusCode(code) => DownloadError::Status { host, code },
+        other => DownloadError::Other {
+            host,
+            message: other.to_string(),
+        },
     }
 }
-pub(crate) fn unreachable(url: &str) -> String {
-    format!(
-        "Couldn't reach {}. Check your internet connection, then Retry.",
-        host(url)
-    )
+pub fn unreachable(url: &str) -> DownloadError {
+    DownloadError::Unreachable { host: host(url) }
 }
 fn host(url: &str) -> String {
     url::Url::parse(url)
@@ -227,13 +261,15 @@ mod tests {
             ureq::Error::ConnectionFailed,
             ureq::Error::BodyStalled,
         ] {
-            assert_eq!(download_error(url, error), offline);
+            assert_eq!(download_error(url, error).to_string(), offline);
         }
         assert!(
-            download_error(url, ureq::Error::Tls("bad certificate")).contains("proxy or firewall")
+            download_error(url, ureq::Error::Tls("bad certificate"))
+                .to_string()
+                .contains("proxy or firewall")
         );
         assert_eq!(
-            download_error(url, ureq::Error::StatusCode(503)),
+            download_error(url, ureq::Error::StatusCode(503)).to_string(),
             "github.com answered the download with HTTP 503. Retry later."
         );
         // A refused connection goes through the real fetch path.
@@ -247,7 +283,7 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(
-            error,
+            error.to_string(),
             "Couldn't reach 127.0.0.1. Check your internet connection, then Retry."
         );
     }

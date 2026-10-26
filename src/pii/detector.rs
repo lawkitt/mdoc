@@ -20,7 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub const SUPPORTED: bool = crate::ocr::SUPPORTED;
+pub const SUPPORTED: bool = mdoc_import::ocr::SUPPORTED;
 /// Company legal forms that mark a manual selection as an organization.
 const LEGAL_FORMS: &[&str] = &[
     "ООО", "ОАО", "ЗАО", "ПАО", "АО", "НКО", "ИП", "LLC", "LLP", "Ltd", "Inc", "Corp", "PLC",
@@ -185,37 +185,44 @@ pub fn root_for(model: mdoc_store::settings::PiiModel) -> Result<PathBuf, String
 }
 /// Bytes setup still needs for `model`, including the shared ONNX Runtime.
 /// Tests always report a full download.
-pub fn pending(model: mdoc_store::settings::PiiModel) -> crate::model_download::Pending {
+pub fn pending(model: mdoc_store::settings::PiiModel) -> mdoc_import::model_download::Pending {
     let root = root_for(model).ok().filter(|_| !cfg!(test));
     let files = manifest_for(model).files;
     let missing: Vec<u64> = files
         .iter()
         .filter(|file| {
             root.as_ref().is_none_or(|root| {
-                crate::model_download::missing(&root.join(&file.path), file.bytes)
+                mdoc_import::model_download::missing(&root.join(&file.path), file.bytes)
             })
         })
         .map(|file| file.bytes)
         .collect();
-    crate::model_download::Pending {
-        full: files.iter().map(|file| file.bytes).sum::<u64>() + crate::ocr::onnx_runtime_size(),
+    mdoc_import::model_download::Pending {
+        full: files.iter().map(|file| file.bytes).sum::<u64>()
+            + mdoc_import::ocr::onnx_runtime_size(),
         model: missing.iter().sum(),
-        runtime: crate::ocr::onnx_runtime_pending(),
+        runtime: mdoc_import::ocr::onnx_runtime_pending(
+            mdoc_import::ocr::root()
+                .ok()
+                .filter(|_| !cfg!(test))
+                .as_deref(),
+        ),
     }
 }
 fn verify_model(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), String> {
     for artifact in manifest_for(model).files {
-        crate::model_download::verify(
+        mdoc_import::model_download::verify(
             &root.join(&artifact.path),
             artifact.bytes,
             &artifact.sha256,
-        )?;
+        )
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 pub fn setup_config(
     config: &mdoc_store::settings::PiiConfig,
-    progress: &crate::model_download::Progress,
+    progress: &mdoc_import::model_download::Progress,
 ) -> Result<(), String> {
     if !SUPPORTED {
         return Err(
@@ -223,20 +230,22 @@ pub fn setup_config(
                 .into(),
         );
     }
-    let _permit = crate::model_work::Permit::acquire_for("installing pseudonymization model")?;
+    let _permit = mdoc_import::model_work::Permit::acquire_for("installing pseudonymization model")
+        .map_err(|e| e.to_string())?;
     let root = root_for(config.model)?;
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     for artifact in manifest_for(config.model).files {
-        crate::model_download::fetch(
+        mdoc_import::model_download::fetch(
             &artifact.url,
             artifact.bytes,
             &artifact.sha256,
             &root.join(&artifact.path),
             progress,
-        )?;
+        )
+        .map_err(|e| e.to_string())?;
     }
-    progress.check()?;
-    crate::ocr::onnx_runtime_with_progress(progress)?;
+    progress.check().map_err(|e| e.to_string())?;
+    mdoc_import::ocr::onnx_runtime_with_progress(progress).map_err(|e| e.to_string())?;
     let licenses = root.join("licenses");
     fs::create_dir_all(&licenses).map_err(|e| e.to_string())?;
     for (name, text) in [
@@ -257,13 +266,15 @@ pub fn setup_config(
     }
     fs::write(licenses.join("MODEL-NOTICE.txt"),format!("Experimental unmodified {}.\nExport: Jugaad s.r.l., e594898629d452e8311796f5f329c7edbeda907c, Apache-2.0.\nBase: Fastino GLiNER2 privacy PII, 1cb4166094dc58fa8d836429f060d6c95f62b495, Apache-2.0.\nEncoder: Microsoft mDeBERTa-v3-base, MIT.\nPinned model card retained in README.md. Shared ONNX notices: mdoc/ocr/v1/licenses/onnx.\n",config.model.name())).map_err(|e|e.to_string())?;
     progress.phase("Checking runtime");
-    progress.check()?;
+    progress.check().map_err(|e| e.to_string())?;
     check_engine(&root, config.model)?;
-    progress.check()
+    progress.check().map_err(|e| e.to_string())
 }
 fn check_engine(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), String> {
     verify_model(root, model)?;
-    crate::ocr::load_onnx_runtime(&crate::ocr::onnx_runtime(false)?)?;
+    mdoc_import::ocr::onnx_runtime(false)
+        .and_then(|runtime| mdoc_import::ocr::load_onnx_runtime(&runtime))
+        .map_err(|e| e.to_string())?;
     let _engine = SpanEngine::new(
         SpanConfig::new(root)
             .with_precision(precision(model))
@@ -285,7 +296,8 @@ pub fn check_reserved(model: mdoc_store::settings::PiiModel) -> Result<bool, Str
     Ok(true)
 }
 pub fn remove_model(model: mdoc_store::settings::PiiModel) -> Result<(), String> {
-    let _permit = crate::model_work::Permit::acquire_for("removing pseudonymization model")?;
+    let _permit = mdoc_import::model_work::Permit::acquire_for("removing pseudonymization model")
+        .map_err(|e| e.to_string())?;
     let root = root_for(model)?;
     if root.exists() {
         fs::remove_dir_all(root).map_err(|e| e.to_string())?;
@@ -313,7 +325,8 @@ pub fn scan_config(
     cancel: &AtomicBool,
     config: &mdoc_store::settings::PiiConfig,
 ) -> Result<Vec<Detection>, String> {
-    let _permit = crate::model_work::Permit::acquire_for("pseudonymization scanning")?;
+    let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")
+        .map_err(|e| e.to_string())?;
     scan_reserved(source, cancel, config)
 }
 pub fn scan_reserved(
@@ -331,7 +344,7 @@ pub fn scan_reserved(
         source,
         cancel,
         &root_for(config.model)?,
-        crate::ocr::onnx_runtime(false)
+        mdoc_import::ocr::onnx_runtime(false)
             .map_err(|_| "Set up the experimental model before scanning.".to_string())?,
         config,
     )
@@ -358,7 +371,7 @@ fn scan_in(
     verify_model(root, config.model)
         .map_err(|_| "Set up the experimental model before scanning.".to_string())?;
     checkpoint(cancel, started)?;
-    crate::ocr::load_onnx_runtime(&runtime)?;
+    mdoc_import::ocr::load_onnx_runtime(&runtime).map_err(|e| e.to_string())?;
     let tasks: Vec<_> = FAMILIES
         .iter()
         .map(|family| {
@@ -478,7 +491,8 @@ mod tests {
         );
     }
     fn verify(path: &Path, artifact: &Artifact) -> Result<(), String> {
-        crate::model_download::verify(path, artifact.bytes, &artifact.sha256)
+        mdoc_import::model_download::verify(path, artifact.bytes, &artifact.sha256)
+            .map_err(|e| e.to_string())
     }
     #[test]
     fn resource_guards_reject_before_opening_any_model_and_deadlines_reject_partial_work() {
@@ -520,7 +534,7 @@ mod tests {
             &source,
             &AtomicBool::new(false),
             &root,
-            crate::ocr::onnx_runtime(false).unwrap(),
+            mdoc_import::ocr::onnx_runtime(false).unwrap(),
             &mdoc_store::settings::PiiConfig::default(),
         )
         .unwrap();
@@ -552,7 +566,7 @@ mod tests {
                 &source,
                 &cancel,
                 &root,
-                crate::ocr::onnx_runtime(false).unwrap(),
+                mdoc_import::ocr::onnx_runtime(false).unwrap(),
                 &mdoc_store::settings::PiiConfig::default(),
             );
             assert_eq!(result.unwrap_err(), "Scan cancelled.");
@@ -566,7 +580,7 @@ mod tests {
                 "Alice",
                 &AtomicBool::new(true),
                 &root,
-                crate::ocr::onnx_runtime(false).unwrap(),
+                mdoc_import::ocr::onnx_runtime(false).unwrap(),
                 &mdoc_store::settings::PiiConfig::default(),
             )
             .is_err()

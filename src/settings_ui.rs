@@ -1,8 +1,7 @@
 use crate::{
     document_view::{Save, SaveAs},
     markdown_search::SearchInput,
-    model_download::{self, Pending, Progress},
-    model_work, models, ocr, pii,
+    models, pii,
     style::{self, Theme},
     ui, updater,
     workspace::{Close, Import, New, NextTab, Open, PreviousTab},
@@ -10,6 +9,10 @@ use crate::{
 use gpui::{
     AnyElement, App, Context, Entity, FocusHandle, Focusable, KeyBinding, MouseButton, PromptLevel,
     Window, actions, div, prelude::*, px,
+};
+use mdoc_import::{
+    model_download::{self, Pending, Progress},
+    model_work, ocr,
 };
 use mdoc_store::settings::{
     Model, OcrConfig, OcrModel, PiiConfig, PiiModel, Preferences, Shared, SpellingConfig,
@@ -364,6 +367,8 @@ impl Panel {
                 .into_iter()
                 .map(|model| {
                     let result = match model {
+                        // Tests never read the real profile's installed models.
+                        Model::Ocr(_) if cfg!(test) => Ok(false),
                         Model::Ocr(m) => ocr::check_reserved(&OcrConfig {
                             model: m,
                             ..Default::default()
@@ -374,7 +379,8 @@ impl Panel {
                                 installed.push(v);
                             }
                             ready
-                        }),
+                        })
+                        .map_err(|e| e.to_string()),
                         Model::Pii(m) => pii::detector::check_reserved(m),
                     };
                     if !ocr::SUPPORTED {
@@ -505,7 +511,7 @@ impl Panel {
             async move {
                 if remove {
                     match model {
-                        Model::Ocr(m) => ocr::remove_model(m),
+                        Model::Ocr(m) => ocr::remove_model(m).map_err(|e| e.to_string()),
                         Model::Pii(m) => pii::detector::remove_model(m),
                     }
                     .map(|_| None)
@@ -518,7 +524,8 @@ impl Panel {
                             },
                             &progress,
                         )
-                        .map(Some),
+                        .map(Some)
+                        .map_err(|e| e.to_string()),
                         Model::Pii(m) => pii::detector::setup_config(
                             &PiiConfig {
                                 model: m,
@@ -886,7 +893,7 @@ impl Panel {
             .when_some(self.progress_of(model), |v, state| v.child(div().px_3().pb_3().child(ui::setup_progress(("model-progress", index), &state, self.cancelling(), theme))))
             .when(self.details == Some(model), |v| {
                 let (revision, path) = match model {
-                    Model::Ocr(m) => (ocr::manifest::for_model(m).revision.to_string(), ocr::root().map(|root| ocr::model_root(&root, m))),
+                    Model::Ocr(m) => (ocr::manifest::for_model(m).revision.to_string(), ocr::root().map(|root| ocr::model_root(&root, m)).map_err(|e| e.to_string())),
                     Model::Pii(m) => (pii::detector::manifest_for(m).revision, pii::detector::root_for(m)),
                 };
                 let evidence = match model { Model::Ocr(m) => m.evidence(), Model::Pii(m) => m.evidence() };

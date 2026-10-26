@@ -3,7 +3,6 @@
 use crate::{
     comparison, comparison_ui,
     document_view::{DocumentView, DocumentViewDependencies, Next, OcrState, known_ocr_state},
-    import, model_work, ocr,
     pii::{self, ui::PiiApplyAll},
     settings_ui,
     style::{self, Theme},
@@ -14,6 +13,7 @@ use gpui::{
     PromptLevel, Subscription, Window, WindowBounds, WindowOptions, actions, div, prelude::*, px,
     size,
 };
+use mdoc_import::{import, model_work, ocr};
 use mdoc_store::session_store::ThemeChoice;
 use mdoc_store::{
     document::{self, Document},
@@ -227,7 +227,7 @@ pub(super) struct Workspace {
     ocr_state: OcrState,
     /// Keyboard input source languages for recognition defaults; tests
     /// inject their own so they never read this computer's keyboards.
-    pub(super) input_languages: fn() -> Vec<crate::recognition::Language>,
+    pub(super) input_languages: fn() -> Vec<mdoc_import::recognition::Language>,
     pending_open: Vec<PathBuf>,
     /// Paths wait in `pending_open` for a confirm dialog to be answered.
     awaiting_prompt: bool,
@@ -321,7 +321,7 @@ impl Workspace {
         let captured = config.clone();
         let check = cx
             .background_executor()
-            .spawn(async move { config.and_then(|c| ocr::check_config(&c)) });
+            .spawn(async move { config.and_then(|c| check_ocr(&c)) });
         cx.spawn(async move |this, cx| {
             let result = check.await;
             let _ = this.update(cx, |this, cx| {
@@ -420,7 +420,7 @@ impl Workspace {
             input_languages: if cfg!(test) {
                 Vec::new
             } else {
-                crate::recognition::input_source_languages
+                mdoc_import::recognition::input_source_languages
             },
             pending_open: Vec::new(),
             awaiting_prompt: false,
@@ -563,7 +563,7 @@ impl Workspace {
         let captured = config.clone();
         let task = cx
             .background_executor()
-            .spawn(async move { ocr::check_config(&config) });
+            .spawn(async move { check_ocr(&config) });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {
@@ -3654,5 +3654,17 @@ impl Workspace {
             window.focus(focus, cx);
         }
         cx.notify();
+    }
+}
+
+/// The background OCR install check. Tests never read the real profile's
+/// installed models.
+fn check_ocr(
+    config: &mdoc_store::settings::OcrConfig,
+) -> Result<Option<mdoc_import::ocr::Installed>, String> {
+    if cfg!(test) {
+        Ok(None)
+    } else {
+        ocr::check_config(config).map_err(|e| e.to_string())
     }
 }

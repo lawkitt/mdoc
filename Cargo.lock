@@ -4473,24 +4473,20 @@ dependencies = [
 name = "mdoc"
 version = "0.2.0-rc.3"
 dependencies = [
- "anydoc",
  "dirs 7.0.0",
- "docxide-pdf",
  "dunce",
  "embed-resource",
- "flate2",
  "gliner2-rs",
  "gpui-pdf",
  "gpui-pre",
  "gpui-pre-platform",
  "gpui-pre-windows",
  "image",
- "libloading 0.9.0",
  "mdoc-editor",
+ "mdoc-import",
  "mdoc-pii",
  "mdoc-spell",
  "mdoc-store",
- "ort",
  "pdf-inspector 1.25.2",
  "presidio-analyzer",
  "regex",
@@ -4499,7 +4495,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "tar",
  "tempfile",
  "thiserror 2.0.21",
  "unicode-segmentation",
@@ -4527,6 +4522,30 @@ dependencies = [
 [[package]]
 name = "mdoc-history"
 version = "0.1.0"
+
+[[package]]
+name = "mdoc-import"
+version = "0.1.0"
+dependencies = [
+ "anydoc",
+ "docxide-pdf",
+ "flate2",
+ "libloading 0.9.0",
+ "mdoc-store",
+ "ort",
+ "pdf-inspector 1.25.2",
+ "roxmltree 0.21.1",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.21",
+ "ureq",
+ "url",
+ "windows-sys 0.61.2",
+ "zip 9.0.5",
+]
 
 [[package]]
 name = "mdoc-pii"

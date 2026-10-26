@@ -1,7 +1,8 @@
 //! What setup and Settings show for each downloadable model. Settings hold
 //! plain model IDs; each engine knows its own manifest, languages and
 //! downloads (ADR 0069), so these dispatch to the OCR and detector modules.
-use crate::{model_download::Pending, ocr, pii::detector};
+use crate::pii::detector;
+use mdoc_import::{model_download::Pending, ocr};
 use mdoc_store::settings::Model;
 
 /// Plain-language row title, e.g. "English & Russian" or "Standard".
@@ -22,7 +23,8 @@ pub fn short_name(model: Model) -> String {
 
 pub fn pending(model: Model) -> Pending {
     match model {
-        Model::Ocr(m) => ocr::pending(m),
+        // Tests never read the real profile's installed models.
+        Model::Ocr(m) => ocr::pending(ocr::root().ok().filter(|_| !cfg!(test)).as_deref(), m),
         Model::Pii(m) => detector::pending(m),
     }
 }
@@ -43,8 +45,8 @@ pub fn attribution_label(model: Model) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ocr::manifest;
-    use crate::recognition::{ENGLISH, Language, RUSSIAN};
+    use mdoc_import::ocr::manifest;
+    use mdoc_import::recognition::{ENGLISH, Language, RUSSIAN};
     use mdoc_store::settings::OcrModel;
 
     #[test]

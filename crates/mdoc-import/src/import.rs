@@ -81,36 +81,71 @@ pub struct Imported {
     pub is_docx: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ImportError {
     /// Pages needing recognition, the languages the PDF's own text layer
     /// suggests (`recognition::text_languages`), and the PDF's page count.
+    #[error("This PDF requires OCR.")]
     NeedsOcr(PathBuf, Vec<u32>, Vec<crate::recognition::Language>, u32),
-    Message(String),
+    #[error("Import cancelled")]
+    Cancelled,
+    #[error("Could not read document: {0}")]
+    Read(std::io::Error),
+    #[error("{0}")]
+    Io(std::io::Error),
+    #[error("This PDF exceeds the 256 MiB import limit.")]
+    PdfTooLarge,
+    #[error("This PDF is password-protected. Import an unlocked copy.")]
+    PdfEncrypted,
+    #[error("This document is password-protected. Import an unlocked copy.")]
+    Encrypted,
+    #[error(
+        "This PDF requires OCR. Run text recognition in another application, then import it again."
+    )]
+    ConverterNeedsOcr,
+    #[error("This format is not supported. Choose a {} file.", supported_formats())]
+    Unsupported,
+    #[error("{DAMAGED}")]
+    Damaged,
+    #[error(
+        "This document exceeds the converter’s resource limits. Try importing a smaller document."
+    )]
+    ResourceLimit,
+    /// Any other native PDF pass failure, in pdf-inspector's words.
+    #[error("Could not import PDF: {0}")]
+    Pdf(String),
+    /// Any other conversion failure, in AnyDoc's words.
+    #[error("Could not import document: {0}")]
+    Convert(String),
+    #[error("No usable native text was extracted. Run OCR or use a clearer source.")]
+    NoNativeText,
     /// The OCR runtime or models failed; the shared OCR state needs repair.
-    OcrFailed(String),
+    #[error("{0}")]
+    OcrFailed(OcrFailure),
     /// OCR ran on this document but recognized nothing usable.
-    OcrNoText(String),
+    #[error(
+        "Local OCR produced no usable text. Retry with a clearer scan or extract native text only."
+    )]
+    OcrNoText,
 }
 
-impl From<String> for ImportError {
-    fn from(message: String) -> Self {
-        Self::Message(message)
-    }
-}
-impl From<&str> for ImportError {
-    fn from(message: &str) -> Self {
-        Self::Message(message.into())
-    }
+/// Why local OCR could not run on a document.
+#[derive(Debug, thiserror::Error)]
+pub enum OcrFailure {
+    #[error(transparent)]
+    Permit(#[from] crate::model_work::PermitError),
+    #[error(transparent)]
+    Setup(#[from] crate::ocr::SetupError),
+    /// The OCR pipeline failed, in its words.
+    #[error("Local OCR failed: {0}")]
+    Engine(String),
 }
 
 #[cfg(test)]
 pub fn convert(path: &Path) -> Result<Imported, String> {
     prepare(path, None, true).map_err(|error| match error {
-        ImportError::Message(message)
-        | ImportError::OcrFailed(message)
-        | ImportError::OcrNoText(message) => message,
         ImportError::NeedsOcr(..) => "This PDF requires OCR.".into(),
+        other => other.to_string(),
     })
 }
 
@@ -130,20 +165,19 @@ pub fn prepare_cancellable(
     cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
     check_cancel(cancel)?;
-    let source = std::path::absolute(path).map_err(|e| format!("Could not read document: {e}"))?;
+    let source = std::path::absolute(path).map_err(ImportError::Read)?;
     // Detect PDFs by their header, preserving renamed-file import support.
     // Only PDF conversion reads the complete buffer here; AnyDoc retains its
     // format detection and resource limits for all other inputs.
-    let mut file =
-        std::fs::File::open(&source).map_err(|e| format!("Could not read document: {e}"))?;
+    let mut file = std::fs::File::open(&source).map_err(ImportError::Read)?;
     let mut header = [0; 1024];
-    let n = std::io::Read::read(&mut file, &mut header).map_err(|e| e.to_string())?;
+    let n = std::io::Read::read(&mut file, &mut header).map_err(ImportError::Io)?;
     if header[..n].windows(5).any(|bytes| bytes == b"%PDF-") {
         return convert_pdf(source, installed, skip_ocr, cancel);
     }
     let converted =
         anydoc::to_markdown_with(&source, anydoc::Options::default().ocr(anydoc::Ocr::Skip))
-            .map_err(message)?;
+            .map_err(convert_error)?;
     check_cancel(cancel)?;
     let warning = (!converted.pages_needing_ocr.is_empty()).then(|| {
         let pages = converted
@@ -172,7 +206,7 @@ pub fn prepare_cancellable(
 
 fn check_cancel(cancel: &AtomicBool) -> Result<(), ImportError> {
     if cancel.load(Ordering::Relaxed) {
-        Err("Import cancelled".into())
+        Err(ImportError::Cancelled)
     } else {
         Ok(())
     }
@@ -186,17 +220,17 @@ fn convert_pdf(
 ) -> Result<Imported, ImportError> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
     const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
-    let file = std::fs::File::open(&source).map_err(|e| format!("Could not read document: {e}"))?;
+    let file = std::fs::File::open(&source).map_err(ImportError::Read)?;
     let mut bytes = Vec::new();
     std::io::Read::read_to_end(
         &mut std::io::Read::take(file, MAX_PDF_BYTES + 1),
         &mut bytes,
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(ImportError::Io)?;
     if bytes.len() as u64 > MAX_PDF_BYTES {
-        return Err("This PDF exceeds the 256 MiB import limit.".into());
+        return Err(ImportError::PdfTooLarge);
     }
-    let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_message)?;
+    let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     check_cancel(cancel)?;
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
     if needs_ocr && installed.is_none() && !skip_ocr {
@@ -209,11 +243,16 @@ fn convert_pdf(
     }
     let (result, used_ocr) = if !skip_ocr && let Some(installed) = installed {
         let _permit = crate::model_work::Permit::acquire_for("text recognition")
-            .map_err(ImportError::OcrFailed)?;
-        crate::ocr::load_onnx_runtime(&installed.onnx).map_err(ImportError::OcrFailed)?;
+            .map_err(|e| ImportError::OcrFailed(e.into()))?;
+        crate::ocr::load_onnx_runtime(&installed.onnx)
+            .map_err(|e| ImportError::OcrFailed(e.into()))?;
         match process_pdf_with_ocr_mem(&bytes, installed.options()) {
             Ok(result) => (result, true),
-            Err(error) => return Err(ImportError::OcrFailed(format!("Local OCR failed: {error}"))),
+            Err(error) => {
+                return Err(ImportError::OcrFailed(OcrFailure::Engine(
+                    error.to_string(),
+                )));
+            }
         }
     } else {
         (native, false)
@@ -238,9 +277,9 @@ fn convert_pdf(
     // Avoid importing punctuation-only failure output as a useful document.
     if !result.markdown.chars().any(char::is_alphanumeric) {
         return Err(if used_ocr {
-            ImportError::OcrNoText("Local OCR produced no usable text. Retry with a clearer scan or extract native text only.".into())
+            ImportError::OcrNoText
         } else {
-            "No usable native text was extracted. Run OCR or use a clearer source.".into()
+            ImportError::NoNativeText
         });
     }
     let warning = if warning_pages.is_empty() {
@@ -278,34 +317,32 @@ fn convert_pdf(
     })
 }
 
-/// A plain sentence for a PDF the native text pass could not read.
-fn pdf_message(error: pdf_inspector::vision::OcrPipelineError) -> String {
+/// Why the native text pass could not read a PDF.
+fn pdf_error(error: pdf_inspector::vision::OcrPipelineError) -> ImportError {
     use pdf_inspector::{PdfError, vision::OcrPipelineError};
     match error {
-        OcrPipelineError::Pdf(PdfError::Encrypted) => {
-            "This PDF is password-protected. Import an unlocked copy.".into()
-        }
-        OcrPipelineError::Pdf(PdfError::Io(error)) => format!("Could not read document: {error}"),
+        OcrPipelineError::Pdf(PdfError::Encrypted) => ImportError::PdfEncrypted,
+        OcrPipelineError::Pdf(PdfError::Io(error)) => ImportError::Read(error),
         OcrPipelineError::Pdf(
             PdfError::Parse(_) | PdfError::InvalidStructure | PdfError::NotAPdf(_),
-        ) => DAMAGED.into(),
-        other => format!("Could not import PDF: {other}"),
+        ) => ImportError::Damaged,
+        other => ImportError::Pdf(other.to_string()),
     }
 }
 
 const DAMAGED: &str =
     "This document could not be converted because its contents are damaged or incomplete.";
 
-fn message(error: anydoc::ConvertError) -> String {
+fn convert_error(error: anydoc::ConvertError) -> ImportError {
     use anydoc::ConvertError;
     match error {
-        ConvertError::NeedsOcr { .. } => "This PDF requires OCR. Run text recognition in another application, then import it again.".into(),
-        ConvertError::Encrypted => "This document is password-protected. Import an unlocked copy.".into(),
-        ConvertError::Unsupported(_) => format!("This format is not supported. Choose a {} file.", supported_formats()),
-        ConvertError::Malformed { .. } | ConvertError::MissingPart { .. } => DAMAGED.into(),
-        ConvertError::ResourceLimit { .. } => "This document exceeds the converter’s resource limits. Try importing a smaller document.".into(),
-        ConvertError::Io(error) => format!("Could not read document: {error}"),
-        other => format!("Could not import document: {other}"),
+        ConvertError::NeedsOcr { .. } => ImportError::ConverterNeedsOcr,
+        ConvertError::Encrypted => ImportError::Encrypted,
+        ConvertError::Unsupported(_) => ImportError::Unsupported,
+        ConvertError::Malformed { .. } | ConvertError::MissingPart { .. } => ImportError::Damaged,
+        ConvertError::ResourceLimit { .. } => ImportError::ResourceLimit,
+        ConvertError::Io(error) => ImportError::Read(error),
+        other => ImportError::Convert(other.to_string()),
     }
 }
 
@@ -355,7 +392,7 @@ mod tests {
 
     fn fixture(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/import")
+            .join("../../tests/fixtures/import")
             .join(name)
     }
 
@@ -438,10 +475,11 @@ mod tests {
         std::fs::write(&path, b"unknown format").unwrap();
         assert!(convert(&path).unwrap_err().contains("not supported"));
         assert!(
-            message(anydoc::ConvertError::ResourceLimit {
+            convert_error(anydoc::ConvertError::ResourceLimit {
                 limit: "test",
                 detail: String::new()
             })
+            .to_string()
             .contains("resource limits")
         );
     }
@@ -471,7 +509,7 @@ mod tests {
         };
         assert_eq!((pages, text), (vec![2, 5], vec![ENGLISH]));
         let raster = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/ocr-qualification/russian.pdf");
+            .join("../../tests/fixtures/ocr-qualification/russian.pdf");
         assert!(matches!(
             prepare(&raster, None, false),
             Err(ImportError::NeedsOcr(_, _, text, _)) if text.is_empty()

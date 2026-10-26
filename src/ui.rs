@@ -460,7 +460,7 @@ pub fn card_actions() -> gpui::Div {
 /// current phase (Verifying, Checking runtime) without a percentage.
 pub fn setup_progress(
     id: impl Into<gpui::ElementId>,
-    state: &crate::model_download::State,
+    state: &mdoc_import::model_download::State,
     cancelling: bool,
     theme: Theme,
 ) -> gpui::Div {
@@ -497,7 +497,7 @@ pub fn setup_progress(
                             .child(format!(
                                 "{} / {} MB",
                                 received / 1_000_000,
-                                crate::model_download::megabytes(total)
+                                mdoc_import::model_download::megabytes(total)
                             )),
                     )
                 }),

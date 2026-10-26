@@ -9,7 +9,7 @@ snapshot so archive inflation is inside the timeout. The read-only preview is
 approximate and independent from Markdown extraction.
 
 Reject encryption, macros, tracked changes, excessive archive entries/expanded
-sizes, and oversized input. Current limits live in src/docx_preview.rs. Keep the
+sizes, and oversized input. Current limits live in crates/mdoc-import/src/docx_preview.rs. Keep the
 previous loaded preview on failure; discard stale results. Release the PDF view
 before disposing its temporary file and cancel queued/running work on tab close.
 Extract comments separately as read-only metadata, allowing empty comment text;

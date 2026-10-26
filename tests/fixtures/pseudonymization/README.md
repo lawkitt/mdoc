@@ -140,7 +140,7 @@ three tool Cargo lockfiles retain registry checksums and transitive versions.
 | GLiNER2 privacy base | Fastino `1cb4166094dc58fa8d836429f060d6c95f62b495` | Apache-2.0 in model card |
 | GLiNER2 ONNX export / tokenizer | jugaadsrl `e594898629d452e8311796f5f329c7edbeda907c` | Apache-2.0 in export card; derivative weights keep upstream obligations |
 | Base encoder/tokenizer lineage | Microsoft mDeBERTa-v3-base / DeBERTa-v3-small; exact card pins in provenance | MIT in Microsoft cards; fine-tuned tokenizer bytes are separately pinned |
-| Native ONNX Runtime | 1.27.0, existing app pin/digest in `src/ocr.rs` | MIT; existing runtime license/third-party notices must travel with redistribution |
+| Native ONNX Runtime | 1.27.0, existing app pin/digest in `crates/mdoc-import/src/ocr.rs` | MIT; existing runtime license/third-party notices must travel with redistribution |
 
 The original multilingual model provides no ONNX artifact; evaluation uses the
 identified third-party quantized export. These are practical source/license

@@ -1,6 +1,7 @@
 //! A virtualized read-only list; comment text never enters the Markdown editor.
-use crate::{docx_preview::DocxComment, style::Theme};
+use crate::style::Theme;
 use gpui::{Context, ListAlignment, ListState, Window, div, list, prelude::*, px};
+use mdoc_import::docx_preview::DocxComment;
 use std::{cell::Cell, rc::Rc, sync::Arc};
 
 pub struct CommentPanel {

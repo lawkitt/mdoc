@@ -3,7 +3,6 @@
 use super::{Tab, Workspace};
 use crate::{
     document_view::{CopyMarkdown, DocumentView, Save, SaveAs, ToggleCompare},
-    import,
     markdown_search::{SearchInput, SearchInputEvent},
     pii::ui::{CopyForAi, Pseudonymize},
     style::{self, Theme},
@@ -16,6 +15,7 @@ use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Entity, Focusable, Hsla, KeyBinding,
     SharedString, Subscription, Window, actions, div, prelude::*, px,
 };
+use mdoc_import::import;
 use mdoc_store::recents::{self, Recents};
 use mdoc_store::session_store::ThemeChoice;
 use std::{path::PathBuf, time::Duration};
@@ -942,7 +942,7 @@ impl Workspace {
                     .px_4()
                     .text_size(px(12.))
                     .text_color(p.header_muted)
-                    .child(crate::import::supported_formats())
+                    .child(mdoc_import::import::supported_formats())
                     .child("Several at once open in their own tabs"),
             )
             .into_any_element()
