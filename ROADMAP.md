@@ -143,6 +143,43 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   and the memory of the active set ("2.3 GB in memory"). *From Anoni 0.86.1.*
 - **[PII]** Default categories to detect for new documents in Settings,
   besides per-case categories. *From Anoni 0.86.1.*
+- **[A11y]** Report keyboard focus to UI Automation in the Replacements list,
+  the palette and the sidebar context menu: arrowing there leaves the window
+  as the focused element, so Narrator can't follow. *From the 2026-10-26
+  Windows run.*
+- **[A11y]** Expose status text (download progress, "Download cancelled",
+  "Checking runtime…", notices, a model's "Installed") to assistive tech as
+  text and announcements. *From the 2026-10-26 Windows run (A5, S5).*
+- **[PII]** In the popup, Enter applies even when a scope segment has focus;
+  today a clicked segment keeps focus and Enter presses it again (ADR 0055).
+  *From the 2026-10-26 Windows run (R2).*
+- **[PII]** Undo inside the popup keeps it open, so the next popup shortcut
+  (⌘⌫, ⌘⇧⌫) doesn't fall through to the editor. *From the 2026-10-26
+  Windows run (R3).*
+- **[PII]** The popup's category menu shows each row's resulting alias, or
+  none, instead of the current alias on every row. *From the 2026-10-26
+  Windows run.*
+- **[Workspace]** Save As for an untitled or converted document starts in
+  Documents or the last-used folder, not mdoc's app-data folder. *From the
+  2026-10-26 Windows run (P2).*
+- **[Cases]** Save mapping as case on an unsaved conversion says why Save As
+  opens ("save the document first so the case can find it"). *From the
+  2026-10-26 Windows run (E4).*
+- **[Workspace]** Transient notices (the clipboard notice) time out or clear
+  on the next action instead of staying on the document. *From the
+  2026-10-26 Windows run (C4).*
+- **[Models]** Settings remembers model install state instead of showing
+  "Checking…" on every open, and says whether the OCR choice made on a
+  document's card also becomes the default. *From the 2026-10-26 Windows
+  run (S5).*
+- **[Windows]** Caption buttons and resize borders respond to synthetic input
+  (UI Automation, Voice Access, test agents); today only a physical mouse
+  works, and a narrow window leaves almost no title bar to drag, so a
+  double-click can land on Pseudonymize. *From the 2026-10-26 Windows run
+  (T6, D5).*
+- **[Release]** Keep the Windows acceptance helpers (UI Automation tree and
+  focus dump, clipboard byte compare, HTML clipboard writer) in `scripts/` so
+  runs don't rewrite them. *From the 2026-10-26 Windows run.*
 
 ## Ongoing tracks
 
