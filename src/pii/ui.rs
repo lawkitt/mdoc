@@ -81,24 +81,24 @@ const KEPT_ID: u64 = 1 << 61;
 pub(crate) struct ReviewUi {
     /// Derived data (panel projection, before/after view, spelling
     /// exclusions) is keyed on `review.revision()`, which its mutators advance.
-    pub review: Review,
+    review: Review,
     /// Candidate highlights are shown; Close review hides them.
-    pub reviewing: bool,
-    pub popup: Option<Popup>,
+    reviewing: bool,
+    popup: Option<Popup>,
     /// The popup was opened by a manual addition, so Enter applies (ADR 0024).
-    pub enter_applies: bool,
+    enter_applies: bool,
     /// The next activation comes from a manual addition (alias cue choice).
     manual_activation: bool,
-    pub focus: FocusHandle,
+    focus: FocusHandle,
     job: Option<ScanJob>,
     /// When the running scan started, for the toolbar stage label.
     scan_started: std::time::Instant,
     discovery_job: Option<discovery::DiscoveryJob>,
     discovery_pending: bool,
-    pub scans: Vec<settings::PiiConfig>,
-    pub error: Option<String>,
+    scans: Vec<settings::PiiConfig>,
+    error: Option<String>,
     /// The panel shows the setup consent card instead of a review (ADR 0026).
-    pub setup: bool,
+    setup: bool,
     /// Download & scan was chosen here: scan this document once setup succeeds.
     setup_subscription: Option<gpui::Subscription>,
     mapping: mapping::MappingUi,
@@ -113,11 +113,11 @@ pub(crate) struct ReviewUi {
     /// screen in the frame being built (ADR 0055).
     /// The mention bar's size at its last layout, for placing it.
     popup_size: Rc<Cell<gpui::Size<Pixels>>>,
-    pub(crate) popup_layer: PopupLayer,
+    popup_layer: PopupLayer,
     chooser_scroll: gpui::UniformListScrollHandle,
     popup_controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
     /// Set in a tab opened by Paste AI Response (ADR 0041).
-    pub(crate) restore: Option<restore::RestoreState>,
+    restore: Option<restore::RestoreState>,
 }
 impl Drop for ReviewUi {
     fn drop(&mut self) {
@@ -163,6 +163,60 @@ impl ReviewUi {
         }
         self.generation = self.generation.wrapping_add(1);
     }
+    /// The document's review: identities, decisions and their history.
+    pub(crate) fn review(&self) -> &Review {
+        &self.review
+    }
+
+    pub(crate) fn review_mut(&mut self) -> &mut Review {
+        &mut self.review
+    }
+
+    /// Candidate highlights are shown; Close review hides them.
+    pub(crate) fn reviewing(&self) -> bool {
+        self.reviewing
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_reviewing(&mut self, reviewing: bool) {
+        self.reviewing = reviewing;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn popup(&self) -> Option<&Popup> {
+        self.popup.as_ref()
+    }
+
+    /// The panel shows the setup consent card instead of a review (ADR 0026).
+    #[cfg(test)]
+    pub(crate) fn setup(&self) -> bool {
+        self.setup
+    }
+
+    /// Show or hide the setup card, for renders of it.
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn show_setup(&mut self, setup: bool) {
+        self.setup = setup;
+    }
+
+    pub(crate) fn scans(&self) -> &[settings::PiiConfig] {
+        &self.scans
+    }
+
+    #[cfg(test)]
+    pub(crate) fn add_scan(&mut self, scan: settings::PiiConfig) {
+        self.scans.push(scan);
+    }
+
+    /// Set in a tab opened by Paste AI Response (ADR 0041).
+    pub(crate) fn restore(&self) -> Option<&restore::RestoreState> {
+        self.restore.as_ref()
+    }
+
     pub(crate) fn scanning(&self) -> bool {
         self.job.is_some()
     }
@@ -499,9 +553,9 @@ impl DocumentView {
             "restored reply"
         } else if self.lifecycle.source_only() {
             "source only"
-        } else if self.preview.pdf.is_some() {
+        } else if self.preview.pdf().is_some() {
             "PDF"
-        } else if self.preview.source.is_some() {
+        } else if self.preview.source().is_some() {
             "converted"
         } else {
             "Markdown"
@@ -511,7 +565,7 @@ impl DocumentView {
             self.editor.read(cx).text().len(),
             (self.zoom * 100.).round() as i32
         )];
-        if self.preview.visible {
+        if self.preview.visible() {
             parts.push("source shown".into());
         }
         if self.pii.mapping.open {
@@ -535,7 +589,7 @@ impl DocumentView {
         if self.compare.is_some() {
             parts.push("before/after view".into());
         }
-        if self.search.open {
+        if self.search.open() {
             parts.push("find open".into());
         }
         parts.join(", ")

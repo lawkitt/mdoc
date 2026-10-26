@@ -21,10 +21,10 @@ const EDIT_DELAY: Duration = Duration::from_millis(300);
 pub(crate) struct SpellState {
     /// The per-document switch. Session-only: never saved with the document
     /// or in app state.
-    pub(crate) off_here: bool,
+    off_here: bool,
     /// The dictionaries are still parsing; nothing is flagged yet.
-    pub(crate) loading: bool,
-    pub(crate) menu_open: bool,
+    loading: bool,
+    menu_open: bool,
     /// Words ignored in this document ("Ignore in this document"). Session-only.
     ignored: HashSet<String>,
     ignored_generation: u64,
@@ -40,6 +40,13 @@ pub(crate) struct SpellState {
     worker: Option<gpui::Task<()>>,
     #[cfg(test)]
     snapshots: usize,
+}
+
+impl SpellState {
+    /// Spellcheck is off in this document only.
+    pub(crate) fn off_here(&self) -> bool {
+        self.off_here
+    }
 }
 
 /// Spelling choices from Settings, or `None` when spellcheck is off there.
@@ -138,7 +145,7 @@ impl DocumentView {
             self.editor.read(cx).revision(),
             self.spelling_options(),
             self.accepted_generation(),
-            self.pii.review.revision(),
+            self.pii.review().revision(),
         )
     }
 
@@ -203,7 +210,7 @@ impl DocumentView {
         self.spelling.ready = false;
         self.spelling.running = true;
         let text = self.editor.read(cx).text().to_owned();
-        let review = &self.pii.review;
+        let review = &self.pii.review();
         let entities: Vec<Range<usize>> = review
             .candidates()
             .iter()
@@ -423,7 +430,7 @@ mod scheduling_tests {
         });
         app.update(cx, |app, cx| {
             app.pii
-                .review
+                .review_mut()
                 .add_manual("partys", 0..6, mdoc_pii::Category::Person)
                 .unwrap();
             app.review_changed(cx);

@@ -144,14 +144,14 @@ impl DocumentView {
         if self.lifecycle.loading() || self.lifecycle.unavailable() || !self.can_copy_markdown() {
             return Primary::None;
         }
-        if self.pii.restore.is_some() {
+        if self.pii.restore().is_some() {
             return Primary::Copy;
         }
         if self.pii.scanning() {
             return Primary::Scanning;
         }
-        let remaining = self.pii.review.remaining();
-        if self.pii.reviewing && remaining > 0 {
+        let remaining = self.pii.review().remaining();
+        if self.pii.reviewing() && remaining > 0 {
             return Primary::Apply(remaining);
         }
         // Inspector (ADR 0048 variant C): sharing lives in the Share tab.
@@ -189,8 +189,8 @@ impl DocumentView {
                     .on_click(cx.listener(|this, _, window, cx| {
                         // Pseudonymize scans once and opens the panel; it never
                         // closes it (ADR 0048 decision 22).
-                        let review = &this.pii.review;
-                        let fresh = !this.pii.reviewing
+                        let review = &this.pii.review();
+                        let fresh = !this.pii.reviewing()
                             && review.variants().is_empty()
                             && review.applied().is_empty();
                         if fresh {
@@ -246,13 +246,13 @@ impl DocumentView {
     ) -> gpui::AnyElement {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let has_preview = self.preview.pdf.is_some() || self.preview.source.is_some();
+        let has_preview = self.preview.pdf().is_some() || self.preview.source().is_some();
         let reviewable = !self.lifecycle.source_only()
-            && self.pii.restore.is_none()
-            && (self.pii.reviewing
+            && self.pii.restore().is_none()
+            && (self.pii.reviewing()
                 || self.replacements_open()
-                || !self.pii.review.variants().is_empty()
-                || !self.pii.review.applied().is_empty());
+                || !self.pii.review().variants().is_empty()
+                || !self.pii.review().applied().is_empty());
         let name = self.display_name();
         let dirty = self.lifecycle.dirty();
         let crumb = div()
@@ -286,7 +286,7 @@ impl DocumentView {
                         .text_color(p.header_muted),
                 )
             })
-            .when(self.pii.restore.is_some(), |v| {
+            .when(self.pii.restore().is_some(), |v| {
                 v.child(
                     gpui::svg()
                         .data(ui::Icon::Reply.data())
@@ -342,14 +342,14 @@ impl DocumentView {
                 v.child(
                     ui::header_icon(
                         "header-source",
-                        if self.preview.visible {
+                        if self.preview.visible() {
                             "Hide the original file"
                         } else {
                             "Show the original file"
                         },
                         ui::Icon::Source,
                         theme,
-                        self.preview.visible,
+                        self.preview.visible(),
                     )
                     .when(cfg!(test), |v| v.debug_selector(|| "header-source".into()))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(TogglePreview), cx)),
@@ -431,9 +431,9 @@ impl DocumentView {
             Some("Available once the document has loaded.")
         } else if self.has_applied_aliases() {
             None
-        } else if self.pii.review.variants().is_empty() {
+        } else if self.pii.review().variants().is_empty() {
             Some("Pseudonymize the document first.")
-        } else if self.pii.review.remaining() > 0 {
+        } else if self.pii.review().remaining() > 0 {
             Some("Apply replacements first.")
         } else {
             // Every proposal was kept as the original.
@@ -454,7 +454,7 @@ impl DocumentView {
         let has_text = copy && !self.editor.read(cx).text().is_empty();
         let alias_reason = self.alias_actions_reason();
         let aliases = copy && alias_reason.is_none();
-        let spelling_on = !self.spelling_control_off() && !self.spelling.off_here;
+        let spelling_on = !self.spelling_control_off() && !self.spelling.off_here();
         let misspelled = self.editor.read(cx).diagnostics().len();
         // A menu choice hands focus back to the document first, so the action
         // and the keys after it land there.
@@ -683,7 +683,7 @@ impl DocumentView {
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.original_selected = original;
                             if original {
-                                if let Some(pdf) = &this.preview.pdf {
+                                if let Some(pdf) = this.preview.pdf() {
                                     window.focus(&pdf.read(cx).focus_handle(cx), cx);
                                 }
                             } else if !this.lifecycle.source_only() {

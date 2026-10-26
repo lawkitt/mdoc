@@ -278,7 +278,7 @@ fn import_completion_protects_edits_and_cancel_preserves_pdf(cx: &mut TestAppCon
     cx.update(|_, cx| {
         let app = app.read(cx);
         assert_eq!(app.editor.read(cx).text(), "edits made during conversion");
-        assert!(app.preview.pdf.is_none());
+        assert!(app.preview.pdf().is_none());
         assert!(app.session.source.is_none());
         assert!(!app.import.busy());
     });

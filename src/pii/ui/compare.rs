@@ -188,7 +188,7 @@ impl DocumentView {
         let (original, left) = pane(&left_scroll, window, cx);
         let (current, right) = pane(&right_scroll, window, cx);
         self.pii.dismiss_popup();
-        let hid_preview = std::mem::take(&mut self.preview.visible);
+        let hid_preview = self.preview.hide();
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         self.compare = Some(CompareState {
@@ -408,7 +408,7 @@ impl DocumentView {
         if let Some(state) = self.compare.take()
             && state.hid_preview
         {
-            self.preview.visible = true;
+            self.preview.show();
         }
         // A popup opened by panel decisions meanwhile belongs to no visible text.
         self.pii.dismiss_popup();

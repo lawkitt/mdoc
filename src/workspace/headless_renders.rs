@@ -124,7 +124,7 @@ impl Driver {
                     "case_rename": w.cases.renaming.is_some(),
                     "case_categories": w.cases.categories_open.is_some(),
                     "keychain_explainer": w.cases.explainer,
-                    "find_replace": w.active_view().is_some_and(|v| v.read(cx).search.open),
+                    "find_replace": w.active_view().is_some_and(|v| v.read(cx).search.open()),
                 })
             })?
         } else {
@@ -241,7 +241,7 @@ fn scenarios(
             let text = std::fs::read_to_string(path).expect("copied fixture");
             v.editor.update(cx, |e, cx| e.set_text(text.clone(), cx));
             v.pii
-                .review
+                .review_mut()
                 .ingest(&text, detections.to_vec())
                 .expect("fixture review");
             v.review_changed(cx);
@@ -251,10 +251,10 @@ fn scenarios(
     records.push(d.capture(out, "review")?);
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
-            let variant = &v.pii.review.variants()[0];
+            let variant = &v.pii.review().variants()[0];
             let id = v
                 .pii
-                .review
+                .review()
                 .annotation_id(variant.id, &variant.mentions[0])
                 .unwrap();
             v.activate_annotation(id, window, cx);
@@ -266,7 +266,7 @@ fn scenarios(
     })?;
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
-            v.pii.setup = true;
+            v.pii.show_setup(true);
             window.focus(&v.replacements_focus(), cx);
             cx.notify();
         })
@@ -294,7 +294,7 @@ fn scenarios(
                 .expect("sandbox preferences")
                 .pseudonymization
                 .model = settings::PiiModel::Fp16;
-            v.pii.setup = false;
+            v.pii.show_setup(false);
             cx.notify();
         })
     })?;
@@ -444,12 +444,8 @@ fn scenarios(
         w.active_view().unwrap().update(cx, |v, cx| {
             let source = PathBuf::from("Damaged agreement.docx");
             v.lifecycle.show_source();
-            v.preview.source = Some(source.clone());
-            v.preview.attachment = Some(source);
-            v.preview.visible = true;
-            v.preview.retryable = false;
-            v.preview.failed = true;
-            v.preview.message = Some(
+            v.preview.show_failure(
+                source,
                 crate::preview::docx_message(&mdoc_import::docx_preview::PreviewError::Package(
                     "invalid ZIP".into(),
                 ))

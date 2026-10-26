@@ -111,16 +111,16 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
     let app = open_document(&app, source_path.clone(), cx);
     app.update_in(cx, |app, window, cx| {
         app.session.warning = Some("Review extraction".into());
-        app.pii.reviewing = true;
-        app.pii.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9, recognizer: mdoc_pii::Recognizer::Model }]).unwrap();
+        app.pii.set_reviewing(true);
+        app.pii.review_mut().ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9, recognizer: mdoc_pii::Recognizer::Model }]).unwrap();
         app.review_changed(cx);
-        let id = app.pii.review.variants()[0].id;
-        let range=app.pii.review.variant(id).unwrap().mentions[0].clone();
-        let annotation=app.pii.review.annotation_id(id,&range).unwrap();
+        let id = app.pii.review().variants()[0].id;
+        let range=app.pii.review().variant(id).unwrap().mentions[0].clone();
+        let annotation=app.pii.review().annotation_id(id,&range).unwrap();
         app.activate_annotation(annotation,window,cx);
         app.apply_all_pii(&PiiApplyAll, window, cx);
         assert_eq!(app.editor.read(cx).text(), "# Contract\n\nPERSON_1 represents **PERSON_1**. [contact](https://x.invalid/Alice_Morgan)\n");
-        assert_eq!(app.pii.review.remaining(), 0);
+        assert_eq!(app.pii.review().remaining(), 0);
         assert_eq!(app.session.document.path.as_ref(), Some(&source_path));
         assert!(app.session.warning.is_some());
         assert!(app.dirty(cx));
@@ -132,19 +132,19 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(app.pii.review.remaining(), 2);
+        assert_eq!(app.pii.review().remaining(), 2);
         assert!(!app.dirty(cx));
-        let id = app.pii.review.variants()[0].id;
-        let range = app.pii.review.variant(id).unwrap().mentions[0].clone();
+        let id = app.pii.review().variants()[0].id;
+        let range = app.pii.review().variant(id).unwrap().mentions[0].clone();
         let annotation = app
             .pii
-            .review
+            .review()
             .annotation_id(id, &range)
             .unwrap();
         app.activate_annotation(annotation, window, cx);
-        app.pii.review.keep(id, Some(range));
+        app.pii.review_mut().keep(id, Some(range));
         app.apply_all_pii(&PiiApplyAll, window, cx);
-        assert_eq!(app.pii.review.remaining(), 0);
+        assert_eq!(app.pii.review().remaining(), 0);
         assert_eq!(app.editor.read(cx).text(), "# Contract\n\nAlice Morgan represents **PERSON_1**. [contact](https://x.invalid/Alice_Morgan)\n");
         let text = app.editor.read(cx).text().to_owned();
         app.session
@@ -162,13 +162,13 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
             cx,
         );
         assert_ne!(app.session.generation, generation);
-        assert!(app.pii.review.variants().is_empty());
-        assert!(app.pii.popup.is_none());
+        assert!(app.pii.review().variants().is_empty());
+        assert!(app.pii.popup().is_none());
     });
     let app = close_document(&app, cx);
     cx.update(|_, cx| {
-        assert!(app.read(cx).pii.review.variants().is_empty());
-        assert!(app.read(cx).pii.popup.is_none());
+        assert!(app.read(cx).pii.review().variants().is_empty());
+        assert!(app.read(cx).pii.popup().is_none());
     });
 }
 
@@ -179,9 +179,9 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
     app.update_in(cx, |app, window, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice Alice", cx));
-        app.pii.reviewing = true;
+        app.pii.set_reviewing(true);
         app.pii
-            .review
+            .review_mut()
             .ingest(
                 "Alice Alice",
                 vec![Detection {
@@ -192,19 +192,19 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
                 }],
             )
             .unwrap();
-        let id = app.pii.review.variants()[0].id;
-        let range = app.pii.review.variant(id).unwrap().mentions[0].clone();
-        let annotation = app.pii.review.annotation_id(id, &range).unwrap();
+        let id = app.pii.review().variants()[0].id;
+        let range = app.pii.review().variant(id).unwrap().mentions[0].clone();
+        let annotation = app.pii.review().annotation_id(id, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
-        app.pii.review.keep(id, None);
+        app.pii.review_mut().keep(id, None);
         assert_eq!(app.editor.read(cx).text(), "Alice Alice");
-        assert_eq!(app.pii.review.remaining(), 0);
+        assert_eq!(app.pii.review().remaining(), 0);
         app.pii
-            .review
+            .review_mut()
             .add_manual("Alice Alice", 0..5, Category::Person)
             .unwrap();
-        let range = app.pii.review.variant(id).unwrap().mentions[0].clone();
-        let annotation = app.pii.review.annotation_id(id, &range).unwrap();
+        let range = app.pii.review().variant(id).unwrap().mentions[0].clone();
+        let annotation = app.pii.review().annotation_id(id, &range).unwrap();
         app.activate_annotation(annotation, window, cx);
         app.editor.update(cx, |editor, cx| {
             let revision = editor.revision();
@@ -213,9 +213,9 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
-        assert!(app.pii.popup.is_none());
+        assert!(app.pii.popup().is_none());
         assert_eq!(app.editor.read(cx).text(), "Betty Alice");
-        assert_eq!(app.pii.review.remaining(), 1);
+        assert_eq!(app.pii.review().remaining(), 1);
     });
 }
 
@@ -350,13 +350,13 @@ fn search_wraps_and_preserves_document_and_selection(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.simulate_input("alpha");
     cx.run_until_parked();
-    assert_eq!(cx.update(|_, cx| app.read(cx).search.active), Some(1));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.active()), Some(1));
     cx.dispatch_action(FindNextMarkdown);
     cx.run_until_parked();
-    assert_eq!(cx.update(|_, cx| app.read(cx).search.active), Some(0));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.active()), Some(0));
     cx.dispatch_action(FindPreviousMarkdown);
     cx.run_until_parked();
-    assert_eq!(cx.update(|_, cx| app.read(cx).search.active), Some(1));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.active()), Some(1));
     assert_eq!(cx.update(|_, cx| app.read(cx).editor.read(cx).cursor()), 3);
     assert!(!cx.update(|_, cx| app.read(cx).dirty(cx)));
     assert_eq!(
@@ -421,9 +421,9 @@ fn automatic_table_cells_keep_readable_wrapping_when_original_is_toggled(cx: &mu
     let right_start = source.find(right).unwrap();
     app.update(cx, |app, cx| {
         app.session.document.saved = source.clone();
-        app.preview.source = Some(PathBuf::from("retained-original.docx"));
-        app.preview.loading = true;
-        app.preview.visible = true;
+        app.preview
+            .set_loading(PathBuf::from("retained-original.docx"));
+        app.preview.set_visible(true);
         app.editor.update(cx, |e, cx| {
             e.set_text(&source, cx);
             e.set_search(
@@ -446,7 +446,7 @@ fn automatic_table_cells_keep_readable_wrapping_when_original_is_toggled(cx: &mu
     let mut saved_geometry = None;
     for visible in [true, false, true, false, true] {
         app.update_in(cx, |app, window, cx| {
-            if app.preview.visible != visible {
+            if app.preview.visible() != visible {
                 app.toggle_preview(window, cx);
             }
         });
@@ -585,8 +585,8 @@ fn search_preserves_selection_undo_and_save_as_state(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.simulate_new_path_selection(|_| Some(dir.path().join("search.md")));
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).search.open));
-    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 1);
+    assert!(cx.update(|_, cx| app.read(cx).search.open()));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches().len()), 1);
     cx.dispatch_action(CloseMarkdownSearch);
     cx.run_until_parked();
     cx.dispatch_action(mdoc_editor::Undo);
@@ -605,8 +605,8 @@ fn pending_large_search_cannot_survive_tab_close(cx: &mut TestAppContext) {
     });
     let app = close_document(&app, cx);
     cx.run_until_parked();
-    assert!(!cx.update(|_, cx| app.read(cx).search.open));
-    assert!(cx.update(|_, cx| app.read(cx).search.matches.is_empty()));
+    assert!(!cx.update(|_, cx| app.read(cx).search.open()));
+    assert!(cx.update(|_, cx| app.read(cx).search.matches().is_empty()));
     assert!(cx.update(|_, cx| app.read(cx).editor.read(cx).text().is_empty()));
 }
 
@@ -621,17 +621,20 @@ fn large_search_publishes_latest_query(cx: &mut TestAppContext) {
     cx.dispatch_action(FindMarkdown);
     cx.run_until_parked();
     // Opening an empty find bar must not build or schedule a large index.
-    assert!(cx.update(|_, cx| app.read(cx).search.index.is_none()));
-    assert!(cx.update(|_, cx| app.read(cx).search.task.is_none()));
+    assert!(cx.update(|_, cx| app.read(cx).search.index().is_none()));
+    assert!(cx.update(|_, cx| !app.read(cx).search.running()));
     cx.simulate_input("alpha");
     cx.dispatch_action(FindMarkdown);
     cx.simulate_input("beta");
     cx.run_until_parked();
-    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 7_000);
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).search.matches().len()),
+        7_000
+    );
     assert!(cx.update(|_, cx| {
         let app = app.read(cx);
         app.search
-            .matches
+            .matches()
             .iter()
             .all(|m| &app.editor.read(cx).text()[m.source[0].clone()] == "beta")
     }));
@@ -658,10 +661,10 @@ fn markdown_search_is_live_and_keeps_the_editor_caret(cx: &mut TestAppContext) {
     cx.simulate_input("world");
     cx.run_until_parked();
 
-    assert!(cx.update(|_, cx| app.read(cx).search.open));
-    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 2);
+    assert!(cx.update(|_, cx| app.read(cx).search.open()));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches().len()), 2);
     assert_eq!(cx.update(|_, cx| app.read(cx).editor.read(cx).cursor()), 4);
-    assert_eq!(cx.update(|_, cx| app.read(cx).search.active), Some(0));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.active()), Some(0));
 }
 
 #[gpui::test]
@@ -678,12 +681,12 @@ fn closing_search_clears_highlights_but_retains_query(cx: &mut TestAppContext) {
     cx.dispatch_action(CloseMarkdownSearch);
     cx.run_until_parked();
 
-    assert!(!cx.update(|_, cx| app.read(cx).search.open));
+    assert!(!cx.update(|_, cx| app.read(cx).search.open()));
     assert_eq!(
         cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().to_owned()),
         "beta"
     );
-    assert!(cx.update(|_, cx| app.read(cx).search.matches.is_empty()));
+    assert!(cx.update(|_, cx| app.read(cx).search.matches().is_empty()));
 }
 
 #[gpui::test]
@@ -704,8 +707,8 @@ fn accepted_document_transition_resets_search_state(cx: &mut TestAppContext) {
 
     let app = active_document(&app, cx);
     assert!(cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().is_empty()));
-    assert!(!cx.update(|_, cx| app.read(cx).search.open));
-    assert!(cx.update(|_, cx| app.read(cx).search.matches.is_empty()));
+    assert!(!cx.update(|_, cx| app.read(cx).search.open()));
+    assert!(cx.update(|_, cx| app.read(cx).search.matches().is_empty()));
 }
 
 #[gpui::test]
@@ -737,8 +740,8 @@ fn editing_refreshes_search_without_auto_scrolling_or_moving_the_query(cx: &mut 
     cx.simulate_input("x");
     cx.run_until_parked();
 
-    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 2);
-    assert_eq!(cx.update(|_, cx| app.read(cx).search.active), Some(1));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches().len()), 2);
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.active()), Some(1));
     assert_eq!(cx.update(|_, cx| app.read(cx).scroll.offset()), before);
     assert_eq!(
         cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().to_owned()),
@@ -759,11 +762,11 @@ fn cancelled_document_transition_preserves_search_state(cx: &mut TestAppContext)
     cx.run_until_parked();
     cx.dispatch_action(Close);
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).search.open));
+    assert!(cx.update(|_, cx| app.read(cx).search.open()));
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
 
-    assert!(cx.update(|_, cx| app.read(cx).search.open));
+    assert!(cx.update(|_, cx| app.read(cx).search.open()));
     assert_eq!(
         cx.update(|_, cx| app.read(cx).markdown_search.read(cx).value().to_owned()),
         "alpha"
@@ -792,11 +795,12 @@ fn pdf_preview_does_not_change_markdown_search(cx: &mut TestAppContext) {
     app.update_in(cx, |app, window, cx| app.open_path(pdf_path, window, cx));
     cx.run_until_parked();
 
-    assert!(cx.update(|_, cx| app.read(cx).search.open));
-    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 1);
-    assert!(cx.update(
-        |_, cx| app.read(cx).preview.pdf.is_some() || app.read(cx).preview.message.is_some()
-    ));
+    assert!(cx.update(|_, cx| app.read(cx).search.open()));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches().len()), 1);
+    assert!(
+        cx.update(|_, cx| app.read(cx).preview.pdf().is_some()
+            || app.read(cx).preview.message().is_some())
+    );
 }
 
 #[gpui::test]
@@ -810,7 +814,7 @@ fn pdf_open_keeps_markdown_and_close_pdf_restores_editor(cx: &mut TestAppContext
     cx.run_until_parked();
     assert!(cx.update(|_, cx| {
         let preview = &app.read(cx).preview;
-        preview.pdf.is_none() && !preview.retryable && preview.message.is_some()
+        preview.pdf().is_none() && !preview.retryable() && preview.message().is_some()
     }));
     assert_eq!(
         cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
@@ -818,7 +822,7 @@ fn pdf_open_keeps_markdown_and_close_pdf_restores_editor(cx: &mut TestAppContext
     );
     cx.dispatch_action(ClosePdf);
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).preview.pdf.is_none()));
+    assert!(cx.update(|_, cx| app.read(cx).preview.pdf().is_none()));
 }
 
 #[test]
@@ -840,15 +844,15 @@ fn accepted_pdf_import_opens_source_pane(cx: &mut TestAppContext) {
         let mut imported = converted(source);
         imported.is_pdf = true;
         app.proceed(Next::Import(imported), window, cx);
-        assert!(app.preview.loading);
+        assert!(app.preview.loading());
         assert!(app.dirty(cx));
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert!(!app.preview.loading);
-        assert!(app.preview.pdf.is_some(), "the source pane opened");
-        assert!(app.preview.docx.is_none());
+        assert!(!app.preview.loading());
+        assert!(app.preview.pdf().is_some(), "the source pane opened");
+        assert!(app.preview.docx().is_none());
     });
 }
 
@@ -866,7 +870,7 @@ fn accepted_docx_import_opens_source_pane(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.update(|_, cx| {
         let app = app.read(cx);
-        app.preview.pdf.is_some() && app.preview.docx.is_some()
+        app.preview.pdf().is_some() && app.preview.docx().is_some()
     }));
 }
 
@@ -881,13 +885,13 @@ fn failed_docx_preview_keeps_retry_source(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.update(|_, cx| {
         let app = app.read(cx);
-        app.preview.pdf.is_none()
-            && app.preview.retryable
-            && app.preview.source.as_deref() == Some(source.as_path())
+        app.preview.pdf().is_none()
+            && app.preview.retryable()
+            && app.preview.source().map(PathBuf::as_path) == Some(source.as_path())
     }));
     cx.dispatch_action(RetryPreview);
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).preview.retryable));
+    assert!(cx.update(|_, cx| app.read(cx).preview.retryable()));
 }
 
 #[gpui::test]
@@ -911,10 +915,10 @@ fn damaged_or_unpreviewable_sources_show_one_message_without_retry(cx: &mut Test
         cx.run_until_parked();
         cx.update(|_, cx| {
             let app = app.read(cx);
-            assert!(app.preview.pdf.is_none());
-            assert!(!app.preview.retryable, "{message}");
-            assert!(app.preview.failed, "{message}");
-            assert_eq!(app.preview.message.as_deref(), Some(message));
+            assert!(app.preview.pdf().is_none());
+            assert!(!app.preview.retryable(), "{message}");
+            assert!(app.preview.failed(), "{message}");
+            assert_eq!(app.preview.message().map(String::as_str), Some(message));
         });
     }
     app.update_in(cx, |app, window, cx| {
@@ -923,8 +927,11 @@ fn damaged_or_unpreviewable_sources_show_one_message_without_retry(cx: &mut Test
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert!(!app.preview.retryable && !app.preview.failed);
-        assert_eq!(app.preview.message.as_deref(), Some(preview::NO_PREVIEW));
+        assert!(!app.preview.retryable() && !app.preview.failed());
+        assert_eq!(
+            app.preview.message().map(String::as_str),
+            Some(preview::NO_PREVIEW)
+        );
     });
 }
 
@@ -935,7 +942,7 @@ fn failed_replacement_preserves_loaded_preview_and_markdown(cx: &mut TestAppCont
     cx.simulate_input("unsaved text");
     app.update_in(cx, |app, window, cx| app.open_path(source, window, cx));
     cx.run_until_parked();
-    let old = cx.update(|_, cx| app.read(cx).preview.pdf.clone().unwrap());
+    let old = cx.update(|_, cx| app.read(cx).preview.pdf().cloned().unwrap());
     for missing in ["missing.pdf", "missing.docx"] {
         app.update_in(cx, |app, window, cx| {
             app.open_path(PathBuf::from(missing), window, cx)
@@ -943,8 +950,8 @@ fn failed_replacement_preserves_loaded_preview_and_markdown(cx: &mut TestAppCont
         cx.run_until_parked();
         cx.update(|_, cx| {
             let app = app.read(cx);
-            assert_eq!(app.preview.pdf.as_ref(), Some(&old));
-            assert!(app.preview.retryable);
+            assert_eq!(app.preview.pdf(), Some(&old));
+            assert!(app.preview.retryable());
             assert_eq!(app.editor.read(cx).text(), "unsaved text");
             assert!(app.dirty(cx));
         });
@@ -965,18 +972,18 @@ fn accepted_import_failure_clears_old_preview_and_pdf_retry_works(cx: &mut TestA
         let mut imported = converted(source.clone());
         imported.is_pdf = true;
         app.proceed(Next::Import(imported), window, cx);
-        assert!(app.preview.pdf.is_none());
+        assert!(app.preview.pdf().is_none());
         assert!(app.dirty(cx));
     });
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| app.read(cx).preview.retryable));
+    assert!(cx.update(|_, cx| app.read(cx).preview.retryable()));
     std::fs::copy(reference, &source).unwrap();
     cx.dispatch_action(RetryPreview);
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert!(app.preview.pdf.as_ref().unwrap().read(cx).is_loaded());
-        assert!(!app.preview.retryable);
+        assert!(app.preview.pdf().unwrap().read(cx).is_loaded());
+        assert!(!app.preview.retryable());
         assert!(app.dirty(cx));
     });
 }
@@ -994,10 +1001,10 @@ fn close_and_newer_request_discard_pending_completions(cx: &mut TestAppContext) 
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert!(app.preview.pdf.is_none());
-        assert!(app.preview.source.is_none());
-        assert!(app.preview.message.is_none());
-        assert!(!app.preview.loading);
+        assert!(app.preview.pdf().is_none());
+        assert!(app.preview.source().is_none());
+        assert!(app.preview.message().is_none());
+        assert!(!app.preview.loading());
     });
     app.update_in(cx, |app, window, cx| {
         app.open_docx(docx, window, cx);
@@ -1006,9 +1013,9 @@ fn close_and_newer_request_discard_pending_completions(cx: &mut TestAppContext) 
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert_eq!(app.preview.source.as_ref(), Some(&pdf));
-        assert!(app.preview.pdf.as_ref().unwrap().read(cx).is_loaded());
-        assert!(app.preview.docx.is_none());
+        assert_eq!(app.preview.source(), Some(&pdf));
+        assert!(app.preview.pdf().unwrap().read(cx).is_loaded());
+        assert!(app.preview.docx().is_none());
     });
 }
 
@@ -1046,7 +1053,10 @@ fn large_markdown_scroll_budget(cx: &mut TestAppContext) {
             }
             cx.run_until_parked();
             cx.update(|_, cx| {
-                assert_eq!(app.read(cx).preview.pdf.is_some(), state == "preview_open");
+                assert_eq!(
+                    app.read(cx).preview.pdf().is_some(),
+                    state == "preview_open"
+                );
             });
             let mut times = Vec::new();
             let mut furthest = 0.0_f32;
@@ -1134,19 +1144,19 @@ fn comments_follow_preview_lifecycle(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let panel = cx.update(|_, cx| {
         let app = app.read(cx);
-        assert_eq!(app.preview.docx.as_ref().unwrap().comments.len(), 4);
-        app.preview.comment_panel.clone().unwrap()
+        assert_eq!(app.preview.docx().unwrap().comments.len(), 4);
+        app.preview.comment_panel().cloned().unwrap()
     });
     app.update_in(cx, |app, window, cx| {
         app.open_docx(base.join("missing.docx"), window, cx)
     });
     cx.run_until_parked();
-    cx.update(|_, cx| assert_eq!(app.read(cx).preview.comment_panel.as_ref(), Some(&panel)));
+    cx.update(|_, cx| assert_eq!(app.read(cx).preview.comment_panel(), Some(&panel)));
     app.update_in(cx, |app, window, cx| {
         app.open_pdf(base.join("tests/fixtures/reference.pdf"), window, cx)
     });
     cx.run_until_parked();
-    cx.update(|_, cx| assert!(app.read(cx).preview.comment_panel.is_none()));
+    cx.update(|_, cx| assert!(app.read(cx).preview.comment_panel().is_none()));
     app.update_in(cx, |app, window, cx| {
         app.open_docx(
             base.join("tests/fixtures/docx-preview/comments.docx"),
@@ -1159,9 +1169,9 @@ fn comments_follow_preview_lifecycle(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.update(|_, cx| {
         let app = app.read(cx);
-        assert!(!app.preview.visible);
-        assert!(app.preview.comment_panel.is_some());
-        assert!(app.preview.docx.is_some());
+        assert!(!app.preview.visible());
+        assert!(app.preview.comment_panel().is_some());
+        assert!(app.preview.docx().is_some());
         assert_eq!(app.editor.read(cx).text(), "Markdown stays unchanged");
     });
 }
@@ -1182,9 +1192,9 @@ fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mu
         let (pdf, comments, backing) = cx.update(|_, cx| {
             let preview = &app.read(cx).preview;
             (
-                preview.pdf.as_ref().unwrap().downgrade(),
-                preview.comment_panel.as_ref().unwrap().downgrade(),
-                preview.docx.as_ref().unwrap().pdf_path.clone(),
+                preview.pdf().unwrap().downgrade(),
+                preview.comment_panel().unwrap().downgrade(),
+                preview.docx().unwrap().pdf_path.clone(),
             )
         });
         assert!(backing.exists());
@@ -1199,7 +1209,7 @@ fn repeated_document_switches_release_preview_entities_and_backing_files(cx: &mu
         assert!(pdf.upgrade().is_none());
         assert!(comments.upgrade().is_none());
         assert!(crate::test_support::removed(&backing));
-        let pdf = cx.update(|_, cx| app.read(cx).preview.pdf.as_ref().unwrap().downgrade());
+        let pdf = cx.update(|_, cx| app.read(cx).preview.pdf().unwrap().downgrade());
         app.update_in(cx, |app, window, cx| {
             app.close_preview(window, cx);
         });
@@ -1258,9 +1268,9 @@ fn spellcheck_flags_prose_and_skips_markdown_and_entities(cx: &mut TestAppContex
                 recognizer: mdoc_pii::Recognizer::Model,
             }
         };
-        app.pii.reviewing = true;
+        app.pii.set_reviewing(true);
         app.pii
-            .review
+            .review_mut()
             .ingest(source, vec![person("Kowalczyk"), person("Ivanоv")])
             .unwrap();
         app.review_changed(cx);
@@ -1460,17 +1470,17 @@ fn find_and_replace_fit_beside_replacements_at_minimum_window_size(cx: &mut Test
                 open_replace(&app, "the cat and the dog", "the", "a", cx);
                 app.update_in(cx, |app, window, cx| {
                     app.theme.set(theme);
-                    app.pii.reviewing = true;
+                    app.pii.set_reviewing(true);
                     if !app.replacements_open() {
                         app.toggle_replacements_panel(window, cx);
                     }
-                    app.preview.visible = true;
+                    app.preview.set_visible(true);
                     app.original_selected = false;
-                    app.search.replace_open = replace;
-                    if replace {
-                        // Replacement results are wider than the ordinary match count.
-                        app.search.status = Some("Replaced 2 · skipped 1 (formatting)".into());
-                    }
+                    // Replacement results are wider than the ordinary match count.
+                    app.search.show_replace(
+                        replace,
+                        replace.then(|| "Replaced 2 · skipped 1 (formatting)".into()),
+                    );
                     cx.notify();
                 });
                 // The document measures its column after the workspace/sidebar layout.
@@ -1538,11 +1548,11 @@ fn find_and_replace_fit_beside_replacements_at_minimum_window_size(cx: &mut Test
                 let next = cx.debug_bounds("markdown-search-next").unwrap();
                 cx.simulate_click(next.center(), Default::default());
                 cx.run_until_parked();
-                assert_eq!(app.read_with(cx, |app, _| app.search.active), Some(1));
+                assert_eq!(app.read_with(cx, |app, _| app.search.active()), Some(1));
                 let close = cx.debug_bounds("markdown-search-close").unwrap();
                 cx.simulate_click(close.center(), Default::default());
                 cx.run_until_parked();
-                assert!(!app.read_with(cx, |app, _| app.search.open));
+                assert!(!app.read_with(cx, |app, _| app.search.open()));
             }
         }
     }
@@ -1555,8 +1565,8 @@ fn replace_all_skips_formatting_and_one_undo_reverts_it(cx: &mut TestAppContext)
     cx.update(|_, cx| bind_app_keys(cx));
     let source = "hi **there**. hi there. Hi there.";
     open_replace(&app, source, "hi there", "yo", cx);
-    assert!(cx.update(|_, cx| app.read(cx).search.replace_open));
-    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches.len()), 3);
+    assert!(cx.update(|_, cx| app.read(cx).search.replace_open()));
+    assert_eq!(cx.update(|_, cx| app.read(cx).search.matches().len()), 3);
 
     cx.simulate_keystrokes(replace_all_keys());
     cx.run_until_parked();
@@ -1565,7 +1575,7 @@ fn replace_all_skips_formatting_and_one_undo_reverts_it(cx: &mut TestAppContext)
     };
     assert_eq!(text(cx), "hi **there**. yo. yo.");
     assert_eq!(
-        cx.update(|_, cx| app.read(cx).search.status.clone())
+        cx.update(|_, cx| app.read(cx).search.status().cloned())
             .as_deref(),
         Some("Replaced 2 · skipped 1 (formatting)")
     );
@@ -1579,7 +1589,7 @@ fn replace_all_skips_formatting_and_one_undo_reverts_it(cx: &mut TestAppContext)
     cx.run_until_parked();
     assert_eq!(text(cx), source, "one undo reverts Replace all");
     assert!(
-        cx.update(|_, cx| app.read(cx).search.status.is_none()),
+        cx.update(|_, cx| app.read(cx).search.status().is_none()),
         "the result goes with the undo"
     );
 }
@@ -1595,8 +1605,8 @@ fn replace_moves_past_the_replacement_and_skips_formatting(cx: &mut TestAppConte
             let app = app.read(cx);
             (
                 app.editor.read(cx).text().to_owned(),
-                app.search.active,
-                app.search.status.clone(),
+                app.search.active(),
+                app.search.status().cloned(),
             )
         })
     };
@@ -1621,22 +1631,23 @@ fn stepping_after_a_skip_brings_the_counter_back(cx: &mut TestAppContext) {
     open_replace(&app, "**c**at cat cat", "cat", "cats", cx);
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
-    let status = |cx: &mut VisualTestContext| cx.update(|_, cx| app.read(cx).search.status.clone());
+    let status =
+        |cx: &mut VisualTestContext| cx.update(|_, cx| app.read(cx).search.status().cloned());
     assert_eq!(status(cx).as_deref(), Some("Skipped: crosses formatting"));
-    let before = cx.update(|_, cx| app.read(cx).search.active);
+    let before = cx.update(|_, cx| app.read(cx).search.active());
     app.update_in(cx, |app, window, cx| {
         app.find_next_markdown(&FindNextMarkdown, window, cx)
     });
     cx.run_until_parked();
     assert_eq!(status(cx), None);
-    assert_ne!(cx.update(|_, cx| app.read(cx).search.active), before);
+    assert_ne!(cx.update(|_, cx| app.read(cx).search.active()), before);
 }
 
 #[gpui::test]
 fn whole_word_and_match_case_toggle_from_the_keyboard(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     open_replace(&app, "Cat cat category", "cat", "", cx);
-    let count = |cx: &mut VisualTestContext| cx.update(|_, cx| app.read(cx).search.matches.len());
+    let count = |cx: &mut VisualTestContext| cx.update(|_, cx| app.read(cx).search.matches().len());
     assert_eq!(count(cx), 3);
     let (word, case) = if cfg!(target_os = "macos") {
         ("cmd-alt-w", "cmd-alt-c")
@@ -1662,7 +1673,7 @@ fn find_hides_the_replace_row_and_the_toggle_shows_it(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     cx.dispatch_action(FindMarkdown);
     cx.run_until_parked();
-    assert!(!cx.update(|_, cx| app.read(cx).search.replace_open));
+    assert!(!cx.update(|_, cx| app.read(cx).search.replace_open()));
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds("markdown-replace-row").is_none());
     app.update_in(cx, |app, window, cx| {
@@ -1710,11 +1721,11 @@ fn replace_after_a_skip_takes_the_highlighted_match_while_a_search_runs(cx: &mut
             editor.set_cursor(0, cx);
         });
     });
-    assert!(cx.update(|_, cx| app.read(cx).search.task.is_some()));
+    assert!(cx.update(|_, cx| app.read(cx).search.running()));
     app.update_in(cx, |app, window, cx| {
         app.replace_next_markdown(&ReplaceNextMarkdown, window, cx);
         assert_eq!(
-            app.search.status.as_deref(),
+            app.search.status().map(|status| status.as_ref()),
             Some("Skipped: crosses formatting")
         );
         app.replace_next_markdown(&ReplaceNextMarkdown, window, cx);

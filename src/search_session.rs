@@ -31,23 +31,23 @@ pub(super) enum SearchRefresh {
 
 #[derive(Default)]
 pub(super) struct SearchSession {
-    pub open: bool,
+    open: bool,
     /// The Replace row is shown (⌘⌥F / Ctrl+H, ADR 0063).
-    pub replace_open: bool,
-    pub match_case: bool,
-    pub whole_word: bool,
+    replace_open: bool,
+    match_case: bool,
+    whole_word: bool,
     /// The last Replace result, until the query or an option changes.
-    pub status: Option<SharedString>,
+    status: Option<SharedString>,
     /// Where a Replace left off, in the edited text, so the next match is the
     /// one after the replacement rather than the replacement itself.
     next_anchor: Option<usize>,
-    pub index: Option<SearchIndex>,
-    pub source: Arc<str>,
-    pub matches: Vec<SearchMatch>,
-    pub active: Option<usize>,
-    pub anchor: Option<usize>,
-    pub revision: u64,
-    pub task: Option<gpui::Task<()>>,
+    index: Option<SearchIndex>,
+    source: Arc<str>,
+    matches: Vec<SearchMatch>,
+    active: Option<usize>,
+    anchor: Option<usize>,
+    revision: u64,
+    task: Option<gpui::Task<()>>,
     pending: Option<SearchRequest>,
     running: bool,
 }
@@ -65,6 +65,59 @@ struct SearchRequest {
 // pending request. Completion may donate its index to a newer query, but only
 // for the same immutable document snapshot.
 impl SearchSession {
+    /// The find bar is open.
+    pub(crate) fn open(&self) -> bool {
+        self.open
+    }
+
+    /// The Replace row is shown.
+    pub(crate) fn replace_open(&self) -> bool {
+        self.replace_open
+    }
+
+    pub(crate) fn match_case(&self) -> bool {
+        self.match_case
+    }
+
+    pub(crate) fn whole_word(&self) -> bool {
+        self.whole_word
+    }
+
+    /// The last Replace result, until the query or an option changes.
+    pub(crate) fn status(&self) -> Option<&SharedString> {
+        self.status.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn index(&self) -> Option<&SearchIndex> {
+        self.index.as_ref()
+    }
+
+    /// The matches of the published query, in document order.
+    pub(crate) fn matches(&self) -> &[SearchMatch] {
+        &self.matches
+    }
+
+    /// The highlighted match.
+    pub(crate) fn active(&self) -> Option<usize> {
+        self.active
+    }
+
+    /// A search is still being built or run.
+    pub(crate) fn running(&self) -> bool {
+        self.task.is_some()
+    }
+
+    /// Show the Replace row and a Replace result, for tests of how the bar
+    /// lays out.
+    #[cfg(test)]
+    pub(crate) fn show_replace(&mut self, open: bool, status: Option<SharedString>) {
+        self.replace_open = open;
+        if status.is_some() {
+            self.status = status;
+        }
+    }
+
     fn invalidate(&mut self) {
         self.revision = self.revision.wrapping_add(1);
         self.pending = None;
@@ -157,11 +210,11 @@ impl DocumentView {
         if self.lifecycle.source_only() {
             // Nothing to replace in a source-only tab: the chord opens the
             // preview's find, as ⌘F does there (ADR 0063).
-            if !self.preview.visible {
+            if !self.preview.visible() {
                 self.toggle_preview(window, cx);
             }
             self.original_selected = true;
-            if let Some(pdf) = self.preview.pdf.clone() {
+            if let Some(pdf) = self.preview.pdf().cloned() {
                 pdf.update(cx, |pdf, cx| {
                     if !pdf.search_is_open() {
                         pdf.toggle_search(window, cx);
@@ -324,7 +377,7 @@ impl DocumentView {
 
     fn applied_alias_ranges(&self) -> Vec<Range<usize>> {
         self.pii
-            .review
+            .review()
             .applied()
             .iter()
             .map(|applied| applied.range.clone())

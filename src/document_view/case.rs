@@ -69,7 +69,7 @@ impl DocumentView {
     ) -> usize {
         let text = self.editor.read(cx).text().to_owned();
         let history = self.editor.read(cx).history_id();
-        let review = &mut self.pii.review;
+        let review = self.pii.review_mut();
         let ids = review.seed(identities, &text);
         let linked = review.relink(&text, identities, &ids, history);
         self.case.attach(Some(link));
