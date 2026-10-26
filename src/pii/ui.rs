@@ -13,13 +13,9 @@ use scan::ScanJob;
 #[cfg(test)]
 mod tests;
 
-use crate::{
-    document_view::DocumentView,
-    pii::detector,
-    pii::{Category, IdentitySnapshot, Review, tracking::ReplacementPlan},
-    settings_ui,
-};
+use crate::{document_view::DocumentView, settings_ui};
 use gpui::{App, Context, FocusHandle, Focusable, Hsla, KeyBinding, Pixels, Window, actions, px};
+use mdoc_pii::{Category, IdentitySnapshot, Review, tracking::ReplacementPlan};
 use mdoc_store::settings;
 use std::{
     cell::Cell,
@@ -555,7 +551,7 @@ impl DocumentView {
     /// Download the selected model, then scan this document once if it is
     /// still the same document. Settings stays closed.
     fn setup_pii_model(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !detector::SUPPORTED {
+        if !mdoc_detect::SUPPORTED {
             return;
         }
         let config = match self.preferences.borrow().snapshot() {
@@ -763,7 +759,7 @@ impl DocumentView {
             return;
         };
         let source = self.editor.read(cx).text().to_owned();
-        let category = detector::guess_category(&source, range.clone());
+        let category = mdoc_detect::guess_category(&source, range.clone());
         let Some(id) = self.checkpoint_review(cx, |review| {
             review
                 .add_manual(&source, range.clone(), category)

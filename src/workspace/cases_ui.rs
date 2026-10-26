@@ -4,7 +4,7 @@
 use super::{TabDrag, Workspace};
 use crate::{
     document_view::{DocumentView, Next},
-    markdown_search, pii, style, ui,
+    markdown_search, style, ui,
 };
 use gpui::{
     AnyElement, App, Context, Entity, Focusable, KeyBinding, PromptLevel, Window, div, prelude::*,
@@ -703,7 +703,7 @@ impl Workspace {
         {
             return;
         }
-        let category = pii::detector::guess_category(term, 0..term.len());
+        let category = mdoc_detect::guess_category(term, 0..term.len());
         let alias = case.next_alias(category);
         case.identities.push(mdoc_store::cases::StoredIdentity {
             alias,
@@ -1385,7 +1385,7 @@ impl Workspace {
     pub(super) fn toggle_case_category(
         &mut self,
         case_id: &str,
-        category: pii::Category,
+        category: mdoc_pii::Category,
         cx: &mut Context<Self>,
     ) {
         let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == case_id) else {
@@ -1426,10 +1426,10 @@ impl Workspace {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let skip = case.skipped();
-        let rows: Vec<AnyElement> = pii::Category::ALL
+        let rows: Vec<AnyElement> = mdoc_pii::Category::ALL
             .into_iter()
             // Date and Other are manual-only; the detector never emits them.
-            .filter(|c| !matches!(c, pii::Category::Date | pii::Category::Other))
+            .filter(|c| !matches!(c, mdoc_pii::Category::Date | mdoc_pii::Category::Other))
             .map(|category| {
                 let on = !skip.contains(&category);
                 let id = case_id.clone();

@@ -4,8 +4,8 @@ use crate::{
         ClosePdf, CopyMarkdown, DismissImportWarning, DocumentView, Next, OcrState, Save, SaveAs,
         bind_markdown_search_keys, find_counter,
     },
-    markdown_search,
-    pii::{self, ui::PiiApplyAll},
+    markdown_search, pii,
+    pii::ui::PiiApplyAll,
     preview::{self, RetryPreview},
     search_session::{
         CloseMarkdownSearch, FindMarkdown, FindNextMarkdown, FindPreviousMarkdown,
@@ -88,7 +88,7 @@ pub(crate) fn close_document(
 
 #[gpui::test]
 fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppContext) {
-    use crate::pii::{Category, Detection};
+    use mdoc_pii::{Category, Detection};
     let dir = tempfile::tempdir().unwrap();
     let source_path = dir.path().join("legal.md");
     let source = "# Contract\n\nAlice Morgan represents **Alice Morgan**. [contact](https://x.invalid/Alice_Morgan)\n";
@@ -99,7 +99,7 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
     app.update_in(cx, |app, window, cx| {
         app.session.warning = Some("Review extraction".into());
         app.pii.reviewing = true;
-        app.pii.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9, recognizer: crate::pii::Recognizer::Model }]).unwrap();
+        app.pii.review.ingest(source, vec![Detection { range: 12..24, category: Category::Person, score: 0.9, recognizer: mdoc_pii::Recognizer::Model }]).unwrap();
         app.review_changed(cx);
         let id = app.pii.review.variants()[0].id;
         let range=app.pii.review.variant(id).unwrap().mentions[0].clone();
@@ -161,7 +161,7 @@ fn pseudonymization_group_accept_undo_save_and_identity_reset(cx: &mut TestAppCo
 
 #[gpui::test]
 fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut TestAppContext) {
-    use crate::pii::{Category, Detection};
+    use mdoc_pii::{Category, Detection};
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
         app.editor
@@ -175,7 +175,7 @@ fn pseudonymization_keep_preserves_text_and_popup_edits_are_invalidated(cx: &mut
                     range: 0..5,
                     category: Category::Person,
                     score: 0.9,
-                    recognizer: crate::pii::Recognizer::Model,
+                    recognizer: mdoc_pii::Recognizer::Model,
                 }],
             )
             .unwrap();
@@ -1799,7 +1799,7 @@ fn selected_text(app: &Entity<DocumentView>, cx: &mut VisualTestContext) -> Stri
 
 #[gpui::test]
 fn spellcheck_flags_prose_and_skips_markdown_and_entities(cx: &mut TestAppContext) {
-    use crate::pii::{Category, Detection};
+    use mdoc_pii::{Category, Detection};
     let source =
         "The partys agre.\n`fooo` [link](https://exampel.com/pathh) Mr Kowalczyk and Mr Ivanоv\n";
     let (app, cx) = boot(cx);
@@ -1820,7 +1820,7 @@ fn spellcheck_flags_prose_and_skips_markdown_and_entities(cx: &mut TestAppContex
                 range: start..start + name.len(),
                 category: Category::Person,
                 score: 0.9,
-                recognizer: crate::pii::Recognizer::Model,
+                recognizer: mdoc_pii::Recognizer::Model,
             }
         };
         app.pii.reviewing = true;

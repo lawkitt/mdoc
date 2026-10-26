@@ -11,7 +11,7 @@ publish = false
 [workspace]
 # Upstream code with one Linux glyph-offset correction; not a workspace crate.
 exclude = ["vendor"]
-members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-history", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell", "crates/mdoc-store", "crates/mdoc-import"]
+members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-history", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell", "crates/mdoc-store", "crates/mdoc-import", "crates/mdoc-detect"]
 resolver = "2"
 
 [features]
@@ -31,8 +31,6 @@ gpui_platform = { package = "gpui-pre-platform", version = "0.3", features = ["f
 
 [dependencies]
 regex = "1"
-# Exact: structured-rule predictions are frozen against the corpus (ADR 0017).
-presidio-analyzer = { version = "=0.1.11", default-features = false }
 pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "d28ce2914a15e0100d049cd5c72493a6d6695a72", features = ["ocr"] }
 # App data lives under data_local_dir / cache_dir (settings, session, cases,
 # models, updates, crash report); a bump must keep those paths (ADR 0053).
@@ -53,13 +51,12 @@ mdoc-pii = { path = "crates/mdoc-pii" }
 mdoc-spell = { path = "crates/mdoc-spell" }
 mdoc-store = { path = "crates/mdoc-store" }
 mdoc-import = { path = "crates/mdoc-import" }
+mdoc-detect = { path = "crates/mdoc-detect" }
 gpui-pdf = { path = "crates/gpui-pdf" }
 tempfile = "3"
 url = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 unicode-segmentation = "1"
-# Exact: the pinned GLiNER2 export must load unchanged (ADR 0002).
-gliner2-rs = { version = "=0.9.6", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 gpui_windows = { package = "gpui-pre-windows", version = "=0.3.2", optional = true }

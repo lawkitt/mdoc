@@ -1,0 +1,28 @@
+[package]
+name = "mdoc-detect"
+version = "0.1.0"
+edition = "2024"
+description = "GUI-free pseudonymization detection: the offline GLiNER2 detector, its setup and its structured rules (ADR 0069)."
+license = "GPL-3.0-or-later"
+publish = false
+repository = "https://github.com/lawkitt/mdoc"
+
+[dependencies]
+mdoc-pii = { path = "../mdoc-pii" }
+mdoc-store = { path = "../mdoc-store" }
+mdoc-import = { path = "../mdoc-import" }
+regex = "1"
+# Exact: structured-rule predictions are frozen against the corpus (ADR 0017).
+presidio-analyzer = { version = "=0.1.11", default-features = false }
+# Exact: the pinned GLiNER2 export must load unchanged (ADR 0002).
+gliner2-rs = { version = "=0.9.6", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+sha2 = "0.11"
+tempfile = "3"
+
+[lints.clippy]
+wildcard_imports = "deny"

@@ -337,7 +337,7 @@ impl DocumentView {
 mod scheduling_tests {
     use super::*;
     use crate::document_view::tests::boot;
-    use crate::{pii, style::Theme};
+    use crate::style::Theme;
     use mdoc_store::cases;
 
     #[gpui::test]
@@ -420,7 +420,7 @@ mod scheduling_tests {
         app.update(cx, |app, cx| {
             app.pii
                 .review
-                .add_manual("partys", 0..6, pii::Category::Person)
+                .add_manual("partys", 0..6, mdoc_pii::Category::Person)
                 .unwrap();
             app.review_changed(cx);
         });

@@ -6,16 +6,14 @@ use super::{
 };
 use crate::{
     document_view::DocumentView,
-    pii::{
-        Category,
-        ui::{APPLIED_ID, KEPT_ID},
-    },
+    pii::ui::{APPLIED_ID, KEPT_ID},
     style, ui,
 };
 use gpui::{
     AnyElement, App, AppContext, Context, Entity, Focusable, HighlightStyle, Hsla, Pixels,
     SharedString, StyledText, Window, div, prelude::*, px,
 };
+use mdoc_pii::Category;
 use std::ops::Range;
 
 /// Starts a panel drag: remembers what is dragged and shows its ghost chip.

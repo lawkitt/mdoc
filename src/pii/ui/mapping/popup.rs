@@ -2,12 +2,10 @@
 use super::{Applying, MappingAction, Selection};
 use crate::{
     document_view::DocumentView,
-    pii::{
-        Category,
-        ui::{APPLIED_ID, KEPT_ID, PiiClosePopup},
-    },
+    pii::ui::{APPLIED_ID, KEPT_ID, PiiClosePopup},
 };
 use gpui::{App, Context, Focusable, Window, px};
+use mdoc_pii::Category;
 use std::{ops::Range, sync::Arc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

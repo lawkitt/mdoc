@@ -1,11 +1,8 @@
 //! Identity review and direct correction. All mutation uses editor history.
 use super::{APPLIED_ID, KEPT_ID, Popup};
-use crate::{
-    document_view::DocumentView,
-    markdown_search,
-    pii::{Category, tracking::ReplacementPlan},
-};
+use crate::{document_view::DocumentView, markdown_search};
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Pixels, Window, px};
+use mdoc_pii::{Category, tracking::ReplacementPlan};
 use std::{cell::Cell, ops::Range, rc::Rc, sync::Arc};
 
 mod checklist;

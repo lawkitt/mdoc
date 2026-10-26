@@ -1,9 +1,5 @@
 //! Immutable scan jobs and generation/revision/configuration validation.
-use crate::{
-    document_view::DocumentView,
-    pii::{self, detector},
-    settings_ui,
-};
+use crate::{document_view::DocumentView, settings_ui};
 use gpui::Context;
 use mdoc_store::settings;
 use std::sync::{
@@ -41,7 +37,7 @@ impl DocumentView {
             }
         };
         // Never start a scan that cannot load its model: ask first (ADR 0026).
-        if detector::SUPPORTED
+        if mdoc_detect::SUPPORTED
             && self
                 .model_panel
                 .read(cx)
@@ -62,9 +58,9 @@ impl DocumentView {
             generation,
             config: config.clone(),
         });
-        let task = cx
-            .background_executor()
-            .spawn(async move { detector::scan_config(&source, &cancel, &config) });
+        let task = cx.background_executor().spawn(async move {
+            mdoc_detect::scan_config(&source, &cancel, &config).map_err(|e| e.to_string())
+        });
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {
@@ -79,7 +75,7 @@ impl DocumentView {
         generation: u64,
         identity: u64,
         revision: u64,
-        result: Result<Vec<pii::Detection>, String>,
+        result: Result<Vec<mdoc_pii::Detection>, String>,
         cx: &mut Context<Self>,
     ) {
         let Some(job) = &self.pii.job else {

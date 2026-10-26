@@ -4476,19 +4476,18 @@ dependencies = [
  "dirs 7.0.0",
  "dunce",
  "embed-resource",
- "gliner2-rs",
  "gpui-pdf",
  "gpui-pre",
  "gpui-pre-platform",
  "gpui-pre-windows",
  "image",
+ "mdoc-detect",
  "mdoc-editor",
  "mdoc-import",
  "mdoc-pii",
  "mdoc-spell",
  "mdoc-store",
  "pdf-inspector 1.25.2",
- "presidio-analyzer",
  "regex",
  "roxmltree 0.21.1",
  "semver",
@@ -4502,6 +4501,23 @@ dependencies = [
  "url",
  "windows-sys 0.61.2",
  "zip 9.0.5",
+]
+
+[[package]]
+name = "mdoc-detect"
+version = "0.1.0"
+dependencies = [
+ "gliner2-rs",
+ "mdoc-import",
+ "mdoc-pii",
+ "mdoc-store",
+ "presidio-analyzer",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

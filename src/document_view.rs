@@ -2,11 +2,8 @@
 //! import/OCR state and pseudonymization review. The window-level
 //! [`crate::workspace::Workspace`] owns these views.
 use crate::{
-    images, markdown_search,
-    pii::{
-        self,
-        ui::{PiiAddCandidate, PiiNextCandidate, PiiPreviousCandidate, PiiReviewCandidate},
-    },
+    images, markdown_search, pii,
+    pii::ui::{PiiAddCandidate, PiiNextCandidate, PiiPreviousCandidate, PiiReviewCandidate},
     preview::{self, RetryPreview},
     search_session::{
         self, CloseMarkdownSearch, FindMarkdown, FindNextMarkdown, FindPreviousMarkdown,
@@ -156,7 +153,7 @@ pub(crate) struct DocumentView {
     pub(crate) case: Option<cases::CaseLink>,
     pub(crate) case_save: Option<gpui::Task<()>>,
     /// The case's identities, for the panel's "in case" section.
-    pub(crate) case_names: Vec<pii::restore::ExportedIdentity>,
+    pub(crate) case_names: Vec<mdoc_pii::restore::ExportedIdentity>,
     pub(crate) case_names_open: bool,
     pub(crate) case_term: Option<Entity<markdown_search::SearchInput>>,
     /// The result of Pseudonymize Clipboard, until dismissed.
@@ -166,7 +163,7 @@ pub(crate) struct DocumentView {
     /// The floating view pill fades when idle (README media decision 9).
     pub(crate) switcher: pii::ui::SwitcherRest,
     /// Categories this tab's case does not detect.
-    pub(crate) case_skip: std::collections::HashSet<pii::Category>,
+    pub(crate) case_skip: std::collections::HashSet<mdoc_pii::Category>,
     pub(crate) view_bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
     pub(crate) split_dragging: bool,
     pub(crate) original_selected: bool,

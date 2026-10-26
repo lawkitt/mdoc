@@ -1,5 +1,4 @@
 //! Immutable local QA input. These results never enter the document/review owners.
-use crate::pii;
 use mdoc_import::ocr;
 use mdoc_store::settings::{OcrConfig, PiiConfig};
 use serde::{Deserialize, Serialize};
@@ -79,7 +78,7 @@ impl Config {
                 serde_json::json!({"model":m.id,"revision":m.revision,"mode":"Force","runtime":"ONNX Runtime 1.27.0","renderer":"PDFium native-v7988","artifacts":m.artifacts.iter().map(|a|serde_json::json!({"file":a.filename,"sha256":a.sha256})).collect::<Vec<_>>()})
             }
             Self::Pii(c) => {
-                let m = pii::detector::manifest_for(c.model);
+                let m = mdoc_detect::manifest_for(c.model);
                 serde_json::json!({"model":m.id,"revision":m.revision,"repository":m.repository,"runtime":"ONNX Runtime 1.27.0","engine":c.model.engine(),"model_card":c.model.hugging_face_url(),"languages":c.model.languages(),"description":c.model.description(),"confidence":"GLiNER2 span confidence","execution":"CPU","threads":4,"artifacts":m.files.iter().map(|a|serde_json::json!({"file":a.path,"sha256":a.sha256})).collect::<Vec<_>>()})
             }
         }
@@ -174,7 +173,8 @@ pub fn run(
         }
         match (input, &config) {
             (Input::Markdown(source), Config::Pii(c)) => {
-                let detections = pii::detector::scan_reserved(source, cancel, c)?;
+                let detections =
+                    mdoc_detect::scan_reserved(source, cancel, c).map_err(|e| e.to_string())?;
                 let predictions=detections.iter().map(|d|serde_json::json!({"text":&source[d.range.clone()],"category":format!("{:?}",d.category),"start":d.range.start,"end":d.range.end,"confidence":d.score})).collect::<Vec<_>>();
                 Ok(
                     serde_json::json!({"predictions":predictions,"count":predictions.len(),"warnings":[c.model.evidence(),c.model.languages(),c.model.description(),"Confidence and candidate count are not accuracy scores."]}),
@@ -278,7 +278,7 @@ mod tests {
                 .unwrap();
             }
             mdoc_store::settings::Model::Pii(model) => {
-                crate::pii::detector::setup_config(
+                mdoc_detect::setup_config(
                     &PiiConfig {
                         model,
                         ..Default::default()

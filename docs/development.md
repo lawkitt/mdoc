@@ -103,7 +103,8 @@ dependency forks.
 | `src/preview.rs` | Preview ownership |
 | `crates/mdoc-import/src/docx_preview/comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
 | `src/markdown_search.rs`, `src/search_session.rs` | Markdown find controls and revision-aware search scheduling |
-| `src/pii.rs`, `src/pii/detector*`, `src/pii/ui*` | Pseudonymization: offline detection/setup, scan/edit controller, Replacements panel and word popup, UI regression tests |
+| `src/pii.rs`, `src/pii/ui*` | Pseudonymization UI: scan/edit controller, Replacements panel and word popup, UI regression tests |
+| `crates/mdoc-detect` | GUI-free offline detection: the GLiNER2 detector, its verified setup and the structured rules |
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
 | `src/document_view/tests.rs`, `src/workspace/tests.rs`, `src/perf_tests.rs` | Headless flows, ownership/lifetime checks, and opt-in performance measurements |
 | `src/workspace/headless_renders.rs`, `tests/headless_renders.rs` | Dev-only offscreen screen/Tab evidence and the output contract test |

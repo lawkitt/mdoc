@@ -1,14 +1,10 @@
 //! Keeping a tab in step with its case (ADR 0041, phase 3): joining aligns its
 //! aliases with the case in one undo step, and alias or category changes made
 //! in another member tab arrive as an edit in this tab's own history.
-use crate::{
-    document_view::DocumentView,
-    markdown_search,
-    pii::{self, Category},
-    ui,
-};
+use crate::{document_view::DocumentView, markdown_search, ui};
 use gpui::{AnyElement, AppContext, Context, Focusable, div, prelude::*, px};
-use pii::restore::{ExportedIdentity, plan_join};
+use mdoc_pii::Category;
+use mdoc_pii::restore::{ExportedIdentity, plan_join};
 
 /// What joining a case changed in this tab, for the notice.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
