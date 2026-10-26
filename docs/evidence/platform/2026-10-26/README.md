@@ -87,12 +87,40 @@ passed.
   already exists"), as designed. Skipped for 0.2.0 by the maintainer (ROADMAP
   Engineering: run it against a throwaway keychain).
 
-## Gate
+## Gate and 0.2.0
 
-#167 is must-fix, so the default gate applies: fix it, cut rc.5 as a draft,
-and re-run the rows its fix touches on both platforms: H18, A4, R2 and R6,
-plus #167's own steps (the popup's category menu, its "Belongs to…" owner
-menu, and the panel's filter menu, by keyboard).
+#167 was must-fix. The maintainer chose to ship 0.2.0 straight from `main`
+after the fix instead of cutting rc.5, re-running only what Claude could run,
+and skipped every remaining maintainer check for 0.2.0.
+
+- **Fix:** [#175](https://github.com/lawkitt/mdoc/pull/175) (`564ca1f`): the
+  popup's category and owner menus and the panel's filter menu take focus,
+  with ↑/↓/Tab inside, Enter to choose and Esc back to the button.
+- **macOS re-run** on a release build of the fix (the same code as `v0.2.0`),
+  from a copy of the rc.4 test profile: the category menu opens on the
+  current category and ↓ moves focus without stepping the popup's mention
+  ("Mention 1 of 4" unchanged); ↓ ↓ Enter changed the category (ORG_1 →
+  PHONE_2, undone); Esc closed it and left the popup open; the filter menu
+  chose "To replace" and back to All by keyboard. R2 (→, ←, ⌘↓, ⌘↑, Enter
+  applies all and opens the next, ⌫ keeps, Esc) and R6 (↓ into the list,
+  Space keeps and unkeeps, → expands, ← collapses, ⌫ keeps, ⌘Z) behave as on
+  rc.4. H18 and A4's menu parts pass with the fix; their other parts are as
+  in [macos.md](macos.md).
+- **Windows re-run:** not run. The T3 Codex desktop tool still failed at
+  preflight ("Computer Use native pipe is unavailable"); the rows fall under
+  the maintainer's skip.
+- **Release:** `v0.2.0` (`648f875`), draft GitHub Release built by the
+  Release workflow, every job green, including the installed Windows desktop
+  smoke of the NSIS installer. `mdoc_0.2.0_arm64.dmg`, SHA-256
+  `295e176e5d3931df2f8b8c68adc97fc63ae24aa3a9ec1edda712f7f4f6a5911e` (matches
+  `SHA256SUMS`), version 0.2.0, notarized Developer ID, staple valid.
+- **`.msi`:** `mdoc_0.2.0_x64.msi` matches `SHA256SUMS`, but it installs per
+  machine (`ALLUSERS=1`, Program Files), so the install needs a UAC prompt
+  the agent can't answer; the agent stopped before installing and left the PC
+  unchanged. The maintainer checks install, launch, quit and uninstall by
+  hand before publishing.
+- **After publishing:** `just smoke-update` from the 0.1.5 `.dmg` (ROADMAP
+  0.2.x patches).
 
 ## Automation notes
 

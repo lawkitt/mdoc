@@ -1,8 +1,8 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-26 (latest: 0.1.5; 0.2.0-rc.4
-tagged); accepted behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
+This roadmap lists open work as of 2026-10-26 (latest: 0.2.0); accepted
+behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
 [Issues](https://github.com/lawkitt/mdoc/issues).
@@ -26,59 +26,24 @@ since fixed); Windows did not run
 ([evidence](docs/evidence/platform/2026-10-24/README.md)). rc.2 and rc.3 got
 no Windows run. The architecture refactoring
 ([ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md)) finished on
-2026-10-26, so 0.2.0 now ships from rc.4, cut from `main`, after full
-acceptance on both platforms.
+2026-10-26, and 0.2.0 shipped from `main` the same day after the rc.4
+acceptance run on both platforms
+([evidence](docs/evidence/platform/2026-10-26/README.md)). Its one must-fix
+fail, menus that never took keyboard focus (#167), was fixed and re-checked on
+macOS; the Windows rows were not re-run (no desktop tool there), and the
+maintainer skipped the remaining manual rows and the keychain launch check for
+0.2.0. Windows also ships an `.msi`, checked by hand by the maintainer
+before publishing.
 
-## 0.1.x patches
+## 0.2.x patches
 
 Wrong output, data loss or silent failures that need no design decision
-(GitHub milestones). None open; after 0.2.0 ships, patches are 0.2.x. Items
-that are not ready ride along with a later patch.
-Each patch gets a smoke run on both platforms; an item is done when its issue
-closes, with the expected behavior stated there.
-
-## 0.2.0
-
-Waits only on must-fix items; should-fix items ship if ready, otherwise move
-to the top of the next milestone. Items are in priority order.
-
-### Must-fix
-
-1. **[Platform] 0.2.0 acceptance.** A run of the full
-   [checklist](docs/platform-acceptance.md) on rc.4 on both platforms,
-   including S1, A5, D3 and D4 deferred from 0.1.0 and, on Windows, the
-   model-download rows S2–S5. rc.1's macOS run predates the refactoring, so
-   macOS runs again.
-   Keyboard reach follow-ups found during implementation ([#89](https://github.com/lawkitt/mdoc/pull/89))
-   also need native checks: F6 must stay in the Keychain explainer; Shift+F10
-   must open a sidebar tab's case actions in both sidebar layouts; Categories
-   to detect must take focus, hold Tab and return focus on Esc or Close.
-   Previously F6 escaped the explainer and case categories required a pointer.
-   Also natively: VoiceOver and Narrator read each Home Recents row's name,
-   and Tab and ⇧Tab cycle the Keychain explainer's two buttons.
-   Codex runs Windows through T3 if the desktop tool passes preflight, else
-   the maintainer; the maintainer takes rows it cannot reach. macOS: a Claude
-   desktop session, models copied from the maintainer's profile. Must-fix
-   Fails: data loss, a blocked flow, a keyboard or screen-reader dead end, or
-   broken case keys, cases or updates; they get rc.5 and a re-run of the
-   affected rows, other Fails a 0.2.1 issue. D2, K3–K7 and Windows 10 stay
-   Unavailable with the reason. Blocking
-   maintainer rows: E2, E3, E5, P6, ⇧F10, Categories, A5; the ⇧ shortcuts and
-   browser paste may stay Pending, a Fail there going to 0.2.1.
-   *Done when:* the evidence folder covers every row; each Fail links an item.
-2. **[Release] Ship checks on rc.4.** The refactoring moved the case-key
-   store and the updater, so `scripts/keychain-launch-check.sh` runs on a
-   clean macOS account and `just smoke-update` from 0.1.5, after the macOS
-   acceptance run, one at a time, each restoring the installed app. Stable is
-   `just release 0.2.0` from rc.4's code; before publishing, its `.msi`
-   (never built for an RC) installs, launches, quits and uninstalls on
-   `windows`, or ships later in 0.2.1. Windows stays unsigned.
-   *Done when:* both checks pass in the evidence folder and the `.msi` is
-   checked or dropped.
-
-### Should-fix
-
-None open.
+(GitHub milestones). Open: [0.2.1](https://github.com/lawkitt/mdoc/milestone/5),
+the bugs from the 0.2.0 acceptance runs. First, once 0.2.0 is published,
+`just smoke-update` from the 0.1.5 `.dmg`, which could not run before
+publishing (Engineering). Items that are not ready ride along with a later
+patch. Each patch gets a smoke run on both platforms; an item is done when its
+issue closes, with the expected behavior stated there.
 
 ## 0.3.0
 
