@@ -26,7 +26,7 @@ curl -fsSL -o "$tmp/sums.txt" "$base/actionlint_${ACTIONLINT_VERSION}_checksums.
 want=$(awk -v a="$asset" '$2 == a { print $1 }' "$tmp/sums.txt")
 if command -v sha256sum >/dev/null; then sum=(sha256sum); else sum=(shasum -a 256); fi
 got=$("${sum[@]}" "$tmp/$asset" | awk '{ print $1 }')
-[ -n "$want" ] && [ "$want" = "$got" ] || die "actionlint checksum mismatch"
+[[ -n $want && $want == "$got" ]] || die "actionlint checksum mismatch"
 
 mkdir -p "$tmp/x" "$bin"
 case "$asset" in

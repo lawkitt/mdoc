@@ -26,10 +26,14 @@ blocks.
   `lint (ubuntu)`, `clippy (macos-26)`, `clippy (windows-latest)`,
   `test (macos-26)`, `test (windows-latest)`. `release.yml` still calls
   `ci.yml`, and the OCR smoke test stays a step of the test jobs.
-- **Dependency optimization.** The dev profile compiles dependencies (`"*"`)
-  at the `opt-level` (1 or 2) that most shortens the warm Windows test job,
-  provided a cold local build grows no more than ~30%; dependencies keep
-  `debug = 0`. Workspace crates stay unoptimized for debugging.
+- **No dependency optimization in the dev profile.** Dependencies (`"*"`)
+  stay at `opt-level` 0 with `debug = 0`; only the PDF rasterization crates
+  keep `opt-level = 2`. An optimization level is adopted only if it shortens
+  the Windows test job while a cold local build grows no more than ~30%.
+  Measured on 2026-10-26 (one cold run each), opt-level 1 cut the Windows
+  render test from 267 s to 39 s but grew the cold Mac test build from 77 s
+  to 179 s (+134%; opt-level 2: 251 s), so neither qualifies. Workspace
+  crates stay unoptimized for debugging.
 - **Scripts.** No rewrite and no Rust `xtask`. `just lint-scripts` runs
   `shellcheck` and `shfmt -d` over `scripts/`, from `just check` and the
   Ubuntu lint job only. shfmt's flags match the existing style (two-space
@@ -39,12 +43,9 @@ blocks.
 - **PowerShell.** No PSScriptAnalyzer for `ci-installed-windows.ps1`; every
   release run exercises it.
 
-Until the ROADMAP's *CI speed and script hygiene* item is done, the
-dependency optimization and `just lint-scripts` are being adopted, not yet in
-place.
-
 ## Consequences
 
+- `tests/headless_renders.rs` stays the longest step of `test (windows-latest)`.
 - A warm PR costs more runner minutes (two builds per OS), but Windows no
   longer runs clippy and the tests back to back.
 - A PR that changes `Cargo.lock` or the toolchain builds cold until `main`
@@ -55,4 +56,4 @@ place.
 - There are no required status checks (no branch protection), so the renamed
   jobs break nothing.
 
-References: [interview](../design/scripts-and-ci.md).
+References: [interview](https://github.com/lawkitt/mdoc/blob/cde5db2fab1ca383d388e18fada0ec0775e3035d/docs/design/scripts-and-ci.md).

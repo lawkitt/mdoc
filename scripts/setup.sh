@@ -2,12 +2,12 @@
 # Usage: scripts/setup.sh
 # Installs the tools pinned in scripts/tools.env for this machine: the Rust
 # toolchain, Rust tools through cargo-binstall (or cargo install), actionlint
-# (scripts/install-actionlint.sh), and on Windows the WiX Toolset after
-# confirmation.
+# and shfmt (scripts/install-actionlint.sh, scripts/install-shfmt.sh), and on
+# Windows the WiX Toolset after confirmation.
 source "$(dirname "$0")/lib.sh"
 load_tools
 
-rustup toolchain install   # reads rust-toolchain.toml
+rustup toolchain install # reads rust-toolchain.toml
 
 crate() { # crate, version, probe command...
   local name=$1 want=$2
@@ -26,6 +26,7 @@ crate cargo-deny "$CARGO_DENY_VERSION" cargo deny --version
 crate cargo-packager "$CARGO_PACKAGER_VERSION" cargo packager --version
 
 scripts/install-actionlint.sh
+scripts/install-shfmt.sh
 
 if [ "$(platform)" = windows-x64 ]; then
   crate cargo-wix "$CARGO_WIX_VERSION" cargo wix --version

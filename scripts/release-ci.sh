@@ -34,7 +34,7 @@ release_ci_green() {
   fi
   while IFS= read -r pattern; do
     excludes+=(":(exclude,glob)$pattern")
-  done <<< "$patterns"
+  done <<<"$patterns"
 
   # Glob pathspecs make **/*.md include root Markdown too. First-parent
   # diffs include a merge's net changes against main, including resolutions.
@@ -53,16 +53,16 @@ release_ci_green() {
     echo "local checks required: no CI push run for $sha"
     return 1
   fi
-  IFS='|' read -r status conclusion url head event workflow extra <<< "$run"
+  IFS='|' read -r status conclusion url head event workflow extra <<<"$run"
   # ci.yml skips the release commit on main: the tag's Release run tests it
   # (it calls ci.yml). Accept that run instead, for the tag on this commit.
-  if [ "$status" = completed ] && [ "$conclusion" = skipped ] && [ -z "$extra" ] && \
+  if [ "$status" = completed ] && [ "$conclusion" = skipped ] && [ -z "$extra" ] &&
     [[ $run != *$'\n'* ]]; then
     release_ci_tag_green "$sha"
     return
   fi
-  if [ "$status" != completed ] || [ "$conclusion" != success ] || \
-    [ "$head" != "$sha" ] || [ "$event" != push ] || [ "$workflow" != CI ] || \
+  if [ "$status" != completed ] || [ "$conclusion" != success ] ||
+    [ "$head" != "$sha" ] || [ "$event" != push ] || [ "$workflow" != CI ] ||
     [ -z "$url" ] || [ -n "$extra" ] || [[ $run == *$'\n'* ]]; then
     echo "local checks required: CI for $sha is not clearly green (status=$status, conclusion=$conclusion)"
     return 1
@@ -96,9 +96,9 @@ release_ci_tag_green() {
     echo "local checks required: no Release run for $tag"
     return 1
   fi
-  IFS='|' read -r status conclusion url head event workflow branch extra <<< "$run"
-  if [ "$status" != completed ] || [ "$conclusion" != success ] || \
-    [ "$head" != "$sha" ] || [ "$event" != push ] || [ "$workflow" != Release ] || \
+  IFS='|' read -r status conclusion url head event workflow branch extra <<<"$run"
+  if [ "$status" != completed ] || [ "$conclusion" != success ] ||
+    [ "$head" != "$sha" ] || [ "$event" != push ] || [ "$workflow" != Release ] ||
     [ "$branch" != "$tag" ] || [ -z "$url" ] || [ -n "$extra" ] || [[ $run == *$'\n'* ]]; then
     echo "local checks required: the Release run for $tag is not clearly green (status=$status, conclusion=$conclusion)"
     return 1

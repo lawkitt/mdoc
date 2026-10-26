@@ -5,7 +5,7 @@
 # current, runs the checks, sets the version, names the CHANGELOG section for
 # stable versions, commits `release: v<version>`, tags, and pushes on y/N.
 source "$(dirname "$0")/lib.sh"
-source scripts/release-ci.sh  # lib.sh has moved to the repository root
+source scripts/release-ci.sh # lib.sh has moved to the repository root
 
 usage() {
   cat <<'EOF'
@@ -20,8 +20,14 @@ Flags may appear in any order after the version. --yes uses check unless
 EOF
 }
 
-[ "$#" -gt 0 ] || { usage >&2; exit 1; }
-[ "$1" != --help ] || { usage; exit 0; }
+[ "$#" -gt 0 ] || {
+  usage >&2
+  exit 1
+}
+[ "$1" != --help ] || {
+  usage
+  exit 0
+}
 new=$1
 shift
 new=${new#v}
@@ -35,7 +41,10 @@ for flag in "$@"; do
     --check-all) check_all=1 ;;
     --skip-checks-if-ci-green) skip_checks=1 ;;
     --no-push) push=0 ;;
-    --help) usage; exit 0 ;;
+    --help)
+      usage
+      exit 0
+      ;;
     *) die "unknown flag: $flag (see --help)" ;;
   esac
 done
@@ -74,7 +83,7 @@ if [ "$stable" = 1 ]; then
   awk -v head="## [$new] - $today" '
     !done && /^## Unreleased/ { print; print ""; print head; done = 1; next }
     { print }
-  ' CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+  ' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 fi
 
 git add Cargo.toml Cargo.lock resources/Info.plist CHANGELOG.md

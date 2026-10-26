@@ -10,7 +10,7 @@ default:
     @just --list --unsorted
 
 # Format, licences/advisories, clippy and tests — what CI runs
-check: fmt-check deny lint test
+check: fmt-check deny lint-scripts lint test
 
 # Format the workspace
 fmt:
@@ -32,6 +32,11 @@ lint:
     if grep -rnE --include='*.rs' '#\[path[[:space:]]*=' src; then echo 'error: #[path] under src/; use a folder module (ADR 0069)' >&2; exit 1; fi
     scripts/gui-free.sh
     cargo clippy --workspace --all-targets --features headless-renders -- -D warnings
+
+# shellcheck and shfmt over scripts/; shfmt's style is in .editorconfig (ADR 0070)
+lint-scripts:
+    shellcheck -x -P SCRIPTDIR scripts/*.sh
+    shfmt -d scripts
 
 # Workspace tests
 test:

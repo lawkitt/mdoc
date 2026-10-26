@@ -7,7 +7,7 @@
 #   - Windows .ico and resources/icons/icon.png: full-bleed.
 # Requires macOS's sips and iconutil, plus Python 3 (standard library only).
 set -euo pipefail
-cd "$(dirname "$0")/.."          # repo root
+cd "$(dirname "$0")/.." # repo root
 SOURCE="build/appicon.svg"
 
 for tool in sips iconutil python3; do
@@ -53,7 +53,7 @@ done
 # macOS .icns — listed in cargo-packager's icons.
 for s in 16 32 128 256 512; do
   cp "$TMP/mac/$s.png" "$ICONSET/icon_${s}x${s}.png"
-  cp "$TMP/mac/$((s*2)).png" "$ICONSET/icon_${s}x${s}@2x.png"
+  cp "$TMP/mac/$((s * 2)).png" "$ICONSET/icon_${s}x${s}@2x.png"
 done
 iconutil -c icns "$ICONSET" -o "$TMP/icon.icns"
 

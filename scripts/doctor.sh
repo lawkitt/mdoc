@@ -27,6 +27,14 @@ check just "$JUST_VERSION" "$(out just --version)"
 check cargo-deny "$CARGO_DENY_VERSION" "$(out cargo deny --version)"
 check cargo-packager "$CARGO_PACKAGER_VERSION" "$(out cargo packager --version)"
 check actionlint "$ACTIONLINT_VERSION" "$(out actionlint --version)"
+check shfmt "$SHFMT_VERSION" "$(out shfmt --version)"
+# Not pinned: `just lint-scripts` needs any shellcheck (Homebrew, apt, winget).
+if command -v shellcheck >/dev/null; then
+  printf '  %-16s ok (any version)\n' shellcheck
+else
+  printf '  %-16s missing (any version)\n' shellcheck
+  problems=$((problems + 1))
+fi
 if [ "$(platform)" = windows-x64 ]; then
   check cargo-wix "$CARGO_WIX_VERSION" "$(out cargo wix --version)"
   check "WiX (candle)" "${WIX_VERSION}" "$(out candle -?)"
