@@ -1,10 +1,23 @@
 use crate::{
     comparison::{self, Config, Input, ResultRecord},
-    settings::*,
+    document, markdown_search, model_work,
+    settings::{self, Model, OcrConfig, OcrModel, PiiConfig, PiiModel, Preferences},
     settings_ui::{self, control},
-    *,
+    style::{self, Theme},
+    ui,
+    workspace::{self, Close, Quit, Settings},
 };
-use gpui::{FocusHandle, actions};
+use gpui::{App, Context, Entity, FocusHandle, Focusable, Window, actions, div, prelude::*, px};
+use std::{
+    cell::Cell,
+    path::PathBuf,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+
 actions!(model_comparison, [CloseComparison]);
 
 pub struct View {
@@ -657,6 +670,7 @@ impl Focusable for View {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::Store;
     use gpui::TestAppContext;
 
     #[gpui::test]

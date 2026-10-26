@@ -2,10 +2,16 @@
 //! pseudonymized text, both formatted like the editor and read-only, scrolling
 //! together. Live: it follows every change to the applied replacements, with
 //! the editor's replacement motion.
-use super::*;
-use crate::ui;
-use gpui::{AnyElement, Entity, Pixels, SharedString, Subscription, div, prelude::*};
-use std::collections::{HashMap, HashSet};
+use super::APPLIED_ID;
+use crate::{document_view::DocumentView, style, ui};
+use gpui::{
+    AnyElement, AppContext, Context, Entity, FocusHandle, Focusable, Hsla, Pixels, SharedString,
+    Subscription, Window, div, prelude::*, px,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
 /// Below this width the view shows one column at a time.
 const NARROW: f32 = 720.;
@@ -761,9 +767,11 @@ impl DocumentView {
                 .when(cfg!(test), |v| v.debug_selector(|| "compare-view".into()))
                 .key_context("CompareView")
                 .track_focus(&state.focus)
-                .on_action(cx.listener(|this, _: &crate::CloseCompare, window, cx| {
-                    this.close_compare(window, cx)
-                }))
+                .on_action(
+                    cx.listener(|this, _: &crate::pii::ui::CloseCompare, window, cx| {
+                        this.close_compare(window, cx)
+                    }),
+                )
                 .relative()
                 .size_full()
                 .flex()

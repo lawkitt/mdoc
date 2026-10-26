@@ -1,4 +1,13 @@
-use super::*;
+use super::{popup::Step, *};
+use crate::{
+    document_view::DocumentView,
+    pii::{
+        self, Category, Review,
+        ui::{APPLIED_ID, KEPT_ID, PiiApplyAll},
+    },
+};
+use gpui::{Context, Entity, Focusable, px};
+use std::{ops::Range, sync::Arc};
 
 /// Text edits Apply would make for pending mentions.
 fn plan_all(review: &Review, source: &str) -> Result<Vec<(Range<usize>, String)>, String> {
@@ -93,7 +102,7 @@ fn staging_merge_category_owner_apply_rename_and_undo_preserve_exact_originals(
     });
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
-        app.copy_markdown(&crate::CopyMarkdown, window, cx);
+        app.copy_markdown(&crate::document_view::CopyMarkdown, window, cx);
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().unwrap(),
             app.editor.read(cx).text()
@@ -194,7 +203,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
 #[gpui::test]
 fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
-    for theme in [crate::Theme::Dark, crate::Theme::Light] {
+    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
         for (width, height) in [(1500., 900.), (640., 480.)] {
             cx.simulate_resize(gpui::size(px(width), px(height)));
             app.update_in(cx, |app, window, cx| {
@@ -345,7 +354,7 @@ fn bulk_apply_preserves_first_occurrence_split(cx: &mut gpui::TestAppContext) {
 #[gpui::test]
 fn owner_picker_click_links_without_merging_identities(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
-    for theme in [crate::Theme::Dark, crate::Theme::Light] {
+    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
         cx.simulate_resize(gpui::size(px(1500.), px(1000.)));
         let (full, email) = app.update_in(cx, |app, window, cx| {
             app.theme.set(theme);
@@ -509,7 +518,7 @@ fn single_copy_with_pending_replacements_preserves_exact_source_and_history(
         let revision = app.editor.read(cx).revision();
         let history = app.editor.read(cx).history_id();
         let pending = app.pii.review.remaining();
-        app.copy_markdown(&crate::CopyMarkdown, window, cx);
+        app.copy_markdown(&crate::document_view::CopyMarkdown, window, cx);
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().as_deref(),
             Some(source)
@@ -526,7 +535,7 @@ fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
     cx: &mut gpui::TestAppContext,
 ) {
     let (app, cx) = crate::document_view_tests::boot(cx);
-    for theme in [crate::Theme::Dark, crate::Theme::Light] {
+    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
         for (width, height, preview) in [
             (1500., 900., false),
             (1100., 760., true),
@@ -620,7 +629,7 @@ fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
 #[gpui::test]
 fn visible_alias_draft_and_apply_share_one_undo_step(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
-    for theme in [crate::Theme::Dark, crate::Theme::Light] {
+    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
         for (width, height) in [(1500., 900.), (640., 480.)] {
             cx.simulate_resize(gpui::size(px(width), px(height)));
             let source = "Павлова Марина Сергеевна · Павлова М.С.";
@@ -778,7 +787,7 @@ fn category_origin_existing_alias_and_draft_lifecycle_are_explicit(cx: &mut gpui
 #[gpui::test]
 fn table_occurrence_popup_uses_exact_painted_word_in_both_themes(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
-    for theme in [crate::Theme::Light, crate::Theme::Dark] {
+    for theme in [crate::style::Theme::Light, crate::style::Theme::Dark] {
         cx.simulate_resize(gpui::size(px(1500.), px(900.)));
         app.update_in(cx, |app, window, cx| {
             app.theme.set(theme);
@@ -1118,7 +1127,7 @@ fn kept_homonyms_stay_with_their_entity_before_and_after_apply(cx: &mut gpui::Te
 #[gpui::test]
 fn unticking_an_applied_mention_restores_only_its_original(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view_tests::boot(cx);
-    for theme in [crate::Theme::Dark, crate::Theme::Light] {
+    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
         let source = "Павлова М.С. · Павлова М.С.";
         app.update_in(cx, |app, window, cx| {
             app.theme.set(theme);
@@ -2458,7 +2467,7 @@ fn add_by_hand(app: &Entity<DocumentView>, word: &str, cx: &mut gpui::VisualTest
         let at = app.editor.read(cx).text().find(word).unwrap();
         app.editor
             .update(cx, |e, cx| e.set_selection(at..at + word.len(), cx));
-        app.add_pii_candidate(&crate::PiiAddCandidate, window, cx);
+        app.add_pii_candidate(&crate::pii::ui::PiiAddCandidate, window, cx);
         window.focus(&app.pii.focus, cx);
     });
     cx.run_until_parked();

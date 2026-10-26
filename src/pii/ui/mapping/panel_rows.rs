@@ -1,9 +1,22 @@
 //! Replacements panel rows: group headers and mention rows (ADR 0033).
-use super::checklist::Tick;
-use super::panel::{PanelEntry, PanelItem, ROW_HEIGHT, ReplacementRow};
-use super::*;
-use crate::ui;
-use gpui::{AnyElement, HighlightStyle, SharedString, StyledText, div, prelude::*};
+use super::{
+    DragGhost, DropTarget, MappingAction, PanelCursor, PanelDrag, PanelMenu,
+    checklist::Tick,
+    panel::{PanelEntry, PanelItem, ROW_HEIGHT, ReplacementRow},
+};
+use crate::{
+    document_view::DocumentView,
+    pii::{
+        Category,
+        ui::{APPLIED_ID, KEPT_ID},
+    },
+    style, ui,
+};
+use gpui::{
+    AnyElement, App, AppContext, Context, Entity, Focusable, HighlightStyle, Hsla, Pixels,
+    SharedString, StyledText, Window, div, prelude::*, px,
+};
+use std::ops::Range;
 
 /// Starts a panel drag: remembers what is dragged and shows its ghost chip.
 fn start_drag(

@@ -1,5 +1,15 @@
 //! Immutable scan jobs and generation/revision/configuration validation.
-use super::*;
+use crate::{
+    document_view::DocumentView,
+    pii::{self, detector},
+    settings, settings_ui,
+};
+use gpui::Context;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 /// A scan only proposes candidates; Apply edits the document explicitly.
 pub(super) struct ScanJob {
     pub(super) cancel: Arc<AtomicBool>,

@@ -1,9 +1,13 @@
 //! The Inspector's Share tab (ADR 0048 variant C): everything that takes the
 //! pseudonymized document out, and brings the AI's reply back.
-use super::*;
-use crate::ui;
-use crate::{CopyForAi, CopyMarkdown, PasteAiResponse, SaveAs};
-use gpui::{AnyElement, App, Window, div, prelude::*};
+use super::Selection;
+use crate::{
+    document_view::{CopyMarkdown, DocumentView, SaveAs},
+    pii::ui::{APPLIED_ID, CopyForAi, KEPT_ID},
+    ui,
+    workspace::PasteAiResponse,
+};
+use gpui::{AnyElement, App, Context, Window, div, prelude::*, px};
 
 impl DocumentView {
     /// Review | Share, the Inspector's two tabs.

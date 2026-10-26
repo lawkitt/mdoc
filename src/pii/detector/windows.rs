@@ -1,5 +1,8 @@
 //! Tokenizer-bounded model windows, including pathological-word rejection.
-use super::*;
+use super::{MAX_INPUT_TOKENS, checkpoint};
+use gliner2_rs::{Chunker, SchemaTask, processor::SchemaTransformer};
+use std::{sync::atomic::AtomicBool, time::Instant};
+
 pub(super) fn bounded_windows(
     source: &str,
     transformer: &SchemaTransformer,

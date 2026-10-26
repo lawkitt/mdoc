@@ -1,8 +1,12 @@
 //! Explicit host CPU measurements, not display latency or visual acceptance.
-use super::*;
-use crate::document_view_tests::{boot, close_document, open_document};
-use gpui::{TestAppContext, VisualTestContext};
-use std::time::Instant;
+use crate::{
+    document_view_tests::{boot, close_document, open_document},
+    import,
+    search_session::{CloseMarkdownSearch, FindMarkdown, FindNextMarkdown},
+};
+use gpui::{Entity, TestAppContext, VisualTestContext, px};
+use mdoc_editor::SearchIndex;
+use std::{path::PathBuf, time::Instant};
 
 pub(crate) fn draw(cx: &mut VisualTestContext) {
     cx.update(|window, cx| {

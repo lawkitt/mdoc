@@ -1,12 +1,21 @@
 use crate::{
+    document_view::{Save, SaveAs},
     markdown_search::SearchInput,
-    model_download::{Pending, Progress},
-    settings::*,
-    style::Theme,
-    *,
+    model_download::{self, Pending, Progress},
+    model_work, ocr, pii,
+    settings::{
+        Model, OcrConfig, OcrModel, PiiConfig, PiiModel, Preferences, Shared, SpellingConfig,
+        UpdatesConfig, save,
+    },
+    style::{self, Theme},
+    ui, updater,
+    workspace::{Close, Import, New, NextTab, Open, PreviousTab},
 };
-use gpui::{AnyElement, FocusHandle, MouseButton, actions};
-use std::time::Duration;
+use gpui::{
+    AnyElement, App, Context, Entity, FocusHandle, Focusable, KeyBinding, MouseButton, PromptLevel,
+    Window, actions, div, prelude::*, px,
+};
+use std::{cell::Cell, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 mod dictionary;
 
@@ -1023,7 +1032,9 @@ impl Render for Panel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settings::Store;
     use gpui::TestAppContext;
+    use gpui::size;
     #[gpui::test]
     fn text_recognition_note_matches_the_offered_languages(cx: &mut TestAppContext) {
         let (panel, cx) = cx.add_window_view(|_, cx| {

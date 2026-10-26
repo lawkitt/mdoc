@@ -1,7 +1,13 @@
 //! Lazy list for multiple hidden fields sharing a containing visual row.
-use super::*;
-use crate::{PiiNextChoice, PiiOpenChoice, PiiPreviousChoice, ui};
-use gpui::{AnyElement, anchored, deferred, div, prelude::*, uniform_list};
+use super::{APPLIED_ID, Popup};
+use crate::{
+    document_view::DocumentView,
+    pii::ui::{PiiClosePopup, PiiNextChoice, PiiOpenChoice, PiiPreviousChoice},
+    ui,
+};
+use gpui::{AnyElement, Context, Window, anchored, deferred, div, prelude::*, px, uniform_list};
+use std::{ops::Range, sync::Arc};
+
 impl DocumentView {
     pub(crate) fn choose_annotations(
         &mut self,

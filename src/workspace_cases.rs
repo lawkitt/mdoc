@@ -1,9 +1,21 @@
 //! Saved cases in the window (ADR 0041, phase 2): create a case from a tab's
 //! mapping, save changes in the background, give reopened members their
 //! mapping back, rename, remove, delete, and the Open Case list.
-use super::*;
-use crate::cases::{Case, CaseLink, Store};
-use std::collections::{HashMap, HashSet};
+use super::{TabDrag, Workspace};
+use crate::{
+    cases::{Case, CaseLink, Store},
+    document_view::{DocumentView, Next},
+    markdown_search, pii, session_store, style, ui,
+};
+use gpui::{
+    AnyElement, App, Context, Entity, Focusable, KeyBinding, PromptLevel, Window, div, prelude::*,
+    px,
+};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+    sync::Arc,
+};
 
 gpui::actions!(cases, [ConfirmCaseName, CancelCaseName]);
 

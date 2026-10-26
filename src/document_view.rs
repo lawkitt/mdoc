@@ -1,10 +1,61 @@
 //! The document view: one tab's Markdown editor, source preview, search,
 //! import/OCR state and pseudonymization review. The window-level
 //! [`crate::workspace::Workspace`] owns these views.
-use super::*;
+use crate::{
+    cases,
+    document::{self, Document},
+    document_session, images, import, import_session, markdown_search, model_work, ocr,
+    pii::{
+        self,
+        ui::{PiiAddCandidate, PiiNextCandidate, PiiPreviousCandidate, PiiReviewCandidate},
+    },
+    preview::{self, RetryPreview},
+    recognition,
+    search_session::{
+        self, CloseMarkdownSearch, FindMarkdown, FindNextMarkdown, FindPreviousMarkdown,
+        FindReplaceMarkdown, ReplaceAllMarkdown, ReplaceNextMarkdown, SearchRefresh,
+        ToggleMarkdownMatchCase, ToggleMarkdownWholeWord,
+    },
+    session_store, settings, settings_ui, spelling,
+    style::{self, Theme},
+    ui,
+    workspace::{self, Close, Import, New, Open, RetryDocument, ToggleTheme},
+};
+use gpui::{
+    App, Context, Entity, Focusable, KeyBinding, PathPromptOptions, PromptLevel, ScrollHandle,
+    Subscription, Window, actions, div, prelude::*, px,
+};
+use mdoc_editor::{EditorEvent, EditorState};
+use std::{
+    cell::Cell,
+    path::PathBuf,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 mod case;
 mod chrome;
+actions!(
+    mdoc,
+    [
+        SetupOcr,
+        RunOcr,
+        ExtractNative,
+        DismissImportWarning,
+        Save,
+        SaveAs,
+        CopyMarkdown,
+        ToggleCompare,
+        ZoomIn,
+        ZoomOut,
+        ZoomReset,
+        ClosePdf,
+        TogglePreview,
+    ]
+);
 
 #[derive(Clone)]
 pub(crate) enum Next {
@@ -2268,13 +2319,15 @@ impl Render for DocumentView {
             // regions (ADR 0062).
             .track_focus(&self.focus)
             .on_action(cx.listener(Self::toggle_theme))
-            .on_action(cx.listener(|this, _: &crate::ExpandAllIdentities, _, cx| {
-                if this.replacements_open() {
-                    this.set_all_identities_expanded(true, cx)
-                }
-            }))
             .on_action(
-                cx.listener(|this, _: &crate::CollapseAllIdentities, _, cx| {
+                cx.listener(|this, _: &crate::pii::ui::ExpandAllIdentities, _, cx| {
+                    if this.replacements_open() {
+                        this.set_all_identities_expanded(true, cx)
+                    }
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::pii::ui::CollapseAllIdentities, _, cx| {
                     if this.replacements_open() {
                         this.set_all_identities_expanded(false, cx)
                     }
@@ -2290,9 +2343,11 @@ impl Render for DocumentView {
             .on_action(cx.listener(Self::copy_markdown))
             .on_action(cx.listener(Self::copy_for_ai))
             .on_action(cx.listener(Self::paste_ai_response))
-            .on_action(cx.listener(|this, _: &crate::ToggleCompare, window, cx| {
-                this.toggle_compare(window, cx)
-            }))
+            .on_action(cx.listener(
+                |this, _: &crate::document_view::ToggleCompare, window, cx| {
+                    this.toggle_compare(window, cx)
+                },
+            ))
             .on_action(cx.listener(Self::pseudonymize_clipboard))
             .on_action(cx.listener(Self::pseudonymize))
             .on_action(cx.listener(Self::add_pii_candidate))

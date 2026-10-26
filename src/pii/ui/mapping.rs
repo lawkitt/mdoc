@@ -1,12 +1,20 @@
 //! Identity review and direct correction. All mutation uses editor history.
-use super::*;
+use super::{APPLIED_ID, KEPT_ID, Popup};
+use crate::{
+    document_view::DocumentView,
+    markdown_search,
+    pii::{Category, tracking::ReplacementPlan},
+};
+use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Pixels, Window, px};
+use std::{cell::Cell, ops::Range, rc::Rc, sync::Arc};
+
 mod checklist;
 mod panel;
 mod panel_keys;
 mod panel_rows;
 mod popup;
 mod share;
-pub(super) use popup::{Scope, Step};
+pub(super) use popup::Scope;
 mod popup_render;
 
 /// What the workspace popup edits: a whole entity after a mapping change, or

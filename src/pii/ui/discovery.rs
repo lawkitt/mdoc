@@ -1,5 +1,11 @@
 //! One running candidate refresh and one replaceable latest request.
-use super::*;
+use crate::document_view::DocumentView;
+use gpui::Context;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 pub(super) struct DiscoveryJob {
     pub cancel: Arc<AtomicBool>,
     pub ticket: u64,

@@ -1,10 +1,34 @@
 //! Dev-only screen evidence. TestPlatform owns every window: no native window,
 //! application event loop, activation, clipboard or OS prompt is used.
-use super::*;
-use gpui::{HeadlessAppContext, Keystroke};
+use super::{
+    Workspace, app_actions::bind as bind_app_actions, cases_ui::bind_keys as bind_case_keys,
+    shell::bind_keys as bind_shell_keys,
+};
+use crate::{
+    bind_app_keys, comparison, comparison_ui,
+    document::Document,
+    document_view::{DocumentView, bind_markdown_search_keys},
+    markdown_search,
+    pii::{
+        self,
+        ui::{PiiApplyAll, PiiClosePopup},
+    },
+    search_session::CloseMarkdownSearch,
+    session_store::Session,
+    settings, settings_ui, style, ui,
+};
+use gpui::{
+    Context, Entity, Focusable, HeadlessAppContext, KeyBinding, Keystroke, PromptLevel, Window,
+    prelude::*, px, size,
+};
 use image::ImageEncoder;
 use serde_json::{Value, json};
-use std::{collections::HashMap, path::Path, time::Instant};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 type Result<T> = std::result::Result<T, String>;
 const WIDTH: f32 = 1100.;

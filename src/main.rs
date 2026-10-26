@@ -6,24 +6,21 @@
 mod app_paths;
 mod cases;
 mod comment_panel;
+mod comparison;
+mod comparison_ui;
+mod confirm_dialog;
 mod crash;
 mod document;
 mod document_session;
 mod document_view;
+#[cfg(test)]
+mod document_view_tests;
 mod docx_preview;
 mod images;
 mod import;
 mod import_session;
 mod markdown_search;
 mod menus;
-mod search_session;
-mod self_test;
-use search_session::SearchRefresh;
-mod comparison;
-mod comparison_ui;
-mod confirm_dialog;
-#[cfg(test)]
-mod document_view_tests;
 mod model_download;
 mod model_work;
 mod ocr;
@@ -33,6 +30,8 @@ mod pii;
 mod preview;
 mod recents;
 mod recognition;
+mod search_session;
+mod self_test;
 mod session_store;
 mod settings;
 mod settings_ui;
@@ -43,110 +42,16 @@ mod ui;
 mod updater;
 mod workspace;
 
-use document::Document;
-use document_view::*;
-use gpui::{
-    App, Bounds, Context, Entity, Focusable, KeyBinding, PathPromptOptions, PromptLevel,
-    ScrollHandle, Subscription, Window, WindowBounds, WindowOptions, actions, div, prelude::*, px,
-    size,
+use document_view::{
+    Save, SaveAs, ToggleCompare, ZoomIn, ZoomOut, ZoomReset, bind_markdown_search_keys,
 };
-use gpui_pdf::PdfView;
-use mdoc_editor::{EditorEvent, EditorState, SearchIndex, SearchMatch};
-use std::{
-    cell::{Cell, RefCell},
-    path::PathBuf,
-    rc::Rc,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+use gpui::{App, Bounds, KeyBinding, WindowBounds, WindowOptions, prelude::*, px, size};
+use spelling::{NextMisspelling, PreviousMisspelling};
+use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use workspace::{
+    Close, Import, New, NextTab, Open, PasteAiResponse, PreviousTab, PseudonymizeClipboard, Quit,
+    Settings,
 };
-use style::Theme;
-
-actions!(
-    mdoc,
-    [
-        New,
-        Open,
-        Import,
-        SetupOcr,
-        Settings,
-        RunOcr,
-        ExtractNative,
-        DismissImportWarning,
-        Save,
-        SaveAs,
-        CopyMarkdown,
-        CopyForAi,
-        PasteAiResponse,
-        ToggleCompare,
-        CloseCompare,
-        OpenCase,
-        PseudonymizeClipboard,
-        Pseudonymize,
-        PiiAddCandidate,
-        PiiReviewCandidate,
-        PiiNextCandidate,
-        PiiPreviousCandidate,
-        PiiConfirm,
-        PiiApplyAll,
-        PiiNextChoice,
-        PiiPreviousChoice,
-        PiiOpenChoice,
-        PiiClosePopup,
-        PanelUp,
-        PanelDown,
-        PanelFirst,
-        PanelLast,
-        PanelEnterList,
-        PanelEscape,
-        PanelMoveUp,
-        PanelMoveDown,
-        ToggleNotices,
-        ZoomIn,
-        ZoomOut,
-        ZoomReset,
-        PanelToggle,
-        PanelOpen,
-        PanelExpand,
-        PanelCollapse,
-        ExpandAllIdentities,
-        CollapseAllIdentities,
-        PanelKeep,
-        ApplyThis,
-        ApplySame,
-        ApplyAll,
-        KeepThis,
-        KeepSame,
-        KeepAll,
-        PopupPreviousMention,
-        PopupNextMention,
-        PopupFirstMention,
-        PopupLastMention,
-        Close,
-        ClosePdf,
-        RetryPreview,
-        ToggleTheme,
-        ToggleSidebar,
-        NextTab,
-        PreviousTab,
-        Quit,
-        TogglePreview,
-        RetryDocument,
-        FindMarkdown,
-        FindReplaceMarkdown,
-        ReplaceNextMarkdown,
-        ReplaceAllMarkdown,
-        ToggleMarkdownWholeWord,
-        FindNextMarkdown,
-        FindPreviousMarkdown,
-        CloseMarkdownSearch,
-        ToggleMarkdownMatchCase,
-        NextMisspelling,
-        PreviousMisspelling,
-        ToggleDocumentSpelling,
-    ]
-);
 
 fn main() {
     // The pinned engine chooses providers through this variable. Set it once,
@@ -405,7 +310,7 @@ pub(crate) fn bind_app_keys(cx: &mut App) {
         KeyBinding::new("ctrl-tab", NextTab, None),
         // The macOS convention for View › Toggle Sidebar.
         #[cfg(target_os = "macos")]
-        KeyBinding::new("ctrl-cmd-s", ToggleSidebar, None),
+        KeyBinding::new("ctrl-cmd-s", workspace::ToggleSidebar, None),
         KeyBinding::new("ctrl-shift-tab", PreviousTab, None),
     ]);
 }

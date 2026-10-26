@@ -1,9 +1,18 @@
 //! Searchable replacement overview with inline occurrence context.
-use super::checklist::Tick;
-use super::*;
-use crate::ui;
-use gpui::{AnyElement, SharedString, div, prelude::*, uniform_list};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use super::{DropTarget, MappingAction, PanelDrag, PanelFilter, PanelMenu, checklist::Tick};
+use crate::{
+    document_view::DocumentView,
+    pii::{Category, ui::APPLIED_ID},
+    settings, settings_ui, style, ui,
+};
+use gpui::{
+    AnyElement, App, Context, Hsla, SharedString, Window, div, prelude::*, px, uniform_list,
+};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    ops::Range,
+    sync::Arc,
+};
 
 #[derive(Clone)]
 pub(super) struct ReplacementRow {

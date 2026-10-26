@@ -1,8 +1,18 @@
 //! The user dictionary view inside Settings (ADR 0036): search as you type,
 //! add the typed word, remove words with a short Undo. The list is
 //! virtualized, so only visible rows are drawn and focusable.
-use super::*;
-use gpui::{UniformListScrollHandle, uniform_list};
+use super::{Event, Panel, quiet_control};
+use crate::{
+    markdown_search::{self, SearchInput},
+    settings::{Store, valid_word},
+    style::{self, Theme},
+    ui,
+};
+use gpui::{
+    AnyElement, App, Context, Entity, Focusable, KeyBinding, UniformListScrollHandle, Window,
+    actions, div, prelude::*, px, uniform_list,
+};
+use std::{rc::Rc, time::Duration};
 
 actions!(model_settings, [AddDictionaryWord]);
 

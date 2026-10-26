@@ -1,5 +1,8 @@
 //! Commands whose availability must not depend on a focused element.
-use super::*;
+use super::{Reveal, SLIDE, Workspace};
+use crate::workspace::{New, Open, OpenCase, Quit, Settings, ToggleSidebar, ToggleTheme};
+use gpui::{App, Context, Window};
+use std::time::Duration;
 
 pub(crate) fn bind(cx: &mut App) {
     app_action::<Quit>(cx, |this, window, cx| this.quit(window, cx));

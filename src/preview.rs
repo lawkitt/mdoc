@@ -1,7 +1,22 @@
 //! Loaded preview and pending replacement have independent lifetimes.
 //! Failure preserves the displayed preview; committing releases old PDF data
 //! before deleting its temporary DOCX backing file.
-use super::*;
+use crate::{
+    comment_panel, document_view::DocumentView, docx_preview, markdown_search, session_store,
+    style::Theme, workspace,
+};
+use gpui::{App, Context, Entity, Focusable, Subscription, Window, actions, prelude::*};
+use gpui_pdf::PdfView;
+use std::{
+    cell::Cell,
+    path::PathBuf,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
+actions!(mdoc, [RetryPreview]);
 
 /// DOCX previews are rendered locally and only approximate Word's layout
 /// (ADR 0005); the Markdown is converted from the file itself.

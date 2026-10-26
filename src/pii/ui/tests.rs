@@ -1,5 +1,20 @@
 use super::*;
-use crate::{CopyMarkdown, document::Document, style::Theme};
+use crate::{
+    document::Document,
+    document_view::{CopyMarkdown, DocumentView},
+    pii::{
+        self, Category, Review,
+        ui::{PiiAddCandidate, PiiApplyAll, PiiConfirm, Pseudonymize},
+    },
+    settings, settings_ui,
+    style::Theme,
+};
+use gpui::{App, Context, Entity, Focusable, Window, px};
+use std::{
+    ops::Range,
+    sync::{Arc, atomic::AtomicBool},
+};
+
 fn install_scan(app: &mut DocumentView, cx: &mut Context<DocumentView>) -> (u64, u64, u64) {
     let revision = app.editor.read(cx).revision();
     let generation = app.pii.generation;
@@ -1893,7 +1908,7 @@ fn the_view_pill_rests_hidden_until_pointer_scroll_or_zoom(cx: &mut gpui::TestAp
     // At rest the pill does not sit over the text (README media decision 9).
     assert!(!shown(&app, cx));
     // Keyboard zoom shows it with the new level, then it fades.
-    cx.dispatch_action(crate::ZoomIn);
+    cx.dispatch_action(crate::document_view::ZoomIn);
     assert!(shown(&app, cx));
     idle(cx);
     assert!(!shown(&app, cx));
@@ -2006,7 +2021,7 @@ fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext)
     let applied = cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned());
     assert_ne!(applied, source, "the manual mention is applied");
     let alias = cx.update(|_, cx| app.read(cx).pii.review.applied()[0].step.after.to_string());
-    cx.dispatch_action(crate::FindReplaceMarkdown);
+    cx.dispatch_action(crate::search_session::FindReplaceMarkdown);
     cx.run_until_parked();
     cx.simulate_input(&alias);
     app.update_in(cx, |app, window, cx| {
@@ -2017,7 +2032,7 @@ fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext)
     let matches = cx.update(|_, cx| app.read(cx).search.matches.len());
     assert!(matches >= 1);
     let applied_count = cx.update(|_, cx| app.read(cx).pii.review.applied().len());
-    cx.dispatch_action(crate::ReplaceAllMarkdown);
+    cx.dispatch_action(crate::search_session::ReplaceAllMarkdown);
     cx.run_until_parked();
     assert_eq!(
         cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),
@@ -2028,7 +2043,7 @@ fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext)
             .as_deref(),
         Some(format!("Replaced 0 · skipped {applied_count} (alias)").as_str())
     );
-    cx.dispatch_action(crate::ReplaceNextMarkdown);
+    cx.dispatch_action(crate::search_session::ReplaceNextMarkdown);
     cx.run_until_parked();
     assert_eq!(
         cx.update(|_, cx| app.read(cx).editor.read(cx).text().to_owned()),

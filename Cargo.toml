@@ -99,6 +99,11 @@ windows-sys = { version = "0.61", features = [
 [build-dependencies]
 embed-resource = "3"
 
+# Module dependencies stay visible (ADR 0069). The workspace crates adopt this
+# in phase P5; `use super::*` in test modules stays allowed.
+[lints.clippy]
+wildcard_imports = "deny"
+
 # Lean debug information (ADR 0050): workspace crates keep line tables, so
 # backtraces still show file and line; dependencies keep none. The test profile
 # inherits this. For a debugger, build with `--profile debugging`.
