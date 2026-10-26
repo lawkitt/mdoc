@@ -34,6 +34,8 @@ use std::{
 };
 
 mod cases_ui;
+mod docx_queue;
+use docx_queue::{DocxEffect, DocxJob};
 mod focus_regions;
 #[cfg(all(
     debug_assertions,
@@ -139,12 +141,6 @@ impl SidebarStatus {
 }
 
 type Tab = tab_set::Tab<Entity<DocumentView>>;
-struct DocxJob {
-    id: u64,
-    path: PathBuf,
-    generation: u64,
-    cancel: Arc<AtomicBool>,
-}
 
 #[derive(Clone)]
 struct TabDrag {
@@ -205,8 +201,7 @@ pub(super) struct Workspace {
     notices: notices::Notices,
     tab_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
     import_busy: Arc<AtomicBool>,
-    docx_queue: VecDeque<DocxJob>,
-    docx_running: Option<(u64, u64)>,
+    docx_queue: docx_queue::DocxQueue,
     quitting: Option<VecDeque<u64>>,
     quit_active: Option<u64>,
     closing_tab: Option<u64>,
@@ -373,8 +368,7 @@ impl Workspace {
             notices: Default::default(),
             tab_menu: None,
             import_busy: Arc::new(AtomicBool::new(false)),
-            docx_queue: VecDeque::new(),
-            docx_running: None,
+            docx_queue: docx_queue::DocxQueue::default(),
             quitting: None,
             quit_active: None,
             closing_tab: None,
@@ -1379,7 +1373,7 @@ impl Workspace {
                 generation,
                 cancel,
             } => {
-                self.docx_queue.push_back(DocxJob {
+                self.docx_queue.push(DocxJob {
                     id,
                     path: path.clone(),
                     generation: *generation,
@@ -1410,21 +1404,16 @@ impl Workspace {
     }
 
     fn pump_docx(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.docx_running.is_some() {
-            return;
-        }
-        while let Some(job) = self.docx_queue.pop_front() {
-            if job.cancel.load(Ordering::Relaxed) {
-                continue;
-            }
-            let Some(view) = self.tabs.get(job.id).and_then(|tab| tab.view().cloned()) else {
-                continue;
-            };
-            self.docx_running = Some((job.id, job.generation));
+        let tabs = &self.tabs;
+        let effect = self
+            .docx_queue
+            .next(|id| tabs.get(id).is_some_and(|tab| tab.view().is_some()));
+        if let Some(DocxEffect::Run(job)) = effect
+            && let Some(view) = self.tabs.get(job.id).and_then(|tab| tab.view().cloned())
+        {
             view.update(cx, |view, cx| {
                 view.run_docx(job.path, job.generation, job.cancel, window, cx)
             });
-            break;
         }
     }
 
@@ -1435,9 +1424,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.docx_running == Some((id, generation)) {
-            self.docx_running = None;
-        }
+        self.docx_queue.finished(id, generation);
         self.pump_docx(window, cx);
     }
 
@@ -1493,7 +1480,7 @@ impl Workspace {
             return;
         };
         self.tab_subscriptions.remove(&id);
-        self.docx_queue.retain(|job| job.id != id);
+        self.docx_queue.forget(id);
         if let Some(TabsEffect::Activate(next)) = effect {
             self.activate(next, window, cx);
         } else if closed_reveal {
