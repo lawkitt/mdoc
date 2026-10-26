@@ -35,7 +35,7 @@ echo "installed copy: mdoc $before"
 after=$(plist_version "$app")
 [ "$after" != "$before" ] || die "mdoc $before did not update; is it older than the latest release?"
 codesign --verify --deep --strict \
-  -R='=anchor apple generic and identifier "io.github.lawkitt.mdoc" and certificate leaf[subject.OU] = "F33DLM8K53"' \
+  -R '=anchor apple generic and identifier "io.github.lawkitt.mdoc" and certificate leaf[subject.OU] = "F33DLM8K53"' \
   "$app"
 spctl --assess --type execute -v "$app"
 for leftover in "$work/Applications/.mdoc.app.update" "$work/Applications/.mdoc.app.old"; do
