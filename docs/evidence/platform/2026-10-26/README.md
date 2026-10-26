@@ -11,9 +11,9 @@ the keyboard-reach follow-ups. Run by [`docs/release-run.md`](../../../release-r
 
 | Target | Checklist | Pass | Fail | Pending | Unavailable |
 | --- | --- | --- | --- | --- | --- |
-| Apple Silicon macOS | [macos.md](macos.md) | 68 | 0 | 5 | 10 |
-| Windows x64 | [windows.md](windows.md) | 54 | 2 | 17 | 8 |
-| **Total** | | 122 | 2 | 22 | 18 |
+| Apple Silicon macOS | [macos.md](macos.md) | 68 | 0 | 0 | 15 |
+| Windows x64 | [windows.md](windows.md) | 55 | 2 | 0 | 24 |
+| **Total** | | 123 | 2 | 0 | 39 |
 
 - **Build:** GitHub pre-release `v0.2.0-rc.4`, tag commit `911dd0b`
   (`release: v0.2.0-rc.4`), built by CI. `mdoc_0.2.0-rc.4_arm64.dmg`, SHA-256
@@ -30,7 +30,8 @@ the keyboard-reach follow-ups. Run by [`docs/release-run.md`](../../../release-r
 - **Windows:** Claude through computer use from the Claude desktop app on the
   maintainer's PC (Ryzen 9 3900X, 32 GB, RTX 2070 SUPER, Windows 11 Pro 26H2
   build 26300.9711, one 1600 × 900 display at 100 %), installed over 0.1.1
-  from a renamed profile, with the real model downloads (S2–S5). The T3 Codex
+  from a renamed profile, with the real model downloads (S2–S5). The
+  maintainer ran P6 and skipped the other maintainer rows for 0.2.0. The T3 Codex
   `windows-desktop` thread stopped at preflight ("Computer Use native pipe is
   unavailable"), so the maintainer started this run instead.
 - **Linux:** compiles in CI (`lint (ubuntu)`); no runtime checks.
@@ -57,17 +58,18 @@ rc.1's D5 fail (#115) passes on rc.4.
 - **Windows D2, X1, X5:** macOS-only rows.
 - **K3–K7, both:** no Japanese input source; the maintainer does not run the
   Japanese rows (ADR 0057).
+- **Skipped for 0.2.0 by the maintainer (2026-10-26):**
+  - macOS: H3 (⇧⌘I), H10 (⇧⌘H), H12 (⇧⌘P) on the physical keyboard (each
+    worked injected); H18's and the follow-up's ⇧F10 on a sidebar tab row (on
+    a MacBook keyboard F10 is the mute key, so the check needs fn+⇧+F10).
+  - Windows: I3 (SmartScreen), T3 (OS appearance), T6 (physical mouse), D3,
+    D4 (display scale did not apply), P3–P5 (drags from Explorer), S1
+    (network off), C1 (browser paste), K1, K2, K9, H15 (physical keyboard),
+    A5 and X4 (Narrator speech).
 
-## Pending rows (the maintainer's)
-
-- **macOS, skipped for 0.2.0 by the maintainer:** H3 (⇧⌘I), H10 (⇧⌘H), H12
-  (⇧⌘P) on the physical keyboard (each worked injected); H18's and the
-  follow-up's ⇧F10 on a sidebar tab row (on a MacBook keyboard F10 is the mute
-  key, so the check needs fn+⇧+F10).
-- **Windows:** I3 (SmartScreen), T3 (OS appearance), T6 (physical mouse), D3,
-  D4 (display scale did not apply), P3–P6 (drags from Explorer; P6 blocking),
-  S1 (network off), C1 (browser paste), K1, K2, K9, H15 (physical keyboard),
-  A5 and X4 (Narrator speech; A5 blocking).
+The maintainer's own macOS checks (T3, P6, S1, C1, K1, K2, K8, K9, E2, E3's
+Unlock…, E5, Categories, A3–A5 and the Recents names) passed; on Windows, P6
+passed.
 
 ## Ship checks (ROADMAP 0.2.0 must-fix 2)
 
