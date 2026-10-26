@@ -19,7 +19,7 @@ impl DocumentView {
                 .await;
             let _ = this.update(cx, |this, cx| {
                 this.case_save = None;
-                cx.emit(workspace::TabEvent::CaseChanged);
+                cx.emit(workspace::TabEvent::Case(workspace::CaseEvent::Changed));
             });
         }));
     }

@@ -132,7 +132,9 @@ impl DocumentView {
                         };
                         let term = input.read(cx).value().trim().to_string();
                         if !term.is_empty() {
-                            cx.emit(crate::workspace::TabEvent::AddCaseTerm(term));
+                            cx.emit(crate::workspace::TabEvent::Case(
+                                crate::workspace::CaseEvent::AddTerm(term),
+                            ));
                         }
                         input.update(cx, |input, cx| input.reset(cx));
                         window.focus(&input.read(cx).focus_handle(cx), cx);

@@ -95,6 +95,7 @@ dependency forks.
 | --- | --- |
 | `src/main.rs` | Application startup, menus, key bindings and window creation |
 | `src/workspace.rs`, `src/workspace/` | The window shell: document sidebar, tab identity, admission, scheduling and session persistence |
+| `src/workspace/{tab_set,sidebar,focus_regions,notices,session_writer,docx_queue,quit_flow,case_coordinator}.rs` | The window's owners: tabs and the active tab, the sidebar and its reveal, F6 regions, the bell's notices, session saves, the DOCX worker queue, closing and quitting, and case coordination |
 | `src/document_view.rs`, `src/document_view/` | One tab's document view: editor, source preview, import/OCR state, actions and toolbar chrome |
 | `crates/mdoc-store` | GUI-free storage: app paths, atomic document saves and document identity, the session manifest, recents, settings types and files, encrypted saved cases, crash-report masking |
 | `crates/mdoc-import` | GUI-free import: library integration and pending jobs (`import`, `import_session`), explicit verified setup and offline OCR (`ocr`), model downloads and the one-at-a-time model permit, and the supervised DOCX preview worker (`docx_preview`; its entry point stays in `src/main.rs`) |

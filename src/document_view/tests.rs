@@ -44,12 +44,13 @@ pub(crate) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut Visua
     (app, cx)
 }
 
+/// The active document in `_app`'s window.
 pub(crate) fn active_document(
-    app: &Entity<DocumentView>,
+    _app: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
 ) -> Entity<DocumentView> {
-    cx.update(|_, cx| {
-        let tabs = app.read(cx).owner.1.upgrade().unwrap();
+    cx.update(|window, cx| {
+        let tabs = window.root::<workspace::Workspace>().flatten().unwrap();
         tabs.read(cx).active_view().unwrap()
     })
 }
@@ -59,7 +60,11 @@ pub(crate) fn open_document(
     path: PathBuf,
     cx: &mut VisualTestContext,
 ) -> Entity<DocumentView> {
-    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::Open(vec![path])));
+    app.update(cx, |_, cx| {
+        cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(vec![
+            path,
+        ])))
+    });
     cx.run_until_parked();
     active_document(app, cx)
 }
@@ -68,7 +73,9 @@ pub(crate) fn new_document(
     app: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
 ) -> Entity<DocumentView> {
-    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::New));
+    app.update(cx, |_, cx| {
+        cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::New))
+    });
     cx.run_until_parked();
     active_document(app, cx)
 }
@@ -77,7 +84,9 @@ pub(crate) fn close_document(
     app: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
 ) -> Entity<DocumentView> {
-    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::CloseRequested));
+    app.update(cx, |_, cx| {
+        cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Requested))
+    });
     cx.run_until_parked();
     if cx.has_pending_prompt() {
         cx.simulate_prompt_answer("Discard");
@@ -1323,7 +1332,16 @@ fn imported_warning_survives_save_and_stays_with_its_tab_until_dismissed(cx: &mu
             window,
             cx,
         );
-        app.write(dir.path().join("output.md"), None, window, cx);
+        app.write(dir.path().join("output.md"), None, cx);
+    });
+    // The window checks for another tab with the file, then saves.
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let app = app.read(cx);
+        assert_eq!(
+            app.session.document.path,
+            Some(session_store::identity(&dir.path().join("output.md")))
+        );
         assert!(app.session.warning.is_some());
     });
     cx.dispatch_action(DismissImportWarning);
@@ -1351,7 +1369,11 @@ fn empty_import_is_unsaved_and_source_cannot_be_overwritten(cx: &mut TestAppCont
         result.markdown.clear();
         app.proceed(Next::Import(result), window, cx);
         assert!(app.dirty(cx));
-        app.write(source.clone(), None, window, cx);
+        // The window checks for another tab with the file, then saves.
+        app.write(source.clone(), None, cx);
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
         assert!(
             app.error
                 .as_ref()
@@ -2395,7 +2417,11 @@ fn files_opened_during_a_confirm_dialog_wait_for_the_answer(cx: &mut TestAppCont
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("later.md");
     std::fs::write(&path, "later").unwrap();
-    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::Open(vec![path])));
+    app.update(cx, |_, cx| {
+        cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(vec![
+            path,
+        ])))
+    });
     cx.executor()
         .advance_clock(std::time::Duration::from_millis(300));
     cx.run_until_parked();
@@ -2433,8 +2459,14 @@ fn an_open_already_resolving_waits_for_a_dialog_raised_meanwhile(cx: &mut TestAp
     let path = dir.path().join("later.md");
     std::fs::write(&path, "later").unwrap();
     // The open starts resolving, then the close asks before it finishes.
-    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::Open(vec![path])));
-    app.update(cx, |_, cx| cx.emit(workspace::TabEvent::CloseRequested));
+    app.update(cx, |_, cx| {
+        cx.emit(workspace::TabEvent::Tabs(workspace::TabsEvent::Open(vec![
+            path,
+        ])))
+    });
+    app.update(cx, |_, cx| {
+        cx.emit(workspace::TabEvent::Close(workspace::CloseEvent::Requested))
+    });
     cx.run_until_parked();
     assert!(cx.update(|window, _| window.has_active_prompt()));
     assert_eq!(active_document(&app, cx), app, "the dialog keeps focus");

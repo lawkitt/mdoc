@@ -101,7 +101,9 @@ impl DocumentView {
                 "This tab has no names to replace yet. Pseudonymize a document or open a case first."
                     .into(),
             );
-            cx.emit(crate::workspace::TabEvent::MappingMissing);
+            cx.emit(crate::workspace::TabEvent::Case(
+                crate::workspace::CaseEvent::MappingMissing,
+            ));
             cx.notify();
             return;
         }
@@ -144,7 +146,9 @@ impl DocumentView {
                  Apply replacements, copy the text for the AI, then paste its reply here."
                     .into(),
             );
-            cx.emit(crate::workspace::TabEvent::MappingMissing);
+            cx.emit(crate::workspace::TabEvent::Case(
+                crate::workspace::CaseEvent::MappingMissing,
+            ));
             cx.notify();
             return;
         }
@@ -159,14 +163,14 @@ impl DocumentView {
         }
         let name = self.display_name();
         let stem = name.strip_suffix(".md").unwrap_or(&name).to_string();
-        cx.emit(crate::workspace::TabEvent::Restored(Arc::new(
-            RestoredReply {
+        cx.emit(crate::workspace::TabEvent::Tabs(
+            crate::workspace::TabsEvent::Restored(Arc::new(RestoredReply {
                 text,
                 identities,
                 source_name: stem,
                 case: self.case.clone(),
-            },
-        )));
+            })),
+        ));
     }
     /// Fill this new tab with `reply`, then restore its aliases as one undo step.
     pub(crate) fn start_restored(

@@ -206,7 +206,7 @@ impl DocumentView {
                                             // stays in every view, so shortcuts keep a
                                             // focused target (#79).
                                             window.focus(&this.pii.mapping.focus, cx);
-                                            cx.emit(crate::workspace::TabEvent::CreateCase { close: false });
+                                            cx.emit(crate::workspace::TabEvent::Case(crate::workspace::CaseEvent::Create { close: false }));
                                         }
                                     })),
                             )

@@ -4,7 +4,23 @@
 //! asks the documents, saves the session, flushes cases and closes the
 //! window; this owner decides what comes next.
 
-use std::collections::{HashMap, VecDeque};
+use std::{
+    cell::Cell,
+    collections::{HashMap, VecDeque},
+    rc::Rc,
+};
+
+/// Whether a close or quit waits on a document's answer, shared read-only
+/// with the documents: an import finishing then waits too (ADR 0069, one
+/// channel each way).
+#[derive(Clone, Default)]
+pub(crate) struct CloseWatch(Rc<Cell<bool>>);
+
+impl CloseWatch {
+    pub(crate) fn resolving(&self) -> bool {
+        self.0.get()
+    }
+}
 
 /// What the workspace view carries out for a quit-flow transition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,6 +58,8 @@ pub(super) struct QuitFlow {
     finishing: bool,
     /// The history each document had when its changes were resolved, by tab.
     checked: HashMap<u64, u64>,
+    /// `resolving()`, as the documents read it.
+    watch: CloseWatch,
 }
 
 impl QuitFlow {
@@ -63,6 +81,15 @@ impl QuitFlow {
         self.queue.is_some() || self.closing.is_some()
     }
 
+    /// `resolving()` for the documents, kept current by every transition.
+    pub(super) fn watch(&self) -> CloseWatch {
+        self.watch.clone()
+    }
+
+    fn publish(&self) {
+        self.watch.0.set(self.resolving());
+    }
+
     /// Whether a quit may begin now.
     pub(super) fn may_quit(&self) -> bool {
         self.queue.is_none() && !self.finishing
@@ -78,6 +105,7 @@ impl QuitFlow {
         self.closing = None;
         self.restore = Some(active);
         self.queue = Some(dirty);
+        self.publish();
         self.step()
     }
 
@@ -117,12 +145,14 @@ impl QuitFlow {
         }
         self.finishing = false;
         self.queue = Some(changed);
+        self.publish();
         QuitEnd::Ask(self.step())
     }
 
     /// Tab `id` has unsaved changes: ask its document before closing it.
     pub(super) fn close(&mut self, id: u64) -> QuitEffect {
         self.closing = Some(id);
+        self.publish();
         QuitEffect::Resolve(id)
     }
 
@@ -132,6 +162,7 @@ impl QuitFlow {
             self.advance()
         } else if self.closing == Some(id) {
             self.closing = None;
+            self.publish();
             Some(QuitEffect::Remove(id))
         } else {
             None
@@ -143,6 +174,7 @@ impl QuitFlow {
         self.queue = None;
         self.restore = None;
         self.closing = None;
+        self.publish();
     }
 
     /// The quit stops: a session save failed, or the user cancelled the
@@ -150,6 +182,7 @@ impl QuitFlow {
     pub(super) fn abandon(&mut self) -> bool {
         let finishing = std::mem::take(&mut self.finishing);
         self.queue = None;
+        self.publish();
         finishing
     }
 }
@@ -196,12 +229,15 @@ mod tests {
     #[test]
     fn closing_one_tab_removes_it_once_resolved() {
         let mut quit = QuitFlow::default();
+        let watch = quit.watch();
+        assert!(!watch.resolving());
         assert_eq!(quit.close(4), QuitEffect::Resolve(4));
         assert_eq!(quit.closing(), Some(4));
         assert!(quit.resolving() && !quit.may_close() && quit.may_quit());
+        assert!(watch.resolving());
         assert_eq!(quit.resolved(9), None);
         assert_eq!(quit.resolved(4), Some(QuitEffect::Remove(4)));
-        assert!(quit.may_close());
+        assert!(quit.may_close() && !watch.resolving());
         // A quit replaces a pending close.
         quit.close(4);
         quit.quit(4, [4].into());
@@ -212,13 +248,15 @@ mod tests {
     fn cancelling_or_a_failed_save_ends_the_quit() {
         let mut quit = QuitFlow::default();
         quit.quit(1, [1, 2].into());
+        assert!(quit.watch().resolving());
         quit.cancel();
-        assert!(quit.may_quit() && quit.may_close());
+        assert!(quit.may_quit() && quit.may_close() && !quit.watch().resolving());
         assert_eq!(quit.advance(), None);
         quit.quit(1, VecDeque::new());
         quit.settle([]);
+        assert!(quit.watch().resolving());
         assert!(quit.abandon());
-        assert!(quit.may_quit());
+        assert!(quit.may_quit() && !quit.watch().resolving());
         assert!(!quit.abandon());
     }
 }
