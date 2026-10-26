@@ -39,14 +39,19 @@ blocks.
 - **PowerShell.** No PSScriptAnalyzer for `ci-installed-windows.ps1`; every
   release run exercises it.
 
+Until the ROADMAP's *CI speed and script hygiene* item is done, the
+dependency optimization and `just lint-scripts` are being adopted, not yet in
+place.
+
 ## Consequences
 
 - A warm PR costs more runner minutes (two builds per OS), but Windows no
   longer runs clippy and the tests back to back.
 - A PR that changes `Cargo.lock` or the toolchain builds cold until `main`
   saves a cache for the new key.
-- Release runs on tags no longer save caches; a tag's cache could only be
-  restored by reruns of that same tag.
+- Release runs on tags no longer save caches, so a rerun of a release's
+  packaging builds cold (the `release` cache key never matches CI's). A tag's
+  cache served only reruns of that same tag.
 - There are no required status checks (no branch protection), so the renamed
   jobs break nothing.
 
