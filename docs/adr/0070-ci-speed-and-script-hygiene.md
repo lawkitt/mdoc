@@ -40,8 +40,7 @@ blocks.
   release run exercises it.
 
 Until the ROADMAP's *CI speed and script hygiene* item is done, the
-dependency optimization and `just lint-scripts` are being adopted, not yet in
-place.
+dependency optimization is being adopted, not yet in place.
 
 ## Consequences
 
@@ -55,4 +54,4 @@ place.
 - There are no required status checks (no branch protection), so the renamed
   jobs break nothing.
 
-References: [interview](../design/scripts-and-ci.md).
+References: [interview](https://github.com/lawkitt/mdoc/blob/cde5db2fab1ca383d388e18fada0ec0775e3035d/docs/design/scripts-and-ci.md).
