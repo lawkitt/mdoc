@@ -73,10 +73,11 @@ passed.
 
 ## Ship checks (ROADMAP 0.2.0 must-fix 2)
 
-- **`just smoke-update` from 0.1.5:** cannot pass before 0.2.0 is published: a
-  stable build reads only `/releases/latest`, which is 0.1.5 while rc.4 is a
-  pre-release ("mdoc 0.1.5 is the latest version."). Run it again once 0.2.0
-  is published (ROADMAP Engineering: an update check before publishing).
+- **`just smoke-update` from 0.1.5:** could not pass before 0.2.0 was
+  published: a stable build reads only `/releases/latest`, which was 0.1.5
+  while rc.4 was a pre-release ("mdoc 0.1.5 is the latest version."). It
+  passed after publishing (below; ROADMAP Engineering: an update check before
+  publishing).
 - **`just smoke-update` from rc.3 (stand-in):** the in-app update worked
   (`Updated mdoc 0.2.0-rc.3 to 0.2.0-rc.4.`), but the script's own
   `codesign -R` check had a quoting bug and had never passed; with it fixed
@@ -117,10 +118,13 @@ and skipped every remaining maintainer check for 0.2.0.
 - **`.msi`:** `mdoc_0.2.0_x64.msi` matches `SHA256SUMS`, but it installs per
   machine (`ALLUSERS=1`, Program Files), so the install needs a UAC prompt
   the agent can't answer; the agent stopped before installing and left the PC
-  unchanged. The maintainer checks install, launch, quit and uninstall by
-  hand before publishing.
-- **After publishing:** `just smoke-update` from the 0.1.5 `.dmg` (ROADMAP
-  0.2.x patches).
+  unchanged. The maintainer then installed, launched, quit and uninstalled
+  it by hand on the PC: it works.
+- **Published** by the maintainer on 2026-10-26 (13:50 UTC).
+- **`just smoke-update` from the 0.1.5 `.dmg`** after publishing: "Updated
+  mdoc 0.1.5 to 0.2.0.", `accepted`, `source=Notarized Developer ID`,
+  `smoke-update passed: mdoc 0.1.5 -> 0.2.0` (after one transient "Couldn't
+  reach github.com").
 
 ## Automation notes
 

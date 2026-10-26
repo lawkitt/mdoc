@@ -32,17 +32,15 @@ acceptance run on both platforms
 fail, menus that never took keyboard focus (#167), was fixed and re-checked on
 macOS; the Windows rows were not re-run (no desktop tool there), and the
 maintainer skipped the remaining manual rows and the keychain launch check for
-0.2.0. Windows also ships an `.msi`, checked by hand by the maintainer
-before publishing.
+0.2.0. Windows also ships an `.msi`, which the maintainer checked by hand;
+the in-app update from 0.1.5 passed after publishing.
 
 ## 0.2.x patches
 
 Wrong output, data loss or silent failures that need no design decision
 (GitHub milestones). Open: [0.2.1](https://github.com/lawkitt/mdoc/milestone/5),
-the bugs from the 0.2.0 acceptance runs. First, once 0.2.0 is published,
-`just smoke-update` from the 0.1.5 `.dmg`, which could not run before
-publishing (Engineering). Items that are not ready ride along with a later
-patch. Each patch gets a smoke run on both platforms; an item is done when its
+the bugs from the 0.2.0 acceptance runs. Items that are not ready ride
+along with a later patch. Each patch gets a smoke run on both platforms; an item is done when its
 issue closes, with the expected behavior stated there.
 
 ## 0.3.0
