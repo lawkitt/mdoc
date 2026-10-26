@@ -1,6 +1,7 @@
 //! macOS caret moves and deletions (ADR 0061), run on any OS through the
 //! macOS keymap.
 use super::*;
+use gpui::Entity;
 
 /// An editor on the macOS keymap, focused on `text` with the caret at `at`,
 /// laid out once so wrapped rows are known.

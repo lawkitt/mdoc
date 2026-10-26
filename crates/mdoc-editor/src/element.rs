@@ -1,7 +1,31 @@
 //! The editor's render element: layout, prepaint geometry, and paint — split
 //! from `lib.rs`.
 
-use super::*;
+use crate::markdown_syntax;
+use crate::markdown_syntax::SyntaxStyle;
+use crate::tables::{
+    ColResizeGrip, TABLE_CELL_PAD, TABLE_GUTTER, TableAffordance, TableColResize, TableThumb,
+    cell_span_width, col_offset, fit_table_widths, paint_table_outline, paint_table_pill,
+    paint_table_row, table_caret_pos, table_column_widths, table_row_wrap_rows, table_visible_band,
+};
+use crate::{
+    AnnotationFlash, Block, BlockChipFn, BlockImageFn, BlockImg, CARET_WIDTH, CHECKBOX_SCALE,
+    CHIP_PAD, CODE_INSET, CODE_PAD, CachedLineRuns, CodeBg, CodeChip, CodeChipHit, Diagnostic,
+    EditorEvent, EditorState, IMG_ROW_PAD, INLINE_MATH_ROW_PAD, ImageResize, InlineImage,
+    LINE_HEIGHT_RATIO, LIST_LEVEL_PER_SPACE, LIST_ROW_GAP, LIST_TEXT_GAP, LineMark, QUOTE_INSET,
+    RtlRow, ScanData, ShapeCaches, ShapeMemo, ShapedDoc, ShapedLine, TAB_INDENT, TableRow,
+    caret_line_pos, checkbox_x, display_col_in, grip_left, line_pos, line_run_epoch, measure_width,
+    paint_doc_icon, rtl_marker_x, rtl_shift, shape_runs,
+};
+use gpui::{
+    App, AvailableSpace, BorderStyle, Bounds, Corners, CursorStyle, Edges, Element, ElementId,
+    ElementInputHandler, Entity, Font, FontWeight, GlobalElementId, Hitbox, HitboxBehavior, Hsla,
+    InspectorElementId, IntoElement, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, PaintQuad, PathBuilder, Pixels, Point, RenderImage, SharedString, Style, TextRun,
+    Window, WrappedLine, fill, hsla, point, px, relative, rgba, size,
+};
+use std::ops::Range;
+use std::sync::Arc;
 
 /// The custom element that lays out + paints the editor's wrapped lines, cursor,
 /// and selection, and wires the input handler. Height is content-driven via a
@@ -914,7 +938,8 @@ impl Element for EditorElement {
 
                 // Column-resize grips: a slim band on each column's right
                 // border (hover-gated; kept while a drag on this table is live).
-                if zone.contains(&mouse) || dragging_col.is_some_and(|r| r.header_row == tbl_header)
+                if zone.contains(&mouse)
+                    || dragging_col.is_some_and(|r| r.header_row() == tbl_header)
                 {
                     for (col, &cw) in t.col_widths.iter().enumerate() {
                         // The grip sits on the edge where this column ENDS: its
@@ -2630,7 +2655,8 @@ impl Element for EditorElement {
         for gr in &prepaint.col_resize_grips {
             window.set_cursor_style(CursorStyle::ResizeLeftRight, &gr.hit);
             table_col_resize_rects.push((gr.band, gr.header_row, gr.col, gr.width));
-            let active = dragging.is_some_and(|d| d.header_row == gr.header_row && d.col == gr.col)
+            let active = dragging
+                .is_some_and(|d| d.header_row() == gr.header_row && d.col() == gr.col)
                 || (dragging.is_none() && gr.band.contains(&mouse));
             if active {
                 window.paint_quad(fill(
@@ -3395,10 +3421,10 @@ fn shape_document(
             f32::from(base_font_size).to_bits().hash(&mut h);
             run_epoch.hash(&mut h);
             if let Some(r) = col_resize {
-                r.header_row.hash(&mut h);
-                r.col.hash(&mut h);
-                r.width.to_bits().hash(&mut h);
-                for width in r.widths.iter() {
+                r.header_row().hash(&mut h);
+                r.col().hash(&mut h);
+                r.width().to_bits().hash(&mut h);
+                for width in r.widths() {
                     f32::from(*width).to_bits().hash(&mut h);
                 }
             }
@@ -3454,7 +3480,7 @@ fn shape_document(
                             let mut widths = widths.clone();
                             if r.col_widths_attr.is_none()
                                 && col_resize
-                                    .is_none_or(|resize| resize.header_row != r.lines.start)
+                                    .is_none_or(|resize| resize.header_row() != r.lines.start)
                                 && let Some(available) = wrap_width
                             {
                                 fit_table_widths(

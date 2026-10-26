@@ -16,3 +16,6 @@ flate2 = "1"
 
 [build-dependencies]
 flate2 = "1"
+
+[lints]
+workspace = true

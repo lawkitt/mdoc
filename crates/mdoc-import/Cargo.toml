@@ -33,5 +33,5 @@ libloading = "0.9"
 # Recognition defaults read the keyboard layouts.
 windows-sys = { version = "0.61", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
-[lints.clippy]
-wildcard_imports = "deny"
+[lints]
+workspace = true
