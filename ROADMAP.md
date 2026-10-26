@@ -180,6 +180,19 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Release]** Keep the Windows acceptance helpers (UI Automation tree and
   focus dump, clipboard byte compare, HTML clipboard writer) in `scripts/` so
   runs don't rewrite them. *From the 2026-10-26 Windows run.*
+- **[A11y]** Report keyboard focus on macOS too: only text fields and dialog
+  buttons set `AXFocused`, so accessibility clients and agent-run acceptance
+  can't follow focus elsewhere. *From the rc.4 acceptance run.*
+- **[A11y]** One visible focus style: sidebar rows and Settings show focus with
+  the same fill as selection or hover, and a toolbar toggle's "on" fill hides
+  it. *From the rc.4 acceptance run.*
+- **[A11y]** F6 into the sidebar lands on the active tab, not the last control
+  (often Settings, where ↑/↓ do nothing), so ↑/↓, ⌫ and the tab's actions are
+  one key away. *From the rc.4 acceptance run.*
+- **[A11y]** A Mac shortcut for a sidebar tab's actions besides ⇧F10, which on
+  MacBook keyboards needs fn (F10 is the mute key). *From the rc.4 acceptance run.*
+- **[UI]** Number new tabs (Untitled 2.md, Untitled 3.md) so the sidebar, the
+  quit prompts and VoiceOver tell them apart. *From the rc.4 acceptance run.*
 
 ## Ongoing tracks
 
@@ -197,6 +210,13 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **Cleanup charter** ([ADR 0029](docs/adr/0029-codebase-cleanup-charter.md)):
   concrete ownership/test improvements; conversion and OCR changes belong in
   the AnyDoc/pdf-inspector forks.
+- **Update check before publishing:** `just smoke-update` from the last
+  stable release can only pass once the new stable is published, because a
+  stable build reads only `/releases/latest`; let the smoke run point the
+  updater at a named draft or pre-release. *From the rc.4 acceptance run.*
+- **Keychain launch check without a second account:** run
+  `scripts/keychain-launch-check.sh` against a throwaway keychain instead of a
+  clean macOS user account. *From the rc.4 acceptance run.*
 
 ## Deferred
 
