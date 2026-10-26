@@ -141,9 +141,9 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 ## Engineering
 
 - **CI speed and script hygiene** ([ADR 0070](docs/adr/0070-ci-speed-and-script-hygiene.md)).
-  *Done when:* a warm PR run finishes in about 10 minutes, a PR stack no
-  longer evicts `main`'s cache, and `just check` lints and format-checks
-  `scripts/`.
+  *Done when:* a warm PR run finishes in about 10 minutes and a PR stack no
+  longer evicts `main`'s cache. Dependency optimization was measured and
+  not adopted; `just check` lints and format-checks `scripts/`.
 - **Build-cache check** ([ADR 0050](docs/adr/0050-rust-build-cache-growth.md)):
   `just disk` read 38.5 GiB on 2026-10-23, over the ~30 GiB threshold; evaluate
   `sccache` against a periodic `cargo clean --workspace`.
