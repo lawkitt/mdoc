@@ -5427,7 +5427,12 @@ fn in_toolbar(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
 }
 
 fn in_sidebar(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) -> bool {
-    cx.update(|window, cx| tabs.read(cx).sidebar_region.contains_focused(window, cx))
+    cx.update(|window, cx| {
+        tabs.read(cx)
+            .focus_regions
+            .sidebar()
+            .contains_focused(window, cx)
+    })
 }
 
 #[gpui::test]
@@ -5554,17 +5559,27 @@ fn tab_from_home_enters_its_controls(cx: &mut TestAppContext) {
     tabs.update_in(cx, |tabs, window, cx| window.focus(&tabs.focus, cx));
     draw(cx);
     key(cx, "tab");
-    assert!(cx.update(|window, cx| tabs.read(cx).home_region.contains_focused(window, cx)));
+    assert!(cx.update(|window, cx| {
+        tabs.read(cx)
+            .focus_regions
+            .home()
+            .contains_focused(window, cx)
+    }));
     let home = cx.update(|window, cx| window.focused(cx));
     assert_ne!(
         home,
-        cx.update(|_, cx| Some(tabs.read(cx).home_region.clone()))
+        cx.update(|_, cx| Some(tabs.read(cx).focus_regions.home().clone()))
     );
     // F6 on Home: sidebar, then Home again.
     key(cx, "f6");
     assert!(in_sidebar(&tabs, cx));
     key(cx, "f6");
-    assert!(cx.update(|window, cx| tabs.read(cx).home_region.contains_focused(window, cx)));
+    assert!(cx.update(|window, cx| {
+        tabs.read(cx)
+            .focus_regions
+            .home()
+            .contains_focused(window, cx)
+    }));
 }
 
 #[gpui::test]
@@ -6009,7 +6024,7 @@ fn tab_moves_between_regions_at_their_edges(cx: &mut TestAppContext) {
             cx.run_until_parked();
         }
         tabs.update_in(cx, |tabs, window, cx| {
-            tabs.region_last.clear();
+            tabs.focus_regions.forget();
             tabs.focus_active(window, cx);
         });
         draw(cx);
@@ -6022,7 +6037,7 @@ fn tab_moves_between_regions_at_their_edges(cx: &mut TestAppContext) {
             in_sidebar(&tabs, cx),
             "{layout}: Shift+Tab from the toolbar"
         );
-        tabs.update_in(cx, |tabs, _, _| tabs.region_last.clear());
+        tabs.update_in(cx, |tabs, _, _| tabs.focus_regions.forget());
         key(cx, "f6");
         assert!(in_toolbar(&tabs, cx), "{layout}");
         // The view switcher counts as the toolbar's region.
@@ -6043,7 +6058,7 @@ fn tab_moves_between_regions_at_their_edges(cx: &mut TestAppContext) {
         assert!(editor_focused(&tabs, cx), "{layout}: Tab past the toolbar");
         // Panel: Shift+Tab from its first control returns to the editor;
         // Tab past its last control moves on, wrapping to the sidebar.
-        tabs.update_in(cx, |tabs, _, _| tabs.region_last.clear());
+        tabs.update_in(cx, |tabs, _, _| tabs.focus_regions.forget());
         key(cx, "f6");
         assert!(in_panel(cx), "{layout}");
         key(cx, "shift-tab");
@@ -6051,13 +6066,13 @@ fn tab_moves_between_regions_at_their_edges(cx: &mut TestAppContext) {
             editor_focused(&tabs, cx),
             "{layout}: Shift+Tab from the panel"
         );
-        tabs.update_in(cx, |tabs, _, _| tabs.region_last.clear());
+        tabs.update_in(cx, |tabs, _, _| tabs.focus_regions.forget());
         key(cx, "f6");
         tab_out(cx, &in_panel);
         assert!(in_sidebar(&tabs, cx), "{layout}: Tab past the panel");
         // And back: Shift+Tab from the sidebar's first control.
         tabs.update_in(cx, |tabs, window, cx| {
-            tabs.region_last.clear();
+            tabs.focus_regions.forget();
             tabs.focus_active(window, cx);
         });
         key(cx, "shift-f6");
@@ -6112,7 +6127,7 @@ fn toolbar_members_take_part_in_tab_esc_and_f6(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.region_last.clear();
+        tabs.focus_regions.forget();
         tabs.focus_active(window, cx);
     });
     draw(cx);
@@ -6232,7 +6247,7 @@ fn expand_and_collapse_all_identities(cx: &mut TestAppContext) {
     // document's own action handlers.
     for (query, expanded) in [("collapse all identities", 0), ("expand all identities", 2)] {
         tabs.update_in(cx, |tabs, window, cx| {
-            let sidebar = tabs.sidebar_region.clone();
+            let sidebar = tabs.focus_regions.sidebar().clone();
             window.focus(&sidebar, cx);
         });
         draw(cx);

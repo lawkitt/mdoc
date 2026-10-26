@@ -777,7 +777,7 @@ impl Workspace {
         // own card below (ADR 0048).
         div()
             .id("home")
-            .track_focus(&self.home_region)
+            .track_focus(self.focus_regions.home())
             .when(cfg!(test), |v| v.debug_selector(|| "home".into()))
             .size_full()
             .flex()

@@ -34,6 +34,7 @@ use std::{
 };
 
 mod cases_ui;
+mod focus_regions;
 #[cfg(all(
     debug_assertions,
     feature = "headless-renders",
@@ -162,9 +163,7 @@ pub(super) struct Workspace {
     focus: gpui::FocusHandle,
     /// F6 regions the workspace owns, and the control last focused in each
     /// region when F6 left it (ADR 0062).
-    sidebar_region: gpui::FocusHandle,
-    pub(super) home_region: gpui::FocusHandle,
-    region_last: Vec<(gpui::FocusHandle, gpui::FocusHandle)>,
+    focus_regions: focus_regions::FocusRegions<gpui::FocusHandle>,
     /// The sidebar row the arrows last moved to: the list's one Tab stop.
     sidebar_cursor: Option<u64>,
     /// The Open Case list holds focus while open, and gives it back on
@@ -364,9 +363,7 @@ impl Workspace {
         let panel = cx.new(|cx| settings_ui::Panel::new(preferences.clone(), theme.clone(), cx));
         let mut this = Self {
             focus: cx.focus_handle(),
-            sidebar_region: cx.focus_handle(),
-            home_region: cx.focus_handle(),
-            region_last: Vec::new(),
+            focus_regions: focus_regions::FocusRegions::new(cx.focus_handle(), cx.focus_handle()),
             sidebar_cursor: None,
             case_list_focus: cx.focus_handle(),
             case_list_return: None,
@@ -2690,7 +2687,7 @@ impl Workspace {
         let width = |open: bool| if open { PANEL_WIDTH } else { RAIL_WIDTH };
         let mut sidebar = div()
             .id("sidebar")
-            .track_focus(&self.sidebar_region)
+            .track_focus(self.focus_regions.sidebar())
             .key_context("SidebarRegion")
             .relative()
             .w(px(width(expanded)))
@@ -3355,13 +3352,13 @@ impl Workspace {
     /// The window's F6 regions in order, each with whether it is a single
     /// focus target (the editor) rather than a group of controls.
     fn regions(&self, cx: &App) -> Vec<(gpui::FocusHandle, bool)> {
-        let mut regions = vec![(self.sidebar_region.clone(), false)];
-        if self.showing_home(cx) {
-            regions.push((self.home_region.clone(), false));
-        } else if let Some(view) = self.active_view() {
-            regions.extend(view.read(cx).focus_regions(cx));
-        }
-        regions
+        let home = self.showing_home(cx);
+        let document = self
+            .active_view()
+            .filter(|_| !home)
+            .map(|view| view.read(cx).focus_regions(cx))
+            .unwrap_or_default();
+        self.focus_regions.order(home, document)
     }
 
     /// The visible document owns chrome undo, unless a field or modal surface
@@ -3396,33 +3393,27 @@ impl Workspace {
             return;
         }
         let regions = self.regions(cx);
-        if regions.is_empty() {
-            return;
-        }
         let current = self.note_region_focus(window, cx);
-        let n = regions.len();
-        let next = match current {
-            Some(i) if backwards => (i + n - 1) % n,
-            Some(i) => (i + 1) % n,
-            None if backwards => n - 1,
-            None => 0,
-        };
-        let (region, single) = regions[next].clone();
-        let last = self
-            .region_last
-            .iter()
-            .find(|(r, _)| *r == region)
-            .map(|(_, focus)| self.tab_row_in_layout(focus, cx))
-            .filter(|focus| *focus != region && self.region_holds(&region, focus, window, cx));
-        if single {
-            window.focus(&region, cx);
-        } else if let Some(last) = last {
-            window.focus(&last, cx);
-        } else {
-            window.focus(&region, cx);
-            ui::cycle(window, cx, Some(&region), false);
-            if !region.contains_focused(window, cx) {
-                window.focus(&region, cx);
+        let effect = self
+            .focus_regions
+            .cycle(&regions, current, backwards, |focus| {
+                self.tab_row_in_layout(focus, cx)
+            });
+        match effect {
+            None => {}
+            Some(focus_regions::FocusEffect::Focus(target)) => window.focus(&target, cx),
+            Some(focus_regions::FocusEffect::Enter { region, last }) => {
+                if let Some(last) =
+                    last.filter(|focus| self.region_holds(&region, focus, window, cx))
+                {
+                    window.focus(&last, cx);
+                } else {
+                    window.focus(&region, cx);
+                    ui::cycle(window, cx, Some(&region), false);
+                    if !region.contains_focused(window, cx) {
+                        window.focus(&region, cx);
+                    }
+                }
             }
         }
     }
@@ -3510,11 +3501,7 @@ impl Workspace {
         let regions = self.regions(cx);
         let current = self.region_index(&regions, window, cx);
         if let (Some(i), Some(focused)) = (current, window.focused(cx)) {
-            let region = regions[i].0.clone();
-            if focused != region {
-                self.region_last.retain(|(r, _)| *r != region);
-                self.region_last.push((region, focused));
-            }
+            self.focus_regions.note(&regions[i].0, &focused);
         }
         current
     }
@@ -3547,7 +3534,7 @@ impl Workspace {
     fn tab_from_window(&mut self, backwards: bool, window: &mut Window, cx: &mut App) {
         let from = self.note_region_focus(window, cx);
         if self.focus.is_focused(window) && self.showing_home(cx) {
-            let home = self.home_region.clone();
+            let home = self.focus_regions.home().clone();
             window.focus(&home, cx);
             ui::cycle(window, cx, Some(&home), backwards);
             if home.contains_focused(window, cx) {
@@ -3557,29 +3544,11 @@ impl Workspace {
         }
         let regions = self.regions(cx);
         ui::cycle(window, cx, None, backwards);
-        if from.is_some_and(|i| regions[i].1) {
-            return;
-        }
         let to = self.region_index(&regions, window, cx);
-        let n = regions.len();
-        let editor = match (from, to) {
-            (Some(i), Some(j)) if i == j => None,
-            // Leaving a region: the editor when it comes next in F6 order.
-            (Some(i), _) => {
-                let next = if backwards {
-                    (i + n - 1) % n
-                } else {
-                    (i + 1) % n
-                };
-                regions[next].1.then_some(next)
-            }
-            // From a control outside every region (the find bar), forward
-            // into the region right after the editor: the editor first.
-            (None, Some(j)) if !backwards && j > 0 && regions[j - 1].1 => Some(j - 1),
-            (None, _) => None,
-        };
-        if let Some(editor) = editor {
-            window.focus(&regions[editor].0, cx);
+        if let Some(focus_regions::FocusEffect::Focus(editor)) =
+            focus_regions::FocusRegions::tab_into_editor(&regions, from, to, backwards)
+        {
+            window.focus(&editor, cx);
         }
     }
 
