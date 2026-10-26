@@ -3691,7 +3691,7 @@ fn applied_document<'a>(
     cx.run_until_parked();
     let view = active(&tabs, cx);
     view.update_in(cx, |view, window, cx| {
-        if view.case.is_some() {
+        if view.case.link().is_some() {
             return;
         }
         view.pii.reviewing = true;
@@ -3850,7 +3850,7 @@ fn unsaved_mapping_is_absent_after_session_restore(cx: &mut TestAppContext) {
             reopened.read(cx).editor.read(cx).text(),
             "PERSON_1 met ORG_1."
         );
-        assert!(reopened.read(cx).case.is_none());
+        assert!(reopened.read(cx).case.link().is_none());
         assert!(reopened.read(cx).pii.review.active_identities().is_empty());
     });
 }
@@ -3971,7 +3971,7 @@ fn shortcuts_work_right_after_share_save_as_case(cx: &mut TestAppContext) {
     cx.simulate_click(button.center(), Default::default());
     cx.run_until_parked();
     draw(cx);
-    cx.update(|_, cx| assert!(view.read(cx).case.is_some()));
+    cx.update(|_, cx| assert!(view.read(cx).case.link().is_some()));
     // #79: Mod+Q reaches the workspace without clicking the editor first.
     cx.simulate_keystrokes(if cfg!(target_os = "macos") {
         "cmd-q"
@@ -4056,7 +4056,7 @@ fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
     let view = active(&tabs, cx);
     cx.update(|_, cx| {
         let view = view.read(cx);
-        assert_eq!(view.case.as_ref().map(|l| l.name.as_str()), Some("Petrova"));
+        assert_eq!(view.case.link().map(|l| l.name.as_str()), Some("Petrova"));
         let applied: Vec<_> = view
             .pii
             .review
@@ -4078,7 +4078,7 @@ fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(store.load(&case.id).is_err());
     cx.update(|_, cx| {
-        assert!(view.read(cx).case.is_none());
+        assert!(view.read(cx).case.link().is_none());
         assert_eq!(view.read(cx).pii.review.applied().len(), 2);
         assert!(
             tabs.read(cx)
@@ -4174,7 +4174,7 @@ fn replies_join_the_source_case_and_save_as_moves_the_member(cx: &mut TestAppCon
             tabs.tabs.active(),
             "the reply follows its source"
         );
-        let link = reply.read(cx).case.clone().unwrap();
+        let link = reply.read(cx).case.link().cloned().unwrap();
         assert_eq!(link.id, case);
         assert_eq!(
             reply.read(cx).editor.read(cx).text(),
@@ -4259,7 +4259,7 @@ fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext
     cx.run_until_parked();
     cx.update(|_, cx| {
         let view = second_view.read(cx);
-        assert_eq!(view.case.as_ref().unwrap().id, case);
+        assert_eq!(view.case.link().unwrap().id, case);
         assert_eq!(
             view.editor.read(cx).text(),
             "PERSON_2 wrote to Anna Petrova.",
@@ -4374,7 +4374,7 @@ fn a_term_added_to_the_case_is_proposed_in_every_member(cx: &mut TestAppContext)
         );
         let view = view.read(cx);
         assert_eq!(view.pii.review.remaining(), 1, "the new term is proposed");
-        assert_eq!(view.case_names.len(), 2);
+        assert_eq!(view.case.names().len(), 2);
     });
 }
 
@@ -4413,7 +4413,7 @@ fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
             .filter_map(|t| t.view())
             .map(|v| {
                 let v = v.read(cx);
-                assert_eq!(v.case.as_ref().unwrap().id, case.id);
+                assert_eq!(v.case.link().unwrap().id, case.id);
                 v.display_name()
             })
             .collect();
@@ -4464,7 +4464,8 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         assert!(
             view.read(cx)
-                .case_skip
+                .case
+                .skip()
                 .contains(&mdoc_pii::Category::Address)
         );
         assert_eq!(tabs.read(cx).case_coordinator.cases()[0].skip, ["ADDRESS"]);
@@ -4473,7 +4474,7 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.remove_from_case(tab, window, cx)
     });
-    cx.update(|_, cx| assert!(view.read(cx).case_skip.is_empty()));
+    cx.update(|_, cx| assert!(view.read(cx).case.skip().is_empty()));
     // Before/after shows originals beside aliases.
     view.update_in(cx, |view, window, cx| view.toggle_compare(window, cx));
     draw(cx);
@@ -4562,7 +4563,7 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
     // its case link, and the bar offers Unlock.
     let view = active(&tabs, cx);
     cx.update(|_, cx| {
-        assert!(view.read(cx).case.is_none());
+        assert!(view.read(cx).case.link().is_none());
         let tabs = tabs.read(cx);
         assert!(tabs.case_coordinator.locked() && !tabs.cases.explainer);
         assert!(tabs.cases.test_open.is_some());
@@ -4605,7 +4606,7 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
     draw(cx);
     cx.update(|_, cx| {
         assert_eq!(
-            view.read(cx).case.as_ref().map(|l| l.name.as_str()),
+            view.read(cx).case.link().map(|l| l.name.as_str()),
             Some("Petrova")
         );
         assert!(tabs.read(cx).case_key_banner().is_none());
@@ -4764,7 +4765,7 @@ fn locked_members_load_when_the_key_opens_without_a_dialog_later(cx: &mut TestAp
     cx.run_until_parked();
     let view = active(&tabs, cx);
     cx.update(|_, cx| {
-        assert!(tabs.read(cx).case_coordinator.locked() && view.read(cx).case.is_none())
+        assert!(tabs.read(cx).case_coordinator.locked() && view.read(cx).case.link().is_none())
     });
     // The key became readable without a dialog (e.g. allowed elsewhere):
     // Open Case… opens it quietly and the locked member gets its mapping.
@@ -4777,7 +4778,7 @@ fn locked_members_load_when_the_key_opens_without_a_dialog_later(cx: &mut TestAp
         let tabs = tabs.read(cx);
         assert!(!tabs.case_coordinator.locked() && tabs.cases.list_open);
         assert_eq!(
-            view.read(cx).case.as_ref().map(|l| l.name.as_str()),
+            view.read(cx).case.link().map(|l| l.name.as_str()),
             Some("Petrova")
         );
     });
@@ -4799,7 +4800,7 @@ fn a_member_opened_by_hand_offers_unlock_and_gets_its_mapping(cx: &mut TestAppCo
     cx.run_until_parked();
     draw(cx);
     let view = active(&tabs, cx);
-    cx.update(|_, cx| assert!(view.read(cx).case.is_none()));
+    cx.update(|_, cx| assert!(view.read(cx).case.link().is_none()));
     // Nothing marks it as a member yet, so the notice waits behind the bell
     // (ADR 0043); the bell still offers Unlock.
     assert!(cx.debug_bounds("notices-popover").is_none());
@@ -4814,7 +4815,7 @@ fn a_member_opened_by_hand_offers_unlock_and_gets_its_mapping(cx: &mut TestAppCo
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(
-            view.read(cx).case.as_ref().map(|l| l.name.as_str()),
+            view.read(cx).case.link().map(|l| l.name.as_str()),
             Some("Petrova")
         );
     });
@@ -5194,7 +5195,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
             .filter(|view| {
                 view.read(cx)
                     .case
-                    .as_ref()
+                    .link()
                     .is_some_and(|link| link.id == case)
             })
             .collect();

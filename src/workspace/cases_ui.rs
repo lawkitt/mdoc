@@ -379,7 +379,7 @@ impl Workspace {
             let v = view.read(cx);
             (
                 !v.lifecycle.loading() && !v.lifecycle.unavailable() && !v.lifecycle.source_only(),
-                v.case.is_some(),
+                v.case.link().is_some(),
             )
         };
         if !loaded || has_case {
@@ -396,7 +396,7 @@ impl Workspace {
                 let skip = case.skipped();
                 let case_id = link.id.clone();
                 view.update(cx, |view, cx| {
-                    view.case_skip = skip;
+                    view.case.set_skip(skip);
                     view.open_case_mapping(link, &identities, cx)
                 });
                 // A saved document is a member from the moment it joins.
@@ -434,7 +434,7 @@ impl Workspace {
     pub(super) fn can_create_case(&self, id: u64, cx: &App) -> bool {
         self.tab_view(id).is_some_and(|view| {
             let view = view.read(cx);
-            view.case.is_none()
+            view.case.link().is_none()
                 && view.can_copy_markdown()
                 && (!view.pii.review.applied().is_empty() || !view.pii.review.variants().is_empty())
         })
@@ -448,7 +448,7 @@ impl Workspace {
     ) -> Option<String> {
         let view = self.tab_view(id)?;
         // Already saved, e.g. by an earlier request waiting on the Keychain.
-        if view.read(cx).case.is_some() {
+        if view.read(cx).case.link().is_some() {
             return None;
         }
         let (name, identities, path) = {
@@ -495,7 +495,7 @@ impl Workspace {
         let effect = self.case_coordinator.create(case);
         self.carry_out_cases(effect.into_iter().collect(), cx);
         view.update(cx, |view, cx| {
-            view.case = Some(link.clone());
+            view.case.attach(Some(link.clone()));
             cx.notify();
         });
         self.tabs.set_case(id, Some(link.id));
@@ -566,7 +566,7 @@ impl Workspace {
             }) else {
                 continue;
             };
-            let in_case = tab.view().is_some_and(|v| v.read(cx).case.is_some());
+            let in_case = tab.view().is_some_and(|v| v.read(cx).case.link().is_some());
             if !in_case && tab.record().case.is_none() {
                 let id = tab.id();
                 self.tabs.set_case(id, Some(case_id.clone()));
@@ -588,7 +588,7 @@ impl Workspace {
         };
         let (link, identities, path) = {
             let v = view.read(cx);
-            let Some(link) = v.case.clone() else {
+            let Some(link) = v.case.link().cloned() else {
                 return;
             };
             (
@@ -626,7 +626,7 @@ impl Workspace {
         else {
             return;
         };
-        view.update(cx, |view, _| view.case_names = exported.clone());
+        view.update(cx, |view, _| view.case.set_names(exported.clone()));
         self.carry_out_cases(effect.into_iter().collect(), cx);
         if renames.is_empty() && !added {
             return;
@@ -637,7 +637,7 @@ impl Workspace {
                 continue;
             }
             if let Some(view) = tab.view()
-                && view.read(cx).case.as_ref().is_some_and(|l| l.id == link.id)
+                && view.read(cx).case.link().is_some_and(|l| l.id == link.id)
             {
                 view.update(cx, |view, cx| {
                     view.sync_case_identities(&renames, &exported, cx)
@@ -651,7 +651,7 @@ impl Workspace {
         let Some(view) = self.tab_view(id) else {
             return;
         };
-        let Some(link) = view.read(cx).case.clone() else {
+        let Some(link) = view.read(cx).case.link().cloned() else {
             return;
         };
         let Some((exported, effect)) = self.case_coordinator.edit(&link.id, |case| {
@@ -679,7 +679,7 @@ impl Workspace {
         self.carry_out_cases(effect.into_iter().collect(), cx);
         for tab in &self.tabs {
             if let Some(view) = tab.view()
-                && view.read(cx).case.as_ref().is_some_and(|l| l.id == link.id)
+                && view.read(cx).case.link().is_some_and(|l| l.id == link.id)
             {
                 view.update(cx, |view, cx| view.sync_case_identities(&[], &exported, cx));
             }
@@ -698,13 +698,13 @@ impl Workspace {
         let Some(view) = self.tab_view(id) else {
             return;
         };
-        if view.read(cx).case.as_ref().is_some_and(|l| l.id == case_id) {
+        if view.read(cx).case.link().is_some_and(|l| l.id == case_id) {
             return;
         }
         if !view.read(cx).can_copy_markdown() {
             return;
         }
-        if view.read(cx).case.is_some() {
+        if view.read(cx).case.link().is_some() {
             self.remove_from_case(id, window, cx);
         }
         let Some(case) = self.case_coordinator.case(case_id) else {
@@ -714,10 +714,10 @@ impl Workspace {
         let identities = case.exported();
         let skip = case.skipped();
         let result = view.update(cx, |view, cx| {
-            view.case_skip = skip;
+            view.case.set_skip(skip);
             let result = view.join_case_identities(&identities, cx);
             if result.is_ok() {
-                view.case = Some(link.clone());
+                view.case.attach(Some(link.clone()));
             }
             result
         });
@@ -735,7 +735,7 @@ impl Workspace {
         let last = self.tabs.iter().rposition(|t| {
             t.id() != id
                 && t.view()
-                    .and_then(|v| v.read(cx).case.as_ref().map(|l| l.id == link.id))
+                    .and_then(|v| v.read(cx).case.link().map(|l| l.id == link.id))
                     .unwrap_or(false)
         });
         if let Some(last) = last
@@ -798,7 +798,7 @@ impl Workspace {
         let (link, current) = {
             let v = view.read(cx);
             (
-                v.case.clone(),
+                v.case.link().cloned(),
                 v.session
                     .document
                     .path
@@ -961,12 +961,7 @@ impl Workspace {
         let Some(view) = self.tab_view(id) else {
             return;
         };
-        let Some(link) = view.update(cx, |view, cx| {
-            view.case_save = None;
-            cx.notify();
-            view.case_skip.clear();
-            view.case.take()
-        }) else {
+        let Some(link) = view.update(cx, |view, cx| view.leave_case(cx)) else {
             return;
         };
         let path = view
@@ -1030,14 +1025,7 @@ impl Workspace {
         self.tabs.forget_case(case_id);
         for tab in &self.tabs {
             if let Some(view) = tab.view() {
-                view.update(cx, |view, cx| {
-                    if view.case.as_ref().is_some_and(|l| l.id == case_id) {
-                        view.case = None;
-                        view.case_skip.clear();
-                        view.case_save = None;
-                        cx.notify();
-                    }
-                });
+                view.update(cx, |view, cx| view.case_deleted(case_id, cx));
             }
         }
         if let Ok(store) = self.case_store() {
@@ -1093,10 +1081,8 @@ impl Workspace {
             }
             for view in self.tabs.iter().filter_map(|t| t.view().cloned()) {
                 view.update(cx, |view, cx| {
-                    if let Some(link) = view.case.as_mut().filter(|l| l.id == case_id) {
-                        link.name = name.clone();
-                        cx.notify();
-                    }
+                    let effect = view.case.case_renamed(&case_id, &name);
+                    view.carry_out_case_link(effect, cx);
                 });
             }
         }
@@ -1304,10 +1290,8 @@ impl Workspace {
         self.carry_out_cases(effect.into_iter().collect(), cx);
         for view in self.tabs.iter().filter_map(|t| t.view().cloned()) {
             view.update(cx, |view, cx| {
-                if view.case.as_ref().is_some_and(|l| l.id == case_id) {
-                    view.case_skip = skip.clone();
-                    cx.notify();
-                }
+                let effect = view.case.case_skip_changed(case_id, &skip);
+                view.carry_out_case_link(effect, cx);
             });
         }
         cx.notify();
@@ -1463,7 +1447,9 @@ impl Workspace {
                 .hover(move |v| v.bg(palette.placeholder_bg))
                 .child(label)
         };
-        let link = self.tab_view(tab).and_then(|v| v.read(cx).case.clone());
+        let link = self
+            .tab_view(tab)
+            .and_then(|v| v.read(cx).case.link().cloned());
         let movable = self
             .tab_view(tab)
             .is_some_and(|v| v.read(cx).can_copy_markdown());
@@ -1563,7 +1549,7 @@ impl Workspace {
         let open: HashSet<String> = self
             .tabs
             .iter()
-            .filter_map(|t| t.view()?.read(cx).case.as_ref().map(|l| l.id.clone()))
+            .filter_map(|t| t.view()?.read(cx).case.link().map(|l| l.id.clone()))
             .collect();
         let rows: Vec<AnyElement> = self
             .case_coordinator
@@ -1812,7 +1798,7 @@ impl Workspace {
             let v = view.read(cx);
             !v.pii.review.applied().is_empty()
                 && v.case
-                    .as_ref()
+                    .link()
                     .is_none_or(|l| self.case_coordinator.failed(&l.id))
         };
         if !ask

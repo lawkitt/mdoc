@@ -135,5 +135,8 @@ Owners extracted so far:
   document lifecycle): loading and its generation, availability, the
   source-only state, unsaved changes, an untouched conversion or Home
   placeholder, and the document's open dialog.
+- `CaseLink` (`src/document_view/case_link.rs`): the tab's case, the case's
+  identities and skipped categories, and when a mapping change is saved
+  into the case.
 
 References: [interview](../design/codebase-refactoring.md).

@@ -22,7 +22,6 @@ use gpui::{
 use mdoc_editor::{EditorEvent, EditorState};
 use mdoc_import::{import, model_work, ocr, recognition};
 use mdoc_store::{
-    cases,
     document::{self, Document},
     document_session, session_store, settings,
 };
@@ -34,6 +33,8 @@ use std::{
 };
 
 mod case;
+mod case_link;
+use case_link::CaseLinkEffect;
 mod chrome;
 mod document_lifecycle;
 use document_lifecycle::LifecycleEffect;
@@ -141,10 +142,9 @@ pub(crate) struct DocumentView {
     /// The running copy feedback belongs to Copy for AI, not Copy Markdown.
     pub(crate) copied_for_ai: bool,
     /// The saved case this tab's mapping belongs to (ADR 0041).
-    pub(crate) case: Option<cases::CaseLink>,
-    pub(crate) case_save: Option<gpui::Task<()>>,
-    /// The case's identities, for the panel's "in case" section.
-    pub(crate) case_names: Vec<mdoc_pii::restore::ExportedIdentity>,
+    pub(crate) case: case_link::CaseLink,
+    /// The waiting save of the mapping into the case.
+    case_save: Option<gpui::Task<()>>,
     pub(crate) case_names_open: bool,
     pub(crate) case_term: Option<Entity<markdown_search::SearchInput>>,
     /// The result of Pseudonymize Clipboard, until dismissed.
@@ -153,8 +153,6 @@ pub(crate) struct DocumentView {
     pub(crate) compare: Option<pii::ui::CompareState>,
     /// The floating view pill fades when idle (README media decision 9).
     pub(crate) switcher: pii::ui::SwitcherRest,
-    /// Categories this tab's case does not detect.
-    pub(crate) case_skip: std::collections::HashSet<mdoc_pii::Category>,
     pub(crate) view_bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
     pub(crate) split_dragging: bool,
     pub(crate) original_selected: bool,
@@ -344,15 +342,13 @@ impl DocumentView {
             zoom: 1.,
             inspector_share: false,
             copied_for_ai: false,
-            case: None,
+            case: Default::default(),
             case_save: None,
-            case_names: Vec::new(),
             case_names_open: false,
             case_term: None,
             clipboard_notice: None,
             compare: None,
             switcher: Default::default(),
-            case_skip: Default::default(),
             view_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
             split_dragging: false,
             original_selected: false,

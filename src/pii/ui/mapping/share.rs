@@ -104,7 +104,7 @@ impl DocumentView {
         } else {
             "Nothing is replaced yet.".to_string()
         };
-        let case = self.case.clone();
+        let case = self.case.link().cloned();
         ui::panel("identity-panel", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "identity-panel".into()))
             .m_2()

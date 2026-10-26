@@ -398,14 +398,14 @@ mod scheduling_tests {
         let (app, cx) = boot(cx);
         app.update(cx, |app, cx| {
             let case = cases::Case::new("Fixture".into(), &[], None);
-            app.case = Some(cases::CaseLink::of(&case));
+            app.case.attach(Some(cases::CaseLink::of(&case)));
             let key = app.spelling.scheduled;
             let snapshots = app.spelling.snapshots;
             app.theme.set(Theme::Light);
             app.sync_pii_theme(cx);
             assert_eq!(app.spelling.scheduled, key);
             assert_eq!(app.spelling.snapshots, snapshots);
-            assert!(app.case_save.is_none());
+            assert!(!app.case_save_pending());
         });
     }
 

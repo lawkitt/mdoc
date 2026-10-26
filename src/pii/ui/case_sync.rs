@@ -53,7 +53,7 @@ impl DocumentView {
     ) -> Result<JoinSummary, String> {
         let document = self.pii.review.export_identities_with_ids();
         let plan = plan_join(case, &document);
-        self.case_names = case.to_vec();
+        self.case.set_names(case.to_vec());
         self.retag_identities(&plan.changes, cx)?;
         let before = self.pii.review.remaining();
         if !plan.unmatched.is_empty() {
@@ -79,7 +79,7 @@ impl DocumentView {
         case: &[ExportedIdentity],
         cx: &mut Context<Self>,
     ) {
-        self.case_names = case.to_vec();
+        self.case.set_names(case.to_vec());
         let review = &self.pii.review;
         let changes: Vec<_> = renames
             .iter()
@@ -111,11 +111,12 @@ impl DocumentView {
     /// Case names this document doesn't mention, folded under the panel
     /// footer, with a field to add a name to the case (ADR 0041 #11, #24).
     pub(crate) fn case_names_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let link = self.case.as_ref()?;
+        let link = self.case.link()?;
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let absent: Vec<_> = self
-            .case_names
+            .case
+            .names()
             .iter()
             .filter(|c| !self.case_alias_is_present(&c.alias, cx))
             .collect();

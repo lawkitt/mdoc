@@ -97,6 +97,7 @@ dependency forks.
 | `src/workspace.rs`, `src/workspace/` | The window shell: document sidebar, tab identity, admission, scheduling and session persistence |
 | `src/workspace/{tab_set,sidebar,focus_regions,notices,session_writer,docx_queue,quit_flow,case_coordinator}.rs` | The window's owners: tabs and the active tab, the sidebar and its reveal, F6 regions, the bell's notices, session saves, the DOCX worker queue, closing and quitting, and case coordination |
 | `src/document_view.rs`, `src/document_view/` | One tab's document view: editor, source preview, import/OCR state, actions and toolbar chrome |
+| `src/document_view/case_link.rs` | The tab's case-link owner: its case, the case's identities and skipped categories, and the pending save into the case |
 | `src/document_view/document_lifecycle.rs` | The tab's lifecycle owner: loading, availability, source-only, unsaved changes, untouched conversions and placeholders, and its open dialog |
 | `src/document_view/import_flow.rs` | The tab's conversion owner: the import job and slot, automatic conversion, OCR consent, recognition languages and setup |
 | `crates/mdoc-store` | GUI-free storage: app paths, atomic document saves and document identity, the session manifest, recents, settings types and files, encrypted saved cases, crash-report masking |
