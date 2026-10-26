@@ -131,5 +131,9 @@ Owners extracted so far:
 - `ImportFlow` (`src/document_view/import_flow.rs`): a tab's conversion to
   Markdown and its hold on the import slot, automatic conversion, and OCR
   consent, recognition languages and setup on the conversion card.
+- `DocumentLifecycle` (`src/document_view/document_lifecycle.rs`, ADR 0049
+  document lifecycle): loading and its generation, availability, the
+  source-only state, unsaved changes, an untouched conversion or Home
+  placeholder, and the document's open dialog.
 
 References: [interview](../design/codebase-refactoring.md).

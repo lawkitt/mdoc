@@ -175,7 +175,7 @@ impl Workspace {
         tab.record().blank_disposable
             && tab.view().is_none_or(|view| {
                 let view = view.read(cx);
-                view.blank_disposable
+                view.lifecycle.blank_disposable()
                     && view.session.document.path.is_none()
                     && view.preview.source.is_none()
                     && view.editor.read(cx).text().is_empty()
@@ -209,7 +209,7 @@ impl Workspace {
         else {
             return;
         };
-        if view.loading || view.unavailable {
+        if view.lifecycle.loading() || view.lifecycle.unavailable() {
             return;
         }
         // Saved Markdown first: a conversion saved as .md reopens as that
@@ -1443,7 +1443,10 @@ impl Workspace {
         // The active document's headings (from MiaoYan's table of contents).
         if let Some(view) = self.active_view().filter(|_| has_document) {
             let view = view.read(cx);
-            if !view.source_only && !view.loading && !view.unavailable {
+            if !view.lifecycle.source_only()
+                && !view.lifecycle.loading()
+                && !view.lifecycle.unavailable()
+            {
                 for heading in mdoc_editor::headings(view.editor.read(cx).text()) {
                     rows.push(Row {
                         section: "Go to heading",

@@ -173,8 +173,8 @@ impl SidebarStatus {
         Self {
             path: view.session.document.path.clone(),
             source: view.preview.source.clone(),
-            dirty: view.dirty_cached,
-            loading: view.loading || view.preview.loading,
+            dirty: view.lifecycle.dirty(),
+            loading: view.lifecycle.loading() || view.preview.loading,
             queued: view.preview.queued || view.import.auto_pending(),
             importing: view.import.busy(),
             error: view.error.is_some()
@@ -893,8 +893,11 @@ impl Workspace {
                 cx,
             );
             view.active = id == self.tabs.active();
-            view.source_only = record.source_only;
-            view.blank_disposable = record.blank_disposable;
+            view.lifecycle.restore(
+                !record.markdown.as_os_str().is_empty(),
+                record.source_only,
+                record.blank_disposable,
+            );
             view.import.queue_auto(
                 record.source_only
                     && record.attachment.as_ref().is_some_and(|path| {
@@ -903,7 +906,6 @@ impl Workspace {
                         })
                     }),
             );
-            view.loading = !record.markdown.as_os_str().is_empty();
             view.preview.attachment = record.attachment.clone();
             view.preview.source = record.attachment.clone();
             view.preview.visible = record.preview_visible;
@@ -947,12 +949,10 @@ impl Workspace {
             return;
         };
         let generation = view.update(cx, |view, cx| {
-            view.load_generation = view.load_generation.wrapping_add(1);
-            view.loading = true;
-            view.unavailable = false;
+            let generation = view.lifecycle.begin_load();
             view.error = None;
             cx.notify();
-            view.load_generation
+            generation
         });
         let weak = view.downgrade();
         let path = record.markdown.clone();
@@ -969,10 +969,9 @@ impl Workspace {
                     this.tabs.set_identity(id, document.path.clone());
                 }
                 let _ = weak.update(cx, |view, cx| {
-                    if view.load_generation != generation {
+                    if !view.lifecycle.finish_load(generation, result.is_ok()) {
                         return;
                     }
-                    view.loading = false;
                     match result {
                         Ok(document) => {
                             view.session.replace(document);
@@ -999,7 +998,6 @@ impl Workspace {
                             }
                         }
                         Err(error) => {
-                            view.unavailable = true;
                             view.error = Some(format!(
                                 "Could not open {}: {error}",
                                 record.markdown.display()
@@ -1031,9 +1029,9 @@ impl Workspace {
             view.update(cx, |view, cx| {
                 view.active = true;
                 view.try_auto_convert(window, cx);
-                if view.source_only {
+                if view.lifecycle.source_only() {
                     window.focus(&view.focus, cx);
-                } else if view.loading || view.unavailable {
+                } else if view.lifecycle.loading() || view.lifecycle.unavailable() {
                     window.focus(&self.focus, cx);
                 } else {
                     window.focus(&view.editor.read(cx).focus_handle(cx), cx);
@@ -1058,7 +1056,7 @@ impl Workspace {
         {
             self.tabs.keep_blank(Some(id));
             if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view()) {
-                view.update(cx, |view, _| view.blank_disposable = false);
+                view.update(cx, |view, _| view.lifecycle.keep_blank());
             }
             self.activate(id, window, cx);
             return id;
@@ -1066,7 +1064,7 @@ impl Workspace {
         self.tabs.keep_blank(None);
         for tab in &self.tabs {
             if let Some(view) = tab.view() {
-                view.update(cx, |view, _| view.blank_disposable = false);
+                view.update(cx, |view, _| view.lifecycle.keep_blank());
             }
         }
         let id = self.push(TabRecord {
@@ -1275,7 +1273,7 @@ impl Workspace {
                     tab.id() != first
                         && tab.view().map_or(tab.record().blank_disposable, |view| {
                             let view = view.read(cx);
-                            view.blank_disposable
+                            view.lifecycle.blank_disposable()
                                 && view.editor.read(cx).text().is_empty()
                                 && view.session.document.path.is_none()
                                 && view.preview.source.is_none()
@@ -1493,7 +1491,7 @@ impl Workspace {
                 self.remove(id, window, cx);
                 return;
             }
-            if view.read(cx).prompting {
+            if view.read(cx).lifecycle.prompting() {
                 return;
             }
             let effect = self.quit_flow.close(id);
@@ -1556,11 +1554,10 @@ impl Workspace {
         if !self.ready || !self.quit_flow.may_quit() {
             return;
         }
-        if self
-            .tabs
-            .iter()
-            .any(|tab| tab.view().is_some_and(|view| view.read(cx).prompting))
-        {
+        if self.tabs.iter().any(|tab| {
+            tab.view()
+                .is_some_and(|view| view.read(cx).lifecycle.prompting())
+        }) {
             return;
         }
         let dirty = self
@@ -1661,12 +1658,13 @@ impl Workspace {
             let mut record = tab.record().clone();
             if let Some(view) = tab.view() {
                 let view = view.read(cx);
-                record.source_only = view.source_only || view.generated_unedited;
+                record.source_only =
+                    view.lifecycle.source_only() || view.lifecycle.generated_unedited();
                 record.blank = !record.source_only
                     && view.session.document.path.is_none()
                     && view.preview.source.is_none()
                     && view.editor.read(cx).text().is_empty();
-                record.blank_disposable = record.blank && view.blank_disposable;
+                record.blank_disposable = record.blank && view.lifecycle.blank_disposable();
                 // A document still waiting to join its folder's case keeps it.
                 if let Some(link) = &view.case {
                     record.case = Some(link.id.clone());
@@ -1674,7 +1672,7 @@ impl Workspace {
                 if let Some(path) = &view.session.document.path {
                     record.markdown = path.clone();
                 }
-                if !view.loading && !view.unavailable {
+                if !view.lifecycle.loading() && !view.lifecycle.unavailable() {
                     record.caret = view.editor.read(cx).cursor();
                     record.scroll_y = f32::from(view.scroll.offset().y);
                 }
@@ -1786,9 +1784,9 @@ impl Workspace {
             return;
         }
         let view = view.read(cx);
-        let focus = if view.source_only {
+        let focus = if view.lifecycle.source_only() {
             view.focus.clone()
-        } else if view.loading || view.unavailable {
+        } else if view.lifecycle.loading() || view.lifecycle.unavailable() {
             self.focus.clone()
         } else {
             view.editor.read(cx).focus_handle(cx)
@@ -2009,9 +2007,9 @@ impl Workspace {
                     format,
                     source,
                 } = labels[index].clone();
-                let dirty = view.is_some_and(|v| v.dirty_cached);
-                let running =
-                    view.is_some_and(|v| v.loading || v.import.busy() || v.preview.loading);
+                let dirty = view.is_some_and(|v| v.lifecycle.dirty());
+                let running = view
+                    .is_some_and(|v| v.lifecycle.loading() || v.import.busy() || v.preview.loading);
                 let busy = running || view.is_some_and(|v| v.preview.queued);
                 let error = view.is_some_and(|v| {
                     v.error.is_some() || v.preview.failed || v.import.ocr_required().is_some()

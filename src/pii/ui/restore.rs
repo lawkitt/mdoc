@@ -181,7 +181,7 @@ impl DocumentView {
     ) {
         self.session.name = Some(format!("Restored – {}.md", reply.source_name));
         self.case = reply.case.clone();
-        self.blank_disposable = false;
+        self.lifecycle.keep_blank();
         self.editor
             .update(cx, |editor, cx| editor.set_text(reply.text.clone(), cx));
         let map = RestoreMap::new(reply.identities.clone());

@@ -222,10 +222,10 @@ fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
     cx.run_until_parked();
     cx.update(|_, cx| {
         let view = first.read(cx);
-        assert!(!view.prompting);
+        assert!(!view.lifecycle.prompting());
         assert!(!view.import.busy());
         assert!(view.import.ocr_required().is_some());
-        assert!(view.source_only);
+        assert!(view.lifecycle.source_only());
         assert!(view.editor.read(cx).text().is_empty());
         // The OCR runtime is bogus, so recognition fails. Its message varies:
         // a parallel test may hold the process-wide model-work permit, which
@@ -237,12 +237,12 @@ fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
     let second = active(&tabs, cx);
     second.update_in(cx, |view, window, cx| view.import(&Import, window, cx));
     cx.run_until_parked();
-    cx.update(|_, cx| assert!(!second.read(cx).source_only));
+    cx.update(|_, cx| assert!(!second.read(cx).lifecycle.source_only()));
     first.update_in(cx, |view, window, cx| view.ocr_action(true, window, cx));
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_ne!(tabs.read(cx).tabs.active(), first_id);
-        assert!(!first.read(cx).source_only);
+        assert!(!first.read(cx).lifecycle.source_only());
         assert!(
             first
                 .read(cx)
@@ -276,7 +276,7 @@ fn setup_download_card(
     let (primary, cancel) = match model {
         settings::Model::Ocr(_) => {
             view.update(cx, |view, cx| {
-                view.source_only = true;
+                view.lifecycle.set_source_only(true);
                 view.import.set_source(Some("scan.pdf".into()));
                 view.import.require_ocr(Some(vec![1]));
                 view.ocr_state = OcrState::Missing;
@@ -556,7 +556,7 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
         let view = view.read(cx);
         assert!(matches!(view.ocr_state, OcrState::Ready(_)));
         assert!(!view.import.busy());
-        assert!(view.source_only);
+        assert!(view.lifecycle.source_only());
         assert!(view.editor.read(cx).text().is_empty());
         assert!(!panel.read(cx).open);
     });
@@ -804,7 +804,7 @@ fn closing_source_rejects_conversion_even_when_view_is_retained(cx: &mut TestApp
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.len(), 1);
-        assert!(view.read(cx).source_only);
+        assert!(view.read(cx).lifecycle.source_only());
         assert!(view.read(cx).editor.read(cx).text().is_empty());
         assert!(!view.read(cx).import.busy());
         assert!(!tabs.read(cx).import_busy.load(Ordering::Relaxed));
@@ -849,7 +849,7 @@ fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
             session_store::identity(&markdown)
         );
         assert!(tabs.notices.message().unwrap().contains("unknown.bin"));
-        assert!(!source.read(cx).source_only);
+        assert!(!source.read(cx).lifecycle.source_only());
         assert!(!source.read(cx).dirty(cx));
         assert!(source.read(cx).preview.pdf.is_some());
         assert!(!source.read(cx).editor.read(cx).text().is_empty());
@@ -934,9 +934,9 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
     cx.dispatch_action(Import);
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert!(!view.read(cx).prompting);
+        assert!(!view.read(cx).lifecycle.prompting());
         assert_eq!(view.read(cx).import.ocr_required(), Some(&[2, 5][..]));
-        assert!(view.read(cx).source_only);
+        assert!(view.read(cx).lifecycle.source_only());
         assert!(!view.read(cx).import.slot_busy());
         assert!(matches!(view.read(cx).ocr_state, OcrState::Ready(_)));
     });
@@ -944,7 +944,7 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
     cx.run_until_parked();
     cx.update(|_, cx| {
         let view = view.read(cx);
-        assert!(!view.source_only);
+        assert!(!view.lifecycle.source_only());
         assert!(view.dirty(cx));
         assert!(view.editor.read(cx).text().contains("Readable page three"));
         assert!(view.session.warning.as_ref().unwrap().contains("2, 5"));
@@ -1483,12 +1483,12 @@ fn restoration_is_lazy_and_missing_files_remain_retryable(cx: &mut TestAppContex
     tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
     cx.run_until_parked();
     let view = active(&tabs, cx);
-    cx.update(|_, cx| assert!(view.read(cx).unavailable));
+    cx.update(|_, cx| assert!(view.read(cx).lifecycle.unavailable()));
     std::fs::write(missing, "now present").unwrap();
     cx.dispatch_action(RetryDocument);
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert!(!view.read(cx).unavailable);
+        assert!(!view.read(cx).lifecycle.unavailable());
         assert_eq!(view.read(cx).editor.read(cx).text(), "now present");
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.open_path(first, window, cx));
@@ -1870,7 +1870,10 @@ fn a_closed_tab_s_import_ending_starts_the_conversion_waiting_for_it(cx: &mut Te
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert!(!waiting.read(cx).import.auto_pending());
-        assert!(!waiting.read(cx).source_only, "the waiting PDF converted");
+        assert!(
+            !waiting.read(cx).lifecycle.source_only(),
+            "the waiting PDF converted"
+        );
         assert!(!tabs.read(cx).import_busy.load(Ordering::Relaxed));
     });
 }
@@ -2315,7 +2318,7 @@ fn edited_then_emptied_placeholder_is_not_disposable(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         let view = tabs.read(cx).active_view().unwrap();
         assert!(view.read(cx).editor.read(cx).text().is_empty());
-        assert!(!view.read(cx).blank_disposable);
+        assert!(!view.read(cx).lifecycle.blank_disposable());
         assert!(!tabs.read(cx).snapshot(cx).tabs[0].blank_disposable);
     });
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/import/text.pdf");
@@ -2334,8 +2337,8 @@ fn automatic_conversion_is_disposable_until_edited_but_can_be_saved(cx: &mut Tes
     cx.run_until_parked();
     let view = active(&tabs, cx);
     cx.update(|_, cx| {
-        assert!(!view.read(cx).source_only);
-        assert!(view.read(cx).generated_unedited);
+        assert!(!view.read(cx).lifecycle.source_only());
+        assert!(view.read(cx).lifecycle.generated_unedited());
         assert!(!view.read(cx).dirty(cx));
         assert!(!view.read(cx).editor.read(cx).text().is_empty());
         assert!(view.read(cx).preview.pdf.is_some());
@@ -2412,7 +2415,7 @@ fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.active(), selected);
-        assert!(!first.read(cx).source_only);
+        assert!(!first.read(cx).lifecycle.source_only());
         assert!(closed.read(cx).editor.read(cx).text().is_empty());
         assert!(closed.read(cx).import.cancelled());
         let view = tabs.read(cx).active_view().unwrap();
@@ -2664,7 +2667,7 @@ fn document_header_keeps_its_actions_in_a_narrow_window_in_both_themes(cx: &mut 
                     cx.notify();
                 });
                 view.update(cx, |view, cx| {
-                    view.source_only = source_only;
+                    view.lifecycle.set_source_only(source_only);
                     cx.notify();
                 });
                 for _ in 0..3 {
@@ -2839,7 +2842,7 @@ fn narrow_original_switch_and_divider_preserve_source_and_session(cx: &mut TestA
     view.update(cx, |v, cx| {
         v.editor
             .update(cx, |e, cx| e.set_text("# Draft\n\nOriginal words", cx));
-        v.source_only = false;
+        v.lifecycle.set_source_only(false);
         cx.notify();
     });
     let (source, revision) = cx.update(|_, cx| {
@@ -5969,7 +5972,7 @@ fn f6_skips_the_hidden_pane_in_a_narrow_window(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let view = active(&tabs, cx);
     view.update(cx, |view, cx| {
-        view.source_only = false;
+        view.lifecycle.set_source_only(false);
         view.original_selected = false;
         cx.notify();
     });
