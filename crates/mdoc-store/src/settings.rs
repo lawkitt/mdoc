@@ -1,11 +1,12 @@
 //! Application preferences only. No document text, QA results or replacement maps.
 //! The user's spelling dictionary is a word list beside the settings file.
-use crate::recognition::{ENGLISH, Language, RUSSIAN};
+//! Models are plain IDs here; their manifests, languages and downloads live
+//! with their engines (ADR 0069).
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
     collections::BTreeSet,
-    io::{Read, Write},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     rc::Rc,
     sync::{
@@ -13,6 +14,61 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
 };
+
+/// Why settings could not be read or written.
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum SettingsError {
+    #[error(
+        "Invalid or obsolete settings. Open Settings and explicitly reset or choose supported values."
+    )]
+    Invalid,
+    #[error("Settings file is too large. Reset explicitly in Settings.")]
+    TooLarge,
+    #[error("Could not read settings: {0}. Reset explicitly in Settings.")]
+    Parse(Arc<serde_json::Error>),
+    #[error("Could not find local application storage for settings.")]
+    NoStorage,
+    /// No preferences were loaded and none chosen yet.
+    #[error("Open Settings to select supported preferences.")]
+    Unset,
+    #[error("Settings path has no parent.")]
+    NoParent,
+    #[error("{0}")]
+    Io(Arc<io::Error>),
+    #[error("{0}")]
+    Encode(Arc<serde_json::Error>),
+    #[error("{0}")]
+    Persist(Arc<tempfile::PersistError>),
+}
+impl From<io::Error> for SettingsError {
+    fn from(error: io::Error) -> Self {
+        Self::Io(Arc::new(error))
+    }
+}
+
+/// Why the spelling dictionary could not be read or written.
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum DictionaryError {
+    #[error("{0}")]
+    Open(Arc<io::Error>),
+    #[error("Could not read your spelling dictionary: {0}")]
+    Read(Arc<io::Error>),
+    #[error("Your dictionary is full ({MAX_WORDS} words).")]
+    Full,
+    #[error("Dictionary path has no parent.")]
+    NoParent,
+    #[error("{0}")]
+    Io(Arc<io::Error>),
+    #[error("{0}")]
+    Persist(Arc<tempfile::PersistError>),
+    #[error("Could not save your spelling dictionary: {0}")]
+    Save(Box<DictionaryError>),
+}
+impl From<io::Error> for DictionaryError {
+    fn from(error: io::Error) -> Self {
+        Self::Io(Arc::new(error))
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OcrModel {
@@ -24,46 +80,11 @@ pub enum OcrModel {
 impl OcrModel {
     /// Recommended first.
     pub const ALL: [Self; 2] = [Self::V6Small, Self::Cyrillic];
-    pub fn manifest(self) -> &'static crate::ocr::manifest::Manifest {
-        crate::ocr::manifest::for_model(self)
-    }
     pub fn name(self) -> &'static str {
         match self {
             Self::Cyrillic => "PP-OCRv5 Cyrillic + v6 detector",
             Self::V6Small => "PP-OCRv6 Small",
         }
-    }
-    /// Plain-language row title: the languages it reads, "English & Russian".
-    pub fn title(self) -> String {
-        crate::recognition::label(self.languages())
-    }
-    /// The recognition languages the bundle reads (ADR 0065).
-    pub fn languages(self) -> &'static [Language] {
-        match self {
-            Self::V6Small => &[ENGLISH],
-            Self::Cyrillic => &[ENGLISH, RUSSIAN],
-        }
-    }
-    /// The recognition-language lists PP-OCR offers, one per bundle,
-    /// recommended first: English; English & Russian.
-    pub fn offered() -> Vec<&'static [Language]> {
-        Self::ALL.map(Self::languages).to_vec()
-    }
-    /// PP-OCR's reading of a recognition-language list: the first bundle
-    /// that reads all of it, else the one reading most, and the languages
-    /// that bundle cannot read.
-    pub fn plan(languages: &[Language]) -> (Self, Vec<Language>) {
-        let list = crate::recognition::closest(languages, &Self::offered());
-        let model = Self::ALL
-            .into_iter()
-            .find(|m| m.languages() == list.as_slice())
-            .unwrap_or_default();
-        let unreadable = languages
-            .iter()
-            .copied()
-            .filter(|l| !model.languages().contains(l))
-            .collect();
-        (model, unreadable)
     }
     pub fn summary(self) -> &'static str {
         match self {
@@ -100,12 +121,6 @@ impl PiiModel {
         match self {
             Self::Fp16 => "fp16_v2",
             Self::Fp32 => "fp32_v2",
-        }
-    }
-    pub fn precision(self) -> gliner2_rs::Precision {
-        match self {
-            Self::Fp16 => gliner2_rs::Precision::Fp16,
-            Self::Fp32 => gliner2_rs::Precision::Fp32,
         }
     }
     pub fn engine(self) -> &'static str {
@@ -161,12 +176,6 @@ impl Model {
             Self::Pii(m) => m.name(),
         }
     }
-    pub fn title(self) -> String {
-        match self {
-            Self::Ocr(m) => m.title(),
-            Self::Pii(m) => m.title().into(),
-        }
-    }
     pub fn summary(self) -> &'static str {
         match self {
             Self::Ocr(m) => m.summary(),
@@ -179,42 +188,6 @@ impl Model {
             Self::Ocr(m) => m == OcrModel::default(),
             Self::Pii(m) => m == PiiModel::default(),
         }
-    }
-    /// How setup prompts name the bundle, e.g. "English OCR".
-    pub fn short_name(self) -> String {
-        match self {
-            Self::Ocr(m) => format!("{} OCR", m.title()),
-            Self::Pii(m) => format!("{} model", m.title()),
-        }
-    }
-    pub fn pending(self) -> crate::model_download::Pending {
-        match self {
-            Self::Ocr(m) => crate::ocr::pending(m),
-            Self::Pii(m) => crate::pii::detector::pending(m),
-        }
-    }
-    /// Attribution for exactly the files setup offers, including ONNX exports.
-    pub fn source_and_license(self) -> (String, String) {
-        match self {
-            Self::Ocr(m) => {
-                let manifest = m.manifest();
-                (
-                    format!("GitHub · {}", manifest.repository),
-                    manifest.license.into(),
-                )
-            }
-            Self::Pii(m) => {
-                let manifest = crate::pii::detector::manifest_for(m);
-                (
-                    format!("Hugging Face · {}", manifest.repository),
-                    manifest.license,
-                )
-            }
-        }
-    }
-    pub fn attribution_label(self) -> String {
-        let (source, license) = self.source_and_license();
-        format!("Source: {source}\nLicense: {license}")
     }
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -342,13 +315,13 @@ pub fn unit_interval(value: f32) -> bool {
     value.is_finite() && (0. ..=1.).contains(&value)
 }
 impl Preferences {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), SettingsError> {
         if self.version != 1
             || ![150, 200, 300].contains(&self.ocr.dpi)
             || !unit_interval(self.ocr.minimum_confidence)
             || !unit_interval(self.pseudonymization.threshold)
         {
-            return Err("Invalid or obsolete settings. Open Settings and explicitly reset or choose supported values.".into());
+            return Err(SettingsError::Invalid);
         }
         Ok(())
     }
@@ -356,7 +329,7 @@ impl Preferences {
 pub type Shared = Rc<RefCell<Store>>;
 pub struct Store {
     pub current: Option<Preferences>,
-    pub error: Option<String>,
+    pub error: Option<SettingsError>,
     pub path: Option<PathBuf>,
     pub words: UserWords,
 }
@@ -368,7 +341,7 @@ pub struct UserWords {
     /// Bumped on every change, so spellcheck caches know to recheck.
     pub generation: u64,
     pub path: Option<PathBuf>,
-    pub error: Option<String>,
+    pub error: Option<DictionaryError>,
 }
 
 pub const MAX_WORDS: usize = 10_000;
@@ -383,16 +356,16 @@ pub fn valid_word(word: &str) -> bool {
         && word.chars().any(char::is_alphabetic)
 }
 
-pub fn load_words(path: &Path) -> Result<BTreeSet<String>, String> {
+pub fn load_words(path: &Path) -> Result<BTreeSet<String>, DictionaryError> {
     let file = match std::fs::File::open(path) {
         Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
-        Err(e) => return Err(e.to_string()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(BTreeSet::new()),
+        Err(e) => return Err(DictionaryError::Open(Arc::new(e))),
     };
     let mut text = String::new();
     file.take(1 << 20)
         .read_to_string(&mut text)
-        .map_err(|e| format!("Could not read your spelling dictionary: {e}"))?;
+        .map_err(|e| DictionaryError::Read(Arc::new(e)))?;
     Ok(text
         .lines()
         .map(str::trim)
@@ -402,15 +375,16 @@ pub fn load_words(path: &Path) -> Result<BTreeSet<String>, String> {
         .collect())
 }
 
-pub fn save_words(path: &Path, words: &BTreeSet<String>) -> Result<(), String> {
-    let parent = path.parent().ok_or("Dictionary path has no parent.")?;
-    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+pub fn save_words(path: &Path, words: &BTreeSet<String>) -> Result<(), DictionaryError> {
+    let parent = path.parent().ok_or(DictionaryError::NoParent)?;
+    std::fs::create_dir_all(parent)?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
     for word in words {
-        writeln!(file, "{word}").map_err(|e| e.to_string())?;
+        writeln!(file, "{word}")?;
     }
-    file.as_file().sync_all().map_err(|e| e.to_string())?;
-    file.persist(path).map_err(|e| e.to_string())?;
+    file.as_file().sync_all()?;
+    file.persist(path)
+        .map_err(|e| DictionaryError::Persist(Arc::new(e)))?;
     Ok(())
 }
 
@@ -418,59 +392,69 @@ pub fn save_words(path: &Path, words: &BTreeSet<String>) -> Result<(), String> {
 static WORDS_WRITE: Mutex<()> = Mutex::new(());
 static WORDS_LATEST: AtomicU64 = AtomicU64::new(0);
 
-impl Store {
-    /// Replace the user's words and save them in the background. Returns
-    /// `false` (changing nothing) when the list is full.
-    pub fn set_words(shared: &Shared, words: BTreeSet<String>, cx: &mut gpui::App) -> bool {
-        if words.len() > MAX_WORDS {
-            shared.borrow_mut().words.error =
-                Some(format!("Your dictionary is full ({MAX_WORDS} words)."));
-            return false;
+/// A dictionary save for the caller to run off the UI thread
+/// ([`WordsWrite::run`]); a write for an older generation does nothing.
+#[must_use]
+pub struct WordsWrite {
+    path: PathBuf,
+    words: Arc<BTreeSet<String>>,
+    generation: u64,
+}
+impl WordsWrite {
+    pub fn run(self) -> Result<(), DictionaryError> {
+        let _guard = WORDS_WRITE.lock().unwrap_or_else(|e| e.into_inner());
+        if WORDS_LATEST.load(Ordering::SeqCst) != self.generation {
+            return Ok(());
         }
-        let (path, words, generation) = {
-            let mut store = shared.borrow_mut();
-            store.words.words = Arc::new(words);
-            store.words.generation += 1;
-            (
-                store.words.path.clone(),
-                store.words.words.clone(),
-                store.words.generation,
-            )
+        save_words(&self.path, &self.words).map_err(|e| DictionaryError::Save(Box::new(e)))
+    }
+}
+
+impl Store {
+    /// Replace the user's words; the returned write saves them (none without
+    /// a dictionary file). When the list is full nothing changes and the
+    /// error is kept for the dictionary view.
+    pub fn set_words(
+        shared: &Shared,
+        words: BTreeSet<String>,
+    ) -> Result<Option<WordsWrite>, DictionaryError> {
+        if words.len() > MAX_WORDS {
+            shared.borrow_mut().words.error = Some(DictionaryError::Full);
+            return Err(DictionaryError::Full);
+        }
+        let mut store = shared.borrow_mut();
+        store.words.words = Arc::new(words);
+        store.words.generation += 1;
+        let Some(path) = store.words.path.clone() else {
+            return Ok(None);
         };
-        let Some(path) = path else {
-            return true;
-        };
-        WORDS_LATEST.store(generation, Ordering::SeqCst);
-        let task = cx.background_executor().spawn(async move {
-            let _guard = WORDS_WRITE.lock().unwrap_or_else(|e| e.into_inner());
-            if WORDS_LATEST.load(Ordering::SeqCst) != generation {
-                return Ok(());
-            }
-            save_words(&path, &words)
-        });
-        let shared = shared.clone();
-        cx.spawn(async move |_| {
-            let result = task.await;
-            shared.borrow_mut().words.error = result
-                .err()
-                .map(|e| format!("Could not save your spelling dictionary: {e}"));
-        })
-        .detach();
-        true
+        WORDS_LATEST.store(store.words.generation, Ordering::SeqCst);
+        Ok(Some(WordsWrite {
+            path,
+            words: store.words.words.clone(),
+            generation: store.words.generation,
+        }))
     }
 }
 impl Store {
-    pub fn new() -> Shared {
-        let path = if cfg!(test) {
-            None
-        } else {
-            crate::app_paths::data_local_dir().map(|p| p.join("mdoc/settings.json"))
-        };
+    /// The settings file under app data, if the system has a folder for it.
+    pub fn default_path() -> Option<PathBuf> {
+        crate::app_paths::data_local_dir().map(|p| p.join("mdoc/settings.json"))
+    }
+    /// Preferences and dictionary read from `path` (see [`Store::default_path`]);
+    /// without one, the store reports that settings have nowhere to live.
+    pub fn open(path: Option<PathBuf>) -> Shared {
         let loaded = match &path {
             Some(path) => load(path),
-            None if cfg!(test) => Ok(Preferences::default()),
-            None => Err("Could not find local application storage for settings.".into()),
+            None => Err(SettingsError::NoStorage),
         };
+        Self::with(path, loaded)
+    }
+    /// Default preferences that are never read from or saved to disk.
+    pub fn in_memory() -> Shared {
+        Self::with(None, Ok(Preferences::default()))
+    }
+    fn with(path: Option<PathBuf>, loaded: Result<Preferences, SettingsError>) -> Shared {
         let (current, error) = match loaded {
             Ok(p) => (Some(p), None),
             Err(e) => (None, Some(e)),
@@ -495,86 +479,44 @@ impl Store {
             },
         }))
     }
-    pub fn snapshot(&self) -> Result<Preferences, String> {
-        self.current.clone().ok_or_else(|| {
-            self.error
-                .clone()
-                .unwrap_or_else(|| "Open Settings to select supported preferences.".into())
-        })
+    pub fn snapshot(&self) -> Result<Preferences, SettingsError> {
+        self.current
+            .clone()
+            .ok_or_else(|| self.error.clone().unwrap_or(SettingsError::Unset))
     }
 }
-pub fn load(path: &Path) -> Result<Preferences, String> {
+pub fn load(path: &Path) -> Result<Preferences, SettingsError> {
     let file = match std::fs::File::open(path) {
         Ok(f) => f,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Preferences::default()),
-        Err(e) => return Err(e.to_string()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Preferences::default()),
+        Err(e) => return Err(e.into()),
     };
     let mut bytes = Vec::new();
-    file.take(65537)
-        .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
+    file.take(65537).read_to_end(&mut bytes)?;
     if bytes.len() > 65536 {
-        return Err("Settings file is too large. Reset explicitly in Settings.".into());
+        return Err(SettingsError::TooLarge);
     }
-    let prefs: Preferences = serde_json::from_slice(&bytes)
-        .map_err(|e| format!("Could not read settings: {e}. Reset explicitly in Settings."))?;
+    let prefs: Preferences =
+        serde_json::from_slice(&bytes).map_err(|e| SettingsError::Parse(Arc::new(e)))?;
     prefs.validate()?;
     Ok(prefs)
 }
-pub fn save(path: &Path, prefs: &Preferences) -> Result<(), String> {
+pub fn save(path: &Path, prefs: &Preferences) -> Result<(), SettingsError> {
     prefs.validate()?;
-    let parent = path.parent().ok_or("Settings path has no parent.")?;
-    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let mut file = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
-    serde_json::to_writer_pretty(&mut file, prefs).map_err(|e| e.to_string())?;
-    file.flush().map_err(|e| e.to_string())?;
-    file.as_file().sync_all().map_err(|e| e.to_string())?;
-    file.persist(path).map_err(|e| e.to_string())?;
+    let parent = path.parent().ok_or(SettingsError::NoParent)?;
+    std::fs::create_dir_all(parent)?;
+    let mut file = tempfile::NamedTempFile::new_in(parent)?;
+    serde_json::to_writer_pretty(&mut file, prefs)
+        .map_err(|e| SettingsError::Encode(Arc::new(e)))?;
+    file.flush()?;
+    file.as_file().sync_all()?;
+    file.persist(path)
+        .map_err(|e| SettingsError::Persist(Arc::new(e)))?;
     Ok(())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn model_attribution_tracks_the_pinned_downloads() {
-        for model in Model::ALL {
-            let (source, license) = model.source_and_license();
-            match model {
-                Model::Pii(m) => {
-                    let manifest = crate::pii::detector::manifest_for(m);
-                    assert_eq!(
-                        source,
-                        "Hugging Face · jugaadsrl/gliner2-privacy-filter-PII-multi-onnx"
-                    );
-                    assert_eq!(license, "Apache-2.0; encoder MIT");
-                    for file in manifest.files {
-                        assert!(file.url.starts_with(&format!(
-                            "https://huggingface.co/{}/resolve/{}/",
-                            manifest.repository, manifest.revision
-                        )));
-                    }
-                }
-                Model::Ocr(m) => {
-                    let manifest = m.manifest();
-                    assert_eq!(source, "GitHub · GreatV/oar-ocr");
-                    assert_eq!(license, "Apache-2.0");
-                    assert_eq!(
-                        manifest.revision,
-                        match m {
-                            OcrModel::V6Small => "oar-ocr-v0.7.0",
-                            OcrModel::Cyrillic => "oar-det-v0.7.0-rec-v0.3.0",
-                        }
-                    );
-                    for file in manifest.artifacts {
-                        assert!(file.url.starts_with(&format!(
-                            "https://github.com/{}/releases/download/",
-                            manifest.repository
-                        )));
-                    }
-                }
-            }
-        }
-    }
     #[test]
     fn settings_roundtrip_and_invalid_values_preserve_previous_file() {
         let d = tempfile::tempdir().unwrap();
@@ -605,29 +547,6 @@ mod tests {
         save(&path, &stored).unwrap();
         assert_eq!(load(&path).unwrap().ocr.model, OcrModel::Cyrillic);
     }
-    #[test]
-    fn pp_ocr_maps_recognition_languages_and_names_what_it_cannot_read() {
-        use crate::recognition::{ENGLISH, Language, RUSSIAN};
-        // The card's offered lists come from the bundles, recommended first.
-        assert_eq!(
-            OcrModel::offered(),
-            [&[ENGLISH][..], &[ENGLISH, RUSSIAN][..]]
-        );
-        assert_eq!(OcrModel::Cyrillic.title(), "English & Russian");
-        assert_eq!(OcrModel::plan(&[ENGLISH]), (OcrModel::V6Small, vec![]));
-        assert_eq!(OcrModel::plan(&[RUSSIAN]), (OcrModel::Cyrillic, vec![]));
-        assert_eq!(
-            OcrModel::plan(&[ENGLISH, RUSSIAN]),
-            (OcrModel::Cyrillic, vec![])
-        );
-        let german = Language("de");
-        assert_eq!(
-            OcrModel::plan(&[RUSSIAN, german]),
-            (OcrModel::Cyrillic, vec![german])
-        );
-        assert_eq!(OcrModel::plan(&[german]), (OcrModel::V6Small, vec![german]));
-    }
-
     #[test]
     fn every_pii_model_roundtrips_without_changing_existing_defaults() {
         let dir = tempfile::tempdir().unwrap();
@@ -691,11 +610,75 @@ mod tests {
             let bytes = serde_json::to_vec(&stored).unwrap();
             std::fs::write(&path, &bytes).unwrap();
             let error = load(&path).unwrap_err();
-            assert!(error.contains("Reset explicitly in Settings"));
+            assert!(error.to_string().contains("Reset explicitly in Settings"));
             assert_eq!(std::fs::read(&path).unwrap(), bytes);
 
             save(&path, &Preferences::default()).unwrap();
             assert_eq!(load(&path).unwrap(), Preferences::default());
         }
+    }
+    #[test]
+    fn default_settings_file_is_unchanged_byte_for_byte() {
+        // The file format predates mdoc-store; moving the types must not
+        // change a single byte of what is written.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        save(&path, &Preferences::default()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            r#"{
+  "version": 1,
+  "ocr": {
+    "model": "V6Small",
+    "dpi": 150,
+    "minimum_confidence": 0.0
+  },
+  "pseudonymization": {
+    "model": "Fp16",
+    "threshold": 0.5
+  },
+  "spelling": {
+    "enabled": true,
+    "english": true,
+    "russian": true,
+    "check_all_caps": false,
+    "check_digits": false
+  },
+  "updates": {
+    "check_automatically": true,
+    "include_prereleases": false
+  },
+  "cases": {
+    "ask_before_closing": true
+  }
+}"#
+        );
+    }
+    #[test]
+    fn full_dictionary_changes_nothing_and_writes_skip_older_generations() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = Store::open(Some(dir.path().join("settings.json")));
+        let full: BTreeSet<String> = (0..=MAX_WORDS).map(|i| format!("w{i}")).collect();
+        assert!(matches!(
+            Store::set_words(&shared, full),
+            Err(DictionaryError::Full)
+        ));
+        assert!(shared.borrow().words.words.is_empty());
+        let first = Store::set_words(&shared, ["one".to_string()].into())
+            .unwrap()
+            .unwrap();
+        let second = Store::set_words(&shared, ["two".to_string()].into())
+            .unwrap()
+            .unwrap();
+        first.run().unwrap();
+        let path = dir.path().join("spelling-words.txt");
+        assert!(!path.exists());
+        second.run().unwrap();
+        assert_eq!(load_words(&path).unwrap(), ["two".to_string()].into());
+        assert!(
+            Store::set_words(&Store::in_memory(), BTreeSet::new())
+                .unwrap()
+                .is_none()
+        );
     }
 }

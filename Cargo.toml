@@ -11,12 +11,12 @@ publish = false
 [workspace]
 # Upstream code with one Linux glyph-offset correction; not a workspace crate.
 exclude = ["vendor"]
-members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-history", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell"]
+members = ["crates/gpui-bidi", "crates/mdoc-editor", "crates/mdoc-history", "crates/mdoc-pii", "crates/gpui-pdf", "crates/mdoc-spell", "crates/mdoc-store"]
 resolver = "2"
 
 [features]
 # The entry point and runner are additionally gated by debug_assertions.
-headless-renders = ["gpui/test-support", "gpui_platform/test-support", "dep:gpui_windows", "gpui_windows/test-support"]
+headless-renders = ["mdoc-store/headless-renders", "gpui/test-support", "gpui_platform/test-support", "dep:gpui_windows", "gpui_windows/test-support"]
 
 # Remove when an adopted GPUI release includes the combining-mark correction.
 # Preserve the current GPUI family; see vendor/gpui-pre-wgpu/ZORITE-PATCH.md.
@@ -58,6 +58,7 @@ gpui_platform = { workspace = true }
 mdoc-editor = { path = "crates/mdoc-editor" }
 mdoc-pii = { path = "crates/mdoc-pii" }
 mdoc-spell = { path = "crates/mdoc-spell" }
+mdoc-store = { path = "crates/mdoc-store" }
 gpui-pdf = { path = "crates/gpui-pdf" }
 tempfile = "3"
 url = "2"
@@ -69,15 +70,6 @@ gliner2-rs = { version = "=0.9.6", default-features = false }
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
 # Probe the ONNX Runtime before ort sees it (ocr::load_onnx_runtime); ort's own version.
 libloading = "0.9"
-# Saved cases (ADR 0041): AES-256-GCM files, the key held by the OS.
-aes-gcm = "0.11"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-security-framework = { version = "3", features = ["OSX_10_15"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-# Pure-Rust D-Bus (zbus): no system libdbus needed.
-secret-service = { version = "5", default-features = false, features = ["rt-async-io-crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]
 gpui_windows = { package = "gpui-pre-windows", version = "=0.3.2", optional = true }
@@ -86,7 +78,6 @@ gpui_windows = { package = "gpui-pre-windows", version = "=0.3.2", optional = tr
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
-    "Win32_Security_Cryptography",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_Pipes",

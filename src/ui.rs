@@ -419,10 +419,10 @@ pub fn card_note(text: impl Into<gpui::SharedString>, theme: Theme) -> gpui::Div
 /// screen readers can read its named group and each prompt's existing actions.
 pub fn model_attribution(
     id: impl Into<gpui::ElementId>,
-    model: crate::settings::Model,
+    model: mdoc_store::settings::Model,
     theme: Theme,
 ) -> gpui::Stateful<gpui::Div> {
-    let text = model.attribution_label();
+    let text = crate::models::attribution_label(model);
     div()
         .id(id)
         .role(gpui::Role::Group)

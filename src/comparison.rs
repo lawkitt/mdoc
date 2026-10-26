@@ -1,8 +1,6 @@
 //! Immutable local QA input. These results never enter the document/review owners.
-use crate::{
-    ocr, pii,
-    settings::{OcrConfig, PiiConfig},
-};
+use crate::{ocr, pii};
+use mdoc_store::settings::{OcrConfig, PiiConfig};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -76,7 +74,7 @@ impl Config {
     pub fn identity(&self) -> serde_json::Value {
         match self {
             Self::Ocr(c) => {
-                let m = c.model.manifest();
+                let m = crate::ocr::manifest::for_model(c.model);
                 serde_json::json!({"model":m.id,"revision":m.revision,"mode":"Force","runtime":"ONNX Runtime 1.27.0","renderer":"PDFium native-v7988","artifacts":m.artifacts.iter().map(|a|serde_json::json!({"file":a.filename,"sha256":a.sha256})).collect::<Vec<_>>()})
             }
             Self::Pii(c) => {
@@ -249,15 +247,17 @@ pub fn save_report(path: &Path, records: &[ResultRecord]) -> Result<(), String> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn probe_model() -> crate::settings::Model {
+    fn probe_model() -> mdoc_store::settings::Model {
         match std::env::var("MDOC_MODEL")
             .expect("set MDOC_MODEL explicitly")
             .as_str()
         {
-            "ocr-cyrillic" => crate::settings::Model::Ocr(crate::settings::OcrModel::Cyrillic),
-            "ocr-v6" => crate::settings::Model::Ocr(crate::settings::OcrModel::V6Small),
-            "pii-fp16" => crate::settings::Model::Pii(crate::settings::PiiModel::Fp16),
-            "pii-fp32" => crate::settings::Model::Pii(crate::settings::PiiModel::Fp32),
+            "ocr-cyrillic" => {
+                mdoc_store::settings::Model::Ocr(mdoc_store::settings::OcrModel::Cyrillic)
+            }
+            "ocr-v6" => mdoc_store::settings::Model::Ocr(mdoc_store::settings::OcrModel::V6Small),
+            "pii-fp16" => mdoc_store::settings::Model::Pii(mdoc_store::settings::PiiModel::Fp16),
+            "pii-fp32" => mdoc_store::settings::Model::Pii(mdoc_store::settings::PiiModel::Fp32),
             _ => panic!("unknown MDOC_MODEL"),
         }
     }
@@ -266,7 +266,7 @@ mod tests {
     fn settings_model_setup_probe() {
         let progress = crate::model_download::Progress::default();
         match probe_model() {
-            crate::settings::Model::Ocr(model) => {
+            mdoc_store::settings::Model::Ocr(model) => {
                 crate::ocr::install_config(
                     &OcrConfig {
                         model,
@@ -276,7 +276,7 @@ mod tests {
                 )
                 .unwrap();
             }
-            crate::settings::Model::Pii(model) => {
+            mdoc_store::settings::Model::Pii(model) => {
                 crate::pii::detector::setup_config(
                     &PiiConfig {
                         model,
@@ -297,14 +297,14 @@ mod tests {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ocr-qualification");
         for language in ["english", "russian"] {
             let (input, config) = match model {
-                crate::settings::Model::Ocr(model) => (
+                mdoc_store::settings::Model::Ocr(model) => (
                     Input::pdf(&base.join(format!("{language}.pdf"))).unwrap(),
                     Config::Ocr(OcrConfig {
                         model,
                         ..Default::default()
                     }),
                 ),
-                crate::settings::Model::Pii(model) => {
+                mdoc_store::settings::Model::Pii(model) => {
                     let text = if language == "english" {
                         "Alice Morgan represents Northbridge Legal Ltd. Email alice@example.invalid. [Contact](mailto:alice@example.invalid)."
                     } else {
@@ -327,7 +327,9 @@ mod tests {
                 "{}",
                 record.error.clone().unwrap_or_default()
             );
-            if let crate::settings::Model::Ocr(crate::settings::OcrModel::Cyrillic) = model {
+            if let mdoc_store::settings::Model::Ocr(mdoc_store::settings::OcrModel::Cyrillic) =
+                model
+            {
                 let expected =
                     std::fs::read_to_string(base.join(format!("{language}.txt"))).unwrap();
                 let actual = record.output["recognition"]

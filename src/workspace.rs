@@ -2,12 +2,10 @@
 //! unopened session records allocate no editor, PDF, or conversion worker.
 use crate::{
     comparison, comparison_ui,
-    document::{self, Document},
     document_view::{DocumentView, DocumentViewDependencies, Next, OcrState, known_ocr_state},
     import, model_work, ocr,
     pii::{self, ui::PiiApplyAll},
-    session_store::{self, Session, TabRecord},
-    settings, settings_ui,
+    settings_ui,
     style::{self, Theme},
     ui,
 };
@@ -15,6 +13,12 @@ use gpui::{
     Animation, AnimationExt, AnyElement, App, Bounds, Context, Entity, EventEmitter, Focusable,
     PromptLevel, Subscription, Window, WindowBounds, WindowOptions, actions, div, prelude::*, px,
     size,
+};
+use mdoc_store::session_store::ThemeChoice;
+use mdoc_store::{
+    document::{self, Document},
+    session_store::{self, Session, TabRecord},
+    settings,
 };
 use std::{
     cell::Cell,
@@ -246,9 +250,9 @@ pub(super) struct Workspace {
     pending_write: Option<Session>,
     cases: cases_ui::CaseState,
     /// The sidebar's theme pick; `theme` holds what it resolves to (ADR 0048).
-    theme_choice: style::ThemeChoice,
+    theme_choice: ThemeChoice,
     /// The theme button's tooltip reads the choice live.
-    theme_tip: Rc<Cell<style::ThemeChoice>>,
+    theme_tip: Rc<Cell<ThemeChoice>>,
     /// The title last given to the window: "mdoc" on Home, else the active
     /// document's.
     window_title: String,
@@ -286,7 +290,7 @@ impl Workspace {
         this.session_path = if cfg!(test) {
             None
         } else {
-            crate::app_paths::data_local_dir().map(|path| path.join("mdoc/session.json"))
+            mdoc_store::app_paths::data_local_dir().map(|path| path.join("mdoc/session.json"))
         };
         let path = this.session_path.clone();
         let task = cx.background_executor().spawn(async move {
@@ -308,7 +312,12 @@ impl Workspace {
         .detach();
         // Reading positions can change without document notifications. Sampling
         // metadata is cheap; unchanged snapshots never touch disk.
-        let config = this.preferences.borrow().snapshot().map(|p| p.ocr);
+        let config = this
+            .preferences
+            .borrow()
+            .snapshot()
+            .map(|p| p.ocr)
+            .map_err(|e| e.to_string());
         let captured = config.clone();
         let check = cx
             .background_executor()
@@ -316,7 +325,8 @@ impl Workspace {
         cx.spawn(async move |this, cx| {
             let result = check.await;
             let _ = this.update(cx, |this, cx| {
-                if this.preferences.borrow().snapshot().map(|p| p.ocr) != captured {
+                let current = this.preferences.borrow().snapshot();
+                if current.map(|p| p.ocr).map_err(|e| e.to_string()) != captured {
                     return;
                 }
                 let state = match result {
@@ -344,7 +354,11 @@ impl Workspace {
     }
 
     pub(super) fn empty(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let preferences = settings::Store::new();
+        let preferences = if cfg!(test) {
+            settings::Store::in_memory()
+        } else {
+            settings::Store::open(settings::Store::default_path())
+        };
         let theme = Rc::new(Cell::new(Theme::default()));
         let panel = cx.new(|cx| settings_ui::Panel::new(preferences.clone(), theme.clone(), cx));
         let mut this = Self {
@@ -426,7 +440,7 @@ impl Workspace {
             writing: false,
             pending_write: None,
             cases: Default::default(),
-            theme_choice: style::ThemeChoice::default(),
+            theme_choice: ThemeChoice::default(),
             theme_tip: Rc::default(),
             window_title: String::new(),
             home: false,
@@ -441,7 +455,7 @@ impl Workspace {
                 this.apply_theme(window, cx)
             }));
         this.theme
-            .set(this.theme_choice.resolve(window.appearance()));
+            .set(style::resolve(this.theme_choice, window.appearance()));
         this.settings_subscription =
             Some(
                 cx.subscribe_in(&panel, window, |this, _, event, window, cx| match event {
@@ -492,7 +506,7 @@ impl Workspace {
         let config = match self.preferences.borrow().snapshot() {
             Ok(p) => p.ocr,
             Err(e) => {
-                self.notice = Some(e);
+                self.notice = Some(e.to_string());
                 cx.notify();
                 return;
             }
@@ -717,7 +731,7 @@ impl Workspace {
         let defaults = match self.preferences.borrow().snapshot() {
             Ok(p) => p,
             Err(e) => {
-                self.notice = Some(e);
+                self.notice = Some(e.to_string());
                 cx.notify();
                 return;
             }

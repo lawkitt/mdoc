@@ -119,7 +119,7 @@ pub fn fetch(
     path: &Path,
     progress: &Progress,
 ) -> Result<(), String> {
-    if crate::app_paths::isolated() {
+    if mdoc_store::app_paths::isolated() {
         return Err("network is disabled in headless renders".into());
     }
     progress.check()?;

@@ -4473,7 +4473,6 @@ dependencies = [
 name = "mdoc"
 version = "0.2.0-rc.3"
 dependencies = [
- "aes-gcm",
  "anydoc",
  "dirs 7.0.0",
  "docxide-pdf",
@@ -4490,13 +4489,12 @@ dependencies = [
  "mdoc-editor",
  "mdoc-pii",
  "mdoc-spell",
+ "mdoc-store",
  "ort",
  "pdf-inspector 1.25.2",
  "presidio-analyzer",
  "regex",
  "roxmltree 0.21.1",
- "secret-service",
- "security-framework",
  "semver",
  "serde",
  "serde_json",
@@ -4547,6 +4545,25 @@ version = "0.1.0"
 dependencies = [
  "flate2",
  "spellbook",
+]
+
+[[package]]
+name = "mdoc-store"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "dirs 7.0.0",
+ "dunce",
+ "mdoc-pii",
+ "mdoc-spell",
+ "secret-service",
+ "security-framework",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "url",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -30,9 +30,9 @@ const CYRILLIC: Manifest = Manifest {
     license: "Apache-2.0",
 };
 
-pub fn for_model(model: crate::settings::OcrModel) -> &'static Manifest {
+pub fn for_model(model: mdoc_store::settings::OcrModel) -> &'static Manifest {
     match model {
-        crate::settings::OcrModel::V6Small => &SMALL,
-        crate::settings::OcrModel::Cyrillic => &CYRILLIC,
+        mdoc_store::settings::OcrModel::V6Small => &SMALL,
+        mdoc_store::settings::OcrModel::Cyrillic => &CYRILLIC,
     }
 }

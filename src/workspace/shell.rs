@@ -6,7 +6,6 @@ use crate::{
     import,
     markdown_search::{SearchInput, SearchInputEvent},
     pii::ui::{CopyForAi, Pseudonymize},
-    recents::{self, Recents},
     style::{self, Theme},
     ui,
     workspace::{
@@ -17,6 +16,8 @@ use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Entity, Focusable, Hsla, KeyBinding,
     SharedString, Subscription, Window, actions, div, prelude::*, px,
 };
+use mdoc_store::recents::{self, Recents};
+use mdoc_store::session_store::ThemeChoice;
 use std::{path::PathBuf, time::Duration};
 
 actions!(
@@ -72,7 +73,11 @@ pub(super) struct ShellState {
 impl ShellState {
     pub fn new(_cx: &mut App) -> Self {
         Self {
-            recents: Recents::load(),
+            recents: Recents::load(if cfg!(test) {
+                None
+            } else {
+                Recents::default_path()
+            }),
             notice_count: 0,
             palette: None,
             drop: None,
@@ -141,7 +146,7 @@ impl Workspace {
     /// Resolve the theme choice against the OS appearance and repaint every
     /// open document when the result changes.
     pub(super) fn apply_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let theme = self.theme_choice.resolve(window.appearance());
+        let theme = style::resolve(self.theme_choice, window.appearance());
         if theme == self.theme.get() {
             return;
         }
@@ -334,9 +339,9 @@ impl Workspace {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let theme_icon = match self.theme_choice {
-            style::ThemeChoice::System => ui::Icon::ThemeSystem,
-            style::ThemeChoice::Light => ui::Icon::Sun,
-            style::ThemeChoice::Dark => ui::Icon::Moon,
+            ThemeChoice::System => ui::Icon::ThemeSystem,
+            ThemeChoice::Light => ui::Icon::Sun,
+            ThemeChoice::Dark => ui::Icon::Moon,
         };
         let card = self.update_card(cx);
         // The card carries its own dot; Settings marks an update only without it.
@@ -377,7 +382,7 @@ impl Workspace {
                     .child(
                         ui::header_icon_untipped(
                             "theme-toggle",
-                            self.theme_choice.label(),
+                            style::theme_label(self.theme_choice),
                             theme_icon,
                             theme,
                             false,
@@ -387,7 +392,9 @@ impl Workspace {
                         .tooltip({
                             self.theme_tip.set(self.theme_choice);
                             let (choice, theme) = (self.theme_tip.clone(), self.theme.clone());
-                            style::live_tooltip(move || (choice.get().label().into(), theme.get()))
+                            style::live_tooltip(move || {
+                                (style::theme_label(choice.get()).into(), theme.get())
+                            })
                         })
                         .when(cfg!(test), |v| v.debug_selector(|| "theme-toggle".into()))
                         .on_click(cx.listener(|this, _, window, cx| this.cycle_theme(window, cx))),
@@ -1023,7 +1030,7 @@ impl Workspace {
             );
         }
         for case in cases.iter().take(6) {
-            let link = crate::cases::CaseLink::of(case);
+            let link = mdoc_store::cases::CaseLink::of(case);
             let id = case.id.clone();
             let documents = case.members.len();
             list = list.child(
@@ -1044,7 +1051,7 @@ impl Workspace {
                     div()
                         .size(px(8.))
                         .rounded_full()
-                        .bg(link.color())
+                        .bg(style::case_color(link.hue()))
                         .flex_shrink_0(),
                 )
                 .child(div().flex_1().min_w_0().truncate().child(case.name.clone()))
@@ -1412,10 +1419,7 @@ impl Workspace {
                 section: "Actions",
                 label: format!(
                     "Switch theme ({})",
-                    self.theme_choice
-                        .next()
-                        .label()
-                        .trim_start_matches("Theme: ")
+                    style::theme_label(self.theme_choice.next()).trim_start_matches("Theme: ")
                 ),
                 detail: None,
                 shortcut: None,

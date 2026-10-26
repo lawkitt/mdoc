@@ -10,8 +10,7 @@ use crate::{
     preview::RetryPreview,
     recognition,
     search_session::FindMarkdown,
-    session_store::{self, Session, TabRecord},
-    settings, settings_ui,
+    settings_ui,
     style::{self, Theme},
     ui,
     workspace::{
@@ -21,6 +20,11 @@ use crate::{
 };
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
 use gpui_pdf::PdfView;
+use mdoc_store::session_store::ThemeChoice;
+use mdoc_store::{
+    session_store::{self, Session, TabRecord},
+    settings,
+};
 use std::{
     path::PathBuf,
     rc::Rc,
@@ -209,7 +213,7 @@ fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
     let first_id = cx.update(|_, cx| tabs.read(cx).active);
     first.update(cx, |view, _| {
         view.ocr_state = OcrState::Ready(ocr::Installed {
-            config: crate::settings::OcrConfig::default(),
+            config: mdoc_store::settings::OcrConfig::default(),
             models: "missing-models".into(),
             pdfium: "missing-pdfium".into(),
             onnx: "missing-onnx".into(),
@@ -488,7 +492,7 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
     });
     draw(cx);
     cx.update(|_, cx| assert!(view.read(cx).ocr_required.is_some()));
-    assert_eq!(settings::OcrModel::V6Small.title(), "English");
+    assert_eq!(crate::ocr::title(settings::OcrModel::V6Small), "English");
     for selector in [
         "ocr-language-hint",
         "conversion-card",
@@ -500,11 +504,15 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
     }
     for model in settings::OcrModel::ALL {
         view.update(cx, |view, cx| {
-            view.pick_recognition(model.languages().to_vec(), cx);
+            view.pick_recognition(crate::ocr::languages(model).to_vec(), cx);
         });
         draw(cx);
         let model = settings::Model::Ocr(model);
-        let label = format!("{}: {}", model.name(), model.attribution_label());
+        let label = format!(
+            "{}: {}",
+            model.name(),
+            crate::models::attribution_label(model)
+        );
         let bounds = cx
             .debug_bounds(Box::leak(label.into_boxed_str()))
             .expect("OCR source and license");
@@ -512,7 +520,10 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
         assert!(bounds.top() >= card.top() && bounds.bottom() <= card.bottom());
     }
     view.update(cx, |view, cx| {
-        view.pick_recognition(settings::OcrModel::V6Small.languages().to_vec(), cx);
+        view.pick_recognition(
+            crate::ocr::languages(settings::OcrModel::V6Small).to_vec(),
+            cx,
+        );
     });
     // Setup progress replaces the actions with Cancel.
     view.update(cx, |view, cx| {
@@ -916,7 +927,7 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
     let pdf = cx.update(|_, cx| view.read(cx).preview.pdf.clone().unwrap());
     view.update(cx, |view, _| {
         view.ocr_state = OcrState::Ready(ocr::Installed {
-            config: crate::settings::OcrConfig::default(),
+            config: mdoc_store::settings::OcrConfig::default(),
             models: "must-not-load".into(),
             pdfium: "must-not-load".into(),
             onnx: "must-not-load".into(),
@@ -1134,21 +1145,18 @@ fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
     // The sidebar's theme control cycles System → Light → Dark (ADR 0048).
-    cx.update(|_, cx| assert_eq!(tabs.read(cx).theme_choice, style::ThemeChoice::System));
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).theme_choice, ThemeChoice::System));
     click_toolbar(cx, "theme-toggle");
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).theme_choice, style::ThemeChoice::Light);
+        assert_eq!(tabs.read(cx).theme_choice, ThemeChoice::Light);
         assert_eq!(tabs.read(cx).theme.get(), Theme::Light);
     });
     cx.update(|window, cx| window.focus(&tabs.read(cx).focus.clone(), cx));
     click_toolbar(cx, "theme-toggle");
     cx.update(|_, cx| {
-        assert_eq!(tabs.read(cx).theme_choice, style::ThemeChoice::Dark);
+        assert_eq!(tabs.read(cx).theme_choice, ThemeChoice::Dark);
         assert_eq!(tabs.read(cx).theme.get(), Theme::Dark);
-        assert_eq!(
-            tabs.read(cx).snapshot(cx).theme_choice,
-            style::ThemeChoice::Dark
-        );
+        assert_eq!(tabs.read(cx).snapshot(cx).theme_choice, ThemeChoice::Dark);
     });
 }
 
@@ -3432,7 +3440,7 @@ fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mu
     let shared = cx.update(|_, cx| panel.read(cx).shared.clone());
     let words: std::collections::BTreeSet<String> =
         (0..300).map(|i| format!("word{i:03}")).collect();
-    cx.update(|_, cx| settings::Store::set_words(&shared, words, cx));
+    cx.update(|_, cx| crate::settings_ui::dictionary::set_words(&shared, words, cx));
     click_toolbar(cx, "Settings");
     panel.update_in(cx, |panel, window, cx| panel.open_dictionary(window, cx));
     draw(cx);
@@ -3618,7 +3626,10 @@ fn applied_document<'a>(
     let (tabs, cx) = boot_home(cx, session);
     cx.simulate_resize(size(px(1400.), px(850.)));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.use_case_store(crate::cases::Store::with_key(dir.join("cases"), &[3; 32]));
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.join("cases"),
+            &[3; 32],
+        ));
         tabs.open_paths(vec![path.clone()], window, cx)
     });
     cx.run_until_parked();
@@ -3762,7 +3773,7 @@ fn unsaved_mapping_is_absent_after_session_restore(cx: &mut TestAppContext) {
     let restored = cx.update(|window, cx| {
         cx.new(|cx| {
             let mut restored = Workspace::empty(window, cx);
-            restored.use_case_store(crate::cases::Store::with_key(
+            restored.use_case_store(mdoc_store::cases::Store::with_key(
                 dir.path().join("cases"),
                 &[3; 32],
             ));
@@ -3822,7 +3833,7 @@ fn a_saved_case_is_encrypted_named_and_listed_in_the_sidebar(cx: &mut TestAppCon
     cx.update(|_, cx| assert!(tabs.read(cx).can_create_case(tab, cx)));
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
     cx.run_until_parked();
-    let store = crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     let (cases, _) = store.list();
     assert_eq!(cases.len(), 1);
     let case = &cases[0];
@@ -3860,7 +3871,7 @@ fn saving_an_unsaved_document_as_a_case_saves_the_markdown_first(cx: &mut TestAp
     let tab = cx.update(|_, cx| tabs.read(cx).active);
     // As a fresh conversion: Markdown never saved (#75).
     active(&tabs, cx).update(cx, |view, _| view.session.document.path = None);
-    let store = || crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     // Cancelling the save creates no case.
     tabs.update_in(cx, |tabs, window, cx| {
         assert!(tabs.create_case(tab, window, cx).is_none())
@@ -3937,10 +3948,10 @@ fn a_long_case_name_keeps_the_categories_popup_close_button_inside(cx: &mut Test
 #[gpui::test]
 fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let store = crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     let path = dir.path().join("contract.md");
     std::fs::write(&path, "PERSON_1 met ORG_1; PERSON_9 did not.").unwrap();
-    let case = crate::cases::Case::new(
+    let case = mdoc_store::cases::Case::new(
         "Petrova".into(),
         &[
             crate::pii::restore::ExportedIdentity {
@@ -3971,7 +3982,7 @@ fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
     };
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.use_case_store(crate::cases::Store::with_key(
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
             dir.path().join("cases"),
             &[3; 32],
         ));
@@ -4033,7 +4044,7 @@ fn closing_an_unsaved_mapping_offers_to_save_it_once(cx: &mut TestAppContext) {
         cx.run_until_parked();
     }
     cx.update(|_, cx| assert!(tabs.read(cx).tabs.iter().all(|t| t.id != tab)));
-    let store = crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     assert_eq!(store.list().0.len(), 1);
 }
 
@@ -4052,7 +4063,7 @@ fn closing_an_unsaved_conversion_as_a_case_saves_it_then_closes(cx: &mut TestApp
     cx.run_until_parked();
     assert!(!cx.has_pending_prompt());
     cx.update(|_, cx| assert!(tabs.read(cx).tabs.iter().all(|t| t.id != tab)));
-    let store = crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     let (cases, _) = store.list();
     assert_eq!(cases.len(), 1);
     assert_eq!(cases[0].members, [session_store::identity(&saved)]);
@@ -4144,7 +4155,7 @@ fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
     tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(crate::cases::Store::with_key(
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
             dir.path().join("cases"),
             &[3; 32],
         ))
@@ -4268,7 +4279,7 @@ fn a_term_added_to_the_case_is_proposed_in_every_member(cx: &mut TestAppContext)
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(crate::cases::Store::with_key(
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
             dir.path().join("cases"),
             &[3; 32],
         ))
@@ -4313,7 +4324,7 @@ fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
     std::fs::write(folder.join(".draft.md"), "Hidden").unwrap();
     let (tabs, cx) = boot_home(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.use_case_store(crate::cases::Store::with_key(
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
             dir.path().join("cases"),
             &[3; 32],
         ));
@@ -4405,11 +4416,11 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
 }
 
 /// A case to restore, saved in an isolated store under `dir`.
-fn saved_case(dir: &std::path::Path) -> (crate::cases::Case, std::path::PathBuf) {
-    let store = crate::cases::Store::with_key(dir.join("cases"), &[3; 32]);
+fn saved_case(dir: &std::path::Path) -> (mdoc_store::cases::Case, std::path::PathBuf) {
+    let store = mdoc_store::cases::Store::with_key(dir.join("cases"), &[3; 32]);
     let path = dir.join("contract.md");
     std::fs::write(&path, "PERSON_1 met Bob.").unwrap();
-    let case = crate::cases::Case::new(
+    let case = mdoc_store::cases::Case::new(
         "Petrova".into(),
         &[crate::pii::restore::ExportedIdentity {
             alias: "PERSON_1".into(),
@@ -4429,7 +4440,7 @@ fn saving_a_case_explains_the_keychain_before_asking(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let tab = cx.update(|_, cx| tabs.read(cx).active);
-    let store = || crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     // Not now cancels: nothing is saved and the key is not read.
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.stage_case_key(Ok(store()));
@@ -4475,7 +4486,7 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
         // The first attempt is declined, the second allowed.
-        tabs.stage_case_key(Err(crate::cases::KEY_DENIED.into()));
+        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
         tabs.restore(session, window, cx);
         let restored = tabs.tabs.last().unwrap().id;
         tabs.activate(restored, window, cx);
@@ -4513,7 +4524,7 @@ fn case_members_restored_at_launch_wait_for_unlock(cx: &mut TestAppContext) {
         );
     });
     tabs.update(cx, |tabs, _| {
-        tabs.cases.test_open = Some(Ok(crate::cases::Store::with_key(
+        tabs.cases.test_open = Some(Ok(mdoc_store::cases::Store::with_key(
             dir.path().join("cases"),
             &[3; 32],
         )));
@@ -4542,9 +4553,9 @@ fn try_again_after_a_declined_keychain_dialog_finishes_the_action(cx: &mut TestA
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let tab = cx.update(|_, cx| tabs.read(cx).active);
-    let store = || crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Err(crate::cases::KEY_DENIED.into()));
+        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
         tabs.create_case(tab, window, cx);
     });
     draw(cx);
@@ -4570,7 +4581,7 @@ fn a_second_case_action_waits_with_the_first_for_the_keychain(cx: &mut TestAppCo
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let tab = cx.update(|_, cx| tabs.read(cx).active);
-    let store = || crate::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.stage_case_key(Ok(store()));
         tabs.create_case(tab, window, cx);
@@ -4599,7 +4610,7 @@ fn the_keychain_explainer_is_modal_and_returns_keyboard_focus(cx: &mut TestAppCo
         focus
     });
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Ok(crate::cases::Store::with_key(
+        tabs.stage_case_key(Ok(mdoc_store::cases::Store::with_key(
             dir.path().join("cases"),
             &[3; 32],
         )));
@@ -4677,7 +4688,7 @@ fn locked_members_load_when_the_key_opens_without_a_dialog_later(cx: &mut TestAp
     };
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Ok(crate::cases::Store::with_key(
+        tabs.stage_case_key(Ok(mdoc_store::cases::Store::with_key(
             dir.path().join("cases"),
             &[3; 32],
         )));
@@ -4711,7 +4722,7 @@ fn a_member_opened_by_hand_offers_unlock_and_gets_its_mapping(cx: &mut TestAppCo
     let (_, path) = saved_case(dir.path());
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Ok(crate::cases::Store::with_key(
+        tabs.stage_case_key(Ok(mdoc_store::cases::Store::with_key(
             dir.path().join("cases"),
             &[3; 32],
         )));
@@ -4888,7 +4899,7 @@ fn locked_cases_notice_opens_only_when_a_locked_case_is_needed(cx: &mut TestAppC
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Err(crate::cases::KEY_DENIED.into()));
+        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
         tabs.open_paths(vec![plain], window, cx);
     });
     cx.run_until_parked();
@@ -4917,7 +4928,7 @@ fn restore_from_home_shows_unlock_over_an_earlier_notice(cx: &mut TestAppContext
     let (tabs, cx) = boot_home(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     tabs.update(cx, |tabs, cx| {
-        tabs.stage_case_key(Err(crate::cases::KEY_DENIED.into()));
+        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
         // An earlier notice the user closed without dismissing.
         tabs.notice = Some("The clipboard has no text.".into());
         cx.notify();
@@ -4943,7 +4954,7 @@ fn restore_from_a_blank_tab_looks_for_locked_cases(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1100.), px(760.)));
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Err(crate::cases::KEY_DENIED.into()));
+        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
         tabs.new_tab(window, cx);
     });
     cx.simulate_input("PERSON_1 wrote back.");
@@ -4986,7 +4997,7 @@ fn review_host_performance(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
     tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(crate::cases::Store::with_key(
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
             dir.path().join("cases"),
             &[3; 32],
         ));
@@ -5146,7 +5157,7 @@ fn case_quit_fixture<'a>(
     let blocked = dir.join("blocked-store");
     std::fs::write(&blocked, "keep this file").unwrap();
     tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(crate::cases::Store::with_key(blocked, &[3; 32]));
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(blocked, &[3; 32]));
     });
     (tabs, cx, id)
 }
@@ -5186,7 +5197,7 @@ fn case_quit_failure_can_cancel_without_losing_mappings(cx: &mut TestAppContext)
     tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
     cx.run_until_parked();
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
-    let store = crate::cases::Store::with_key(dir.path().join("blocked-store"), &[3; 32]);
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("blocked-store"), &[3; 32]);
     assert!(!store.load(&case).unwrap().skip.is_empty());
 }
 
@@ -5208,7 +5219,7 @@ fn case_quit_retry_saves_the_latest_pending_revision(cx: &mut TestAppContext) {
     cx.simulate_prompt_answer("Retry");
     cx.run_until_parked();
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
-    let saved = crate::cases::Store::with_key(dir.path().join("blocked-store"), &[3; 32])
+    let saved = mdoc_store::cases::Store::with_key(dir.path().join("blocked-store"), &[3; 32])
         .load(&case)
         .unwrap();
     assert_eq!(saved.skip.len(), 2);
@@ -5238,14 +5249,14 @@ fn case_quit_store_open_failure_retains_work_for_retry(cx: &mut TestAppContext) 
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
     tabs.update(cx, |tabs, cx| {
-        tabs.stage_case_key(Err("fixture key unavailable".into()));
+        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::NoKeyStore));
         tabs.toggle_case_category(&case, crate::pii::Category::Person, cx);
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
     cx.run_until_parked();
     assert!(cx.has_pending_prompt());
     tabs.update(cx, |tabs, _| {
-        tabs.use_case_store(crate::cases::Store::with_key(
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
             dir.path().join("retry-store"),
             &[3; 32],
         ))
@@ -5253,7 +5264,7 @@ fn case_quit_store_open_failure_retains_work_for_retry(cx: &mut TestAppContext) 
     cx.simulate_prompt_answer("Retry");
     cx.run_until_parked();
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
-    let saved = crate::cases::Store::with_key(dir.path().join("retry-store"), &[3; 32])
+    let saved = mdoc_store::cases::Store::with_key(dir.path().join("retry-store"), &[3; 32])
         .load(&case)
         .unwrap();
     assert_eq!(saved.skip.len(), 1);
@@ -5303,7 +5314,7 @@ fn abandoned_quit_does_not_block_later_case_saves(cx: &mut TestAppContext) {
         tabs.toggle_case_category(&case, crate::pii::Category::Organization, cx)
     });
     cx.run_until_parked();
-    let saved = crate::cases::Store::with_key(blocked, &[3; 32])
+    let saved = mdoc_store::cases::Store::with_key(blocked, &[3; 32])
         .load(&case)
         .unwrap();
     assert_eq!(saved.skip.len(), 2);
@@ -5313,19 +5324,19 @@ fn abandoned_quit_does_not_block_later_case_saves(cx: &mut TestAppContext) {
 fn failed_write_of_a_removed_case_keeps_the_queue_moving(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, removed) = case_quit_fixture(cx, dir.path());
-    let other = crate::cases::Case::new("Other".into(), &[], None);
+    let other = mdoc_store::cases::Case::new("Other".into(), &[], None);
     let good = dir.path().join("good-store");
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.cases.cases.push(other.clone());
         // The removed case's write is in flight against the blocked store;
         // the other case queues behind it and targets a writable one.
         tabs.toggle_case_category(&removed, crate::pii::Category::Person, cx);
-        tabs.use_case_store(crate::cases::Store::with_key(good.clone(), &[3; 32]));
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(good.clone(), &[3; 32]));
         tabs.toggle_case_category(&other.id, crate::pii::Category::Person, cx);
         tabs.forget_case(&removed, window, cx);
     });
     cx.run_until_parked();
-    let saved = crate::cases::Store::with_key(good, &[3; 32])
+    let saved = mdoc_store::cases::Store::with_key(good, &[3; 32])
         .load(&other.id)
         .unwrap();
     assert_eq!(saved.skip.len(), 1);
@@ -5784,7 +5795,7 @@ fn the_open_case_list_takes_focus_traps_tab_and_gives_it_back(cx: &mut TestAppCo
     let (case, _) = saved_case(dir.path());
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Ok(crate::cases::Store::with_key(
+        tabs.stage_case_key(Ok(mdoc_store::cases::Store::with_key(
             dir.path().join("cases"),
             &[3; 32],
         )));
@@ -5844,7 +5855,7 @@ fn opening_a_case_with_enter_closes_the_list_and_focuses_its_document(cx: &mut T
     let (case, path) = saved_case(dir.path());
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.stage_case_key(Ok(crate::cases::Store::with_key(
+        tabs.stage_case_key(Ok(mdoc_store::cases::Store::with_key(
             dir.path().join("cases"),
             &[3; 32],
         )));
@@ -6130,7 +6141,7 @@ fn home_recents_rows_are_reachable_by_tab_and_open_with_enter(cx: &mut TestAppCo
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.shell.recents.files = paths
             .iter()
-            .map(|path| crate::recents::Recent {
+            .map(|path| mdoc_store::recents::Recent {
                 path: path.clone(),
                 opened: 0,
                 pseudonymized: false,

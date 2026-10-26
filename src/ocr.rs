@@ -6,6 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::recognition::{ENGLISH, Language, RUSSIAN};
+use mdoc_store::settings::OcrModel;
 use pdf_inspector::vision::{
     ModelArtifactKind, ModelDownloadPolicy, ModelStore, OarOcrEngine, OcrMode, OcrOptions,
     OcrPdfOptions, PdfiumRenderer,
@@ -20,7 +22,7 @@ pub const SUPPORTED: bool = cfg!(any(
 
 #[derive(Clone, Debug)]
 pub struct Installed {
-    pub config: crate::settings::OcrConfig,
+    pub config: mdoc_store::settings::OcrConfig,
     pub models: PathBuf,
     pub pdfium: PathBuf,
     pub onnx: PathBuf,
@@ -29,7 +31,7 @@ pub struct Installed {
 impl Installed {
     pub fn options(&self) -> OcrPdfOptions {
         OcrPdfOptions {
-            model_manifest: self.config.model.manifest(),
+            model_manifest: manifest::for_model(self.config.model),
             pdfium_library: Some(self.pdfium.clone()),
             onnx_runtime_library: Some(self.onnx.clone()),
             ocr: OcrOptions::new()
@@ -41,6 +43,48 @@ impl Installed {
             ..OcrPdfOptions::default()
         }
     }
+}
+
+/// Plain-language row title for a bundle: the languages it reads,
+/// "English & Russian".
+pub fn title(model: OcrModel) -> String {
+    crate::recognition::label(languages(model))
+}
+/// The recognition languages the bundle reads (ADR 0065).
+pub fn languages(model: OcrModel) -> &'static [Language] {
+    match model {
+        OcrModel::V6Small => &[ENGLISH],
+        OcrModel::Cyrillic => &[ENGLISH, RUSSIAN],
+    }
+}
+/// The recognition-language lists PP-OCR offers, one per bundle,
+/// recommended first: English; English & Russian.
+pub fn offered() -> Vec<&'static [Language]> {
+    OcrModel::ALL.map(languages).to_vec()
+}
+/// PP-OCR's reading of a recognition-language list: the first bundle
+/// that reads all of it, else the one reading most, and the languages
+/// that bundle cannot read.
+pub fn plan(wanted: &[Language]) -> (OcrModel, Vec<Language>) {
+    let list = crate::recognition::closest(wanted, &offered());
+    let model = OcrModel::ALL
+        .into_iter()
+        .find(|m| languages(*m) == list.as_slice())
+        .unwrap_or_default();
+    let unreadable = wanted
+        .iter()
+        .copied()
+        .filter(|l| !languages(model).contains(l))
+        .collect();
+    (model, unreadable)
+}
+/// Attribution for exactly the files setup offers.
+pub fn source_and_license(model: OcrModel) -> (String, String) {
+    let manifest = manifest::for_model(model);
+    (
+        format!("GitHub · {}", manifest.repository),
+        manifest.license.into(),
+    )
 }
 
 struct Runtime {
@@ -104,15 +148,15 @@ const RUNTIMES: &[Runtime] = MAC_RUNTIMES;
 
 /// Bytes OCR setup still needs for `model`: missing model files plus any
 /// runtime archive not yet installed. Tests always report a full download.
-pub fn pending(model: crate::settings::OcrModel) -> crate::model_download::Pending {
+pub fn pending(model: mdoc_store::settings::OcrModel) -> crate::model_download::Pending {
     pending_in(root().ok().filter(|_| !cfg!(test)).as_deref(), model)
 }
 fn pending_in(
     root: Option<&Path>,
-    model: crate::settings::OcrModel,
+    model: mdoc_store::settings::OcrModel,
 ) -> crate::model_download::Pending {
     let model_root = root.map(|root| model_root(root, model));
-    let artifacts = model.manifest().artifacts;
+    let artifacts = manifest::for_model(model).artifacts;
     let missing: Vec<u64> = artifacts
         .iter()
         .filter(|a| {
@@ -147,13 +191,13 @@ pub(crate) fn onnx_runtime_pending() -> u64 {
 }
 
 pub(crate) fn root() -> Result<PathBuf, String> {
-    crate::app_paths::data_local_dir()
+    mdoc_store::app_paths::data_local_dir()
         .map(|path| path.join("mdoc/ocr/v1"))
         .ok_or_else(|| "Could not find local application storage for OCR.".into())
 }
 
 /// No downloads, including when files are missing or invalid.
-pub fn check_config(config: &crate::settings::OcrConfig) -> Result<Option<Installed>, String> {
+pub fn check_config(config: &mdoc_store::settings::OcrConfig) -> Result<Option<Installed>, String> {
     if !SUPPORTED || cfg!(test) {
         return Ok(None);
     }
@@ -162,7 +206,9 @@ pub fn check_config(config: &crate::settings::OcrConfig) -> Result<Option<Instal
 }
 
 /// The caller owns model admission, including for the complete catalog check.
-pub fn check_reserved(config: &crate::settings::OcrConfig) -> Result<Option<Installed>, String> {
+pub fn check_reserved(
+    config: &mdoc_store::settings::OcrConfig,
+) -> Result<Option<Installed>, String> {
     if !SUPPORTED || cfg!(test) {
         return Ok(None);
     }
@@ -174,8 +220,8 @@ pub fn check_reserved(config: &crate::settings::OcrConfig) -> Result<Option<Inst
     validate_config(&root, config).map(Some)
 }
 
-pub fn model_root(root: &Path, model: crate::settings::OcrModel) -> PathBuf {
-    let manifest = model.manifest();
+pub fn model_root(root: &Path, model: mdoc_store::settings::OcrModel) -> PathBuf {
+    let manifest = manifest::for_model(model);
     root.join("models")
         .join(manifest.id)
         .join(manifest.revision)
@@ -194,9 +240,9 @@ fn check_in(root: &Path) -> Result<Option<Installed>, String> {
 
 /// The English/Russian qualification bundle, independent of the app default.
 #[cfg(test)]
-fn qualification_config() -> crate::settings::OcrConfig {
-    crate::settings::OcrConfig {
-        model: crate::settings::OcrModel::Cyrillic,
+fn qualification_config() -> mdoc_store::settings::OcrConfig {
+    mdoc_store::settings::OcrConfig {
+        model: mdoc_store::settings::OcrModel::Cyrillic,
         ..Default::default()
     }
 }
@@ -206,12 +252,15 @@ fn validate(root: &Path) -> Result<Installed, String> {
     validate_config(root, &qualification_config())
 }
 
-fn validate_config(root: &Path, config: &crate::settings::OcrConfig) -> Result<Installed, String> {
+fn validate_config(
+    root: &Path,
+    config: &mdoc_store::settings::OcrConfig,
+) -> Result<Installed, String> {
     for runtime in RUNTIMES {
         verify(&root.join(runtime.library), runtime.library_sha)?;
     }
     let models = ModelStore::new(root.join("models"))
-        .resolve(config.model.manifest())
+        .resolve(manifest::for_model(config.model))
         .map_err(|e| format!("OCR models are missing or damaged: {e}"))?;
     let installed = Installed {
         config: config.clone(),
@@ -279,7 +328,7 @@ fn probe_onnx_runtime(path: &Path) -> Result<(), String> {
 }
 
 /// Called by a worker that already owns model admission.
-pub fn installed_config(config: &crate::settings::OcrConfig) -> Result<Installed, String> {
+pub fn installed_config(config: &mdoc_store::settings::OcrConfig) -> Result<Installed, String> {
     validate_config(&root()?, config)
 }
 
@@ -331,7 +380,7 @@ fn install_in(root: &Path) -> Result<Installed, String> {
 }
 
 pub fn install_config(
-    config: &crate::settings::OcrConfig,
+    config: &mdoc_store::settings::OcrConfig,
     progress: &crate::model_download::Progress,
 ) -> Result<Installed, String> {
     if !SUPPORTED {
@@ -342,7 +391,7 @@ pub fn install_config(
 }
 pub(crate) fn install_config_in(
     root: &Path,
-    config: &crate::settings::OcrConfig,
+    config: &mdoc_store::settings::OcrConfig,
     progress: &crate::model_download::Progress,
 ) -> Result<Installed, String> {
     fs::create_dir_all(root).map_err(|e| e.to_string())?;
@@ -353,7 +402,7 @@ pub(crate) fn install_config_in(
         }
         install_runtime_progress(root, runtime, progress)?;
     }
-    let manifest = config.model.manifest();
+    let manifest = manifest::for_model(config.model);
     let model_root = model_root(root, config.model);
     for artifact in manifest.artifacts {
         crate::model_download::fetch(
@@ -379,11 +428,11 @@ pub(crate) fn install_config_in(
     Ok(installed)
 }
 
-pub fn remove_model(model: crate::settings::OcrModel) -> Result<(), String> {
+pub fn remove_model(model: mdoc_store::settings::OcrModel) -> Result<(), String> {
     let _permit = crate::model_work::Permit::acquire_for("removing text recognition")?;
     remove_model_files(&root()?, model)
 }
-fn remove_model_files(root: &Path, model: crate::settings::OcrModel) -> Result<(), String> {
+fn remove_model_files(root: &Path, model: mdoc_store::settings::OcrModel) -> Result<(), String> {
     let path = model_root(root, model);
     if path.exists() {
         fs::remove_dir_all(path).map_err(|e| e.to_string())?;
@@ -504,11 +553,11 @@ fn copy_runtime_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::OcrModel;
+    use mdoc_store::settings::OcrModel;
 
     #[test]
     fn removing_a_bundle_preserves_other_bundles_and_shared_runtimes() {
-        use crate::settings::OcrModel;
+        use mdoc_store::settings::OcrModel;
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         for model in OcrModel::ALL {
@@ -574,7 +623,11 @@ mod tests {
         let model = OcrModel::V6Small;
         let full = pending_in(None, model);
         assert_eq!(pending_in(Some(dir.path()), model), full);
-        let model_bytes: u64 = model.manifest().artifacts.iter().map(|a| a.size).sum();
+        let model_bytes: u64 = manifest::for_model(model)
+            .artifacts
+            .iter()
+            .map(|a| a.size)
+            .sum();
         assert_eq!(full.model, model_bytes);
         fs::write(dir.path().join(RUNTIMES[1].library), b"shared-runtime").unwrap();
         assert_eq!(
@@ -600,7 +653,7 @@ mod tests {
     #[test]
     fn import_options_never_download_and_select_qualified_model() {
         let installed = Installed {
-            config: crate::settings::OcrConfig::default(),
+            config: mdoc_store::settings::OcrConfig::default(),
             models: "models".into(),
             pdfium: "pdfium".into(),
             onnx: "onnx".into(),

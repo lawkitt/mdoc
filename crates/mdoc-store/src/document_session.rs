@@ -4,7 +4,7 @@ use crate::document::Document;
 use std::{io, path::PathBuf};
 
 #[derive(Default)]
-pub(super) struct DocumentSession {
+pub struct DocumentSession {
     pub document: Document,
     pub generation: u64,
     pub source: Option<PathBuf>,

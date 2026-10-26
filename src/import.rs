@@ -8,7 +8,7 @@ use std::{
 /// Whether a file dragged from the OS looks openable by its extension alone;
 /// drag feedback cannot afford `supported_source`'s content reads (ADR 0028).
 pub fn supported_extension(path: &Path) -> bool {
-    crate::document::is_markdown(path) || anydoc::Format::from_path(path).is_some()
+    mdoc_store::document::is_markdown(path) || anydoc::Format::from_path(path).is_some()
 }
 
 /// The formats mdoc opens, as hints name them: one entry per converter
@@ -73,7 +73,7 @@ pub fn supported_source(path: &Path) -> bool {
 
 #[derive(Clone, Debug)]
 pub struct Imported {
-    pub ocr_configuration: Option<crate::settings::OcrConfig>,
+    pub ocr_configuration: Option<mdoc_store::settings::OcrConfig>,
     pub source: PathBuf,
     pub markdown: String,
     pub warning: Option<String>,
@@ -501,7 +501,7 @@ mod tests {
     #[test]
     fn missing_runtime_requires_explicit_fallback() {
         let installed = crate::ocr::Installed {
-            config: crate::settings::OcrConfig::default(),
+            config: mdoc_store::settings::OcrConfig::default(),
             models: "missing-models".into(),
             pdfium: "missing-pdfium".into(),
             onnx: "missing-onnx".into(),

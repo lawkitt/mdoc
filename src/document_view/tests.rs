@@ -11,13 +11,14 @@ use crate::{
         CloseMarkdownSearch, FindMarkdown, FindNextMarkdown, FindPreviousMarkdown,
         FindReplaceMarkdown, ReplaceNextMarkdown, map_edit_offset,
     },
-    session_store, settings, settings_ui,
+    settings_ui,
     spelling::{NextMisspelling, PreviousMisspelling, ToggleDocumentSpelling},
     style::{self, Theme},
     ui,
     workspace::{self, Close, Import, New, Open},
 };
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
+use mdoc_store::{session_store, settings};
 use std::{path::PathBuf, sync::atomic::Ordering};
 
 pub(crate) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut VisualTestContext) {
@@ -1024,7 +1025,7 @@ fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut Tes
         app.session.generation += 1;
         app.finish_ocr_setup(
             Ok(ocr::Installed {
-                config: crate::settings::OcrConfig::default(),
+                config: mdoc_store::settings::OcrConfig::default(),
                 models: "models".into(),
                 pdfium: "pdfium".into(),
                 onnx: "onnx".into(),
@@ -1038,7 +1039,7 @@ fn ocr_setup_failure_is_retryable_and_stale_success_does_not_import(cx: &mut Tes
     });
 }
 
-fn set_default_ocr(app: &DocumentView, model: crate::settings::OcrModel) {
+fn set_default_ocr(app: &DocumentView, model: mdoc_store::settings::OcrModel) {
     let mut store = app.preferences.borrow_mut();
     store.current.as_mut().unwrap().ocr.model = model;
 }
@@ -1048,7 +1049,7 @@ fn set_default_ocr(app: &DocumentView, model: crate::settings::OcrModel) {
 #[gpui::test]
 fn recognition_choice_and_setup_survive_a_settings_change(cx: &mut TestAppContext) {
     use crate::recognition::{ENGLISH, RUSSIAN};
-    use crate::settings::OcrModel;
+    use mdoc_store::settings::OcrModel;
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
         app.job.complete(
@@ -1077,7 +1078,7 @@ fn recognition_choice_and_setup_survive_a_settings_change(cx: &mut TestAppContex
         assert_eq!(app.recognition_model(), OcrModel::Cyrillic);
         app.model_panel.update(cx, |panel, _| {
             panel.ocr_installations.push(ocr::Installed {
-                config: crate::settings::OcrConfig {
+                config: mdoc_store::settings::OcrConfig {
                     model: OcrModel::Cyrillic,
                     ..Default::default()
                 },
@@ -1104,7 +1105,7 @@ fn recognition_choice_and_setup_survive_a_settings_change(cx: &mut TestAppContex
         set_default_ocr(app, OcrModel::Cyrillic);
         app.finish_ocr_setup(
             Ok(ocr::Installed {
-                config: crate::settings::OcrConfig::default(),
+                config: mdoc_store::settings::OcrConfig::default(),
                 models: "models".into(),
                 pdfium: "pdfium".into(),
                 onnx: "onnx".into(),
@@ -1148,7 +1149,7 @@ fn ocr_without_text_stays_with_its_document(cx: &mut TestAppContext) {
     let (app, cx) = boot(cx);
     app.update_in(cx, |app, window, cx| {
         app.ocr_state = OcrState::Ready(crate::ocr::Installed {
-            config: crate::settings::OcrConfig::default(),
+            config: mdoc_store::settings::OcrConfig::default(),
             models: "models".into(),
             pdfium: "pdfium".into(),
             onnx: "onnx".into(),

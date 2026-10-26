@@ -2,9 +2,7 @@
 //! import/OCR state and pseudonymization review. The window-level
 //! [`crate::workspace::Workspace`] owns these views.
 use crate::{
-    cases,
-    document::{self, Document},
-    document_session, images, import, import_session, markdown_search, model_work, ocr,
+    images, import, import_session, markdown_search, model_work, ocr,
     pii::{
         self,
         ui::{PiiAddCandidate, PiiNextCandidate, PiiPreviousCandidate, PiiReviewCandidate},
@@ -16,7 +14,7 @@ use crate::{
         FindReplaceMarkdown, ReplaceAllMarkdown, ReplaceNextMarkdown, SearchRefresh,
         ToggleMarkdownMatchCase, ToggleMarkdownWholeWord,
     },
-    session_store, settings, settings_ui, spelling,
+    settings_ui, spelling,
     style::{self, Theme},
     ui,
     workspace::{self, Close, Import, New, Open, RetryDocument, ToggleTheme},
@@ -26,6 +24,11 @@ use gpui::{
     Subscription, Window, actions, div, prelude::*, px,
 };
 use mdoc_editor::{EditorEvent, EditorState};
+use mdoc_store::{
+    cases,
+    document::{self, Document},
+    document_session, session_store, settings,
+};
 use std::{
     cell::Cell,
     path::PathBuf,
@@ -506,14 +509,14 @@ impl DocumentView {
         let fallback = self.settings_ocr_model().unwrap_or_default();
         recognition::detect(
             &self.recognition_signals.clone().unwrap_or_default(),
-            &settings::OcrModel::offered(),
-            fallback.languages(),
+            &crate::ocr::offered(),
+            crate::ocr::languages(fallback),
         )
     }
 
     /// The bundle that reads this document's recognition languages.
     pub(crate) fn recognition_model(&self) -> settings::OcrModel {
-        settings::OcrModel::plan(&self.recognition_choice().languages).0
+        crate::ocr::plan(&self.recognition_choice().languages).0
     }
 
     /// Gather detection signals for `path` once its card appears.
@@ -794,7 +797,7 @@ impl DocumentView {
                     ..p.ocr
                 }),
                 Err(e) => {
-                    self.error = Some(e);
+                    self.error = Some(e.to_string());
                     cx.notify();
                     return;
                 }
@@ -935,7 +938,7 @@ impl DocumentView {
                 ..p.ocr
             },
             Err(e) => {
-                self.error = Some(e);
+                self.error = Some(e.to_string());
                 cx.notify();
                 return;
             }
@@ -1111,7 +1114,7 @@ impl DocumentView {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let choice = self.recognition_choice();
-        let (ocr_model, unreadable) = settings::OcrModel::plan(&choice.languages);
+        let (ocr_model, unreadable) = crate::ocr::plan(&choice.languages);
         let model = Some(settings::Model::Ocr(ocr_model));
         let shared = self.settings_ocr_model() == Some(ocr_model);
         let ready = self.installed_for(ocr_model, cx).is_some();
@@ -1265,7 +1268,7 @@ impl DocumentView {
             window.defer(cx, move |window, cx| window.focus(&focus, cx));
         }
         let name = model
-            .map(|m| m.short_name())
+            .map(crate::models::short_name)
             .unwrap_or_else(|| "OCR".into());
         // The engine says what it cannot read (ADR 0065).
         let hint = if unreadable.is_empty() {
@@ -1274,63 +1277,64 @@ impl DocumentView {
             format!(
                 "{}. {} OCR cannot read {}.",
                 choice.reason,
-                ocr_model.title(),
+                crate::ocr::title(ocr_model),
                 recognition::label(&unreadable)
             )
         };
         let accent = theme.search_accent();
-        let picker = div()
-            .id("recognition-languages")
-            .role(gpui::Role::RadioGroup)
-            .aria_label("Recognition languages")
-            .flex()
-            .flex_wrap()
-            .items_center()
-            .gap_1()
-            .child(
-                div()
-                    .mr_1()
-                    .text_size(px(12.))
-                    .text_color(palette.header_muted)
-                    .child("Recognize"),
-            )
-            .children(settings::OcrModel::offered().into_iter().enumerate().map(
-                |(index, languages)| {
-                    let selected = choice.languages == languages;
-                    let label = recognition::label(languages);
-                    let selector = format!("recognize {label}");
+        let picker =
+            div()
+                .id("recognition-languages")
+                .role(gpui::Role::RadioGroup)
+                .aria_label("Recognition languages")
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .gap_1()
+                .child(
                     div()
-                        .id(("recognition-language", index))
-                        .role(gpui::Role::RadioButton)
-                        .aria_label(label.clone())
-                        .aria_toggled(if selected {
-                            gpui::Toggled::True
-                        } else {
-                            gpui::Toggled::False
-                        })
-                        .key_context("UiControl")
-                        .tab_index(0)
-                        .tab_stop(!disabled)
-                        .px_2()
-                        .py(px(2.))
-                        .rounded_md()
-                        .border_1()
-                        .border_color(if selected { accent } else { palette.border })
-                        .when(selected, |v| v.bg(gpui::Hsla { a: 0.08, ..accent }))
+                        .mr_1()
                         .text_size(px(12.))
-                        .text_color(if selected { accent } else { palette.header_fg })
-                        .focus_visible(move |s| s.bg(palette.placeholder_bg))
-                        .when(!disabled, |v| v.cursor_pointer())
-                        .when(disabled, |v| v.opacity(0.45))
-                        .child(label)
-                        .when(cfg!(test), move |v| v.debug_selector(move || selector))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if !disabled {
-                                this.pick_recognition(languages.to_vec(), cx);
-                            }
-                        }))
-                },
-            ));
+                        .text_color(palette.header_muted)
+                        .child("Recognize"),
+                )
+                .children(crate::ocr::offered().into_iter().enumerate().map(
+                    |(index, languages)| {
+                        let selected = choice.languages == languages;
+                        let label = recognition::label(languages);
+                        let selector = format!("recognize {label}");
+                        div()
+                            .id(("recognition-language", index))
+                            .role(gpui::Role::RadioButton)
+                            .aria_label(label.clone())
+                            .aria_toggled(if selected {
+                                gpui::Toggled::True
+                            } else {
+                                gpui::Toggled::False
+                            })
+                            .key_context("UiControl")
+                            .tab_index(0)
+                            .tab_stop(!disabled)
+                            .px_2()
+                            .py(px(2.))
+                            .rounded_md()
+                            .border_1()
+                            .border_color(if selected { accent } else { palette.border })
+                            .when(selected, |v| v.bg(gpui::Hsla { a: 0.08, ..accent }))
+                            .text_size(px(12.))
+                            .text_color(if selected { accent } else { palette.header_fg })
+                            .focus_visible(move |s| s.bg(palette.placeholder_bg))
+                            .when(!disabled, |v| v.cursor_pointer())
+                            .when(disabled, |v| v.opacity(0.45))
+                            .child(label)
+                            .when(cfg!(test), move |v| v.debug_selector(move || selector))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if !disabled {
+                                    this.pick_recognition(languages.to_vec(), cx);
+                                }
+                            }))
+                    },
+                ));
         card.child(picker)
             .child(ui::card_hint(hint, theme).when(cfg!(test), |v| {
                 v.debug_selector(|| "ocr-language-hint".into())

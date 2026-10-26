@@ -34,7 +34,7 @@ pub fn install(editor: &Entity<EditorState>, directory: PathBuf, cx: &mut App) -
             if cache.borrow().released {
                 return None;
             }
-            let path = crate::document::local_path(src, &directory)?;
+            let path = mdoc_store::document::local_path(src, &directory)?;
             cache.borrow_mut().images.insert(src.to_owned(), None);
             let cache = cache.clone();
             let key = src.to_owned();

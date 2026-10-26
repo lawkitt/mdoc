@@ -266,7 +266,7 @@ impl DocumentView {
                         .size(px(7.))
                         .rounded_full()
                         .flex_shrink_0()
-                        .bg(link.color()),
+                        .bg(style::case_color(link.hue())),
                 )
                 .child(
                     div()

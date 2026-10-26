@@ -18,13 +18,9 @@ pub struct Recent {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Recents {
     pub files: Vec<Recent>,
-}
-
-fn store_path() -> Option<PathBuf> {
-    if cfg!(test) {
-        return None;
-    }
-    crate::app_paths::data_local_dir().map(|path| path.join("mdoc/recents.json"))
+    /// Where changes are saved; none keeps them in memory.
+    #[serde(skip)]
+    path: Option<PathBuf>,
 }
 
 fn now() -> u64 {
@@ -34,15 +30,23 @@ fn now() -> u64 {
 }
 
 impl Recents {
-    pub fn load() -> Self {
-        store_path()
+    /// The recents file under app data, if the system has a folder for it.
+    pub fn default_path() -> Option<PathBuf> {
+        crate::app_paths::data_local_dir().map(|path| path.join("mdoc/recents.json"))
+    }
+
+    /// The list saved at `path`; changes are saved back there.
+    pub fn load(path: Option<PathBuf>) -> Self {
+        let recents: Self = path
+            .as_ref()
             .and_then(|path| std::fs::read(path).ok())
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        Self { path, ..recents }
     }
 
     fn save(&self) {
-        let Some(path) = store_path() else {
+        let Some(path) = &self.path else {
             return;
         };
         if let Some(parent) = path.parent() {

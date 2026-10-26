@@ -1,13 +1,16 @@
 use crate::{
     comparison::{self, Config, Input, ResultRecord},
-    document, markdown_search, model_work,
-    settings::{self, Model, OcrConfig, OcrModel, PiiConfig, PiiModel, Preferences},
+    markdown_search, model_work,
     settings_ui::{self, control},
     style::{self, Theme},
     ui,
     workspace::{self, Close, Quit, Settings},
 };
 use gpui::{App, Context, Entity, FocusHandle, Focusable, Window, actions, div, prelude::*, px};
+use mdoc_store::{
+    document,
+    settings::{self, Model, OcrConfig, OcrModel, PiiConfig, PiiModel, Preferences},
+};
 use std::{
     cell::Cell,
     path::PathBuf,
@@ -670,8 +673,8 @@ impl Focusable for View {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::Store;
     use gpui::TestAppContext;
+    use mdoc_store::settings::Store;
 
     #[gpui::test]
     fn comparison_results_keep_captured_config_and_ignore_cancelled_or_late_completion(
@@ -679,7 +682,7 @@ mod tests {
     ) {
         let (owner, cx) = cx.add_window_view(workspace::Workspace::new);
         cx.run_until_parked();
-        let shared = Store::new();
+        let shared = Store::in_memory();
         let panel = cx.new(|cx| {
             settings_ui::Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
         });

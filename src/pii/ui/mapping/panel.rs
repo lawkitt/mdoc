@@ -3,11 +3,12 @@ use super::{DropTarget, MappingAction, PanelDrag, PanelFilter, PanelMenu, checkl
 use crate::{
     document_view::DocumentView,
     pii::{Category, ui::APPLIED_ID},
-    settings, settings_ui, style, ui,
+    settings_ui, style, ui,
 };
 use gpui::{
     AnyElement, App, Context, Hsla, SharedString, Window, div, prelude::*, px, uniform_list,
 };
+use mdoc_store::settings;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     ops::Range,
@@ -436,9 +437,13 @@ impl DocumentView {
         };
         let note = match model {
             Some(m) if pending.total() > 0 => {
-                format!("{} · {}, once", m.short_name(), pending.download_label())
+                format!(
+                    "{} · {}, once",
+                    crate::models::short_name(m),
+                    pending.download_label()
+                )
             }
-            Some(m) => format!("{} · runs on this computer", m.short_name()),
+            Some(m) => format!("{} · runs on this computer", crate::models::short_name(m)),
             None => String::new(),
         };
         ui::panel("identity-panel", theme)

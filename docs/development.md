@@ -96,9 +96,9 @@ dependency forks.
 | `src/main.rs` | Application startup, menus, key bindings and window creation |
 | `src/workspace.rs`, `src/workspace/` | The window shell: document sidebar, tab identity, admission, scheduling and session persistence |
 | `src/document_view.rs`, `src/document_view/` | One tab's document view: editor, source preview, import/OCR state, actions and toolbar chrome |
-| `src/document.rs`, `src/document_session.rs` | Atomic saves, external-change checks, accepted document identity and provenance |
-| `src/session_store.rs` | Paths and view metadata restoration; no document text |
+| `crates/mdoc-store` | GUI-free storage: app paths, atomic document saves and document identity, the session manifest, recents, settings types and files, encrypted saved cases, crash-report masking |
 | `src/import.rs`, `src/import_session.rs`, `src/ocr.rs` | Library integration, pending jobs, explicit verified setup and offline OCR |
+| `src/models.rs` | What setup and Settings show for each downloadable model, from the engine that owns it |
 | `src/recognition.rs` | Recognition languages: a document's default list, its reason and the keyboard input-source signal ([ADR 0066](adr/0066-recognition-language-defaults.md)) |
 | `src/preview.rs`, `src/docx_preview.rs` | Preview ownership and supervised local DOCX worker |
 | `src/docx_preview/comments.rs`, `src/comment_panel.rs` | Read-only DOCX comments |
