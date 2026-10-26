@@ -4,6 +4,14 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Code laid out by owner.** Each piece of window and document state now
+  lives in one owner with private fields
+  ([ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md)):
+  storage, import and detection moved into their own GUI-free crates, and
+  `just lint` rejects glob imports, `#[path]` modules and GPUI under those
+  crates. No change in behaviour; the headless renders match before and
+  after.
+
 - **Whole words in mention snippets; disabled actions say why.** The
   Replacements panel's snippets now start and end at whole words instead of
   mid-word ("ennett, known to…"). In the ⋯ menu, a disabled Copy for AI or
