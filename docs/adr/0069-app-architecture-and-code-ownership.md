@@ -139,4 +139,4 @@ Owners extracted so far:
   identities and skipped categories, and when a mapping change is saved
   into the case.
 
-References: [interview](../design/codebase-refactoring.md).
+References: [interview](https://github.com/lawkitt/mdoc/blob/cb72c2fa853cd554b462e27f1375640b3392e035/docs/design/codebase-refactoring.md).

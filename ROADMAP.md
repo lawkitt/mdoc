@@ -36,11 +36,11 @@ fixed by #123); Windows did not run
 ([evidence](docs/evidence/platform/2026-10-24/README.md)). 0.2.0-rc.2 adds the
 rc.1 should-fix items and goes to the Windows run; 0.2.0 ships from it.
 
-**Refactoring freeze (from 2026-10-25).** Until the architecture refactoring
-ends ([ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md), phase P5),
-only refactoring lands on `main`: no features and no bug fixes. 0.2.0 ships
-from rc.3 if it passes the Windows run; otherwise the next release is cut from
-`main` after P5 with full acceptance on both platforms.
+**Refactoring freeze (2026-10-25 to 2026-10-26).** It ended when the
+architecture refactoring's last phase merged
+([ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md), P5). 0.2.0
+ships from rc.3 if it passes the Windows run; otherwise the next release is cut
+from `main` with full acceptance on both platforms.
 
 ## 0.1.x patches
 
@@ -142,13 +142,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 
 ## Engineering
 
-- **Architecture refactoring** ([ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md)):
-  P1 explicit imports and folders per owner; P2 `mdoc-store`, `mdoc-detect`,
-  `mdoc-import`; P3 Workspace owners, ending with `CaseCoordinator`; P4
-  DocumentView owners; P5 editor and gpui-pdf module hygiene. Each PR passes
-  `just check`; each phase ends with a headless-renders comparison.
-  *Done when:* P5 merges, the ADR's owner list is complete and the `just lint`
-  guardrails are on.
 - **Build-cache check** ([ADR 0050](docs/adr/0050-rust-build-cache-growth.md)):
   `just disk` read 38.5 GiB on 2026-10-23, over the ~30 GiB threshold; evaluate
   `sccache` against a periodic `cargo clean --workspace`.
