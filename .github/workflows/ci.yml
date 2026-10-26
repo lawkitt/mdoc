@@ -73,14 +73,15 @@ jobs:
       - run: just deny
       - run: just lint
 
-  # The shipped targets: clippy and the full test suite.
-  test:
-    name: test (${{ matrix.runner }})
+  # The shipped targets: clippy and the full test suite, as parallel jobs so
+  # the slow Windows test build doesn't wait for clippy (ADR 0070).
+  clippy:
+    name: clippy (${{ matrix.runner }})
     if: *not-release-commit
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-26, windows-latest]
+        runner: &shipped [macos-26, windows-latest]
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -90,6 +91,22 @@ jobs:
       - uses: ./.github/actions/setup
 
       - run: just lint
+
+  test:
+    name: test (${{ matrix.runner }})
+    if: *not-release-commit
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: *shipped
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
       - run: just test
       # Release gate: real OCR runtime/model download and EN/RU recognition,
       # on the test build just compiled.
