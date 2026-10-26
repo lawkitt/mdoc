@@ -12,3 +12,8 @@ crates/mdoc-spell/dictionaries/*.dic -text
 # byte (ADR 0056): keep LF on Windows.
 tests/fixtures/restore/** text eol=lf
 docs/product-media/*.md text eol=lf
+
+# Shell scripts and the tool pins they source keep LF on Windows too:
+# shellcheck rejects CRLF, and a sourced CR ends up in variable values.
+*.sh text eol=lf
+scripts/tools.env text eol=lf
