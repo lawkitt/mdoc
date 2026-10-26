@@ -587,6 +587,7 @@ impl DocumentView {
             theme,
             filter != PanelFilter::All,
         )
+        .track_focus(&self.pii.mapping.filter_focus)
         .when(cfg!(test), |v| {
             v.debug_selector(|| "replacement-filter".into())
         })
@@ -602,34 +603,50 @@ impl DocumentView {
                     .bg(theme.applied()),
             )
         })
-        .on_click(cx.listener(|this, _, _, cx| {
+        .on_click(cx.listener(|this, _, window, cx| {
             let menu = &mut this.pii.mapping.panel_menu;
             *menu = (*menu != Some(PanelMenu::Filter)).then_some(PanelMenu::Filter);
+            // The menu takes focus on the current filter (ADR 0062).
+            if this.pii.mapping.panel_menu.is_some() {
+                let row = format!("replacement-filter-{}", this.pii.mapping.filter.label());
+                window.focus(
+                    &this.pii.popup_control_focus(SharedString::from(row), cx),
+                    cx,
+                );
+            }
             cx.notify();
         }));
         let menu = (self.pii.mapping.panel_menu == Some(PanelMenu::Filter)).then(|| {
-            self.menu_surface("replacement-filter-menu")
-                .w(px(160.))
-                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+            let surface = self.menu_surface("replacement-filter-menu");
+            self.focus_menu(
+                surface,
+                &self.pii.mapping.filter_menu_focus,
+                &self.pii.mapping.filter_focus,
+                |this, _, _| {
                     this.pii.mapping.panel_menu = None;
+                    true
+                },
+                cx,
+            )
+            .w(px(160.))
+            .children(PanelFilter::ALL.into_iter().map(|option| {
+                self.menu_row(
+                    SharedString::from(format!("replacement-filter-{}", option.label())),
+                    option.label(),
+                    "",
+                    Some(option == filter),
+                    true,
+                    cx,
+                )
+                // A choice hands focus to the list it filters.
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.pii.mapping.filter = option;
+                    this.pii.mapping.panel_menu = None;
+                    window.focus(&this.pii.mapping.focus, cx);
                     cx.notify();
                 }))
-                .children(PanelFilter::ALL.into_iter().map(|option| {
-                    self.menu_row(
-                        SharedString::from(format!("replacement-filter-{}", option.label())),
-                        option.label(),
-                        "",
-                        Some(option == filter),
-                        true,
-                        cx,
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.pii.mapping.filter = option;
-                        this.pii.mapping.panel_menu = None;
-                        cx.notify();
-                    }))
-                }))
-                .into_any_element()
+            }))
+            .into_any_element()
         });
         // Anchored at the button's left; the menu snaps inside the window.
         self.with_dropdown(button, menu)

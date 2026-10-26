@@ -562,8 +562,12 @@ impl DocumentView {
                             })
                             .aria_label("Correct category for selected scope")
                             .when(identity.is_some(), |v| {
-                                v.on_click(cx.listener(|this, _, _, cx| {
+                                v.on_click(cx.listener(|this, _, window, cx| {
                                     this.pii.mapping.toggle_category_picker();
+                                    // The menu takes focus (ADR 0062).
+                                    if this.pii.mapping.pickers.category {
+                                        this.focus_category_menu(window, cx);
+                                    }
                                     cx.notify();
                                 }))
                             })
@@ -785,6 +789,77 @@ impl DocumentView {
                     .inset_0()
             })
     }
+    /// A menu that holds focus while open (ADR 0062): Tab, ⇧Tab, ↑ and ↓
+    /// stay in its rows, and Esc closes it and hands focus back to `back`.
+    /// `close` says whether it closed this menu rather than one on top.
+    pub(super) fn focus_menu(
+        &self,
+        menu: gpui::Stateful<gpui::Div>,
+        group: &gpui::FocusHandle,
+        back: &gpui::FocusHandle,
+        close: fn(&mut Self, &mut Window, &mut Context<Self>) -> bool,
+        cx: &mut Context<Self>,
+    ) -> gpui::Stateful<gpui::Div> {
+        let (next, previous, out) = (group.clone(), group.clone(), group.clone());
+        let (escape, outside) = (back.clone(), back.clone());
+        menu.track_focus(group)
+            .key_context("UiPanel UiMenu PiiMenu")
+            .on_action(
+                cx.listener(move |_, _: &crate::ui::NextControl, window, cx| {
+                    crate::ui::cycle(window, cx, Some(&next), false);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(move |_, _: &crate::ui::PreviousControl, window, cx| {
+                    crate::ui::cycle(window, cx, Some(&previous), true);
+                    cx.stop_propagation();
+                }),
+            )
+            .on_action(
+                cx.listener(move |this, _: &crate::ui::CloseMenu, window, cx| {
+                    if close(this, window, cx) {
+                        window.focus(&escape, cx);
+                    }
+                    cx.notify();
+                    cx.stop_propagation();
+                }),
+            )
+            // A click outside closes the menu, so keys never reach what is
+            // behind it while it shows (ADR 0055); a click on its own button
+            // is that button's toggle. A right-click opens a menu on top and
+            // leaves this one under it (#92).
+            .on_mouse_down_out(cx.listener(move |_, e: &gpui::MouseDownEvent, window, cx| {
+                if e.button != gpui::MouseButton::Left {
+                    return;
+                }
+                let (menu, back) = (out.clone(), outside.clone());
+                let view = cx.entity().downgrade();
+                window.defer(cx, move |window, cx| {
+                    if back.is_focused(window) {
+                        return;
+                    }
+                    let had_focus = menu.contains_focused(window, cx);
+                    let _ = view.update(cx, |this, cx| {
+                        close(this, window, cx);
+                        cx.notify();
+                    });
+                    if had_focus {
+                        window.focus(&back, cx);
+                    }
+                });
+            }))
+    }
+    /// The open category menu's row for the current category, which takes
+    /// focus when the menu opens.
+    fn focus_category_menu(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let current = self
+            .selected_entity()
+            .and_then(|id| self.pii.review.identity(id))
+            .map_or(Category::ALL[0], |identity| identity.category);
+        let id = SharedString::from(format!("direct-category-{}", current.token()));
+        window.focus(&self.pii.popup_control_focus(id, cx), cx);
+    }
     /// A menu row: label left, a muted detail right. `checked` reserves a ✓
     /// column in menus that mark the current choice.
     pub(super) fn menu_row(
@@ -849,43 +924,64 @@ impl DocumentView {
         let review = &self.pii.review;
         let custom = identity.custom_alias;
         let palette = self.theme.get().pdf_style();
-        self.menu_surface("direct-category-menu")
-            .children(Category::ALL.into_iter().map(|category| {
-                let current = identity.category == category;
-                let alias = if (custom || current) && selected_count == mentions {
-                    identity.alias.clone()
-                } else {
-                    review.next_alias(category)
-                };
+        let back = self.pii.popup_control_focus("direct-category", cx);
+        let menu = self.menu_surface("direct-category-menu");
+        self.focus_menu(
+            menu,
+            &self.pii.mapping.popup_menu_focus,
+            &back,
+            // A panel menu opened over the popup closes first (#92).
+            |this, window, cx| {
+                !this.close_panel_menu(window, cx) && {
+                    this.pii.mapping.close_pickers();
+                    true
+                }
+            },
+            cx,
+        )
+        .children(Category::ALL.into_iter().map(|category| {
+            let current = identity.category == category;
+            let alias = if (custom || current) && selected_count == mentions {
+                identity.alias.clone()
+            } else {
+                review.next_alias(category)
+            };
+            self.menu_row(
+                SharedString::from(format!("direct-category-{}", category.token())),
+                category.label(),
+                alias,
+                Some(current),
+                enabled,
+                cx,
+            )
+            // A choice hands focus back to the popup, where its keys work.
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.correct_category(category, cx);
+                window.focus(&this.pii.focus, cx);
+            }))
+        }))
+        // Ownership opens in the menu's place (ADR 0055).
+        .when_some(owner, |v, owner| {
+            v.child(div().h(px(1.)).my_1().bg(palette.border)).child(
                 self.menu_row(
-                    SharedString::from(format!("direct-category-{}", category.token())),
-                    category.label(),
-                    alias,
-                    Some(current),
+                    "direct-owner",
+                    "Belongs to…",
+                    owner.unwrap_or_else(|| "nobody".into()),
+                    None,
                     enabled,
                     cx,
                 )
-                .on_click(cx.listener(move |this, _, _, cx| this.correct_category(category, cx)))
-            }))
-            // Ownership opens in the menu's place (ADR 0055).
-            .when_some(owner, |v, owner| {
-                v.child(div().h(px(1.)).my_1().bg(palette.border)).child(
-                    self.menu_row(
-                        "direct-owner",
-                        "Belongs to…",
-                        owner.unwrap_or_else(|| "nobody".into()),
-                        None,
-                        enabled,
-                        cx,
-                    )
-                    .aria_label("Belongs to")
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.pii.mapping.toggle_owner_picker();
-                        cx.notify();
-                    })),
-                )
-            })
-            .into_any_element()
+                .aria_label("Belongs to")
+                // The owner menu opens with focus in its search.
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.pii.mapping.toggle_owner_picker();
+                    let search = this.pii.mapping.target.read(cx).focus_handle(cx);
+                    window.focus(&search, cx);
+                    cx.notify();
+                })),
+            )
+        })
+        .into_any_element()
     }
     /// The editable alias: a boxed field, accent-bordered while editing.
     /// The alias in its mention's colour (the category's while proposed, the
@@ -1101,65 +1197,81 @@ impl DocumentView {
         let query = mapping.target.read(cx).value().trim().to_lowercase();
         let owners: Arc<[_]> = self.alias_targets(&query, true).into();
         let count = owners.len();
-        self.menu_surface("direct-owner-menu")
-            .child(self.menu_heading("Belongs to"))
-            .child(div().px_1().pb_1().child(mapping.target.clone()))
-            .child(
-                self.menu_row(
-                    "direct-owner-none",
-                    "Nobody",
-                    "",
-                    Some(identity.owner.is_none()),
-                    enabled,
-                    cx,
-                )
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.change_mapping(MappingAction::Owner(id, None), cx)
-                })),
+        let back = self.pii.popup_control_focus("direct-category", cx);
+        let menu = self.menu_surface("direct-owner-menu");
+        self.focus_menu(
+            menu,
+            &mapping.popup_menu_focus,
+            &back,
+            // A panel menu opened over the popup closes first (#92).
+            |this, window, cx| {
+                !this.close_panel_menu(window, cx) && {
+                    this.pii.mapping.close_pickers();
+                    true
+                }
+            },
+            cx,
+        )
+        .child(self.menu_heading("Belongs to"))
+        .child(div().px_1().pb_1().child(mapping.target.clone()))
+        .child(
+            self.menu_row(
+                "direct-owner-none",
+                "Nobody",
+                "",
+                Some(identity.owner.is_none()),
+                enabled,
+                cx,
             )
-            .child(
-                uniform_list(
-                    "direct-owners",
-                    count,
-                    cx.processor(move |this, indices: Range<usize>, _, cx| {
-                        indices
-                            .map(|index| {
-                                let popup::AliasTarget {
-                                    id: target_id,
-                                    alias,
-                                    original,
-                                    ..
-                                } = owners[index].clone();
-                                let current = this
-                                    .pii
-                                    .review
-                                    .identity(id)
-                                    .is_some_and(|i| i.owner == Some(target_id));
-                                this.menu_row(
-                                    SharedString::from(format!("direct-owner-{target_id}")),
-                                    alias,
-                                    original,
-                                    Some(current),
-                                    !this.pii.scanning(),
-                                    cx,
-                                )
-                                .h(px(30.))
-                                .on_click(cx.listener(
-                                    move |this, _, _, cx| {
-                                        this.change_mapping(
-                                            MappingAction::Owner(id, Some(target_id)),
-                                            cx,
-                                        )
-                                    },
-                                ))
-                            })
-                            .collect()
-                    }),
-                )
-                .h(px((count as f32 * 30.).clamp(0., 150.)))
-                .flex_shrink_0(),
+            .on_click(cx.listener(move |this, _, window, cx| {
+                this.change_mapping(MappingAction::Owner(id, None), cx);
+                window.focus(&this.pii.focus, cx);
+            })),
+        )
+        .child(
+            uniform_list(
+                "direct-owners",
+                count,
+                cx.processor(move |this, indices: Range<usize>, _, cx| {
+                    indices
+                        .map(|index| {
+                            let popup::AliasTarget {
+                                id: target_id,
+                                alias,
+                                original,
+                                ..
+                            } = owners[index].clone();
+                            let current = this
+                                .pii
+                                .review
+                                .identity(id)
+                                .is_some_and(|i| i.owner == Some(target_id));
+                            this.menu_row(
+                                SharedString::from(format!("direct-owner-{target_id}")),
+                                alias,
+                                original,
+                                Some(current),
+                                !this.pii.scanning(),
+                                cx,
+                            )
+                            .h(px(30.))
+                            .on_click(cx.listener(
+                                move |this, _, window, cx| {
+                                    this.change_mapping(
+                                        MappingAction::Owner(id, Some(target_id)),
+                                        cx,
+                                    );
+                                    window.focus(&this.pii.focus, cx);
+                                },
+                            ))
+                        })
+                        .collect()
+                }),
             )
-            .into_any_element()
+            .h(px((count as f32 * 30.).clamp(0., 150.)))
+            .flex_shrink_0(),
+        )
+        .into_any_element()
     }
     /// `( This one | All N )`: the popup's one scope, and the only place its
     /// count appears. All, the whole entity, is the default (ADR 0055).

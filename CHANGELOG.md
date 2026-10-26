@@ -105,6 +105,12 @@ readers and the keyboard reach more of the app.
 - **Home's Recents and Cases rows work by keyboard.** Each row is a Tab stop
   with a name for screen readers, and Enter or Space opens it.
 
+- **Category and filter menus work by keyboard.** The mention popup's
+  category menu, its Belongs to… menu and the Replacements panel's filter
+  menu now take focus when they open: Tab or the arrows move between rows,
+  Enter chooses, and Esc returns to the button. Before, focus stayed on the
+  button and ↓ stepped to the next mention behind the open menu (fixes #167).
+
 - **Keychain explainer keeps Continue reachable.** Tab and ⇧Tab now move
   between Not now and Continue instead of sticking on Not now. The OCR and
   pseudonymization setup cards' buttons had the same fault and are fixed too.
