@@ -223,8 +223,8 @@ fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
     cx.update(|_, cx| {
         let view = first.read(cx);
         assert!(!view.prompting);
-        assert!(!view.job.busy());
-        assert!(view.ocr_required.is_some());
+        assert!(!view.import.busy());
+        assert!(view.import.ocr_required().is_some());
         assert!(view.source_only);
         assert!(view.editor.read(cx).text().is_empty());
         // The OCR runtime is bogus, so recognition fails. Its message varies:
@@ -252,7 +252,7 @@ fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
                 .unwrap()
                 .contains("2, 5")
         );
-        assert!(!first.read(cx).import_busy.load(Ordering::Relaxed));
+        assert!(!first.read(cx).import.slot_busy());
     });
     second.update_in(cx, |view, window, cx| view.import(&Import, window, cx));
     cx.run_until_parked();
@@ -277,8 +277,8 @@ fn setup_download_card(
         settings::Model::Ocr(_) => {
             view.update(cx, |view, cx| {
                 view.source_only = true;
-                view.conversion_source = Some("scan.pdf".into());
-                view.ocr_required = Some(vec![1]);
+                view.import.set_source(Some("scan.pdf".into()));
+                view.import.require_ocr(Some(vec![1]));
                 view.ocr_state = OcrState::Missing;
                 cx.notify();
             });
@@ -486,7 +486,7 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
         cx.notify();
     });
     draw(cx);
-    cx.update(|_, cx| assert!(view.read(cx).ocr_required.is_some()));
+    cx.update(|_, cx| assert!(view.read(cx).import.ocr_required().is_some()));
     assert_eq!(
         mdoc_import::ocr::title(settings::OcrModel::V6Small),
         "English"
@@ -555,7 +555,7 @@ fn ocr_card_asks_once_offers_retry_and_settings_downloads_do_not_convert(cx: &mu
     cx.update(|_, cx| {
         let view = view.read(cx);
         assert!(matches!(view.ocr_state, OcrState::Ready(_)));
-        assert!(!view.job.busy());
+        assert!(!view.import.busy());
         assert!(view.source_only);
         assert!(view.editor.read(cx).text().is_empty());
         assert!(!panel.read(cx).open);
@@ -577,7 +577,7 @@ fn open_scan(
     cx.run_until_parked();
     let view = active(tabs, cx);
     draw(cx);
-    cx.update(|_, cx| assert!(view.read(cx).ocr_required.is_some()));
+    cx.update(|_, cx| assert!(view.read(cx).import.ocr_required().is_some()));
     view
 }
 
@@ -751,10 +751,10 @@ fn picking_recognition_languages_changes_only_this_document(cx: &mut TestAppCont
     draw(cx);
     cx.update(|_, cx| {
         let view = view.read(cx);
-        assert!(view.ocr_failure.is_some());
+        assert!(view.import.ocr_failure().is_some());
         assert!(matches!(view.ocr_state, OcrState::Ready(_)));
         assert!(matches!(english.read(cx).ocr_state, OcrState::Ready(_)));
-        assert!(english.read(cx).ocr_failure.is_none());
+        assert!(english.read(cx).import.ocr_failure().is_none());
     });
     assert!(cx.debug_bounds("Retry").is_some());
 }
@@ -798,7 +798,7 @@ fn closing_source_rejects_conversion_even_when_view_is_retained(cx: &mut TestApp
     let view = active(&tabs, cx);
     tabs.update_in(cx, |tabs, window, cx| {
         view.update(cx, |view, cx| view.import(&Import, window, cx));
-        assert!(view.read(cx).job.busy());
+        assert!(view.read(cx).import.busy());
         tabs.close_tab(tabs.tabs.active(), window, cx);
     });
     cx.run_until_parked();
@@ -806,7 +806,7 @@ fn closing_source_rejects_conversion_even_when_view_is_retained(cx: &mut TestApp
         assert_eq!(tabs.read(cx).tabs.len(), 1);
         assert!(view.read(cx).source_only);
         assert!(view.read(cx).editor.read(cx).text().is_empty());
-        assert!(!view.read(cx).job.busy());
+        assert!(!view.read(cx).import.busy());
         assert!(!tabs.read(cx).import_busy.load(Ordering::Relaxed));
     });
 }
@@ -935,9 +935,9 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
     cx.run_until_parked();
     cx.update(|_, cx| {
         assert!(!view.read(cx).prompting);
-        assert_eq!(view.read(cx).ocr_required, Some(vec![2, 5]));
+        assert_eq!(view.read(cx).import.ocr_required(), Some(&[2, 5][..]));
         assert!(view.read(cx).source_only);
-        assert!(!view.read(cx).import_busy.load(Ordering::Relaxed));
+        assert!(!view.read(cx).import.slot_busy());
         assert!(matches!(view.read(cx).ocr_state, OcrState::Ready(_)));
     });
     view.update_in(cx, |view, window, cx| view.ocr_action(true, window, cx));
@@ -949,7 +949,7 @@ fn conversion_stays_in_source_tab_and_ready_ocr_requires_consent(cx: &mut TestAp
         assert!(view.editor.read(cx).text().contains("Readable page three"));
         assert!(view.session.warning.as_ref().unwrap().contains("2, 5"));
         assert_eq!(view.preview.pdf.as_ref(), Some(&pdf));
-        assert!(!view.import_busy.load(Ordering::Relaxed));
+        assert!(!view.import.slot_busy());
         assert_eq!(tabs.read(cx).tabs.len(), 1);
         assert!(
             tabs.read(cx).snapshot(cx).tabs.is_empty(),
@@ -1694,7 +1694,7 @@ fn background_import_finishes_in_its_own_tab_without_stealing_focus(cx: &mut Tes
         let imported = tabs.read(cx).tabs[1].view().unwrap().read(cx);
         assert!(imported.editor.read(cx).text().contains("alpha"));
         assert!(imported.dirty(cx));
-        assert!(!imported.job.busy());
+        assert!(!imported.import.busy());
     });
 }
 
@@ -1849,7 +1849,7 @@ fn a_closed_tab_s_import_ending_starts_the_conversion_waiting_for_it(cx: &mut Te
     });
     cx.run_until_parked();
     let waiting = active(&tabs, cx);
-    cx.update(|_, cx| assert!(waiting.read(cx).auto_convert_pending));
+    cx.update(|_, cx| assert!(waiting.read(cx).import.auto_pending()));
     // Another tab's import holds the slot; the tab closes before it ends.
     let closed = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     tabs.update_in(cx, |tabs, window, cx| {
@@ -1869,7 +1869,7 @@ fn a_closed_tab_s_import_ending_starts_the_conversion_waiting_for_it(cx: &mut Te
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
-        assert!(!waiting.read(cx).auto_convert_pending);
+        assert!(!waiting.read(cx).import.auto_pending());
         assert!(!waiting.read(cx).source_only, "the waiting PDF converted");
         assert!(!tabs.read(cx).import_busy.load(Ordering::Relaxed));
     });
@@ -2396,7 +2396,7 @@ fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
     cx.run_until_parked();
     let first = active(&tabs, cx);
     cx.update(|_, cx| {
-        assert!(first.read(cx).auto_convert_pending);
+        assert!(first.read(cx).import.auto_pending());
         assert!(tabs.read(cx).tabs[1].view().is_none());
     });
     tabs.update_in(cx, |tabs, window, cx| tabs.cycle(1, window, cx));
@@ -2414,9 +2414,9 @@ fn automatic_conversions_queue_on_activation_and_closed_waiters_do_not_run(
         assert_eq!(tabs.read(cx).tabs.active(), selected);
         assert!(!first.read(cx).source_only);
         assert!(closed.read(cx).editor.read(cx).text().is_empty());
-        assert!(closed.read(cx).import_cancel.load(Ordering::Relaxed));
+        assert!(closed.read(cx).import.cancelled());
         let view = tabs.read(cx).active_view().unwrap();
-        assert_eq!(view.read(cx).ocr_required, Some(vec![2, 5]));
+        assert_eq!(view.read(cx).import.ocr_required(), Some(&[2, 5][..]));
         assert!(!tabs.read(cx).import_busy.load(Ordering::Relaxed));
     });
     assert!(!cx.has_pending_prompt());

@@ -132,7 +132,9 @@ impl DocumentView {
     /// The header's state-driven primary action (ADR 0048).
     fn primary(&self, cx: &App) -> Primary {
         if self.source_only {
-            return if self.ocr_required.is_none() && !self.auto_convert_pending && !self.job.busy()
+            return if self.import.ocr_required().is_none()
+                && !self.import.auto_pending()
+                && !self.import.busy()
             {
                 Primary::Convert
             } else {
