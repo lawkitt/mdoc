@@ -1794,7 +1794,7 @@ fn checkpoint_serializes_latest_state_and_restores_pdf_position(cx: &mut TestApp
         assert_eq!(pdf.reading_position(), (0, 1.5));
     });
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.session_path = Some(path.clone());
+        tabs.session_writer.set_path(Some(path.clone()));
         tabs.checkpoint(window, cx);
         tabs.sidebar.restore(false, Some(false));
         tabs.checkpoint(window, cx);
@@ -2053,7 +2053,8 @@ fn failed_final_checkpoint_can_cancel_quit_without_losing_tabs(cx: &mut TestAppC
     std::fs::write(&parent_file, "preserve").unwrap();
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update(cx, |tabs, _| {
-        tabs.session_path = Some(parent_file.join("session.json"))
+        tabs.session_writer
+            .set_path(Some(parent_file.join("session.json")))
     });
     cx.dispatch_action(Quit);
     cx.run_until_parked();
@@ -5274,7 +5275,8 @@ fn abandoned_quit_does_not_block_later_case_saves(cx: &mut TestAppContext) {
     // Waiting on final case saves when the tab-list write fails; Cancel
     // abandons the quit.
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.session_path = Some(parent_file.join("session.json"));
+        tabs.session_writer
+            .set_path(Some(parent_file.join("session.json")));
         tabs.finishing = true;
         tabs.set_case_quit_window(Some(window.window_handle()));
         tabs.checkpoint(window, cx);

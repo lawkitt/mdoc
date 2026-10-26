@@ -43,7 +43,9 @@ mod focus_regions;
 pub(crate) mod headless_renders;
 mod keychain_ui;
 mod notices;
+mod session_writer;
 mod shell;
+use session_writer::SessionEffect;
 mod sidebar;
 mod tab_set;
 pub(crate) use cases_ui::{CancelCaseName, ConfirmCaseName, bind_keys as bind_case_keys};
@@ -211,10 +213,7 @@ pub(super) struct Workspace {
     finishing: bool,
     /// Histories whose save/discard decisions have already been resolved, by tab.
     quit_checked: std::collections::HashMap<u64, u64>,
-    session_path: Option<PathBuf>,
-    persisted: Option<Session>,
-    writing: bool,
-    pending_write: Option<Session>,
+    session_writer: session_writer::SessionWriter<Session>,
     cases: cases_ui::CaseState,
     /// The sidebar's theme pick; `theme` holds what it resolves to (ADR 0048).
     theme_choice: ThemeChoice,
@@ -252,12 +251,12 @@ impl Workspace {
         if !cfg!(test) {
             this.notices.load_crash(crate::crash::pending());
         }
-        this.session_path = if cfg!(test) {
+        this.session_writer.set_path(if cfg!(test) {
             None
         } else {
             mdoc_store::app_paths::data_local_dir().map(|path| path.join("mdoc/session.json"))
-        };
-        let path = this.session_path.clone();
+        });
+        let path = this.session_writer.path().cloned();
         let task = cx.background_executor().spawn(async move {
             path.map_or_else(|| Ok(Session::default()), |path| session_store::load(&path))
         });
@@ -381,10 +380,7 @@ impl Workspace {
             closing_tab: None,
             finishing: false,
             quit_checked: std::collections::HashMap::new(),
-            session_path: None,
-            persisted: None,
-            writing: false,
-            pending_write: None,
+            session_writer: session_writer::SessionWriter::new(None),
             cases: Default::default(),
             theme_choice: ThemeChoice::default(),
             theme_tip: Rc::default(),
@@ -1553,7 +1549,7 @@ impl Workspace {
                 .collect();
             self.finishing = true;
             self.checkpoint(window, cx);
-            if !self.writing {
+            if !self.session_writer.writing() {
                 self.finish_quit(window, cx);
             }
         }
@@ -1666,28 +1662,23 @@ impl Workspace {
     }
 
     fn checkpoint(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.ready || self.session_path.is_none() {
+        if !self.ready || !self.session_writer.enabled() {
             return;
         }
         let snapshot = self.snapshot(cx);
-        if self.persisted.as_ref() == Some(&snapshot) && !self.writing {
-            return;
-        }
-        self.pending_write = Some(snapshot);
-        self.write_pending(window, cx);
+        let effect = self.session_writer.checkpoint(snapshot);
+        self.carry_out_session(effect, window, cx);
     }
 
-    fn write_pending(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.writing {
-            return;
-        }
-        let Some(snapshot) = self.pending_write.take() else {
+    fn carry_out_session(
+        &mut self,
+        effect: Option<SessionEffect<Session>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(SessionEffect::Write { path, snapshot }) = effect else {
             return;
         };
-        let Some(path) = self.session_path.clone() else {
-            return;
-        };
-        self.writing = true;
         let task = cx.background_executor().spawn(async move {
             let result = session_store::save(&path, &snapshot);
             (snapshot, result)
@@ -1695,18 +1686,18 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let (snapshot, result) = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                this.writing = false;
                 match result {
                     Ok(()) => {
-                        this.persisted = Some(snapshot);
+                        let effect = this.session_writer.saved(snapshot);
+                        this.carry_out_session(effect, window, cx);
                     }
                     Err(error) => {
+                        this.session_writer.failed();
                         this.notices.post(format!("Could not save session: {error}"));
                         let was_quitting = this.finishing;
                         this.finishing = false;
                         this.quitting = None;
                         this.cancel_case_quit();
-                        this.pending_write = None;
                         if was_quitting {
                             let answer = window.prompt(PromptLevel::Warning,
                                 "Could not save the tab list",
@@ -1724,11 +1715,7 @@ impl Workspace {
                         return;
                     }
                 }
-                if this.pending_write.as_ref() == this.persisted.as_ref() {
-                    this.pending_write = None;
-                }
-                this.write_pending(window, cx);
-                if this.finishing && !this.writing {
+                if this.finishing && !this.session_writer.writing() {
                     this.finish_quit(window, cx);
                 }
             });
