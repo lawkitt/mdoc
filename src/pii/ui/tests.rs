@@ -30,7 +30,7 @@ fn install_scan(app: &mut DocumentView, cx: &mut Context<DocumentView>) -> (u64,
 }
 #[gpui::test]
 fn scan_proposes_without_applying_until_explicit_apply(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice", cx));
@@ -78,7 +78,7 @@ fn scan_proposes_without_applying_until_explicit_apply(cx: &mut gpui::TestAppCon
 
 #[gpui::test]
 fn a_failed_scan_still_offers_manual_replace(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice Morgan signs", cx));
@@ -113,7 +113,7 @@ fn a_failed_scan_still_offers_manual_replace(cx: &mut gpui::TestAppContext) {
 #[gpui::test]
 #[ignore = "requires installed verified GLiNER2 FP16 and ONNX Runtime; no downloads"]
 fn installed_model_offline_smoke(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Alice Morgan represents Northbridge Legal Ltd. Contact alice@example.invalid.\n";
     // Tests report every model as missing; this smoke uses the installed one.
     app.update(cx, |app, cx| {
@@ -143,13 +143,13 @@ fn installed_model_offline_smoke(cx: &mut gpui::TestAppContext) {
 }
 #[gpui::test]
 fn scan_then_apply_is_one_undo_step_and_copy_is_explicit(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "**Анна** Bob Анна [mail](anna@example.invalid)";
     let applied = "**Анна** PERSON_2 PERSON_1 [mail](EMAIL_1)";
     let dir = tempfile::tempdir().unwrap();
     let original = dir.path().join("original.md");
     std::fs::write(&original, source).unwrap();
-    let app = crate::document_view_tests::open_document(&app, original.clone(), cx);
+    let app = crate::document_view::tests::open_document(&app, original.clone(), cx);
     app.update(cx, |app, cx| {
         app.session.warning = Some("Review extraction".into());
         let kept = app
@@ -230,7 +230,7 @@ fn scan_then_apply_is_one_undo_step_and_copy_is_explicit(cx: &mut gpui::TestAppC
 }
 #[gpui::test]
 fn failed_cancelled_stale_and_superseded_scans_do_not_edit(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     for case in 0..6 {
         app.update(cx, |app, cx| {
             app.editor
@@ -270,7 +270,7 @@ fn failed_cancelled_stale_and_superseded_scans_do_not_edit(cx: &mut gpui::TestAp
 }
 #[gpui::test]
 fn manual_replacements_count_without_a_scan_or_open_review(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice", cx));
@@ -293,7 +293,7 @@ fn manual_replacements_count_without_a_scan_or_open_review(cx: &mut gpui::TestAp
 fn header_pseudonymize_scans_once_and_the_panel_toggle_hides_the_review(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(720.), px(480.)));
     // An empty document has nothing to pseudonymize (ADR 0048).
     cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -363,7 +363,7 @@ fn header_pseudonymize_scans_once_and_the_panel_toggle_hides_the_review(
         app.read_with(cx, |app, cx| app.editor.read(cx).text().to_owned()),
         "Alice"
     );
-    let next = crate::document_view_tests::new_document(&app, cx);
+    let next = crate::document_view::tests::new_document(&app, cx);
     next.read_with(cx, |app, _| {
         assert!(!app.pii.reviewing);
         assert!(!app.pii.mapping.open);
@@ -371,7 +371,7 @@ fn header_pseudonymize_scans_once_and_the_panel_toggle_hides_the_review(
 }
 #[gpui::test]
 fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "**Анна** Acme Анна [mail](anna@example.invalid) Bob";
     app.update(cx, |app, cx| {
         app.editor
@@ -450,7 +450,7 @@ fn accept_all_button_applies_pending_replacements_as_one_undo_step(cx: &mut gpui
 }
 #[gpui::test]
 fn keyboard_search_and_navigation_reach_virtualized_alias_targets(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(640.), px(480.)));
     let source = (0..30)
         .map(|i| format!("Name{i:02}"))
@@ -508,7 +508,7 @@ fn keyboard_search_and_navigation_reach_virtualized_alias_targets(cx: &mut gpui:
 
 #[gpui::test]
 fn accept_all_refuses_pending_scans_and_invalid_alias_drafts(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Alice Acme";
     app.update(cx, |app, cx| {
         app.editor
@@ -552,7 +552,7 @@ fn accept_all_refuses_pending_scans_and_invalid_alias_drafts(cx: &mut gpui::Test
 }
 #[gpui::test]
 fn missing_model_asks_first_and_resumes_only_after_this_setup(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(1000.), px(700.)));
     let panel = cx.update(|_, cx| app.read(cx).model_panel.clone());
     let fp16 = settings::Model::Pii(settings::PiiModel::Fp16);
@@ -658,7 +658,7 @@ fn missing_model_asks_first_and_resumes_only_after_this_setup(cx: &mut gpui::Tes
 }
 #[gpui::test]
 fn cancelled_edited_and_replaced_document_results_are_rejected(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice", cx));
@@ -727,7 +727,7 @@ fn prepare_applied(app: &mut DocumentView, source: &str, cx: &mut Context<Docume
 fn applied_highlights_restore_one_or_matching_originals_and_keep_survives_rescan(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| prepare_applied(app, "Anna Bob Anna", cx));
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
@@ -787,7 +787,7 @@ fn applied_highlights_restore_one_or_matching_originals_and_keep_survives_rescan
 fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     for theme in [Theme::Dark, Theme::Light] {
         for (width, height) in [(1100., 760.), (640., 480.)] {
             cx.simulate_resize(gpui::size(px(width), px(height)));
@@ -855,7 +855,7 @@ fn compact_restoration_buttons_preserve_matching_scope_in_both_themes(
 fn long_original_enter_applies_this_one_and_alias_enter_only_confirms(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(640.), px(480.)));
     let original = "Индивидуальный предприниматель Анна Александровна ".repeat(5);
     for theme in [Theme::Dark, Theme::Light] {
@@ -929,7 +929,7 @@ fn long_original_enter_applies_this_one_and_alias_enter_only_confirms(
 fn editing_alias_invalidates_provenance_undo_recovers_it_and_paste_creates_none(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| prepare_applied(app, "Anna", cx));
     cx.run_until_parked();
     app.update(cx, |app, cx| {
@@ -960,7 +960,7 @@ fn editing_alias_invalidates_provenance_undo_recovers_it_and_paste_creates_none(
 }
 #[gpui::test]
 fn dense_hidden_fields_choose_and_restore_by_keyboard(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         prepare_applied(app, "intro\n\n[link](https://x.invalid/Anna/Bob)", cx)
     });
@@ -1002,7 +1002,7 @@ fn dense_hidden_fields_choose_and_restore_by_keyboard(cx: &mut gpui::TestAppCont
 
 #[gpui::test]
 fn hidden_annotations_follow_visible_wrapped_rows(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = format!(
         "{}\n\nend",
         "Пример [visible_label_with_words](https://x.invalid/Anna/Bob) ".repeat(1000)
@@ -1065,7 +1065,7 @@ fn hidden_annotations_follow_visible_wrapped_rows(cx: &mut gpui::TestAppContext)
 }
 #[gpui::test]
 fn selection_replace_supersedes_partial_proposals_and_enter_applies(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Contact Иван Петров today. Иван agreed.";
     app.update(cx, |app, cx| {
         app.editor
@@ -1154,7 +1154,7 @@ fn selection_replace_supersedes_partial_proposals_and_enter_applies(cx: &mut gpu
 fn unknown_wording_is_other_cued_and_cancel_reverts_addition_and_apply(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Планируемая дата поступления. Анна agreed.";
     app.update(cx, |app, cx| {
         app.editor
@@ -1225,7 +1225,7 @@ fn unknown_wording_is_other_cued_and_cancel_reverts_addition_and_apply(
 
 #[gpui::test]
 fn decision_card_fits_the_mention_and_apply_settles_in(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Планируемая дата поступления. Анна agreed.";
     app.update(cx, |app, cx| {
         app.editor
@@ -1319,7 +1319,7 @@ fn decision_card_fits_the_mention_and_apply_settles_in(cx: &mut gpui::TestAppCon
 }
 #[gpui::test]
 fn toolbar_status_cancels_a_running_scan(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice", cx));
@@ -1350,7 +1350,7 @@ fn alias_click_shows_a_caret_and_new_alias_below_the_card_applies(cx: &mut gpui:
         mapping::Scope::Wording,
         mapping::Scope::Entity,
     ] {
-        let (app, cx) = crate::document_view_tests::boot(cx);
+        let (app, cx) = crate::document_view::tests::boot(cx);
         app.update(cx, |app, cx| {
             app.editor.update(cx, |e, cx| e.set_text(source, cx))
         });
@@ -1436,7 +1436,7 @@ fn renaming_an_alias_back_frees_its_old_name(cx: &mut gpui::TestAppContext) {
         mapping::Scope::Wording,
         mapping::Scope::Entity,
     ] {
-        let (app, cx) = crate::document_view_tests::boot(cx);
+        let (app, cx) = crate::document_view::tests::boot(cx);
         app.update(cx, |app, cx| {
             app.editor.update(cx, |e, cx| e.set_text(source, cx))
         });
@@ -1534,7 +1534,7 @@ fn renaming_an_alias_back_frees_its_old_name(cx: &mut gpui::TestAppContext) {
 
 #[gpui::test]
 fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         app.editor
             .update(cx, |e, cx| e.set_text("Anna Bob Anna", cx))
@@ -1600,7 +1600,7 @@ fn panel_undo_redo_and_after_action_notice(cx: &mut gpui::TestAppContext) {
 
 #[gpui::test]
 fn popup_delete_keeps_but_alias_field_backspace_edits(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update_in(cx, |app, window, cx| {
         app.editor.update(cx, |e, cx| e.set_text("Anna Bob", cx));
         app.pii.review = Review::default();
@@ -1646,7 +1646,7 @@ fn popup_delete_keeps_but_alias_field_backspace_edits(cx: &mut gpui::TestAppCont
 #[gpui::test]
 fn unrecognized_placeholders_are_assigned_or_left_never_guessed(cx: &mut gpui::TestAppContext) {
     use crate::pii::restore::ExportedIdentity;
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let reply = restore::RestoredReply {
         text: "PERSON_1 and PERSON_2 met PERSON_2 and ORG_5.".into(),
         identities: vec![ExportedIdentity {
@@ -1708,7 +1708,7 @@ fn ai_notice_names_aliases_only() {
 #[gpui::test]
 fn homonyms_keep_their_own_aliases_through_restore_and_apply(cx: &mut gpui::TestAppContext) {
     use crate::pii::restore::ExportedIdentity;
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let person = |alias: &str| ExportedIdentity {
         alias: alias.into(),
         previous: Vec::new(),
@@ -1739,7 +1739,7 @@ fn homonyms_keep_their_own_aliases_through_restore_and_apply(cx: &mut gpui::Test
 
 #[gpui::test]
 fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| {
         app.editor
             .update(cx, |editor, cx| editor.set_text("Alice at 1 Main St", cx));
@@ -1777,7 +1777,7 @@ fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
 
 #[gpui::test]
 fn before_after_follows_replacements_live_and_escape_closes(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, |app, cx| prepare_applied(app, "Anna Bob Anna", cx));
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| app.toggle_compare(window, cx));
@@ -1845,7 +1845,7 @@ fn before_after_follows_replacements_live_and_escape_closes(cx: &mut gpui::TestA
 #[gpui::test]
 fn view_switcher_picks_edit_original_pseudonymized_or_side_by_side(cx: &mut gpui::TestAppContext) {
     use crate::pii::ui::compare::CompareMode;
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(1200.), px(800.)));
     let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
     draw(cx);
@@ -1892,7 +1892,7 @@ fn view_switcher_picks_edit_original_pseudonymized_or_side_by_side(cx: &mut gpui
 #[gpui::test]
 fn the_view_pill_rests_hidden_until_pointer_scroll_or_zoom(cx: &mut gpui::TestAppContext) {
     use crate::pii::ui::compare::SWITCHER_IDLE;
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(1200.), px(800.)));
     let draw = |cx: &mut gpui::VisualTestContext| cx.update(|window, cx| window.draw(cx).clear(cx));
     let shown = |app: &Entity<DocumentView>, cx: &mut gpui::VisualTestContext| {
@@ -1937,7 +1937,7 @@ fn the_view_pill_rests_hidden_until_pointer_scroll_or_zoom(cx: &mut gpui::TestAp
 #[gpui::test]
 fn switching_single_column_views_keeps_the_reading_position(cx: &mut gpui::TestAppContext) {
     use crate::pii::ui::compare::CompareMode;
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(1200.), px(600.)));
     let source = "Anna Bob Anna\n\n".repeat(200);
     app.update(cx, |app, cx| prepare_applied(app, &source, cx));
@@ -1971,7 +1971,7 @@ fn switching_single_column_views_keeps_the_reading_position(cx: &mut gpui::TestA
 
 #[gpui::test]
 fn inspector_share_tab_copies_for_ai_after_apply(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(1200.), px(800.)));
     app.update(cx, |app, cx| prepare_applied(app, "Anna Bob Anna", cx));
     cx.run_until_parked();
@@ -2004,7 +2004,7 @@ fn inspector_share_tab_copies_for_ai_after_apply(cx: &mut gpui::TestAppContext) 
 
 #[gpui::test]
 fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Bob met PERSON_X and Bob.";
     app.update(cx, |app, cx| {
         app.editor

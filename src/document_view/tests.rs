@@ -20,7 +20,7 @@ use crate::{
 use gpui::{Entity, Focusable, TestAppContext, VisualTestContext, px, size};
 use std::{path::PathBuf, sync::atomic::Ordering};
 
-pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut VisualTestContext) {
+pub(crate) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut VisualTestContext) {
     cx.update(mdoc_editor::bind_keys);
     cx.update(ui::bind_keys);
     cx.update(gpui_pdf::bind_keys);
@@ -42,7 +42,7 @@ pub(super) fn boot(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut Visua
     (app, cx)
 }
 
-pub(super) fn active_document(
+pub(crate) fn active_document(
     app: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
 ) -> Entity<DocumentView> {
@@ -52,7 +52,7 @@ pub(super) fn active_document(
     })
 }
 
-pub(super) fn open_document(
+pub(crate) fn open_document(
     app: &Entity<DocumentView>,
     path: PathBuf,
     cx: &mut VisualTestContext,
@@ -62,7 +62,7 @@ pub(super) fn open_document(
     active_document(app, cx)
 }
 
-pub(super) fn new_document(
+pub(crate) fn new_document(
     app: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
 ) -> Entity<DocumentView> {
@@ -71,7 +71,7 @@ pub(super) fn new_document(
     active_document(app, cx)
 }
 
-pub(super) fn close_document(
+pub(crate) fn close_document(
     app: &Entity<DocumentView>,
     cx: &mut VisualTestContext,
 ) -> Entity<DocumentView> {

@@ -28,22 +28,17 @@ use std::{
     time::Duration,
 };
 
-#[path = "workspace_cases.rs"]
 mod cases_ui;
 #[cfg(all(
     debug_assertions,
     feature = "headless-renders",
     any(target_os = "macos", target_os = "windows")
 ))]
-#[path = "headless_renders.rs"]
 pub(crate) mod headless_renders;
-#[path = "workspace_keychain.rs"]
 mod keychain_ui;
-#[path = "workspace_shell.rs"]
 mod shell;
 pub(crate) use cases_ui::{CancelCaseName, ConfirmCaseName, bind_keys as bind_case_keys};
 pub(crate) use shell::bind_keys as bind_shell_keys;
-#[path = "workspace_actions.rs"]
 mod app_actions;
 pub(crate) use app_actions::bind as bind_app_actions;
 actions!(
@@ -3304,7 +3299,6 @@ impl Workspace {
 }
 
 #[cfg(test)]
-#[path = "workspace_tests.rs"]
 mod tests;
 
 /// Keyboard reach (ADR 0062): F6 regions, Tab from the window, and the

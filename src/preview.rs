@@ -425,7 +425,7 @@ mod tests {
 
     #[gpui::test]
     fn stale_accept_cannot_consume_newer_pending_preview(cx: &mut gpui::TestAppContext) {
-        let (app, cx) = crate::document_view_tests::boot(cx);
+        let (app, cx) = crate::document_view::tests::boot(cx);
         app.update_in(cx, |app, window, cx| {
             let old = app.begin_preview("old.pdf".into());
             let current = app.begin_preview("new.pdf".into());

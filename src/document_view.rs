@@ -38,6 +38,8 @@ use std::{
 
 mod case;
 mod chrome;
+#[cfg(test)]
+pub(crate) mod tests;
 actions!(
     mdoc,
     [

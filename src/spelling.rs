@@ -335,7 +335,7 @@ impl DocumentView {
 #[cfg(test)]
 mod scheduling_tests {
     use super::*;
-    use crate::document_view_tests::boot;
+    use crate::document_view::tests::boot;
     use crate::{cases, pii, style::Theme};
 
     #[gpui::test]

@@ -1,6 +1,6 @@
 //! Explicit host CPU measurements, not display latency or visual acceptance.
 use crate::{
-    document_view_tests::{boot, close_document, open_document},
+    document_view::tests::{boot, close_document, open_document},
     import,
     search_session::{CloseMarkdownSearch, FindMarkdown, FindNextMarkdown},
 };

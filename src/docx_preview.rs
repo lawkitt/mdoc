@@ -14,7 +14,6 @@ use std::{
 use tempfile::{TempDir, tempdir};
 use zip::ZipArchive;
 
-#[path = "docx_comments.rs"]
 mod comments;
 pub use comments::DocxComment;
 

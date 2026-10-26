@@ -64,7 +64,7 @@ fn seed(app: &mut DocumentView, source: &str, cx: &mut Context<DocumentView>) ->
 fn staging_merge_category_owner_apply_rename_and_undo_preserve_exact_originals(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -145,7 +145,7 @@ fn staging_merge_category_owner_apply_rename_and_undo_preserve_exact_originals(
 
 #[gpui::test]
 fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С.";
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -202,7 +202,7 @@ fn homonym_split_survives_bulk_apply_rescan_undo_and_redo(cx: &mut gpui::TestApp
 
 #[gpui::test]
 fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
         for (width, height) in [(1500., 900.), (640., 480.)] {
             cx.simulate_resize(gpui::size(px(width), px(height)));
@@ -256,7 +256,7 @@ fn live_identity_panel_and_popup_fit_both_themes_and_narrow_windows(cx: &mut gpu
 
 #[gpui::test]
 fn alias_rename_ignores_pasted_lookalikes(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · pasted CLIENT_9";
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -293,7 +293,7 @@ fn alias_rename_ignores_pasted_lookalikes(cx: &mut gpui::TestAppContext) {
 
 #[gpui::test]
 fn inline_keep_is_metadata_only_and_undoable(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С.";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -324,7 +324,7 @@ fn inline_keep_is_metadata_only_and_undoable(cx: &mut gpui::TestAppContext) {
 
 #[gpui::test]
 fn bulk_apply_preserves_first_occurrence_split(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С.";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -353,7 +353,7 @@ fn bulk_apply_preserves_first_occurrence_split(cx: &mut gpui::TestAppContext) {
 
 #[gpui::test]
 fn owner_picker_click_links_without_merging_identities(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
         cx.simulate_resize(gpui::size(px(1500.), px(1000.)));
         let (full, email) = app.update_in(cx, |app, window, cx| {
@@ -407,7 +407,7 @@ fn owner_picker_click_links_without_merging_identities(cx: &mut gpui::TestAppCon
 
 #[gpui::test]
 fn entity_rename_then_apply_covers_all_normalized_variants(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · ПАВЛОВА МАРИНА СЕРГЕЕВНА";
     let (full, _) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -442,7 +442,7 @@ fn entity_rename_then_apply_covers_all_normalized_variants(cx: &mut gpui::TestAp
 fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С.";
     app.update_in(cx, |app, window, cx| {
         let (full, initials) = seed(app, source, cx);
@@ -501,7 +501,7 @@ fn identity_keep_includes_linked_variants_but_preserves_a_separated_homonym(
 fn single_copy_with_pending_replacements_preserves_exact_source_and_history(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "# Review\n\nПавлова Марина Сергеевна · Павлова М.С.\n\n[mail](marina@example.invalid)\n<!-- untouched -->\n";
     app.update_in(cx, |app, window, cx| {
         let (full, _) = seed(app, source, cx);
@@ -534,7 +534,7 @@ fn single_copy_with_pending_replacements_preserves_exact_source_and_history(
 fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
         for (width, height, preview) in [
             (1500., 900., false),
@@ -628,7 +628,7 @@ fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
 
 #[gpui::test]
 fn visible_alias_draft_and_apply_share_one_undo_step(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
         for (width, height) in [(1500., 900.), (640., 480.)] {
             cx.simulate_resize(gpui::size(px(width), px(height)));
@@ -681,7 +681,7 @@ fn visible_alias_draft_and_apply_share_one_undo_step(cx: &mut gpui::TestAppConte
 fn same_wording_links_preserve_detached_homonyms_before_and_after_apply(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · Павлова М.С.";
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -737,7 +737,7 @@ fn same_wording_links_preserve_detached_homonyms_before_and_after_apply(
 
 #[gpui::test]
 fn category_origin_existing_alias_and_draft_lifecycle_are_explicit(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · marina@example.invalid";
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -786,7 +786,7 @@ fn category_origin_existing_alias_and_draft_lifecycle_are_explicit(cx: &mut gpui
 
 #[gpui::test]
 fn table_occurrence_popup_uses_exact_painted_word_in_both_themes(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     for theme in [crate::style::Theme::Light, crate::style::Theme::Dark] {
         cx.simulate_resize(gpui::size(px(1500.), px(900.)));
         app.update_in(cx, |app, window, cx| {
@@ -818,7 +818,7 @@ fn table_occurrence_popup_uses_exact_painted_word_in_both_themes(cx: &mut gpui::
 
 #[gpui::test]
 fn chrome_history_fallback_does_not_take_alias_field_keys(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.update(|_, cx| crate::bind_app_keys(cx));
     let source = "Павлова Марина Сергеевна · Павлова М.С.";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
@@ -853,7 +853,7 @@ fn chrome_history_fallback_does_not_take_alias_field_keys(cx: &mut gpui::TestApp
 
 #[gpui::test]
 fn external_source_edit_discards_unconfirmed_mapping_draft(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С.";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -886,7 +886,7 @@ fn external_source_edit_discards_unconfirmed_mapping_draft(cx: &mut gpui::TestAp
 
 #[gpui::test]
 fn redo_works_after_an_undo_closes_the_popup(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · marina@example.invalid";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -924,7 +924,7 @@ fn redo_works_after_an_undo_closes_the_popup(cx: &mut gpui::TestAppContext) {
 
 #[gpui::test]
 fn popup_apply_undo_and_keep_follow_scope_and_stay_on_the_mention(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -1010,7 +1010,7 @@ fn popup_apply_undo_and_keep_follow_scope_and_stay_on_the_mention(cx: &mut gpui:
 
 #[gpui::test]
 fn undo_replacement_keeps_a_separated_homonym_on_its_identity(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С.";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -1045,7 +1045,7 @@ fn undo_replacement_keeps_a_separated_homonym_on_its_identity(cx: &mut gpui::Tes
 
 #[gpui::test]
 fn kept_homonyms_stay_with_their_entity_before_and_after_apply(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С.";
     let (first, second) = app.update(cx, |app, cx| {
         let (_, variant) = seed(app, source, cx);
@@ -1126,7 +1126,7 @@ fn kept_homonyms_stay_with_their_entity_before_and_after_apply(cx: &mut gpui::Te
 
 #[gpui::test]
 fn unticking_an_applied_mention_restores_only_its_original(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
         let source = "Павлова М.С. · Павлова М.С.";
         app.update_in(cx, |app, window, cx| {
@@ -1169,7 +1169,7 @@ fn unticking_an_applied_mention_restores_only_its_original(cx: &mut gpui::TestAp
 
 #[gpui::test]
 fn entity_rows_jump_chevrons_expand_and_selection_survives_collapse(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let identity = app.update(cx, |app, cx| {
         let (_, initials) = seed(app, source, cx);
@@ -1222,7 +1222,7 @@ fn entity_rows_jump_chevrons_expand_and_selection_survives_collapse(cx: &mut gpu
 
 #[gpui::test]
 fn entity_and_mention_checkboxes_keep_originals_and_tick_again(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let identity = app.update(cx, |app, cx| {
         let (_, initials) = seed(app, source, cx);
@@ -1314,7 +1314,7 @@ fn entity_and_mention_checkboxes_keep_originals_and_tick_again(cx: &mut gpui::Te
 fn panel_drops_link_one_mention_merge_entities_and_split_new_entities(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     app.update(cx, |app, cx| {
         let (full, initials) = seed(app, source, cx);
@@ -1389,7 +1389,7 @@ fn panel_drops_link_one_mention_merge_entities_and_split_new_entities(
 
 #[gpui::test]
 fn dragging_a_mention_over_free_panel_space_offers_the_next_alias(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (initials, identity) = app.update(cx, |app, cx| {
         let (_, initials) = seed(app, source, cx);
@@ -1441,7 +1441,7 @@ fn dragging_a_mention_over_free_panel_space_offers_the_next_alias(cx: &mut gpui:
 
 #[gpui::test]
 fn escape_closes_a_panel_menu_before_the_popup(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     // The app binds the generic UiMenu Escape last, so it wins in the panel.
     cx.update(|_, cx| crate::ui::bind_keys(cx));
     let source = "Павлова Марина Сергеевна · Павлова М.С. · marina@example.invalid";
@@ -1515,7 +1515,7 @@ fn escape_closes_a_panel_menu_before_the_popup(cx: &mut gpui::TestAppContext) {
 
 #[gpui::test]
 fn panel_groups_expand_independently_filter_and_edit_from_rows(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (full, initials) = app.update(cx, |app, cx| {
         let (full, initials) = seed(app, source, cx);
@@ -1624,7 +1624,7 @@ fn panel_groups_expand_independently_filter_and_edit_from_rows(cx: &mut gpui::Te
 
 #[gpui::test]
 fn panel_keyboard_ticks_jumps_expands_and_applies(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (full, initials) = app.update(cx, |app, cx| {
         let (full, initials) = seed(app, source, cx);
@@ -1716,7 +1716,7 @@ fn panel_keyboard_ticks_jumps_expands_and_applies(cx: &mut gpui::TestAppContext)
 
 #[gpui::test]
 fn keyboard_move_wheel_and_middle_click(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (full, initials) = app.update(cx, |app, cx| {
         let (full, initials) = seed(app, source, cx);
@@ -1833,7 +1833,7 @@ fn keyboard_move_wheel_and_middle_click(cx: &mut gpui::TestAppContext) {
 fn applying_under_the_proposed_filter_keeps_the_cursor_on_a_shown_row(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С.";
     app.update_in(cx, |app, window, cx| {
         let (_, initials) = seed(app, source, cx);
@@ -1870,7 +1870,7 @@ fn panel_projection_reuses_rows_and_invalidates_on_keep_history_filter_and_query
     cx: &mut gpui::TestAppContext,
 ) {
     use super::panel::PanelItem;
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let identity = app.update(cx, |app, cx| {
         let (full, _) = seed(app, source, cx);
@@ -1932,7 +1932,7 @@ fn panel_projection_reuses_rows_and_invalidates_on_keep_history_filter_and_query
 #[ignore = "expanded 2 MiB / 20,000 mention panel projection; run serially"]
 fn expanded_panel_projection_performance(cx: &mut gpui::TestAppContext) {
     use std::time::Instant;
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let names: Vec<_> = (0..64).map(|i| format!("Client{i:04}")).collect();
     let mut source: String = (0..20_000)
         .map(|i| format!("{} agrees to the terms.\n", names[i % names.len()]))
@@ -2041,7 +2041,7 @@ fn assert_popup_in_view(app: &Entity<DocumentView>, cx: &mut gpui::VisualTestCon
 
 #[gpui::test]
 fn popup_visible_mentions_do_not_scroll_when_stepping_either_way(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(1200.), px(800.)));
     let filler = "An ordinary contract paragraph.\n\n".repeat(30);
     let source = format!("{filler}Here Anna signs.\n\nAnna agrees.\n\n{filler}");
@@ -2080,7 +2080,7 @@ fn popup_visible_mentions_do_not_scroll_when_stepping_either_way(cx: &mut gpui::
 
 #[gpui::test]
 fn popup_enter_to_visible_proposal_does_not_scroll(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(1200.), px(800.)));
     let source = format!(
         "Павлова М.С. · Павлова М.С.\n\nmarina@example.invalid\n\n{}",
@@ -2108,7 +2108,7 @@ fn popup_enter_to_visible_proposal_does_not_scroll(cx: &mut gpui::TestAppContext
 
 #[gpui::test]
 fn popup_offscreen_mention_scrolls_only_to_the_nearest_edge(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(1200.), px(800.)));
     let filler = "An ordinary contract paragraph.\n\n".repeat(30);
     let source = format!("Here Anna signs.\n\n{filler}Anna agrees.\n\n{filler}");
@@ -2148,7 +2148,7 @@ fn popup_offscreen_mention_scrolls_only_to_the_nearest_edge(cx: &mut gpui::TestA
 
 #[gpui::test]
 fn popup_untick_stays_open_and_arrows_and_retick_follow_the_scope(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Anna met Bob. Anna left early. Then Anna came back.";
     let starts: Vec<_> = source.match_indices("Anna").map(|(at, _)| at).collect();
     app.update_in(cx, |app, window, cx| {
@@ -2230,7 +2230,7 @@ fn popup_untick_stays_open_and_arrows_and_retick_follow_the_scope(cx: &mut gpui:
 
 #[gpui::test]
 fn stepping_keeps_the_focus_the_popup_returns_to(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Anna met Bob. Anna left. Anna came back.";
     app.update_in(cx, |app, window, cx| {
         let ids = seed_anna(app, source, cx);
@@ -2252,7 +2252,7 @@ fn stepping_keeps_the_focus_the_popup_returns_to(cx: &mut gpui::TestAppContext) 
 
 #[gpui::test]
 fn popup_leaves_its_line_and_the_next_visible_and_scrolls_with_it(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     cx.simulate_resize(gpui::size(px(1200.), px(800.)));
     let filler = "A line of ordinary contract text.\n\n".repeat(30);
     let source = format!("{filler}Here Anna signs.\n\n{filler}");
@@ -2329,7 +2329,7 @@ fn press(keys: &str, cx: &mut gpui::VisualTestContext) {
 fn popup_enter_applies_the_whole_entity_under_all_and_opens_the_next(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -2363,7 +2363,7 @@ fn popup_enter_applies_the_whole_entity_under_all_and_opens_the_next(
 fn popup_enter_under_this_one_applies_one_mention_and_steps_within_the_entity(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -2397,7 +2397,7 @@ fn popup_enter_under_this_one_applies_one_mention_and_steps_within_the_entity(
 
 #[gpui::test]
 fn popup_enter_on_an_applied_mention_does_nothing(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · marina@example.invalid";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -2422,7 +2422,7 @@ fn popup_enter_on_an_applied_mention_does_nothing(cx: &mut gpui::TestAppContext)
 
 #[gpui::test]
 fn apply_all_closes_the_popup(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -2446,7 +2446,7 @@ fn apply_all_closes_the_popup(cx: &mut gpui::TestAppContext) {
 
 #[gpui::test]
 fn popup_keep_keys_leave_the_segment_as_shown(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -2478,7 +2478,7 @@ fn add_by_hand(app: &Entity<DocumentView>, word: &str, cx: &mut gpui::VisualTest
 fn popup_enter_after_a_manual_addition_stays_and_cancel_reverts_both(
     cx: &mut gpui::TestAppContext,
 ) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Акме · marina@example.invalid";
     for draft in [None, Some("CLIENT_9")] {
         app.update(cx, |app, cx| {
@@ -2513,7 +2513,7 @@ fn popup_enter_after_a_manual_addition_stays_and_cancel_reverts_both(
 
 #[gpui::test]
 fn popup_enter_under_this_one_with_an_alias_draft_keeps_the_segment(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С. · Павлова М.С.";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -2546,7 +2546,7 @@ fn popup_enter_under_this_one_with_an_alias_draft_keeps_the_segment(cx: &mut gpu
 
 #[gpui::test]
 fn popup_enter_wraps_and_skips_entities_without_proposals(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · marina@example.invalid · Павлова М.С. · Павлова Марина Сергеевна";
     let (full, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -2586,7 +2586,7 @@ fn popup_enter_wraps_and_skips_entities_without_proposals(cx: &mut gpui::TestApp
 
 #[gpui::test]
 fn popup_enter_on_a_kept_mention_and_apply_all_with_nothing_left(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · marina@example.invalid";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();
@@ -2627,7 +2627,7 @@ fn popup_enter_on_a_kept_mention_and_apply_all_with_nothing_left(cx: &mut gpui::
 
 #[gpui::test]
 fn popup_wider_keep_keys_leave_the_segment_as_shown(cx: &mut gpui::TestAppContext) {
-    let (app, cx) = crate::document_view_tests::boot(cx);
+    let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С. · Павлова М.С.";
     let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
     cx.run_until_parked();

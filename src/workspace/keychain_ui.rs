@@ -34,7 +34,7 @@ const DOTS: usize = 8;
 static BADGE: LazyLock<Arc<gpui::Image>> = LazyLock::new(|| {
     Arc::new(gpui::Image::from_bytes(
         gpui::ImageFormat::Png,
-        include_bytes!("../resources/ui/app-badge.png").to_vec(),
+        include_bytes!("../../resources/ui/app-badge.png").to_vec(),
     ))
 });
 
@@ -134,21 +134,21 @@ fn preview_frame(theme: Theme, t: f32) -> gpui::Div {
         .size(px(52.))
         .child(
             gpui::svg()
-                .data(include_bytes!("../resources/ui/lock-shackle.svg"))
+                .data(include_bytes!("../../resources/ui/lock-shackle.svg"))
                 .absolute()
                 .size(px(52.))
                 .text_color(gpui::rgb(0xc7c9cc)),
         )
         .child(
             gpui::svg()
-                .data(include_bytes!("../resources/ui/lock-body.svg"))
+                .data(include_bytes!("../../resources/ui/lock-body.svg"))
                 .absolute()
                 .size(px(52.))
                 .text_color(gpui::rgb(0xe3a63c)),
         )
         .child(
             gpui::svg()
-                .data(include_bytes!("../resources/ui/lock-ridges.svg"))
+                .data(include_bytes!("../../resources/ui/lock-ridges.svg"))
                 .absolute()
                 .size(px(52.))
                 .text_color(gpui::rgba(0xb07a1e66)),
@@ -292,7 +292,7 @@ fn preview_frame(theme: Theme, t: f32) -> gpui::Div {
                     .opacity(pointer)
                     .child(
                         gpui::svg()
-                            .data(include_bytes!("../resources/ui/pointer-outline.svg"))
+                            .data(include_bytes!("../../resources/ui/pointer-outline.svg"))
                             .absolute()
                             .w(px(13. * size))
                             .h(px(19.5 * size))
@@ -300,7 +300,7 @@ fn preview_frame(theme: Theme, t: f32) -> gpui::Div {
                     )
                     .child(
                         gpui::svg()
-                            .data(include_bytes!("../resources/ui/pointer.svg"))
+                            .data(include_bytes!("../../resources/ui/pointer.svg"))
                             .absolute()
                             .w(px(13. * size))
                             .h(px(19.5 * size))
