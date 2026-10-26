@@ -41,6 +41,7 @@ mod cases_ui;
 ))]
 pub(crate) mod headless_renders;
 mod keychain_ui;
+mod notices;
 mod shell;
 pub(crate) use cases_ui::{CancelCaseName, ConfirmCaseName, bind_keys as bind_case_keys};
 pub(crate) use shell::bind_keys as bind_shell_keys;
@@ -232,9 +233,7 @@ pub(super) struct Workspace {
     pending_open: Vec<PathBuf>,
     /// Paths wait in `pending_open` for a confirm dialog to be answered.
     awaiting_prompt: bool,
-    notice: Option<String>,
-    /// Last run's masked crash report and whether its preview is open (ADR 0047).
-    crash: Option<(String, bool)>,
+    notices: notices::Notices,
     tab_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
     import_busy: Arc<AtomicBool>,
     docx_queue: VecDeque<DocxJob>,
@@ -286,7 +285,7 @@ impl Workspace {
             .unwrap_or(true)
         });
         if !cfg!(test) {
-            this.crash = crate::crash::pending().map(|report| (report, false));
+            this.notices.load_crash(crate::crash::pending());
         }
         this.session_path = if cfg!(test) {
             None
@@ -303,7 +302,8 @@ impl Workspace {
                 let session = match result {
                     Ok(session) => session,
                     Err(error) => {
-                        this.notice = Some(format!("Could not restore tabs: {error}"));
+                        this.notices
+                            .post(format!("Could not restore tabs: {error}"));
                         Session::default()
                     }
                 };
@@ -425,8 +425,7 @@ impl Workspace {
             },
             pending_open: Vec::new(),
             awaiting_prompt: false,
-            notice: None,
-            crash: None,
+            notices: Default::default(),
             tab_menu: None,
             import_busy: Arc::new(AtomicBool::new(false)),
             docx_queue: VecDeque::new(),
@@ -507,7 +506,7 @@ impl Workspace {
         let config = match self.preferences.borrow().snapshot() {
             Ok(p) => p.ocr,
             Err(e) => {
-                self.notice = Some(e.to_string());
+                self.notices.post(e.to_string());
                 cx.notify();
                 return;
             }
@@ -602,13 +601,17 @@ impl Workspace {
     /// "mdoc had a problem last time it ran", with the exact report before
     /// anything leaves the Mac (ADR 0047). Send and Copy also discard it.
     fn crash_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let (report, open) = self.crash.clone()?;
+        let (report, open) = self
+            .notices
+            .crash()
+            .map(|(report, open)| (report.to_owned(), open))?;
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let accent = style::markdown_style(theme).alert_warning;
         let done = |this: &mut Self, cx: &mut Context<Self>| {
-            crate::crash::discard();
-            this.crash = None;
+            if let Some(effect) = this.notices.finish_crash() {
+                this.carry_out_notices(effect);
+            }
             cx.notify();
         };
         let action = |id: &'static str, label: &'static str| {
@@ -646,9 +649,7 @@ impl Workspace {
                         .when(!open, |v| {
                             v.child(action("crash-preview", "See what would be sent").on_click(
                                 cx.listener(|this, _, _, cx| {
-                                    if let Some((_, open)) = &mut this.crash {
-                                        *open = true;
-                                    }
+                                    this.notices.preview_crash();
                                     cx.notify();
                                 }),
                             ))
@@ -725,14 +726,15 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let Some(view) = self.active_view() else {
-            self.notice = Some("Open a document before comparing models.".into());
+            self.notices
+                .post("Open a document before comparing models.");
             cx.notify();
             return;
         };
         let defaults = match self.preferences.borrow().snapshot() {
             Ok(p) => p,
             Err(e) => {
-                self.notice = Some(e.to_string());
+                self.notices.post(e.to_string());
                 cx.notify();
                 return;
             }
@@ -754,7 +756,8 @@ impl Workspace {
                     .clone()
                     .or_else(|| view.read(cx).session.source.clone());
                 let Some(source) = source else {
-                    self.notice = Some("OCR comparison requires an attached original PDF.".into());
+                    self.notices
+                        .post("OCR comparison requires an attached original PDF.");
                     cx.notify();
                     return;
                 };
@@ -762,8 +765,8 @@ impl Workspace {
             }
             settings::Model::Pii(_) => {
                 if !view.read(cx).can_copy_markdown() {
-                    self.notice =
-                        Some("Convert the document to Markdown before comparing detection.".into());
+                    self.notices
+                        .post("Convert the document to Markdown before comparing detection.");
                     cx.notify();
                     return;
                 }
@@ -827,7 +830,7 @@ impl Workspace {
             }
             Err(e) => {
                 let _ = this.update(cx, |this, cx| {
-                    this.notice = Some(e);
+                    this.notices.post(e);
                     cx.notify();
                 });
             }
@@ -1316,7 +1319,7 @@ impl Workspace {
             self.tabs.splice(index..index, moved);
         }
         if !unsupported.is_empty() {
-            self.notice = Some(format!(
+            self.notices.post(format!(
                 "Unsupported files skipped: {}",
                 unsupported.join(", ")
             ));
@@ -1416,7 +1419,7 @@ impl Workspace {
                 // A quiet look: launch onto Home may not have checked yet.
                 self.load_cases(window, cx);
                 if self.case_key_banner().is_some() {
-                    self.title.notices_open.set(true);
+                    self.carry_out_notices(self.notices.show_locked_cases());
                     cx.notify();
                 }
             }
@@ -1817,7 +1820,7 @@ impl Workspace {
                         this.persisted = Some(snapshot);
                     }
                     Err(error) => {
-                        this.notice = Some(format!("Could not save session: {error}"));
+                        this.notices.post(format!("Could not save session: {error}"));
                         let was_quitting = this.finishing;
                         this.finishing = false;
                         this.quitting = None;
@@ -2950,15 +2953,12 @@ impl Render for Workspace {
         // Notices wait behind the header's bell; a new one opens it (ADR 0048),
         // except locked cases, which open it only when a locked case is
         // needed (ADR 0043).
-        let others = usize::from(self.crash.is_some()) + usize::from(self.notice.is_some());
-        let notices = others + usize::from(self.case_key_banner().is_some());
-        let opening = others + usize::from(self.case_key_needed());
-        if opening > self.shell.notice_count {
-            self.title.notices_open.set(true);
-        } else if notices == 0 {
-            self.title.notices_open.set(false);
+        let (notices, effect) = self
+            .notices
+            .count(self.case_key_banner().is_some(), self.case_key_needed());
+        if let Some(effect) = effect {
+            self.carry_out_notices(effect);
         }
-        self.shell.notice_count = opening;
         self.title.notices.set(notices);
         // A crash report says what the window showed (no text, no names).
         crate::crash::note_state(format!(
@@ -3261,8 +3261,17 @@ impl Workspace {
             .into_any_element()
     }
 
+    /// Carry out what a notices transition asks for.
+    fn carry_out_notices(&mut self, effect: notices::NoticesEffect) {
+        match effect {
+            notices::NoticesEffect::DiscardCrashReport => crate::crash::discard(),
+            notices::NoticesEffect::OpenBell => self.title.notices_open.set(true),
+            notices::NoticesEffect::CloseBell => self.title.notices_open.set(false),
+        }
+    }
+
     fn notice_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        self.notice.clone().map(|notice| {
+        self.notices.message().map(str::to_owned).map(|notice| {
             let palette = self.theme.get().pdf_style();
             let accent = style::markdown_style(self.theme.get()).alert_warning;
             div()
@@ -3303,7 +3312,7 @@ impl Workspace {
                                 .hover(|v| v.bg(palette.placeholder_bg))
                                 .child("×")
                                 .on_click(cx.listener(|this, _, _, cx| {
-                                    this.notice = None;
+                                    this.notices.dismiss();
                                     cx.notify();
                                 })),
                         ),

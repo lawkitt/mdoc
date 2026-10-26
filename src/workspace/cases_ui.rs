@@ -294,9 +294,9 @@ impl Workspace {
         if matches!(error, CaseError::KeyDenied) {
             self.cases.denied = true;
             // The action the user asked for is waiting: show Try again.
-            self.title.notices_open.set(true);
+            self.carry_out_notices(self.notices.show_locked_cases());
         } else {
-            self.notice = Some(error.to_string());
+            self.notices.post(error.to_string());
         }
     }
     /// The banner for members waiting on the key, or a declined dialog.
@@ -376,7 +376,7 @@ impl Workspace {
                     }
                 }
                 if !failed.is_empty() {
-                    this.notice = Some(format!(
+                    this.notices.post(format!(
                         "{} saved {} could not be opened. {} damaged or saved with another key.",
                         failed.len(),
                         if failed.len() == 1 { "case" } else { "cases" },
@@ -453,7 +453,7 @@ impl Workspace {
             }
             None if wanted.is_some() => {
                 let name = view.read(cx).display_name();
-                self.notice = Some(format!(
+                self.notices.post(format!(
                     "The saved case for {name} could not be found, so it opened without its \
                      replacement mapping."
                 ));
@@ -500,9 +500,8 @@ impl Workspace {
             )
         };
         if identities.is_empty() {
-            self.notice = Some(
-                "Apply replacements first; a case saves which original each alias stands for."
-                    .into(),
+            self.notices.post(
+                "Apply replacements first; a case saves which original each alias stands for.",
             );
             cx.notify();
             return None;
@@ -578,7 +577,7 @@ impl Workspace {
         }
         if folder.files.is_empty() {
             notes.insert(0, format!("“{}” has no supported files", folder.name));
-            self.notice = Some(notes.join("; ") + ".");
+            self.notices.post(notes.join("; ") + ".");
             cx.notify();
             return;
         }
@@ -591,7 +590,7 @@ impl Workspace {
         }
         if let Err(error) = self.case_store() {
             notes.push(format!("the folder opened without a case: {error}"));
-            self.notice = Some(notes.join("; "));
+            self.notices.post(notes.join("; "));
             cx.notify();
             return;
         }
@@ -617,7 +616,7 @@ impl Workspace {
             self.attach_case(id, window, cx);
         }
         notes.insert(0, format!("Opened “{}” as a case", folder.name));
-        self.notice = Some(notes.join("; ") + ".");
+        self.notices.post(notes.join("; ") + ".");
         self.checkpoint(window, cx);
         cx.notify();
     }
@@ -762,7 +761,8 @@ impl Workspace {
         let summary = match result {
             Ok(summary) => summary,
             Err(error) => {
-                self.notice = Some(format!("Could not add the document to the case: {error}"));
+                self.notices
+                    .post(format!("Could not add the document to the case: {error}"));
                 cx.notify();
                 return;
             }
@@ -815,7 +815,7 @@ impl Workspace {
             ));
         }
         if !parts.is_empty() {
-            self.notice = Some(format!(
+            self.notices.post(format!(
                 "Added to “{}”: {}. Undo in the document reverts the renumbering.",
                 link.name,
                 parts.join("; ")
@@ -928,7 +928,8 @@ impl Workspace {
             self.pump_cases(cx);
             return;
         }
-        self.notice = Some(format!("Could not save the case: {error}"));
+        self.notices
+            .post(format!("Could not save the case: {error}"));
         self.cases.failed.insert(case.id.clone());
         if let Some(tab) = self.cases.close_after.remove(&case.id) {
             self.cases.asked.remove(&tab);
@@ -1142,7 +1143,8 @@ impl Workspace {
             cx.spawn(async move |this, cx| {
                 if let Err(error) = task.await {
                     let _ = this.update(cx, |this, cx| {
-                        this.notice = Some(format!("Could not delete the case file: {error}"));
+                        this.notices
+                            .post(format!("Could not delete the case file: {error}"));
                         cx.notify();
                     });
                 }
@@ -1215,7 +1217,7 @@ impl Workspace {
             .cloned()
             .collect();
         if existing.is_empty() {
-            self.notice = Some(format!(
+            self.notices.post(format!(
                 "None of the documents in “{}” are where they were saved. Open a document \
                  and save the mapping as a new case.",
                 case.name

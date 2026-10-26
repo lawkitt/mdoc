@@ -853,7 +853,7 @@ fn bulk_open_preserves_edits_deduplicates_and_initializes_only_first_selection(
             tabs.tabs[2].record.markdown,
             session_store::identity(&markdown)
         );
-        assert!(tabs.notice.as_ref().unwrap().contains("unknown.bin"));
+        assert!(tabs.notices.message().unwrap().contains("unknown.bin"));
         assert!(!source.read(cx).source_only);
         assert!(!source.read(cx).dirty(cx));
         assert!(source.read(cx).preview.pdf.is_some());
@@ -2069,7 +2069,7 @@ fn failed_final_checkpoint_can_cancel_quit_without_losing_tabs(cx: &mut TestAppC
     cx.update(|_, cx| {
         assert_eq!(tabs.read(cx).tabs.len(), 1);
         assert!(!tabs.read(cx).finishing);
-        assert!(tabs.read(cx).notice.is_some());
+        assert!(tabs.read(cx).notices.message().is_some());
     });
     assert_eq!(std::fs::read_to_string(parent_file).unwrap(), "preserve");
 }
@@ -3201,8 +3201,8 @@ fn home_accepts_dropped_files_and_rejects_unsupported(cx: &mut TestAppContext) {
     cx.update(|_, cx| {
         assert!(
             tabs.read(cx)
-                .notice
-                .as_ref()
+                .notices
+                .message()
                 .unwrap()
                 .contains("unknown.bin")
         );
@@ -3295,7 +3295,10 @@ fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
     assert_eq!(tab_names(&tabs, cx), ["a.md"]);
     cx.update(|_, cx| {
         assert!(!tabs.read(cx).file_drop_refused);
-        assert!(tabs.read(cx).notice.is_none(), "nothing to report");
+        assert!(
+            tabs.read(cx).notices.message().is_none(),
+            "nothing to report"
+        );
     });
 
     // With an openable file beside it, the skipped one is named, not its path.
@@ -3305,7 +3308,7 @@ fn sidebar_refuses_files_it_cannot_open(cx: &mut TestAppContext) {
     cx.update(|_, cx| assert!(!tabs.read(cx).file_drop_refused));
     drop_files(cx, row.center());
     cx.update(|_, cx| {
-        let notice = tabs.read(cx).notice.clone().unwrap();
+        let notice = tabs.read(cx).notices.message().unwrap().to_owned();
         assert!(notice.contains("образец.xyz"), "{notice}");
         assert!(!notice.contains(&*dir.path().to_string_lossy()), "{notice}");
     });
@@ -3328,7 +3331,7 @@ fn escape_closes_notices_without_focus_in_an_editor(cx: &mut TestAppContext) {
     let focus = cx.update(|_, cx| [view.read(cx).focus.clone(), tabs.read(cx).focus.clone()]);
     for handle in focus {
         tabs.update_in(cx, |tabs, window, cx| {
-            tabs.notice = Some("Unsupported files skipped: sample.xyz".into());
+            tabs.notices.post("Unsupported files skipped: sample.xyz");
             tabs.title.notices_open.set(true);
             cx.notify();
             window.focus(&handle, cx);
@@ -4205,8 +4208,8 @@ fn joining_a_case_renumbers_proposes_and_follows_renames(cx: &mut TestAppContext
         assert_eq!(view.pii.review.remaining(), 1, "Anna is proposed");
         let tabs = tabs.read(cx);
         assert!(
-            tabs.notice
-                .as_deref()
+            tabs.notices
+                .message()
                 .unwrap()
                 .contains("1 alias renumbered")
         );
@@ -4361,7 +4364,7 @@ fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
             "sorted by name; unsupported skipped"
         );
         assert_eq!(case.members.len(), 2, "members are recorded as they join");
-        let notice = tabs.notice.as_deref().unwrap();
+        let notice = tabs.notices.message().unwrap();
         assert!(notice.contains("1 subfolder") && notice.contains("1 hidden file"));
     });
 }
@@ -4760,9 +4763,8 @@ fn a_member_opened_by_hand_offers_unlock_and_gets_its_mapping(cx: &mut TestAppCo
 fn a_crash_report_is_previewed_before_it_is_copied(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update(cx, |tabs, cx| {
-        tabs.crash = Some((
+        tabs.notices.load_crash(Some(
             "mdoc 0.1 — macos aarch64\nPanic at <path>/a.rs:1:1".into(),
-            false,
         ));
         cx.notify();
     });
@@ -4784,7 +4786,7 @@ fn a_crash_report_is_previewed_before_it_is_copied(cx: &mut TestAppContext) {
         Some("mdoc 0.1 — macos aarch64\nPanic at <path>/a.rs:1:1")
     );
     assert!(cx.debug_bounds("crash-bar").is_none());
-    tabs.read_with(cx, |tabs, _| assert!(tabs.crash.is_none()));
+    tabs.read_with(cx, |tabs, _| assert!(tabs.notices.crash().is_none()));
 }
 
 #[gpui::test]
@@ -4856,7 +4858,7 @@ fn notices_wait_behind_the_header_bell(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("header-notices").is_none());
     // A new notice opens the popover once (ADR 0048).
     tabs.update(cx, |tabs, cx| {
-        tabs.notice = Some("Could not restore one tab.".into());
+        tabs.notices.post("Could not restore one tab.");
         cx.notify();
     });
     draw(cx);
@@ -4933,7 +4935,7 @@ fn restore_from_home_shows_unlock_over_an_earlier_notice(cx: &mut TestAppContext
     tabs.update(cx, |tabs, cx| {
         tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
         // An earlier notice the user closed without dismissing.
-        tabs.notice = Some("The clipboard has no text.".into());
+        tabs.notices.post("The clipboard has no text.");
         cx.notify();
     });
     draw(cx);
@@ -5305,8 +5307,8 @@ fn abandoned_quit_does_not_block_later_case_saves(cx: &mut TestAppContext) {
     assert!(!cx.has_pending_prompt());
     tabs.read_with(cx, |tabs, _| {
         assert!(
-            tabs.notice
-                .as_deref()
+            tabs.notices
+                .message()
                 .is_some_and(|n| n.contains("Could not save the case"))
         );
         assert!(!tabs.case_quit_pending());
@@ -5779,7 +5781,7 @@ fn the_more_menu_takes_focus_and_escape_returns_to_its_button(cx: &mut TestAppCo
 fn escape_in_the_notices_popover_closes_it(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.notice = Some("Saved elsewhere".into());
+        tabs.notices.post("Saved elsewhere");
         tabs.title.notices_open.set(true);
         cx.notify();
         window.focus(&tabs.notices_focus, cx);
@@ -5841,7 +5843,7 @@ fn clicking_more_again_closes_its_menu(cx: &mut TestAppContext) {
 fn closing_notices_with_its_button_returns_to_the_document(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
-        tabs.notice = Some("Saved elsewhere".into());
+        tabs.notices.post("Saved elsewhere");
         tabs.title.notices_open.set(true);
         cx.notify();
         window.focus(&tabs.notices_focus, cx);
