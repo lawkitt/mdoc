@@ -148,7 +148,7 @@ impl Workspace {
         }
         self.theme.set(theme);
         for tab in &self.tabs {
-            if let Some(view) = &tab.view {
+            if let Some(view) = tab.view() {
                 view.update(cx, |view, cx| {
                     view.editor.update(cx, |editor, cx| {
                         editor.set_markdown_style(style::markdown_style(theme), cx)
@@ -172,8 +172,8 @@ impl Workspace {
 
     /// The hidden blank tab under Home: never edited, never listed.
     pub(super) fn is_placeholder(&self, tab: &Tab, cx: &App) -> bool {
-        tab.record.blank_disposable
-            && tab.view.as_ref().is_none_or(|view| {
+        tab.record().blank_disposable
+            && tab.view().is_none_or(|view| {
                 let view = view.read(cx);
                 view.blank_disposable
                     && view.session.document.path.is_none()
@@ -183,11 +183,10 @@ impl Workspace {
     }
 
     pub(super) fn showing_home(&self, cx: &App) -> bool {
-        self.home
+        self.tabs.home()
             || self
                 .tabs
-                .iter()
-                .find(|tab| tab.id == self.active)
+                .active_tab()
                 .is_some_and(|tab| self.is_placeholder(tab, cx))
     }
 
@@ -195,17 +194,19 @@ impl Workspace {
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| view.pii.dismiss_popup());
         }
-        self.home = true;
+        self.tabs.show_home();
         window.focus(&self.focus, cx);
         cx.notify();
     }
 
     /// Remember files as they open or save (paths only).
     pub(super) fn remember_recent(&mut self, id: u64, cx: &App) {
-        let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) else {
-            return;
-        };
-        let Some(view) = tab.view.as_ref().map(|view| view.read(cx)) else {
+        let Some(view) = self
+            .tabs
+            .get(id)
+            .and_then(|tab| tab.view())
+            .map(|view| view.read(cx))
+        else {
             return;
         };
         if view.loading || view.unavailable {
@@ -220,10 +221,7 @@ impl Workspace {
             .as_ref()
             .or(view.preview.attachment.as_ref())
             .or(view.preview.source.as_ref());
-        let opened = path != tab.recent_path.as_ref();
-        if opened {
-            tab.recent_path = path.cloned();
-        }
+        let opened = self.tabs.note_recent(id, path);
         if let Some(path) = path {
             let pseudonymized = view.pseudonymized();
             let new_badge = pseudonymized
@@ -1223,8 +1221,7 @@ impl Workspace {
     ) -> Option<Entity<DocumentView>> {
         let real = self
             .tabs
-            .iter()
-            .find(|tab| tab.id == self.active)
+            .active_tab()
             .is_some_and(|tab| !self.is_placeholder(tab, cx));
         if !real {
             // The notice opens even over an earlier one; check quietly whether
@@ -1239,7 +1236,7 @@ impl Workspace {
         }
         // Leave Home so document-level feedback and any error are visible.
         if self.showing_home(cx) {
-            self.activate(self.active, window, cx);
+            self.activate(self.tabs.active(), window, cx);
         }
         self.active_view()
     }
@@ -1463,14 +1460,13 @@ impl Workspace {
                 continue;
             }
             let name = tab
-                .view
-                .as_ref()
+                .view()
                 .map(|v| v.read(cx).display_name())
                 .unwrap_or_else(|| {
-                    tab.record
+                    tab.record()
                         .attachment
                         .as_ref()
-                        .unwrap_or(&tab.record.markdown)
+                        .unwrap_or(&tab.record().markdown)
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_else(|| "Untitled.md".into())
@@ -1480,7 +1476,7 @@ impl Workspace {
                 label: name,
                 detail: None,
                 shortcut: None,
-                command: Command::Tab(tab.id),
+                command: Command::Tab(tab.id()),
             });
         }
         for case in &self.cases.cases {

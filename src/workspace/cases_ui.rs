@@ -322,7 +322,7 @@ impl Workspace {
     /// mapping is locked. Otherwise it waits behind the bell (ADR 0043).
     pub(super) fn case_key_needed(&self) -> bool {
         self.case_key_banner().is_some()
-            && (self.cases.denied || self.tabs.iter().any(|tab| tab.record.case.is_some()))
+            && (self.cases.denied || self.tabs.iter().any(|tab| tab.record().case.is_some()))
     }
     /// Read every case in the background, then attach loaded member tabs.
     /// Nothing touches the key until a cases folder exists, and launch never
@@ -387,7 +387,7 @@ impl Workspace {
                         },
                     ));
                 }
-                let ids: Vec<_> = this.tabs.iter().map(|t| t.id).collect();
+                let ids: Vec<_> = this.tabs.iter().map(|t| t.id()).collect();
                 for id in ids {
                     this.attach_case(id, window, cx);
                 }
@@ -402,14 +402,14 @@ impl Workspace {
             self.load_cases(window, cx);
             return;
         }
-        let Some(tab) = self.tabs.iter().find(|t| t.id == id) else {
+        let Some(tab) = self.tabs.get(id) else {
             return;
         };
-        let Some(view) = tab.view.clone() else {
+        let Some(view) = tab.view().cloned() else {
             return;
         };
-        let wanted = tab.record.case.clone();
-        let identity = tab.identity.clone();
+        let wanted = tab.record().case.clone();
+        let identity = tab.identity().cloned();
         let (loaded, has_case) = {
             let v = view.read(cx);
             (
@@ -457,16 +457,14 @@ impl Workspace {
                     "The saved case for {name} could not be found, so it opened without its \
                      replacement mapping."
                 ));
-                if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) {
-                    tab.record.case = None;
-                }
+                self.tabs.set_case(id, None);
             }
             None => {}
         }
         cx.notify();
     }
     fn tab_view(&self, id: u64) -> Option<Entity<DocumentView>> {
-        self.tabs.iter().find(|t| t.id == id)?.view.clone()
+        self.tabs.get(id)?.view().cloned()
     }
     /// Whether this tab can start a case: it has a mapping and none yet.
     pub(super) fn can_create_case(&self, id: u64, cx: &App) -> bool {
@@ -536,9 +534,7 @@ impl Workspace {
             view.case = Some(link.clone());
             cx.notify();
         });
-        if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) {
-            tab.record.case = Some(link.id);
-        }
+        self.tabs.set_case(id, Some(link.id));
         self.checkpoint(window, cx);
         cx.notify();
         Some(case_id)
@@ -601,15 +597,16 @@ impl Workspace {
         self.enqueue_case(case, cx);
         let mut joined = Vec::new();
         for path in &folder.files {
-            let Some(tab) = self.tabs.iter_mut().find(|t| {
-                t.identity.as_ref() == Some(path) || t.record.attachment.as_ref() == Some(path)
+            let Some(tab) = self.tabs.iter().find(|t| {
+                t.identity() == Some(path) || t.record().attachment.as_ref() == Some(path)
             }) else {
                 continue;
             };
-            let in_case = tab.view.as_ref().is_some_and(|v| v.read(cx).case.is_some());
-            if !in_case && tab.record.case.is_none() {
-                tab.record.case = Some(case_id.clone());
-                joined.push(tab.id);
+            let in_case = tab.view().is_some_and(|v| v.read(cx).case.is_some());
+            if !in_case && tab.record().case.is_none() {
+                let id = tab.id();
+                self.tabs.set_case(id, Some(case_id.clone()));
+                joined.push(id);
             }
         }
         for id in joined {
@@ -670,10 +667,10 @@ impl Workspace {
         }
         // Other open members follow, each as an edit in its own history.
         for tab in &self.tabs {
-            if tab.id == id {
+            if tab.id() == id {
                 continue;
             }
-            if let Some(view) = &tab.view
+            if let Some(view) = tab.view()
                 && view.read(cx).case.as_ref().is_some_and(|l| l.id == link.id)
             {
                 view.update(cx, |view, cx| {
@@ -715,7 +712,7 @@ impl Workspace {
         let case = case.clone();
         self.enqueue_case(case, cx);
         for tab in &self.tabs {
-            if let Some(view) = &tab.view
+            if let Some(view) = tab.view()
                 && view.read(cx).case.as_ref().is_some_and(|l| l.id == link.id)
             {
                 view.update(cx, |view, cx| view.sync_case_identities(&[], &exported, cx));
@@ -767,28 +764,23 @@ impl Workspace {
                 return;
             }
         };
-        if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) {
-            tab.record.case = Some(link.id.clone());
-        }
+        self.tabs.set_case(id, Some(link.id.clone()));
         // Keep members together in the sidebar.
         let last = self.tabs.iter().rposition(|t| {
-            t.id != id
-                && t.view
-                    .as_ref()
+            t.id() != id
+                && t.view()
                     .and_then(|v| v.read(cx).case.as_ref().map(|l| l.id == link.id))
                     .unwrap_or(false)
         });
         if let Some(last) = last
-            && let Some(next) = self.tabs.get(last + 1).map(|t| t.id)
+            && let Some(next) = self.tabs.at(last + 1).map(|t| t.id())
             && next != id
         {
             self.reorder(id, next, cx);
         } else if let Some(last) = last
             && last + 1 == self.tabs.len()
         {
-            let from = self.tabs.iter().position(|t| t.id == id).unwrap();
-            let tab = self.tabs.remove(from);
-            self.tabs.push(tab);
+            self.tabs.place(&[id], None);
         }
         self.case_changed(id, cx);
         let mut parts = Vec::new();
@@ -1024,7 +1016,7 @@ impl Workspace {
             .detach();
             return false;
         }
-        let ids: Vec<_> = self.tabs.iter().map(|t| t.id).collect();
+        let ids: Vec<_> = self.tabs.iter().map(|t| t.id()).collect();
         for id in ids {
             self.case_changed(id, cx);
         }
@@ -1061,9 +1053,7 @@ impl Workspace {
             .path
             .as_deref()
             .map(session_store::identity);
-        if let Some(tab) = self.tabs.iter_mut().find(|t| t.id == id) {
-            tab.record.case = None;
-        }
+        self.tabs.set_case(id, None);
         if let Some(case) = self.cases.cases.iter_mut().find(|c| c.id == link.id)
             && let Some(path) = path
             && case.members.contains(&path)
@@ -1120,11 +1110,9 @@ impl Workspace {
     ) {
         self.cases.pending.remove(case_id);
         self.cases.cases.retain(|c| c.id != case_id);
-        for tab in &mut self.tabs {
-            if tab.record.case.as_deref() == Some(case_id) {
-                tab.record.case = None;
-            }
-            if let Some(view) = &tab.view {
+        self.tabs.forget_case(case_id);
+        for tab in &self.tabs {
+            if let Some(view) = tab.view() {
                 view.update(cx, |view, cx| {
                     if view.case.as_ref().is_some_and(|l| l.id == case_id) {
                         view.case = None;
@@ -1191,7 +1179,7 @@ impl Workspace {
                 let case = case.clone();
                 self.enqueue_case(case, cx);
             }
-            for view in self.tabs.iter().filter_map(|t| t.view.clone()) {
+            for view in self.tabs.iter().filter_map(|t| t.view().cloned()) {
                 view.update(cx, |view, cx| {
                     if let Some(link) = view.case.as_mut().filter(|l| l.id == case_id) {
                         link.name = name.clone();
@@ -1402,7 +1390,7 @@ impl Workspace {
         let skip = case.skipped();
         let case = case.clone();
         self.enqueue_case(case, cx);
-        for view in self.tabs.iter().filter_map(|t| t.view.clone()) {
+        for view in self.tabs.iter().filter_map(|t| t.view().cloned()) {
             view.update(cx, |view, cx| {
                 if view.case.as_ref().is_some_and(|l| l.id == case_id) {
                     view.case_skip = skip.clone();
@@ -1663,14 +1651,7 @@ impl Workspace {
         let open: HashSet<String> = self
             .tabs
             .iter()
-            .filter_map(|t| {
-                t.view
-                    .as_ref()?
-                    .read(cx)
-                    .case
-                    .as_ref()
-                    .map(|l| l.id.clone())
-            })
+            .filter_map(|t| t.view()?.read(cx).case.as_ref().map(|l| l.id.clone()))
             .collect();
         let rows: Vec<AnyElement> = self
             .cases

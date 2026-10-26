@@ -353,12 +353,12 @@ fn scenarios(
     d.change(|w, window, cx| w.delete_case(id, window, cx))?;
     records.push(d.capture(out, "confirm-delete-case")?);
     d.key("escape")?;
-    d.change(|w, window, cx| w.close_tab(w.active, window, cx))?;
+    d.change(|w, window, cx| w.close_tab(w.tabs.active(), window, cx))?;
     records.push(d.capture(out, "confirm-keep-mapping")?);
     d.key("escape")?;
     d.change(|w, window, cx| {
-        w.cases.asked.insert(w.active);
-        w.close_tab(w.active, window, cx);
+        w.cases.asked.insert(w.tabs.active());
+        w.close_tab(w.tabs.active(), window, cx);
     })?;
     records.push(d.capture(out, "confirm-unsaved")?);
     d.key("escape")?;

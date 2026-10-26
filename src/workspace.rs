@@ -45,9 +45,11 @@ mod keychain_ui;
 mod notices;
 mod shell;
 mod sidebar;
+mod tab_set;
 pub(crate) use cases_ui::{CancelCaseName, ConfirmCaseName, bind_keys as bind_case_keys};
 pub(crate) use shell::bind_keys as bind_shell_keys;
 use sidebar::{Reveal, SLIDE, SidebarEffect};
+use tab_set::TabsEffect;
 mod app_actions;
 pub(crate) use app_actions::bind as bind_app_actions;
 actions!(
@@ -134,15 +136,7 @@ impl SidebarStatus {
     }
 }
 
-struct Tab {
-    id: u64,
-    record: TabRecord,
-    identity: Option<PathBuf>,
-    view: Option<Entity<DocumentView>>,
-    /// Last opened/saved path observed, independent of the capped recent list.
-    recent_path: Option<PathBuf>,
-    subscriptions: Vec<Subscription>,
-}
+type Tab = tab_set::Tab<Entity<DocumentView>>;
 struct DocxJob {
     id: u64,
     path: PathBuf,
@@ -173,9 +167,9 @@ pub(super) struct Workspace {
     pub(super) case_categories_focus: gpui::FocusHandle,
     pub(super) case_categories_return: Option<gpui::FocusHandle>,
     pub(super) notices_focus: gpui::FocusHandle,
-    tabs: Vec<Tab>,
-    active: u64,
-    next_id: u64,
+    tabs: tab_set::TabSet<Entity<DocumentView>>,
+    /// Each shown tab's event and change subscriptions, dropped with it.
+    tab_subscriptions: std::collections::HashMap<u64, Vec<Subscription>>,
     sidebar: sidebar::Sidebar<gpui::FocusHandle>,
     reveal_focus: gpui::FocusHandle,
     rail_toggle_focus: gpui::FocusHandle,
@@ -229,8 +223,6 @@ pub(super) struct Workspace {
     /// The title last given to the window: "mdoc" on Home, else the active
     /// document's.
     window_title: String,
-    /// Home fills the card instead of the active tab (ADR 0048).
-    home: bool,
     /// Shared with document headers: title-bar inset and drag state.
     title: style::TitleBar,
     shell: shell::ShellState,
@@ -343,9 +335,8 @@ impl Workspace {
             case_categories_focus: cx.focus_handle(),
             case_categories_return: None,
             notices_focus: cx.focus_handle(),
-            tabs: Vec::new(),
-            active: 0,
-            next_id: 1,
+            tabs: tab_set::TabSet::default(),
+            tab_subscriptions: std::collections::HashMap::new(),
             sidebar: sidebar::Sidebar::default(),
             reveal_focus: cx.focus_handle(),
             rail_toggle_focus: cx.focus_handle().tab_stop(true),
@@ -398,7 +389,6 @@ impl Workspace {
             theme_choice: ThemeChoice::default(),
             theme_tip: Rc::default(),
             window_title: String::new(),
-            home: false,
             title: style::TitleBar::default(),
             shell: shell::ShellState::new(cx),
             settings_focus: cx.focus_handle().tab_stop(true),
@@ -417,7 +407,7 @@ impl Workspace {
                     settings_ui::Event::Applied | settings_ui::Event::Checked => {
                         this.refresh_model_settings(cx);
                         // Spelling choices apply at once; views re-read them on render.
-                        for view in this.tabs.iter().filter_map(|tab| tab.view.as_ref()) {
+                        for view in this.tabs.iter().filter_map(|tab| tab.view()) {
                             view.update(cx, |_, cx| cx.notify());
                         }
                     }
@@ -810,11 +800,11 @@ impl Workspace {
         for record in session.tabs {
             if self.tabs.iter().any(|tab| {
                 if record.source_only {
-                    tab.record.attachment == record.attachment
+                    tab.record().attachment == record.attachment
                 } else {
                     !record.markdown.as_os_str().is_empty()
-                        && !tab.record.source_only
-                        && tab.record.markdown == record.markdown
+                        && !tab.record().source_only
+                        && tab.record().markdown == record.markdown
                 }
             }) {
                 continue;
@@ -831,7 +821,7 @@ impl Workspace {
                 ..TabRecord::default()
             });
         }
-        let active = self.tabs[selected.min(self.tabs.len() - 1)].id;
+        let active = self.tabs[selected.min(self.tabs.len() - 1)].id();
         self.activate(active, window, cx);
         let pending = std::mem::take(&mut self.pending_open);
         if !pending.is_empty() {
@@ -841,36 +831,21 @@ impl Workspace {
     }
 
     fn push(&mut self, record: TabRecord) -> u64 {
-        let id = self.next_id;
-        self.next_id += 1;
-        let identity = (!record.markdown.as_os_str().is_empty()).then(|| record.markdown.clone());
-        self.tabs.push(Tab {
-            id,
-            record,
-            identity,
-            view: None,
-            recent_path: None,
-            subscriptions: Vec::new(),
-        });
-        id
+        self.tabs.push(record)
     }
 
     pub(super) fn active_view(&self) -> Option<Entity<DocumentView>> {
-        self.tabs
-            .iter()
-            .find(|tab| tab.id == self.active)?
-            .view
-            .clone()
+        self.tabs.active_tab()?.view().cloned()
     }
 
     fn initialize(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
+        let Some(index) = self.tabs.position(id) else {
             return;
         };
-        if self.tabs[index].view.is_some() {
+        if self.tabs[index].view().is_some() {
             return;
         }
-        let record = self.tabs[index].record.clone();
+        let record = self.tabs[index].record().clone();
         let owner = cx.entity().downgrade();
         let theme = self.theme.clone();
         let import_busy = self.import_busy.clone();
@@ -889,7 +864,7 @@ impl Workspace {
                 window,
                 cx,
             );
-            view.active = id == self.active;
+            view.active = id == self.tabs.active();
             view.source_only = record.source_only;
             view.blank_disposable = record.blank_disposable;
             view.auto_convert_pending = record.source_only
@@ -920,8 +895,8 @@ impl Workspace {
                 cx.notify();
             }
         });
-        self.tabs[index].view = Some(view.clone());
-        self.tabs[index].subscriptions = vec![events, changes];
+        self.tabs.open(id, view.clone());
+        self.tab_subscriptions.insert(id, vec![events, changes]);
         if !record.markdown.as_os_str().is_empty() {
             self.load_document(id, record, window, cx);
         } else if record.source_only
@@ -938,12 +913,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(view) = self
-            .tabs
-            .iter()
-            .find(|tab| tab.id == id)
-            .and_then(|tab| tab.view.clone())
-        else {
+        let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
             return;
         };
         let generation = view.update(cx, |view, cx| {
@@ -962,13 +932,11 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if !this.tabs.iter().any(|tab| tab.id == id) {
+                if !this.tabs.contains(id) {
                     return;
                 }
-                if let Ok(document) = &result
-                    && let Some(tab) = this.tabs.iter_mut().find(|tab| tab.id == id)
-                {
-                    tab.identity = document.path.clone();
+                if let Ok(document) = &result {
+                    this.tabs.set_identity(id, document.path.clone());
                 }
                 let _ = weak.update(cx, |view, cx| {
                     if view.load_generation != generation {
@@ -1018,7 +986,7 @@ impl Workspace {
     }
 
     fn activate(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if self.finishing || !self.tabs.iter().any(|tab| tab.id == id) {
+        if self.finishing || !self.tabs.contains(id) {
             return;
         }
         if let Some(old) = self.active_view() {
@@ -1027,8 +995,7 @@ impl Workspace {
                 view.pii.dismiss_popup();
             });
         }
-        self.active = id;
-        self.home = false;
+        self.tabs.activate(id);
         self.initialize(id, window, cx);
         if let Some(view) = self.active_view() {
             view.update(cx, |view, cx| {
@@ -1057,20 +1024,18 @@ impl Workspace {
             .tabs
             .iter()
             .find(|tab| self.is_placeholder(tab, cx))
-            .map(|tab| tab.id)
+            .map(|tab| tab.id())
         {
-            if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) {
-                tab.record.blank_disposable = false;
-                if let Some(view) = &tab.view {
-                    view.update(cx, |view, _| view.blank_disposable = false);
-                }
+            self.tabs.keep_blank(Some(id));
+            if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view()) {
+                view.update(cx, |view, _| view.blank_disposable = false);
             }
             self.activate(id, window, cx);
             return id;
         }
-        for tab in &mut self.tabs {
-            tab.record.blank_disposable = false;
-            if let Some(view) = &tab.view {
+        self.tabs.keep_blank(None);
+        for tab in &self.tabs {
+            if let Some(view) = tab.view() {
                 view.update(cx, |view, _| view.blank_disposable = false);
             }
         }
@@ -1091,13 +1056,13 @@ impl Workspace {
         self.tabs
             .iter()
             .find(|tab| {
-                Some(tab.id) != except
-                    && (tab.identity.as_deref() == Some(identity)
-                        || tab.view.as_ref().is_some_and(|view| {
+                Some(tab.id()) != except
+                    && (tab.identity().map(PathBuf::as_path) == Some(identity)
+                        || tab.view().is_some_and(|view| {
                             view.read(cx).session.document.path.as_deref() == Some(identity)
                         }))
             })
-            .map(|tab| tab.id)
+            .map(|tab| tab.id())
     }
 
     #[cfg(test)]
@@ -1210,7 +1175,7 @@ impl Workspace {
             return;
         }
         // Anchor on a tab, not an index: tabs may close while paths resolve.
-        let anchor = at.and_then(|at| self.tabs.get(at).map(|tab| tab.id));
+        let anchor = at.and_then(|at| self.tabs.at(at).map(|tab| tab.id()));
         let mut created = Vec::new();
         let mut first = None;
         let mut unsupported = Vec::new();
@@ -1230,8 +1195,7 @@ impl Workspace {
                     .iter()
                     .find(|tab| {
                         let source = tab
-                            .view
-                            .as_ref()
+                            .view()
                             .and_then(|view| {
                                 let view = view.read(cx);
                                 view.session
@@ -1240,14 +1204,13 @@ impl Workspace {
                                     .or(view.preview.attachment.as_ref())
                                     .or(view.preview.source.as_ref())
                             })
-                            .or(tab.record.attachment.as_ref());
+                            .or(tab.record().attachment.as_ref());
                         source == Some(&path)
                     })
-                    .map(|tab| tab.id)
+                    .map(|tab| tab.id())
             });
             let id = existing.unwrap_or_else(|| {
-                created.push(self.next_id);
-                if document::is_markdown(&path) {
+                let id = if document::is_markdown(&path) {
                     self.push(TabRecord {
                         markdown: path,
                         ..TabRecord::default()
@@ -1259,19 +1222,14 @@ impl Workspace {
                         preview_visible: true,
                         ..TabRecord::default()
                     })
-                }
+                };
+                created.push(id);
+                id
             });
             first.get_or_insert(id);
         }
         if at.is_some() && !created.is_empty() {
-            let (moved, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.tabs)
-                .into_iter()
-                .partition(|tab| created.contains(&tab.id));
-            self.tabs = kept;
-            let index = anchor
-                .and_then(|anchor| self.tabs.iter().position(|tab| tab.id == anchor))
-                .unwrap_or(self.tabs.len());
-            self.tabs.splice(index..index, moved);
+            self.tabs.place(&created, anchor);
         }
         if !unsupported.is_empty() {
             self.notices.post(format!(
@@ -1284,19 +1242,16 @@ impl Workspace {
                 .tabs
                 .iter()
                 .filter(|tab| {
-                    tab.id != first
-                        && tab
-                            .view
-                            .as_ref()
-                            .map_or(tab.record.blank_disposable, |view| {
-                                let view = view.read(cx);
-                                view.blank_disposable
-                                    && view.editor.read(cx).text().is_empty()
-                                    && view.session.document.path.is_none()
-                                    && view.preview.source.is_none()
-                            })
+                    tab.id() != first
+                        && tab.view().map_or(tab.record().blank_disposable, |view| {
+                            let view = view.read(cx);
+                            view.blank_disposable
+                                && view.editor.read(cx).text().is_empty()
+                                && view.session.document.path.is_none()
+                                && view.preview.source.is_none()
+                        })
                 })
-                .map(|tab| tab.id)
+                .map(|tab| tab.id())
                 .collect();
             self.activate(first, window, cx);
             for id in disposable {
@@ -1311,7 +1266,7 @@ impl Workspace {
             return;
         }
         for tab in &self.tabs {
-            if let Some(view) = &tab.view {
+            if let Some(view) = tab.view() {
                 view.update(cx, |view, cx| {
                     view.try_auto_convert(window, cx);
                     cx.notify();
@@ -1322,7 +1277,7 @@ impl Workspace {
     }
 
     fn event(&mut self, id: u64, event: &TabEvent, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.tabs.iter().any(|tab| tab.id == id) {
+        if !self.tabs.contains(id) {
             return;
         }
         match event {
@@ -1334,18 +1289,13 @@ impl Workspace {
                 let reply = reply.clone();
                 let tab = self.new_tab(window, cx);
                 // The reply sits right after the tab it answers.
-                let after = self.tabs.iter().position(|t| t.id == id).map(|i| i + 1);
-                if let Some(next) = after.and_then(|i| self.tabs.get(i)).map(|t| t.id)
+                let after = self.tabs.position(id).map(|i| i + 1);
+                if let Some(next) = after.and_then(|i| self.tabs.at(i)).map(|t| t.id())
                     && next != tab
                 {
                     self.reorder(tab, next, cx);
                 }
-                if let Some(view) = self
-                    .tabs
-                    .iter()
-                    .find(|t| t.id == tab)
-                    .and_then(|t| t.view.clone())
-                {
+                if let Some(view) = self.tabs.get(tab).and_then(|t| t.view().cloned()) {
                     view.update(cx, |view, cx| view.start_restored(&reply, window, cx));
                 }
             }
@@ -1357,14 +1307,12 @@ impl Workspace {
             TabEvent::CloseRequested => self.close_tab(id, window, cx),
             TabEvent::OcrState(state) => self.set_ocr(state.clone(), cx),
             TabEvent::Saved => {
-                let mut previous = None;
-                if let Some(tab) = self.tabs.iter_mut().find(|tab| tab.id == id) {
-                    previous = tab.identity.take();
-                    tab.identity = tab
-                        .view
-                        .as_ref()
-                        .and_then(|view| view.read(cx).session.document.path.clone());
-                }
+                let saved = self
+                    .tabs
+                    .get(id)
+                    .and_then(|tab| tab.view())
+                    .and_then(|view| view.read(cx).session.document.path.clone());
+                let previous = self.tabs.set_identity(id, saved);
                 // Save As moves the member: the case forgets the old path.
                 self.case_member_moved(id, previous, cx);
                 self.case_changed(id, cx);
@@ -1403,7 +1351,7 @@ impl Workspace {
                 let views: Vec<_> = self
                     .tabs
                     .iter()
-                    .filter_map(|tab| tab.view.clone())
+                    .filter_map(|tab| tab.view().cloned())
                     .collect();
                 let owner = cx.entity().downgrade();
                 window.defer(cx, move |window, cx| {
@@ -1451,7 +1399,7 @@ impl Workspace {
     pub(super) fn set_ocr(&mut self, state: OcrState, cx: &mut Context<Self>) {
         self.ocr_state = state.clone();
         for tab in &self.tabs {
-            if let Some(view) = &tab.view {
+            if let Some(view) = tab.view() {
                 view.update(cx, |view, cx| {
                     view.ocr_state = state.clone();
                     cx.notify();
@@ -1473,12 +1421,7 @@ impl Workspace {
             if job.cancel.load(Ordering::Relaxed) {
                 continue;
             }
-            let Some(view) = self
-                .tabs
-                .iter()
-                .find(|tab| tab.id == job.id)
-                .and_then(|tab| tab.view.clone())
-            else {
+            let Some(view) = self.tabs.get(job.id).and_then(|tab| tab.view().cloned()) else {
                 continue;
             };
             self.docx_running = Some((job.id, job.generation));
@@ -1506,16 +1449,15 @@ impl Workspace {
         if self.quitting.is_some() || self.closing_tab.is_some() || self.finishing {
             return;
         }
-        if !self.tabs.iter().any(|tab| tab.id == id) || !self.confirm_mapping_close(id, window, cx)
-        {
+        if !self.tabs.contains(id) || !self.confirm_mapping_close(id, window, cx) {
             return;
         }
         // A member's latest mapping reaches its case before the tab goes.
         self.case_changed(id, cx);
-        let Some(tab) = self.tabs.iter().find(|tab| tab.id == id) else {
+        let Some(tab) = self.tabs.get(id) else {
             return;
         };
-        if let Some(view) = tab.view.clone() {
+        if let Some(view) = tab.view().cloned() {
             if !view.read(cx).dirty(cx) {
                 self.remove(id, window, cx);
                 return;
@@ -1545,23 +1487,19 @@ impl Workspace {
         self.sidebar_row_focus.borrow_mut().remove(&id);
         let removed_opener = self.compact_row_focus.borrow_mut().remove(&id);
         let closed_reveal = self.sidebar.forget_opener(removed_opener.as_ref());
-        let Some(index) = self.tabs.iter().position(|tab| tab.id == id) else {
+        let Some(tab) = self.tabs.get(id) else {
             return;
         };
-        if let Some(view) = &self.tabs[index].view {
+        if let Some(view) = tab.view() {
             Self::release(view, window, cx);
         }
-        self.tabs.remove(index);
+        let Some((_, effect)) = self.tabs.remove(id) else {
+            return;
+        };
+        self.tab_subscriptions.remove(&id);
         self.docx_queue.retain(|job| job.id != id);
-        if self.tabs.is_empty() {
-            let id = self.push(TabRecord {
-                blank: true,
-                blank_disposable: true,
-                ..TabRecord::default()
-            });
-            self.activate(id, window, cx);
-        } else if self.active == id {
-            self.activate(self.tabs[index.min(self.tabs.len() - 1)].id, window, cx);
+        if let Some(TabsEffect::Activate(next)) = effect {
+            self.activate(next, window, cx);
         } else if closed_reveal {
             self.dismiss_reveal(window, cx);
             self.focus_active(window, cx);
@@ -1574,24 +1512,20 @@ impl Workspace {
         if !self.ready || self.quitting.is_some() || self.finishing {
             return;
         }
-        if self.tabs.iter().any(|tab| {
-            tab.view
-                .as_ref()
-                .is_some_and(|view| view.read(cx).prompting)
-        }) {
+        if self
+            .tabs
+            .iter()
+            .any(|tab| tab.view().is_some_and(|view| view.read(cx).prompting))
+        {
             return;
         }
         self.closing_tab = None;
-        self.quit_active = Some(self.active);
+        self.quit_active = Some(self.tabs.active());
         self.quitting = Some(
             self.tabs
                 .iter()
-                .filter(|tab| {
-                    tab.view
-                        .as_ref()
-                        .is_some_and(|view| view.read(cx).dirty(cx))
-                })
-                .map(|tab| tab.id)
+                .filter(|tab| tab.view().is_some_and(|view| view.read(cx).dirty(cx)))
+                .map(|tab| tab.id())
                 .collect(),
         );
         self.continue_quit(window, cx);
@@ -1614,10 +1548,7 @@ impl Workspace {
                 .tabs
                 .iter()
                 .filter_map(|tab| {
-                    Some((
-                        tab.id,
-                        tab.view.as_ref()?.read(cx).editor.read(cx).history_id(),
-                    ))
+                    Some((tab.id(), tab.view()?.read(cx).editor.read(cx).history_id()))
                 })
                 .collect();
             self.finishing = true;
@@ -1633,13 +1564,13 @@ impl Workspace {
             .tabs
             .iter()
             .filter_map(|tab| {
-                let view = tab.view.as_ref()?.read(cx);
+                let view = tab.view()?.read(cx);
                 (view.dirty(cx)
                     && self
                         .quit_checked
-                        .get(&tab.id)
+                        .get(&tab.id())
                         .is_none_or(|history| *history != view.editor.read(cx).history_id()))
-                .then_some(tab.id)
+                .then_some(tab.id())
             })
             .collect();
         if !changed.is_empty() {
@@ -1658,7 +1589,7 @@ impl Workspace {
     fn close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.settings.update(cx, |panel, cx| panel.cancel_setup(cx));
         for tab in &self.tabs {
-            if let Some(view) = &tab.view {
+            if let Some(view) = tab.view() {
                 Self::release(view, window, cx);
             }
         }
@@ -1685,8 +1616,8 @@ impl Workspace {
             ..Session::default()
         };
         for tab in &self.tabs {
-            let mut record = tab.record.clone();
-            if let Some(view) = &tab.view {
+            let mut record = tab.record().clone();
+            if let Some(view) = tab.view() {
                 let view = view.read(cx);
                 record.source_only = view.source_only || view.generated_unedited;
                 record.blank = !record.source_only
@@ -1726,7 +1657,7 @@ impl Workspace {
             if record.markdown.as_os_str().is_empty() && !record.source_only && !record.blank {
                 continue;
             }
-            if tab.id == self.active {
+            if tab.id() == self.tabs.active() {
                 session.active = session.tabs.len();
             }
             session.tabs.push(record);
@@ -1809,13 +1740,9 @@ impl Workspace {
         if self.quitting.is_some() || self.tabs.is_empty() {
             return;
         }
-        let index = self
-            .tabs
-            .iter()
-            .position(|tab| tab.id == self.active)
-            .unwrap_or(0);
-        let next = (index as isize + delta).rem_euclid(self.tabs.len() as isize) as usize;
-        self.activate(self.tabs[next].id, window, cx);
+        if let Some(TabsEffect::Activate(next)) = self.tabs.cycle(delta) {
+            self.activate(next, window, cx);
+        }
     }
 
     /// Focus the active document without changing which document is active.
@@ -2006,15 +1933,9 @@ impl Workspace {
         if self.quitting.is_some() {
             return;
         }
-        let Some(from) = self.tabs.iter().position(|tab| tab.id == from) else {
-            return;
-        };
-        let Some(to) = self.tabs.iter().position(|tab| tab.id == to) else {
-            return;
-        };
-        let tab = self.tabs.remove(from);
-        self.tabs.insert(to, tab);
-        cx.notify();
+        if let Some(TabsEffect::Repaint) = self.tabs.reorder(from, to) {
+            cx.notify();
+        }
     }
 
     fn sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -2034,7 +1955,7 @@ impl Workspace {
                 listed
                     .iter()
                     .copied()
-                    .find(|id| *id == self.active && !home)
+                    .find(|id| *id == self.tabs.active() && !home)
             })
             .or(listed.first().copied());
         let accent = theme.search_accent();
@@ -2045,12 +1966,12 @@ impl Workspace {
             .iter()
             .enumerate()
             .map(|(index, tab)| {
-                let id = tab.id;
+                let id = tab.id();
                 // Home's blank placeholder is never listed (ADR 0048).
                 if self.is_placeholder(tab, cx) {
                     return None;
                 }
-                let view = tab.view.as_ref().map(|v| v.read(cx));
+                let view = tab.view().map(|v| v.read(cx));
                 let TabLabel {
                     name,
                     identity,
@@ -2142,7 +2063,7 @@ impl Workspace {
                             )
                         })
                         .role(gpui::Role::Tab)
-                        .aria_selected(self.active == id && !home)
+                        .aria_selected(self.tabs.active() == id && !home)
                         .aria_label(name.clone())
                         .when(cfg!(test), |v| {
                             v.debug_selector(move || format!("compact-tab-{id}"))
@@ -2154,14 +2075,14 @@ impl Workspace {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .when(self.active == id && !home, |v| {
+                        .when(self.tabs.active() == id && !home, |v| {
                             v.bg(theme.sidebar_selected())
                         })
                         .child(
                             gpui::svg()
                                 .data(ui::Icon::Source.data())
                                 .size(px(16.))
-                                .text_color(if self.active == id && !home {
+                                .text_color(if self.tabs.active() == id && !home {
                                     palette.header_fg
                                 } else {
                                     palette.header_muted
@@ -2222,7 +2143,7 @@ impl Workspace {
                         .tab_index(0)
                         .tab_stop(roving == Some(id))
                         .role(gpui::Role::Tab)
-                        .aria_selected(self.active == id && !home)
+                        .aria_selected(self.tabs.active() == id && !home)
                         .aria_label(row_label.clone())
                         .when(cfg!(test), |v| {
                             v.debug_selector(move || format!("tab-{id}"))
@@ -2235,7 +2156,7 @@ impl Workspace {
                         .min_h(px(32.))
                         .mb(px(2.))
                         .rounded_md()
-                        .when(self.active == id && !home, |v| {
+                        .when(self.tabs.active() == id && !home, |v| {
                             v.bg(theme.sidebar_selected())
                         })
                         .hover(move |v| v.bg(palette.placeholder_bg))
@@ -2359,8 +2280,7 @@ impl Workspace {
                 continue;
             };
             let link = self.tabs[index]
-                .view
-                .as_ref()
+                .view()
                 .and_then(|v| v.read(cx).case.clone());
             let id = link.as_ref().map(|l| l.id.clone());
             // Tabs without a case gather under "Open".
@@ -2368,21 +2288,22 @@ impl Workspace {
                 rows_with_cases.push(self.section_label("Open"));
             }
             if let Some(link) = link.filter(|_| previous.as_ref() != Some(&id)) {
-                let count = self.tabs[index..]
+                let count = self
+                    .tabs
                     .iter()
+                    .skip(index)
                     .take_while(|t| {
-                        t.view
-                            .as_ref()
+                        t.view()
                             .and_then(|v| v.read(cx).case.as_ref().map(|l| l.id.clone()))
                             == id
                     })
                     .count();
-                rows_with_cases.push(self.case_header(&link, self.tabs[index].id, count, cx));
+                rows_with_cases.push(self.case_header(&link, self.tabs[index].id(), count, cx));
             }
             let folded = id
                 .as_ref()
                 .is_some_and(|id| self.cases.collapsed.contains(id))
-                && self.tabs[index].id != self.active;
+                && self.tabs[index].id() != self.tabs.active();
             previous = Some(id);
             if !folded {
                 rows_with_cases.push(row.into_any_element());
@@ -2740,29 +2661,29 @@ struct TabLabel {
 }
 
 fn tab_label(tab: &Tab, cx: &App) -> TabLabel {
-    let view = tab.view.as_ref().map(|v| v.read(cx));
+    let view = tab.view().map(|v| v.read(cx));
     let name = view.map(|v| v.display_name()).unwrap_or_else(|| {
-        let path = if tab.record.source_only {
-            tab.record
+        let path = if tab.record().source_only {
+            tab.record()
                 .attachment
                 .as_ref()
-                .unwrap_or(&tab.record.markdown)
+                .unwrap_or(&tab.record().markdown)
         } else {
-            &tab.record.markdown
+            &tab.record().markdown
         };
         path.file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "Untitled.md".into())
     });
     let saved = view.map(|v| v.session.document.path.as_ref());
-    let path = saved.flatten().unwrap_or(&tab.record.markdown);
+    let path = saved.flatten().unwrap_or(&tab.record().markdown);
     let saved = saved.map_or(
-        !tab.record.source_only && !tab.record.markdown.as_os_str().is_empty(),
+        !tab.record().source_only && !tab.record().markdown.as_os_str().is_empty(),
         |path| path.is_some(),
     );
     let source = view
         .and_then(|v| v.preview.attachment.as_ref().or(v.preview.source.as_ref()))
-        .or(tab.record.attachment.as_ref())
+        .or(tab.record().attachment.as_ref())
         .cloned();
     let identity = if saved {
         path.clone()
@@ -2958,9 +2879,9 @@ impl Render for Workspace {
                     this.home_drag(event, cx)
                 },
             ))
-            .on_action(
-                cx.listener(|this, _: &Close, window, cx| this.close_tab(this.active, window, cx)),
-            )
+            .on_action(cx.listener(|this, _: &Close, window, cx| {
+                this.close_tab(this.tabs.active(), window, cx)
+            }))
             .on_action(cx.listener(|this, _: &Import, window, cx| {
                 if let Some(view) = this.active_view() {
                     view.update(cx, |view, cx| view.import(&Import, window, cx));
@@ -2983,8 +2904,8 @@ impl Render for Workspace {
                 this.tab_from_window(true, window, cx)
             }))
             .on_action(cx.listener(|this, _: &RetryDocument, window, cx| {
-                if let Some(tab) = this.tabs.iter().find(|tab| tab.id == this.active) {
-                    this.load_document(tab.id, tab.record.clone(), window, cx);
+                if let Some(tab) = this.tabs.get(this.tabs.active()) {
+                    this.load_document(tab.id(), tab.record().clone(), window, cx);
                 }
             }))
             .when_some(self.tab_menu, |view, (id, position)| {
@@ -3435,11 +3356,11 @@ impl Workspace {
             .iter()
             .filter(|tab| !self.is_placeholder(tab, cx))
             .filter(|tab| {
-                let case = tab.view.as_ref().and_then(|v| v.read(cx).case.as_ref());
-                tab.id == self.active
+                let case = tab.view().and_then(|v| v.read(cx).case.as_ref());
+                tab.id() == self.tabs.active()
                     || !case.is_some_and(|link| self.cases.collapsed.contains(&link.id))
             })
-            .map(|tab| tab.id)
+            .map(|tab| tab.id())
             .collect()
     }
 
@@ -3448,7 +3369,7 @@ impl Workspace {
         self.tabs
             .iter()
             .filter(|tab| !self.is_placeholder(tab, cx))
-            .map(|tab| tab.id)
+            .map(|tab| tab.id())
             .collect()
     }
 
@@ -3502,7 +3423,7 @@ impl Workspace {
             .or(index.checked_sub(1).and_then(|i| listed.get(i)))
             .copied();
         self.close_tab(id, window, cx);
-        if self.tabs.iter().all(|tab| tab.id != id)
+        if !self.tabs.contains(id)
             && let Some(focus) = neighbour.and_then(|n| rows.get(&n))
         {
             self.sidebar.set_cursor(neighbour);
