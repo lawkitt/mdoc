@@ -56,7 +56,25 @@ to the top of the next milestone. Items are in priority order.
    Previously F6 escaped the explainer and case categories required a pointer.
    Also natively: VoiceOver and Narrator read each Home Recents row's name,
    and Tab and ⇧Tab cycle the Keychain explainer's two buttons.
+   Codex runs Windows through T3 if the desktop tool passes preflight, else
+   the maintainer; the maintainer takes rows it cannot reach. macOS: a Claude
+   desktop session, models copied from the maintainer's profile. Must-fix
+   Fails: data loss, a blocked flow, a keyboard or screen-reader dead end, or
+   broken case keys, cases or updates; they get rc.5 and a re-run of the
+   affected rows, other Fails a 0.2.1 issue. D2, K3–K7 and Windows 10 stay
+   Unavailable with the reason. Blocking
+   maintainer rows: E2, E3, E5, P6, ⇧F10, Categories, A5; the ⇧ shortcuts and
+   browser paste may stay Pending, a Fail there going to 0.2.1.
    *Done when:* the evidence folder covers every row; each Fail links an item.
+2. **[Release] Ship checks on rc.4.** The refactoring moved the case-key
+   store and the updater, so `scripts/keychain-launch-check.sh` runs on a
+   clean macOS account and `just smoke-update` from 0.1.5, after the macOS
+   acceptance run, one at a time, each restoring the installed app. Stable is
+   `just release 0.2.0` from rc.4's code; before publishing, its `.msi`
+   (never built for an RC) installs, launches, quits and uninstalls on
+   `windows`, or ships later in 0.2.1. Windows stays unsigned.
+   *Done when:* both checks pass in the evidence folder and the `.msi` is
+   checked or dropped.
 
 ### Should-fix
 

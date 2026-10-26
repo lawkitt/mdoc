@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+Polish from the 2026-10-22 UX review and the code laid out by owner: plain
+error messages, Find and the source preview fit small windows, and screen
+readers and the keyboard reach more of the app.
+
 - **Code laid out by owner.** Each piece of window and document state now
   lives in one owner with private fields
   ([ADR 0069](docs/adr/0069-app-architecture-and-code-ownership.md)):
