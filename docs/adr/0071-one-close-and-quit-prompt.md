@@ -19,6 +19,8 @@ restore AI replies to it.
   mapping (applied aliases and no case, or a case whose save failed), or
   both. The mapping half counts only while Settings → Saved cases → "Ask
   before closing an unsaved mapping" is on; one switch covers close and quit.
+  While quitting, a case whose save failed is not asked about here: the
+  quit's final case saves already offer Retry for it.
 - **One prompt per tab.** A tab with both: "Save “<tab title>” and keep its
   mapping?" with Save as Case (default, Enter: saves the file, then creates
   the case), Save (saves the file, forgets the mapping), Don't Save (⌘D /
