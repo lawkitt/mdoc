@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Rescan fits small windows.** The Replacements footer wraps its counts
+  and actions at the minimum window size, keeping Rescan and Update aliases
+  fully inside the panel (fixes #170).
+
 ## [0.2.0] - 2026-10-26
 
 Polish from the 2026-10-22 UX review and the code laid out by owner: plain

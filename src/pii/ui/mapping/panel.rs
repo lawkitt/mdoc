@@ -995,6 +995,7 @@ impl DocumentView {
                     .child(
                         div()
                             .flex()
+                            .flex_wrap()
                             .items_center()
                             .gap_2()
                             .child(
@@ -1003,6 +1004,7 @@ impl DocumentView {
                                         v.debug_selector(|| "replacement-summary".into())
                                     })
                                     .flex_1()
+                                    .min_w(px(96.))
                                     .text_size(px(12.))
                                     .text_color(palette.header_fg)
                                     .child(summary),
