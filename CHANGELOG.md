@@ -4,6 +4,8 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+## [0.2.1] - 2026-10-27
+
 - **Sidebar tooltips follow file drops.** Inserting or reordering tabs
   dismisses a moved row's old tooltip, so it cannot name the previous tab
   over a newly inserted row (fixes #171).
