@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Visible view and zoom controls on Tab.** The floating document controls
+  now stay visible while keyboard focus is inside them, so Tab no longer
+  crosses seven hidden controls before reaching the editor (#168).
+
 - **OS file opening keeps scanned PDFs.** An Open With event that arrives
   during an app update now waits for that update, then opens the source tab
   and text-recognition card through the same flow as File > Open and a drop
