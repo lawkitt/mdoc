@@ -2491,6 +2491,66 @@ fn press(keys: &str, cx: &mut gpui::VisualTestContext) {
 }
 
 #[gpui::test]
+fn popup_enter_after_clicking_all_applies_and_moves_on(cx: &mut gpui::TestAppContext) {
+    popup_enter_after_scope_click(cx, Scope::Entity);
+}
+
+#[gpui::test]
+fn popup_enter_after_clicking_this_one_applies_and_moves_on(cx: &mut gpui::TestAppContext) {
+    popup_enter_after_scope_click(cx, Scope::Mention);
+}
+
+fn popup_enter_after_scope_click(cx: &mut gpui::TestAppContext, scope: Scope) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 0, cx);
+    let entity = app.read_with(cx, |app, _| app.selected_entity().unwrap());
+    let selector: &'static str = Box::leak(format!("scope-{}", scope as u8).into_boxed_str());
+    click_tab(cx, selector);
+    cx.update(|window, cx| {
+        let app = app.read(cx);
+        assert_eq!(app.pii.mapping.scope, scope);
+        let control = app
+            .pii
+            .popup_control_focus(gpui::SharedString::from(selector), cx);
+        assert!(
+            control.is_focused(window),
+            "the mouse click focuses the segment"
+        );
+    });
+    press("space", cx);
+    app.read_with(cx, |app, _| {
+        assert_eq!(
+            app.pii.review.applied().len(),
+            0,
+            "Space still selects the segment"
+        );
+        assert_eq!(app.pii.mapping.scope, scope);
+    });
+    press("enter", cx);
+    app.read_with(cx, |app, _| {
+        assert_eq!(
+            app.pii.review.applied().len(),
+            if scope == Scope::Entity { 2 } else { 1 }
+        );
+        assert!(app.pii.popup.is_some());
+        assert_eq!(app.pii.mapping.scope, scope);
+        if scope == Scope::Entity {
+            assert_ne!(app.selected_entity(), Some(entity));
+        } else {
+            assert_eq!(app.selected_entity(), Some(entity));
+            assert_eq!(
+                app.active_replacement_range().unwrap().start,
+                "ORG_1 · ".len()
+            );
+        }
+    });
+    assert!(cx.update(|window, cx| app.read(cx).pii.focus.contains_focused(window, cx)));
+}
+
+#[gpui::test]
 fn popup_enter_applies_the_whole_entity_under_all_and_opens_the_next(
     cx: &mut gpui::TestAppContext,
 ) {
@@ -2582,6 +2642,180 @@ fn popup_enter_on_an_applied_mention_does_nothing(cx: &mut gpui::TestAppContext)
         assert_eq!(app.editor.read(cx).text(), text);
         assert_eq!(app.editor.read(cx).history_id(), history);
         assert!(app.pii.popup.is_some());
+    });
+}
+
+#[gpui::test]
+fn review_footer_fits_at_minimum_window_size(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    for theme in [crate::style::Theme::Dark, crate::style::Theme::Light] {
+        cx.simulate_resize(gpui::size(px(720.), px(480.)));
+        let source = "Павлова Марина Сергеевна · Павлова М.С. · marina@example.invalid";
+        app.update_in(cx, |app, window, cx| {
+            app.theme.set(theme);
+            let (full, _) = seed(app, source, cx);
+            let candidate = app
+                .pii
+                .review
+                .candidates()
+                .iter()
+                .find(|c| c.variant == full)
+                .unwrap()
+                .id;
+            app.activate_annotation(candidate, window, cx);
+            app.apply_scope(cx);
+            let email = app
+                .pii
+                .review
+                .candidates()
+                .iter()
+                .find(|c| app.pii.review.variant(c.variant).unwrap().category == Category::Email)
+                .unwrap();
+            app.keep_mentions_now(vec![(email.variant, email.range.clone())], vec![], cx);
+            app.close_pii_popup(&crate::pii::ui::PiiClosePopup, window, cx);
+            assert_eq!(app.pii.review.remaining(), 1);
+            assert_eq!(app.pii.review.applied().len(), 1);
+        });
+        cx.run_until_parked();
+        for upgrade in [false, true] {
+            if upgrade {
+                app.update_in(cx, |app, window, cx| {
+                    app.apply_replacements(cx);
+                    let identity = app.pii.review.applied()[0].step.identity;
+                    // A case mapping can change while the text still uses its
+                    // old alias, exposing the footer's Update aliases action.
+                    app.pii
+                        .review
+                        .rename_identity(identity, "CLIENT_7")
+                        .unwrap();
+                    app.review_changed(cx);
+                    app.close_pii_popup(&crate::pii::ui::PiiClosePopup, window, cx);
+                });
+                cx.run_until_parked();
+            }
+            for _ in 0..3 {
+                cx.update(|window, cx| {
+                    window.refresh();
+                    window.draw(cx).clear(cx);
+                });
+                cx.run_until_parked();
+            }
+            let panel = cx.debug_bounds("identity-panel").unwrap();
+            let rescan = cx.debug_bounds("review-rescan").unwrap();
+            let summary = cx.debug_bounds("replacement-summary").unwrap();
+            assert!(panel.right() <= px(720.), "panel {panel:?}");
+            assert!(
+                rescan.left() >= panel.left()
+                    && rescan.right() <= panel.right()
+                    && rescan.top() >= panel.top()
+                    && rescan.bottom() <= panel.bottom(),
+                "Rescan {rescan:?} must fit inside panel {panel:?}"
+            );
+            assert!(!summary.intersects(&rescan), "summary overlaps Rescan");
+            assert!(summary.size.width >= px(96.));
+            if upgrade {
+                let update = cx.debug_bounds("apply-identity-map").unwrap();
+                assert!(
+                    update.left() >= panel.left()
+                        && update.right() <= panel.right()
+                        && update.bottom() <= panel.bottom(),
+                    "Update aliases {update:?}"
+                );
+                assert!(!update.intersects(&rescan));
+                assert!(!update.intersects(&summary));
+            }
+        }
+    }
+}
+
+#[gpui::test]
+fn apply_all_after_confirming_alias_restores_document_undo(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    // Review can be entered from the panel's search field (for example by F6).
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.search.read(cx).focus_handle(cx), cx);
+    });
+    open_popup_on(&app, initials, 0, cx);
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.alias.read(cx).focus_handle(cx), cx);
+    });
+    press(
+        if cfg!(target_os = "macos") {
+            "cmd-a"
+        } else {
+            "ctrl-a"
+        },
+        cx,
+    );
+    cx.simulate_input("CLIENT_7");
+    cx.run_until_parked();
+    press("enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), source);
+        assert_eq!(app.pii.mapping.alias.read(cx).value(), "CLIENT_7");
+    });
+    press("secondary-enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert!(app.pii.popup.is_none());
+        assert_eq!(app.pii.review.remaining(), 0);
+        assert_eq!(app.editor.read(cx).text(), "CLIENT_7 · CLIENT_7 · EMAIL_1");
+    });
+    press(
+        if cfg!(target_os = "macos") {
+            "cmd-z"
+        } else {
+            "ctrl-z"
+        },
+        cx,
+    );
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), source);
+        assert!(
+            app.pii
+                .review
+                .active_identities()
+                .into_iter()
+                .any(|id| { app.pii.review.identity(id).unwrap().alias == "CLIENT_7" })
+        );
+    });
+}
+
+#[gpui::test]
+fn apply_all_from_review_search_keeps_history_on_share(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Павлова М.С. · marina@example.invalid";
+    app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.search.read(cx).focus_handle(cx), cx);
+    });
+    press("secondary-enter", cx);
+    app.update_in(cx, |app, window, _| {
+        assert!(app.inspector_share);
+        assert!(app.pii.mapping.focus.is_focused(window));
+    });
+    press(
+        if cfg!(target_os = "macos") {
+            "cmd-z"
+        } else {
+            "ctrl-z"
+        },
+        cx,
+    );
+    app.read_with(cx, |app, cx| assert_eq!(app.editor.read(cx).text(), source));
+    press(
+        if cfg!(target_os = "macos") {
+            "cmd-shift-z"
+        } else {
+            "ctrl-shift-z"
+        },
+        cx,
+    );
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), "ORG_1 · EMAIL_1");
     });
 }
 

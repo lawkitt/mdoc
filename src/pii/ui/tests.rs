@@ -1894,6 +1894,65 @@ fn view_switcher_picks_edit_original_pseudonymized_or_side_by_side(cx: &mut gpui
 }
 
 #[gpui::test]
+fn tab_reveals_every_view_and_zoom_control_until_focus_leaves(cx: &mut gpui::TestAppContext) {
+    use crate::pii::ui::compare::SWITCHER_IDLE;
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    cx.update(|_, cx| cx.set_reduce_motion(true));
+    cx.simulate_resize(gpui::size(px(1600.), px(900.)));
+    app.update(cx, |app, cx| prepare_applied(app, "Anna Bob Anna", cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.editor.read(cx).focus_handle(cx), cx);
+    });
+    let draw = |cx: &mut gpui::VisualTestContext| {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    };
+    draw(cx);
+    cx.simulate_keystrokes("shift-f6");
+    let mut controls = 0;
+    for _ in 0..60 {
+        cx.simulate_keystrokes("tab");
+        cx.run_until_parked();
+        draw(cx);
+        let in_pill =
+            cx.update(|window, cx| app.read(cx).switcher_region.contains_focused(window, cx));
+        if in_pill {
+            controls += 1;
+            // The idle timer must not hide a control with keyboard focus.
+            cx.executor()
+                .advance_clock(SWITCHER_IDLE + std::time::Duration::from_millis(50));
+            cx.run_until_parked();
+            draw(cx);
+            let bounds = cx.debug_bounds("view-switcher").unwrap();
+            cx.update(|window, _| {
+                let scaled = bounds.scale(window.scale_factor());
+                assert!(
+                    window
+                        .painted_quads()
+                        .iter()
+                        .any(|quad| { quad.bounds == scaled && quad.border_color.a == 1. }),
+                    "the focused pill must be painted at full opacity"
+                );
+            });
+        } else if controls > 0 {
+            break;
+        }
+    }
+    assert_eq!(controls, 7, "four views and three zoom controls");
+    assert!(cx.update(|window, cx| {
+        app.read(cx)
+            .editor
+            .read(cx)
+            .focus_handle(cx)
+            .is_focused(window)
+    }));
+    assert!(
+        !app.read_with(cx, |app, _| app.switcher.shown()),
+        "keyboard focus does not wake the pointer timer"
+    );
+}
+
+#[gpui::test]
 fn the_view_pill_rests_hidden_until_pointer_scroll_or_zoom(cx: &mut gpui::TestAppContext) {
     use crate::pii::ui::compare::SWITCHER_IDLE;
     let (app, cx) = crate::document_view::tests::boot(cx);

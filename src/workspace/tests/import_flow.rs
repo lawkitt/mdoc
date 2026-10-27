@@ -2,6 +2,70 @@
 use super::*;
 
 #[gpui::test]
+fn os_open_during_an_app_update_keeps_the_scanned_pdf(cx: &mut TestAppContext) {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/ocr-qualification/russian.pdf");
+    let original = std::fs::read(&source).unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let mut async_cx = cx.to_async();
+    cx.update(|window, _| {
+        // A native open-documents callback may arrive while GPUI is in an
+        // update. It must retain the paths until the app can be borrowed.
+        let handle = window.window_handle().downcast::<Workspace>().unwrap();
+        crate::open_paths_from_os(vec![source.clone()], handle, &mut async_cx);
+    });
+    cx.run_until_parked();
+    assert_scanned_pdf_card(&tabs, &source, cx);
+    assert_eq!(std::fs::read(source).unwrap(), original);
+}
+
+#[gpui::test]
+fn file_open_and_home_drop_show_the_same_scanned_pdf_card(cx: &mut TestAppContext) {
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/ocr-qualification/russian.pdf");
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    cx.dispatch_action(Open);
+    cx.run_until_parked();
+    cx.simulate_path_prompt_response(|_| Some(vec![source.clone()]));
+    cx.run_until_parked();
+    assert_scanned_pdf_card(&tabs, &source, cx);
+
+    cx.dispatch_action(Close);
+    cx.run_until_parked();
+    draw(cx);
+    let center = cx.debug_bounds("home-drop").unwrap().center();
+    drag_files(cx, std::slice::from_ref(&source), center);
+    drop_files(cx, center);
+    assert_scanned_pdf_card(&tabs, &source, cx);
+}
+
+fn assert_scanned_pdf_card(
+    tabs: &Entity<Workspace>,
+    source: &std::path::Path,
+    cx: &mut VisualTestContext,
+) {
+    draw(cx);
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.tabs.len(), 1);
+        let view = tabs.active_view().unwrap();
+        let view = view.read(cx);
+        assert!(view.lifecycle.source_only(), "the source tab must open");
+        assert_eq!(view.preview.source().map(PathBuf::as_path), Some(source));
+        assert_eq!(view.import.ocr_required(), Some(&[1][..]));
+        assert!(!view.import.busy());
+        assert!(!tabs.import_busy.load(Ordering::Relaxed));
+        assert!(view.error.is_none());
+        assert!(view.editor.read(cx).text().is_empty());
+    });
+    assert!(cx.debug_bounds("conversion-card").is_some());
+    assert!(cx.debug_bounds("Download & recognize").is_some());
+    assert!(!cx.has_pending_prompt());
+}
+
+#[gpui::test]
 fn ocr_failure_requires_explicit_native_fallback_and_releases_conversion_slot(
     cx: &mut TestAppContext,
 ) {

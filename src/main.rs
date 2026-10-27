@@ -132,9 +132,7 @@ fn main() {
                 .filter_map(|url| url::Url::parse(url).ok()?.to_file_path().ok())
                 .collect();
             if let Some((window, cx)) = open_context.borrow_mut().as_mut() {
-                let _ = window.update(cx, |workspace, window, cx| {
-                    workspace.open_paths(paths, window, cx)
-                });
+                open_paths_from_os(paths, *window, cx);
             } else {
                 pending_url.borrow_mut().extend(paths);
             }
@@ -244,6 +242,24 @@ fn main() {
         .detach();
         cx.activate(true);
     });
+}
+
+fn open_paths_from_os(
+    paths: Vec<PathBuf>,
+    handle: gpui::WindowHandle<workspace::Workspace>,
+    cx: &mut gpui::AsyncApp,
+) {
+    // A native callback can re-enter GPUI while the app is borrowed. Queue
+    // the paths on its foreground executor so that update cannot drop them.
+    let mut cx = cx.clone();
+    cx.foreground_executor()
+        .clone()
+        .spawn(async move {
+            let _ = handle.update(&mut cx, |workspace, window, cx| {
+                workspace.open_paths(paths, window, cx)
+            });
+        })
+        .detach();
 }
 
 /// Window-wide shortcuts: files, tabs, zoom and spelling.
