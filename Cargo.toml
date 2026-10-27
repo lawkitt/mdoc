@@ -112,6 +112,8 @@ opt-level = 3
 strip = true
 
 [package.metadata.packager]
+# Never set appdata-paths: the NSIS uninstaller would delete the case key at
+# %LOCALAPPDATA%\mdoc\cases\key.dpapi, making saved cases unreadable.
 product-name = "mdoc"
 identifier = "io.github.lawkitt.mdoc"
 category = "Productivity"

@@ -129,12 +129,32 @@ try {
             if ($app -and -not $app.HasExited) { $app.Kill($true); $app.WaitForExit() }
             $uninstaller = Join-Path $installDir 'uninstall.exe'
             if ($installAttempted -and (Test-Path -LiteralPath $uninstaller)) {
-                # _?= runs in place, so WaitForExit observes the real uninstaller.
-                Run-Installer $uninstaller "/S _?=$installDir"
-                if (Test-Path -LiteralPath (Join-Path $installDir 'mdoc.exe')) {
-                    throw 'Uninstall left mdoc.exe installed.'
+                # NSIS must preserve the DPAPI case key across uninstall/reinstall.
+                # Seed only after the app exits: dummy bytes are not a real key.
+                $caseKey = Join-Path $profilePath 'cases/key.dpapi'
+                $dummyCaseKeyCreated = $false
+                try {
+                    if (-not (Test-Path -LiteralPath $caseKey)) {
+                        New-Item -ItemType Directory -Path (Split-Path $caseKey) -Force | Out-Null
+                        New-Item -ItemType File -Path $caseKey -Value 'mdoc CI uninstall sentinel (not a DPAPI key)' | Out-Null
+                        $dummyCaseKeyCreated = $true
+                    }
+                    # _?= runs in place, so WaitForExit observes the real uninstaller.
+                    Run-Installer $uninstaller "/S _?=$installDir"
+                    if (Test-Path -LiteralPath (Join-Path $installDir 'mdoc.exe')) {
+                        throw 'Uninstall left mdoc.exe installed.'
+                    }
+                    if (-not (Test-Path -LiteralPath $caseKey -PathType Leaf)) {
+                        throw 'Uninstall deleted the case key (cases/key.dpapi).'
+                    }
+                    'Uninstall preserved cases/key.dpapi.' | Tee-Object -FilePath (Join-Path $evidence.FullName 'case-key.txt')
+                    Write-Host 'Uninstall completed.'
+                } finally {
+                    # Never remove a key that was already present before seeding.
+                    if ($dummyCaseKeyCreated -and (Test-Path -LiteralPath $caseKey)) {
+                        Remove-Item -LiteralPath $caseKey
+                    }
                 }
-                Write-Host 'Uninstall completed.'
             }
         } catch {
             $_ | Format-List * -Force | Out-File (Join-Path $evidence.FullName 'cleanup-error.txt')
