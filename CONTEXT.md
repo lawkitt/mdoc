@@ -135,6 +135,10 @@ shared category markers ([ADR 0022](docs/adr/0022-remove-anonymization-mode.md))
 separate from the Markdown handed off. Unsaved mappings live only in the open
 document; a case stores its mapping encrypted on disk.
 
+**At-risk tab**: a tab that close or quit would lose something from: unsaved
+changes, an unsaved mapping, or both; each gets one prompt
+([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md)).
+
 **Case**: a named, saved mapping shared by a group of tabs; shown as a tab group
 in the sidebar. One case per document. Avoid "matter" and "project".
 
