@@ -92,7 +92,9 @@ impl ConfirmDialog {
                 (!self.buttons.is_empty()).then_some(0)
             }
             // ⌘D / Alt+D: Discard, as in the platform's save sheets.
-            "d" if discard_chord => self.position("Discard"),
+            "d" if discard_chord => self
+                .position("Discard")
+                .or_else(|| self.position("Don't Save")),
             _ => None,
         };
         if let Some(index) = index {

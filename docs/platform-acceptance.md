@@ -215,7 +215,7 @@ Every application shortcut, from `bind_app_keys`, `bind_markdown_search_keys`,
 | H13 | Mod+B, Mod+I, Mod+E, Mod+U, Mod+Shift+X | Bold, italic, code, underline, strike | | |
 | H14 | Mod+A, Mod+C, Mod+X, Mod+V, Mod+Z, Mod+Shift+Z (Ctrl+Y on Windows) | Editing | | |
 | H15 | Alt+←/→, Alt+Shift+←/→, Home/End, Shift+arrows, Tab/Shift+Tab | Word moves, selection, indent | | |
-| H16 | Mod+Q | Quit, with the unsaved-changes prompt | | |
+| H16 | Mod+Q | Quit, with the unsaved-changes prompt; with two or more edited or pseudonymized tabs, the summary (Review…, Discard All, Cancel) first (ADR 0071) | | |
 | H17 | *macOS*: every item in the mdoc, File, Edit, View and Window menus runs its action and shows its shortcut; Edit › Paste works in the find field and in a Save dialog (ADR 0058). *Windows*: each File-menu action is reachable from the window | | |
 | H18 | F6 / Shift+F6 cycle sidebar, toolbar, editor, Replacements, Original and Comments (open ones only), returning to the last control in each; Tab / Shift+Tab move between controls with a visible focus ring and, at a region's last (first) control, on to the next (previous) region, so Tab past the toolbar enters the editor; in the sidebar ↑/↓ move between tabs, ⌫ closes one and Shift+F10 opens its case actions; the category list keeps focus until closed; Esc closes menus and returns from the sidebar or toolbar to the editor (ADR 0062) | | |
 | H19 | Enter, Shift+Enter in the editor | New paragraph, line break; Copy for AI pasted into a chat keeps both apart (ADR 0060) | | |
@@ -232,6 +232,7 @@ Every application shortcut, from `bind_app_keys`, `bind_markdown_search_keys`,
 | E3 | *macOS*: Not now (Esc) cancels the action, and the locked-cases bar offers Unlock… | | |
 | E4 | *Windows*: saving a case asks nothing (DPAPI) | | |
 | E5 | After quit and relaunch, opening a case member restores its replacements without a prompt | | |
+| E6 | Mod+W on an edited, pseudonymized tab without a case asks once, "Save “…” and keep its mapping?"; Save as Case saves the file and the case and closes the tab. Mod+Q with a saved, pseudonymized tab without a case asks "Keep the replacement mapping?" (ADR 0071) | | |
 
 ## 11. Screen reader basics
 

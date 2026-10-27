@@ -41,6 +41,8 @@ fn quit_cancel_keeps_all_tabs_and_save_as_collision_never_overwrites(cx: &mut Te
     cx.simulate_input("other unsaved");
     cx.dispatch_action(Quit);
     cx.run_until_parked();
+    cx.simulate_prompt_answer("Review…");
+    cx.run_until_parked();
     cx.simulate_prompt_answer("Discard");
     cx.run_until_parked();
     cx.simulate_prompt_answer("Cancel");

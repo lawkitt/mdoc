@@ -255,21 +255,293 @@ fn reopening_a_case_document_restores_its_mapping(cx: &mut TestAppContext) {
 #[gpui::test]
 fn closing_an_unsaved_mapping_offers_to_save_it_once(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    // Edited and pseudonymized: one question covers both (ADR 0071).
+    assert_eq!(
+        cx.pending_prompt().unwrap().0,
+        "Save “contract.md” and keep its mapping?"
+    );
+    cx.simulate_prompt_answer("Save as Case");
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
+    assert_eq!(
+        std::fs::read_to_string(path).unwrap(),
+        "PERSON_1 met ORG_1."
+    );
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    assert_eq!(store.list().0.len(), 1);
+}
+
+#[gpui::test]
+fn the_close_prompt_can_save_only_the_document_or_neither(cx: &mut TestAppContext) {
+    for (answer, written) in [("Save", true), ("Don't Save", false)] {
+        let dir = tempfile::tempdir().unwrap();
+        let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+        let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+        tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+        cx.run_until_parked();
+        cx.simulate_prompt_answer(answer);
+        cx.run_until_parked();
+        assert!(!cx.has_pending_prompt(), "{answer} asks nothing more");
+        cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap() == "PERSON_1 met ORG_1.",
+            written,
+            "{answer}"
+        );
+        let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+        assert!(store.list().0.is_empty(), "{answer} forgets the mapping");
+    }
+}
+
+#[gpui::test]
+fn cancelling_the_close_prompt_keeps_the_tab_and_asks_again(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    for _ in 0..2 {
+        tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+        cx.run_until_parked();
+        assert_eq!(
+            cx.pending_prompt().unwrap().0,
+            "Save “contract.md” and keep its mapping?"
+        );
+        cx.simulate_prompt_answer("Cancel");
+        cx.run_until_parked();
+        cx.update(|_, cx| assert!(tabs.read(cx).tabs.contains(tab)));
+    }
+}
+
+#[gpui::test]
+fn quitting_asks_about_an_unsaved_mapping(cx: &mut TestAppContext) {
+    for (answer, cases) in [("Close", 0), ("Save as Case", 1)] {
+        let dir = tempfile::tempdir().unwrap();
+        let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+        // Saved, so only the mapping is at risk.
+        active(&tabs, cx).update(cx, |view, cx| view.write(path, None, cx));
+        cx.run_until_parked();
+        tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+        cx.run_until_parked();
+        assert_eq!(
+            cx.pending_prompt().unwrap().0,
+            "Keep the replacement mapping?"
+        );
+        cx.simulate_prompt_answer(answer);
+        cx.run_until_parked();
+        assert!(!cx.has_pending_prompt(), "{answer} asks nothing more");
+        assert!(cx.cx.read(|cx| cx.windows().is_empty()), "{answer} quits");
+        let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+        assert_eq!(store.list().0.len(), cases, "{answer}");
+    }
+}
+
+#[gpui::test]
+fn quitting_with_the_question_turned_off_drops_the_mapping(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    active(&tabs, cx).update(cx, |view, cx| view.write(path, None, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let prefs = tabs.read(cx).preferences.clone();
+        prefs
+            .borrow_mut()
+            .current
+            .as_mut()
+            .unwrap()
+            .cases
+            .ask_before_closing = false;
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+}
+
+#[gpui::test]
+fn quitting_with_two_at_risk_tabs_summarizes_first(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    let summary = "2 documents have unsaved changes or mappings";
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.simulate_input("draft");
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert_eq!(cx.pending_prompt().unwrap().0, summary);
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|_, cx| {
+        assert_eq!(tabs.read(cx).tabs.len(), 2);
+        assert!(!tabs.read(cx).quit_flow.quitting());
+    });
+    // Review asks each tab in sidebar order: the pseudonymized one, then the
+    // draft.
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    assert_eq!(cx.pending_prompt().unwrap().0, summary);
+    cx.simulate_prompt_answer("Review…");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.pending_prompt().unwrap().0,
+        "Save “contract.md” and keep its mapping?"
+    );
+    cx.simulate_prompt_answer("Save as Case");
+    cx.run_until_parked();
+    assert!(
+        cx.pending_prompt()
+            .unwrap()
+            .0
+            .starts_with("Save changes to")
+    );
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    assert_eq!(
+        std::fs::read_to_string(path).unwrap(),
+        "PERSON_1 met ORG_1."
+    );
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    assert_eq!(store.list().0.len(), 1);
+}
+
+#[gpui::test]
+fn a_quit_waits_for_an_open_close_prompt(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
     cx.run_until_parked();
-    assert!(cx.has_pending_prompt());
+    // The window's close button quits; it must not replace the question.
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(!tabs.read(cx).quit_flow.quitting()));
+    assert_eq!(
+        cx.pending_prompt().unwrap().0,
+        "Save “contract.md” and keep its mapping?"
+    );
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+}
+
+#[gpui::test]
+fn a_quit_saves_the_case_after_the_keychain_explainer(cx: &mut TestAppContext) {
+    quit_through_the_keychain_explainer(cx, true);
+}
+
+#[gpui::test]
+fn not_now_in_the_keychain_explainer_cancels_the_quit(cx: &mut TestAppContext) {
+    quit_through_the_keychain_explainer(cx, false);
+}
+
+fn quit_through_the_keychain_explainer(cx: &mut TestAppContext, quits: bool) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    active(&tabs, cx).update(cx, |view, cx| view.write(path, None, cx));
+    cx.run_until_parked();
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(store()));
+        tabs.quit(window, cx);
+    });
+    cx.run_until_parked();
     cx.simulate_prompt_answer("Save as Case");
     cx.run_until_parked();
-    // The tab was edited, so the ordinary unsaved-changes question follows.
-    if cx.has_pending_prompt() {
-        cx.simulate_prompt_answer("Discard");
-        cx.run_until_parked();
+    draw(cx);
+    // The quit waits for the explainer instead of closing past it.
+    assert!(cx.debug_bounds("keychain-explainer").is_some());
+    cx.update(|_, cx| assert!(tabs.read(cx).quit_flow.quitting()));
+    if quits {
+        let button = cx.debug_bounds("keychain-continue").unwrap();
+        cx.simulate_click(button.center(), Default::default());
+    } else {
+        cx.simulate_keystrokes("escape");
     }
-    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
+    cx.run_until_parked();
+    assert_eq!(cx.cx.read(|cx| cx.windows().is_empty()), quits);
+    assert_eq!(store().list().0.len(), usize::from(quits));
+    if !quits {
+        cx.update(|_, cx| assert!(!tabs.read(cx).quit_flow.quitting()));
+    }
+}
+
+#[gpui::test]
+fn try_again_after_a_denied_quit_saves_the_case_without_resolving_a_later_quit(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    active(&tabs, cx).update(cx, |view, cx| view.write(path, None, cx));
+    cx.run_until_parked();
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
+        tabs.quit(window, cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Save as Case");
+    cx.run_until_parked();
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    // Denied: the quit stops; Try again still owes the case.
+    cx.update(|_, cx| assert!(!tabs.read(cx).quit_flow.quitting()));
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.simulate_input("draft");
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Review…");
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Close");
+    cx.run_until_parked();
+    assert!(
+        cx.pending_prompt()
+            .unwrap()
+            .0
+            .starts_with("Save changes to")
+    );
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(store()));
+        tabs.continue_unlock(window, cx);
+    });
+    cx.run_until_parked();
+    // The draft's question is still the one to answer.
+    cx.update(|_, cx| assert!(tabs.read(cx).quit_flow.quitting()));
+    assert!(
+        cx.pending_prompt()
+            .unwrap()
+            .0
+            .starts_with("Save changes to")
+    );
+    assert_eq!(store().list().0.len(), 1);
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+}
+
+#[gpui::test]
+fn discard_all_quits_without_asking_each_tab(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.simulate_input("draft");
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Discard All");
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    assert_eq!(
+        std::fs::read_to_string(path).unwrap(),
+        "Anna Petrova met Northwind Traders Ltd."
+    );
     let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
-    assert_eq!(store.list().0.len(), 1);
+    assert!(store.list().0.is_empty());
 }
 
 #[gpui::test]
