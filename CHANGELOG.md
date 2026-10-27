@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Sidebar tooltips follow file drops.** Inserting or reordering tabs
+  dismisses a moved row's old tooltip, so it cannot name the previous tab
+  over a newly inserted row (fixes #171).
+
 - **Undo keeps the replacement popup open.** Undoing or redoing a keep that
   also changes applied text now follows the restored mention with its scope
   and focus intact, so the next popup shortcut still acts there (#178).
