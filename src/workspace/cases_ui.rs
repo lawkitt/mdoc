@@ -2,7 +2,7 @@
 //! mapping, save changes in the background, give reopened members their
 //! mapping back, rename, remove, delete, and the Open Case list.
 use super::{
-    TabDrag, Workspace,
+    CloseEvent, TabDrag, TabEvent, Workspace,
     case_coordinator::{CaseEffect, CaseLoad, Flush, KeyWait},
 };
 use crate::{
@@ -86,6 +86,12 @@ pub(super) struct CaseState {
     pub(super) explainer: bool,
     /// What runs once the explainer's Continue opened the key.
     then: Option<AfterUnlock>,
+    /// The tab whose Save as Case, answered while quitting, waits for its
+    /// document to save; the quit goes on once its case is queued (ADR 0071).
+    quit_case: Option<u64>,
+    /// Tabs whose mapping this quit already asked about; a cancelled quit
+    /// asks again.
+    quit_asked: Vec<u64>,
     /// Stands in for "reading the key may ask" in tests.
     #[cfg(test)]
     pub(super) test_may_ask: bool,
@@ -1778,14 +1784,11 @@ impl Workspace {
         true
     }
 
-    /// Before closing a tab whose mapping would be lost, offer to keep it.
-    /// Returns true when the close continues now.
-    pub(super) fn confirm_mapping_close(
-        &mut self,
-        id: u64,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> bool {
+    /// Whether closing tab `id` would lose an unsaved mapping, and Settings
+    /// asks first: applied aliases and no case, or, closing one tab, a case
+    /// whose save failed; a quit retries those in its final case saves
+    /// (ADR 0071's at-risk tab, without the unsaved changes).
+    pub(super) fn mapping_at_risk(&self, id: u64, quitting: bool, cx: &App) -> bool {
         let ask = self
             .preferences
             .borrow()
@@ -1793,24 +1796,81 @@ impl Workspace {
             .map(|p| p.cases.ask_before_closing)
             .unwrap_or(true);
         let Some(view) = self.tab_view(id) else {
-            return true;
+            return false;
         };
-        let at_risk = {
+        let v = view.read(cx);
+        ask && !self.case_coordinator.asked(id)
+            && cfg!(any(target_os = "macos", windows, target_os = "linux"))
+            && !v.pii.review().applied().is_empty()
+            && v.case
+                .link()
+                .is_none_or(|l| !quitting && self.case_coordinator.failed(&l.id))
+    }
+
+    /// Before closing a tab whose mapping would be lost, offer to keep it:
+    /// with its unsaved changes in one prompt (ADR 0071). Returns true when
+    /// the close continues now.
+    pub(super) fn confirm_mapping_close(
+        &mut self,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        !self.ask_about_mapping(id, false, window, cx)
+    }
+
+    /// While quitting, ask about tab `id`'s mapping, with its unsaved changes
+    /// when it has them. Returns false when its mapping isn't at risk.
+    pub(super) fn ask_quit_mapping(
+        &mut self,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        self.ask_about_mapping(id, true, window, cx)
+    }
+
+    /// Returns true when a prompt took over the close or quit step.
+    fn ask_about_mapping(
+        &mut self,
+        id: u64,
+        quitting: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.mapping_at_risk(id, quitting, cx) {
+            return false;
+        }
+        let Some(view) = self.tab_view(id) else {
+            return false;
+        };
+        let (dirty, prompting) = {
             let v = view.read(cx);
-            !v.pii.review().applied().is_empty()
-                && v.case
-                    .link()
-                    .is_none_or(|l| self.case_coordinator.failed(&l.id))
+            (v.dirty(cx), v.lifecycle.prompting())
         };
-        if !ask
-            || !at_risk
-            || self.case_coordinator.asked(id)
-            || cfg!(not(any(target_os = "macos", windows, target_os = "linux")))
-        {
+        if prompting {
             return true;
         }
         self.case_coordinator.note_asked(id);
+        if quitting {
+            self.cases.quit_asked.push(id);
+        }
         self.activate(id, window, cx);
+        if dirty {
+            self.ask_changes_and_mapping(id, quitting, window, cx);
+        } else {
+            self.ask_mapping(id, quitting, window, cx);
+        }
+        true
+    }
+
+    fn ask_mapping(
+        &mut self,
+        id: u64,
+        quitting: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let answer = window.prompt(
             PromptLevel::Info,
             "Keep the replacement mapping?",
@@ -1825,14 +1885,170 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let answer = answer.await.ok();
             let _ = this.update_in(cx, |this, window, cx| match answer {
+                Some(0) if quitting => this.quit_save_case(id, window, cx),
                 Some(0) => this.save_case_and_close(id, window, cx),
+                Some(1) if quitting => this.event(id, &CLOSE_RESOLVED, window, cx),
                 Some(1) => this.close_tab(id, window, cx),
-                _ => {
-                    this.case_coordinator.forget_asked(id);
+                _ => this.cancel_mapping_close(id, quitting, window, cx),
+            });
+        })
+        .detach();
+    }
+
+    /// Unsaved changes and an unsaved mapping: one question for both.
+    fn ask_changes_and_mapping(
+        &mut self,
+        id: u64,
+        quitting: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(view) = self.tab_view(id) else {
+            return;
+        };
+        let question = format!(
+            "Save “{}” and keep its mapping?",
+            view.read(cx).display_name()
+        );
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            &question,
+            Some(
+                "Closing forgets which original each alias stands for, so AI replies to this \
+                 document can't be restored. Save as Case keeps it, encrypted on this \
+                 computer; Save keeps only the document. You can turn this question off in \
+                 Settings.",
+            ),
+            &[
+                gpui::PromptButton::new("Save as Case"),
+                gpui::PromptButton::new("Save"),
+                gpui::PromptButton::new("Don't Save"),
+                gpui::PromptButton::cancel("Cancel"),
+            ],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let answer = answer.await.ok();
+            let _ = this.update_in(cx, |this, window, cx| {
+                let Some(view) = this.tab_view(id) else {
+                    return;
+                };
+                let unsaved = view.read(cx).session.document.path.is_none();
+                match answer {
+                    Some(0) if quitting => this.quit_save_case(id, window, cx),
+                    Some(0) => {
+                        // The document is saved first; its case follows and
+                        // closes the tab once written.
+                        this.case_coordinator.forget_asked(id);
+                        view.update(cx, |view, cx| {
+                            view.save(unsaved, Some(Next::CreateCase { close: true }), window, cx)
+                        });
+                    }
+                    Some(answer @ (1 | 2)) => {
+                        if !quitting {
+                            this.quit_flow.close(id);
+                        }
+                        view.update(cx, |view, cx| {
+                            if answer == 1 {
+                                view.save(unsaved, Some(Next::Close), window, cx)
+                            } else {
+                                view.proceed(Next::Close, window, cx)
+                            }
+                        });
+                    }
+                    _ => this.cancel_mapping_close(id, quitting, window, cx),
                 }
             });
         })
         .detach();
-        false
+    }
+
+    fn cancel_mapping_close(
+        &mut self,
+        id: u64,
+        quitting: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.case_coordinator.forget_asked(id);
+        if quitting {
+            self.event(id, &CLOSE_CANCELLED, window, cx);
+        }
+    }
+
+    /// Save as Case while quitting: the document first when it needs it,
+    /// then the case; the quit goes on once the case is queued.
+    fn quit_save_case(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(view) = self.tab_view(id) else {
+            return;
+        };
+        let (dirty, unsaved) = {
+            let v = view.read(cx);
+            (v.dirty(cx), v.session.document.path.is_none())
+        };
+        if dirty || unsaved {
+            self.cases.quit_case = Some(id);
+            view.update(cx, |view, cx| {
+                view.save(unsaved, Some(Next::CreateCase { close: false }), window, cx)
+            });
+            return;
+        }
+        self.quit_create_case(id, window, cx);
+    }
+
+    /// Whether a Create event from tab `id` finishes a Save as Case answered
+    /// while quitting; if so, it is carried out.
+    pub(super) fn quit_case_saved(
+        &mut self,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.cases.quit_case != Some(id) {
+            return false;
+        }
+        self.cases.quit_case = None;
+        self.quit_create_case(id, window, cx);
+        true
+    }
+
+    fn quit_create_case(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        // The Keychain explainer comes first: the quit stops so it can be
+        // answered, and the case is saved once it is.
+        if !self.case_key_ready(
+            move |this, window, cx| {
+                this.create_case(id, window, cx);
+            },
+            cx,
+        ) {
+            self.event(id, &CLOSE_CANCELLED, window, cx);
+            return;
+        }
+        let event = if self.create_case(id, window, cx).is_some() {
+            CLOSE_RESOLVED
+        } else {
+            CLOSE_CANCELLED
+        };
+        self.event(id, &event, window, cx);
+    }
+
+    /// A close or quit was cancelled: the mappings it asked about are asked
+    /// about again next time.
+    pub(super) fn mapping_close_cancelled(&mut self, id: u64) {
+        self.cases.quit_case = None;
+        self.case_coordinator.forget_asked(id);
+        for asked in std::mem::take(&mut self.cases.quit_asked) {
+            self.case_coordinator.forget_asked(asked);
+        }
+    }
+
+    /// A quit starts: none of its mappings is asked about yet.
+    pub(super) fn mapping_quit_started(&mut self) {
+        for asked in std::mem::take(&mut self.cases.quit_asked) {
+            self.case_coordinator.forget_asked(asked);
+        }
     }
 }
+
+const CLOSE_RESOLVED: TabEvent = TabEvent::Close(CloseEvent::Resolved);
+const CLOSE_CANCELLED: TabEvent = TabEvent::Close(CloseEvent::Cancelled);

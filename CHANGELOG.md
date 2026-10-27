@@ -4,6 +4,14 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **One close prompt, and quit asks about mappings.** Closing an edited,
+  pseudonymized tab asks once, "Save “…” and keep its mapping?" (Save as
+  Case, Save, Don't Save, Cancel), instead of two questions in a row. Quit
+  now asks about unsaved mappings too, instead of dropping them; with two or
+  more documents to lose, a summary comes first (Review…, Discard All,
+  Cancel). The Settings switch "Ask before closing an unsaved mapping" covers
+  both ([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md), #119).
+
 ## [0.2.0] - 2026-10-26
 
 Polish from the 2026-10-22 UX review and the code laid out by owner: plain

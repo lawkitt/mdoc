@@ -45,25 +45,18 @@ issue closes, with the expected behavior stated there.
 
 ## 0.3.0
 
-Closing and restoring cases without surprises, then shortcut discovery
+Restoring cases without surprises, then shortcut discovery
 ([milestone](https://github.com/lawkitt/mdoc/milestone/4)). The 2026-10-22 UX
 review's polish shipped in 0.2.0. Items are in priority order.
 
-1. **[Cases] One close prompt.** Closing a pseudonymized, unsaved tab asks
-   twice (keep the mapping, then save changes), and ⌘Q drops an unsaved
-   mapping without asking ([#119](https://github.com/lawkitt/mdoc/issues/119)).
-   One prompt covers both, quit asks about mappings too and offers Discard
-   all. Amends [ADR 0041](docs/adr/0041-cases-and-ai-response-restoration.md);
-   ADR first. *From the UX review and the rc.1 run.*
-   *Done when:* the ADR is accepted and #119 closes.
-2. **[Cases] Restore banner wording.** Say plainly that restored names are
+1. **[Cases] Restore banner wording.** Say plainly that restored names are
    proposals and what Apply does. *From the UX review.*
    *Done when:* the banner's first sentence says the names are proposals and
    what Apply does, in the headless renders.
-3. **[UI] Keyboard shortcuts panel.** `?` and a palette action list every
+2. **[UI] Keyboard shortcuts panel.** `?` and a palette action list every
    shortcut by context (everywhere, editor, popup, panel). *From Anoni 0.86.1.*
    *Done when:* every bound action appears, from one source of truth.
-4. **[UI] Theme control.** A System / Light / Dark segmented control in
+3. **[UI] Theme control.** A System / Light / Dark segmented control in
    Settings; today the sidebar button cycles without showing the choices.
    *From Anoni 0.86.1.* *Done when:* the choice is visible and persists.
 

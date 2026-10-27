@@ -249,6 +249,8 @@ pub(super) struct Workspace {
     import_busy: Arc<AtomicBool>,
     docx_queue: docx_queue::DocxQueue,
     quit_flow: quit_flow::QuitFlow,
+    /// The quit's summary question is up (ADR 0071).
+    quit_summary: bool,
     session_writer: session_writer::SessionWriter<Session>,
     cases: cases_ui::CaseState,
     case_coordinator: case_coordinator::CaseCoordinator<gpui::AnyWindowHandle>,
@@ -412,6 +414,7 @@ impl Workspace {
             import_busy: Arc::new(AtomicBool::new(false)),
             docx_queue: docx_queue::DocxQueue::default(),
             quit_flow: quit_flow::QuitFlow::default(),
+            quit_summary: false,
             session_writer: session_writer::SessionWriter::new(None),
             cases: Default::default(),
             case_coordinator: Default::default(),
@@ -1360,7 +1363,8 @@ impl Workspace {
                 self.save_case_and_close(id, window, cx)
             }
             TabEvent::Case(CaseEvent::Create { close: false }) => {
-                if self.can_create_case(id, cx) {
+                if self.quit_case_saved(id, window, cx) {
+                } else if self.can_create_case(id, cx) {
                     self.create_case(id, window, cx);
                 }
             }
@@ -1373,6 +1377,7 @@ impl Workspace {
             TabEvent::Close(CloseEvent::Cancelled) => {
                 crate::updater::cancel_restart(cx);
                 self.quit_flow.cancel();
+                self.mapping_close_cancelled(id);
                 self.cancel_case_quit();
                 let views: Vec<_> = self
                     .tabs
@@ -1561,19 +1566,79 @@ impl Workspace {
         }) {
             return;
         }
-        let dirty = self
-            .tabs
+        if self.quit_summary {
+            return;
+        }
+        let at_risk = self.at_risk_tabs(cx);
+        if at_risk.len() < 2 {
+            self.start_quit(at_risk, window, cx);
+            return;
+        }
+        // Two or more to lose: one question first (ADR 0071).
+        self.quit_summary = true;
+        let answer = window.prompt(
+            PromptLevel::Warning,
+            &format!(
+                "{} documents have unsaved changes or mappings",
+                at_risk.len()
+            ),
+            Some(
+                "Review each one, or discard them all and quit. A mapping not saved as a \
+                 case can't be recovered, so AI replies to its document can't be restored.",
+            ),
+            &[
+                gpui::PromptButton::new("Review…"),
+                gpui::PromptButton::new("Discard All"),
+                gpui::PromptButton::cancel("Cancel"),
+            ],
+            cx,
+        );
+        cx.spawn_in(window, async move |this, cx| {
+            let answer = answer.await.ok();
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.quit_summary = false;
+                match answer {
+                    Some(0) => {
+                        let at_risk = this.at_risk_tabs(cx);
+                        this.start_quit(at_risk, window, cx);
+                    }
+                    Some(1) => this.start_quit(VecDeque::new(), window, cx),
+                    _ => crate::updater::cancel_restart(cx),
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Tabs a quit would lose something from, in sidebar order: unsaved
+    /// changes, an unsaved mapping, or both (ADR 0071).
+    fn at_risk_tabs(&mut self, cx: &mut Context<Self>) -> VecDeque<u64> {
+        self.mapping_quit_started();
+        self.tabs
             .iter()
-            .filter(|tab| tab.view().is_some_and(|view| view.read(cx).dirty(cx)))
             .map(|tab| tab.id())
-            .collect();
-        let effect = self.quit_flow.quit(self.tabs.active(), dirty);
+            .filter(|&id| {
+                self.tabs
+                    .get(id)
+                    .and_then(|tab| tab.view())
+                    .is_some_and(|view| view.read(cx).dirty(cx))
+                    || self.mapping_at_risk(id, true, cx)
+            })
+            .collect()
+    }
+
+    /// Ask each tab in `at_risk` in turn, then quit.
+    fn start_quit(&mut self, at_risk: VecDeque<u64>, window: &mut Window, cx: &mut Context<Self>) {
+        let effect = self.quit_flow.quit(self.tabs.active(), at_risk);
         self.carry_out_quit(effect, window, cx);
     }
 
     fn carry_out_quit(&mut self, effect: QuitEffect, window: &mut Window, cx: &mut Context<Self>) {
         match effect {
             QuitEffect::Resolve(id) => {
+                if self.quit_flow.quitting() && self.ask_quit_mapping(id, window, cx) {
+                    return;
+                }
                 self.activate(id, window, cx);
                 if let Some(view) = self.active_view() {
                     view.update(cx, |view, cx| view.request(Next::Close, window, cx));

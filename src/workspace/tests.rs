@@ -237,6 +237,12 @@ fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
     );
     cx.dispatch_action(Quit);
     cx.run_until_parked();
+    if matches!(model, settings::Model::Pii(_)) {
+        // The setup tab has typed text too: two to ask about, so the quit's
+        // summary comes first (ADR 0071).
+        cx.simulate_prompt_answer("Review…");
+        cx.run_until_parked();
+    }
     assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
     cx.simulate_prompt_answer("Cancel");
     cx.run_until_parked();
@@ -260,10 +266,16 @@ fn quit_during_setup_download(cx: &mut TestAppContext, model: settings::Model) {
         "ctrl-q"
     });
     cx.run_until_parked();
-    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
-    for _ in 0..dirty {
-        cx.simulate_prompt_answer("Discard");
+    if dirty > 1 {
+        // Discard All in the summary drops every tab's changes at once.
+        cx.simulate_prompt_answer("Discard All");
         cx.run_until_parked();
+    } else {
+        assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
+        for _ in 0..dirty {
+            cx.simulate_prompt_answer("Discard");
+            cx.run_until_parked();
+        }
     }
     assert!(progress.cancel.load(Ordering::Relaxed));
     assert!(cx.cx.read(|cx| cx.windows().is_empty()));
