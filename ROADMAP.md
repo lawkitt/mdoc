@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-27 (latest: 0.2.0); accepted
+This roadmap lists open work as of 2026-10-27 (latest: 0.2.1); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
@@ -18,14 +18,15 @@ rc.4 acceptance run on both platforms
 remaining manual rows and the keychain launch check. Windows also ships an
 `.msi`. No PII model has passed the
 [initial qualification](tests/fixtures/pseudonymization/README.md). Earlier
-releases: [CHANGELOG](CHANGELOG.md).
+releases: [CHANGELOG](CHANGELOG.md). 0.2.1 (2026-10-27) fixed the seven
+bugs from the 0.2.0 runs; its [smoke run](docs/evidence/platform/2026-10-27/README.md)
+left rows for the maintainer and found #194 (now 0.3.0 item 5).
 
 ## 0.2.x patches
 
 Wrong output, data loss or silent failures that need no design decision
-(GitHub milestones). Open: [0.2.1](https://github.com/lawkitt/mdoc/milestone/5),
-the bugs from the 0.2.0 acceptance runs; it ships once #166 and #169 are
-fixed, with whatever else has merged by then. Items that are not ready ride
+(GitHub milestones). Open: [0.2.2](https://github.com/lawkitt/mdoc/milestone/6),
+empty so far. Items that are not ready ride
 along with a later patch. Each patch gets a smoke run on both platforms; an item is done when its
 issue closes, with the expected behavior stated there.
 
@@ -49,6 +50,12 @@ review's polish shipped in 0.2.0. Items are in priority order.
 4. **[UI] Theme control.** A System / Light / Dark segmented control in
    Settings; today the sidebar button cycles without showing the choices.
    *From Anoni 0.86.1.* *Done when:* the choice is visible and persists.
+5. **[A11y] One visible focus style.** Sidebar rows and Settings show focus
+   with the same fill as selection or hover, and a toolbar toggle's "on" fill
+   hides its ring ([#194](https://github.com/lawkitt/mdoc/issues/194)), on both
+   platforms. One focus ring for every control, distinct from selection and
+   hover. *From the rc.4 and 0.2.1 runs.* *Done when:* every Tab stop shows the
+   same ring in light and dark, including toggles that are on, and #194 closes.
 
 ## Later
 
@@ -114,14 +121,15 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[A11y]** Report keyboard focus on macOS too: only text fields and dialog
   buttons set `AXFocused`, so accessibility clients and agent-run acceptance
   can't follow focus elsewhere. *From the rc.4 acceptance run.*
-- **[A11y]** One visible focus style: sidebar rows and Settings show focus with
-  the same fill as selection or hover, and a toolbar toggle's "on" fill hides
-  it. *From the rc.4 acceptance run.*
 - **[A11y]** F6 into the sidebar lands on the active tab, not the last control
   (often Settings, where ↑/↓ do nothing), so ↑/↓, ⌫ and the tab's actions are
   one key away. *From the rc.4 acceptance run.*
 - **[A11y]** A Mac shortcut for a sidebar tab's actions besides ⇧F10, which on
   MacBook keyboards needs fn (F10 is the mute key). *From the rc.4 acceptance run.*
+- **[Windows]** One install per machine: the `.msi` (all users) and the NSIS
+  `.exe` (per user) each detect the other and stop with a message, and the
+  updater says which one it updates. Today both can sit side by side, with two
+  shortcuts and two `mdoc.exe`. *From the 0.2.1 smoke run.*
 
 ## Ongoing tracks
 
@@ -146,6 +154,19 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **Keychain launch check without a second account:** run
   `scripts/keychain-launch-check.sh` against a throwaway keychain instead of a
   clean macOS user account. *From the rc.4 acceptance run.*
+- **CI concurrency:** one concurrency group per ref with `cancel-in-progress`,
+  so a new push replaces its branch's earlier run and runs for merged branches
+  don't hold `main`'s run in the queue. *From the 0.2.1 merges.*
+- **Changelog fragments:** each change adds `changes/<slug>.md`, and
+  `just release` joins them into CHANGELOG in merge order and deletes them, so
+  parallel PRs stop conflicting on Unreleased. Amends ADR 0059's "the same
+  commit adds the CHANGELOG entry"; ADR first. *From the 0.2.1 merges.*
+- **Release-run rules:** GUI acceptance runs in a Claude desktop session the
+  maintainer starts on each machine (the T3 Codex Windows desktop pipe failed
+  4 of 4 times); without one, the in-app rows are the maintainer's. A patch
+  publishes once both agent runs are done with no must-fix Fail; rows only the
+  maintainer can do may follow. Update `docs/release-run.md` and ADR 0059's
+  acceptance line. *From the 0.2.1 run.*
 
 ## Deferred
 
