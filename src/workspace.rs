@@ -2083,7 +2083,7 @@ impl Workspace {
                     .clone()
                     .tab_stop(!revealed && roving == Some(id));
                 compact_rows.push(
-                    ui::control(("compact-tab", id), "", theme, true)
+                    ui::control(format!("compact-tab-{id}-at-{index}"), "", theme, true)
                         .map(|v| self.sidebar_tab_menu(v, id, cx))
                         .key_context("UiControl SidebarTab")
                         .tab_stop(!revealed && roving == Some(id))
@@ -2162,7 +2162,9 @@ impl Workspace {
                 );
                 Some(
                     div()
-                        .id(("tab", id))
+                        // Tooltip state includes its old hover bounds. A row
+                        // moved by insertion or reordering needs fresh state.
+                        .id(format!("tab-{id}-at-{index}"))
                         .map(|v| self.sidebar_tab_menu(v, id, cx))
                         .map(|v| {
                             ui::reveal_focus(
