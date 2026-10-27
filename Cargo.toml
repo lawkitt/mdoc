@@ -95,6 +95,16 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = 0
 
+# Headless evidence spends most of its time in BGRA readback conversion and
+# PNG encoding. Level 2 keeps these loops from reusing unoptimized generic
+# helpers. Keep app/editor code at 0.
+[profile.dev.package.gpui-pre-windows]
+opt-level = 2
+[profile.dev.package.png]
+opt-level = 2
+[profile.dev.package.simd-adler32]
+opt-level = 2
+
 # Full debug information for lldb/CodeLLDB, in its own target/debugging/.
 [profile.debugging]
 inherits = "dev"
