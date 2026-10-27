@@ -4,6 +4,11 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **OS file opening keeps scanned PDFs.** An Open With event that arrives
+  during an app update now waits for that update, then opens the source tab
+  and text-recognition card through the same flow as File > Open and a drop
+  (fixes #166).
+
 ## [0.2.0] - 2026-10-26
 
 Polish from the 2026-10-22 UX review and the code laid out by owner: plain
