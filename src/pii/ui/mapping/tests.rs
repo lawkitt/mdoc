@@ -2626,7 +2626,7 @@ fn review_footer_fits_at_minimum_window_size(cx: &mut gpui::TestAppContext) {
                     // old alias, exposing the footer's Update aliases action.
                     app.pii
                         .review
-                        .rename_identity(identity, "CLIENT_7".into())
+                        .rename_identity(identity, "CLIENT_7")
                         .unwrap();
                     app.review_changed(cx);
                     app.close_pii_popup(&crate::pii::ui::PiiClosePopup, window, cx);
