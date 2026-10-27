@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Enter applies after choosing a popup scope.** Clicking This one or All
+  no longer leaves Enter pressing that segment again; it applies the shown
+  scope and moves to the next proposal (#177).
+
 ## [0.2.0] - 2026-10-26
 
 Polish from the 2026-10-22 UX review and the code laid out by owner: plain

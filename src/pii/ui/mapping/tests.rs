@@ -2491,6 +2491,66 @@ fn press(keys: &str, cx: &mut gpui::VisualTestContext) {
 }
 
 #[gpui::test]
+fn popup_enter_after_clicking_all_applies_and_moves_on(cx: &mut gpui::TestAppContext) {
+    popup_enter_after_scope_click(cx, Scope::Entity);
+}
+
+#[gpui::test]
+fn popup_enter_after_clicking_this_one_applies_and_moves_on(cx: &mut gpui::TestAppContext) {
+    popup_enter_after_scope_click(cx, Scope::Mention);
+}
+
+fn popup_enter_after_scope_click(cx: &mut gpui::TestAppContext, scope: Scope) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    open_popup_on(&app, initials, 0, cx);
+    let entity = app.read_with(cx, |app, _| app.selected_entity().unwrap());
+    let selector: &'static str = Box::leak(format!("scope-{}", scope as u8).into_boxed_str());
+    click_tab(cx, selector);
+    cx.update(|window, cx| {
+        let app = app.read(cx);
+        assert_eq!(app.pii.mapping.scope, scope);
+        let control = app
+            .pii
+            .popup_control_focus(gpui::SharedString::from(selector), cx);
+        assert!(
+            control.is_focused(window),
+            "the mouse click focuses the segment"
+        );
+    });
+    press("space", cx);
+    app.read_with(cx, |app, _| {
+        assert_eq!(
+            app.pii.review.applied().len(),
+            0,
+            "Space still selects the segment"
+        );
+        assert_eq!(app.pii.mapping.scope, scope);
+    });
+    press("enter", cx);
+    app.read_with(cx, |app, _| {
+        assert_eq!(
+            app.pii.review.applied().len(),
+            if scope == Scope::Entity { 2 } else { 1 }
+        );
+        assert!(app.pii.popup.is_some());
+        assert_eq!(app.pii.mapping.scope, scope);
+        if scope == Scope::Entity {
+            assert_ne!(app.selected_entity(), Some(entity));
+        } else {
+            assert_eq!(app.selected_entity(), Some(entity));
+            assert_eq!(
+                app.active_replacement_range().unwrap().start,
+                "ORG_1 · ".len()
+            );
+        }
+    });
+    assert!(cx.update(|window, cx| app.read(cx).pii.focus.contains_focused(window, cx)));
+}
+
+#[gpui::test]
 fn popup_enter_applies_the_whole_entity_under_all_and_opens_the_next(
     cx: &mut gpui::TestAppContext,
 ) {

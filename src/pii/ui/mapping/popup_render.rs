@@ -1303,6 +1303,7 @@ impl DocumentView {
                         enabled,
                         cx,
                     )
+                    .key_context("UiControl PiiScope")
                     // The label and count are drawn as children; name the
                     // segment for screen readers and report the chosen one.
                     .aria_label(match count {
