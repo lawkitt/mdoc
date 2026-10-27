@@ -2622,7 +2622,13 @@ fn review_footer_fits_at_minimum_window_size(cx: &mut gpui::TestAppContext) {
                 app.update_in(cx, |app, window, cx| {
                     app.apply_replacements(cx);
                     let identity = app.pii.review.applied()[0].step.identity;
-                    app.change_mapping(MappingAction::Rename(identity, "CLIENT_7".into()), cx);
+                    // A case mapping can change while the text still uses its
+                    // old alias, exposing the footer's Update aliases action.
+                    app.pii
+                        .review
+                        .rename_identity(identity, "CLIENT_7".into())
+                        .unwrap();
+                    app.review_changed(cx);
                     app.close_pii_popup(&crate::pii::ui::PiiClosePopup, window, cx);
                 });
                 cx.run_until_parked();
