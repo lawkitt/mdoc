@@ -8,6 +8,24 @@ All notable changes to **mdoc** are documented here.
   and actions at the minimum window size, keeping Rescan and Update aliases
   fully inside the panel (fixes #170).
 
+- **Enter applies after choosing a popup scope.** Clicking This one or All
+  no longer leaves Enter pressing that segment again; it applies the shown
+  scope and moves to the next proposal (#177).
+
+- **Visible view and zoom controls on Tab.** The floating document controls
+  now stay visible while keyboard focus is inside them, so Tab no longer
+  crosses seven hidden controls before reaching the editor (#168).
+
+- **OS file opening keeps scanned PDFs.** An Open With event that arrives
+  during an app update now waits for that update, then opens the source tab
+  and text-recognition card through the same flow as File > Open and a drop
+  (fixes #166).
+
+- **Undo after Apply all.** Switching from Review to Share returns focus to
+  the panel when its old search field disappears, including after editing a
+  popup alias. Undo and Redo keep working without clicking the editor (fixes
+  #169).
+
 ## [0.2.0] - 2026-10-26
 
 Polish from the 2026-10-22 UX review and the code laid out by owner: plain

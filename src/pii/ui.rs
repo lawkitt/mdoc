@@ -286,6 +286,9 @@ pub(crate) fn bind_keys(cx: &mut App) {
         // In the alias field Enter confirms the draft; elsewhere in the popup
         // the shared decision keys apply (ADR 0033).
         KeyBinding::new("enter", PiiConfirm, Some("PseudonymReplacement")),
+        // Scope segments keep Space for selection, but Enter applies in the
+        // chosen scope instead of pressing the focused segment again (#177).
+        KeyBinding::new("enter", crate::pii::ui::ApplyThis, Some("PiiScope")),
         // ← → step through the entity's mentions, ⌘← ⌘→ to its ends; the
         // alias field and menus keep their own arrows (ADR 0055).
         KeyBinding::new("left", crate::pii::ui::PopupPreviousMention, Some(STEP)),
@@ -861,6 +864,20 @@ impl DocumentView {
             self.apply_replacements(cx);
             // Inspector (ADR 0048 variant C): next comes sharing.
             if self.pii.review.remaining() == 0 && self.has_applied_aliases() {
+                // Share unmounts Review's fields. Neither current focus nor a
+                // closing popup's return target may stay on those controls.
+                let panel = &self.pii.mapping.focus;
+                if self
+                    .pii
+                    .popup_previous
+                    .as_ref()
+                    .is_some_and(|previous| panel.contains(previous, window))
+                {
+                    self.pii.popup_previous = Some(panel.clone());
+                }
+                if panel.contains_focused(window, cx) {
+                    window.focus(panel, cx);
+                }
                 self.inspector_share = true;
             }
         }

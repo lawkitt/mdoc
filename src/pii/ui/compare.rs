@@ -320,7 +320,11 @@ impl DocumentView {
         if progress < 1. {
             window.request_animation_frame();
         }
-        let opacity = if self.switcher.shown() {
+        // Keyboard reach must never land on a faded control (ADR 0062),
+        // including during the idle/fade timer.
+        let opacity = if self.switcher_region.contains_focused(window, cx) {
+            1.
+        } else if self.switcher.shown() {
             progress
         } else {
             1. - progress
