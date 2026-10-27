@@ -421,6 +421,90 @@ fn keyboard_reveals_last_document_in_collapsed_list(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn sidebar_drop_dismisses_tooltip_for_the_row_that_moved(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let [a, b, c, d] = ["a.md", "b.md", "two-b.md", "two-c.md"].map(|n| dir.path().join(n));
+    for path in [&a, &b, &c, &d] {
+        std::fs::write(path, "x").unwrap();
+    }
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![a, b], window, cx)
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let (b_id, old_tip) = cx.update(|_, cx| {
+        let tab = &tabs.read(cx).tabs[1];
+        let label = tab_label(tab, cx);
+        (
+            tab.id(),
+            Box::leak(
+                format!(
+                    "tooltip-{}\n{}",
+                    label.name,
+                    label.identity.as_path().parent().unwrap().display()
+                )
+                .into_boxed_str(),
+            ) as &'static str,
+        )
+    });
+    let row = cx
+        .debug_bounds(Box::leak(format!("tab-{b_id}").into_boxed_str()))
+        .unwrap();
+    let pointer = gpui::point(row.left() + px(45.), row.top() + row.size.height / 4.);
+    cx.simulate_mouse_move(pointer, None, gpui::Modifiers::none());
+    cx.run_until_parked();
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(600));
+    cx.run_until_parked();
+    draw(cx);
+    assert!(
+        cx.debug_bounds(old_tip).is_some(),
+        "old row's tooltip is visible"
+    );
+
+    // Finish the drop's resolved admission without another MouseMove or an
+    // extra frame: the old tooltip must disappear on the first changed frame.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.finish_open(vec![(c, true), (d, true)], Some(1), window, cx);
+    });
+    draw(cx);
+    assert!(
+        cx.debug_bounds(old_tip).is_none(),
+        "moved row's tooltip must not name the new row"
+    );
+    cx.run_until_parked();
+    assert_eq!(
+        tab_names(&tabs, cx),
+        ["a.md", "two-b.md", "two-c.md", "b.md"]
+    );
+
+    // A fresh hover shows the inserted row's own name and folder.
+    cx.simulate_mouse_move(
+        pointer + gpui::point(px(1.), px(0.)),
+        None,
+        gpui::Modifiers::none(),
+    );
+    cx.run_until_parked();
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(600));
+    cx.run_until_parked();
+    draw(cx);
+    let new_tip = cx.update(|_, cx| {
+        let label = tab_label(&tabs.read(cx).tabs[1], cx);
+        Box::leak(
+            format!(
+                "tooltip-{}\n{}",
+                label.name,
+                label.identity.as_path().parent().unwrap().display()
+            )
+            .into_boxed_str(),
+        ) as &'static str
+    });
+    assert!(cx.debug_bounds(new_tip).is_some());
+}
+
+#[gpui::test]
 fn sidebar_drop_opens_files_at_the_insertion_line(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let [a, b, c, d] = ["a.md", "b.md", "c.md", "d.md"].map(|name| dir.path().join(name));

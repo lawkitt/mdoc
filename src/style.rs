@@ -311,6 +311,10 @@ fn tip_body(text: String, theme: Theme) -> impl gpui::IntoElement {
         use gpui::{div, prelude::*, px};
         let palette = theme.pdf_style();
         div()
+            .when(cfg!(test), |v| {
+                let selector = format!("tooltip-{text}");
+                v.debug_selector(move || selector.clone())
+            })
             .px_2()
             .py_1()
             .rounded_md()
