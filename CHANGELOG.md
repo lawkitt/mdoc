@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Visible view and zoom controls on Tab.** The floating document controls
+  now stay visible while keyboard focus is inside them, so Tab no longer
+  crosses seven hidden controls before reaching the editor (#168).
+
 ## [0.2.0] - 2026-10-26
 
 Polish from the 2026-10-22 UX review and the code laid out by owner: plain
