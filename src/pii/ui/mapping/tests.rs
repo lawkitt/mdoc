@@ -2630,7 +2630,13 @@ fn apply_all_after_confirming_alias_restores_document_undo(cx: &mut gpui::TestAp
     );
     app.read_with(cx, |app, cx| {
         assert_eq!(app.editor.read(cx).text(), source);
-        assert_eq!(app.pii.mapping.alias.read(cx).value(), "CLIENT_7");
+        assert!(
+            app.pii
+                .review
+                .active_identities()
+                .into_iter()
+                .any(|id| { app.pii.review.identity(id).unwrap().alias == "CLIENT_7" })
+        );
     });
 }
 
