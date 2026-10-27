@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Enter applies after choosing a popup scope.** Clicking This one or All
+  no longer leaves Enter pressing that segment again; it applies the shown
+  scope and moves to the next proposal (#177).
+
 - **Visible view and zoom controls on Tab.** The floating document controls
   now stay visible while keyboard focus is inside them, so Tab no longer
   crosses seven hidden controls before reaching the editor (#168).
