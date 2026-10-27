@@ -2844,6 +2844,80 @@ fn apply_all_closes_the_popup(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
+fn popup_undo_after_keep_same_preserves_the_next_shortcut(cx: &mut gpui::TestAppContext) {
+    popup_history_after_keep(cx, "secondary-backspace");
+}
+
+#[gpui::test]
+fn popup_undo_after_keep_entity_preserves_the_next_shortcut(cx: &mut gpui::TestAppContext) {
+    popup_history_after_keep(cx, "secondary-shift-backspace");
+}
+
+fn popup_history_after_keep(cx: &mut gpui::TestAppContext, keep: &str) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Anna met Bob. Anna left early. Then Anna came back.";
+    let applied = source.replacen("Anna", "PERSON_1", 1);
+    app.update_in(cx, |app, window, cx| {
+        let ids = seed_anna(app, source, cx);
+        app.activate_annotation(ids[0], window, cx);
+        app.pii.mapping.set_scope(Scope::Mention);
+        app.apply_scope(cx);
+    });
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let next = app
+            .pii
+            .review
+            .candidates()
+            .iter()
+            .min_by_key(|c| c.range.start)
+            .unwrap()
+            .id;
+        app.activate_annotation(next, window, cx);
+        app.pii.mapping.set_scope(Scope::Mention);
+        window.focus(&app.pii.focus, cx);
+    });
+    cx.run_until_parked();
+    draw_frames(cx);
+    let assert_popup = |cx: &mut gpui::VisualTestContext, kept| {
+        cx.update(|window, cx| {
+            let app = app.read(cx);
+            let text = if kept { source } else { &applied };
+            let start = if kept {
+                source.match_indices("Anna").nth(1).unwrap().0
+            } else {
+                applied.find("Anna").unwrap()
+            };
+            assert_eq!(app.editor.read(cx).text(), text);
+            assert_eq!(app.pii.review.remaining(), if kept { 0 } else { 2 });
+            assert!(app.pii.popup.is_some(), "history must keep the popup open");
+            assert_eq!(app.active_is_kept(), kept);
+            assert_eq!(app.active_replacement_range().unwrap().start, start);
+            assert_eq!(app.pii.mapping.scope, Scope::Mention);
+            assert!(app.pii.focus.contains_focused(window, cx));
+        });
+    };
+    press(keep, cx);
+    assert_popup(cx, true);
+    press("secondary-z", cx);
+    assert_popup(cx, false);
+    for redo in if cfg!(target_os = "windows") {
+        vec!["secondary-shift-z", "ctrl-y"]
+    } else {
+        vec!["secondary-shift-z"]
+    } {
+        press(redo, cx);
+        assert_popup(cx, true);
+        press("secondary-z", cx);
+        assert_popup(cx, false);
+    }
+    // Without reopening or refocusing, the next widened keep stays in the
+    // popup. In the editor this chord would delete source text instead.
+    press(keep, cx);
+    assert_popup(cx, true);
+}
+
+#[gpui::test]
 fn popup_keep_keys_leave_the_segment_as_shown(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";

@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Undo keeps the replacement popup open.** Undoing or redoing a keep that
+  also changes applied text now follows the restored mention with its scope
+  and focus intact, so the next popup shortcut still acts there (#178).
+
 - **Rescan fits small windows.** The Replacements footer wraps its counts
   and actions at the minimum window size, keeping Rescan and Update aliases
   fully inside the panel (fixes #170).
