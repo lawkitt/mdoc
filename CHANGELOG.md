@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Rescan fits small windows.** The Replacements footer wraps its counts
+  and actions at the minimum window size, keeping Rescan and Update aliases
+  fully inside the panel (fixes #170).
+
 - **Enter applies after choosing a popup scope.** Clicking This one or All
   no longer leaves Enter pressing that segment again; it applies the shown
   scope and moves to the next proposal (#177).
