@@ -31,7 +31,9 @@ restore AI replies to it.
   tab's prompt. With two or more, a summary comes first: "<N> documents have
   unsaved changes or mappings" with Review… (default: each at-risk tab's
   prompt in turn, sidebar order), Discard All and Cancel. Cancel at any step
-  cancels the quit.
+  cancels the quit, and so does Not now in the Keychain explainer when Save as
+  Case needs it. Discard All asks no tab again; a failed save of an existing
+  case still offers Retry, since that mapping was meant to be kept.
 - **No mapping survives quit without a case.** Creating a case stays the
   consent to store originals (ADR 0041); unsaved mappings are not written to
   the session.
@@ -41,7 +43,7 @@ restore AI replies to it.
 ## Consequences
 
 - Done when #119 closes: ⌘W on a dirty, pseudonymized tab asks once; ⌘Q with
-  an unsaved mapping asks; Discard All quits without further prompts.
+  an unsaved mapping asks; Discard All quits without asking each tab.
 - Untitled tabs need distinct names in the quit prompts: roadmap 0.3.0
   "Number new tabs".
 - The acceptance checklist's close and quit rows gain the combined prompt and
