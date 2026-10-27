@@ -861,6 +861,20 @@ impl DocumentView {
             self.apply_replacements(cx);
             // Inspector (ADR 0048 variant C): next comes sharing.
             if self.pii.review.remaining() == 0 && self.has_applied_aliases() {
+                // Share unmounts Review's fields. Neither current focus nor a
+                // closing popup's return target may stay on those controls.
+                let panel = &self.pii.mapping.focus;
+                if self
+                    .pii
+                    .popup_previous
+                    .as_ref()
+                    .is_some_and(|previous| panel.contains(previous, window))
+                {
+                    self.pii.popup_previous = Some(panel.clone());
+                }
+                if panel.contains_focused(window, cx) {
+                    window.focus(panel, cx);
+                }
                 self.inspector_share = true;
             }
         }
