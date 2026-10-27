@@ -4,6 +4,10 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Undo keeps the replacement popup open.** Undoing or redoing a keep that
+  also changes applied text now follows the restored mention with its scope
+  and focus intact, so the next popup shortcut still acts there (#178).
+
 ## [0.2.0] - 2026-10-26
 
 Polish from the 2026-10-22 UX review and the code laid out by owner: plain

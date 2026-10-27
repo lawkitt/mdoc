@@ -1078,6 +1078,12 @@ impl DocumentView {
             .iter()
             .any(|change| change.edits.is_empty())
         {
+            // Text history travel leaves proposals awaiting discovery. The
+            // open popup needs them now to follow its restored occurrence
+            // before Changed treats it as a stale source-edit popup (#178).
+            if self.pii.popup.is_some() {
+                self.pii.review.refresh(self.editor.read(cx).text());
+            }
             self.sync_identity_selection_after_history(cx);
         }
         self.sync_annotations(cx);
