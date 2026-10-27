@@ -73,6 +73,9 @@ jobs:
       contents: read
     uses: ./.github/workflows/ci.yml
     with:
+      # Called CI inherits our event/ref: explicitly isolate its concurrency
+      # group so branch CI cannot cancel a release's checks (or vice versa).
+      release-call: true
       smoke-ocr: true
 
   package:

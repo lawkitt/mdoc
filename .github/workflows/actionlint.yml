@@ -10,6 +10,7 @@ on:
       - ".github/**"
       - "scripts/tools.env"
   pull_request:
+    types: [opened, synchronize, reopened, closed]
     paths:
       - ".github/**"
       - "scripts/tools.env"
@@ -18,12 +19,15 @@ on:
 permissions:
   contents: read
 
+# Replace superseded pushes and PR runs. Closing/merging a PR cancels its old
+# run through the same PR-number group, while the closed run skips every job.
 concurrency:
   group: actionlint-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   actionlint:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
