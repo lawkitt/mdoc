@@ -4,6 +4,11 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **OS file opening keeps scanned PDFs.** An Open With event that arrives
+  during an app update now waits for that update, then opens the source tab
+  and text-recognition card through the same flow as File > Open and a drop
+  (fixes #166).
+
 - **Undo after Apply all.** Switching from Review to Share returns focus to
   the panel when its old search field disappears, including after editing a
   popup alias. Undo and Redo keep working without clicking the editor (fixes
