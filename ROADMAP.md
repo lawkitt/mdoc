@@ -151,9 +151,16 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   stable release can only pass once the new stable is published, because a
   stable build reads only `/releases/latest`; let the smoke run point the
   updater at a named draft or pre-release. *From the rc.4 acceptance run.*
-- **Keychain launch check without a second account:** run
-  `scripts/keychain-launch-check.sh` against a throwaway keychain instead of a
-  clean macOS user account. *From the rc.4 acceptance run.*
+- **Keychain launch check without a fresh account:** run
+  `scripts/keychain-launch-check.sh` and E2 against a throwaway keychain. The
+  macOS `acceptance` user (fleet ADR 0011) shows the first Keychain prompt
+  only once, since the case-key item outlives a profile rename and agents
+  never delete it. *From the rc.4 acceptance run and the 0.2.1 grill.*
+- **Uninstall keeps the case key:** the NSIS uninstaller leaves
+  `%LOCALAPPDATA%\mdoc\cases\key.dpapi` only because mdoc sets no packager
+  `appdata-paths`. *Done when:* the `installed-windows-desktop` job seeds a
+  dummy `cases\key.dpapi` before uninstalling and fails if it is gone, and
+  `Cargo.toml` says never to set `appdata-paths`. *From the 0.2.1 smoke run.*
 - **CI concurrency:** one concurrency group per ref with `cancel-in-progress`,
   so a new push replaces its branch's earlier run and runs for merged branches
   don't hold `main`'s run in the queue. *From the 0.2.1 merges.*
@@ -161,12 +168,11 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   `just release` joins them into CHANGELOG in merge order and deletes them, so
   parallel PRs stop conflicting on Unreleased. Amends ADR 0059's "the same
   commit adds the CHANGELOG entry"; ADR first. *From the 0.2.1 merges.*
-- **Release-run rules:** GUI acceptance runs in a Claude desktop session the
-  maintainer starts on each machine (the T3 Codex Windows desktop pipe failed
-  4 of 4 times); without one, the in-app rows are the maintainer's. A patch
-  publishes once both agent runs are done with no must-fix Fail; rows only the
-  maintainer can do may follow. Update `docs/release-run.md` and ADR 0059's
-  acceptance line. *From the 0.2.1 run.*
+- **Release-run rules:** a patch publishes once both agent runs are done with
+  no must-fix Fail; rows only the maintainer can do may follow. Update
+  `docs/release-run.md` and ADR 0059's acceptance line. (The GUI runner,
+  a Claude desktop session in the `acceptance` account, is already in
+  `docs/release-run.md`.) *From the 0.2.1 run.*
 
 ## Deferred
 

@@ -34,9 +34,10 @@ release gates do not establish what it checks.
 
 ### Running it with an agent
 
-An agent runs both checklists through computer use (ADR 0057). Dispatched
-runs use Codex through T3 (fleet ADR 0009), proven on both machines; Claude
-can also run them from the Claude desktop app, started by the maintainer.
+An agent runs both checklists through computer use (ADR 0057): a Claude
+desktop session the maintainer starts in the machine's `acceptance` account
+(fleet ADR 0011; see [release runs](release-run.md#roles)). That account's
+case key guards only test cases, but the rules below still apply there.
 Before the first screenshot, only public fixtures may be on screen: start from
 the clean profile in step 2, since mdoc restores the last session's documents.
 On Windows `%LOCALAPPDATA%\mdoc` also holds the installed `mdoc.exe`, so the
@@ -61,6 +62,10 @@ ADR 0057 and the latest `docs/evidence/platform/<date>/README.md`.
   Keychain item above.
 - **Only public fixtures** on screen and in notes; close or avoid the
   maintainer's own windows and files.
+- **File Explorer and Finder are click-only** for Claude's computer use, so
+  rows that drop files from them or use their context menu (P3–P7) are the
+  maintainer's. For P7, passing the file's path to the running app is a
+  supporting check, not a Pass.
 - **Finish** by committing `<platform>.md`, updating the counts, Fail,
   Unavailable and Pending lists in the run's `README.md`, and linking every
   Fail row to a fix or a roadmap item (by its title, not its number).

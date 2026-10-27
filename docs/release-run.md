@@ -17,9 +17,14 @@ and the [acceptance checklist](platform-acceptance.md).
 - **Code lanes:** `windows-lane-1`, `windows-lane-2` and `wsl-lane-1` (the
   `wsl` lane runs only the platform-neutral crates and the forks). One thread
   per lane, branch `<machine>/<topic>` from `origin/main`.
-- **GUI runs:** `windows-desktop` (Codex through T3) runs the Windows
-  checklist; `macbook-air-desktop` (Codex through T3, or a Claude desktop
-  session the maintainer starts) runs the macOS checklist.
+- **GUI runs:** a Claude desktop session the maintainer starts in the
+  machine's `acceptance` account (fleet ADR 0011) runs that platform's
+  checklist: `windows-desktop` on Windows, `macbook-air-desktop` on macOS. The
+  account is a standard user with its own mdoc profile, case key, clone and
+  `gh` login, so the maintainer's desktop and real case key stay out of the
+  run. Until a machine has that account, the run uses the maintainer's
+  account: mdoc maximized before the first screenshot, and window-only
+  captures for anything smaller.
 
 ## Preflight (before the RC, while the maintainer is present)
 
@@ -30,10 +35,9 @@ run.
 
 - `windows` and `wsl` reachable; mdoc registered in T3 on both; the three
   lanes exist and are free (create `wsl-lane-1` if missing).
-- On each GUI machine: the desktop tool answers one harmless accessibility
-  read (no screenshot), and the screen is unlocked. A desktop session the
-  maintainer starts: the maintainer writes "desktop approved" in the hub
-  thread.
+- On each GUI machine: the maintainer has started the Claude desktop session
+  in the `acceptance` account, the screen is unlocked, and the maintainer
+  writes "desktop approved" in the hub thread.
 - The milestone and labels the plan uses exist on GitHub.
 - A test alert from the hub reaches the maintainer's phone.
 
@@ -66,8 +70,17 @@ run.
 
 - Follow [platform-acceptance.md](platform-acceptance.md) on the RC's draft
   artifacts, from a clean profile. Never delete the case key.
-- The real model download happens on `windows`; the Mac may copy models from
-  the maintainer's profile when the run's prompt says so.
+- Models: a full acceptance run downloads them for real and refreshes a model
+  cache in the `acceptance` account, outside the mdoc profile. A patch smoke
+  run copies that cache into its fresh profile instead.
+- Grant mdoc to computer use by its installed `mdoc.exe` or `mdoc.app`, and
+  check the granted path against the install location before the first row:
+  with a second install on the machine, the name alone can resolve to the
+  wrong build.
+- Rows needing a drag from, or a context menu in, File Explorer or Finder
+  (P3–P7): **Pending (maintainer)**. Claude's computer use gets those apps
+  click-only. For P7, passing the file's path to the running app is a
+  supporting check, not a Pass.
 - Rows needing a physical keyboard, spoken screen-reader output, passwords or
   System Settings: **Pending (maintainer)**, collected into one list.
 - A Fail is recorded, gets an issue in the release's milestone, and is linked;
