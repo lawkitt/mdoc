@@ -2586,6 +2586,91 @@ fn popup_enter_on_an_applied_mention_does_nothing(cx: &mut gpui::TestAppContext)
 }
 
 #[gpui::test]
+fn apply_all_after_confirming_alias_restores_document_undo(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";
+    let (_, initials) = app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    // Review can be entered from the panel's search field (for example by F6).
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.search.read(cx).focus_handle(cx), cx);
+    });
+    open_popup_on(&app, initials, 0, cx);
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.alias.read(cx).focus_handle(cx), cx);
+    });
+    press(
+        if cfg!(target_os = "macos") {
+            "cmd-a"
+        } else {
+            "ctrl-a"
+        },
+        cx,
+    );
+    cx.simulate_input("CLIENT_7");
+    cx.run_until_parked();
+    press("enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), source);
+        assert_eq!(app.pii.mapping.alias.read(cx).value(), "CLIENT_7");
+    });
+    press("secondary-enter", cx);
+    app.read_with(cx, |app, cx| {
+        assert!(app.pii.popup.is_none());
+        assert_eq!(app.pii.review.remaining(), 0);
+        assert_eq!(app.editor.read(cx).text(), "CLIENT_7 · CLIENT_7 · EMAIL_1");
+    });
+    press(
+        if cfg!(target_os = "macos") {
+            "cmd-z"
+        } else {
+            "ctrl-z"
+        },
+        cx,
+    );
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), source);
+        assert_eq!(app.pii.mapping.alias.read(cx).value(), "CLIENT_7");
+    });
+}
+
+#[gpui::test]
+fn apply_all_from_review_search_keeps_history_on_share(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Павлова М.С. · marina@example.invalid";
+    app.update(cx, |app, cx| seed(app, source, cx));
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.search.read(cx).focus_handle(cx), cx);
+    });
+    press("secondary-enter", cx);
+    app.update_in(cx, |app, window, _| {
+        assert!(app.inspector_share);
+        assert!(app.pii.mapping.focus.is_focused(window));
+    });
+    press(
+        if cfg!(target_os = "macos") {
+            "cmd-z"
+        } else {
+            "ctrl-z"
+        },
+        cx,
+    );
+    app.read_with(cx, |app, cx| assert_eq!(app.editor.read(cx).text(), source));
+    press(
+        if cfg!(target_os = "macos") {
+            "cmd-shift-z"
+        } else {
+            "ctrl-shift-z"
+        },
+        cx,
+    );
+    app.read_with(cx, |app, cx| {
+        assert_eq!(app.editor.read(cx).text(), "ORG_1 · EMAIL_1");
+    });
+}
+
+#[gpui::test]
 fn apply_all_closes_the_popup(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
     let source = "Павлова М.С. · Павлова М.С. · marina@example.invalid";

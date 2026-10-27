@@ -4,6 +4,11 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Undo after Apply all.** Switching from Review to Share returns focus to
+  the panel when its old search field disappears, including after editing a
+  popup alias. Undo and Redo keep working without clicking the editor (fixes
+  #169).
+
 ## [0.2.0] - 2026-10-26
 
 Polish from the 2026-10-22 UX review and the code laid out by owner: plain
