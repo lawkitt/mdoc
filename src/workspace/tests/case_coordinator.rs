@@ -409,6 +409,67 @@ fn quitting_with_two_at_risk_tabs_summarizes_first(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn a_quit_waits_for_an_open_close_prompt(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    // The window's close button quits; it must not replace the question.
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(!tabs.read(cx).quit_flow.quitting()));
+    assert_eq!(
+        cx.pending_prompt().unwrap().0,
+        "Save “contract.md” and keep its mapping?"
+    );
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+}
+
+#[gpui::test]
+fn a_quit_saves_the_case_after_the_keychain_explainer(cx: &mut TestAppContext) {
+    quit_through_the_keychain_explainer(cx, true);
+}
+
+#[gpui::test]
+fn not_now_in_the_keychain_explainer_cancels_the_quit(cx: &mut TestAppContext) {
+    quit_through_the_keychain_explainer(cx, false);
+}
+
+fn quit_through_the_keychain_explainer(cx: &mut TestAppContext, quits: bool) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    active(&tabs, cx).update(cx, |view, cx| view.write(path, None, cx));
+    cx.run_until_parked();
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(store()));
+        tabs.quit(window, cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Save as Case");
+    cx.run_until_parked();
+    draw(cx);
+    // The quit waits for the explainer instead of closing past it.
+    assert!(cx.debug_bounds("keychain-explainer").is_some());
+    cx.update(|_, cx| assert!(tabs.read(cx).quit_flow.quitting()));
+    if quits {
+        let button = cx.debug_bounds("keychain-continue").unwrap();
+        cx.simulate_click(button.center(), Default::default());
+    } else {
+        cx.simulate_keystrokes("escape");
+    }
+    cx.run_until_parked();
+    assert_eq!(cx.cx.read(|cx| cx.windows().is_empty()), quits);
+    assert_eq!(store().list().0.len(), usize::from(quits));
+    if !quits {
+        cx.update(|_, cx| assert!(!tabs.read(cx).quit_flow.quitting()));
+    }
+}
+
+#[gpui::test]
 fn discard_all_quits_without_asking_each_tab(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());

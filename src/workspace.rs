@@ -688,7 +688,7 @@ impl Workspace {
             .update(cx, |panel, cx| panel.close(window, cx));
         self.quit(window, cx);
         // Quitting can't start now (a prompt is open): don't relaunch later.
-        if self.quit_flow.may_quit() {
+        if self.quit_flow.may_quit() && !self.quit_summary {
             crate::updater::cancel_restart(cx);
         }
     }
@@ -1566,7 +1566,9 @@ impl Workspace {
         }) {
             return;
         }
-        if self.quit_summary {
+        // A question already up (the summary, or a tab's mapping) is
+        // answered first.
+        if self.quit_summary || self.mapping_prompt_open() {
             return;
         }
         let at_risk = self.at_risk_tabs(cx);

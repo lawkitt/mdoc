@@ -92,6 +92,10 @@ pub(super) struct CaseState {
     /// Tabs whose mapping this quit already asked about; a cancelled quit
     /// asks again.
     quit_asked: Vec<u64>,
+    /// The quit waits on the Keychain explainer to save this tab's case.
+    quit_key_wait: Option<u64>,
+    /// A close or quit question about a mapping is up; a quit waits for it.
+    mapping_prompt: bool,
     /// Stands in for "reading the key may ask" in tests.
     #[cfg(test)]
     pub(super) test_may_ask: bool,
@@ -237,6 +241,7 @@ impl Workspace {
                     self.cases.then = then;
                 }
                 self.key_failed(error);
+                self.stop_quit_key_wait(window, cx);
             }
         }
         cx.notify();
@@ -252,6 +257,7 @@ impl Workspace {
     pub(super) fn cancel_unlock(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_explainer(window, cx);
         self.cases.then = None;
+        self.stop_quit_key_wait(window, cx);
         cx.notify();
     }
     /// Hide the explainer and give focus back to where it was.
@@ -1855,6 +1861,7 @@ impl Workspace {
         if quitting {
             self.cases.quit_asked.push(id);
         }
+        self.cases.mapping_prompt = true;
         self.activate(id, window, cx);
         if dirty {
             self.ask_changes_and_mapping(id, quitting, window, cx);
@@ -1884,12 +1891,15 @@ impl Workspace {
         );
         cx.spawn_in(window, async move |this, cx| {
             let answer = answer.await.ok();
-            let _ = this.update_in(cx, |this, window, cx| match answer {
-                Some(0) if quitting => this.quit_save_case(id, window, cx),
-                Some(0) => this.save_case_and_close(id, window, cx),
-                Some(1) if quitting => this.event(id, &CLOSE_RESOLVED, window, cx),
-                Some(1) => this.close_tab(id, window, cx),
-                _ => this.cancel_mapping_close(id, quitting, window, cx),
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.cases.mapping_prompt = false;
+                match answer {
+                    Some(0) if quitting => this.quit_save_case(id, window, cx),
+                    Some(0) => this.save_case_and_close(id, window, cx),
+                    Some(1) if quitting => this.event(id, &CLOSE_RESOLVED, window, cx),
+                    Some(1) => this.close_tab(id, window, cx),
+                    _ => this.cancel_mapping_close(id, quitting, window, cx),
+                }
             });
         })
         .detach();
@@ -1930,6 +1940,7 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let answer = answer.await.ok();
             let _ = this.update_in(cx, |this, window, cx| {
+                this.cases.mapping_prompt = false;
                 let Some(view) = this.tab_view(id) else {
                     return;
                 };
@@ -2013,17 +2024,16 @@ impl Workspace {
     }
 
     fn quit_create_case(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        // The Keychain explainer comes first: the quit stops so it can be
-        // answered, and the case is saved once it is.
+        // The Keychain explainer comes first; the quit waits for it and goes
+        // on once Continue opens the key. Not now cancels the quit.
         if !self.case_key_ready(
-            move |this, window, cx| {
-                this.create_case(id, window, cx);
-            },
+            move |this, window, cx| this.quit_create_case(id, window, cx),
             cx,
         ) {
-            self.event(id, &CLOSE_CANCELLED, window, cx);
+            self.cases.quit_key_wait = Some(id);
             return;
         }
+        self.cases.quit_key_wait = None;
         let event = if self.create_case(id, window, cx).is_some() {
             CLOSE_RESOLVED
         } else {
@@ -2036,9 +2046,22 @@ impl Workspace {
     /// about again next time.
     pub(super) fn mapping_close_cancelled(&mut self, id: u64) {
         self.cases.quit_case = None;
+        self.cases.quit_key_wait = None;
         self.case_coordinator.forget_asked(id);
         for asked in std::mem::take(&mut self.cases.quit_asked) {
             self.case_coordinator.forget_asked(asked);
+        }
+    }
+
+    /// A question about a mapping is up: a quit waits until it's answered.
+    pub(super) fn mapping_prompt_open(&self) -> bool {
+        self.cases.mapping_prompt
+    }
+
+    /// The Keychain explainer was declined while a quit waited on it.
+    fn stop_quit_key_wait(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(id) = self.cases.quit_key_wait.take() {
+            self.event(id, &CLOSE_CANCELLED, window, cx);
         }
     }
 
