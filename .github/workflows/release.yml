@@ -191,7 +191,7 @@ jobs:
         with:
           name: package-Windows
           path: dist
-      - name: Install, launch, inspect, capture, quit and uninstall
+      - name: Install, launch, inspect, capture, quit and verify uninstall keeps the case key
         shell: pwsh
         env:
           SCENARIO: ${{ matrix.scenario }}
@@ -212,6 +212,12 @@ jobs:
             if (Test-Path (Join-Path $env:RUNNER_TEMP 'mdoc-installed-smoke/mdoc.exe')) { throw 'Negative case did not uninstall.' }
             $global:LASTEXITCODE = 0
           }
+          # Both scenarios must prove key preservation. The expected wrong-title
+          # failure must not hide an uninstall/key failure in the child's finally.
+          if (Test-Path installed-windows-evidence/cleanup-error.txt) {
+            throw (Get-Content installed-windows-evidence/cleanup-error.txt -Raw)
+          }
+          if (-not (Test-Path installed-windows-evidence/case-key.txt)) { throw 'Missing uninstall case-key preservation proof.' }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
