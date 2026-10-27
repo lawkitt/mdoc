@@ -470,6 +470,61 @@ fn quit_through_the_keychain_explainer(cx: &mut TestAppContext, quits: bool) {
 }
 
 #[gpui::test]
+fn try_again_after_a_denied_quit_saves_the_case_without_resolving_a_later_quit(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    active(&tabs, cx).update(cx, |view, cx| view.write(path, None, cx));
+    cx.run_until_parked();
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Err(mdoc_store::cases::CaseError::KeyDenied));
+        tabs.quit(window, cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Save as Case");
+    cx.run_until_parked();
+    draw(cx);
+    let button = cx.debug_bounds("keychain-continue").unwrap();
+    cx.simulate_click(button.center(), Default::default());
+    cx.run_until_parked();
+    // Denied: the quit stops; Try again still owes the case.
+    cx.update(|_, cx| assert!(!tabs.read(cx).quit_flow.quitting()));
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.simulate_input("draft");
+    tabs.update_in(cx, |tabs, window, cx| tabs.quit(window, cx));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Review…");
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Close");
+    cx.run_until_parked();
+    assert!(
+        cx.pending_prompt()
+            .unwrap()
+            .0
+            .starts_with("Save changes to")
+    );
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(store()));
+        tabs.continue_unlock(window, cx);
+    });
+    cx.run_until_parked();
+    // The draft's question is still the one to answer.
+    cx.update(|_, cx| assert!(tabs.read(cx).quit_flow.quitting()));
+    assert!(
+        cx.pending_prompt()
+            .unwrap()
+            .0
+            .starts_with("Save changes to")
+    );
+    assert_eq!(store().list().0.len(), 1);
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+}
+
+#[gpui::test]
 fn discard_all_quits_without_asking_each_tab(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());

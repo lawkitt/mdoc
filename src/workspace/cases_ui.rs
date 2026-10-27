@@ -2026,8 +2026,16 @@ impl Workspace {
     fn quit_create_case(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
         // The Keychain explainer comes first; the quit waits for it and goes
         // on once Continue opens the key. Not now cancels the quit.
+        // A quit cancelled meanwhile (a declined dialog keeps this waiting
+        // for Try again) only gets its case: it must not resolve another quit.
         if !self.case_key_ready(
-            move |this, window, cx| this.quit_create_case(id, window, cx),
+            move |this, window, cx| {
+                if this.cases.quit_key_wait == Some(id) {
+                    this.quit_create_case(id, window, cx);
+                } else {
+                    this.create_case(id, window, cx);
+                }
+            },
             cx,
         ) {
             self.cases.quit_key_wait = Some(id);
