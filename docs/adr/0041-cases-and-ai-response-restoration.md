@@ -34,8 +34,8 @@ map, the better ones one map per case.
   document; tabs without a case keep memory-only mappings. Creating a case
   (**Save mapping as case**, named after the document, renamed inline) is the
   consent to store originals; changes then autosave. The unsaved-mapping
-  question is asked on tab close, not on quit, and can be turned off in
-  Settings → Saved cases. Closed cases open from **File → Open Case…**.
+  question is asked on tab close and on quit ([ADR 0071](0071-one-close-and-quit-prompt.md)),
+  and can be turned off in Settings → Saved cases. Closed cases open from **File → Open Case…**.
 - **Storage.** One `<id>.case` file per case in `mdoc/cases/`: `MDOCCASE1`, a
   12-byte nonce, then AES-256-GCM over JSON, authenticated with the case id. The
   key is a Keychain item on macOS (ADR 0045), a DPAPI-protected `key.dpapi` on

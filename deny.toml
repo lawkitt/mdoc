@@ -23,6 +23,14 @@ ignore = [
     { id = "RUSTSEC-2026-0367", reason = "zip extract() keeps SUID/SGID bits. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
     { id = "RUSTSEC-2026-0368", reason = "zip extract() writes symlinks outside the destination. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
     { id = "RUSTSEC-2026-0369", reason = "zip extract() applies permissions through symlinks. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
+    # zstd 0.13 / zstd-safe 7 (added 2026-10-27): fixed only in zstd 0.14.3 and
+    # zstd-safe 8.2, but zip 8 requires zstd ^0.13 and docxide-pdf requires zip ^8.
+    # zip 8 builds zstd without features (no `legacy`, no `seekable`) and calls only
+    # `zstd::Decoder::with_buffer` (read) and `Encoder::new`, never `with_context`.
+    # Clears with the zip 9 move above. zstd-sys's RUSTSEC-2026-0410 is fixed in 2.1.2.
+    { id = "RUSTSEC-2026-0391", reason = "zstd with_context leaks an abandoned stream into the next. zip 8 never passes a context; blocked on docxide-pdf requiring zip ^8." },
+    { id = "RUSTSEC-2026-0398", reason = "zstd-safe Seekable::decompress overruns a Vec. The seekable feature is off; blocked on docxide-pdf requiring zip ^8." },
+    { id = "RUSTSEC-2026-0403", reason = "zstd-safe legacy-frame stream error exposes memory via the write::Decoder. Legacy is off and zip 8 reads through read::Decoder; blocked on docxide-pdf requiring zip ^8." },
     # zbus 5 subcrates, merged into zbus 6 (no safe upgrade). Linux only, via
     # gpui-pre-linux -> accesskit_unix / atspi; clears when upstream moves to zbus 6.
     { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained (merged into zbus 6). Transitive via gpui-pre-linux -> accesskit_unix/atspi; revisit at each gpui pull." },
