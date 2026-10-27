@@ -49,6 +49,27 @@ fn main() {
         std::env::set_var("GLINER2_DEVICE", "cpu");
     }
     let args = std::env::args_os().collect::<Vec<_>>();
+    if args
+        .get(1)
+        .is_some_and(|arg| arg == "--headless-encode-png")
+    {
+        #[cfg(all(debug_assertions, feature = "headless-renders", target_os = "windows"))]
+        {
+            let result = match args.as_slice() {
+                [_, _, out] => {
+                    workspace::headless_renders::run_png_worker(std::path::Path::new(out))
+                }
+                _ => Err("usage: mdoc --headless-encode-png <output-directory>".into()),
+            };
+            match result {
+                Ok(()) => return,
+                Err(error) => eprintln!("PNG worker failed: {error}"),
+            }
+        }
+        #[cfg(not(all(debug_assertions, feature = "headless-renders", target_os = "windows")))]
+        eprintln!("PNG workers require a Windows dev build with --features headless-renders");
+        std::process::exit(1);
+    }
     if args.get(1).is_some_and(|arg| arg == "--headless-renders") {
         #[cfg(all(
             debug_assertions,
