@@ -37,13 +37,27 @@ review's polish shipped in 0.2.0. Items are in priority order. Until
 five-item box this cycle); rc.1 is cut once every item is done. Each item
 merges to `main` on its own when green.
 
+7. **[Workspace] Folder sheet.** A dropped folder opens every file at once and
+   asks for the Keychain before anything is chosen. Show the files first, read
+   the key only for a case, cap 20 per folder
+   ([ADR 0075](docs/adr/0075-folder-sheet.md)). *From the 2026-10-19 rc.1 run.*
+   *Done when:* a folder drop shows the sheet, Open files never reads the key,
+   and one drop opens at most 20 new tabs.
+8. **[UI] Settings categories.** A category list and one row per setting,
+   everything saved on change ([ADR 0076](docs/adr/0076-settings-categories.md)).
+   *From Anoni 0.86.1.* *Done when:* every current setting is reachable, saved
+   on change and operable by keyboard, in both themes.
+9. **[Cases] Case page.** Documents, names, rename, recolour, categories and
+   delete on one page; Open Case… opens it
+   ([ADR 0077](docs/adr/0077-case-page.md)). *From the 2026-10-17 grooming.*
+   *Done when:* the page ships with those actions, never reads the key on open,
+   and is verified in both themes.
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
 detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c400853/ROADMAP.md#after-010).
 
-- **[Workspace]** Folder drop flow: show what will open, ask for the key only
-  for a case, cap large folders.
 - **[OCR]** OS engines (Apple Vision, `Windows.Media.Ocr`) as the no-download
   default where they beat PP-OCR on our fixtures by character error rate; Vision
   reads Russian from macOS 13, Windows needs the Russian pack. *From Panoply.*
@@ -55,8 +69,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   whether to center is still open, and either way it must not undo #102's
   keep-visible-in-place behavior.
 - **[PII]** Merge hint for identities that very likely name the same subject.
-- **[UI]** Settings redesign with a category list and one row per setting.
-- **[Cases]** Case page (documents, identities, rename, recolor, delete); ADR first.
 - **[UI]** Workspace Back/Forward.
 - **[OCR]** Recover page structure on clean scans, in the AnyDoc/pdf-inspector forks.
 - **[DOCX]** Pseudonymized DOCX export with rdocx, then rdocx for the preview.

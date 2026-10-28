@@ -6,7 +6,9 @@ single copy action. Amended by [ADR 0042](0042-live-before-after-view.md) (live
 view), [ADR 0043](0043-deferred-keychain-access.md) and
 [ADR 0045](0045-prompt-free-case-key.md) (key access),
 [ADR 0048](0048-workspace-shell-redesign.md) (sidebar and header placement), and
-[ADR 0056](0056-captured-ai-reply-fixtures.md) (captured replies).
+[ADR 0056](0056-captured-ai-reply-fixtures.md) (captured replies),
+[ADR 0075](0075-folder-sheet.md) (folder drop) and
+[ADR 0077](0077-case-page.md) (case page, Open Case…, case colour).
 
 ## Problem
 
@@ -35,7 +37,8 @@ map, the better ones one map per case.
   (**Save mapping as case**, named after the document, renamed inline) is the
   consent to store originals; changes then autosave. The unsaved-mapping
   question is asked on tab close and on quit ([ADR 0071](0071-one-close-and-quit-prompt.md)),
-  and can be turned off in Settings → Saved cases. Closed cases open from **File → Open Case…**.
+  and can be turned off in Settings → Saved cases. Closed cases open from **File → Open Case…**, which shows the case page
+  (ADR 0077).
 - **Storage.** One `<id>.case` file per case in `mdoc/cases/`: `MDOCCASE1`, a
   12-byte nonce, then AES-256-GCM over JSON, authenticated with the case id. The
   key is a Keychain item on macOS (ADR 0045), a DPAPI-protected `key.dpapi` on
@@ -60,9 +63,9 @@ map, the better ones one map per case.
 - **Panel footer** folds **In “case”, not in this document (n)**: those names
   with aliases, and a field adding a name to the case; with none it reads
   "Add a name to “case”" (ADR 0046).
-- **Folder drop** opens the folder's supported files sorted by name (subfolders
-  and hidden files skipped and counted) and creates a case named after the
-  folder; each tab joins when its Markdown loads or conversion finishes.
+- **Folder drop** shows the folder sheet (ADR 0075); a case it creates is
+  named after the folder, and each tab joins when its Markdown loads or
+  conversion finishes.
 - **Pseudonymize Clipboard** (File menu, ⌥⇧⌘C, mdoc focused) replaces exact
   whole-word originals of the active case (or live mapping), longest first,
   without detection. A system-wide hotkey is deferred.

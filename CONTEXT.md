@@ -86,6 +86,21 @@ document's state: Pseudonymize, scanning + Cancel, Apply N, Copy for AI.
 **Case section**: a collapsible sidebar group of the tabs of one case; tabs
 without a case sit under "Open".
 
+**Case page**: the transient page in the content card, like Home, giving a
+case's documents, names, colour, categories and delete
+([ADR 0077](docs/adr/0077-case-page.md)).
+
+**Case colour**: one of eight named swatches stored on a case and shown
+wherever the case appears; it never encodes state.
+
+**Folder sheet**: the sheet a dropped folder shows before anything opens: its
+files to tick, Open as case or Open files, at most 20
+([ADR 0075](docs/adr/0075-folder-sheet.md)).
+
+**Settings category**: one entry of the Settings overlay's left list (General,
+Detection, Recognition, Spelling, Cases, About), whose rows show at the right
+([ADR 0076](docs/adr/0076-settings-categories.md)).
+
 ## Models and processing
 
 **OCR**: recognize text from document images when direct extraction is insufficient.

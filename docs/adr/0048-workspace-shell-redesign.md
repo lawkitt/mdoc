@@ -9,6 +9,9 @@ of [ADR 0033](0033-replacements-panel-redesign.md), and the "no per-category
 colours" of [ADR 0046](0046-workspace-polish-from-anoni-review.md).
 Amended by [ADR 0055](0055-stable-compact-mention-popup.md): popup width,
 placement, scope, arrow keys, Enter and Apply all.
+Amended by [ADR 0076](0076-settings-categories.md) (Settings categories)
+and [ADR 0077](0077-case-page.md) (case page from the case header, case
+colour).
 
 ## Problem
 
