@@ -128,6 +128,11 @@ impl Driver {
                     "palette": w.shell.palette.is_some(),
                     "shortcuts": w.shell.shortcuts.is_some(),
                     "settings": w.settings.read(cx).open,
+                    "theme_choice": match w.theme_choice {
+                        ThemeChoice::System => "system",
+                        ThemeChoice::Light => "light",
+                        ThemeChoice::Dark => "dark",
+                    },
                     "dictionary": w.settings.read(cx).dictionary.is_some(),
                     "case_list": w.cases.list_open,
                     "case_rename": w.cases.renaming.is_some(),
@@ -367,10 +372,23 @@ fn scenarios(
         w.settings.update(cx, |p, cx| p.show(window, cx));
     })?;
     d.settle()?;
-    d.key("tab")?;
+    // Capture before the Tab walk scrolls the panel away from Appearance.
+    records.push(d.capture(out, "settings")?);
+    // Start a fresh walk at the panel: the first three stops are Appearance,
+    // followed by the first model row used by the focus-ring contract.
+    d.change(|w, window, cx| {
+        w.settings.update(cx, |p, cx| {
+            p.close(window, cx);
+            p.show(window, cx);
+        });
+    })?;
+    d.settle()?;
+    for _ in 0..4 {
+        d.key("tab")?;
+        d.settle()?;
+    }
     let row = d.change(|_, window, cx| window.focused(cx).expect("first Settings row"))?;
     d.focus_pair(out, "settings-row", row)?;
-    records.push(d.capture(out, "settings")?);
     d.change(|w, window, cx| w.settings.update(cx, |p, cx| p.open_dictionary(window, cx)))?;
     records.push(d.capture(out, "dictionary")?);
     d.key("escape")?;

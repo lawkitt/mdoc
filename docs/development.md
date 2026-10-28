@@ -291,6 +291,8 @@ and a restored AI reply. The legal review uses
 `pseudonymization/corpus.json` annotations as deterministic proposals; Restore
 uses the captured `restore/claude-en` fixture. No detector runs. Platform file
 pickers and the OS Keychain password prompt are outside this app-owned set.
+The Settings baseline starts at Appearance with System, Light and Dark visible;
+its state records the workspace theme choice for each render.
 
 PNGs are 2200 × 1520 (1100 × 760 points at 2×). `summary.json` schema version 1
 contains a record per screen/theme: baseline PNG, ordered `tab_order` entries

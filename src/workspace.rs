@@ -439,6 +439,9 @@ impl Workspace {
         this.settings_subscription =
             Some(
                 cx.subscribe_in(&panel, window, |this, _, event, window, cx| match event {
+                    settings_ui::Event::ThemeSelected(choice) => {
+                        this.select_theme(*choice, window, cx);
+                    }
                     settings_ui::Event::Applied | settings_ui::Event::Checked => {
                         this.refresh_model_settings(cx);
                         // Spelling choices apply at once; views re-read them on render.

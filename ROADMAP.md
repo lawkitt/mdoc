@@ -37,10 +37,6 @@ review's polish shipped in 0.2.0. Items are in priority order. Until
 five-item box this cycle); rc.1 is cut once every item is done. Each item
 merges to `main` on its own when green.
 
-4. **[UI] Theme control.** A System / Light / Dark segmented control in a
-   new Settings → Appearance section at the top; today the sidebar button cycles without showing the choices.
-   *From Anoni 0.86.1.* *Done when:* the choice is visible and persists.
-
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier

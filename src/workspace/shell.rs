@@ -177,6 +177,8 @@ impl Workspace {
     /// open document when the result changes.
     pub(super) fn apply_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let theme = style::resolve(self.theme_choice, window.appearance());
+        self.settings
+            .update(cx, |panel, cx| panel.sync_theme(self.theme_choice, cx));
         if theme == self.theme.get() {
             return;
         }
@@ -196,7 +198,16 @@ impl Workspace {
     }
 
     pub(super) fn cycle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.theme_choice = self.theme_choice.next();
+        self.select_theme(self.theme_choice.next(), window, cx);
+    }
+
+    pub(super) fn select_theme(
+        &mut self,
+        choice: ThemeChoice,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.theme_choice = choice;
         self.apply_theme(window, cx);
         self.checkpoint(window, cx);
         cx.notify();

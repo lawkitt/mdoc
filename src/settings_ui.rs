@@ -14,6 +14,7 @@ use mdoc_import::{
     model_download::{self, Pending, Progress},
     model_work, ocr,
 };
+use mdoc_store::session_store::ThemeChoice;
 use mdoc_store::settings::{
     Model, OcrConfig, OcrModel, PiiConfig, PiiModel, Preferences, Shared, SpellingConfig,
     UpdatesConfig, save,
@@ -27,6 +28,8 @@ actions!(
     [CloseSettings, NextSettingsField, PreviousSettingsField]
 );
 pub enum Event {
+    /// The window owns and persists the theme choice (ADR 0048).
+    ThemeSelected(ThemeChoice),
     Applied,
     Checked,
     Compare(Model),
@@ -72,6 +75,8 @@ pub struct Panel {
     pub advanced: bool,
     pub details: Option<Model>,
     theme: Rc<Cell<Theme>>,
+    /// The window's current choice, projected into this control.
+    theme_choice: ThemeChoice,
     focus: FocusHandle,
     previous: Option<FocusHandle>,
     checks: u64,
@@ -235,6 +240,7 @@ impl Panel {
             advanced: false,
             details: None,
             theme,
+            theme_choice: ThemeChoice::default(),
             focus: cx.focus_handle(),
             previous: None,
             checks: 0,
@@ -284,11 +290,16 @@ impl Panel {
         }));
         cx.notify();
     }
+    pub(crate) fn sync_theme(&mut self, choice: ThemeChoice, cx: &mut Context<Self>) {
+        self.theme_choice = choice;
+        // The resolved theme may change even while System stays selected.
+        cx.notify();
+    }
     /// Open Settings at one feature's models, e.g. from a setup card.
     pub fn show_section(&mut self, model: Model, window: &mut Window, cx: &mut Context<Self>) {
         self.show(window, cx);
         self.scroll
-            .scroll_to_item(if matches!(model, Model::Ocr(_)) { 0 } else { 1 });
+            .scroll_to_item(if matches!(model, Model::Ocr(_)) { 1 } else { 2 });
         cx.notify();
     }
     /// Open Settings at Updates, the last section (the update banner).
@@ -953,6 +964,67 @@ impl gpui::Focusable for Panel {
     }
 }
 
+impl Panel {
+    fn appearance_section(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .mb_4()
+            .child(
+                div()
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child("Appearance"),
+            )
+            .child(
+                div()
+                    .id("settings-theme")
+                    .role(gpui::Role::RadioGroup)
+                    .aria_label("Theme")
+                    .flex()
+                    .gap_2()
+                    .children(
+                        [
+                            (ThemeChoice::System, "System", "settings-theme-system"),
+                            (ThemeChoice::Light, "Light", "settings-theme-light"),
+                            (ThemeChoice::Dark, "Dark", "settings-theme-dark"),
+                        ]
+                        .into_iter()
+                        .map(|(choice, label, id)| {
+                            let selected = self.theme_choice == choice;
+                            self.scrolled_control(id, "", theme, true, cx)
+                                .flex_1()
+                                .flex()
+                                .justify_center()
+                                .role(gpui::Role::RadioButton)
+                                .aria_label(style::theme_label(choice))
+                                .aria_toggled(if selected {
+                                    gpui::Toggled::True
+                                } else {
+                                    gpui::Toggled::False
+                                })
+                                .when(cfg!(test), |v| v.debug_selector(move || id.into()))
+                                .child(
+                                    div()
+                                        .when(cfg!(test) && selected, |v| {
+                                            v.debug_selector(move || format!("{id}-selected"))
+                                        })
+                                        .child(label),
+                                )
+                                .when(selected, |v| {
+                                    v.border_color(theme.search_accent())
+                                        .bg(theme.sidebar_selected())
+                                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                                })
+                                .on_click(cx.listener(move |_, _, _, cx| {
+                                    cx.emit(Event::ThemeSelected(choice))
+                                }))
+                        }),
+                    ),
+            )
+    }
+}
+
 impl Render for Panel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = self.theme.get();
@@ -999,8 +1071,9 @@ impl Render for Panel {
                 .when(self.dictionary.is_some(), |v| v.child(self.dictionary_body(theme, cx)))
                 .when(self.dictionary.is_none(), |v| v.child(div().px_4().pt_4().pb_3().flex().flex_col().gap_1().flex_shrink_0()
                     .child(div().text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).child("Settings"))
-                    .child(div().text_size(px(12.)).text_color(p.header_muted).child("Models run on this computer. Choices apply to your next run."))))
+                    .child(div().text_size(px(12.)).text_color(p.header_muted).child("Appearance applies immediately. Model choices apply to your next run."))))
                 .when(self.dictionary.is_none(), |v| v.child(div().id("settings-scroll").when(cfg!(test), |v| v.debug_selector(|| "settings-scroll".into())).track_scroll(&self.scroll).overflow_y_scroll().min_h_0().flex_1().px_4().pb_3()
+                    .child(self.appearance_section(theme, cx))
                     .child(div().flex().flex_col().gap_2()
                         .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child("Text recognition"))
                         .child(div().text_size(px(11.)).text_color(p.header_muted).child(ocr_note.clone())

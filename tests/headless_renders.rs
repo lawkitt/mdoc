@@ -204,6 +204,9 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     matches!(*name, "settings" | "dictionary"),
                     "stale settings on {theme}/{name}"
                 );
+                if *name == "settings" {
+                    assert_eq!(record["state"]["theme_choice"], theme);
+                }
             }
             png(&out.join(theme).join(record["png"].as_str().unwrap()));
             let tabs = record["tab_order"].as_array().unwrap();

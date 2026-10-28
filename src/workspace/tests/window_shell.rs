@@ -191,6 +191,107 @@ fn toolbar_theme_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn settings_theme_choice_updates_sidebar_and_saved_session(cx: &mut TestAppContext) {
+    cx.update(settings_ui::bind_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session.json");
+    tabs.update(cx, |tabs, _| {
+        tabs.ready = true;
+        tabs.session_writer.set_path(Some(path.clone()));
+    });
+    click_toolbar(cx, "Settings");
+    for (id, choice, theme) in [
+        ("settings-theme-system", ThemeChoice::System, Theme::Light),
+        ("settings-theme-light", ThemeChoice::Light, Theme::Light),
+        ("settings-theme-dark", ThemeChoice::Dark, Theme::Dark),
+    ] {
+        click_toolbar(cx, id);
+        draw(cx);
+        let selected = format!("{id}-selected");
+        assert!(
+            cx.debug_bounds(Box::leak(selected.into_boxed_str()))
+                .is_some()
+        );
+        cx.update(|_, cx| {
+            assert_eq!(tabs.read(cx).theme_choice, choice);
+            assert_eq!(tabs.read(cx).theme.get(), theme);
+            // The sidebar button's live tooltip follows the same choice.
+            assert_eq!(tabs.read(cx).theme_tip.get(), choice);
+        });
+        let saved = session_store::load(&path).unwrap();
+        assert_eq!(saved.theme_choice, choice);
+    }
+    cx.dispatch_action(settings_ui::CloseSettings);
+    cx.run_until_parked();
+    let saved = session_store::load(&path).unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.cycle_theme(window, cx);
+        tabs.restore(saved, window, cx);
+    });
+    click_toolbar(cx, "Settings");
+    assert!(cx.debug_bounds("settings-theme-dark-selected").is_some());
+}
+
+#[gpui::test]
+fn settings_theme_tracks_sidebar_cycle_and_updates_while_mounted(cx: &mut TestAppContext) {
+    cx.update(settings_ui::bind_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    for selected in [
+        "settings-theme-light-selected",
+        "settings-theme-dark-selected",
+        "settings-theme-system-selected",
+    ] {
+        click_toolbar(cx, "theme-toggle");
+        click_toolbar(cx, "Settings");
+        assert!(cx.debug_bounds(selected).is_some(), "{selected}");
+        cx.dispatch_action(settings_ui::CloseSettings);
+        cx.run_until_parked();
+    }
+    click_toolbar(cx, "Settings");
+    // The same transition also updates the mounted panel without reopening it.
+    tabs.update_in(cx, |tabs, window, cx| tabs.cycle_theme(window, cx));
+    cx.run_until_parked();
+    draw(cx);
+    assert!(cx.debug_bounds("settings-theme-light-selected").is_some());
+}
+
+#[gpui::test]
+fn settings_theme_segments_are_first_tab_stops_and_activate_with_enter_and_space(
+    cx: &mut TestAppContext,
+) {
+    cx.update(settings_ui::bind_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(640.), px(480.)));
+    click_toolbar(cx, "Settings");
+    draw(cx);
+    for (key, choice) in [
+        ("enter", ThemeChoice::System),
+        ("space", ThemeChoice::Light),
+        ("enter", ThemeChoice::Dark),
+    ] {
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.simulate_keystrokes(key);
+        cx.simulate_event(gpui::KeyUpEvent {
+            keystroke: gpui::Keystroke::parse(key).unwrap(),
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| assert_eq!(tabs.read(cx).theme_choice, choice));
+    }
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    cx.simulate_keystrokes("space");
+    cx.simulate_event(gpui::KeyUpEvent {
+        keystroke: gpui::Keystroke::parse("space").unwrap(),
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).theme_choice, ThemeChoice::Light));
+}
+
+#[gpui::test]
 fn toolbar_preview_toggle_works_without_editor_focus(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(1400.), px(850.)));
