@@ -430,6 +430,11 @@ mod contrast_tests {
                     ("muted text", p.header_muted, chrome),
                     ("placeholder text", p.placeholder_fg, rows),
                     ("focused control text", theme.search_accent(), rows),
+                    (
+                        "selected theme segment text",
+                        p.header_fg,
+                        &[("selected segment", theme.sidebar_selected())],
+                    ),
                     ("applied alias", theme.applied(), rows),
                     ("destructive menu row", m.popover_danger, rows),
                     ("tooltip text", p.header_fg, &[hover]),
@@ -465,12 +470,18 @@ mod contrast_tests {
             ]
             .map(|c| (format!("{c:?} category"), theme.category(c)));
             let its_box = [("its box", fill)];
+            let theme_segment = [("selected segment", theme.sidebar_selected())];
             let mut marks: Vec<Pair> = vec![
                 ("ticked checkbox", fill, rows),
                 ("checkbox tick", tick, &its_box),
                 ("proposed ring", theme.proposed(), rows),
                 ("applied ring", theme.applied(), rows),
                 ("focus accent", theme.search_accent(), rows),
+                (
+                    "selected theme segment border",
+                    theme.search_accent(),
+                    &theme_segment,
+                ),
             ];
             for (name, color) in &categories {
                 marks.push((name.as_str(), *color, page));
