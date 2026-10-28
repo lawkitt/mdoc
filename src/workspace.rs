@@ -246,8 +246,10 @@ pub(super) struct Workspace {
     /// Keyboard input source languages for recognition defaults; tests
     /// inject their own so they never read this computer's keyboards.
     pub(super) input_languages: fn() -> Vec<mdoc_import::recognition::Language>,
-    pending_open: Vec<PathBuf>,
-    /// Paths wait in `pending_open` for a confirm dialog to be answered.
+    /// Opens that wait for launch, or for a dialog to be answered, whole:
+    /// their paths, sidebar position and case header (ADR 0075).
+    pending_open: Vec<(Vec<PathBuf>, Option<usize>, Option<String>)>,
+    /// Opens wait in `pending_open` for a dialog to be answered.
     awaiting_prompt: bool,
     notices: notices::Notices,
     tab_menu: Option<(u64, gpui::Point<gpui::Pixels>)>,
@@ -868,9 +870,8 @@ impl Workspace {
         }
         let active = self.tabs[selected.min(self.tabs.len() - 1)].id();
         self.activate(active, window, cx);
-        let pending = std::mem::take(&mut self.pending_open);
-        if !pending.is_empty() {
-            self.open_paths(pending, window, cx);
+        for (paths, at, case) in std::mem::take(&mut self.pending_open) {
+            self.open_paths_into(paths, at, case, window, cx);
         }
         cx.notify();
     }
@@ -999,6 +1000,8 @@ impl Workspace {
                 if let Ok(document) = &result {
                     this.tabs.set_identity(id, document.path.clone());
                 }
+                // A dialog keeps the keyboard while the document loads behind it.
+                let dialog = this.dialog_up(window);
                 let _ = weak.update(cx, |view, cx| {
                     if !view.lifecycle.finish_load(generation, result.is_ok()) {
                         return;
@@ -1024,7 +1027,7 @@ impl Workspace {
                             {
                                 view.open_path(path, window, cx);
                             }
-                            if view.active {
+                            if view.active && !dialog {
                                 window.focus(&view.editor.read(cx).focus_handle(cx), cx);
                             }
                         }
@@ -1149,9 +1152,8 @@ impl Workspace {
                         return false;
                     }
                     this.awaiting_prompt = false;
-                    let pending = std::mem::take(&mut this.pending_open);
-                    if !pending.is_empty() {
-                        this.open_paths(pending, window, cx);
+                    for (paths, at, case) in std::mem::take(&mut this.pending_open) {
+                        this.open_paths_into(paths, at, case, window, cx);
                     }
                     true
                 });
@@ -1163,9 +1165,10 @@ impl Workspace {
         .detach();
     }
 
-    /// A confirm dialog or a folder sheet keeps focus until answered.
+    /// A confirm dialog, the Keychain explainer or a folder sheet keeps
+    /// focus until answered.
     fn dialog_up(&self, window: &Window) -> bool {
-        window.has_active_prompt() || self.folder_sheets.open()
+        window.has_active_prompt() || self.cases.explainer || self.folder_sheets.open()
     }
 
     /// Open paths as new tabs before the tab now at `at` (ADR 0028), or after
@@ -1192,14 +1195,14 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         if !self.ready {
-            self.pending_open.extend(paths);
+            self.pending_open.push((paths, at, case));
             return;
         }
         // Opening activates a tab and takes focus; a confirm dialog keeps it
         // until answered, and the paths open after (ADR 0064). Checked before
         // quitting, so a cancelled quit still opens them.
         if self.dialog_up(window) {
-            self.pending_open.extend(paths);
+            self.pending_open.push((paths, at, case));
             self.open_after_prompt(window, cx);
             return;
         }
@@ -1228,7 +1231,7 @@ impl Workspace {
             let _ = this.update_in(cx, |this, window, cx| {
                 // A dialog that came up while the paths resolved keeps focus.
                 if this.dialog_up(window) {
-                    this.pending_open.extend(requested);
+                    this.pending_open.push((requested, at, case));
                     this.open_after_prompt(window, cx);
                     return;
                 }

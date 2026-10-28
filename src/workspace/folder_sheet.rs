@@ -136,6 +136,9 @@ pub(super) struct Pending {
 }
 
 pub(super) struct Sheet {
+    /// Which shown sheet this is, so a late Keychain answer for one sheet
+    /// never acts on the next.
+    id: u64,
     name: String,
     skipped: Option<String>,
     rows: Vec<Row>,
@@ -173,6 +176,7 @@ impl Sheet {
             })
             .collect();
         Self {
+            id: 0,
             name: folder.name.clone(),
             skipped: folder.skipped(),
             rows,
@@ -181,6 +185,9 @@ impl Sheet {
             refused: false,
             at,
         }
+    }
+    pub fn id(&self) -> u64 {
+        self.id
     }
     pub fn name(&self) -> &str {
         &self.name
@@ -267,6 +274,7 @@ impl Sheet {
 pub(super) struct FolderSheets {
     shown: Option<Sheet>,
     queue: VecDeque<Pending>,
+    shown_count: u64,
     /// The shown sheet's case action waits on the Keychain explainer.
     key_wait: bool,
 }
@@ -281,7 +289,9 @@ impl FolderSheets {
         }
         self.queue.pop_front()
     }
-    pub fn show(&mut self, sheet: Sheet) {
+    pub fn show(&mut self, mut sheet: Sheet) {
+        self.shown_count += 1;
+        sheet.id = self.shown_count;
         self.shown = Some(sheet);
         self.key_wait = false;
     }

@@ -3,9 +3,9 @@
 //! Open files and Cancel. Open files never touches the case key; the case
 //! actions read it only after the click.
 use super::{
-    Close, Import, New, NextTab, Open, OpenCase, OpenPalette, PreviousTab, RetryDocument, Settings,
-    ToggleSidebar, Workspace,
-    folder_sheet::{CAP_NOTE, DroppedFolder, Pending, Sheet, Status, Target},
+    Close, Import, New, NextTab, Open, OpenCase, OpenPalette, PasteAiResponse, PreviousTab,
+    PseudonymizeClipboard, RetryDocument, Settings, ToggleSidebar, Workspace,
+    folder_sheet::{CAP, CAP_NOTE, DroppedFolder, Pending, Sheet, Status, Target},
     shortcuts_ui::ShowShortcuts,
 };
 use crate::{style, ui};
@@ -199,7 +199,19 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> (Vec<u64>, Vec<u64>) {
-        let paths = sheet.ticked().into_iter().map(|p| (p, true)).collect();
+        // The cap holds against the tabs open now, not when the sheet showed.
+        let mut new = 0;
+        let paths = sheet
+            .ticked()
+            .into_iter()
+            .filter(|path| {
+                self.open_tab_for(path, cx).is_some() || {
+                    new += 1;
+                    new <= CAP
+                }
+            })
+            .map(|path| (path, true))
+            .collect();
         self.finish_open(paths, at, window, cx)
     }
 
@@ -215,19 +227,23 @@ impl Workspace {
         {
             return;
         }
-        if !self.case_key_ready(|this, window, cx| this.folder_case_now(window, cx), cx) {
+        let id = self.folder_sheets.sheet().map_or(0, Sheet::id);
+        if !self.case_key_ready(
+            move |this, window, cx| this.folder_case_now(id, window, cx),
+            cx,
+        ) {
             self.folder_sheets.set_waiting(true);
             return;
         }
-        self.folder_case_now(window, cx);
+        self.folder_case_now(id, window, cx);
     }
 
     /// The key is readable: open the ticked files into the case. Without it
     /// they open without a case, and a notice says so.
-    fn folder_case_now(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // Try again after a declined dialog: the sheet already opened its
-        // files without a case.
-        if self.folder_sheets.sheet().is_none() {
+    fn folder_case_now(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        // Only for the sheet that asked: after a declined dialog its files
+        // opened without a case, and Try again must not answer the next.
+        if self.folder_sheets.sheet().is_none_or(|s| s.id() != id) {
             return;
         }
         if let Err(error) = self.case_store() {
@@ -400,11 +416,21 @@ impl Workspace {
 
     pub(super) fn folder_sheet_view(
         &self,
-        window: &Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let sheet = self.folder_sheets.sheet()?;
         let focus = self.folder_sheet_focus.as_ref()?;
+        // The sheet keeps focus while it is the top dialog: a document that
+        // finishes loading behind it must not take the keyboard.
+        if !self.cases.explainer
+            && !window.has_active_prompt()
+            && !focus.group.contains_focused(window, cx)
+            && let Some(row) = focus.rows.get(sheet.cursor())
+            && !row.is_focused(window)
+        {
+            window.focus(row, cx);
+        }
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let (fill, mark) = theme.checkbox();
@@ -536,6 +562,11 @@ impl Workspace {
                             .on_action(|_: &PreviousTab, _, _| {})
                             .on_action(|_: &ToggleSidebar, _, _| {})
                             .on_action(|_: &RetryDocument, _, _| {})
+                            .on_action(|_: &super::shell::ShowHome, _, _| {})
+                            .on_action(|_: &super::shell::PasteAsNewTab, _, _| {})
+                            .on_action(|_: &PasteAiResponse, _, _| {})
+                            .on_action(|_: &PseudonymizeClipboard, _, _| {})
+                            .on_action(|_: &crate::pii::ui::PiiApplyAll, _, _| {})
                             .key_context("FolderSheet UiPanel")
                             .track_focus(&focus.group)
                             .tab_group()

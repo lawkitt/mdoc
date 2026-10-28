@@ -2,7 +2,9 @@
 //! anything opens; Open files never reads the case key; one folder opens at
 //! most 20 new tabs.
 use super::*;
+use crate::workspace::ShowHome;
 use crate::workspace::folder_sheet::{CAP, CAP_NOTE, Status};
+use gpui::Action;
 use mdoc_store::cases::{Case, CaseError, Store};
 
 fn store(dir: &std::path::Path) -> Store {
@@ -515,4 +517,127 @@ fn no_documents(tabs: &Workspace) -> bool {
     tabs.tabs
         .iter()
         .all(|t| t.record().markdown.as_os_str().is_empty() && t.record().attachment.is_none())
+}
+
+#[gpui::test]
+fn a_declined_key_never_answers_a_later_sheet(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let a = folder(dir.path(), "A", &["a.md"]);
+    let b = folder(dir.path(), "B", &["b.md"]);
+    let c = folder(dir.path(), "C", &["c.md"]);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update(cx, |tabs, _| tabs.stage_case_key(Err(CaseError::KeyDenied)));
+    drop_paths(&tabs, cx, vec![a, b, c]);
+    // A: the Keychain is declined, so its file opens without a case.
+    cx.simulate_keystrokes("enter");
+    draw(cx);
+    click_toolbar(cx, "keychain-continue");
+    assert_eq!(tab_names(&tabs, cx), ["a.md"]);
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).folder_sheets.sheet().unwrap().name(), "B"));
+    // B: this time the key opens. A's leftover action must not answer C.
+    tabs.update(cx, |tabs, _| tabs.stage_case_key(Ok(store(dir.path()))));
+    cx.simulate_keystrokes("enter");
+    draw(cx);
+    click_toolbar(cx, "keychain-continue");
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert_eq!(tabs.folder_sheets.sheet().map(|s| s.name()), Some("C"));
+        assert_eq!(tabs.case_coordinator.cases().len(), 1);
+        assert_eq!(tabs.case_coordinator.cases()[0].name, "B");
+    });
+    assert_eq!(tab_names(&tabs, cx), ["a.md", "b.md"]);
+}
+
+#[gpui::test]
+fn the_cap_holds_against_tabs_closed_behind_the_sheet(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let names: Vec<String> = (1..=21).map(|n| format!("{n:02}.md")).collect();
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let path = folder(dir.path(), "Big", &refs);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    drop_paths(&tabs, cx, vec![path.join("21.md")]);
+    drop_paths(&tabs, cx, vec![path]);
+    // Window commands wait: Home and Close don't act behind the sheet.
+    for action in [ShowHome.boxed_clone(), Close.boxed_clone()] {
+        cx.update(|window, cx| window.dispatch_action(action, cx));
+        cx.run_until_parked();
+        draw(cx);
+        assert_eq!(focused_row(&tabs, cx), Some(0));
+        cx.update(|_, cx| assert!(!tabs.read(cx).showing_home(cx)));
+    }
+    // All 21 are ticked; if the open one goes anyway, 20 still open.
+    let open = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| tabs.remove(open, window, cx));
+    click_toolbar(cx, "folder-open-files");
+    assert_eq!(tab_names(&tabs, cx).len(), CAP);
+}
+
+#[gpui::test]
+fn the_sheet_keeps_the_keyboard_while_a_loose_file_loads(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = folder(dir.path(), "Matter", &["a.md", "b.md"]);
+    let loose = dir.path().join("loose.md");
+    std::fs::write(&loose, "Loose").unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    drop_paths(&tabs, cx, vec![loose, path]);
+    let loose = active(&tabs, cx);
+    cx.update(|_, cx| assert!(!loose.read(cx).lifecycle.loading()));
+    assert_eq!(focused_row(&tabs, cx), Some(0));
+    cx.simulate_keystrokes("space");
+    let ticks: Vec<bool> = sheet_rows(&tabs, cx).into_iter().map(|r| r.2).collect();
+    assert_eq!(
+        ticks,
+        [false, true],
+        "Space reaches the sheet, not the document"
+    );
+}
+
+#[gpui::test]
+fn a_folder_waits_for_the_keychain_explainer(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.stage_case_key(Ok(store(dir.path())));
+        tabs.create_case(tab, window, cx);
+    });
+    draw(cx);
+    assert!(cx.debug_bounds("keychain-explainer").is_some());
+    let other = tempfile::tempdir().unwrap();
+    drop_paths(&tabs, cx, vec![folder(other.path(), "Later", &["x.md"])]);
+    assert!(!sheet_open(&tabs, cx), "no sheet under the explainer");
+    cx.simulate_keystrokes("escape");
+    wait(cx, 200);
+    assert!(sheet_open(&tabs, cx));
+    assert_eq!(focused_row(&tabs, cx), Some(0));
+}
+
+#[gpui::test]
+fn a_deferred_drop_keeps_its_case_header(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let case = tabs
+        .update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx))
+        .unwrap();
+    cx.run_until_parked();
+    let other = tempfile::tempdir().unwrap();
+    let path = folder(other.path(), "Unrelated", &["note.md"]);
+    tabs.update(cx, |tabs, cx| tabs.install_prompts(cx));
+    // Kept alive: dropping the answer dismisses the prompt.
+    let _answer =
+        cx.update(|window, cx| window.prompt(gpui::PromptLevel::Info, "Busy", None, &["OK"], cx));
+    cx.run_until_parked();
+    cx.update(|window, _| assert!(window.has_active_prompt()));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths_into(vec![path], None, Some(case), window, cx)
+    });
+    cx.run_until_parked();
+    assert!(!sheet_open(&tabs, cx));
+    cx.simulate_keystrokes("escape");
+    wait(cx, 200);
+    cx.update(|_, cx| {
+        let sheet = tabs.read(cx).folder_sheets.sheet().unwrap();
+        assert_eq!(sheet.primary_label(), "Add to “contract”");
+    });
 }
