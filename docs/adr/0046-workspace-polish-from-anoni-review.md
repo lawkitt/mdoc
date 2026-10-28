@@ -27,7 +27,10 @@ local-only note and more before/after views.
 3. **Zero-count footer.** With nothing to list, the case footer reads "Add a
    name to “case”" and still opens the field.
 4. **Restore with nothing restored** reads "Nothing to restore · No placeholders
-   found in this reply." The restore bar otherwise stays as in ADR 0041.
+   found in this reply." Otherwise the bar reads "AI reply restored · The N
+   restored names are proposals. Apply turns them back into aliases before
+   you send the text to the AI again." (one count, the mentions; singular "The
+   restored name is a proposal…"), then the unrecognized-placeholder sentence.
 5. **Category groups** in the Replacements panel: fixed category order (the
    category menu's), empty groups hidden, entities in identity creation order.
    Category headers are not collapsible or focusable; keyboard navigation and

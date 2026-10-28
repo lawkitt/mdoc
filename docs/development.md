@@ -349,6 +349,17 @@ skill) read this section for mdoc's needs.
   `windows-lane-2` on `windows`, `wsl-lane-1` on `wsl`. Each task starts with
   `git switch -c <machine>/<topic> origin/main`.
   Retire other worktrees with `just retire-worktree <path>` once merged.
+  A third lane (`windows-lane-3`) is added only when `df` shows room for
+  another 30 GiB with margin.
+- **Cheap sub-agents.** A lane thread may hand simple subtasks (call-site
+  sweeps, running tests and summarizing failures, the `changes/` fragment,
+  checking headless renders) to a cheap model: Codex threads to
+  `gpt-6.1-terra` (xhigh; max only to retry a failed sub-agent), Claude
+  threads to `claude-haiku-5-5` (max). Design, fixes and judgment stay with
+  the thread's own model.
+- **Reviews before a PR.** Claude PRs get a Codex review (`gpt-6.1-sol`,
+  high); Codex PRs get a `claude-haiku-5-5` (max) review. Findings are fixed
+  or answered in the PR body.
 - **Native checks.** The [acceptance](platform-acceptance.md) checklist runs
   by computer use (see [ADR 0057](adr/0057-native-platform-acceptance.md));
   rows that need a physical keyboard, speech, passwords or system settings
