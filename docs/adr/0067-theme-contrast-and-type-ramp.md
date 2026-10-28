@@ -17,13 +17,15 @@ light. Two labels also used 9 px text.
 - **Text contrast (WCAG 2.2, 1.4.3).** Text reaches 4.5:1 on every ground
   it is drawn on, in light and dark. Chrome text is checked on the card, the
   sidebar, a hovered row and the selected row; panel and menu text on the
-  card and a hovered row; category colours, which mention words and popup
+  card and a hovered row; Appearance text on the selected segment fill;
+  category colours, which mention words and popup
   aliases are drawn in, on the card and a hovered row; applied aliases in the
   editor on their own tint, at rest and active; Markdown styles (links, code, quotes, alerts) on
   the card. Alpha colours are blended onto their ground first.
 - **Non-text contrast (1.4.11).** What a control needs to be seen reaches
   3:1: ticked checkboxes and their tick, category dots and underlines, the
-  proposed and applied rings, and the focus accent.
+  proposed and applied rings, the selected Appearance segment's border,
+  and the focus accent.
 - **Exemptions.**
   - Syntax markers (`**`, `#`, `[ ]( )`) stay dimmed. They repeat what the
     rendered style already shows, and full-strength markers would compete

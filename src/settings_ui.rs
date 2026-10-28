@@ -77,6 +77,8 @@ pub struct Panel {
     theme: Rc<Cell<Theme>>,
     /// The window's current choice, projected into this control.
     theme_choice: ThemeChoice,
+    #[cfg(all(debug_assertions, feature = "headless-renders"))]
+    appearance_bounds: Rc<Cell<Option<[gpui::Bounds<gpui::Pixels>; 3]>>>,
     focus: FocusHandle,
     previous: Option<FocusHandle>,
     checks: u64,
@@ -241,6 +243,8 @@ impl Panel {
             details: None,
             theme,
             theme_choice: ThemeChoice::default(),
+            #[cfg(all(debug_assertions, feature = "headless-renders"))]
+            appearance_bounds: Rc::default(),
             focus: cx.focus_handle(),
             previous: None,
             checks: 0,
@@ -294,6 +298,24 @@ impl Panel {
         self.theme_choice = choice;
         // The resolved theme may change even while System stays selected.
         cx.notify();
+    }
+    #[cfg(all(debug_assertions, feature = "headless-renders"))]
+    pub(crate) fn selected_theme(&self) -> ThemeChoice {
+        self.theme_choice
+    }
+    /// Geometry from the three actual segments, cleared before each render:
+    /// an omitted section or a choice below the fold cannot pass the contract.
+    #[cfg(all(debug_assertions, feature = "headless-renders"))]
+    pub(crate) fn appearance_in_view(&self) -> bool {
+        self.open
+            && self.dictionary.is_none()
+            && self.appearance_bounds.get().is_some_and(|segments| {
+                segments.iter().all(|bounds| {
+                    bounds.size.width > px(0.)
+                        && bounds.size.height > px(0.)
+                        && bounds.is_contained_within(&self.scroll.bounds())
+                })
+            })
     }
     /// Open Settings at one feature's models, e.g. from a setup card.
     pub fn show_section(&mut self, model: Model, window: &mut Window, cx: &mut Context<Self>) {
@@ -978,6 +1000,19 @@ impl Panel {
             )
             .child(
                 div()
+                    .map(|v| {
+                        #[cfg(all(debug_assertions, feature = "headless-renders"))]
+                        {
+                            let bounds = self.appearance_bounds.clone();
+                            v.on_children_prepainted(move |children, _, _| {
+                                bounds.set(children.try_into().ok())
+                            })
+                        }
+                        #[cfg(not(all(debug_assertions, feature = "headless-renders")))]
+                        {
+                            v
+                        }
+                    })
                     .id("settings-theme")
                     .role(gpui::Role::RadioGroup)
                     .aria_label("Theme")
@@ -997,7 +1032,7 @@ impl Panel {
                                 .flex()
                                 .justify_center()
                                 .role(gpui::Role::RadioButton)
-                                .aria_label(style::theme_label(choice))
+                                .aria_label(label)
                                 .aria_toggled(if selected {
                                     gpui::Toggled::True
                                 } else {
@@ -1027,6 +1062,8 @@ impl Panel {
 
 impl Render for Panel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(all(debug_assertions, feature = "headless-renders"))]
+        self.appearance_bounds.set(None);
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let accent = theme.search_accent();
@@ -1071,7 +1108,7 @@ impl Render for Panel {
                 .when(self.dictionary.is_some(), |v| v.child(self.dictionary_body(theme, cx)))
                 .when(self.dictionary.is_none(), |v| v.child(div().px_4().pt_4().pb_3().flex().flex_col().gap_1().flex_shrink_0()
                     .child(div().text_size(px(18.)).font_weight(gpui::FontWeight::SEMIBOLD).child("Settings"))
-                    .child(div().text_size(px(12.)).text_color(p.header_muted).child("Appearance applies immediately. Model choices apply to your next run."))))
+                    .child(div().text_size(px(12.)).text_color(p.header_muted).child("Appearance applies immediately. Models run on this computer; choices apply to your next run."))))
                 .when(self.dictionary.is_none(), |v| v.child(div().id("settings-scroll").when(cfg!(test), |v| v.debug_selector(|| "settings-scroll".into())).track_scroll(&self.scroll).overflow_y_scroll().min_h_0().flex_1().px_4().pb_3()
                     .child(self.appearance_section(theme, cx))
                     .child(div().flex().flex_col().gap_2()

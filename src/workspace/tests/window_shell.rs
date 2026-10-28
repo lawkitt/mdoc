@@ -202,18 +202,29 @@ fn settings_theme_choice_updates_sidebar_and_saved_session(cx: &mut TestAppConte
         tabs.session_writer.set_path(Some(path.clone()));
     });
     click_toolbar(cx, "Settings");
-    for (id, choice, theme) in [
-        ("settings-theme-system", ThemeChoice::System, Theme::Light),
-        ("settings-theme-light", ThemeChoice::Light, Theme::Light),
-        ("settings-theme-dark", ThemeChoice::Dark, Theme::Dark),
+    for (id, selected, choice, theme) in [
+        (
+            "settings-theme-system",
+            "settings-theme-system-selected",
+            ThemeChoice::System,
+            Theme::Light,
+        ),
+        (
+            "settings-theme-light",
+            "settings-theme-light-selected",
+            ThemeChoice::Light,
+            Theme::Light,
+        ),
+        (
+            "settings-theme-dark",
+            "settings-theme-dark-selected",
+            ThemeChoice::Dark,
+            Theme::Dark,
+        ),
     ] {
         click_toolbar(cx, id);
         draw(cx);
-        let selected = format!("{id}-selected");
-        assert!(
-            cx.debug_bounds(Box::leak(selected.into_boxed_str()))
-                .is_some()
-        );
+        assert!(cx.debug_bounds(selected).is_some());
         cx.update(|_, cx| {
             assert_eq!(tabs.read(cx).theme_choice, choice);
             assert_eq!(tabs.read(cx).theme.get(), theme);
@@ -263,7 +274,13 @@ fn settings_theme_segments_are_first_tab_stops_and_activate_with_enter_and_space
     cx: &mut TestAppContext,
 ) {
     cx.update(settings_ui::bind_keys);
-    let (tabs, cx) = boot_home(cx, Session::default());
+    let (tabs, cx) = boot_home(
+        cx,
+        Session {
+            theme_choice: ThemeChoice::Dark,
+            ..Session::default()
+        },
+    );
     cx.simulate_resize(size(px(640.), px(480.)));
     click_toolbar(cx, "Settings");
     draw(cx);

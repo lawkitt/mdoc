@@ -128,6 +128,8 @@ impl Driver {
                     "palette": w.shell.palette.is_some(),
                     "shortcuts": w.shell.shortcuts.is_some(),
                     "settings": w.settings.read(cx).open,
+                    "settings_theme_choice": w.settings.read(cx).selected_theme(),
+                    "appearance_in_view": w.settings.read(cx).appearance_in_view(),
                     "theme_choice": match w.theme_choice {
                         ThemeChoice::System => "system",
                         ThemeChoice::Light => "light",
