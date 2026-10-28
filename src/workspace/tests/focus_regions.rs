@@ -28,6 +28,19 @@ fn app_commands_work_without_control_focus(cx: &mut TestAppContext) {
     cx.dispatch_action(Settings);
     cx.run_until_parked();
     cx.update(|_, cx| assert!(tabs.read(cx).settings.read(cx).open));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.settings
+            .update(cx, |panel, cx| panel.close(window, cx));
+        window.blur(cx);
+    });
+    draw(cx);
+    cx.dispatch_action(crate::menus::About);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let settings = tabs.read(cx).settings.read(cx);
+        assert!(settings.open);
+        assert_eq!(settings.category(), settings_ui::Category::About);
+    });
 }
 
 #[gpui::test]

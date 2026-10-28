@@ -408,6 +408,23 @@ fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Public build label, using the same runtime identity as case storage (ADR 0045).
+/// This inspects signing metadata only; it never reads the case key.
+pub fn build_identity() -> &'static str {
+    #[cfg(target_os = "macos")]
+    match key::keychain() {
+        key::Keychain::Protected => "Protected",
+        key::Keychain::Release => "Release",
+        key::Keychain::Dev => "Dev",
+    }
+    #[cfg(not(target_os = "macos"))]
+    if cfg!(debug_assertions) {
+        "Dev"
+    } else {
+        "Release"
+    }
+}
+
 /// The 256-bit case key, created once and held by the operating system.
 mod key {
     use super::{CaseError, Generate, Path};

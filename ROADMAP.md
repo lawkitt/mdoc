@@ -37,10 +37,6 @@ review's polish shipped in 0.2.0. Items are in priority order. Until
 five-item box this cycle); rc.1 is cut once every item is done. Each item
 merges to `main` on its own when green.
 
-8. **[UI] Settings categories.** A category list and one row per setting,
-   everything saved on change ([ADR 0076](docs/adr/0076-settings-categories.md)).
-   *From Anoni 0.86.1.* *Done when:* every current setting is reachable, saved
-   on change and operable by keyboard, in both themes.
 9. **[Cases] Case page.** Documents, names, rename, recolour, categories and
    delete on one page; Open Case… opens it
    ([ADR 0077](docs/adr/0077-case-page.md)). *From the 2026-10-17 grooming.*

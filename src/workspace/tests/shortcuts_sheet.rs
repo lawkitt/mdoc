@@ -183,6 +183,33 @@ fn shortcuts_over_settings_keep_document_commands_blocked(cx: &mut TestAppContex
     cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), "original"));
 }
 
+#[gpui::test]
+fn settings_shortcuts_row_opens_sheet_and_restores_row_focus(cx: &mut TestAppContext) {
+    cx.update(crate::bind_all_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    cx.update(|window, _| window.activate_window());
+    click_toolbar(cx, "Settings");
+    // Reverse from the selected category: close, Reset, then shortcuts.
+    key(cx, "shift-tab");
+    key(cx, "shift-tab");
+    key(cx, "shift-tab");
+    let row_focus = cx.update(|window, cx| window.focused(cx).unwrap());
+    assert!(cx.debug_bounds("settings-shortcuts").is_some());
+    activate_control(cx);
+    assert!(sheet_open(&tabs, cx));
+    assert!(cx.debug_bounds("shortcuts-sheet").is_some());
+    assert_eq!(drawn_rows(cx), shortcuts::rows().count());
+    key(cx, "escape");
+    assert!(!sheet_open(&tabs, cx));
+    cx.update(|window, cx| {
+        let panel = tabs.read(cx).settings.read(cx);
+        assert!(panel.open);
+        assert_eq!(panel.category(), settings_ui::Category::General);
+        assert_eq!(window.focused(cx), Some(row_focus));
+    });
+}
+
 struct Other(gpui::FocusHandle);
 impl Render for Other {
     fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {

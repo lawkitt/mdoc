@@ -12,8 +12,9 @@ pub(crate) fn bind(cx: &mut App) {
     });
     app_action::<crate::menus::About>(cx, |this, window, cx| {
         window.activate_window();
-        this.settings
-            .update(cx, |panel, cx| panel.show_updates(window, cx));
+        this.settings.update(cx, |panel, cx| {
+            panel.show_category(crate::settings_ui::Category::About, window, cx)
+        });
     });
     app_action::<New>(cx, |this, window, cx| {
         if this.ready && !this.quit_flow.quitting() {
