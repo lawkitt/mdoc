@@ -115,7 +115,8 @@ if [ -n "$fragment_list" ]; then
     }
     skip && /^[[:space:]]*$/ { next }
     { skip = 0; print }
-  ' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+  ' CHANGELOG.md >CHANGELOG.md.tmp
+  mv CHANGELOG.md.tmp CHANGELOG.md
   rm "$block"
   # shellcheck disable=SC2086 # fragment names have no spaces (checked above)
   git rm --quiet $fragment_list
@@ -125,7 +126,8 @@ if [ "$stable" = 1 ]; then
   awk -v head="## [$new] - $today" '
     !done && /^## Unreleased/ { print; print ""; print head; done = 1; next }
     { print }
-  ' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+  ' CHANGELOG.md >CHANGELOG.md.tmp
+  mv CHANGELOG.md.tmp CHANGELOG.md
 fi
 
 git add Cargo.toml Cargo.lock resources/Info.plist CHANGELOG.md
