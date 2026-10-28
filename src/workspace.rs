@@ -37,6 +37,8 @@ mod cases_ui;
 mod docx_queue;
 use docx_queue::{DocxEffect, DocxJob};
 mod focus_regions;
+mod folder_sheet;
+mod folder_sheet_ui;
 #[cfg(all(
     debug_assertions,
     feature = "headless-renders",
@@ -256,6 +258,9 @@ pub(super) struct Workspace {
     quit_summary: bool,
     session_writer: session_writer::SessionWriter<Session>,
     cases: cases_ui::CaseState,
+    /// Dropped folders' sheets, one at a time (ADR 0075).
+    folder_sheets: folder_sheet::FolderSheets,
+    folder_sheet_focus: Option<folder_sheet_ui::SheetFocus>,
     case_coordinator: case_coordinator::CaseCoordinator<gpui::AnyWindowHandle>,
     /// The sidebar's theme pick; `theme` holds what it resolves to (ADR 0048).
     theme_choice: ThemeChoice,
@@ -420,6 +425,8 @@ impl Workspace {
             quit_summary: false,
             session_writer: session_writer::SessionWriter::new(None),
             cases: Default::default(),
+            folder_sheets: Default::default(),
+            folder_sheet_focus: None,
             case_coordinator: Default::default(),
             theme_choice: ThemeChoice::default(),
             theme_tip: Rc::default(),
@@ -1138,7 +1145,7 @@ impl Workspace {
                     .timer(std::time::Duration::from_millis(100))
                     .await;
                 let open = this.update_in(cx, |this, window, cx| {
-                    if window.has_active_prompt() {
+                    if this.dialog_up(window) {
                         return false;
                     }
                     this.awaiting_prompt = false;
@@ -1156,12 +1163,31 @@ impl Workspace {
         .detach();
     }
 
+    /// A confirm dialog or a folder sheet keeps focus until answered.
+    fn dialog_up(&self, window: &Window) -> bool {
+        window.has_active_prompt() || self.folder_sheets.open()
+    }
+
     /// Open paths as new tabs before the tab now at `at` (ADR 0028), or after
     /// the last tab. Already-open paths keep their position.
     pub fn open_paths_at(
         &mut self,
         paths: Vec<PathBuf>,
         at: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_paths_into(paths, at, None, window, cx);
+    }
+
+    /// Open paths. Plain files open at once; each folder among them shows
+    /// its sheet in turn, offering to add to `case` when it was dropped on
+    /// that case's header (ADR 0075).
+    fn open_paths_into(
+        &mut self,
+        paths: Vec<PathBuf>,
+        at: Option<usize>,
+        case: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -1172,7 +1198,7 @@ impl Workspace {
         // Opening activates a tab and takes focus; a confirm dialog keeps it
         // until answered, and the paths open after (ADR 0064). Checked before
         // quitting, so a cancelled quit still opens them.
-        if window.has_active_prompt() {
+        if self.dialog_up(window) {
             self.pending_open.extend(paths);
             self.open_after_prompt(window, cx);
             return;
@@ -1188,8 +1214,7 @@ impl Workspace {
             let mut files = Vec::new();
             let mut folders = Vec::new();
             for path in paths {
-                if let Some(folder) = cases_ui::DroppedFolder::read(&path, supported) {
-                    files.extend(folder.files.iter().map(|f| (f.clone(), true)));
+                if let Some(folder) = folder_sheet::DroppedFolder::read(&path, supported) {
                     folders.push(folder);
                 } else {
                     let ok = supported(&path);
@@ -1202,14 +1227,19 @@ impl Workspace {
             let (paths, folders) = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 // A dialog that came up while the paths resolved keeps focus.
-                if window.has_active_prompt() {
+                if this.dialog_up(window) {
                     this.pending_open.extend(requested);
                     this.open_after_prompt(window, cx);
                     return;
                 }
                 this.finish_open(paths, at, window, cx);
                 for folder in folders {
-                    this.open_folder_case(folder, window, cx);
+                    let pending = folder_sheet::Pending {
+                        folder,
+                        case: case.clone(),
+                        at,
+                    };
+                    this.queue_folder(pending, window, cx);
                 }
             });
         })
@@ -1222,12 +1252,13 @@ impl Workspace {
         at: Option<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> (Vec<u64>, Vec<u64>) {
         if !self.quit_flow.may_quit() {
-            return;
+            return Default::default();
         }
         // Anchor on a tab, not an index: tabs may close while paths resolve.
         let anchor = at.and_then(|at| self.tabs.at(at).map(|tab| tab.id()));
+        let mut opened = Vec::new();
         let mut created = Vec::new();
         let mut first = None;
         let mut unsupported = Vec::new();
@@ -1242,25 +1273,7 @@ impl Workspace {
                 );
                 continue;
             }
-            let existing = self.find_path(&path, None, cx).or_else(|| {
-                self.tabs
-                    .iter()
-                    .find(|tab| {
-                        let source = tab
-                            .view()
-                            .and_then(|view| {
-                                let view = view.read(cx);
-                                view.session
-                                    .source
-                                    .as_ref()
-                                    .or(view.preview.attachment())
-                                    .or(view.preview.source())
-                            })
-                            .or(tab.record().attachment.as_ref());
-                        source == Some(&path)
-                    })
-                    .map(|tab| tab.id())
-            });
+            let existing = self.open_tab_for(&path, cx);
             let id = existing.unwrap_or_else(|| {
                 let id = if document::is_markdown(&path) {
                     self.push(TabRecord {
@@ -1279,6 +1292,7 @@ impl Workspace {
                 id
             });
             first.get_or_insert(id);
+            opened.push(id);
         }
         if at.is_some() && !created.is_empty() {
             self.tabs.place(&created, anchor);
@@ -1311,6 +1325,7 @@ impl Workspace {
             }
         }
         cx.notify();
+        (opened, created)
     }
 
     pub fn refresh_import(&self, window: &mut Window, cx: &mut Context<Self>) {
@@ -2049,6 +2064,23 @@ impl Workspace {
         activate_for_drop(window, cx);
         if !self.quit_flow.quitting() {
             self.open_paths_at(paths.paths().to_vec(), at, window, cx);
+        }
+    }
+
+    /// OS files dropped on a case header: a folder among them offers Add to
+    /// that case (ADR 0075); plain files open as on the list.
+    fn drop_on_case(
+        &mut self,
+        paths: &gpui::ExternalPaths,
+        case: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.clear_file_drag(window, cx);
+        activate_for_drop(window, cx);
+        if !self.quit_flow.quitting() {
+            let paths = paths.paths().to_vec();
+            self.open_paths_into(paths, None, Some(case.to_string()), window, cx);
         }
     }
 
@@ -3099,6 +3131,7 @@ impl Render for Workspace {
             })
             .children(self.case_list(cx))
             .children(self.case_categories(cx))
+            .children(self.folder_sheet_view(window, cx))
             .children(self.keychain_explainer(window, cx))
             .child(
                 div()
@@ -3280,6 +3313,7 @@ impl Workspace {
             || self.settings.read(cx).open
             || self.cases.list_open
             || self.cases.explainer
+            || self.folder_sheets.open()
             || self.cases.categories_open.is_some()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
@@ -3300,6 +3334,7 @@ impl Workspace {
         if self.settings.read(cx).open
             || self.cases.list_open
             || self.cases.explainer
+            || self.folder_sheets.open()
             || self.cases.categories_open.is_some()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
