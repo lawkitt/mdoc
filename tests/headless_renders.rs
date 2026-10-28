@@ -30,6 +30,9 @@ const SCREENS: &[&str] = &[
     "rename-case",
     "case-categories",
     "keychain-explainer",
+    "folder-sheet",
+    "folder-sheet-over-cap",
+    "folder-sheet-add-to-case",
     "confirm-delete-case",
     "confirm-keep-mapping",
     "confirm-unsaved",
@@ -204,6 +207,20 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     matches!(*name, "settings" | "dictionary"),
                     "stale settings on {theme}/{name}"
                 );
+                // ADR 0075: the primary button and the 20-file cap.
+                let (primary, ticked) = match *name {
+                    "folder-sheet" => (Value::from("Open as case"), Value::from(4)),
+                    "folder-sheet-over-cap" => (Value::from("Open as case"), Value::from(20)),
+                    "folder-sheet-add-to-case" => {
+                        (Value::from("Add to “Public fixture”"), Value::from(4))
+                    }
+                    _ => (Value::Null, Value::Null),
+                };
+                assert_eq!(record["state"]["folder_sheet"], primary, "{theme}/{name}");
+                assert_eq!(
+                    record["state"]["folder_sheet_ticked"], ticked,
+                    "{theme}/{name}"
+                );
                 if *name == "settings" {
                     assert_eq!(record["state"]["theme_choice"], theme);
                     assert_eq!(
@@ -333,4 +350,18 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
         .unwrap();
     assert!(!rejected.status.success());
     assert_eq!(std::fs::read(out.join("summary.json")).unwrap(), before);
+    // CI keeps each screen's baseline PNGs (not the Tab walks) as an artifact.
+    if let Some(keep) = std::env::var_os("MDOC_HEADLESS_RENDERS_ARTIFACT") {
+        let keep = Path::new(&keep);
+        for theme in ["light", "dark"] {
+            std::fs::create_dir_all(keep.join(theme)).unwrap();
+            for entry in std::fs::read_dir(out.join(theme)).unwrap().flatten() {
+                let path = entry.path();
+                if path.extension().is_some_and(|e| e == "png") {
+                    std::fs::copy(&path, keep.join(theme).join(entry.file_name())).unwrap();
+                }
+            }
+        }
+        std::fs::copy(out.join("summary.json"), keep.join("summary.json")).unwrap();
+    }
 }

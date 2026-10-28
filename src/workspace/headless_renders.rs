@@ -140,6 +140,8 @@ impl Driver {
                     "case_rename": w.cases.renaming.is_some(),
                     "case_categories": w.cases.categories_open.is_some(),
                     "keychain_explainer": w.cases.explainer,
+                    "folder_sheet": w.folder_sheets.sheet().map(|s| s.primary_label()),
+                    "folder_sheet_ticked": w.folder_sheets.sheet().map(|s| s.ticked_count()),
                     "find_replace": w.active_view().is_some_and(|v| v.read(cx).search.open()),
                 })
             })?
@@ -249,6 +251,67 @@ fn document(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>> {
         window.focus(&w.focus, cx);
         view
     })
+}
+
+/// The folder sheet (ADR 0075) for synthetic folders in the temporary
+/// profile: a small one, one over the 20-file cap, and Add to a loaded case.
+/// Each is cancelled: nothing opens and no key is read.
+fn folder_sheets(
+    d: &mut Driver,
+    out: &Path,
+    document: &Path,
+    case: &str,
+    records: &mut Vec<Value>,
+) -> Result<()> {
+    let root = document.parent().ok_or("fixture directory")?;
+    let write = |folder: &Path, names: &[String]| -> Result<()> {
+        std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
+        for name in names {
+            std::fs::write(folder.join(name), format!("# {name}\n")).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    };
+    let matter = root.join("Petrova v Northwind");
+    write(
+        &matter,
+        &[
+            "Engagement letter.md",
+            "README.md",
+            "Timeline.md",
+            "Witness statement.md",
+        ]
+        .map(String::from),
+    )?;
+    write(&matter.join("drafts"), &[])?;
+    write(&matter, &[".notes.md".into()])?;
+    let exhibits = root.join("Exhibits");
+    write(
+        &exhibits,
+        &(1..=24)
+            .map(|n| format!("Exhibit {n:02}.md"))
+            .collect::<Vec<_>>(),
+    )?;
+    for (name, folder, case) in [
+        ("folder-sheet", &matter, None),
+        ("folder-sheet-over-cap", &exhibits, None),
+        ("folder-sheet-add-to-case", &matter, Some(case.to_string())),
+    ] {
+        let folder = super::folder_sheet::DroppedFolder::read(folder, |p| {
+            mdoc_store::document::is_markdown(p)
+        })
+        .ok_or("fixture folder")?;
+        d.change(|w, window, cx| {
+            let pending = super::folder_sheet::Pending {
+                folder,
+                case,
+                at: None,
+            };
+            w.queue_folder(pending, window, cx)
+        })?;
+        records.push(d.capture(out, name)?);
+        d.key("escape")?;
+    }
+    Ok(())
 }
 
 fn scenarios(
@@ -445,6 +508,7 @@ fn scenarios(
     })?;
     records.push(d.capture(out, "keychain-explainer")?);
     d.change(|w, window, cx| w.cancel_unlock(window, cx))?;
+    folder_sheets(d, out, path, &id, &mut records)?;
     d.change(|w, window, cx| w.delete_case(id, window, cx))?;
     records.push(d.capture(out, "confirm-delete-case")?);
     d.key("escape")?;
