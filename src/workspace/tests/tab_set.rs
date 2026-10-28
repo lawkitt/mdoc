@@ -2,6 +2,47 @@
 use super::*;
 
 #[gpui::test]
+fn untitled_numbering_failed_markdown_load_does_not_reserve_an_untitled_name(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let unreadable = dir.path().join("unreadable.md");
+    std::fs::write(&unreadable, [0xff, 0xfe]).unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_path(unreadable, window, cx)
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        let view = tabs.active_view().unwrap();
+        assert!(view.read(cx).lifecycle.unavailable());
+        assert_eq!(view.read(cx).display_name(), "unreadable.md");
+        assert_eq!(view.read(cx).window_title(), "unreadable.md — mdoc");
+        assert_eq!(
+            tab_label(tabs.tabs.active_tab().unwrap(), cx).name,
+            "unreadable.md"
+        );
+        let snapshot = tabs.snapshot(cx);
+        assert!(
+            !snapshot.tabs[0].blank,
+            "a failed file is not an unsaved blank"
+        );
+        let manifest = dir.path().join("session.json");
+        session_store::save(&manifest, &snapshot).unwrap();
+        assert!(session_store::load(&manifest).is_ok());
+    });
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            tabs.read(cx).active_view().unwrap().read(cx).display_name(),
+            "Untitled.md"
+        );
+    });
+}
+
+#[gpui::test]
 fn untitled_numbering_reuses_closed_gaps_and_suggests_the_tab_name(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
@@ -127,10 +168,7 @@ fn untitled_numbering_reserves_later_restored_names_before_naming_legacy_blanks(
         cx,
         Session {
             tabs: vec![
-                TabRecord {
-                    blank: true,
-                    ..TabRecord::default()
-                },
+                serde_json::from_str(r#"{"blank":true}"#).unwrap(),
                 TabRecord {
                     blank: true,
                     name: Some("Untitled 3.md".into()),

@@ -10,7 +10,7 @@ pub struct DocumentSession {
     pub source: Option<PathBuf>,
     pub warning: Option<String>,
     pub ocr_configuration: Option<crate::settings::OcrConfig>,
-    /// Name for an unsaved document without a source, e.g. a restored AI reply.
+    /// Fallback name before a file loads, or for an unsaved document without a source.
     pub name: Option<String>,
 }
 
@@ -40,6 +40,13 @@ impl DocumentSession {
             .as_ref()
             .map(|path| path.with_extension("md"))
             .and_then(|path| path.file_name()?.to_str().map(str::to_owned))
+            .or_else(|| {
+                self.document
+                    .path
+                    .as_ref()
+                    .and_then(|path| path.file_name())
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
             .or_else(|| self.name.clone())
             .unwrap_or_else(|| "Untitled.md".into())
     }
@@ -81,6 +88,19 @@ impl DocumentSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_untitled_tab_suggests_its_current_filename() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut session = DocumentSession {
+            name: Some("Untitled 2.md".into()),
+            ..DocumentSession::default()
+        };
+        assert_eq!(session.suggested_name(), "Untitled 2.md");
+        session.save(dir.path().join("notes.md"), "notes").unwrap();
+        assert_eq!(session.display_name(), "notes.md");
+        assert_eq!(session.suggested_name(), "notes.md");
+    }
 
     #[test]
     fn identity_changes_once_and_clears_import_provenance() {

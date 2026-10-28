@@ -903,7 +903,13 @@ impl Workspace {
                 cx,
             );
             view.active = id == self.tabs.active();
-            view.session.name = record.name.clone();
+            // Keep a file's title while loading, including a failed load,
+            // without accepting its path as a successfully opened document.
+            view.session.name = record
+                .markdown
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .or_else(|| record.name.clone());
             view.lifecycle.restore(
                 !record.markdown.as_os_str().is_empty(),
                 record.source_only,
@@ -1737,6 +1743,7 @@ impl Workspace {
                 record.source_only =
                     view.lifecycle.source_only() || view.lifecycle.generated_unedited();
                 record.blank = !record.source_only
+                    && record.markdown.as_os_str().is_empty()
                     && view.session.document.path.is_none()
                     && view.preview.source().is_none()
                     && view.editor.read(cx).text().is_empty();
