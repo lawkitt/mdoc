@@ -333,12 +333,18 @@ impl<W: Clone> CaseCoordinator<W> {
         self.close_after.insert(id, tab);
     }
 
-    /// Retry case `id`'s failed write and close tab `tab` once it is saved
-    /// (#189). The failed revision still waits in the queue.
-    pub(super) fn retry_and_close(&mut self, id: String, tab: u64) -> Option<CaseEffect<W>> {
+    /// Save as Case for tab `tab` of existing case `id` (#189): close it once
+    /// the waiting revision (a failed one, retried now) is written, or at once
+    /// when nothing waits, e.g. it saved while the close prompt was open.
+    pub(super) fn save_and_close(&mut self, id: String, tab: u64) -> Vec<CaseEffect<W>> {
+        let waiting = self.pending.contains_key(&id)
+            || self.writing.as_ref().is_some_and(|case| case.id == id);
+        if !waiting {
+            return vec![CaseEffect::CloseTab(tab)];
+        }
         self.close_after(id, tab);
         self.note_asked(tab);
-        self.pump()
+        self.pump().into_iter().collect()
     }
 
     // ---- Closing tabs with a mapping ---------------------------------------
@@ -505,7 +511,7 @@ mod tests {
         let id = written_case(cases.create(case("Acme"))).id;
         cases.written(Err("disk full".into()), false).unwrap();
         assert!(cases.failed(&id));
-        let retry = written_case(cases.retry_and_close(id.clone(), 4));
+        let retry = written_case(cases.save_and_close(id.clone(), 4).pop());
         assert_eq!(retry.id, id);
         assert!(cases.asked(4));
         assert_eq!(
@@ -513,6 +519,9 @@ mod tests {
             [CaseEffect::CloseTab(4)]
         );
         assert!(!cases.failed(&id));
+        // Saved meanwhile: nothing waits, so the tab closes at once.
+        assert_eq!(cases.save_and_close(id, 5), [CaseEffect::CloseTab(5)]);
+        assert!(!cases.asked(5));
     }
 
     #[test]
