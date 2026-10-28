@@ -540,3 +540,108 @@ fn forgetting_an_unused_seed_cannot_reappear_when_typed_later(cx: &mut TestAppCo
         );
     });
 }
+
+#[gpui::test]
+fn share_and_sidebar_header_open_the_same_cached_page(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(tab, window, cx).unwrap()
+    });
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.inspector_share = true;
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    let share = cx.debug_bounds("share-case-page").unwrap();
+    cx.simulate_click(share.center(), Default::default());
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| tabs.read(cx).cases.page.as_ref().unwrap().id().to_string()),
+        id
+    );
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(tab, window, cx));
+    draw(cx);
+    let header = cx.debug_bounds("case-page-link").unwrap();
+    cx.simulate_click(header.center(), Default::default());
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| tabs.read(cx).cases.page.as_ref().unwrap().id().to_string()),
+        id
+    );
+}
+
+#[gpui::test]
+fn a_long_case_name_stays_inside_the_narrow_page(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(tab, window, cx).unwrap()
+    });
+    tabs.update(cx, |tabs, _| tabs.case_coordinator.cases_mut()[0].name = "A long case name about acceptance of the first shipment with several parties and exhibits".into());
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_case(&id, window, cx));
+    cx.simulate_resize(size(px(720.), px(480.)));
+    draw(cx);
+    let name = cx.debug_bounds("case-page-rename").unwrap();
+    let page = cx.debug_bounds("case-page").unwrap();
+    assert!(
+        name.left() >= page.left() && name.right() <= page.right(),
+        "name {name:?} outside page {page:?}"
+    );
+}
+
+#[gpui::test]
+fn case_close_all_resolves_dirty_members_in_turn_and_cancel_stops_it(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(first, window, cx).unwrap()
+    });
+    let path = dir.path().join("second.md");
+    std::fs::write(&path, "# Second").unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![path], window, cx)
+    });
+    cx.run_until_parked();
+    let second = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(second, &id, window, cx)
+    });
+    active(&tabs, cx).update(cx, |view, cx| {
+        view.editor.update(cx, |editor, cx| {
+            editor.set_text("Changed second document", cx)
+        })
+    });
+    let close_all = |cx: &mut VisualTestContext| {
+        draw(cx);
+        let menu = cx.debug_bounds("case-header-menu").unwrap();
+        cx.simulate_click(menu.center(), Default::default());
+        draw(cx);
+        let close = cx.debug_bounds("case-action-close-all").unwrap();
+        cx.simulate_click(close.center(), Default::default());
+        cx.run_until_parked();
+    };
+    close_all(cx);
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| tabs.read(cx).tabs.contains(first) && tabs.read(cx).tabs.contains(second)));
+    close_all(cx);
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    assert!(
+        cx.has_pending_prompt(),
+        "the second dirty member must be asked next"
+    );
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    assert!(cx.update(
+        |_, cx| !tabs.read(cx).tabs.contains(first) && !tabs.read(cx).tabs.contains(second)
+    ));
+}

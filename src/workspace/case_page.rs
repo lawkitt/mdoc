@@ -549,6 +549,7 @@ impl Workspace {
                     v.debug_selector(|| "case-page-rename".into())
                 })
                 .aria_label(format!("Rename {}", case.name))
+                .flex_1()
                 .min_w_0()
                 .text_size(px(26.))
                 .on_click(cx.listener({
@@ -814,8 +815,13 @@ impl Workspace {
                                 )))
                                 .child(div().text_size(px(11.)).text_color(p.header_muted).child(
                                     format!(
-                                        "{} variants · {}",
-                                        identity.originals.len().saturating_sub(1),
+                                        "{} {} · {}",
+                                        identity.originals.len(),
+                                        if identity.originals.len() == 1 {
+                                            "variant"
+                                        } else {
+                                            "variants"
+                                        },
                                         counts
                                     ),
                                 )),
