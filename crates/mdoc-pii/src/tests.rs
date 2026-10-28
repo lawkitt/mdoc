@@ -56,7 +56,7 @@ fn forgetting_a_case_alias_also_scrubs_a_pending_document_rename() {
         // The page can open before the member's debounced save reaches the case.
         review.rename_identity(id, "BUYER").unwrap();
         review.commit_identity_snapshot(1, 2, previous);
-        review.forget_aliases(&[case_alias]);
+        review.forget_case_identity(&[case_alias], &["Ann".into()]);
         assert!(review.identity(id).is_none());
         assert!(review.export_identities().is_empty());
     }

@@ -249,16 +249,7 @@ impl Workspace {
                 let aliases: Vec<_> = std::iter::once(forgotten.alias.as_str())
                     .chain(forgotten.previous.iter().map(String::as_str))
                     .collect();
-                view.pii.review_mut().forget_aliases(&aliases);
-                view.pii.review_mut().reserve_aliases(
-                    &aliases
-                        .iter()
-                        .map(|alias| alias.to_string())
-                        .collect::<Vec<_>>(),
-                );
-                view.case.set_names(exported.clone());
-                view.review_changed(cx);
-                cx.notify();
+                view.forget_case_identity(&aliases, &forgotten.originals, &exported, cx);
             });
         }
         cx.notify();

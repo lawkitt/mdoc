@@ -890,3 +890,79 @@ fn swatches_and_inline_rename_are_reachable_and_activatable_by_keyboard(cx: &mut
         "Renamed from keyboard"
     );
 }
+
+#[gpui::test]
+fn forgetting_a_case_alias_preserves_a_joined_identity_renumbered_from_it(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let case_id = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(first, window, cx).unwrap()
+    });
+    tabs.update(cx, |tabs, cx| {
+        let (_, effect) = tabs
+            .case_coordinator
+            .edit(&case_id, |case| {
+                case.identities.push(mdoc_store::cases::StoredIdentity {
+                    alias: "PERSON_2".into(),
+                    previous: vec![],
+                    category: "PERSON".into(),
+                    custom: false,
+                    originals: vec!["Other Anna".into()],
+                });
+                Some(())
+            })
+            .unwrap();
+        tabs.carry_out_cases(effect.into_iter().collect(), cx);
+    });
+    let joined = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "joined.md",
+        "Mark met Bob",
+        &[
+            ("Mark", mdoc_pii::Category::Person),
+            ("Bob", mdoc_pii::Category::Person),
+        ],
+    );
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(joined, &case_id, window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    let (before, bob_alias) = cx.update(|_, cx| {
+        let view = view.read(cx);
+        let bob = view
+            .pii
+            .review()
+            .export_identities()
+            .into_iter()
+            .find(|identity| identity.wording() == "Bob")
+            .unwrap();
+        assert_ne!(bob.alias, "PERSON_2");
+        (view.editor.read(cx).text().to_string(), bob.alias)
+    });
+    tabs.update(cx, |tabs, cx| {
+        tabs.forget_case_identity(&case_id, "PERSON_2", cx)
+    });
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.editor.read(cx).text(), before);
+        assert!(
+            view.pii
+                .review()
+                .export_identities()
+                .iter()
+                .any(|identity| identity.alias == bob_alias && identity.wording() == "Bob"),
+            "a joined identity's creation alias must not select it for forgetting"
+        );
+        assert!(
+            view.pii
+                .review()
+                .applied()
+                .iter()
+                .any(|applied| applied.step.after.as_ref() == bob_alias)
+        );
+    });
+}

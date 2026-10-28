@@ -263,27 +263,48 @@ fn contained_name(whole: &str, part: &str) -> bool {
             .any(|(start, _)| exact_boundary(whole, &(start..start + part.len()), part))
 }
 impl Review {
-    /// Include dormant seeded names, not just identities with live mentions.
-    pub fn forget_aliases(&mut self, aliases: &[&str]) {
-        let ids: Vec<_> = self
-            .identities
-            .ids()
-            .filter(|id| {
-                self.identity(*id)
-                    .is_some_and(|identity| aliases.contains(&identity.alias.as_str()))
-                    || self
-                        .identities
-                        .definitions
-                        .get(id)
-                        .is_some_and(|identity| aliases.contains(&identity.alias.as_str()))
-                    || self.identities.history.values().any(|policy| {
-                        policy
-                            .edited
-                            .get(id)
+    /// Match the case identity by both its aliases and original wording.
+    /// A join may have reassigned a creation alias to a different person.
+    /// Dormant seeds and pending renames still retain their wording ownership.
+    pub fn forget_case_identity(&mut self, aliases: &[&str], originals: &[String]) {
+        let ids: Vec<_> =
+            self.identities
+                .ids()
+                .filter(|id| {
+                    let alias_matches =
+                        self.identity(*id)
                             .is_some_and(|identity| aliases.contains(&identity.alias.as_str()))
-                    })
-            })
-            .collect();
+                            || self
+                                .identities
+                                .definitions
+                                .get(id)
+                                .is_some_and(|identity| aliases.contains(&identity.alias.as_str()))
+                            || self.identities.history.values().any(|policy| {
+                                policy.edited.get(id).is_some_and(|identity| {
+                                    aliases.contains(&identity.alias.as_str())
+                                })
+                            });
+                    alias_matches
+                        && (self.variants().iter().any(|variant| {
+                            originals
+                                .iter()
+                                .any(|original| original.as_str() == variant.original.as_ref())
+                                && (self.variant_identity(variant.id) == Some(*id)
+                                    || self.candidates().iter().any(|candidate| {
+                                        candidate.variant == variant.id
+                                            && self.occurrence_identity(
+                                                candidate.variant,
+                                                &candidate.range,
+                                            ) == Some(*id)
+                                    }))
+                        }) || self.applied().iter().any(|applied| {
+                            applied.step.identity == *id
+                                && originals
+                                    .iter()
+                                    .any(|original| original == applied.step.original())
+                        }))
+                })
+                .collect();
         for id in ids {
             self.forget_identity(id);
         }
