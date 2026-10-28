@@ -156,18 +156,15 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   macOS `acceptance` user (fleet ADR 0011) shows the first Keychain prompt
   only once, since the case-key item outlives a profile rename and agents
   never delete it. *From the rc.4 acceptance run and the 0.2.1 grill.*
-- **Uninstall keeps the case key:** the NSIS uninstaller leaves
-  `%LOCALAPPDATA%\mdoc\cases\key.dpapi` only because mdoc sets no packager
-  `appdata-paths`. *Done when:* the `installed-windows-desktop` job seeds a
-  dummy `cases\key.dpapi` before uninstalling and fails if it is gone, and
-  `Cargo.toml` says never to set `appdata-paths`. *From the 0.2.1 smoke run.*
-- **CI concurrency:** one concurrency group per ref with `cancel-in-progress`,
-  so a new push replaces its branch's earlier run and runs for merged branches
-  don't hold `main`'s run in the queue. *From the 0.2.1 merges.*
 - **Changelog fragments:** each change adds `changes/<slug>.md`, and
   `just release` joins them into CHANGELOG in merge order and deletes them, so
   parallel PRs stop conflicting on Unreleased. Amends ADR 0059's "the same
   commit adds the CHANGELOG entry"; ADR first. *From the 0.2.1 merges.*
+- **Windows CI timing on slow runners:** ADR 0070 targets about 8 minutes
+  for `test (windows-latest)` on a warm cache; #197 was measured only with
+  partial caches on EPYC 9V45/9V74. *Done when:* a `main` run with a full
+  cache match on an EPYC 7763 or Xeon 8370C runner is recorded in ADR 0070,
+  and a miss gets its own grill.
 - **Release-run rules:** a patch publishes once both agent runs are done with
   no must-fix Fail; rows only the maintainer can do may follow. Update
   `docs/release-run.md` and ADR 0059's acceptance line. (The GUI runner,
