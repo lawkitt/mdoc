@@ -241,9 +241,10 @@ clipboard or installed models; it downloads nothing. The gate's integration
 test on macOS runs the child under `sandbox-exec`, denying the real
 profile/update cache and network access. `just lint` and `just test` enable
 this dev feature; on both platforms the latter checks the actual generated
-files and profile cleanup.
-On Windows, a bounded background encoder thread must join successfully before the summary is written.
-The `test (windows-latest)` CI job runs this test through `just test`. On Windows,
+files and profile cleanup. On Windows, PNGs are encoded on a bounded
+background thread, which must finish without error before the summary is
+written. The `test (windows-latest)` CI job runs this test through
+`just test`. On Windows,
 the integration test also polls all top-level HWNDs owned by the child
 (including hidden ones) and fails if it creates any; the check filters by
 child process ID and leaves other apps untouched.
