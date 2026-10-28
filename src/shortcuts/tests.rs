@@ -98,7 +98,7 @@ fn crate_keymaps_agree_with_the_table_on_both_platforms() {
     for mac in [true, false] {
         for (owner, keymap) in [
             (Owner::Editor, mdoc_editor::key_bindings(mac)),
-            (Owner::Pdf, gpui_pdf::key_bindings()),
+            (Owner::Pdf, gpui_pdf::key_bindings(mac)),
         ] {
             let table: Vec<Key> = specs(mac)
                 .iter()
@@ -158,6 +158,7 @@ fn keys_read_as_each_platform_writes_them() {
         ("shift-f6", "⇧F6", "Shift+F6"),
         ("ctrl-tab", "⌃Tab", "Ctrl+Tab"),
         ("escape", "Esc", "Esc"),
+        ("pagedown", "Page Down", "Page Down"),
     ];
     for (key, mac, other) in cases {
         assert_eq!(display(&resolve(key, true), true), mac);

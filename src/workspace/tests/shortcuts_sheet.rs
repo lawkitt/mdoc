@@ -117,3 +117,64 @@ fn the_palette_opens_the_sheet_and_shows_keys_from_the_table(cx: &mut TestAppCon
     assert!(tabs.read_with(cx, |tabs, _| tabs.shell.palette.is_none()));
     assert!(sheet_open(&tabs, cx));
 }
+
+#[gpui::test]
+fn a_command_that_moves_focus_closes_the_sheet(cx: &mut TestAppContext) {
+    cx.update(crate::bind_all_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    // Focus events reach an active window only, as on screen.
+    cx.update(|window, _| window.activate_window());
+    let count = tabs.read_with(cx, |tabs, _| tabs.tabs.len());
+    cx.simulate_keystrokes("secondary-/");
+    draw(cx);
+    assert!(sheet_open(&tabs, cx));
+    // Leaving the window does not close it.
+    cx.deactivate_window();
+    cx.update(|window, _| window.activate_window());
+    draw(cx);
+    assert!(sheet_open(&tabs, cx));
+    // The palette would take focus the closed sheet cannot give back.
+    cx.simulate_keystrokes("secondary-k");
+    draw(cx);
+    assert!(tabs.read_with(cx, |tabs, _| tabs.shell.palette.is_none()));
+    assert!(sheet_open(&tabs, cx));
+    // ⌘N opens a tab in front, not behind the sheet.
+    cx.simulate_keystrokes("secondary-n");
+    draw(cx);
+    assert!(!sheet_open(&tabs, cx));
+    assert_eq!(tabs.read_with(cx, |tabs, _| tabs.tabs.len()), count + 1);
+    let view = active(&tabs, cx);
+    cx.simulate_input("typed");
+    cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), "typed"));
+}
+
+struct Other(gpui::FocusHandle);
+impl Render for Other {
+    fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+        div().track_focus(&self.0).size_full()
+    }
+}
+
+#[gpui::test]
+fn the_sheet_opens_from_another_window(cx: &mut TestAppContext) {
+    cx.update(crate::bind_all_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    let other = cx.update(|_, cx| {
+        cx.open_window(Default::default(), |window, cx| {
+            cx.new(|cx| {
+                let focus = cx.focus_handle();
+                window.focus(&focus, cx);
+                Other(focus)
+            })
+        })
+        .unwrap()
+    });
+    cx.run_until_parked();
+    other
+        .update(cx, |_, window, cx| {
+            window.dispatch_action(Box::new(shortcuts_ui::ShowShortcuts), cx)
+        })
+        .unwrap();
+    cx.run_until_parked();
+    assert!(sheet_open(&tabs, cx));
+}

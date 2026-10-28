@@ -263,8 +263,13 @@ pub(crate) fn bind_all_keys(cx: &mut App) {
     workspace::bind_shell_keys(cx);
     settings_ui::bind_keys(cx);
     ui::bind_keys(cx);
-    shortcuts::bind_crate(cx, shortcuts::Owner::Pdf, gpui_pdf::key_bindings());
+    shortcuts::bind_crate(
+        cx,
+        shortcuts::Owner::Pdf,
+        gpui_pdf::key_bindings(cfg!(target_os = "macos")),
+    );
     comparison_ui::bind_keys(cx);
     bind_markdown_search_keys(cx);
     bind_app_keys(cx);
+    confirm_dialog::bind_keys(cx);
 }

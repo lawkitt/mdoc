@@ -15,7 +15,7 @@
 //! on Windows and Linux.
 
 use crate::{
-    comparison_ui, document_view, markdown_search, menus,
+    comparison_ui, confirm_dialog, document_view, markdown_search, menus,
     pii::ui as pii,
     search_session as find, settings_ui, spelling,
     workspace::{self, shortcuts_ui},
@@ -68,6 +68,8 @@ pub enum Owner {
     App,
     /// macOS menu keys (`menus::install`).
     Menus,
+    /// The confirm dialog (`confirm_dialog::bind_keys`).
+    Dialog,
 }
 
 type Make = fn() -> Box<dyn Action>;
@@ -297,8 +299,9 @@ pub fn display(key: &str, mac: bool) -> String {
         ("left", _) => "←".to_string(),
         ("right", _) => "→".to_string(),
         ("home", _) => "Home".to_string(),
+        ("pageup", _) => "Page Up".to_string(),
+        ("pagedown", _) => "Page Down".to_string(),
         ("end", _) => "End".to_string(),
-        (key, _) if key.len() > 1 && key.starts_with('f') => key.to_uppercase(),
         (key, _) => key.to_uppercase(),
     };
     if mac {
@@ -1072,6 +1075,39 @@ pub static SHORTCUTS: &[Shortcut] = &[
             pii::PanelEnterList
         )],
     ),
+    // The source preview of a PDF or DOCX.
+    row(
+        Panel,
+        "Source: next page",
+        &[on!(Pdf, Some("PdfView"), &["pagedown"], gpui_pdf::NextPage)],
+    ),
+    row(
+        Panel,
+        "Source: previous page",
+        &[on!(
+            Pdf,
+            Some("PdfView"),
+            &["pageup"],
+            gpui_pdf::PreviousPage
+        )],
+    ),
+    row(
+        Panel,
+        "Source: first page",
+        &[on!(Pdf, Some("PdfView"), &["home"], gpui_pdf::FirstPage)],
+    ),
+    row(
+        Panel,
+        "Source: last page",
+        &[on!(Pdf, Some("PdfView"), &["end"], gpui_pdf::LastPage)],
+    ),
+    row(
+        Panel,
+        "Source: go to page",
+        &[on!(Pdf, Some("PdfView"), &[], gpui_pdf::GoToPage)
+            .mac(&["cmd-alt-g"])
+            .other(&["ctrl-alt-g"])],
+    ),
     // ---- Popups, menus and dialogs ------------------------------------------
     // The mention popup (ADR 0055).
     row(
@@ -1178,6 +1214,18 @@ pub static SHORTCUTS: &[Shortcut] = &[
             &["escape"],
             shortcuts_ui::CloseShortcuts
         )],
+    ),
+    row(
+        Popup,
+        "Discard, in a save prompt",
+        &[on!(
+            Dialog,
+            Some(confirm_dialog::DIALOG),
+            &[],
+            confirm_dialog::Discard
+        )
+        .mac(&["cmd-d"])
+        .other(&["alt-d"])],
     ),
     row(
         Popup,

@@ -31,6 +31,7 @@ pub(super) struct ShortcutsSheet {
     scroll: ScrollHandle,
     return_focus: Option<FocusHandle>,
     _changes: Subscription,
+    _focus_out: Subscription,
 }
 
 /// One shown row: its label and its keys as this platform writes them.
@@ -85,13 +86,23 @@ impl Workspace {
         });
         let return_focus = window.focused(cx);
         window.focus(&filter.read(cx).focus_handle(cx), cx);
+        let focus = cx.focus_handle();
+        // A command that moves focus (⌘N, Ctrl+Tab, Find…) closes the sheet
+        // rather than acting behind it.
+        // Switching to another app is not one of them.
+        let focus_out = cx.on_focus_out(&focus, window, |this, _, window, cx| {
+            if window.is_window_active() && this.shell.shortcuts.take().is_some() {
+                cx.notify();
+            }
+        });
         self.shell.shortcuts = Some(ShortcutsSheet {
             filter,
-            focus: cx.focus_handle(),
+            focus,
             list: cx.focus_handle().tab_stop(true),
             scroll: ScrollHandle::new(),
             return_focus,
             _changes: changes,
+            _focus_out: focus_out,
         });
         cx.notify();
     }
@@ -142,6 +153,7 @@ impl Workspace {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let groups = visible(sheet.filter.read(cx).value());
+        let filter_focused = sheet.filter.focus_handle(cx).is_focused(window);
         let mut list = div()
             .id("shortcuts-list")
             .when(cfg!(test), |v| v.debug_selector(|| "shortcuts-list".into()))
@@ -246,6 +258,11 @@ impl Workspace {
                             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                 cx.stop_propagation()
                             })
+                            // Other modal surfaces would take focus they
+                            // cannot give back once the sheet is gone.
+                            .on_action(|_: &super::OpenPalette, _, cx| cx.stop_propagation())
+                            .on_action(|_: &super::Settings, _, cx| cx.stop_propagation())
+                            .on_action(|_: &super::OpenCase, _, cx| cx.stop_propagation())
                             .on_action(cx.listener(|this, _: &CloseShortcuts, window, cx| {
                                 this.close_shortcuts(window, cx)
                             }))
@@ -275,7 +292,12 @@ impl Workspace {
                                     .py_1()
                                     .rounded_md()
                                     .border_1()
-                                    .border_color(p.border)
+                                    // The same ring as the list's when focused.
+                                    .border_color(if filter_focused {
+                                        theme.search_accent()
+                                    } else {
+                                        p.border
+                                    })
                                     .child(sheet.filter.clone()),
                             )
                             .child(list),
