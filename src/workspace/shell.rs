@@ -305,8 +305,7 @@ impl Workspace {
             .pb_2()
             .flex_shrink_0()
             .child(
-                div()
-                    .id("sidebar-search")
+                crate::ui::focus_ring("sidebar-search", theme)
                     .when(cfg!(test), |v| v.debug_selector(|| "sidebar-search".into()))
                     .role(gpui::Role::Button)
                     .aria_label("Search or run an action")
@@ -325,7 +324,6 @@ impl Workspace {
                     .text_color(p.header_muted)
                     .cursor_pointer()
                     .hover(move |s| s.border_color(p.header_muted))
-                    .focus_visible(move |s| s.border_color(theme.search_accent()))
                     .child(
                         gpui::svg()
                             .data(ui::Icon::Search.data())
@@ -634,8 +632,7 @@ impl Workspace {
         };
         let ready = banner.kind == BannerKind::Ready;
         Some(
-            div()
-                .id("update-banner")
+            crate::ui::focus_ring("update-banner", theme)
                 .when(cfg!(test), |v| v.debug_selector(|| "update-banner".into()))
                 .role(gpui::Role::Button)
                 .aria_label(format!("{title}. {detail}"))
@@ -653,7 +650,6 @@ impl Workspace {
                 .bg(p.bg)
                 .cursor_pointer()
                 .hover(move |s| s.border_color(p.header_muted))
-                .focus_visible(move |s| s.border_color(accent))
                 .child(
                     gpui::svg()
                         .data(ui::Icon::Download.data())
@@ -1284,6 +1280,7 @@ impl Workspace {
         }
         let input = cx.new(|cx| {
             SearchInput::new(cx)
+                .with_theme(self.theme.clone())
                 .with_key_context(PALETTE)
                 .with_placeholder("Search or run an action…")
         });
@@ -1800,10 +1797,9 @@ fn nav_row(
     label: &'static str,
     theme: Theme,
     selected: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> ui::Control {
     let p = theme.pdf_style();
-    div()
-        .id(id)
+    crate::ui::focus_ring(id, theme)
         .when(cfg!(test), |v| v.debug_selector(move || id.into()))
         .role(gpui::Role::Button)
         .aria_label(label)
@@ -1818,7 +1814,6 @@ fn nav_row(
         .cursor_pointer()
         .when(selected, |v| v.bg(theme.sidebar_selected()))
         .hover(move |s| s.bg(p.placeholder_bg))
-        .focus_visible(move |s| s.bg(p.placeholder_bg))
         .child(
             gpui::svg()
                 .data(icon.data())
@@ -1848,15 +1843,13 @@ fn home_row(
     id: impl Into<gpui::ElementId>,
     label: impl Into<SharedString>,
     theme: Theme,
-) -> gpui::Stateful<gpui::Div> {
+) -> ui::Control {
     let p = theme.pdf_style();
-    div()
-        .id(id)
+    crate::ui::focus_ring(id, theme)
         .role(gpui::Role::Button)
         .aria_label(label.into())
         .key_context("UiControl")
         .tab_index(0)
-        .focus_visible(move |s| s.bg(p.placeholder_bg))
         .flex()
         .items_center()
         .gap_3()

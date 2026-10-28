@@ -382,10 +382,14 @@ impl MappingUi {
     pub(super) fn mark_popup_revision(&mut self, revision: u64) {
         self.popup_revision = Some(revision);
     }
-    pub fn new(cx: &mut Context<DocumentView>) -> Self {
+    pub fn new(
+        theme: std::rc::Rc<std::cell::Cell<crate::style::Theme>>,
+        cx: &mut Context<DocumentView>,
+    ) -> Self {
         let mut input = |placeholder| {
             let input = cx.new(|cx| {
                 markdown_search::SearchInput::new(cx)
+                    .with_theme(theme.clone())
                     .with_key_context(match placeholder {
                         "Alias" => "PseudonymReplacement",
                         "Find an alias or original" => "ReplacementSearch",

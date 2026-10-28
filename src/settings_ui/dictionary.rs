@@ -66,6 +66,7 @@ impl Panel {
     pub fn open_dictionary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let query = cx.new(|cx| {
             SearchInput::new(cx)
+                .with_theme(self.theme.clone())
                 .with_key_context("SettingsInput")
                 .with_placeholder("Search or add a word")
         });

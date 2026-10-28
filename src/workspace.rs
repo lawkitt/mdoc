@@ -2251,10 +2251,9 @@ impl Workspace {
                         ),
                 );
                 Some(
-                    div()
-                        // Tooltip state includes its old hover bounds. A row
-                        // moved by insertion or reordering needs fresh state.
-                        .id(format!("tab-{id}-at-{index}"))
+                    // Tooltip state includes its old hover bounds. A row
+                    // moved by insertion or reordering needs fresh state.
+                    crate::ui::focus_ring(format!("tab-{id}-at-{index}"), theme)
                         .map(|v| self.sidebar_tab_menu(v, id, cx))
                         .map(|v| {
                             ui::reveal_focus(
@@ -2284,7 +2283,6 @@ impl Workspace {
                             v.bg(theme.sidebar_selected())
                         })
                         .hover(move |v| v.bg(palette.placeholder_bg))
-                        .focus_visible(move |v| v.bg(palette.placeholder_bg))
                         .tooltip(style::tooltip(tooltip, theme))
                         .cursor_pointer()
                         .child(
@@ -2737,11 +2735,7 @@ fn tab_badge(icon: ui::Icon, color: gpui::Hsla) -> gpui::Svg {
         .text_color(color)
 }
 
-fn sidebar_toggle(
-    focus: &gpui::FocusHandle,
-    expanded: bool,
-    theme: Theme,
-) -> gpui::Stateful<gpui::Div> {
+fn sidebar_toggle(focus: &gpui::FocusHandle, expanded: bool, theme: Theme) -> ui::Control {
     let label = if expanded {
         "Collapse sidebar"
     } else {
@@ -3073,15 +3067,11 @@ impl Render for Workspace {
                                 ))
                                 .children(self.case_menu_items(id, cx))
                                 .child(
-                                    div()
-                                        .id("context-close-tab")
+                                    crate::ui::focus_ring("context-close-tab", self.theme.get())
                                         .role(gpui::Role::Button)
                                         .aria_label("Close tab")
                                         .key_context("UiControl")
                                         .tab_index(0)
-                                        .focus_visible(|s| {
-                                            s.bg(self.theme.get().pdf_style().placeholder_bg)
-                                        })
                                         .when(cfg!(test), |v| {
                                             v.debug_selector(|| "context-close-tab".into())
                                         })
@@ -3216,8 +3206,7 @@ impl Workspace {
                         .child(div().text_color(accent).child("ⓘ"))
                         .child(div().flex_1().min_w_0().child(notice))
                         .child(
-                            div()
-                                .id("dismiss-session-notice")
+                            crate::ui::focus_ring("dismiss-session-notice", self.theme.get())
                                 .when(cfg!(test), |v| {
                                     v.debug_selector(|| "dismiss-session-notice".into())
                                 })
@@ -3226,9 +3215,6 @@ impl Workspace {
                                 .aria_label("Dismiss notice")
                                 .key_context("UiControl")
                                 .tab_index(0)
-                                .focus_visible(|s| {
-                                    s.bg(self.theme.get().pdf_style().placeholder_bg)
-                                })
                                 .aria_label("Dismiss notice")
                                 .px_2()
                                 .py_1()
@@ -3255,12 +3241,7 @@ mod tests;
 impl Workspace {
     /// Shift+F10 opens the focused tab's menu at its rendered row, including
     /// the collapsed rail. It exposes case actions without a pointer.
-    fn sidebar_tab_menu(
-        &self,
-        row: gpui::Stateful<gpui::Div>,
-        id: u64,
-        cx: &mut Context<Self>,
-    ) -> gpui::Stateful<gpui::Div> {
+    fn sidebar_tab_menu(&self, row: ui::Control, id: u64, cx: &mut Context<Self>) -> ui::Control {
         let bounds = std::rc::Rc::new(std::cell::Cell::new(gpui::Bounds::default()));
         let drawn = bounds.clone();
         row.relative()

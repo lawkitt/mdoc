@@ -34,11 +34,28 @@ struct Driver {
     cx: HeadlessAppContext,
     window: gpui::AnyWindowHandle,
     frames: Vec<Value>,
+    focus_rings: Vec<Value>,
     #[cfg(target_os = "windows")]
     pngs: encoder::Encoder,
 }
 
 impl Driver {
+    /// Paired images of the same state: only keyboard focus changes. The
+    /// contract test checks pixels, including that the control keeps its fill.
+    fn focus_pair(&mut self, out: &Path, name: &str, target: gpui::FocusHandle) -> Result<()> {
+        let rest = format!("focus-{name}-rest.png");
+        let focused = format!("focus-{name}.png");
+        self.change(|w, window, cx| window.focus(&w.focus, cx))?;
+        self.settle()?;
+        self.png(&out.join(&rest))?;
+        self.change(|_, window, cx| window.focus(&target, cx))?;
+        self.settle()?;
+        self.png(&out.join(&focused))?;
+        self.focus_rings
+            .push(json!({"control": name, "rest": rest, "focused": focused}));
+        Ok(())
+    }
+
     fn change<R>(
         &mut self,
         f: impl FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>) -> R,
@@ -258,6 +275,24 @@ fn scenarios(
     })?;
     records.push(d.capture(out, "review")?);
     d.change(|_, window, cx| {
+        let region = view.read(cx).toolbar_region.clone();
+        window.focus(&region, cx);
+    })?;
+    d.key("tab")?;
+    let toggle = d.change(|_, window, cx| {
+        assert!(view.read(cx).replacements_open());
+        window.focused(cx).expect("first toolbar control")
+    })?;
+    d.focus_pair(out, "toggle-on", toggle)?;
+    let sidebar = d.change(|w, _, _| {
+        w.sidebar_row_focus
+            .borrow()
+            .get(&w.tabs.active())
+            .expect("selected sidebar row")
+            .clone()
+    })?;
+    d.focus_pair(out, "sidebar-row", sidebar)?;
+    d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
             let variant = &v.pii.review().variants()[0];
             let id = v
@@ -311,6 +346,10 @@ fn scenarios(
         // directly, even though TestPlatform cannot show a native window.
         w.settings.update(cx, |p, cx| p.show(window, cx));
     })?;
+    d.settle()?;
+    d.key("tab")?;
+    let row = d.change(|_, window, cx| window.focused(cx).expect("first Settings row"))?;
+    d.focus_pair(out, "settings-row", row)?;
     records.push(d.capture(out, "settings")?);
     d.change(|w, window, cx| w.settings.update(cx, |p, cx| p.open_dictionary(window, cx)))?;
     records.push(d.capture(out, "dictionary")?);
@@ -527,6 +566,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
     let path = profile.path().join("Services Agreement.md");
     std::fs::write(&path, text).map_err(|e| e.to_string())?;
     let mut screens = Vec::new();
+    let mut focus_rings = Vec::new();
     for (theme, tag) in [(ThemeChoice::Light, "light"), (ThemeChoice::Dark, "dark")] {
         let mut cx = HeadlessAppContext::with_platform(text_system.clone(), Arc::new(()), || {
             #[cfg(target_os = "macos")]
@@ -575,6 +615,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             cx,
             window: window.into(),
             frames: Vec::new(),
+            focus_rings: Vec::new(),
             #[cfg(target_os = "windows")]
             pngs: encoder::Encoder::new()?,
         };
@@ -588,6 +629,10 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             record["theme"] = json!(tag);
             screens.push(record);
         }
+        for mut record in d.focus_rings.drain(..) {
+            record["theme"] = json!(tag);
+            focus_rings.push(record);
+        }
         // No summary can pass while an encoder is still writing or has failed.
         #[cfg(target_os = "windows")]
         d.pngs.finish()?;
@@ -598,7 +643,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
         "headless-metal"
     };
     let summary = json!({"schema_version": 1, "platform": std::env::consts::OS, "renderer": renderer, "viewport": [WIDTH, HEIGHT],
-        "profile_directory": profile.path(), "screens": screens,
+        "profile_directory": profile.path(), "screens": screens, "focus_rings": focus_rings,
         "isolation": {"data_directory": data_directory, "cache_directory": cache_directory,
             "os_case_keys_disabled": true, "network_requests_disabled": true},
         "timing_scope": "CPU layout/paint and synchronous GPU raster/readback measured separately; PNG encoding excluded",

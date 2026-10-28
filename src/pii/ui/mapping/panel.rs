@@ -553,7 +553,7 @@ impl DocumentView {
     }
 
     /// Expand or collapse every listed identity; its name follows the state.
-    fn expand_all_control(&self, cx: &mut Context<Self>) -> gpui::Stateful<gpui::Div> {
+    fn expand_all_control(&self, cx: &mut Context<Self>) -> ui::Control {
         let expanded = self.all_identities_expanded(cx);
         let (label, icon) = if expanded {
             ("Collapse all identities", ui::Icon::CollapseAll)

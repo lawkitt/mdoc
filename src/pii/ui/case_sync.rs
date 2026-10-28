@@ -180,6 +180,7 @@ impl DocumentView {
                         if this.case_names_open && this.case_term.is_none() {
                             this.case_term = Some(cx.new(|cx| {
                                 markdown_search::SearchInput::new(cx)
+                                    .with_theme(this.theme.clone())
                                     .with_key_context("CaseName")
                                     .with_placeholder("Add a name to the case…")
                             }));

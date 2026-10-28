@@ -7,9 +7,9 @@ impl ReviewUi {
     pub(super) fn reveal_popup_control(
         &self,
         id: impl Into<gpui::ElementId>,
-        control: gpui::Stateful<gpui::Div>,
+        control: ui::Control,
         cx: &App,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> ui::Control {
         let focus = self.popup_control_focus(id, cx);
         ui::reveal_focus(
             control.track_focus(&focus),
@@ -76,8 +76,7 @@ impl DocumentView {
         // The status is also the way out: hovering swaps it for "Cancel"
         // in the same place; a click stops the scan.
         Some(
-            div()
-                .id("cancel-pii-scan")
+            crate::ui::focus_ring("cancel-pii-scan", theme)
                 .when(cfg!(test), |v| {
                     v.debug_selector(|| "cancel-pii-scan".into())
                 })
@@ -97,7 +96,6 @@ impl DocumentView {
                 .border_color(gpui::transparent_black())
                 .cursor_pointer()
                 .hover(move |s| s.bg(palette.placeholder_bg).border_color(palette.border))
-                .focus_visible(move |s| s.bg(palette.placeholder_bg).border_color(palette.border))
                 .on_click(cx.listener(|this, _, window, cx| this.stop_pii_scan(window, cx)))
                 .child(
                     div()

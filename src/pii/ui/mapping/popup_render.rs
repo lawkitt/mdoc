@@ -16,10 +16,7 @@ use mdoc_pii::Category;
 use std::{ops::Range, sync::Arc, time::Duration};
 
 /// The quiet button look: a thin border, regular weight.
-fn secondary(
-    v: gpui::Stateful<gpui::Div>,
-    theme: crate::style::Theme,
-) -> gpui::Stateful<gpui::Div> {
+fn secondary(v: crate::ui::Control, theme: crate::style::Theme) -> crate::ui::Control {
     v.px_3()
         .py_1()
         .rounded_md()
@@ -108,7 +105,7 @@ impl DocumentView {
         label: impl Into<SharedString>,
         enabled: bool,
         cx: &App,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> crate::ui::Control {
         let id = id.into();
         let debug = id.to_string();
         self.pii.reveal_popup_control(
@@ -126,7 +123,7 @@ impl DocumentView {
         id: impl Into<gpui::ElementId>,
         enabled: bool,
         cx: &App,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> crate::ui::Control {
         let id = id.into();
         let debug = id.to_string();
         let focus = self.pii.popup_control_focus(id.clone(), cx);
@@ -870,7 +867,7 @@ impl DocumentView {
         checked: Option<bool>,
         enabled: bool,
         cx: &App,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> crate::ui::Control {
         let palette = self.theme.get().pdf_style();
         let label = label.into();
         self.menu_control(id, enabled, cx)

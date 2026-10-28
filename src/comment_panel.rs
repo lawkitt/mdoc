@@ -31,13 +31,11 @@ impl Render for CommentPanel {
             .border_t_1()
             .border_color(palette.border)
             .child(
-                div()
-                    .id("toggle-comments")
+                crate::ui::focus_ring("toggle-comments", self.theme.get())
                     .role(gpui::Role::Button)
                     .aria_label("Toggle comments")
                     .key_context("UiControl")
                     .tab_index(0)
-                    .focus_visible(|s| s.bg(palette.placeholder_bg))
                     .p_2()
                     .cursor_pointer()
                     .child(format!(
