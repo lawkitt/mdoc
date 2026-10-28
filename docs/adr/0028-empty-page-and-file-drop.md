@@ -1,7 +1,8 @@
 # Empty page and external file drop
 
 Status: Accepted, 2026-10-09. The empty page is superseded by Home in
-[ADR 0048](0048-workspace-shell-redesign.md); file drop stands.
+[ADR 0048](0048-workspace-shell-redesign.md); file drop stands. Amended by
+[ADR 0075](0075-folder-sheet.md) (folder drops show the folder sheet).
 
 ## Problem
 
@@ -15,7 +16,7 @@ mdoc accepted no files dragged from the OS.
 - Sidebar drops show an insertion line and open new tabs at that position; a
   drop never replaces a document. Dragging over the collapsed rail reveals it.
 - Drag-over feedback reads "Drop to open", or "No supported files" when nothing
-  dragged is supported. Folder drops open as a case (ADR 0041).
+  dragged is supported. Folder drops show the folder sheet (ADR 0075).
 
 ## Consequences
 

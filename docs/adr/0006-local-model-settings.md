@@ -4,6 +4,7 @@ Status: Accepted, 2026-10-02. Amended by
 [ADR 0026](0026-first-use-model-setup.md) (defaults, first-use setup, Settings
 rows and footer) and [ADR 0066](0066-recognition-language-defaults.md) (the
 OCR choice is the default only for documents that suggest no language).
+Settings layout superseded by [ADR 0076](0076-settings-categories.md).
 
 ## Problem
 
