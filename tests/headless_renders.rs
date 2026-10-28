@@ -122,11 +122,12 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
         .unwrap();
     let start = Instant::now();
     // WARP rasterizes every 2x frame in software; allow slower hosted Windows
-    // CPUs as well as this workstation. This is a hang watchdog, not a budget.
+    // CPUs as well as this workstation. Hosted macOS runners vary too (one
+    // took over 300 s). This is a hang watchdog, not a budget.
     let timeout = Duration::from_secs(if cfg!(target_os = "windows") {
         1200
     } else {
-        300
+        600
     });
     while child.try_wait().unwrap().is_none() {
         #[cfg(target_os = "windows")]
