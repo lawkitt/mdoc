@@ -1462,18 +1462,7 @@ impl Workspace {
             if self.is_placeholder(tab, cx) {
                 continue;
             }
-            let name = tab
-                .view()
-                .map(|v| v.read(cx).display_name())
-                .unwrap_or_else(|| {
-                    tab.record()
-                        .attachment
-                        .as_ref()
-                        .unwrap_or(&tab.record().markdown)
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "Untitled.md".into())
-                });
+            let name = super::tab_label(tab, cx).name;
             rows.push(Row {
                 section: "Open tabs",
                 label: name,

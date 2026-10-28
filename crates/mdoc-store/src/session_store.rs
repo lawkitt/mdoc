@@ -42,6 +42,9 @@ pub struct TabRecord {
     pub source_only: bool,
     pub blank: bool,
     pub blank_disposable: bool,
+    /// The unsaved tab's name, retained across restarts without its contents.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     pub attachment: Option<PathBuf>,
     pub preview_visible: bool,
     pub caret: usize,
@@ -180,6 +183,7 @@ mod tests {
             source_only: false,
             blank: false,
             blank_disposable: false,
+            name: None,
             attachment: Some(dir.path().join("source.docx")),
             preview_visible: false,
             caret: 8,

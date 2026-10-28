@@ -2,6 +2,174 @@
 use super::*;
 
 #[gpui::test]
+fn untitled_numbering_reuses_closed_gaps_and_suggests_the_tab_name(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let second = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    let third = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        let names: Vec<_> = tabs
+            .tabs
+            .iter()
+            .map(|tab| tab_label(tab, cx).name)
+            .collect();
+        assert_eq!(names, ["Untitled.md", "Untitled 2.md", "Untitled 3.md"]);
+        let view = tabs.active_view().unwrap();
+        assert_eq!(view.read(cx).session.suggested_name(), "Untitled 3.md");
+    });
+    cx.dispatch_action(SaveAs);
+    cx.run_until_parked();
+    assert!(cx.did_prompt_for_new_path());
+    cx.simulate_new_path_selection(|_| None);
+    cx.run_until_parked();
+    cx.simulate_input("third document");
+    for action in [Box::new(Close) as Box<dyn gpui::Action>, Box::new(Quit)] {
+        cx.update(|window, cx| window.dispatch_action(action, cx));
+        cx.run_until_parked();
+        assert_eq!(
+            cx.pending_prompt().unwrap().0,
+            "Save changes to “Untitled 3.md”?"
+        );
+        cx.simulate_prompt_answer("Cancel");
+        cx.run_until_parked();
+    }
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.close_tab(second, window, cx);
+        tabs.new_tab(window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            tabs.read(cx).active_view().unwrap().read(cx).display_name(),
+            "Untitled 2.md"
+        );
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.close_tab(first, window, cx);
+        tabs.new_tab(window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            tabs.read(cx).active_view().unwrap().read(cx).display_name(),
+            "Untitled.md"
+        );
+        assert_eq!(
+            tabs.read(cx)
+                .tabs
+                .get(third)
+                .unwrap()
+                .view()
+                .unwrap()
+                .read(cx)
+                .display_name(),
+            "Untitled 3.md"
+        );
+    });
+}
+
+#[gpui::test]
+fn untitled_numbering_counts_lazy_restored_tabs_and_keeps_their_names(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.new_tab(window, cx);
+        tabs.new_tab(window, cx);
+    });
+    cx.run_until_parked();
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = dir.path().join("session.json");
+    cx.update(|_, cx| session_store::save(&manifest, &tabs.read(cx).snapshot(cx)).unwrap());
+    let session = session_store::load(&manifest).unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.tabs.clear();
+        tabs.tab_subscriptions.clear();
+        tabs.restore(session, window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        assert!(tabs.tabs[0].view().is_none());
+        assert!(tabs.tabs[1].view().is_none());
+        assert_eq!(tab_label(&tabs.tabs[1], cx).name, "Untitled 2.md");
+        assert_eq!(
+            tabs.active_view().unwrap().read(cx).display_name(),
+            "Untitled 3.md"
+        );
+        assert_eq!(
+            tabs.active_view()
+                .unwrap()
+                .read(cx)
+                .session
+                .suggested_name(),
+            "Untitled 3.md"
+        );
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = tabs.read(cx).active_view().unwrap();
+        assert_eq!(view.read(cx).display_name(), "Untitled 4.md");
+        assert_eq!(view.read(cx).session.suggested_name(), "Untitled 4.md");
+    });
+}
+
+#[gpui::test]
+fn untitled_numbering_reserves_later_restored_names_before_naming_legacy_blanks(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let saved = dir.path().join("Untitled 2.md");
+    std::fs::write(&saved, "saved").unwrap();
+    // The older manifest's unnamed blank precedes named, lazy records.
+    let (tabs, cx) = boot(
+        cx,
+        Session {
+            tabs: vec![
+                TabRecord {
+                    blank: true,
+                    ..TabRecord::default()
+                },
+                TabRecord {
+                    blank: true,
+                    name: Some("Untitled 3.md".into()),
+                    ..TabRecord::default()
+                },
+                TabRecord {
+                    blank: true,
+                    name: Some("Untitled.md".into()),
+                    ..TabRecord::default()
+                },
+                TabRecord {
+                    markdown: saved,
+                    ..TabRecord::default()
+                },
+            ],
+            ..Session::default()
+        },
+    );
+    cx.update(|_, cx| {
+        assert_eq!(
+            tabs.read(cx).active_view().unwrap().read(cx).display_name(),
+            "Untitled 4.md"
+        );
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        let closed = tabs.tabs[1].id();
+        tabs.close_tab(closed, window, cx);
+        tabs.new_tab(window, cx);
+    });
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            tabs.read(cx).active_view().unwrap().read(cx).display_name(),
+            "Untitled 3.md"
+        );
+    });
+}
+
+#[gpui::test]
 fn pseudonymization_mappings_survive_switches_and_end_with_the_tab(cx: &mut TestAppContext) {
     use mdoc_pii::Category;
     let dir = tempfile::tempdir().unwrap();

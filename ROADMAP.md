@@ -37,10 +37,6 @@ review's polish shipped in 0.2.0. Items are in priority order. Until
 five-item box this cycle); rc.1 is cut once every item is done. Each item
 merges to `main` on its own when green.
 
-1. **[UI] Number new tabs.** Untitled 2.md, Untitled 3.md, so the sidebar,
-   the close and quit prompts ([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md))
-   and VoiceOver tell unsaved tabs apart. *From the rc.4 acceptance run.*
-   *Done when:* each new untitled tab gets the next free number.
 2. **[Cases] Restore banner wording.** Say plainly that restored names are
    proposals and what Apply does. *From the UX review.*
    *Done when:* the banner's first sentence says the names are proposals and

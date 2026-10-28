@@ -877,6 +877,13 @@ impl Workspace {
         if self.tabs[index].view().is_some() {
             return;
         }
+        let names: Vec<_> = self
+            .tabs
+            .iter()
+            .filter(|tab| !tab.record().blank || tab.record().name.is_some())
+            .map(|tab| tab_label(tab, cx).name)
+            .collect();
+        self.tabs.name_blank_tabs(names);
         let record = self.tabs[index].record().clone();
         let theme = self.theme.clone();
         let import_busy = self.import_busy.clone();
@@ -896,6 +903,7 @@ impl Workspace {
                 cx,
             );
             view.active = id == self.tabs.active();
+            view.session.name = record.name.clone();
             view.lifecycle.restore(
                 !record.markdown.as_os_str().is_empty(),
                 record.source_only,
@@ -1733,6 +1741,11 @@ impl Workspace {
                     && view.preview.source().is_none()
                     && view.editor.read(cx).text().is_empty();
                 record.blank_disposable = record.blank && view.lifecycle.blank_disposable();
+                record.name = if record.blank {
+                    view.session.name.clone()
+                } else {
+                    None
+                };
                 // A document still waiting to join its folder's case keeps it.
                 if let Some(link) = view.case.link() {
                     record.case = Some(link.id.clone());
@@ -2774,6 +2787,7 @@ fn tab_label(tab: &Tab, cx: &App) -> TabLabel {
         };
         path.file_name()
             .map(|n| n.to_string_lossy().into_owned())
+            .or_else(|| tab.record().name.clone())
             .unwrap_or_else(|| "Untitled.md".into())
     });
     let saved = view.map(|v| v.session.document.path.as_ref());
