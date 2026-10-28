@@ -156,10 +156,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   macOS `acceptance` user (fleet ADR 0011) shows the first Keychain prompt
   only once, since the case-key item outlives a profile rename and agents
   never delete it. *From the rc.4 acceptance run and the 0.2.1 grill.*
-- **Changelog fragments:** each change adds `changes/<slug>.md`, and
-  `just release` joins them into CHANGELOG in merge order and deletes them, so
-  parallel PRs stop conflicting on Unreleased. Amends ADR 0059's "the same
-  commit adds the CHANGELOG entry"; ADR first. *From the 0.2.1 merges.*
 - **Windows CI timing on slow runners:** ADR 0070 targets about 8 minutes
   for `test (windows-latest)` on a warm cache; #197 was measured only with
   partial caches on EPYC 9V45/9V74. *Done when:* a `main` run with a full

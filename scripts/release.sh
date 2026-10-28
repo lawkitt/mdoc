@@ -2,8 +2,9 @@
 # Usage: scripts/release.sh <version> [--yes] [--check-all]
 #        [--skip-checks-if-ci-green] [--no-push] [--help]
 # Makes the release commit and tag (ADR 0037): checks main is clean and
-# current, runs the checks, sets the version, names the CHANGELOG section for
-# stable versions, commits `release: v<version>`, tags, and pushes on y/N.
+# current, runs the checks, sets the version, joins changes/*.md into
+# CHANGELOG's Unreleased (ADR 0072), names the CHANGELOG section for stable
+# versions, commits `release: v<version>`, tags, and pushes on y/N.
 source "$(dirname "$0")/lib.sh"
 source scripts/release-ci.sh # lib.sh has moved to the repository root
 
@@ -58,12 +59,32 @@ git fetch --quiet --tags origin main
 ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null || die "tag $tag already exists"
 [ "$new" != "$(version)" ] || die "the repository is already at $new"
 
+# Changelog fragments (ADR 0072), newest merge first: in the order commits on
+# main's first-parent history added them, then any others by name.
+fragments() {
+  local f
+  {
+    git log --first-parent --diff-merges=first-parent --diff-filter=A \
+      --format= --name-only -- 'changes/*.md'
+    [ ! -d changes ] || find changes -maxdepth 1 -name '*.md' | LC_ALL=C sort
+  } | awk '!seen[$0]++' | while IFS= read -r f; do
+    [[ $f == changes/*.md && $f != changes/*/* && $f != changes/README.md && -f $f ]] || continue
+    [[ $f =~ ^changes/[A-Za-z0-9._-]+\.md$ ]] || die "$f: name fragments with letters, digits, '.', '_' and '-'"
+    printf '%s\n' "$f"
+  done
+}
+fragment_list=$(fragments)
+for f in $fragment_list; do
+  [ "$(head -c 2 "$f")" = '- ' ] || die "$f must start with a '- ' CHANGELOG bullet"
+done
+[ -z "$fragment_list" ] || grep -q '^## Unreleased' CHANGELOG.md || die "CHANGELOG.md has no ## Unreleased section for changes/"
+
 stable=1
 [[ $new == *-* ]] && stable=0
-if [ "$stable" = 1 ]; then
+if [ "$stable" = 1 ] && [ -z "$fragment_list" ]; then
   # Unreleased must have content to become the release's highlights.
   body=$(awk '/^## Unreleased/ { grab = 1; next } grab && /^## / { exit } grab' CHANGELOG.md | tr -d '[:space:]')
-  [ -n "$body" ] || die "CHANGELOG.md has no Unreleased entries for $new"
+  [ -n "$body" ] || die "CHANGELOG.md has no Unreleased entries and changes/ has no fragments for $new"
 fi
 
 if [ "$skip_checks" = 1 ] && release_ci_green; then
@@ -78,6 +99,27 @@ else
 fi
 
 scripts/set-version.sh "$new"
+if [ -n "$fragment_list" ]; then
+  # Each fragment without trailing blank lines, one blank line between them,
+  # at the top of Unreleased.
+  block=$(mktemp)
+  for f in $fragment_list; do
+    [ ! -s "$block" ] || echo >>"$block"
+    awk '{ lines[NR] = $0 } NF { last = NR } END { for (i = 1; i <= last; i++) print lines[i] }' "$f" >>"$block"
+  done
+  awk -v block="$block" '
+    !done && /^## Unreleased/ {
+      print; print ""
+      while ((getline line < block) > 0) print line
+      print ""; done = 1; skip = 1; next
+    }
+    skip && /^[[:space:]]*$/ { next }
+    { skip = 0; print }
+  ' CHANGELOG.md >CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
+  rm "$block"
+  # shellcheck disable=SC2086 # fragment names have no spaces (checked above)
+  git rm --quiet $fragment_list
+fi
 if [ "$stable" = 1 ]; then
   today=$(date +%Y-%m-%d)
   awk -v head="## [$new] - $today" '
