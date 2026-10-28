@@ -53,6 +53,7 @@ pub(super) enum Place {
 pub(super) struct CasePage {
     id: String,
     swatches: bool,
+    place: Place,
     filter: Entity<SearchInput>,
     add: Entity<SearchInput>,
     scroll: gpui::ScrollHandle,
@@ -66,6 +67,10 @@ pub(super) struct CasePage {
 impl CasePage {
     pub(super) fn id(&self) -> &str {
         &self.id
+    }
+
+    pub(super) fn categories(&self) -> bool {
+        matches!(self.place, Place::Categories)
     }
 
     #[cfg(test)]
@@ -199,11 +204,15 @@ impl Workspace {
     ) {
         let (id, alias) = (id.to_string(), alias.to_string());
         let answer = window.prompt(gpui::PromptLevel::Warning, &format!("Forget identity “{alias}”?"),
-            Some("Its originals are forgotten from this case and its open documents. Document text is untouched. This cannot be undone."), &["Forget Identity", "Cancel"], cx);
+            Some("Its originals are forgotten from this case and its member documents. Document text is untouched. This cannot be undone."), &["Forget Identity", "Cancel"], cx);
         cx.spawn_in(window, async move |this, cx| {
             if answer.await.ok() == Some(0) {
-                let _ =
-                    this.update_in(cx, |this, _, cx| this.forget_case_identity(&id, &alias, cx));
+                let _ = this.update_in(cx, |this, window, cx| {
+                    this.forget_case_identity(&id, &alias, cx);
+                    if let Some(page) = this.cases.page.as_ref().filter(|page| page.id == id) {
+                        window.focus(&page.add.read(cx).focus_handle(cx), cx);
+                    }
+                });
             }
         })
         .detach();
@@ -231,6 +240,12 @@ impl Workspace {
                     .chain(forgotten.previous.iter().map(String::as_str))
                     .collect();
                 view.pii.review_mut().forget_aliases(&aliases);
+                view.pii.review_mut().reserve_aliases(
+                    &aliases
+                        .iter()
+                        .map(|alias| alias.to_string())
+                        .collect::<Vec<_>>(),
+                );
                 view.case.set_names(exported.clone());
                 view.review_changed(cx);
                 cx.notify();
@@ -261,7 +276,6 @@ impl Workspace {
         }
         self.cases.list_open = false;
         self.case_list_return = None;
-        self.cases.categories_open = None;
         self.cases.renaming = None;
         let input = |cx: &mut gpui::Context<SearchInput>, placeholder, context| {
             SearchInput::new(cx)
@@ -275,6 +289,7 @@ impl Workspace {
         let page = CasePage {
             id: id.into(),
             swatches: false,
+            place,
             filter,
             add,
             scroll: gpui::ScrollHandle::new(),
@@ -388,6 +403,11 @@ impl Workspace {
             self.carry_out_cases(effect.into_iter().collect(), cx);
         }
         self.checkpoint(window, cx);
+        if let Some(page) = self.cases.page.as_ref().filter(|page| page.id == id)
+            && let Some(focus) = page.controls.borrow().get("case-page-open-all")
+        {
+            window.focus(focus, cx);
+        }
         cx.notify();
     }
 
@@ -471,7 +491,7 @@ impl Workspace {
             .flex_col()
             .gap_4()
             .child(div().text_size(px(26.)).child(summary.name.clone()))
-            .child(format!("{} documents", summary.documents))
+            .child(document_count(summary.documents))
             .child(
                 ui::primary_button("case-page-unlock", "Unlock…", self.theme.get(), true)
                     .track_focus(&self.cases.page.as_ref().unwrap().color_focus)
@@ -591,9 +611,14 @@ impl Workspace {
                         .text_size(px(12.))
                         .text_color(p.header_muted)
                         .child(format!(
-                            "{} documents · {} names · created {}",
-                            case.members.len(),
+                            "{} · {} {} · created {}",
+                            document_count(case.members.len()),
                             case.exported().len(),
+                            if case.exported().len() == 1 {
+                                "name"
+                            } else {
+                                "names"
+                            },
                             created_date(case.created)
                         )),
                 )
@@ -977,5 +1002,12 @@ fn created_date(seconds: u64) -> String {
         [
             "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
         ][(month - 1) as usize]
+    )
+}
+
+fn document_count(count: usize) -> String {
+    format!(
+        "{count} {}",
+        if count == 1 { "document" } else { "documents" }
     )
 }

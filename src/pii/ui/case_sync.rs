@@ -49,10 +49,12 @@ impl DocumentView {
     pub(crate) fn join_case_identities(
         &mut self,
         case: &[ExportedIdentity],
+        reserved: &[String],
         cx: &mut Context<Self>,
     ) -> Result<JoinSummary, String> {
         let document = self.pii.review.export_identities_with_ids();
-        let plan = plan_join(case, &document);
+        let plan = plan_join(case, &document, reserved);
+        self.pii.review.reserve_aliases(reserved);
         self.case.set_names(case.to_vec());
         self.retag_identities(&plan.changes, cx)?;
         let before = self.pii.review.remaining();

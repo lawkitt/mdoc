@@ -5,7 +5,8 @@ Status: Accepted, 2026-10-13. Amends the storage section of
 [ADR 0045](0045-prompt-free-case-key.md) (what counts as "may ask"; data
 protection keychain), on 2026-10-18 (decision 5: the preview is a captioned
 figure below the text) and on 2026-10-24 (decision 3: the notice opens by
-itself only when a locked case is needed).
+itself only when a locked case is needed), and by
+[ADR 0077](0077-case-page.md) (cached case metadata for browsing).
 
 ## Problem
 

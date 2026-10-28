@@ -114,6 +114,7 @@ pub struct Review {
     tracking: Tracking,
     identities: identities::IdentityStore,
     occupied_tokens: HashSet<String>,
+    reserved_tokens: HashSet<String>,
     discovery_version: u64,
     counters: HashMap<Category, usize>,
     next_id: u64,
@@ -415,6 +416,8 @@ impl Review {
         }
         self.candidates.matcher = result.matcher;
         self.occupied_tokens = result.tokens;
+        self.occupied_tokens
+            .extend(self.reserved_tokens.iter().cloned());
         self.occupied_tokens.extend(
             self.candidates
                 .variants

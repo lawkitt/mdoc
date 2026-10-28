@@ -320,6 +320,19 @@ fn generated_tokens(text: &str) -> Vec<(Range<usize>, (Category, u64), bool)> {
 }
 
 impl Review {
+    /// Reserve retired case aliases without retaining any original wording.
+    /// Generated counters are monotonic; custom reservations survive discovery.
+    pub fn reserve_aliases(&mut self, aliases: &[String]) {
+        self.revision.advance();
+        for alias in aliases {
+            self.reserved_tokens.insert(alias.clone());
+            self.occupied_tokens.insert(alias.clone());
+            if let Some((category, number)) = parse_alias(alias) {
+                let counter = self.counters.entry(category).or_default();
+                *counter = (*counter).max(number as usize);
+            }
+        }
+    }
     /// This document's identities with the aliases its text contains, for
     /// restoring AI output and seeding another document's review.
     pub fn export_identities(&self) -> Vec<ExportedIdentity> {
@@ -512,7 +525,11 @@ pub struct JoinPlan {
 /// Align a document's identities with a case: an identity sharing an original
 /// with a case identity takes its alias; any other whose alias the case already
 /// uses takes the next free number. Aliases are never reused.
-pub fn plan_join(case: &[ExportedIdentity], document: &[(u64, ExportedIdentity)]) -> JoinPlan {
+pub fn plan_join(
+    case: &[ExportedIdentity],
+    document: &[(u64, ExportedIdentity)],
+    reserved: &[String],
+) -> JoinPlan {
     let names = |e: &ExportedIdentity| {
         std::iter::once(e.alias.clone())
             .chain(e.previous.iter().cloned())
@@ -520,7 +537,11 @@ pub fn plan_join(case: &[ExportedIdentity], document: &[(u64, ExportedIdentity)]
     };
     // Aliases a document identity may not keep: the case's, and other
     // identities' earlier ones in this document.
-    let case_names: HashSet<String> = case.iter().flat_map(names).collect();
+    let case_names: HashSet<String> = case
+        .iter()
+        .flat_map(names)
+        .chain(reserved.iter().cloned())
+        .collect();
     // Aliases a fresh number may not take: every alias either side ever used.
     let mut taken: HashSet<String> = case_names
         .iter()
@@ -549,6 +570,7 @@ pub fn plan_join(case: &[ExportedIdentity], document: &[(u64, ExportedIdentity)]
                 (c.alias.clone(), c.category, c.custom)
             }
             None if case_names.contains(&doc.alias)
+                || doc.previous.iter().any(|alias| case_names.contains(alias))
                 || assigned.iter().any(|a| a.1 == doc.alias)
                 || document
                     .iter()

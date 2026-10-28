@@ -429,6 +429,9 @@ impl Review {
     }
     pub fn rename_identity(&mut self, id: u64, alias: &str) -> Result<(), String> {
         self.revision.advance();
+        if self.reserved_tokens.contains(alias) {
+            return Err("That alias was retired by the case. Choose another alias.".into());
+        }
         if !valid_replacement(alias) {
             return Err("Use an ASCII alias with letters, digits, underscores or hyphens (up to 128 characters).".into());
         }

@@ -285,6 +285,17 @@ impl Case {
             .filter_map(StoredIdentity::exported)
             .collect()
     }
+    /// Alias-only tombstones. Members must reserve these even though their
+    /// originals no longer exist and cannot be seeded as live identities.
+    pub fn reserved_aliases(&self) -> Vec<String> {
+        self.identities
+            .iter()
+            .filter(|identity| identity.originals.is_empty())
+            .flat_map(|identity| {
+                std::iter::once(identity.alias.clone()).chain(identity.previous.iter().cloned())
+            })
+            .collect()
+    }
     /// Fold a member document's current identities into the case. Identities
     /// the document no longer uses stay; a renamed alias is kept as an earlier
     /// alias, so old files and replies still restore (ADR 0041 #23).

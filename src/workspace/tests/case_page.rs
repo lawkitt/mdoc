@@ -166,6 +166,11 @@ fn case_page_actions_persist_and_delete_returns_home_with_members_open(cx: &mut 
     });
     cx.simulate_prompt_answer("Forget Identity");
     cx.run_until_parked();
+    let add = cx.update(|_, cx| tabs.read(cx).cases.page.as_ref().unwrap().test_inputs().1);
+    assert!(
+        cx.update(|window, cx| add.read(cx).focus_handle(cx).is_focused(window)),
+        "forget returns focus to Add a name"
+    );
     let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
     let saved = store.load(&id).unwrap();
     assert_eq!(saved.color, Some(CaseColor::Teal));
@@ -654,4 +659,234 @@ fn case_close_all_resolves_dirty_members_in_turn_and_cancel_stops_it(cx: &mut Te
     assert!(cx.update(
         |_, cx| !tabs.read(cx).tabs.contains(first) && !tabs.read(cx).tabs.contains(second)
     ));
+}
+
+#[gpui::test]
+fn forgetting_the_highest_alias_reserves_it_in_new_members_and_survives_reopen(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(first, window, cx).unwrap()
+    });
+    let second = dir.path().join("second.md");
+    std::fs::write(&second, "Carol").unwrap();
+    let second = session_store::identity(&second);
+    tabs.update(cx, |tabs, cx| {
+        let (_, effect) = tabs
+            .case_coordinator
+            .edit(&id, |case| {
+                case.identities.push(mdoc_store::cases::StoredIdentity {
+                    alias: "PERSON_2".into(),
+                    previous: vec![],
+                    category: "PERSON".into(),
+                    custom: false,
+                    originals: vec!["Bob".into()],
+                });
+                case.members.push(second.clone());
+                Some(())
+            })
+            .unwrap();
+        tabs.carry_out_cases(effect.into_iter().collect(), cx);
+        tabs.forget_case_identity(&id, "PERSON_2", cx);
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_case_member(second.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let member = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.pii.set_reviewing(true);
+        view.pii
+            .review_mut()
+            .add_manual("Carol", 0..5, mdoc_pii::Category::Person)
+            .unwrap();
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+        assert_eq!(view.editor.read(cx).text(), "PERSON_3");
+        view.write(second.clone(), None, cx);
+    });
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.case_changed(member, cx);
+        tabs.close_tab(member, window, cx);
+    });
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_case_member(second.clone(), window, cx)
+    });
+    cx.run_until_parked();
+    let reopened = active(&tabs, cx);
+    cx.update(|_, cx| {
+        let identities = reopened.read(cx).pii.review().export_identities();
+        assert!(
+            identities
+                .iter()
+                .any(|identity| identity.alias == "PERSON_3" && identity.wording() == "Carol")
+        );
+        assert!(
+            !identities
+                .iter()
+                .any(|identity| identity.alias == "PERSON_2")
+        );
+    });
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    assert!(
+        store
+            .load(&id)
+            .unwrap()
+            .exported()
+            .iter()
+            .any(|identity| identity.alias == "PERSON_3" && identity.wording() == "Carol")
+    );
+}
+
+#[gpui::test]
+fn detached_documents_keep_their_mapping_and_explicit_rejoin_uses_a_fresh_alias(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(tab, window, cx).unwrap()
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.remove_from_case(tab, window, cx)
+    });
+    tabs.update(cx, |tabs, cx| {
+        tabs.forget_case_identity(&id, "PERSON_1", cx)
+    });
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert!(
+            view.read(cx)
+                .pii
+                .review()
+                .export_identities()
+                .iter()
+                .any(|identity| identity.alias == "PERSON_1")
+        )
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.join_case(tab, &id, window, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert!(
+            view.read(cx)
+                .pii
+                .review()
+                .export_identities()
+                .iter()
+                .all(|identity| identity.alias != "PERSON_1")
+        );
+        assert!(
+            tabs.read(cx)
+                .case_coordinator
+                .case(&id)
+                .unwrap()
+                .exported()
+                .iter()
+                .any(
+                    |identity| identity.alias == "PERSON_2" && identity.wording() == "Anna Petrova"
+                )
+        );
+    });
+}
+
+#[gpui::test]
+fn swatches_and_inline_rename_are_reachable_and_activatable_by_keyboard(cx: &mut TestAppContext) {
+    cx.update(crate::bind_all_keys);
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(tab, window, cx).unwrap()
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_case(&id, window, cx));
+    draw(cx);
+    draw(cx);
+    let color = cx.update(|_, cx| {
+        tabs.read(cx)
+            .cases
+            .page
+            .as_ref()
+            .unwrap()
+            .test_controls()
+            .into_iter()
+            .find(|(id, _)| id == "case-page-color")
+            .unwrap()
+            .1
+    });
+    cx.update(|window, cx| window.focus(&color, cx));
+    draw(cx);
+    activate_control(cx);
+    let swatches = cx.update(|_, cx| {
+        tabs.read(cx)
+            .cases
+            .page
+            .as_ref()
+            .unwrap()
+            .test_controls()
+            .into_iter()
+            .filter(|(id, _)| id.starts_with("case-swatch-"))
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(swatches.len(), 8);
+    let mut reached = Vec::new();
+    for _ in 0..60 {
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        cx.update(|window, cx| {
+            if let Some(focus) = window.focused(cx) {
+                reached.push(focus);
+            }
+        });
+        if swatches.iter().all(|(_, focus)| reached.contains(focus)) {
+            break;
+        }
+    }
+    assert!(swatches.iter().all(|(_, focus)| reached.contains(focus)));
+    let blue = swatches
+        .iter()
+        .find(|(id, _)| id == "case-swatch-Blue")
+        .unwrap()
+        .1
+        .clone();
+    cx.update(|window, cx| window.focus(&blue, cx));
+    draw(cx);
+    activate_control(cx);
+    assert_eq!(
+        cx.update(|_, cx| tabs.read(cx).case_coordinator.case(&id).unwrap().color),
+        Some(CaseColor::Blue)
+    );
+    let rename = cx.update(|_, cx| {
+        tabs.read(cx)
+            .cases
+            .page
+            .as_ref()
+            .unwrap()
+            .test_controls()
+            .into_iter()
+            .find(|(id, _)| id == "case-page-rename")
+            .unwrap()
+            .1
+    });
+    cx.update(|window, cx| window.focus(&rename, cx));
+    draw(cx);
+    activate_control(cx);
+    cx.simulate_input("Renamed from keyboard");
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert_eq!(
+        cx.update(|_, cx| tabs
+            .read(cx)
+            .case_coordinator
+            .case(&id)
+            .unwrap()
+            .name
+            .clone()),
+        "Renamed from keyboard"
+    );
 }

@@ -109,6 +109,7 @@ pub fn load(path: &Path) -> io::Result<Session> {
     if session
         .collapsed_cases
         .iter()
+        .chain(session.cases.iter().map(|case| &case.id))
         .any(|id| id.len() != 32 || !id.bytes().all(|b| b.is_ascii_hexdigit()))
     {
         return Err(io::Error::other("Invalid case id in session"));
@@ -209,6 +210,39 @@ mod tests {
         save(&path, &session).unwrap();
         assert_eq!(load(&path).unwrap(), session);
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+    #[test]
+    fn cached_case_summary_ids_are_validated_on_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session.json");
+        let mut session = Session {
+            cases: vec![crate::cases::CaseSummary {
+                id: "aB0123456789cdef".repeat(2),
+                name: "Example case".into(),
+                documents: 3,
+                color: None,
+            }],
+            ..Session::default()
+        };
+        save(&path, &session).unwrap();
+        assert_eq!(load(&path).unwrap(), session);
+
+        for invalid in [
+            "a".repeat(31),
+            "a".repeat(33),
+            format!("{}g", "a".repeat(31)),
+            format!("{}é", "a".repeat(30)),
+            "../secret".into(),
+        ] {
+            session.cases[0].id = invalid.clone();
+            save(&path, &session).unwrap();
+            let error = load(&path).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Invalid case id in session",
+                "{invalid:?}"
+            );
+        }
     }
     #[test]
     fn corrupt_or_future_manifest_is_not_silently_accepted() {

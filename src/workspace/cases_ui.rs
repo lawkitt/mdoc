@@ -34,8 +34,6 @@ pub(super) struct CaseState {
     pub(super) list_open: bool,
     /// Cases whose member rows are folded under their header.
     pub(super) collapsed: HashSet<String>,
-    /// The case whose category switches are shown.
-    pub(super) categories_open: Option<String>,
     /// The Keychain explainer is shown (ADR 0043).
     pub(super) explainer: bool,
     /// What runs once the explainer's Continue opened the key.
@@ -392,11 +390,12 @@ impl Workspace {
             Some(case) => {
                 let link = CaseLink::of(case);
                 let identities = case.exported();
+                let reserved = case.reserved_aliases();
                 let skip = case.skipped();
                 let case_id = link.id.clone();
                 view.update(cx, |view, cx| {
                     view.case.set_skip(skip);
-                    view.open_case_mapping(link, &identities, cx)
+                    view.open_case_mapping(link, &identities, &reserved, cx)
                 });
                 // A saved document is a member from the moment it joins.
                 let path = view
@@ -508,6 +507,40 @@ impl Workspace {
         let Some(view) = self.tab_view(id) else {
             return;
         };
+        // Undo of a join can restore an alias the case has irreversibly
+        // retired. Reconcile it before saving, rather than silently dropping
+        // the member's new mapping at the tombstone boundary.
+        if let Some(case) = view
+            .read(cx)
+            .case
+            .link()
+            .and_then(|link| self.case_coordinator.case(&link.id))
+        {
+            let reserved = case.reserved_aliases();
+            if view
+                .read(cx)
+                .pii
+                .review()
+                .export_identities()
+                .iter()
+                .any(|identity| {
+                    reserved.contains(&identity.alias)
+                        || identity
+                            .previous
+                            .iter()
+                            .any(|alias| reserved.contains(alias))
+                })
+            {
+                let identities = case.exported();
+                if let Err(error) = view.update(cx, |view, cx| {
+                    view.join_case_identities(&identities, &reserved, cx)
+                }) {
+                    self.notices
+                        .post(format!("Could not preserve the case mapping: {error}"));
+                    return;
+                }
+            }
+        }
         let (link, identities, path) = {
             let v = view.read(cx);
             let Some(link) = v.case.link().cloned() else {
@@ -638,10 +671,11 @@ impl Workspace {
         };
         let link = CaseLink::of(case);
         let identities = case.exported();
+        let reserved = case.reserved_aliases();
         let skip = case.skipped();
         let result = view.update(cx, |view, cx| {
             view.case.set_skip(skip);
-            let result = view.join_case_identities(&identities, cx);
+            let result = view.join_case_identities(&identities, &reserved, cx);
             if result.is_ok() {
                 view.case.attach(Some(link.clone()));
             }
@@ -924,8 +958,9 @@ impl Workspace {
             PromptLevel::Warning,
             &format!("Delete the case “{name}” and forget its originals?"),
             Some(
-                "Its replacement mapping is wiped from this computer. Documents keep their \
-                 text, but aliases in them and in AI replies can no longer be restored. \
+                "Its saved replacement mapping is wiped from this computer. Documents keep \
+                 their text. Open documents keep their live mappings until closed; without \
+                 this saved mapping, closed documents and AI replies cannot be restored. \
                  This cannot be undone.",
             ),
             &["Delete Case", "Cancel"],
@@ -1237,137 +1272,6 @@ impl Workspace {
         }
         cx.notify();
     }
-    pub(super) fn close_case_categories(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.cases.categories_open = None;
-        match self.case_categories_return.take() {
-            Some(focus) => window.focus(&focus, cx),
-            None => self.focus_active(window, cx),
-        }
-        cx.notify();
-    }
-
-    /// The categories a case detects, as switches.
-    pub(super) fn case_categories(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let case_id = self.cases.categories_open.clone()?;
-        let case = self.case_coordinator.case(&case_id)?;
-        let theme = self.theme.get();
-        let palette = theme.pdf_style();
-        let skip = case.skipped();
-        let rows: Vec<AnyElement> = mdoc_pii::Category::ALL
-            .into_iter()
-            // Date and Other are manual-only; the detector never emits them.
-            .filter(|c| !matches!(c, mdoc_pii::Category::Date | mdoc_pii::Category::Other))
-            .map(|category| {
-                let on = !skip.contains(&category);
-                let id = case_id.clone();
-                ui::control(
-                    gpui::SharedString::from(format!("case-category-{}", category.token())),
-                    format!("{} {}", if on { "✓" } else { "  " }, category.label()),
-                    theme,
-                    true,
-                )
-                .when(cfg!(test), move |v| {
-                    v.debug_selector(move || format!("case-category-{}", category.token()))
-                })
-                .aria_toggled(if on {
-                    gpui::Toggled::True
-                } else {
-                    gpui::Toggled::False
-                })
-                .on_click(
-                    cx.listener(move |this, _, _, cx| this.toggle_case_category(&id, category, cx)),
-                )
-                .into_any_element()
-            })
-            .collect();
-        Some(
-            gpui::deferred(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .flex()
-                    .items_start()
-                    .justify_center()
-                    .pt(px(80.))
-                    .child(
-                        ui::panel("case-categories", theme)
-                            .track_focus(&self.case_categories_focus)
-                            .key_context("UiPanel UiMenu")
-                            .on_action(cx.listener(|this, _: &ui::NextControl, window, cx| {
-                                ui::cycle(window, cx, Some(&this.case_categories_focus), false);
-                                cx.stop_propagation();
-                            }))
-                            .on_action(cx.listener(|this, _: &ui::PreviousControl, window, cx| {
-                                ui::cycle(window, cx, Some(&this.case_categories_focus), true);
-                                cx.stop_propagation();
-                            }))
-                            .on_action(cx.listener(|this, _: &ui::CloseMenu, window, cx| {
-                                this.close_case_categories(window, cx);
-                                cx.stop_propagation();
-                            }))
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "case-categories".into())
-                            })
-                            .w(px(320.))
-                            .p_2()
-                            .flex()
-                            .flex_col()
-                            .gap_1()
-                            .on_mouse_down_out(cx.listener(|this, _, window, cx| {
-                                this.close_case_categories(window, cx);
-                            }))
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_start()
-                                    .gap_2()
-                                    .px_2()
-                                    .child(
-                                        // A long case name ellipsizes rather than
-                                        // pushing × out of the panel (ADR 0046).
-                                        div()
-                                            .flex_1()
-                                            .min_w_0()
-                                            .flex()
-                                            .flex_col()
-                                            .child("Categories to detect")
-                                            .child(
-                                                div()
-                                                    .text_size(px(11.))
-                                                    .text_color(palette.header_muted)
-                                                    .truncate()
-                                                    .child(case.name.clone()),
-                                            ),
-                                    )
-                                    .child(
-                                        ui::control("close-case-categories", "×", theme, true)
-                                            .flex_shrink_0()
-                                            .when(cfg!(test), |v| {
-                                                v.debug_selector(|| "close-case-categories".into())
-                                            })
-                                            .aria_label("Close")
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.close_case_categories(window, cx);
-                                            })),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .px_2()
-                                    .text_size(px(11.))
-                                    .text_color(palette.header_muted)
-                                    .child(
-                                        "Scans in this case's documents skip categories that are \
-                                         off. Names you mark yourself are still replaced.",
-                                    ),
-                            )
-                            .children(rows),
-                    ),
-            )
-            .with_priority(2)
-            .into_any_element(),
-        )
-    }
     /// Case entries for the tab context menu.
     pub(super) fn case_menu_items(&self, tab: u64, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let theme = self.theme.get();
@@ -1552,20 +1456,17 @@ impl Workspace {
                                 .text_size(px(11.))
                                 .text_color(palette.header_muted)
                                 .child(format!(
-                                    "{} {} · {} {}{}",
-                                    self.case_coordinator
-                                        .case(&case.id)
-                                        .map_or(0, |case| case.exported().len()),
-                                    if self
-                                        .case_coordinator
-                                        .case(&case.id)
-                                        .is_some_and(|case| case.exported().len() == 1)
-                                    {
-                                        "name"
-                                    } else {
-                                        "names"
-                                    },
-                                    documents,
+                                    "{}{documents} {}{}",
+                                    self.case_coordinator.case(&case.id).map_or_else(
+                                        String::new,
+                                        |case| {
+                                            let count = case.exported().len();
+                                            format!(
+                                                "{count} {} · ",
+                                                if count == 1 { "name" } else { "names" }
+                                            )
+                                        }
+                                    ),
                                     if documents == 1 {
                                         "document"
                                     } else {

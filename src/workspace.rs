@@ -218,8 +218,6 @@ pub(super) struct Workspace {
     /// close; the notices popover takes Esc (ADR 0062).
     pub(super) case_list_focus: gpui::FocusHandle,
     pub(super) case_list_return: Option<gpui::FocusHandle>,
-    pub(super) case_categories_focus: gpui::FocusHandle,
-    pub(super) case_categories_return: Option<gpui::FocusHandle>,
     pub(super) notices_focus: gpui::FocusHandle,
     tabs: tab_set::TabSet<Entity<DocumentView>>,
     /// Each shown tab's event and change subscriptions, dropped with it.
@@ -385,8 +383,6 @@ impl Workspace {
             focus_regions: focus_regions::FocusRegions::new(cx.focus_handle(), cx.focus_handle()),
             case_list_focus: cx.focus_handle(),
             case_list_return: None,
-            case_categories_focus: cx.focus_handle(),
-            case_categories_return: None,
             notices_focus: cx.focus_handle(),
             tabs: tab_set::TabSet::default(),
             tab_subscriptions: std::collections::HashMap::new(),
@@ -1381,6 +1377,16 @@ impl Workspace {
                 }
                 if let Some(view) = self.tabs.get(tab).and_then(|t| t.view().cloned()) {
                     view.update(cx, |view, cx| view.start_restored(&reply, window, cx));
+                    if let Some(case) = reply
+                        .case
+                        .as_ref()
+                        .and_then(|link| self.case_coordinator.case(&link.id))
+                    {
+                        let reserved = case.reserved_aliases();
+                        view.update(cx, |view, _| {
+                            view.pii.review_mut().reserve_aliases(&reserved)
+                        });
+                    }
                 }
             }
             TabEvent::Import(ImportEvent::State) => {
@@ -3171,7 +3177,6 @@ impl Render for Workspace {
             })
             .children(self.case_list(cx))
             .children(self.case_header_menu(cx))
-            .children(self.case_categories(cx))
             .children(self.folder_sheet_view(window, cx))
             .children(self.keychain_explainer(window, cx))
             .child(
@@ -3357,7 +3362,6 @@ impl Workspace {
             || self.cases.list_open
             || self.cases.explainer
             || self.folder_sheets.open()
-            || self.cases.categories_open.is_some()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
             || window
@@ -3378,7 +3382,6 @@ impl Workspace {
             || self.cases.list_open
             || self.cases.explainer
             || self.folder_sheets.open()
-            || self.cases.categories_open.is_some()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
         {

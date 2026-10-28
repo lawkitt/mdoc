@@ -144,7 +144,7 @@ impl Driver {
                     "case_page_documents": w.cases.page.as_ref().and_then(|page| w.case_coordinator.case(page.id())).map(|case| case.members.len()),
                     "case_page_names": w.cases.page.as_ref().and_then(|page| w.case_coordinator.case(page.id())).map(|case| case.exported().len()),
                     "case_rename": w.cases.renaming.is_some(),
-                    "case_categories": w.cases.categories_open.is_some(),
+                    "case_categories": w.cases.page.as_ref().is_some_and(|page| page.categories()),
                     "keychain_explainer": w.cases.explainer,
                     "folder_sheet": w.folder_sheets.sheet().map(|s| s.primary_label()),
                     "folder_sheet_ticked": w.folder_sheets.sheet().map(|s| s.ticked_count()),
@@ -537,12 +537,9 @@ fn scenarios(
     records.push(d.capture(out, "rename-case")?);
     d.key("escape")?;
     d.change(|w, window, cx| {
-        w.cases.categories_open = Some(id.clone());
-        window.focus(&w.case_categories_focus, cx);
-        cx.notify();
+        w.show_case_page(&id, super::case_page::Place::Categories, window, cx);
     })?;
     records.push(d.capture(out, "case-categories")?);
-    d.change(|w, window, cx| w.close_case_categories(window, cx))?;
     d.change(|w, window, cx| w.activate(w.tabs.active(), window, cx))?;
     d.change(|w, _, cx| {
         // Preview only. Continue is never invoked and no OS key is read.
