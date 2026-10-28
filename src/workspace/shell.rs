@@ -5,10 +5,12 @@ use crate::{
     document_view::{CopyMarkdown, DocumentView, Save, SaveAs, ToggleCompare},
     markdown_search::{SearchInput, SearchInputEvent},
     pii::ui::{CopyForAi, Pseudonymize},
+    shortcuts,
     style::{self, Theme},
     ui,
     workspace::{
-        Close, New, Open, OpenCase, PasteAiResponse, PseudonymizeClipboard, Settings, ToggleSidebar,
+        Close, New, Open, OpenCase, PasteAiResponse, PseudonymizeClipboard, Settings,
+        ToggleSidebar, shortcuts_ui::ShowShortcuts,
     },
 };
 use gpui::{
@@ -35,30 +37,26 @@ actions!(
     ]
 );
 
-const PALETTE: &str = "CommandPalette";
+pub(crate) const PALETTE: &str = "CommandPalette";
 
+/// The palette, Home, Notices and the shortcuts sheet from the shortcuts
+/// table (ADR 0073); moving inside the palette's list stays here. Esc in
+/// `Workspace` is the window's own, below every deeper one: Notices opens
+/// without focus (ADR 0062), so Esc closes it from a source-only tab or Home.
 pub(crate) fn bind_keys(cx: &mut App) {
-    let modifier = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
+    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Shell));
     cx.bind_keys([
-        KeyBinding::new(&format!("{modifier}-k"), OpenPalette, None),
-        KeyBinding::new(&format!("{modifier}-shift-h"), ShowHome, None),
         KeyBinding::new("up", PaletteUp, Some(PALETTE)),
         KeyBinding::new("down", PaletteDown, Some(PALETTE)),
         KeyBinding::new("enter", PaletteConfirm, Some(PALETTE)),
-        KeyBinding::new("escape", PaletteClose, Some(PALETTE)),
-        // The window's own Esc, below every deeper one: Notices opens without
-        // focus (ADR 0062), so Esc closes it from a source-only tab or Home.
-        KeyBinding::new("escape", CloseNotices, Some("Workspace")),
     ]);
 }
 
 pub(super) struct ShellState {
     pub recents: Recents,
     pub palette: Option<Palette>,
+    /// The keyboard shortcuts sheet, while open (ADR 0073).
+    pub shortcuts: Option<super::shortcuts_ui::ShortcutsSheet>,
     /// Files dragged over the window while Home shows: how many are droppable.
     pub drop: Option<usize>,
     pub drop_generation: u64,
@@ -76,6 +74,7 @@ impl ShellState {
                 Recents::default_path()
             }),
             palette: None,
+            shortcuts: None,
             drop: None,
             drop_generation: 0,
             recent_focus: Default::default(),
@@ -112,6 +111,7 @@ enum Command {
     OpenCase,
     Home,
     Settings,
+    Shortcuts,
     Theme,
     /// The active document's heading whose line starts at this offset.
     Heading(usize),
@@ -120,20 +120,54 @@ enum Command {
     Recent(PathBuf),
 }
 
+impl Command {
+    /// The action this command runs, when it is one: the palette shows its
+    /// key from the shortcuts table (ADR 0073).
+    fn action(&self) -> Option<Box<dyn gpui::Action>> {
+        Some(match self {
+            Command::NewTab => Box::new(New),
+            Command::OpenFiles => Box::new(Open),
+            Command::Pseudonymize => Box::new(Pseudonymize),
+            Command::PseudonymizeClipboard => Box::new(PseudonymizeClipboard),
+            Command::RestoreReply => Box::new(PasteAiResponse),
+            Command::CopyForAi => Box::new(CopyForAi),
+            Command::CopyMarkdown => Box::new(CopyMarkdown),
+            Command::Save => Box::new(Save),
+            Command::SaveAs => Box::new(SaveAs),
+            Command::CloseTab => Box::new(Close),
+            Command::BeforeAfter => Box::new(ToggleCompare),
+            Command::ToggleSidebar => Box::new(ToggleSidebar),
+            Command::OpenCase => Box::new(OpenCase),
+            Command::Home => Box::new(ShowHome),
+            Command::Settings => Box::new(Settings),
+            Command::Shortcuts => Box::new(ShowShortcuts),
+            Command::PasteText
+            | Command::ExpandIdentities
+            | Command::CollapseIdentities
+            | Command::Theme
+            | Command::Heading(_)
+            | Command::Tab(_)
+            | Command::Case(_)
+            | Command::Recent(_) => return None,
+        })
+    }
+
+    /// The key that runs this command on this platform, if any.
+    fn shortcut(&self) -> Option<String> {
+        self.action().and_then(|action| shortcuts::label(&*action))
+    }
+}
+
 struct Row {
     section: &'static str,
     label: String,
     detail: Option<String>,
-    shortcut: Option<&'static str>,
     command: Command,
 }
 
-fn shortcut(mac: &'static str, other: &'static str) -> &'static str {
-    if cfg!(target_os = "macos") {
-        mac
-    } else {
-        other
-    }
+/// The key `action` runs from, as the shortcuts table writes it.
+fn key(action: &dyn gpui::Action) -> String {
+    shortcuts::label(action).unwrap_or_default()
 }
 
 impl Workspace {
@@ -299,7 +333,7 @@ impl Workspace {
                             .text_color(p.header_muted),
                     )
                     .child(div().flex_1().child("Search…"))
-                    .child(div().text_size(px(11.)).child(shortcut("⌘K", "Ctrl+K")))
+                    .child(div().text_size(px(11.)).child(key(&OpenPalette)))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(OpenPalette), cx)),
             )
             .child(
@@ -308,7 +342,7 @@ impl Workspace {
                         div()
                             .text_size(px(11.))
                             .text_color(p.header_muted)
-                            .child(shortcut("⇧⌘H", "Ctrl+Shift+H")),
+                            .child(key(&ShowHome)),
                     )
                     .on_click(cx.listener(|this, _, window, cx| this.show_home(window, cx))),
             )
@@ -924,7 +958,7 @@ impl Workspace {
                 ui::filled_button("home-open", "Open files…", theme, true)
                     .when(cfg!(test), |v| v.debug_selector(|| "home-open".into()))
                     .mt_1()
-                    .child(ui::key_hint(shortcut("⌘O", "Ctrl+O")))
+                    .child(ui::key_hint(key(&Open)))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(Open), cx)),
             )
             .child(
@@ -1293,21 +1327,18 @@ impl Workspace {
                 section: "Actions",
                 label: "New tab".into(),
                 detail: None,
-                shortcut: Some(shortcut("⌘N", "Ctrl+N")),
                 command: Command::NewTab,
             },
             Row {
                 section: "Actions",
                 label: "Open files…".into(),
                 detail: None,
-                shortcut: Some(shortcut("⌘O", "Ctrl+O")),
                 command: Command::OpenFiles,
             },
             Row {
                 section: "Actions",
                 label: "Paste text as new tab".into(),
                 detail: None,
-                shortcut: None,
                 command: Command::PasteText,
             },
         ];
@@ -1317,42 +1348,36 @@ impl Workspace {
                     section: "Actions",
                     label: "Pseudonymize".into(),
                     detail: None,
-                    shortcut: None,
                     command: Command::Pseudonymize,
                 },
                 Row {
                     section: "Actions",
                     label: "Copy for AI".into(),
                     detail: None,
-                    shortcut: None,
                     command: Command::CopyForAi,
                 },
                 Row {
                     section: "Actions",
                     label: "Copy Markdown".into(),
                     detail: None,
-                    shortcut: None,
                     command: Command::CopyMarkdown,
                 },
                 Row {
                     section: "Actions",
                     label: "Save".into(),
                     detail: None,
-                    shortcut: Some(shortcut("⌘S", "Ctrl+S")),
                     command: Command::Save,
                 },
                 Row {
                     section: "Actions",
                     label: "Save as…".into(),
                     detail: None,
-                    shortcut: Some(shortcut("⇧⌘S", "Ctrl+Shift+S")),
                     command: Command::SaveAs,
                 },
                 Row {
                     section: "Actions",
                     label: "Before / After".into(),
                     detail: None,
-                    shortcut: Some(shortcut("⌘\\", "Ctrl+\\")),
                     command: Command::BeforeAfter,
                 },
             ]);
@@ -1366,14 +1391,12 @@ impl Workspace {
                         section: "Actions",
                         label: "Expand all identities".into(),
                         detail: None,
-                        shortcut: None,
                         command: Command::ExpandIdentities,
                     },
                     Row {
                         section: "Actions",
                         label: "Collapse all identities".into(),
                         detail: None,
-                        shortcut: None,
                         command: Command::CollapseIdentities,
                     },
                 ]);
@@ -1382,7 +1405,6 @@ impl Workspace {
                 section: "Actions",
                 label: "Close tab".into(),
                 detail: None,
-                shortcut: Some(shortcut("⌘W", "Ctrl+W")),
                 command: Command::CloseTab,
             }]);
         }
@@ -1391,21 +1413,18 @@ impl Workspace {
                 section: "Actions",
                 label: "Restore AI reply".into(),
                 detail: None,
-                shortcut: Some(shortcut("⌥⇧⌘V", "Ctrl+Alt+Shift+V")),
                 command: Command::RestoreReply,
             },
             Row {
                 section: "Actions",
                 label: "Pseudonymize clipboard".into(),
                 detail: None,
-                shortcut: Some(shortcut("⌥⇧⌘C", "Ctrl+Alt+Shift+C")),
                 command: Command::PseudonymizeClipboard,
             },
             Row {
                 section: "Actions",
                 label: "Open a case…".into(),
                 detail: None,
-                shortcut: None,
                 command: Command::OpenCase,
             },
             Row {
@@ -1415,28 +1434,30 @@ impl Workspace {
                     style::theme_label(self.theme_choice.next()).trim_start_matches("Theme: ")
                 ),
                 detail: None,
-                shortcut: None,
                 command: Command::Theme,
             },
             Row {
                 section: "Actions",
                 label: "Toggle sidebar".into(),
                 detail: None,
-                shortcut: cfg!(target_os = "macos").then_some("⌃⌘S"),
                 command: Command::ToggleSidebar,
+            },
+            Row {
+                section: "Actions",
+                label: "Keyboard shortcuts".into(),
+                detail: None,
+                command: Command::Shortcuts,
             },
             Row {
                 section: "Go to",
                 label: "Home".into(),
                 detail: None,
-                shortcut: Some(shortcut("⇧⌘H", "Ctrl+Shift+H")),
                 command: Command::Home,
             },
             Row {
                 section: "Go to",
                 label: "Settings".into(),
                 detail: None,
-                shortcut: Some(shortcut("⌘,", "Ctrl+,")),
                 command: Command::Settings,
             },
         ]);
@@ -1452,7 +1473,6 @@ impl Workspace {
                         section: "Go to heading",
                         label: heading.title,
                         detail: Some(format!("H{}", heading.level)),
-                        shortcut: None,
                         command: Command::Heading(heading.offset),
                     });
                 }
@@ -1467,7 +1487,6 @@ impl Workspace {
                 section: "Open tabs",
                 label: name,
                 detail: None,
-                shortcut: None,
                 command: Command::Tab(tab.id()),
             });
         }
@@ -1476,7 +1495,6 @@ impl Workspace {
                 section: "Cases",
                 label: case.name.clone(),
                 detail: Some(format!("{} documents", case.members.len())),
-                shortcut: None,
                 command: Command::Case(case.id.clone()),
             });
         }
@@ -1495,7 +1513,6 @@ impl Workspace {
                 section: "Recent",
                 label: name,
                 detail: Some(kind),
-                shortcut: None,
                 command: Command::Recent(recent.path.clone()),
             });
         }
@@ -1507,6 +1524,15 @@ impl Workspace {
                 let label = row.label.to_lowercase();
                 query.split_whitespace().all(|word| label.contains(word))
             })
+            .collect()
+    }
+
+    /// Each palette row with a key: its label and the key, for tests.
+    #[cfg(test)]
+    pub(super) fn palette_shortcuts(&self, cx: &App) -> Vec<(String, String)> {
+        self.palette_rows(cx)
+            .into_iter()
+            .filter_map(|row| Some((row.label, row.command.shortcut()?)))
             .collect()
     }
 
@@ -1576,6 +1602,7 @@ impl Workspace {
             Command::OpenCase => dispatch(window, cx, Box::new(OpenCase)),
             Command::Home => self.show_home(window, cx),
             Command::Settings => dispatch(window, cx, Box::new(Settings)),
+            Command::Shortcuts => dispatch(window, cx, Box::new(ShowShortcuts)),
             Command::Theme => self.cycle_theme(window, cx),
             Command::Heading(offset) => {
                 // The Markdown editor must be the pane shown: not Before/After,
@@ -1627,6 +1654,7 @@ impl Workspace {
                 Command::Heading(_) => ui::Icon::ChevronRight,
                 Command::Home => ui::Icon::Home,
                 Command::Settings => ui::Icon::Settings,
+                Command::Shortcuts => ui::Icon::Help,
                 Command::Theme => ui::Icon::ThemeSystem,
                 Command::RestoreReply => ui::Icon::Reply,
                 Command::CopyForAi | Command::CopyMarkdown => ui::Icon::Copy,
@@ -1666,7 +1694,7 @@ impl Workspace {
                     .when_some(row.detail.clone(), |v, d| {
                         v.child(div().text_size(px(11.)).text_color(p.header_muted).child(d))
                     })
-                    .when_some(row.shortcut, |v, s| {
+                    .when_some(row.command.shortcut(), |v, s| {
                         v.child(div().text_size(px(11.)).text_color(p.header_muted).child(s))
                     })
                     .on_click(cx.listener(move |this, _, window, cx| {

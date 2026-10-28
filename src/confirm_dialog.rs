@@ -5,9 +5,19 @@
 use crate::{style::Theme, ui};
 use gpui::{
     App, Context, EventEmitter, FocusHandle, Focusable, KeyDownEvent, PromptButton, PromptResponse,
-    SharedString, Window, div, prelude::*, px,
+    SharedString, Window, actions, div, prelude::*, px,
 };
 use std::{cell::Cell, rc::Rc};
+
+actions!(confirm_dialog, [Discard]);
+
+/// The dialog's key context.
+pub(crate) const DIALOG: &str = "ConfirmDialog";
+
+/// ⌘D / Alt+D answers Discard, from the shortcuts table (ADR 0073).
+pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Dialog));
+}
 
 /// Replace the platform prompt for the rest of the app's life.
 pub fn install(theme: Rc<Cell<Theme>>, cx: &mut App) {
@@ -77,13 +87,7 @@ impl ConfirmDialog {
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keystroke = &event.keystroke;
-        let modifiers = keystroke.modifiers;
-        let discard_chord = if cfg!(target_os = "macos") {
-            modifiers.platform && !modifiers.alt && !modifiers.control
-        } else {
-            modifiers.alt && !modifiers.control && !modifiers.platform
-        };
-        let plain = !modifiers.modified();
+        let plain = !keystroke.modifiers.modified();
         let index = match keystroke.key.as_str() {
             "escape" => self.cancel_index(),
             // A focused button takes Enter itself; with focus on the dialog
@@ -91,10 +95,6 @@ impl ConfirmDialog {
             "enter" if plain && self.focus.is_focused(window) => {
                 (!self.buttons.is_empty()).then_some(0)
             }
-            // ⌘D / Alt+D: Discard, as in the platform's save sheets.
-            "d" if discard_chord => self
-                .position("Discard")
-                .or_else(|| self.position("Don't Save")),
             _ => None,
         };
         if let Some(index) = index {
@@ -139,7 +139,17 @@ impl Render for ConfirmDialog {
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .key_context("UiPanel")
+                    .key_context(format!("{DIALOG} UiPanel").as_str())
+                    // ⌘D / Alt+D: Discard, as in the platform's save sheets.
+                    .on_action(cx.listener(|this, _: &Discard, _, cx| {
+                        match this
+                            .position("Discard")
+                            .or_else(|| this.position("Don't Save"))
+                        {
+                            Some(index) => this.answer(index, cx),
+                            None => cx.propagate(),
+                        }
+                    }))
                     .track_focus(&self.focus)
                     .tab_group()
                     .tab_stop(false)

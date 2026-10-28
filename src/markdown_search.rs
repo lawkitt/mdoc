@@ -30,11 +30,13 @@ actions!(
     ]
 );
 
-/// Bind the editing keys used by the compact Markdown find field.
+/// Every text field's key context.
+pub(crate) const TEXT_FIELDS: &str = "MarkdownSearch || MarkdownReplace || PreviewSearch || PseudonymReplacement || SettingsInput || ReplacementSearch || CommandPalette || ShortcutsFilter";
+
+/// Bind the text fields' editing keys: caret and deletion basics here, the
+/// clipboard keys from the shortcuts table (ADR 0073).
 pub fn bind_keys(cx: &mut App) {
-    let context = Some(
-        "MarkdownSearch || MarkdownReplace || PreviewSearch || PseudonymReplacement || SettingsInput || ReplacementSearch || CommandPalette",
-    );
+    let context = Some(TEXT_FIELDS);
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, context),
         KeyBinding::new("delete", Delete, context),
@@ -42,18 +44,13 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("right", Right, context),
         KeyBinding::new("shift-left", SelectLeft, context),
         KeyBinding::new("shift-right", SelectRight, context),
-        KeyBinding::new("cmd-a", SelectAll, context),
-        KeyBinding::new("ctrl-a", SelectAll, context),
         KeyBinding::new("home", Home, context),
         KeyBinding::new("end", End, context),
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, context),
-        KeyBinding::new("cmd-v", Paste, context),
-        KeyBinding::new("ctrl-v", Paste, context),
-        KeyBinding::new("cmd-c", Copy, context),
-        KeyBinding::new("ctrl-c", Copy, context),
-        KeyBinding::new("cmd-x", Cut, context),
-        KeyBinding::new("ctrl-x", Cut, context),
     ]);
+    cx.bind_keys(crate::shortcuts::bindings(
+        crate::shortcuts::Owner::TextField,
+    ));
 }
 
 /// Emitted whenever the query text changes, including through IME composition.

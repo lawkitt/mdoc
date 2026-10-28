@@ -1,6 +1,6 @@
 //! The menu bar. On macOS GPUI makes the first menu the application menu, so
 //! it is the app menu (About, Settings, Services, Hide, Quit), followed by
-//! File, Edit, View and Window. Edit items use the editor's actions with their
+//! File, Edit, View, Window and Help. Edit items use the editor's actions with their
 //! OS actions, so they also reach native Open/Save panels.
 
 use crate::{
@@ -9,10 +9,10 @@ use crate::{
     search_session::{FindMarkdown, FindNextMarkdown, FindPreviousMarkdown, FindReplaceMarkdown},
     workspace::{
         Close, Import, New, NextTab, Open, OpenCase, PasteAiResponse, PreviousTab,
-        PseudonymizeClipboard, Quit, Settings, ToggleSidebar,
+        PseudonymizeClipboard, Quit, Settings, ToggleSidebar, shortcuts_ui::ShowShortcuts,
     },
 };
-use gpui::{App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, actions};
+use gpui::{App, Menu, MenuItem, OsAction, SystemMenuType, actions};
 
 actions!(
     mdoc,
@@ -41,13 +41,8 @@ pub(crate) fn install(cx: &mut App) {
             let _ = window.update(cx, |_, window, _| window.zoom_window());
         }
     });
-    if cfg!(target_os = "macos") {
-        cx.bind_keys([
-            KeyBinding::new("cmd-h", HideApp, None),
-            KeyBinding::new("cmd-alt-h", HideOtherApps, None),
-            KeyBinding::new("cmd-m", MinimizeWindow, None),
-        ]);
-    }
+    // macOS only: the table has no Windows keys for these.
+    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Menus));
     cx.set_menus(menus());
 }
 
@@ -138,5 +133,6 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Next Tab", NextTab),
             MenuItem::action("Previous Tab", PreviousTab),
         ]),
+        Menu::new("Help").items([MenuItem::action("Keyboard Shortcuts", ShowShortcuts)]),
     ]
 }

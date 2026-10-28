@@ -416,21 +416,47 @@ gpui::actions!(
         /// Previous item in the More menu (⇧Tab, ↑).
         MenuPrevious,
         /// Close the More menu and return to its button (Esc).
-        MenuClose
+        MenuClose,
+        /// Next page (Page Down).
+        NextPage,
+        /// Previous page (Page Up).
+        PreviousPage,
+        /// First page (Home).
+        FirstPage,
+        /// Last page (End).
+        LastPage,
+        /// Type a page number to jump to (⌘⌥G, Ctrl+Alt+G).
+        GoToPage
     ]
 );
 
-/// Keys for the toolbar's More menu: Tab and the arrows stay inside it and
-/// Esc closes it. Call once at startup; the menu's context is deeper than a
-/// host's own Tab bindings, so these win while it has focus.
+/// Keys for the toolbar's More menu (Tab and the arrows stay inside it and
+/// Esc closes it) and for paging through the document. Call once at
+/// startup; the menu's context is deeper than a host's own Tab bindings, so
+/// these win while it has focus.
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([
+    cx.bind_keys(key_bindings(cfg!(target_os = "macos")));
+}
+
+/// The view's key bindings on macOS (`mac`) or Windows and Linux, for a host
+/// that registers them itself.
+pub fn key_bindings(mac: bool) -> Vec<gpui::KeyBinding> {
+    vec![
         gpui::KeyBinding::new("tab", MenuNext, Some("PdfMenu")),
         gpui::KeyBinding::new("down", MenuNext, Some("PdfMenu")),
         gpui::KeyBinding::new("shift-tab", MenuPrevious, Some("PdfMenu")),
         gpui::KeyBinding::new("up", MenuPrevious, Some("PdfMenu")),
         gpui::KeyBinding::new("escape", MenuClose, Some("PdfMenu")),
-    ]);
+        gpui::KeyBinding::new("pagedown", NextPage, Some("PdfView")),
+        gpui::KeyBinding::new("pageup", PreviousPage, Some("PdfView")),
+        gpui::KeyBinding::new("home", FirstPage, Some("PdfView")),
+        gpui::KeyBinding::new("end", LastPage, Some("PdfView")),
+        gpui::KeyBinding::new(
+            if mac { "cmd-alt-g" } else { "ctrl-alt-g" },
+            GoToPage,
+            Some("PdfView"),
+        ),
+    ]
 }
 
 /// Toolbar tools in drawn order. At narrow widths the ones that do not fit
@@ -2367,6 +2393,33 @@ impl Render for PdfView {
 
         let root = div()
             .track_focus(&self.focus)
+            .key_context("PdfView")
+            // Typing a page number keeps these keys from paging.
+            .on_action(cx.listener(|this, _: &NextPage, _, cx| {
+                if this.page_input.is_none() {
+                    this.next_page(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &PreviousPage, _, cx| {
+                if this.page_input.is_none() {
+                    this.prev_page(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &FirstPage, _, cx| {
+                if this.page_input.is_none() {
+                    this.go_to_page(0, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &LastPage, _, cx| {
+                if this.page_input.is_none() {
+                    let last = this.dims.len().saturating_sub(1);
+                    this.go_to_page(last, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &GoToPage, _, cx| {
+                this.page_input.get_or_insert_with(String::new);
+                cx.notify();
+            }))
             .size_full()
             .min_w_0()
             .flex()
@@ -2429,12 +2482,6 @@ impl Render for PdfView {
                     return;
                 }
                 let secondary = ev.keystroke.modifiers.secondary();
-                // ⌘⌥G: jump to a page (focus the page-number field to type into).
-                if secondary && ev.keystroke.modifiers.alt && key == "g" {
-                    this.page_input.get_or_insert_with(String::new);
-                    cx.notify();
-                    return;
-                }
                 {
                     // ⌘F toggles the find bar; ⌘G / ⌘⇧G step matches (bar open or not).
                     if secondary && key == "f" {
@@ -2487,14 +2534,8 @@ impl Render for PdfView {
                         }
                     }
                 }
+                // Paging and Go to Page are bound actions (`key_bindings`).
                 match key {
-                    "pagedown" => this.next_page(cx),
-                    "pageup" => this.prev_page(cx),
-                    "home" => this.go_to_page(0, cx),
-                    "end" => {
-                        let last = this.dims.len().saturating_sub(1);
-                        this.go_to_page(last, cx);
-                    }
                     "=" | "+" if secondary => this.zoom_in(cx),
                     "-" if secondary => this.zoom_out(cx),
                     "0" if secondary => this.reset_zoom(cx),

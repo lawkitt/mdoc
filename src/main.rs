@@ -20,6 +20,7 @@ mod preview;
 mod search_session;
 mod self_test;
 mod settings_ui;
+mod shortcuts;
 mod single_instance;
 mod spelling;
 mod style;
@@ -29,17 +30,10 @@ mod ui;
 mod updater;
 mod workspace;
 
-use document_view::{
-    Save, SaveAs, ToggleCompare, ZoomIn, ZoomOut, ZoomReset, bind_markdown_search_keys,
-};
-use gpui::{App, Bounds, KeyBinding, WindowBounds, WindowOptions, prelude::*, px, size};
+use document_view::bind_markdown_search_keys;
+use gpui::{App, Bounds, WindowBounds, WindowOptions, prelude::*, px, size};
 use mdoc_import::docx_preview;
-use spelling::{NextMisspelling, PreviousMisspelling};
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
-use workspace::{
-    Close, Import, New, NextTab, Open, PasteAiResponse, PreviousTab, PseudonymizeClipboard, Quit,
-    Settings,
-};
 
 fn main() {
     // The pinned engine chooses providers through this variable. Set it once,
@@ -155,21 +149,7 @@ fn main() {
         })
         .detach();
         updater::init(cx);
-        mdoc_editor::bind_keys(cx);
-        markdown_search::bind_keys(cx);
-        pii::ui::bind_keys(cx);
-        workspace::bind_case_keys(cx);
-        workspace::bind_shell_keys(cx);
-        settings_ui::bind_keys(cx);
-        ui::bind_keys(cx);
-        gpui_pdf::bind_keys(cx);
-        cx.bind_keys([KeyBinding::new(
-            "escape",
-            comparison_ui::CloseComparison,
-            Some("ModelComparison"),
-        )]);
-        bind_markdown_search_keys(cx);
-        bind_app_keys(cx);
+        bind_all_keys(cx);
         workspace::bind_app_actions(cx);
         menus::install(cx);
         let bounds = Bounds::centered(None, size(px(1100.), px(760.)), cx);
@@ -262,59 +242,34 @@ fn open_paths_from_os(
         .detach();
 }
 
-/// Window-wide shortcuts: files, tabs, zoom and spelling.
+/// Window-wide shortcuts: files, tabs, zoom and spelling, from the
+/// shortcuts table (ADR 0073).
 pub(crate) fn bind_app_keys(cx: &mut App) {
-    let modifier = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
-    cx.bind_keys([
-        // Chrome falls back to the active document; text fields keep their keys.
-        KeyBinding::new(
-            &format!("{modifier}-z"),
-            mdoc_editor::Undo,
-            Some("Workspace && !Editor && !TextInput"),
-        ),
-        KeyBinding::new(
-            &format!("{modifier}-shift-z"),
-            mdoc_editor::Redo,
-            Some("Workspace && !Editor && !TextInput"),
-        ),
-        #[cfg(not(target_os = "macos"))]
-        KeyBinding::new(
-            "ctrl-y",
-            mdoc_editor::Redo,
-            Some("Workspace && !Editor && !TextInput"),
-        ),
-        KeyBinding::new(&format!("{modifier}-,"), Settings, None),
-        KeyBinding::new(&format!("{modifier}-n"), New, None),
-        KeyBinding::new(&format!("{modifier}-o"), Open, None),
-        KeyBinding::new(&format!("{modifier}-shift-i"), Import, None),
-        KeyBinding::new(&format!("{modifier}-s"), Save, None),
-        KeyBinding::new(&format!("{modifier}-shift-s"), SaveAs, None),
-        KeyBinding::new(&format!("{modifier}-alt-shift-v"), PasteAiResponse, None),
-        KeyBinding::new(&format!("{modifier}-\\"), ToggleCompare, None),
-        KeyBinding::new(
-            &format!("{modifier}-alt-shift-c"),
-            PseudonymizeClipboard,
-            None,
-        ),
-        KeyBinding::new(&format!("{modifier}-w"), Close, None),
-        KeyBinding::new(&format!("{modifier}-="), ZoomIn, None),
-        KeyBinding::new(&format!("{modifier}-+"), ZoomIn, None),
-        // Layouts where plus needs Shift (US: Shift + =) report the Shift.
-        KeyBinding::new(&format!("{modifier}-shift-="), ZoomIn, None),
-        KeyBinding::new(&format!("{modifier}-shift-+"), ZoomIn, None),
-        KeyBinding::new(&format!("{modifier}--"), ZoomOut, None),
-        KeyBinding::new(&format!("{modifier}-0"), ZoomReset, None),
-        KeyBinding::new(&format!("{modifier}-q"), Quit, None),
-        KeyBinding::new(&format!("{modifier}-;"), NextMisspelling, None),
-        KeyBinding::new(&format!("{modifier}-shift-;"), PreviousMisspelling, None),
-        KeyBinding::new("ctrl-tab", NextTab, None),
-        // The macOS convention for View › Toggle Sidebar.
-        #[cfg(target_os = "macos")]
-        KeyBinding::new("ctrl-cmd-s", workspace::ToggleSidebar, None),
-        KeyBinding::new("ctrl-shift-tab", PreviousTab, None),
-    ]);
+    cx.bind_keys(shortcuts::bindings(shortcuts::Owner::App));
+}
+
+/// Every key binding, in the order GPUI's tie-breaks rely on: between
+/// equally deep bindings the later one wins (so the find fields' ⌘↩ beats
+/// the global Apply all).
+pub(crate) fn bind_all_keys(cx: &mut App) {
+    shortcuts::bind_crate(
+        cx,
+        shortcuts::Owner::Editor,
+        mdoc_editor::key_bindings(cfg!(target_os = "macos")),
+    );
+    markdown_search::bind_keys(cx);
+    pii::ui::bind_keys(cx);
+    workspace::bind_case_keys(cx);
+    workspace::bind_shell_keys(cx);
+    settings_ui::bind_keys(cx);
+    ui::bind_keys(cx);
+    shortcuts::bind_crate(
+        cx,
+        shortcuts::Owner::Pdf,
+        gpui_pdf::key_bindings(cfg!(target_os = "macos")),
+    );
+    comparison_ui::bind_keys(cx);
+    bind_markdown_search_keys(cx);
+    bind_app_keys(cx);
+    confirm_dialog::bind_keys(cx);
 }

@@ -126,6 +126,7 @@ fn opening_and_saving_preserves_markdown_bytes(cx: &mut TestAppContext) {
 fn ask_to_close(cx: &mut TestAppContext) -> (Entity<DocumentView>, &mut VisualTestContext) {
     let (app, cx) = boot(cx);
     cx.update(|_, cx| {
+        crate::confirm_dialog::bind_keys(cx);
         crate::confirm_dialog::install(
             std::rc::Rc::new(std::cell::Cell::new(style::Theme::Light)),
             cx,

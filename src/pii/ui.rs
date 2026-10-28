@@ -260,151 +260,33 @@ impl ReviewUi {
     }
 }
 
+/// The Replacements checklist (ADR 0048): Space ticks, Enter jumps to the
+/// mention, →/← show and hide mentions, ⌫ keeps the original.
+pub(crate) const LIST: &str = "IdentityPanel && !ReplacementSearch && !SettingsInput && !UiControl";
+/// The mention bar: Enter applies in the selected scope and moves on, Space
+/// unticks in it, ⌫ / ⌘⌫ / ⇧⌘⌫ keep this / same wording / all (ADR 0055).
+pub(crate) const POPUP: &str = "PseudonymReview && !PseudonymReplacement && !UiControl && !UiMenu";
+/// ← → step through the entity's mentions, ⌘← ⌘→ to its ends; the alias
+/// field and menus keep their own arrows (ADR 0055).
+pub(crate) const STEP: &str = "PseudonymReview && !PseudonymReplacement && !PiiChooser && !UiMenu";
+/// Document undo in the popup; the alias field keeps its own text undo.
+pub(crate) const POPUP_UNDO: &str = "PseudonymReview && !PseudonymReplacement";
+
+/// The review keys come from the shortcuts table (ADR 0073); moving inside
+/// the chooser and the popup's and panel's menus stays here. Registered
+/// after the table's popup keys: the chooser is also `PseudonymReview`, and
+/// the later binding wins its Enter.
 pub(crate) fn bind_keys(cx: &mut App) {
-    const STEP: &str = "PseudonymReview && !PseudonymReplacement && !PiiChooser && !UiMenu";
-    // The alias field keeps its own text undo.
-    const POPUP_UNDO: &str = "PseudonymReview && !PseudonymReplacement";
-    let modifier = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
-    cx.bind_keys(decision_bindings(modifier));
+    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Pii));
     cx.bind_keys([
-        KeyBinding::new("down", crate::pii::ui::PiiNextChoice, Some("PiiChooser")),
-        KeyBinding::new("up", crate::pii::ui::PiiPreviousChoice, Some("PiiChooser")),
-        KeyBinding::new("enter", crate::pii::ui::PiiOpenChoice, Some("PiiChooser")),
-        KeyBinding::new(&format!("{modifier}-shift-p"), Pseudonymize, None),
-        KeyBinding::new("alt-enter", PiiReviewCandidate, Some("Editor")),
-        KeyBinding::new("alt-down", PiiNextCandidate, Some("Editor")),
-        KeyBinding::new("alt-up", PiiPreviousCandidate, Some("Editor")),
-        KeyBinding::new(
-            &format!("{modifier}-alt-p"),
-            PiiAddCandidate,
-            Some("Editor"),
-        ),
-        // In the alias field Enter confirms the draft; elsewhere in the popup
-        // the shared decision keys apply (ADR 0033).
-        KeyBinding::new("enter", PiiConfirm, Some("PseudonymReplacement")),
-        // Scope segments keep Space for selection, but Enter applies in the
-        // chosen scope instead of pressing the focused segment again (#177).
-        KeyBinding::new("enter", crate::pii::ui::ApplyThis, Some("PiiScope")),
-        // ← → step through the entity's mentions, ⌘← ⌘→ to its ends; the
-        // alias field and menus keep their own arrows (ADR 0055).
-        KeyBinding::new("left", crate::pii::ui::PopupPreviousMention, Some(STEP)),
-        KeyBinding::new("right", crate::pii::ui::PopupNextMention, Some(STEP)),
-        KeyBinding::new("up", crate::pii::ui::PopupPreviousMention, Some(STEP)),
-        KeyBinding::new("down", crate::pii::ui::PopupNextMention, Some(STEP)),
-        KeyBinding::new(
-            &format!("{modifier}-up"),
-            crate::pii::ui::PopupFirstMention,
-            Some(STEP),
-        ),
-        KeyBinding::new(
-            &format!("{modifier}-down"),
-            crate::pii::ui::PopupLastMention,
-            Some(STEP),
-        ),
-        KeyBinding::new(
-            &format!("{modifier}-left"),
-            crate::pii::ui::PopupFirstMention,
-            Some(STEP),
-        ),
-        KeyBinding::new(
-            &format!("{modifier}-right"),
-            crate::pii::ui::PopupLastMention,
-            Some(STEP),
-        ),
+        KeyBinding::new("down", PiiNextChoice, Some("PiiChooser")),
+        KeyBinding::new("up", PiiPreviousChoice, Some("PiiChooser")),
+        KeyBinding::new("enter", PiiOpenChoice, Some("PiiChooser")),
         // In the popup's and panel's menus ↑ ↓ move between rows, like Tab
         // (ADR 0062).
         KeyBinding::new("up", crate::ui::PreviousControl, Some("PiiMenu")),
         KeyBinding::new("down", crate::ui::NextControl, Some("PiiMenu")),
-        KeyBinding::new("escape", PiiClosePopup, Some("PseudonymReview")),
-        // Esc leaves before/after, also from inside its read-only columns.
-        KeyBinding::new("escape", crate::pii::ui::CloseCompare, Some("CompareView")),
-        KeyBinding::new(
-            "escape",
-            crate::pii::ui::CloseCompare,
-            Some("CompareView > Editor"),
-        ),
-        KeyBinding::new("escape", crate::pii::ui::PanelEscape, Some("IdentityPanel")),
-        KeyBinding::new(
-            "down",
-            crate::pii::ui::PanelEnterList,
-            Some("ReplacementSearch"),
-        ),
-        // Document undo from anywhere in the replacements panel (ADR 0033).
-        KeyBinding::new("cmd-z", mdoc_editor::Undo, Some("IdentityPanel")),
-        KeyBinding::new("ctrl-z", mdoc_editor::Undo, Some("IdentityPanel")),
-        KeyBinding::new("cmd-shift-z", mdoc_editor::Redo, Some("IdentityPanel")),
-        KeyBinding::new("ctrl-shift-z", mdoc_editor::Redo, Some("IdentityPanel")),
-        KeyBinding::new("ctrl-y", mdoc_editor::Redo, Some("IdentityPanel")),
-        KeyBinding::new("cmd-z", mdoc_editor::Undo, Some(POPUP_UNDO)),
-        KeyBinding::new("ctrl-z", mdoc_editor::Undo, Some(POPUP_UNDO)),
-        KeyBinding::new("cmd-shift-z", mdoc_editor::Redo, Some(POPUP_UNDO)),
-        KeyBinding::new("ctrl-shift-z", mdoc_editor::Redo, Some(POPUP_UNDO)),
-        KeyBinding::new("ctrl-y", mdoc_editor::Redo, Some(POPUP_UNDO)),
     ]);
-}
-
-/// The panel list's movement keys and the decision keys shared by the panel
-/// list and the popup (ADR 0033): Enter applies, Delete keeps the original;
-/// ⌘ widens to the same text, ⇧⌘ to the whole entity.
-fn decision_bindings(modifier: &str) -> Vec<KeyBinding> {
-    const LIST: &str = "IdentityPanel && !ReplacementSearch && !SettingsInput && !UiControl";
-    const POPUP: &str = "PseudonymReview && !PseudonymReplacement && !UiControl && !UiMenu";
-    // The checklist (ADR 0048): Space ticks, Enter jumps to the mention,
-    // →/← show and hide mentions, ⌫ keeps the original; ⌘↩ applies all.
-    let mut bindings = vec![
-        KeyBinding::new("up", crate::pii::ui::PanelUp, Some(LIST)),
-        KeyBinding::new("down", crate::pii::ui::PanelDown, Some(LIST)),
-        KeyBinding::new(
-            &format!("{modifier}-up"),
-            crate::pii::ui::PanelFirst,
-            Some(LIST),
-        ),
-        KeyBinding::new(
-            &format!("{modifier}-down"),
-            crate::pii::ui::PanelLast,
-            Some(LIST),
-        ),
-        KeyBinding::new("alt-up", crate::pii::ui::PanelMoveUp, Some(LIST)),
-        KeyBinding::new("alt-down", crate::pii::ui::PanelMoveDown, Some(LIST)),
-        KeyBinding::new(
-            "alt-escape",
-            crate::pii::ui::PanelEscape,
-            Some("IdentityPanel"),
-        ),
-        KeyBinding::new("space", crate::pii::ui::PanelToggle, Some(LIST)),
-        KeyBinding::new("enter", crate::pii::ui::PanelOpen, Some(LIST)),
-        KeyBinding::new("right", crate::pii::ui::PanelExpand, Some(LIST)),
-        KeyBinding::new("left", crate::pii::ui::PanelCollapse, Some(LIST)),
-        KeyBinding::new("backspace", crate::pii::ui::PanelKeep, Some(LIST)),
-        KeyBinding::new("delete", crate::pii::ui::PanelKeep, Some(LIST)),
-        KeyBinding::new(&format!("{modifier}-enter"), PiiApplyAll, None),
-    ];
-    // The mention bar: Enter applies in the selected scope and moves on,
-    // Space unticks in it, ⌘↩ applies everything (ADR 0055).
-    bindings.extend([
-        KeyBinding::new("enter", crate::pii::ui::ApplyThis, Some(POPUP)),
-        KeyBinding::new("space", crate::pii::ui::PanelKeep, Some(POPUP)),
-    ]);
-    for key in ["backspace", "delete"] {
-        bindings.extend([
-            KeyBinding::new(key, crate::pii::ui::KeepThis, Some(POPUP)),
-            KeyBinding::new(
-                &format!("{modifier}-{key}"),
-                crate::pii::ui::KeepSame,
-                Some(POPUP),
-            ),
-            KeyBinding::new(
-                &format!("{modifier}-shift-{key}"),
-                crate::pii::ui::KeepAll,
-                Some(POPUP),
-            ),
-        ]);
-    }
-    bindings
 }
 
 impl DocumentView {

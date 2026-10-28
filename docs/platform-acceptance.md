@@ -200,8 +200,8 @@ unless Claude observed them on macOS (ADR 0057).
 
 ## 9. Shortcuts
 
-Every application shortcut, from `bind_app_keys`, `bind_markdown_search_keys`,
-`bind_shell_keys`, `pii::ui::bind_keys` and `mdoc_editor::bind_keys`.
+Every application shortcut, from the one shortcuts table
+(`src/shortcuts.rs`, ADR 0073); Mod+/ lists them.
 
 | ID | Shortcut | Action | Result | Note |
 | --- | --- | --- | --- | --- |
@@ -227,6 +227,7 @@ Every application shortcut, from `bind_app_keys`, `bind_markdown_search_keys`,
 | H20 | *macOS*: ⌘←/→ on a wrapped paragraph and a list item, ⌘↑/↓, each with ⇧ | Visual line start / end (after a list marker first), document start / end; ⇧ selects (ADR 0061) | | |
 | H21 | *macOS*: ⌥⌫, ⌥⌦, ⌘⌫ | Delete word left, word right, to the line start | | |
 | H22 | *Windows*: Ctrl+←/→, Ctrl+Home/End, each with Shift; Ctrl+Backspace, Ctrl+Delete | Word moves, document start / end, selection, word deletion | | |
+| H23 | `?` on Home, in the sidebar and toolbar; `?` in the editor and the find field; Mod+/ (⌘/ or Ctrl+/) in the editor, twice | Keyboard Shortcuts sheet: `?` opens it outside text fields and types a `?` inside them; Mod+/ opens it anywhere and closes it again; it shows this platform's keys only, the filter narrows it, ↑/↓ scroll the list, Esc closes it and focus returns (ADR 0073). *macOS*: Help › Keyboard Shortcuts opens it | | |
 
 ## 10. Case key storage
 

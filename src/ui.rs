@@ -550,30 +550,14 @@ actions!(
     ]
 );
 
+/// Tab inside a control group here; keyboard reach (ADR 0062), menus and
+/// the sidebar's keys from the shortcuts table (ADR 0073).
 pub fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("tab", NextControl, Some("UiControl || UiPanel")),
         KeyBinding::new("shift-tab", PreviousControl, Some("UiControl || UiPanel")),
-        KeyBinding::new("escape", CloseMenu, Some("UiMenu")),
-        // Keyboard reach (ADR 0062): F6 / Shift+F6 cycle the window's regions;
-        // Tab from the window itself (Home) enters its controls; Esc in the
-        // sidebar or toolbar returns to the editor.
-        KeyBinding::new("f6", NextRegion, None),
-        KeyBinding::new("shift-f6", PreviousRegion, None),
-        KeyBinding::new("tab", NextControl, Some("Workspace")),
-        KeyBinding::new("shift-tab", PreviousControl, Some("Workspace")),
-        KeyBinding::new(
-            "escape",
-            FocusEditor,
-            Some("SidebarRegion || ToolbarRegion"),
-        ),
-        // The sidebar's tab list is one Tab stop; arrows move inside it.
-        KeyBinding::new("up", SidebarPrevious, Some("SidebarTab")),
-        KeyBinding::new("down", SidebarNext, Some("SidebarTab")),
-        KeyBinding::new("backspace", SidebarCloseTab, Some("SidebarTab")),
-        KeyBinding::new("delete", SidebarCloseTab, Some("SidebarTab")),
-        KeyBinding::new("shift-f10", SidebarMenu, Some("SidebarTab")),
     ]);
+    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Ui));
 }
 
 pub fn cycle(window: &mut Window, cx: &mut App, group: Option<&FocusHandle>, backwards: bool) {

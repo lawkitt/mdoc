@@ -6,9 +6,8 @@ use crate::{
     pii::ui::{PiiAddCandidate, PiiNextCandidate, PiiPreviousCandidate, PiiReviewCandidate},
     preview::{self, RetryPreview},
     search_session::{
-        self, CloseMarkdownSearch, FindMarkdown, FindNextMarkdown, FindPreviousMarkdown,
-        FindReplaceMarkdown, ReplaceAllMarkdown, ReplaceNextMarkdown, SearchRefresh,
-        ToggleMarkdownMatchCase, ToggleMarkdownWholeWord,
+        self, CloseMarkdownSearch, FindNextMarkdown, FindPreviousMarkdown, ReplaceAllMarkdown,
+        ReplaceNextMarkdown, SearchRefresh, ToggleMarkdownMatchCase, ToggleMarkdownWholeWord,
     },
     settings_ui, spelling,
     style::{self, Theme},
@@ -16,8 +15,8 @@ use crate::{
     workspace::{self, Close, Import, New, Open, RetryDocument, ToggleTheme},
 };
 use gpui::{
-    App, Context, Entity, Focusable, KeyBinding, PathPromptOptions, PromptLevel, ScrollHandle,
-    Subscription, Window, actions, div, prelude::*, px,
+    App, Context, Entity, Focusable, PathPromptOptions, PromptLevel, ScrollHandle, Subscription,
+    Window, actions, div, prelude::*, px,
 };
 use mdoc_editor::{EditorEvent, EditorState};
 use mdoc_import::{import, model_work, ocr, recognition};
@@ -1642,52 +1641,9 @@ fn toggled(on: bool) -> gpui::Toggled {
     }
 }
 
+/// The find bar's keys, from the shortcuts table (ADR 0063, 0073).
 pub(crate) fn bind_markdown_search_keys(cx: &mut App) {
-    let mac = cfg!(target_os = "macos");
-    let modifier = if mac { "cmd" } else { "ctrl" };
-    let find = &format!("{modifier}-f");
-    let next = &format!("{modifier}-g");
-    let previous = &format!("{modifier}-shift-g");
-    // Find and Replace keys follow Zed's defaults (ADR 0063).
-    let replace = if mac { "cmd-alt-f" } else { "ctrl-h" };
-    let replace_all = if mac { "cmd-enter" } else { "ctrl-alt-enter" };
-    let match_case = if mac { "cmd-alt-c" } else { "alt-c" };
-    let whole_word = if mac { "cmd-alt-w" } else { "alt-w" };
-    let fields = ["MarkdownSearch", "MarkdownReplace"];
-    let mut bindings = vec![
-        KeyBinding::new(find, FindMarkdown, Some("Editor")),
-        KeyBinding::new(find, FindMarkdown, None),
-        KeyBinding::new(replace, FindReplaceMarkdown, Some("Editor")),
-        KeyBinding::new(replace, FindReplaceMarkdown, None),
-        KeyBinding::new(next, FindNextMarkdown, Some("Editor")),
-        KeyBinding::new(previous, FindPreviousMarkdown, Some("Editor")),
-        KeyBinding::new("enter", FindNextMarkdown, Some("MarkdownSearch")),
-        KeyBinding::new("shift-enter", FindPreviousMarkdown, Some("MarkdownSearch")),
-        KeyBinding::new("enter", ReplaceNextMarkdown, Some("MarkdownReplace")),
-    ];
-    for field in fields {
-        bindings.extend([
-            KeyBinding::new(find, FindMarkdown, Some(field)),
-            KeyBinding::new(replace, FindReplaceMarkdown, Some(field)),
-            KeyBinding::new(next, FindNextMarkdown, Some(field)),
-            KeyBinding::new(previous, FindPreviousMarkdown, Some(field)),
-            KeyBinding::new(replace_all, ReplaceAllMarkdown, Some(field)),
-            KeyBinding::new(match_case, ToggleMarkdownMatchCase, Some(field)),
-            KeyBinding::new(whole_word, ToggleMarkdownWholeWord, Some(field)),
-            KeyBinding::new("escape", CloseMarkdownSearch, Some(field)),
-            // Undo in the find bar undoes the document, Replace all included.
-            KeyBinding::new(&format!("{modifier}-z"), mdoc_editor::Undo, Some(field)),
-            KeyBinding::new(
-                &format!("{modifier}-shift-z"),
-                mdoc_editor::Redo,
-                Some(field),
-            ),
-        ]);
-        if !mac {
-            bindings.push(KeyBinding::new("ctrl-y", mdoc_editor::Redo, Some(field)));
-        }
-    }
-    cx.bind_keys(bindings);
+    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Find));
 }
 
 /// One zoom step (ADR 0048).
