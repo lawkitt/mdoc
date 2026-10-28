@@ -263,6 +263,12 @@ impl Workspace {
                             .on_action(|_: &super::OpenPalette, _, cx| cx.stop_propagation())
                             .on_action(|_: &super::Settings, _, cx| cx.stop_propagation())
                             .on_action(|_: &super::OpenCase, _, cx| cx.stop_propagation())
+                            // Taking focus above Settings must not bypass its
+                            // restrictions on document commands.
+                            .when(
+                                self.settings.read(cx).open,
+                                crate::settings_ui::block_document_commands,
+                            )
                             .on_action(cx.listener(|this, _: &CloseShortcuts, window, cx| {
                                 this.close_shortcuts(window, cx)
                             }))

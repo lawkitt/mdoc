@@ -39,7 +39,8 @@ context.
   Page Up / Down, Home and End; Tab stays inside, F6 does nothing, Esc or a
   click outside closes it, and focus goes back where it was. A command that
   moves focus (⌘N, Ctrl+Tab, Find) closes it and runs; the palette, Settings
-  and Open Case do nothing while it is open. Switching apps keeps it open.
+  and Open Case do nothing while it is open. Over Settings, its document
+  command restrictions still apply. Switching apps keeps it open.
 - **Opening it.** `?` when no text field has focus (Home, sidebar, toolbar,
   panels); ⌘/ (Ctrl+/) everywhere, which also closes it; the palette action
   "Keyboard shortcuts"; Help → Keyboard Shortcuts on macOS. ⌘/ and Help also

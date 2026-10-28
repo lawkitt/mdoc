@@ -108,6 +108,19 @@ fn field(label: &'static str, value: &str, cx: &mut Context<Panel>) -> Entity<Se
         input
     })
 }
+/// Keep document commands blocked when another sheet covers Settings too.
+pub(crate) fn block_document_commands<E: gpui::InteractiveElement>(element: E) -> E {
+    element
+        .on_action(|_: &New, _, cx| cx.stop_propagation())
+        .on_action(|_: &Open, _, cx| cx.stop_propagation())
+        .on_action(|_: &Close, _, cx| cx.stop_propagation())
+        .on_action(|_: &NextTab, _, cx| cx.stop_propagation())
+        .on_action(|_: &PreviousTab, _, cx| cx.stop_propagation())
+        .on_action(|_: &Save, _, cx| cx.stop_propagation())
+        .on_action(|_: &SaveAs, _, cx| cx.stop_propagation())
+        .on_action(|_: &Import, _, cx| cx.stop_propagation())
+}
+
 pub fn control(
     id: impl Into<gpui::ElementId>,
     label: impl Into<gpui::SharedString>,
@@ -966,14 +979,7 @@ impl Render for Panel {
                 .flex().flex_col().rounded_lg().shadow_lg().bg(p.bg).text_color(p.header_fg).text_size(px(13.))
                 .border_1().border_color(p.border)
                 .on_action(cx.listener(|this, _: &CloseSettings, w, cx| if this.dictionary.is_some() { this.close_dictionary(w, cx) } else { this.close(w, cx) }))
-                .on_action(|_: &New, _, cx| cx.stop_propagation())
-                .on_action(|_: &Open, _, cx| cx.stop_propagation())
-                .on_action(|_: &Close, _, cx| cx.stop_propagation())
-                .on_action(|_: &NextTab, _, cx| cx.stop_propagation())
-                .on_action(|_: &PreviousTab, _, cx| cx.stop_propagation())
-                .on_action(|_: &Save, _, cx| cx.stop_propagation())
-                .on_action(|_: &SaveAs, _, cx| cx.stop_propagation())
-                .on_action(|_: &Import, _, cx| cx.stop_propagation())
+                .map(block_document_commands)
                 .on_action(cx.listener(|this, _: &NextSettingsField, w, cx| {
                     ui::cycle(w, cx, Some(&this.focus), false);
                 }))

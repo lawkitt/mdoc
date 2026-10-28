@@ -148,6 +148,41 @@ fn a_command_that_moves_focus_closes_the_sheet(cx: &mut TestAppContext) {
     cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), "typed"));
 }
 
+#[gpui::test]
+fn shortcuts_over_settings_keep_document_commands_blocked(cx: &mut TestAppContext) {
+    cx.update(crate::bind_all_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.update(|window, _| window.activate_window());
+    let view = active(&tabs, cx);
+    cx.simulate_input("original");
+    let count = tabs.read_with(cx, |tabs, _| tabs.tabs.len());
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_settings(window, cx));
+    draw(cx);
+    cx.simulate_keystrokes("secondary-/");
+    draw(cx);
+    assert!(sheet_open(&tabs, cx));
+    // Settings must keep its command restrictions while its sibling sheet
+    // holds focus. Typing after New still belongs to the shortcut filter.
+    cx.simulate_keystrokes("secondary-n");
+    draw(cx);
+    cx.simulate_input("typed");
+    assert_eq!(tabs.read_with(cx, |tabs, _| tabs.tabs.len()), count);
+    assert!(sheet_open(&tabs, cx));
+    cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), "original"));
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    assert!(!sheet_open(&tabs, cx));
+    cx.update(|window, cx| {
+        let settings = tabs.read(cx).settings.read(cx);
+        assert!(settings.open);
+        assert!(settings.focus_handle(cx).contains_focused(window, cx));
+    });
+    cx.simulate_keystrokes("secondary-n");
+    cx.simulate_input("still settings");
+    assert_eq!(tabs.read_with(cx, |tabs, _| tabs.tabs.len()), count);
+    cx.update(|_, cx| assert_eq!(view.read(cx).editor.read(cx).text(), "original"));
+}
+
 struct Other(gpui::FocusHandle);
 impl Render for Other {
     fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
