@@ -1205,6 +1205,31 @@ fn a_member_opened_by_hand_offers_unlock_and_gets_its_mapping(cx: &mut TestAppCo
 }
 
 #[gpui::test]
+fn save_as_case_on_close_retries_a_failed_case_save(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, case) = case_quit_fixture(cx, dir.path());
+    tabs.update(cx, |tabs, cx| {
+        tabs.toggle_case_category(&case, mdoc_pii::Category::Person, cx)
+    });
+    cx.run_until_parked();
+    tabs.read_with(cx, |tabs, _| assert!(tabs.case_coordinator.failed(&case)));
+    // The store is repaired; Save as Case retries the failed save, then closes (#189).
+    std::fs::remove_file(dir.path().join("blocked-store")).unwrap();
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Save as Case");
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
+    tabs.read_with(cx, |tabs, _| assert!(!tabs.case_coordinator.failed(&case)));
+    let saved = mdoc_store::cases::Store::with_key(dir.path().join("blocked-store"), &[3; 32])
+        .load(&case)
+        .unwrap();
+    assert!(!saved.skip.is_empty());
+}
+
+#[gpui::test]
 fn case_quit_failure_can_cancel_without_losing_mappings(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, case) = case_quit_fixture(cx, dir.path());

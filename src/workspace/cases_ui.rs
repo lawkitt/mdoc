@@ -1761,6 +1761,15 @@ impl Workspace {
         ) {
             return;
         }
+        // The case already exists, e.g. its save failed: retry it (#189).
+        let case = self
+            .tab_view(id)
+            .and_then(|view| view.read(cx).case.link().map(|link| link.id.clone()));
+        if let Some(case) = case {
+            let effects = self.case_coordinator.save_and_close(case, id);
+            self.carry_out_cases(effects, cx);
+            return;
+        }
         if let Some(case) = self.create_case(id, window, cx) {
             self.case_coordinator.note_asked(id);
             self.case_coordinator.close_after(case, id);
