@@ -77,7 +77,11 @@ pub struct Panel {
     theme: Rc<Cell<Theme>>,
     /// The window's current choice, projected into this control.
     theme_choice: ThemeChoice,
-    #[cfg(all(debug_assertions, feature = "headless-renders"))]
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
     appearance_bounds: Rc<Cell<Option<[gpui::Bounds<gpui::Pixels>; 3]>>>,
     focus: FocusHandle,
     previous: Option<FocusHandle>,
@@ -243,7 +247,11 @@ impl Panel {
             details: None,
             theme,
             theme_choice: ThemeChoice::default(),
-            #[cfg(all(debug_assertions, feature = "headless-renders"))]
+            #[cfg(all(
+                debug_assertions,
+                feature = "headless-renders",
+                any(target_os = "macos", target_os = "windows")
+            ))]
             appearance_bounds: Rc::default(),
             focus: cx.focus_handle(),
             previous: None,
@@ -299,13 +307,21 @@ impl Panel {
         // The resolved theme may change even while System stays selected.
         cx.notify();
     }
-    #[cfg(all(debug_assertions, feature = "headless-renders"))]
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
     pub(crate) fn selected_theme(&self) -> ThemeChoice {
         self.theme_choice
     }
     /// Geometry from the three actual segments, cleared before each render:
     /// an omitted section or a choice below the fold cannot pass the contract.
-    #[cfg(all(debug_assertions, feature = "headless-renders"))]
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
     pub(crate) fn appearance_in_view(&self) -> bool {
         self.open
             && self.dictionary.is_none()
@@ -1001,14 +1017,22 @@ impl Panel {
             .child(
                 div()
                     .map(|v| {
-                        #[cfg(all(debug_assertions, feature = "headless-renders"))]
+                        #[cfg(all(
+                            debug_assertions,
+                            feature = "headless-renders",
+                            any(target_os = "macos", target_os = "windows")
+                        ))]
                         {
                             let bounds = self.appearance_bounds.clone();
                             v.on_children_prepainted(move |children, _, _| {
                                 bounds.set(children.try_into().ok())
                             })
                         }
-                        #[cfg(not(all(debug_assertions, feature = "headless-renders")))]
+                        #[cfg(not(all(
+                            debug_assertions,
+                            feature = "headless-renders",
+                            any(target_os = "macos", target_os = "windows")
+                        )))]
                         {
                             v
                         }
@@ -1062,7 +1086,11 @@ impl Panel {
 
 impl Render for Panel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        #[cfg(all(debug_assertions, feature = "headless-renders"))]
+        #[cfg(all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        ))]
         self.appearance_bounds.set(None);
         let theme = self.theme.get();
         let p = theme.pdf_style();
