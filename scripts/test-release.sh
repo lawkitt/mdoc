@@ -254,6 +254,71 @@ contains "$CHECK_LOG" check-all
 [ ! -e "$PUSH_LOG" ] || fail 'interactive no pushed'
 echo 'ok: unflagged release retains both interactive prompts'
 
+# Changelog fragments (ADR 0072): newest merge first, renamed ones last.
+cd "$tmp/repo"
+mkdir -p changes
+printf 'Not a fragment.\n' >changes/README.md
+printf -- '- Older.\n\n\n' >changes/older.md
+commit 'older fragment'
+printf -- '- Newer.\n  continued.\n' >changes/newer.md
+commit 'newer fragment'
+git switch --quiet -c fragment
+printf -- '- Merged.\n' >changes/merged.md
+git add changes/merged.md
+git commit --quiet -m 'merged fragment'
+git switch --quiet main
+git merge --quiet --no-ff fragment -m 'merge fragment'
+printf -- '- Renamed.\n' >changes/a-renamed.md
+commit 'renamed fragment, before'
+git mv changes/a-renamed.md changes/z-renamed.md
+commit 'renamed fragment'
+GH_RESULT=missing
+fragment_case() {
+  n=$((n + 1))
+  git -c core.autocrlf=false clone --quiet "$tmp/repo" "$tmp/release-$n"
+  cd "$tmp/release-$n"
+  git config user.name 'Release script test'
+  git config user.email 'release-test@example.invalid'
+  git config commit.gpgsign false
+  git config tag.gpgsign false
+  git config core.autocrlf false
+}
+fragment_case
+bash scripts/release.sh 0.3.0 --yes --no-push >"$tmp/release-output"
+printf '## Unreleased\n\n## [0.3.0] - %s\n\n- Merged.\n\n- Newer.\n  continued.\n\n- Older.\n\n- Renamed.\n\n- Test release.\n' \
+  "$(date +%Y-%m-%d)" >"$tmp/expected"
+diff -u "$tmp/expected" CHANGELOG.md || fail 'fragments joined out of order'
+[ "$(ls changes)" = README.md ] || fail 'fragments not deleted'
+[ -z "$(git status --porcelain)" ] || fail 'dirty release tree'
+git show --name-status --format= HEAD | grep -q '^D.changes/older.md$' || fail 'fragment deletion not in the release commit'
+echo 'ok: a stable release joins fragments newest merge first and deletes them'
+fragment_case
+bash scripts/release.sh 0.3.0-rc.1 --yes --no-push >"$tmp/release-output"
+grep -q '^- Merged\.$' CHANGELOG.md || fail 'pre-release did not join fragments'
+! grep -q '^## \[' CHANGELOG.md || fail 'pre-release named a section'
+[ "$(ls changes)" = README.md ] || fail 'pre-release kept fragments'
+echo 'ok: a pre-release joins fragments into Unreleased'
+cd "$tmp/repo"
+printf 'Older.\n' >changes/older.md
+commit 'malformed fragment'
+fragment_case
+if bash scripts/release.sh 0.3.0 --yes --no-push >"$tmp/error" 2>&1; then fail 'malformed fragment accepted'; fi
+contains "$tmp/error" "changes/older.md must start with a '- ' CHANGELOG bullet"
+cd "$tmp/repo"
+git rm --quiet changes/older.md changes/newer.md changes/merged.md changes/z-renamed.md
+printf '## Unreleased\n\n## [0.1.1] - 2026-01-01\n\n- Old.\n' >CHANGELOG.md
+commit 'empty Unreleased'
+fragment_case
+if bash scripts/release.sh 0.3.0 --yes --no-push >"$tmp/error" 2>&1; then fail 'empty stable release accepted'; fi
+contains "$tmp/error" 'no Unreleased entries and changes/ has no fragments'
+cd "$tmp/repo"
+printf -- '- Only fragment.\n' >changes/only.md
+commit 'only fragment'
+fragment_case
+bash scripts/release.sh 0.3.0 --yes --no-push >"$tmp/release-output"
+grep -q '^- Only fragment\.$' CHANGELOG.md || fail 'fragment-only stable release failed'
+echo 'ok: malformed fragments and empty stable releases are refused'
+
 cd "$tmp/repo"
 rm -f "$CHECK_LOG" "$PUSH_LOG" "$PROMPT_LOG"
 bash scripts/release.sh --help >"$tmp/help"

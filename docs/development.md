@@ -55,7 +55,9 @@ history lives in git.
 - **New finding:** a bug becomes a GitHub issue (with the patch milestone if it
   meets the patch rule); an idea goes to the end of Later. Don't reorder.
 - **Finishing an item:** the same commit deletes it from ROADMAP.md and adds
-  the CHANGELOG entry; a patch commit says `fixes #n`.
+  its CHANGELOG entry as `changes/<slug>.md`
+  ([ADR 0072](adr/0072-changelog-fragments.md), format in
+  [changes/README.md](../changes/README.md)); a patch commit says `fixes #n`.
 - **Item shape:** title, `[Theme]` tag, one-line source, 1–4 lines of what and
   why, `*Done when:*`; about 6 lines. Diagnosis goes to the issue, evidence
   or ADR, linked.
@@ -359,7 +361,8 @@ Releases ship only for Apple Silicon macOS (`.dmg`) and Windows x64 (NSIS
 `.exe`; `.msi` for stable versions). The repository version is the source of
 truth: `just release 0.1.0-beta.1` checks that `main` is clean and current, runs
 the checks (optionally `check-all`), sets the version in `Cargo.toml`,
-`Cargo.lock` and `Info.plist`, names the CHANGELOG section for stable versions,
+`Cargo.lock` and `Info.plist`, moves the `changes/` fragments into the
+CHANGELOG's Unreleased section, names that section for stable versions,
 commits `release: v…`, tags, and pushes after confirmation. The tag runs
 `.github/workflows/release.yml`: version check, CI with the OCR smoke test on
 both targets, packaging and the packaged-app gate, then a draft GitHub Release
