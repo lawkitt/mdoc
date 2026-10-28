@@ -57,10 +57,6 @@ merges to `main` on its own when green.
    platforms. One focus ring for every control, distinct from selection and
    hover. *From the rc.4 and 0.2.1 runs.* *Done when:* every Tab stop shows the
    same ring in light and dark, including toggles that are on, and #194 closes.
-6. **[Cases] Save as Case retries a failed case save.** Closing a tab whose
-   case save failed and choosing Save as Case does nothing
-   ([#189](https://github.com/lawkitt/mdoc/issues/189)). *From the ADR 0071
-   Codex review.* *Done when:* #189 closes.
 
 ## Later
 

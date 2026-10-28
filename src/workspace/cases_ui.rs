@@ -1761,6 +1761,16 @@ impl Workspace {
         ) {
             return;
         }
+        // A case whose save failed already exists: retry it (#189).
+        let failed = self
+            .tab_view(id)
+            .and_then(|view| view.read(cx).case.link().map(|link| link.id.clone()))
+            .filter(|case| self.case_coordinator.failed(case));
+        if let Some(case) = failed {
+            let effect = self.case_coordinator.retry_and_close(case, id);
+            self.carry_out_cases(effect.into_iter().collect(), cx);
+            return;
+        }
         if let Some(case) = self.create_case(id, window, cx) {
             self.case_coordinator.note_asked(id);
             self.case_coordinator.close_after(case, id);

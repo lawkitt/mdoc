@@ -333,6 +333,14 @@ impl<W: Clone> CaseCoordinator<W> {
         self.close_after.insert(id, tab);
     }
 
+    /// Retry case `id`'s failed write and close tab `tab` once it is saved
+    /// (#189). The failed revision still waits in the queue.
+    pub(super) fn retry_and_close(&mut self, id: String, tab: u64) -> Option<CaseEffect<W>> {
+        self.close_after(id, tab);
+        self.note_asked(tab);
+        self.pump()
+    }
+
     // ---- Closing tabs with a mapping ---------------------------------------
 
     /// Whether closing tab `id` already asked about its unsaved mapping.
@@ -489,6 +497,22 @@ mod tests {
         assert!(!cases.failed(&id));
         assert!(cases.flushed());
         assert_eq!(cases.quit_window(), None);
+    }
+
+    #[test]
+    fn retrying_a_failed_case_closes_its_tab_once_written() {
+        let mut cases = CaseCoordinator::<u8>::default();
+        let id = written_case(cases.create(case("Acme"))).id;
+        cases.written(Err("disk full".into()), false).unwrap();
+        assert!(cases.failed(&id));
+        let retry = written_case(cases.retry_and_close(id.clone(), 4));
+        assert_eq!(retry.id, id);
+        assert!(cases.asked(4));
+        assert_eq!(
+            cases.written(Ok(()), false).unwrap(),
+            [CaseEffect::CloseTab(4)]
+        );
+        assert!(!cases.failed(&id));
     }
 
     #[test]
