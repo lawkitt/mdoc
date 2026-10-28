@@ -30,7 +30,9 @@
 //! # }
 //! ```
 
+mod focus_ring;
 pub mod scrollbar;
+pub use focus_ring::{FOCUS_RING_OUTSET, FocusRing, focus_ring};
 use gpui::prelude::FluentBuilder;
 
 use std::path::PathBuf;
@@ -88,16 +90,14 @@ pub fn header_control(
     id: impl Into<gpui::ElementId>,
     label: impl Into<gpui::SharedString>,
     style: &PdfStyle,
-) -> gpui::Stateful<gpui::Div> {
+) -> FocusRing {
     let style = *style;
     let label = label.into();
-    div()
-        .id(id)
+    focus_ring(id, style.focus_accent)
         .key_context("PdfControl")
         .tab_index(0)
         .role(gpui::Role::Button)
         .aria_label(label.clone())
-        .focus_visible(move |s| s.bg(style.placeholder_bg))
         .flex()
         .items_center()
         .justify_center()
@@ -113,10 +113,7 @@ pub fn header_control(
 }
 
 /// The Original viewer's close button; panels reuse it so the two match.
-pub fn close_control(
-    id: impl Into<gpui::ElementId>,
-    style: &PdfStyle,
-) -> gpui::Stateful<gpui::Div> {
+pub fn close_control(id: impl Into<gpui::ElementId>, style: &PdfStyle) -> FocusRing {
     header_control(id, "✕", style).text_size(px(11.0))
 }
 
@@ -594,6 +591,8 @@ pub struct PdfStyle {
     pub header_fg: Hsla,
     /// Header "· N pages" / page counter text.
     pub header_muted: Hsla,
+    /// Keyboard focus outline, independent of hover and toggle fills.
+    pub focus_accent: Hsla,
     /// Overlays drawn over original (white) paper.
     pub overlays: PageOverlays,
     /// Dark page colors. `Some` paints pages themed by default and shows a header
@@ -610,6 +609,7 @@ impl Default for PdfStyle {
             placeholder_fg: hsla(0.0, 0.0, 1.0, 0.40),
             header_fg: hsla(0.0, 0.0, 1.0, 0.70),
             header_muted: hsla(0.0, 0.0, 1.0, 0.40),
+            focus_accent: hsla(0.43, 0.28, 0.62, 1.),
             overlays: PageOverlays::default(),
             themed_pages: None,
         }
@@ -822,6 +822,12 @@ pub struct PdfView {
 }
 
 impl PdfView {
+    /// Live focus colour for an embedded text input.
+    pub fn focus_accent(&self) -> Rc<dyn Fn() -> Hsla> {
+        let style = self.style.clone();
+        Rc::new(move || style().focus_accent)
+    }
+
     /// Create a viewer for `path`, kicking off the off-thread read + parse + measure.
     /// `style` supplies chrome colors and `quality` the DPI multiplier, both read at
     /// paint time (see [`PdfStyleFn`] / [`PdfQualityFn`]). Call inside
@@ -1643,11 +1649,7 @@ impl PdfView {
     }
 
     /// One header control button (clickable, hover-highlighted).
-    fn control(
-        &self,
-        id: &'static str,
-        label: impl Into<gpui::SharedString>,
-    ) -> gpui::Stateful<gpui::Div> {
+    fn control(&self, id: &'static str, label: impl Into<gpui::SharedString>) -> FocusRing {
         header_control(id, label, &(self.style)())
             .when(cfg!(test), |v| v.debug_selector(move || id.into()))
     }
@@ -1763,7 +1765,7 @@ impl PdfView {
         style: &PdfStyle,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let on = |c: gpui::Stateful<gpui::Div>| {
+        let on = |c: FocusRing| {
             if self.tool_on(tool) == Some(true) {
                 c.bg(style.placeholder_bg)
             } else {
@@ -1850,15 +1852,14 @@ impl PdfView {
         current: usize,
         style: &PdfStyle,
         cx: &mut Context<Self>,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> FocusRing {
         let counter_label = match &self.page_input {
             Some(buf) if !buf.is_empty() => format!("{buf} / {total}"),
             Some(_) => format!("⌷ / {total}"),
             None => format!("{} / {total}", current + 1),
         };
         let editing = self.page_input.is_some();
-        div()
-            .id("pdf-page-counter")
+        focus_ring("pdf-page-counter", style.focus_accent)
             .when(cfg!(test), |v| {
                 v.debug_selector(|| "pdf-page-counter".into())
             })
@@ -1867,7 +1868,6 @@ impl PdfView {
             .aria_label("Go to page")
             .key_context("PdfControl")
             .tab_index(0)
-            .focus_visible(|s| s.bg(style.placeholder_bg))
             .min_w(px(78.0))
             .flex()
             .items_center()
@@ -1961,8 +1961,7 @@ impl PdfView {
                 let tool = *tool;
                 let on = self.tool_on(tool);
                 let id = tool.menu_id();
-                let mut item = div()
-                    .id(id)
+                let mut item = focus_ring(id, style.focus_accent)
                     .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
                     .role(if on.is_some() {
                         gpui::Role::MenuItemCheckBox
@@ -1984,7 +1983,6 @@ impl PdfView {
                     .py(px(4.))
                     .cursor_pointer()
                     .hover(|s| s.bg(style.placeholder_bg))
-                    .focus_visible(|s| s.bg(style.placeholder_bg))
                     .child(div().w(px(12.)).flex_shrink_0().child(if on == Some(true) {
                         "✓"
                     } else {

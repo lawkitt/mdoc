@@ -16,8 +16,7 @@ impl DocumentView {
         let p = theme.pdf_style();
         let tab = |id: &'static str, label: String, share: bool| {
             let on = self.inspector_share == share;
-            div()
-                .id(id)
+            ui::focus_ring(id, theme)
                 .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
                 .role(gpui::Role::Tab)
                 .aria_label(label.clone())

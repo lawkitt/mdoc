@@ -75,6 +75,7 @@ impl Theme {
                 placeholder_bg: rgb(0x35353c).into(),
                 placeholder_fg: rgb(0xa0a0aa).into(),
                 header_fg: rgb(0xe6e6e6).into(),
+                focus_accent: self.search_accent(),
                 header_muted: rgb(0xa0a0aa).into(),
                 overlays: PageOverlays::default(),
                 // Dark Original pages (ADR 0035): paper a step above the viewer
@@ -99,6 +100,7 @@ impl Theme {
                 // sidebar row included (ADR 0067).
                 placeholder_fg: rgb(0x5f5f69).into(),
                 header_fg: rgb(0x24242b).into(),
+                focus_accent: self.search_accent(),
                 header_muted: rgb(0x5f5f69).into(),
                 overlays: PageOverlays::default(),
                 themed_pages: None,
@@ -504,6 +506,37 @@ mod contrast_tests {
         assert!(
             failed.is_empty(),
             "contrast below WCAG 2.2 AA:\n{}",
+            failed.join("\n")
+        );
+    }
+
+    #[test]
+    fn focus_ring_meets_non_text_contrast_on_every_control_ground() {
+        let mut failed = Vec::new();
+        for theme in [Theme::Dark, Theme::Light] {
+            let p = theme.pdf_style();
+            let accent = theme.search_accent();
+            // The outside stroke can cross a neighbouring selected/hovered
+            // row as well as its own control's fill (ADR 0074).
+            let grounds = [
+                ("card and menus", p.bg),
+                ("sidebar and state cards", theme.sidebar_bg()),
+                ("hover and toggle-on fill", p.placeholder_bg),
+                ("selected sidebar row", theme.sidebar_selected()),
+                (
+                    "selected Settings model",
+                    over(Hsla { a: 0.05, ..accent }, p.bg),
+                ),
+                (
+                    "selected recognition language",
+                    over(Hsla { a: 0.08, ..accent }, p.bg),
+                ),
+            ];
+            failed.extend(failures(theme, 3., &[("focus ring", accent, &grounds)]));
+        }
+        assert!(
+            failed.is_empty(),
+            "focus contrast below 3:1:\n{}",
             failed.join("\n")
         );
     }

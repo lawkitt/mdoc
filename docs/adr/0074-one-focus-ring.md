@@ -1,15 +1,15 @@
 # One focus ring
 
-Status: Proposed, 2026-10-28 (0.3.0 grill). Amends
+Status: Accepted, 2026-10-28. Amends
 [ADR 0062](0062-keyboard-reach.md) ("visible focus ring") and
 [ADR 0067](0067-theme-contrast-and-type-ramp.md) (focus accent).
 
 ## Problem
 
-There are 22 separate `focus_visible` styles. Sidebar rows and Settings rows
-show focus with the same fill as selection or hover, and a toolbar toggle that
-is on paints the same `placeholder_bg` as its focus style, so a focused toggle
-looks unfocused ([#194](https://github.com/lawkitt/mdoc/issues/194)).
+A fill alone cannot distinguish keyboard focus from selection, hover or a
+toggle that is on. The separate focus styles on sidebar rows, Settings rows
+and toolbar toggles allowed a focused control to look unfocused
+([#194](https://github.com/lawkitt/mdoc/issues/194)).
 
 ## Decision
 
@@ -26,6 +26,7 @@ looks unfocused ([#194](https://github.com/lawkitt/mdoc/issues/194)).
 
 ## Consequences
 
-- Done when every Tab stop shows the same ring in light and dark, including
-  toggles that are on, and #194 closes (ROADMAP 0.3.0 item 5). Checked on
-  Windows by a GUI run, since #194 was found there.
+- Every Tab stop uses the same ring in light and dark, including toggles
+  that are on. Headless renders cover an on-state toggle, a selected sidebar
+  row and a Settings row in both themes. Windows GUI verification checks
+  the ring with the panels open, since #194 was found there.

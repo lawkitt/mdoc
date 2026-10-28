@@ -94,6 +94,7 @@ impl View {
                 };
                 cx.new(|cx| {
                     let mut i = markdown_search::SearchInput::new(cx)
+                        .with_theme(theme.clone())
                         .with_key_context("SettingsInput")
                         .with_placeholder("0–1");
                     i.set_value(value.to_string(), cx);
@@ -114,6 +115,7 @@ impl View {
             error: None,
             pages: cx.new(|cx| {
                 markdown_search::SearchInput::new(cx)
+                    .with_theme(theme.clone())
                     .with_key_context("SettingsInput")
                     .with_placeholder("All pages")
             }),

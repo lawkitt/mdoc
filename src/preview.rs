@@ -33,8 +33,10 @@ pub(crate) fn attach_search_field(
     pdf: &mut PdfView,
     cx: &mut Context<PdfView>,
 ) -> Entity<markdown_search::SearchInput> {
+    let accent = pdf.focus_accent();
     let field = cx.new(|cx| {
         markdown_search::SearchInput::new(cx)
+            .with_focus_accent(accent)
             .with_key_context("PreviewSearch")
             .with_placeholder("Find…")
             .with_label("Find in preview")

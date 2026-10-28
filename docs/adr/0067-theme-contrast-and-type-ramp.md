@@ -1,6 +1,7 @@
 # Theme contrast and type ramp
 
 Status: Accepted, 2026-10-23.
+Amended by [ADR 0074](0074-one-focus-ring.md): the one outside focus ring.
 
 ## Problem
 

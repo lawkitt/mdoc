@@ -5,7 +5,7 @@ use gpui::{
     Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla,
     KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad,
     Pixels, Point, Render, ShapedLine, SharedString, Style, TextRun, UTF16Selection, Window,
-    actions, div, fill, point, prelude::*, px, relative, size,
+    actions, fill, point, prelude::*, px, relative, size,
 };
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -60,6 +60,7 @@ pub enum SearchInputEvent {
 
 /// A small single-line GPUI input used by the Markdown find bar.
 pub struct SearchInput {
+    focus_accent: std::rc::Rc<dyn Fn() -> Hsla>,
     placeholder: &'static str,
     /// The accessible name; the placeholder when unset.
     label: Option<&'static str>,
@@ -76,8 +77,18 @@ pub struct SearchInput {
 }
 
 impl SearchInput {
+    pub fn with_focus_accent(mut self, accent: std::rc::Rc<dyn Fn() -> Hsla>) -> Self {
+        self.focus_accent = accent;
+        self
+    }
+    pub fn with_theme(mut self, theme: std::rc::Rc<std::cell::Cell<crate::style::Theme>>) -> Self {
+        self.focus_accent = std::rc::Rc::new(move || theme.get().search_accent());
+        self
+    }
+
     pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
+            focus_accent: std::rc::Rc::new(|| crate::style::Theme::default().search_accent()),
             placeholder: "Search Markdown",
             label: None,
             focus_handle: cx.focus_handle().tab_index(0).tab_stop(true),
@@ -692,8 +703,7 @@ impl Element for SearchInputElement {
 
 impl Render for SearchInput {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        div()
-            .id("search-input")
+        gpui_pdf::focus_ring("search-input", (self.focus_accent)())
             .role(gpui::Role::TextInput)
             .aria_label(self.label.unwrap_or(self.placeholder))
             .aria_placeholder(self.placeholder)

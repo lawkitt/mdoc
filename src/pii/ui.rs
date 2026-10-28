@@ -125,7 +125,7 @@ impl Drop for ReviewUi {
     }
 }
 impl ReviewUi {
-    pub fn new(cx: &mut Context<DocumentView>) -> Self {
+    pub fn new(theme: Rc<Cell<crate::style::Theme>>, cx: &mut Context<DocumentView>) -> Self {
         Self {
             review: Review::default(),
             reviewing: false,
@@ -141,7 +141,7 @@ impl ReviewUi {
             error: None,
             setup: false,
             setup_subscription: None,
-            mapping: mapping::MappingUi::new(cx),
+            mapping: mapping::MappingUi::new(theme, cx),
             generation: 0,
             popup_previous: None,
             popup_scroll: gpui::ScrollHandle::new(),
@@ -296,7 +296,7 @@ impl DocumentView {
         self.pii.scans.clear();
         self.pii.dismiss_popup();
         self.pii.error = None;
-        self.pii.mapping = mapping::MappingUi::new(cx);
+        self.pii.mapping = mapping::MappingUi::new(self.theme.clone(), cx);
         self.pii.restore = None;
         self.review_changed(cx);
     }

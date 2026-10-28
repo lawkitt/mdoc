@@ -75,6 +75,7 @@ impl Workspace {
         }
         let filter = cx.new(|cx| {
             SearchInput::new(cx)
+                .with_theme(self.theme.clone())
                 .with_key_context(FILTER)
                 .with_placeholder("Filter shortcuts")
         });
@@ -153,9 +154,7 @@ impl Workspace {
         let theme = self.theme.get();
         let p = theme.pdf_style();
         let groups = visible(sheet.filter.read(cx).value());
-        let filter_focused = sheet.filter.focus_handle(cx).is_focused(window);
-        let mut list = div()
-            .id("shortcuts-list")
+        let mut list = ui::focus_ring("shortcuts-list", theme)
             .when(cfg!(test), |v| v.debug_selector(|| "shortcuts-list".into()))
             .role(gpui::Role::List)
             .aria_label("Shortcuts")
@@ -167,7 +166,6 @@ impl Workspace {
             .rounded_sm()
             .border_1()
             .border_color(gpui::transparent_black())
-            .focus_visible(move |s| s.border_color(theme.search_accent()))
             .on_key_down(cx.listener(|this, event, _, cx| this.scroll_shortcuts(event, cx)))
             .flex()
             .flex_col()
@@ -298,12 +296,7 @@ impl Workspace {
                                     .py_1()
                                     .rounded_md()
                                     .border_1()
-                                    // The same ring as the list's when focused.
-                                    .border_color(if filter_focused {
-                                        theme.search_accent()
-                                    } else {
-                                        p.border
-                                    })
+                                    .border_color(p.border)
                                     .child(sheet.filter.clone()),
                             )
                             .child(list),

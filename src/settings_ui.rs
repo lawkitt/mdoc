@@ -98,9 +98,15 @@ pub fn bind_keys(cx: &mut App) {
     ]);
     dictionary::bind_keys(cx);
 }
-fn field(label: &'static str, value: &str, cx: &mut Context<Panel>) -> Entity<SearchInput> {
+fn field(
+    label: &'static str,
+    value: &str,
+    theme: Rc<Cell<Theme>>,
+    cx: &mut Context<Panel>,
+) -> Entity<SearchInput> {
     cx.new(|cx| {
         let mut input = SearchInput::new(cx)
+            .with_theme(theme)
             .with_key_context("SettingsInput")
             .with_placeholder("0–1")
             .with_label(label);
@@ -126,7 +132,7 @@ pub fn control(
     label: impl Into<gpui::SharedString>,
     theme: Theme,
     enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> ui::Control {
     ui::action_control(id, label, theme, enabled, false)
 }
 fn quiet_control(
@@ -134,19 +140,14 @@ fn quiet_control(
     label: impl Into<gpui::SharedString>,
     theme: Theme,
     enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> ui::Control {
     let label = label.into();
-    div()
-        .id(id)
+    crate::ui::focus_ring(id, theme)
         .key_context("UiControl")
         .tab_index(0)
         .tab_stop(enabled)
         .role(gpui::Role::Button)
         .aria_label(label.clone())
-        .focus_visible(|s| {
-            s.bg(theme.pdf_style().placeholder_bg)
-                .text_color(theme.search_accent())
-        })
         .px_2()
         .py_1()
         .rounded_md()
@@ -165,10 +166,10 @@ impl Panel {
     fn reveal(
         &self,
         id: impl Into<gpui::ElementId>,
-        control: gpui::Stateful<gpui::Div>,
+        control: ui::Control,
         enabled: bool,
         cx: &App,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> ui::Control {
         let focus = self
             .controls
             .borrow_mut()
@@ -185,7 +186,7 @@ impl Panel {
         theme: Theme,
         enabled: bool,
         cx: &App,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> ui::Control {
         let id = id.into();
         self.reveal(id.clone(), control(id, label, theme, enabled), enabled, cx)
     }
@@ -196,7 +197,7 @@ impl Panel {
         theme: Theme,
         enabled: bool,
         cx: &App,
-    ) -> gpui::Stateful<gpui::Div> {
+    ) -> ui::Control {
         let id = id.into();
         self.reveal(
             id.clone(),
@@ -217,11 +218,13 @@ impl Panel {
             threshold: field(
                 "Detection threshold",
                 &draft.pseudonymization.threshold.to_string(),
+                theme.clone(),
                 cx,
             ),
             confidence: field(
                 "OCR minimum confidence",
                 &draft.ocr.minimum_confidence.to_string(),
+                theme.clone(),
                 cx,
             ),
             draft,
@@ -876,7 +879,7 @@ impl Panel {
             .border_1().border_color(if selected { accent } else { palette.border }).rounded_md()
             .when(selected, |v| v.bg(gpui::Hsla { a: 0.05, ..accent }))
             .child(div().flex().flex_wrap().items_center().gap_2().p_2()
-                .child(div().id(("select-model", index)).role(gpui::Role::RadioButton).aria_label(models::title(model)).aria_toggled(if selected { gpui::Toggled::True } else { gpui::Toggled::False }).focus_visible(|s| s.bg(palette.placeholder_bg)).key_context("UiControl").tab_index(0).tab_stop(selectable).flex().flex_1().flex_basis(px(220.)).min_w(px(200.)).items_center().gap_3()
+                .child(crate::ui::focus_ring(("select-model", index), theme).role(gpui::Role::RadioButton).aria_label(models::title(model)).aria_toggled(if selected { gpui::Toggled::True } else { gpui::Toggled::False }).key_context("UiControl").tab_index(0).tab_stop(selectable).flex().flex_1().flex_basis(px(220.)).min_w(px(200.)).items_center().gap_3()
                     .when(selectable, |v| v.cursor_pointer())
                     .when(!selectable, |v| v.opacity(0.5))
                     .child(div().text_color(if selected { accent } else { palette.header_muted }).child(if selected { "●" } else { "○" }))
@@ -1149,6 +1152,58 @@ mod tests {
             choice.top() >= body.top() && choice.bottom() <= body.bottom(),
             "choice={choice:?}, body={body:?}"
         );
+    }
+
+    #[gpui::test]
+    fn scrolling_keeps_the_entire_focus_ring_clear_of_the_footer(cx: &mut TestAppContext) {
+        cx.update(bind_keys);
+        cx.update(ui::bind_keys);
+        for theme in [Theme::Light, Theme::Dark] {
+            let (panel, cx) = cx.add_window_view(|_, cx| {
+                Panel::new(Store::in_memory(), Rc::new(Cell::new(theme)), cx)
+            });
+            cx.simulate_resize(size(px(640.), px(480.)));
+            panel.update_in(cx, |p, window, cx| {
+                p.open = true;
+                p.statuses.fill(Status::Ready);
+                window.focus(&p.focus, cx);
+                cx.notify();
+            });
+            for (id, selector, key) in [
+                ("advanced-settings", "settings-advanced", "tab"),
+                ("cases-ask", "cases-ask", "tab"),
+                ("advanced-settings", "settings-advanced", "shift-tab"),
+            ] {
+                let mut reached = false;
+                for _ in 0..40 {
+                    cx.simulate_keystrokes(key);
+                    for _ in 0..3 {
+                        cx.update(|window, cx| {
+                            window.refresh();
+                            window.draw(cx).clear(cx);
+                        });
+                    }
+                    reached = cx.update(|window, cx| {
+                        panel
+                            .read(cx)
+                            .controls
+                            .borrow()
+                            .get(&gpui::ElementId::from(id))
+                            .is_some_and(|focus| focus.is_focused(window))
+                    });
+                    if reached {
+                        break;
+                    }
+                }
+                assert!(reached, "{key} reaches {id} in {theme:?}");
+                let ring = cx.debug_bounds(selector).unwrap().dilate(px(4.));
+                let viewport = cx.debug_bounds("settings-scroll").unwrap();
+                assert!(
+                    ring.top() >= viewport.top() && ring.bottom() <= viewport.bottom(),
+                    "{id}: ring={ring:?}, viewport={viewport:?}"
+                );
+            }
+        }
     }
 
     #[gpui::test]

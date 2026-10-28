@@ -179,6 +179,7 @@ impl Render for ConfirmDialog {
                                         true,
                                         index == 0,
                                     )
+                                    .paint_in_place()
                                     .when(cfg!(test), |v| {
                                         let label = button.label().to_string();
                                         v.debug_selector(move || format!("confirm-{label}"))

@@ -37,6 +37,7 @@ const SCREENS: &[&str] = &[
     "model-comparison",
     "conversion-failed",
     "restored-reply",
+    "comments",
 ];
 
 fn png(path: &Path) {
@@ -221,7 +222,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 png(&out.join(theme).join(step["png"].as_str().unwrap()));
             }
             let frames = record["frames"].as_array().unwrap();
-            assert_eq!(frames.len(), tabs.len() + 3);
+            assert_eq!(frames.len(), tabs.len() * 4 + 3);
             assert!(
                 frames
                     .iter()
@@ -233,6 +234,85 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
     let dark = image::open(out.join("dark/home.png")).unwrap().to_rgba8();
     assert_ne!(light, dark, "both themes must actually render");
     assert!(light.pixels().any(|p| p[3] != 0));
+    // ADR 0074: actual app controls, not a focus-handle assertion. Focus adds
+    // only an accent outline; selected/on-state fills and labels stay intact.
+    let rings = summary["focus_rings"].as_array().unwrap();
+    assert_eq!(rings.len(), 10);
+    for theme in ["light", "dark"] {
+        for control in [
+            "toggle-on",
+            "sidebar-row",
+            "settings-row",
+            "beside-selected-tab",
+            "comments-toggle",
+        ] {
+            let pair = rings
+                .iter()
+                .find(|r| r["theme"] == theme && r["control"] == control)
+                .unwrap();
+            let dir = out.join(theme);
+            let rest = image::open(dir.join(pair["rest"].as_str().unwrap()))
+                .unwrap()
+                .to_rgba8();
+            let focused = image::open(dir.join(pair["focused"].as_str().unwrap()))
+                .unwrap()
+                .to_rgba8();
+            let changed: Vec<_> = rest
+                .enumerate_pixels()
+                .filter_map(|(x, y, p)| (*p != *focused.get_pixel(x, y)).then_some((x, y)))
+                .collect();
+            assert!(!changed.is_empty(), "no visible focus: {theme}/{control}");
+            let left = changed.iter().map(|(x, _)| *x).min().unwrap();
+            let right = changed.iter().map(|(x, _)| *x).max().unwrap();
+            let top = changed.iter().map(|(_, y)| *y).min().unwrap();
+            let bottom = changed.iter().map(|(_, y)| *y).max().unwrap();
+            assert!(
+                right - left > 24 && bottom - top > 24,
+                "ring bounds: {theme}/{control}"
+            );
+            assert!(
+                changed.iter().all(|&(x, y)| {
+                    x < left + 12 || x > right - 12 || y < top + 12 || y > bottom - 12
+                }),
+                "focus changed the fill or label: {theme}/{control}"
+            );
+            // At 2x, the two 2 px strokes occupy eight pixels across either
+            // midline. Both sides must survive clipping and neighbouring fills.
+            for count in [
+                changed
+                    .iter()
+                    .filter(|&&(x, _)| x == (left + right) / 2)
+                    .count(),
+                changed
+                    .iter()
+                    .filter(|&&(_, y)| y == (top + bottom) / 2)
+                    .count(),
+            ] {
+                assert!(
+                    (8..=10).contains(&count),
+                    "incomplete 2 px ring ({count} pixels): {theme}/{control}"
+                );
+            }
+            let accent = if theme == "light" {
+                [0x33, 0x6b, 0x5c]
+            } else {
+                [0x82, 0xb9, 0xa7]
+            };
+            assert!(
+                changed
+                    .iter()
+                    .filter(|&&(x, y)| {
+                        focused.get_pixel(x, y).0[..3]
+                            .iter()
+                            .zip(accent)
+                            .all(|(&a, b)| a.abs_diff(b) <= 2)
+                    })
+                    .count()
+                    > 50,
+                "ring is not the accent: {theme}/{control}"
+            );
+        }
+    }
     // Existing output is rejected, so a partial/older run cannot pass as new evidence.
     let before = std::fs::read(out.join("summary.json")).unwrap();
     let rejected = render_command()

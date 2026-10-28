@@ -234,9 +234,11 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let markdown_search = cx.new(markdown_search::SearchInput::new);
+        let markdown_search = cx
+            .new(|cx| markdown_search::SearchInput::new(cx).with_theme(dependencies.theme.clone()));
         let markdown_replace = cx.new(|cx| {
             markdown_search::SearchInput::new(cx)
+                .with_theme(dependencies.theme.clone())
                 .with_key_context("MarkdownReplace")
                 .with_placeholder("Replace with")
         });
@@ -326,12 +328,12 @@ impl DocumentView {
             file_drag: None,
             preferences: dependencies.preferences,
             model_panel: dependencies.model_panel,
-            theme: dependencies.theme,
+            theme: dependencies.theme.clone(),
             title: dependencies.title,
             editor,
             images,
             session: document_session::DocumentSession::default(),
-            pii: pii::ui::ReviewUi::new(cx),
+            pii: pii::ui::ReviewUi::new(dependencies.theme.clone(), cx),
             spelling: spelling::SpellState::default(),
             preview: preview::PreviewState::default(),
             scroll,
@@ -1148,8 +1150,7 @@ impl DocumentView {
                     let selected = choice.languages == languages;
                     let label = recognition::label(languages);
                     let selector = format!("recognize {label}");
-                    div()
-                        .id(("recognition-language", index))
+                    crate::ui::focus_ring(("recognition-language", index), theme)
                         .role(gpui::Role::RadioButton)
                         .aria_label(label.clone())
                         .aria_toggled(if selected {
@@ -1168,7 +1169,6 @@ impl DocumentView {
                         .when(selected, |v| v.bg(gpui::Hsla { a: 0.08, ..accent }))
                         .text_size(px(12.))
                         .text_color(if selected { accent } else { palette.header_fg })
-                        .focus_visible(move |s| s.bg(palette.placeholder_bg))
                         .when(!disabled, |v| v.cursor_pointer())
                         .when(disabled, |v| v.opacity(0.45))
                         .child(label)
@@ -1352,10 +1352,8 @@ impl DocumentView {
                         ))
                     })
                     .child(
-                        div()
-                            .id((id, 1usize))
+                        crate::ui::focus_ring((id, 1usize), theme)
                             .role(gpui::Role::Button)
-                            .focus_visible(|s| s.bg(palette.placeholder_bg))
                             .key_context("UiControl")
                             .tab_index(0)
                             .aria_label("Dismiss notice")
@@ -1554,11 +1552,7 @@ impl DocumentView {
     }
 }
 
-pub(crate) fn button(
-    label: &'static str,
-    action: impl gpui::Action,
-    theme: Theme,
-) -> gpui::Stateful<gpui::Div> {
+pub(crate) fn button(label: &'static str, action: impl gpui::Action, theme: Theme) -> ui::Control {
     ui::control(label, label, theme, true)
         .when(cfg!(test), |view| view.debug_selector(move || label.into()))
         .on_click(move |_, window, cx| window.dispatch_action(action.boxed_clone(), cx))
@@ -1572,15 +1566,13 @@ fn search_bar_button(
     label: &'static str,
     shortcut: &'static str,
     theme: Theme,
-) -> gpui::Stateful<gpui::Div> {
+) -> ui::Control {
     let palette = theme.pdf_style();
-    div()
-        .id(id)
+    crate::ui::focus_ring(id, theme)
         .when(cfg!(test), |v| v.debug_selector(move || id.into()))
         .role(gpui::Role::Button)
         .key_context("UiControl")
         .tab_index(0)
-        .focus_visible(|s| s.bg(palette.placeholder_bg))
         .aria_label(label)
         .aria_keyshortcuts(shortcut)
         .tooltip(style::tooltip(format!("{label}  {shortcut}"), theme))

@@ -6,6 +6,13 @@ use gpui::{
 };
 use std::time::Duration;
 
+pub use gpui_pdf::FocusRing as Control;
+
+/// The one keyboard focus indicator (ADR 0074).
+pub fn focus_ring(id: impl Into<gpui::ElementId>, theme: Theme) -> Control {
+    gpui_pdf::focus_ring(id, theme.search_accent())
+}
+
 /// A common surface for app-owned popovers and dialogs. Callers own sizing/focus.
 pub fn panel(id: impl Into<gpui::ElementId>, theme: Theme) -> gpui::Stateful<gpui::Div> {
     let p = theme.pdf_style();
@@ -27,7 +34,7 @@ pub fn action_control(
     theme: Theme,
     enabled: bool,
     primary: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> Control {
     let p = theme.pdf_style();
     control(id, label, theme, enabled)
         .px_3()
@@ -39,7 +46,7 @@ pub fn action_control(
 
 /// The prominent-action look shared by primary and floating buttons: an
 /// outlined button on the window background, in medium weight.
-fn outlined(v: gpui::Stateful<gpui::Div>, theme: Theme) -> gpui::Stateful<gpui::Div> {
+fn outlined(v: Control, theme: Theme) -> Control {
     let p = theme.pdf_style();
     v.rounded_lg()
         .bg(p.bg)
@@ -146,10 +153,10 @@ fn card_button(
     id: impl Into<gpui::ElementId>,
     label: impl Into<gpui::SharedString>,
     enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
+    theme: Theme,
+) -> Control {
     let label = label.into();
-    div()
-        .id(id)
+    focus_ring(id, theme)
         .role(gpui::Role::Button)
         .aria_label(label.clone())
         .key_context("UiControl")
@@ -171,10 +178,9 @@ pub fn primary_button(
     label: impl Into<gpui::SharedString>,
     theme: Theme,
     enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> Control {
     let p = theme.pdf_style();
-    outlined(card_button(id, label, enabled).px_3(), theme)
-        .focus_visible(move |s| s.border_color(p.header_fg))
+    outlined(card_button(id, label, enabled, theme).px_3(), theme)
         .when(enabled, |v| v.hover(move |s| s.bg(p.placeholder_bg)))
 }
 
@@ -185,11 +191,10 @@ pub fn filled_button(
     label: impl Into<gpui::SharedString>,
     theme: Theme,
     enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> Control {
     let p = theme.pdf_style();
     let label = label.into();
-    div()
-        .id(id)
+    focus_ring(id, theme)
         .role(gpui::Role::Button)
         .aria_label(label.clone())
         .key_context("UiControl")
@@ -206,7 +211,6 @@ pub fn filled_button(
         .text_size(px(13.))
         .font_weight(gpui::FontWeight::MEDIUM)
         .child(label)
-        .focus_visible(move |s| s.border_2().border_color(theme.search_accent()))
         .when(enabled, |v| v.cursor_pointer().hover(|s| s.opacity(0.88)))
         .when(!enabled, |v| v.opacity(0.45))
 }
@@ -230,7 +234,7 @@ pub fn header_icon(
     icon: Icon,
     theme: Theme,
     on: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> Control {
     let label = label.into();
     header_icon_untipped(id, label.clone(), icon, theme, on)
         .tooltip(crate::style::tooltip(label.to_string(), theme))
@@ -243,7 +247,7 @@ pub fn header_icon_untipped(
     icon: Icon,
     theme: Theme,
     on: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> Control {
     let p = theme.pdf_style();
     control_base(id, label.into(), theme, true)
         .p_0()
@@ -268,7 +272,7 @@ pub fn menu_row(
     checked: Option<bool>,
     theme: Theme,
     enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> Control {
     menu_row_because(id, label, shortcut, checked, theme, enabled, None)
 }
 
@@ -282,14 +286,13 @@ pub fn menu_row_because(
     theme: Theme,
     enabled: bool,
     reason: Option<gpui::SharedString>,
-) -> gpui::Stateful<gpui::Div> {
+) -> Control {
     let p = theme.pdf_style();
     let label = label.into();
     let reason = reason.filter(|_| !enabled);
     // Disabled rows fade their label and shortcut; the reason stays legible.
     let fade = if enabled { 1. } else { 0.45 };
-    div()
-        .id(id)
+    focus_ring(id, theme)
         .role(gpui::Role::MenuItem)
         .aria_label(label.clone())
         .when_some(reason.clone(), |v, reason| {
@@ -306,7 +309,6 @@ pub fn menu_row_because(
         .when(reason.is_some(), |v| v.py_1())
         .rounded_md()
         .text_size(px(13.))
-        .focus_visible(move |s| s.bg(p.placeholder_bg))
         .when(enabled, |v| {
             v.cursor_pointer().hover(move |s| s.bg(p.placeholder_bg))
         })
@@ -362,11 +364,9 @@ pub fn link_button(
     label: impl Into<gpui::SharedString>,
     theme: Theme,
     enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
-    let p = theme.pdf_style();
-    card_button(id, label, enabled)
+) -> Control {
+    card_button(id, label, enabled, theme)
         .text_color(theme.search_accent())
-        .focus_visible(move |s| s.bg(p.placeholder_bg))
         .when(enabled, |v| v.hover(|s| s.underline()))
 }
 
@@ -592,11 +592,10 @@ fn control_base(
     label: impl Into<gpui::SharedString>,
     theme: Theme,
     enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> Control {
     let p = theme.pdf_style();
     let label = label.into();
-    div()
-        .id(id)
+    focus_ring(id, theme)
         .role(gpui::Role::Button)
         .aria_label(label.clone())
         .key_context("UiControl")
@@ -608,7 +607,6 @@ fn control_base(
         .rounded_md()
         .text_size(px(13.))
         .text_color(p.header_fg)
-        .focus_visible(move |s| s.bg(p.placeholder_bg).text_color(theme.search_accent()))
         .when(enabled, |v| {
             v.cursor_pointer().hover(move |s| s.bg(p.placeholder_bg))
         })
@@ -620,13 +618,13 @@ pub fn control(
     label: impl Into<gpui::SharedString>,
     theme: Theme,
     enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> Control {
     let label = label.into();
     control_base(id, label.clone(), theme, enabled).when(!label.is_empty(), |v| v.child(label))
 }
 
 /// A close button matching the Original viewer's (ADR 0044).
-pub fn close_control(id: impl Into<gpui::ElementId>, theme: Theme) -> gpui::Stateful<gpui::Div> {
+pub fn close_control(id: impl Into<gpui::ElementId>, theme: Theme) -> Control {
     gpui_pdf::close_control(id, &theme.pdf_style())
         .key_context("UiControl")
         .tab_stop(true)
@@ -706,7 +704,7 @@ pub fn floating_button(
     text: impl Into<gpui::SharedString>,
     theme: Theme,
     enabled: bool,
-) -> gpui::Stateful<gpui::Div> {
+) -> Control {
     let p = theme.pdf_style();
     let label = label.into();
     outlined(control_base(id, label.clone(), theme, enabled), theme)
@@ -916,17 +914,27 @@ pub fn title_bar(
 }
 
 /// Reveal a focused control inside a scrolling panel without moving document state.
-pub fn reveal_focus(
-    control: gpui::Stateful<gpui::Div>,
+pub fn reveal_focus<E: ParentElement + Styled>(
+    mut control: E,
     focus: FocusHandle,
     scroll: gpui::ScrollHandle,
-) -> gpui::Stateful<gpui::Div> {
+) -> E {
+    // Absolute children use the padding box, inside the control's border.
+    let border = control.style().border_widths.clone();
     control.relative().child(
         gpui::canvas(
             move |bounds, window, cx| {
                 if !focus.contains_focused(window, cx) {
                     return;
                 }
+                // Reveal the outside outline too, rather than scrolling its
+                // bottom stroke underneath the viewport's fixed footer.
+                let border = [border.top, border.right, border.bottom, border.left]
+                    .into_iter()
+                    .flatten()
+                    .map(|width| width.to_pixels(window.rem_size()))
+                    .fold(px(0.), |a, b| a.max(b));
+                let bounds = bounds.dilate(px(gpui_pdf::FOCUS_RING_OUTSET) + border);
                 let viewport = scroll.bounds();
                 if viewport.size.height <= px(0.) {
                     return;

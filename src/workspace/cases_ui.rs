@@ -1065,6 +1065,7 @@ impl Workspace {
         };
         let input = cx.new(|cx| {
             let mut input = markdown_search::SearchInput::new(cx)
+                .with_theme(self.theme.clone())
                 .with_key_context("CaseName")
                 .with_placeholder("Case name");
             input.set_value(name, cx);
@@ -1439,13 +1440,11 @@ impl Workspace {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let row = |id: &'static str, label: &'static str| {
-            div()
-                .id(id)
+            crate::ui::focus_ring(id, theme)
                 .role(gpui::Role::Button)
                 .aria_label(label)
                 .key_context("UiControl")
                 .tab_index(0)
-                .focus_visible(move |s| s.bg(palette.placeholder_bg))
                 .when(cfg!(test), move |v| v.debug_selector(move || id.into()))
                 .px_3()
                 .py_1()
@@ -1469,29 +1468,30 @@ impl Workspace {
                 .map(|c| {
                     let case_id = c.id.clone();
                     let label = format!("Move to case “{}”", c.name);
-                    div()
-                        .id(gpui::SharedString::from(format!("context-move-{}", c.id)))
-                        .role(gpui::Role::Button)
-                        .aria_label(label.clone())
-                        .key_context("UiControl")
-                        .tab_index(0)
-                        .focus_visible(move |s| s.bg(palette.placeholder_bg))
-                        .when(cfg!(test), |v| {
-                            v.debug_selector(|| "context-move-case".into())
-                        })
-                        .px_3()
-                        .py_1()
-                        .rounded_sm()
-                        .cursor_pointer()
-                        .hover(move |v| v.bg(palette.placeholder_bg))
-                        .max_w(px(320.))
-                        .truncate()
-                        .child(label)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.tab_menu = None;
-                            this.join_case(tab, &case_id, window, cx);
-                        }))
-                        .into_any_element()
+                    crate::ui::focus_ring(
+                        gpui::SharedString::from(format!("context-move-{}", c.id)),
+                        theme,
+                    )
+                    .role(gpui::Role::Button)
+                    .aria_label(label.clone())
+                    .key_context("UiControl")
+                    .tab_index(0)
+                    .when(cfg!(test), |v| {
+                        v.debug_selector(|| "context-move-case".into())
+                    })
+                    .px_3()
+                    .py_1()
+                    .rounded_sm()
+                    .cursor_pointer()
+                    .hover(move |v| v.bg(palette.placeholder_bg))
+                    .max_w(px(320.))
+                    .truncate()
+                    .child(label)
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.tab_menu = None;
+                        this.join_case(tab, &case_id, window, cx);
+                    }))
+                    .into_any_element()
                 })
                 .collect()
         } else {
@@ -1584,51 +1584,52 @@ impl Workspace {
                             .bg(style::case_color(link.hue())),
                     )
                     .child(
-                        div()
-                            .id(gpui::SharedString::from(format!("open-case-{}", case.id)))
-                            .when(cfg!(test), |v| v.debug_selector(|| "open-case-row".into()))
-                            // Enter or Space opens it, as a click does (ADR 0062).
-                            .key_context("UiControl")
-                            .tab_index(0)
-                            .tab_stop(true)
-                            .role(gpui::Role::Button)
-                            .aria_label(format!("Open {}", case.name))
-                            .rounded_sm()
-                            .focus_visible(move |s| s.bg(palette.placeholder_bg))
-                            .flex_1()
-                            .min_w_0()
-                            .cursor_pointer()
-                            .flex()
-                            .flex_col()
-                            .child(div().truncate().child(case.name.clone()))
-                            .child(
-                                div()
-                                    .text_size(px(11.))
-                                    .text_color(palette.header_muted)
-                                    .child(format!(
-                                        "{} {} · {} {}{}",
-                                        case.identities.len(),
-                                        if case.identities.len() == 1 {
-                                            "name"
-                                        } else {
-                                            "names"
-                                        },
-                                        documents,
-                                        if documents == 1 {
-                                            "document"
-                                        } else {
-                                            "documents"
-                                        },
-                                        if open.contains(&case.id) {
-                                            " · open"
-                                        } else {
-                                            ""
-                                        }
-                                    )),
-                            )
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.open_case(&open_id, window, cx)
-                            })),
+                        crate::ui::focus_ring(
+                            gpui::SharedString::from(format!("open-case-{}", case.id)),
+                            theme,
+                        )
+                        .when(cfg!(test), |v| v.debug_selector(|| "open-case-row".into()))
+                        // Enter or Space opens it, as a click does (ADR 0062).
+                        .key_context("UiControl")
+                        .tab_index(0)
+                        .tab_stop(true)
+                        .role(gpui::Role::Button)
+                        .aria_label(format!("Open {}", case.name))
+                        .rounded_sm()
+                        .flex_1()
+                        .min_w_0()
+                        .cursor_pointer()
+                        .flex()
+                        .flex_col()
+                        .child(div().truncate().child(case.name.clone()))
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(palette.header_muted)
+                                .child(format!(
+                                    "{} {} · {} {}{}",
+                                    case.identities.len(),
+                                    if case.identities.len() == 1 {
+                                        "name"
+                                    } else {
+                                        "names"
+                                    },
+                                    documents,
+                                    if documents == 1 {
+                                        "document"
+                                    } else {
+                                        "documents"
+                                    },
+                                    if open.contains(&case.id) {
+                                        " · open"
+                                    } else {
+                                        ""
+                                    }
+                                )),
+                        )
+                        .on_click(cx.listener(
+                            move |this, _, window, cx| this.open_case(&open_id, window, cx),
+                        )),
                     )
                     .child(
                         ui::control(
