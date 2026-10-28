@@ -551,3 +551,69 @@ fn a_number_blur_during_a_save_is_persisted_after_it(cx: &mut TestAppContext) {
         PiiModel::Fp32
     );
 }
+
+#[gpui::test]
+fn general_reset_changes_theme_only_after_save_and_respects_a_newer_choice(
+    cx: &mut TestAppContext,
+) {
+    let shared = Store::in_memory();
+    let (panel, cx) = cx
+        .add_window_view(|_, cx| Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx));
+    let seen = Rc::new(std::cell::RefCell::new(Vec::new()));
+    let events = seen.clone();
+    let _subscription = cx.update(|_, cx| {
+        cx.subscribe(&panel, move |_, event, _| {
+            if let Event::ThemeSelected(choice) = event {
+                events.borrow_mut().push(*choice);
+            }
+        })
+    });
+    panel.update(cx, |p, cx| {
+        p.sync_theme(ThemeChoice::Dark, cx);
+        p.reset(cx);
+        assert!(seen.borrow().is_empty());
+        p.sync_theme(ThemeChoice::Light, cx);
+    });
+    cx.run_until_parked();
+    assert!(seen.borrow().is_empty(), "a later theme choice wins");
+    let dir = tempfile::tempdir().unwrap();
+    let invalid = dir.path().join("not-a-directory");
+    std::fs::write(&invalid, b"blocked").unwrap();
+    shared.borrow_mut().path = Some(invalid.join("settings.json"));
+    panel.update(cx, |p, cx| p.reset(cx));
+    cx.run_until_parked();
+    assert!(
+        seen.borrow().is_empty(),
+        "a failed reset must keep the theme"
+    );
+    shared.borrow_mut().path = None;
+    panel.update(cx, |p, cx| p.reset(cx));
+    cx.run_until_parked();
+    assert_eq!(*seen.borrow(), vec![ThemeChoice::System]);
+}
+
+#[gpui::test]
+fn resetting_another_category_preserves_number_text_and_its_error(cx: &mut TestAppContext) {
+    let (panel, cx) = cx.add_window_view(|_, cx| {
+        Panel::new(Store::in_memory(), Rc::new(Cell::new(Theme::Light)), cx)
+    });
+    panel.update(cx, |p, cx| {
+        p.threshold
+            .update(cx, |i, cx| i.set_value("invalid".into(), cx));
+        p.commit_number(0, cx);
+        p.category = Category::Spelling;
+        p.reset(cx);
+    });
+    cx.run_until_parked();
+    panel.update(cx, |p, cx| {
+        assert_eq!(p.threshold.read(cx).value(), "invalid");
+        assert!(p.number_errors[0].is_some());
+        p.category = Category::Detection;
+        p.reset(cx);
+    });
+    cx.run_until_parked();
+    panel.update(cx, |p, cx| {
+        assert_eq!(p.threshold.read(cx).value(), "0.5");
+        assert!(p.number_errors[0].is_none());
+    });
+}

@@ -408,7 +408,6 @@ fn read_limited(path: &Path) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-/// The 256-bit case key, created once and held by the operating system.
 /// Public build label, using the same runtime identity as case storage (ADR 0045).
 /// This inspects signing metadata only; it never reads the case key.
 pub fn build_identity() -> &'static str {
@@ -426,6 +425,7 @@ pub fn build_identity() -> &'static str {
     }
 }
 
+/// The 256-bit case key, created once and held by the operating system.
 mod key {
     use super::{CaseError, Generate, Path};
     #[cfg(windows)]

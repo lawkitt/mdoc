@@ -329,6 +329,10 @@ impl Panel {
         cx.notify();
     }
     pub(crate) fn sync_theme(&mut self, choice: ThemeChoice, cx: &mut Context<Self>) {
+        // A newer explicit choice wins over a General reset still being saved.
+        if choice != self.theme_choice {
+            self.reset_theme = false;
+        }
         self.theme_choice = choice;
         // The resolved theme may change even while System stays selected.
         cx.notify();
@@ -559,14 +563,24 @@ impl Panel {
         let defaults = Preferences::default();
         match self.category {
             Category::General => self.draft.updates = defaults.updates,
-            Category::Detection => self.draft.pseudonymization = defaults.pseudonymization,
-            Category::Recognition => self.draft.ocr = defaults.ocr,
+            Category::Detection => {
+                self.draft.pseudonymization = defaults.pseudonymization;
+                self.threshold.update(cx, |i, cx| {
+                    i.set_value(self.draft.pseudonymization.threshold.to_string(), cx)
+                });
+                self.number_errors[0] = None;
+            }
+            Category::Recognition => {
+                self.draft.ocr = defaults.ocr;
+                self.confidence.update(cx, |i, cx| {
+                    i.set_value(self.draft.ocr.minimum_confidence.to_string(), cx)
+                });
+                self.number_errors[1] = None;
+            }
             Category::Spelling => self.draft.spelling = defaults.spelling,
             Category::Cases => self.draft.cases = defaults.cases,
             Category::About => return,
         }
-        self.update_fields(cx);
-        self.number_errors = [None, None];
         self.reset_theme = self.category == Category::General;
         self.persist(cx);
     }
@@ -1141,11 +1155,10 @@ impl Panel {
                                     .bg(theme.sidebar_selected())
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                             })
-                            .on_click(
-                                cx.listener(move |_, _, _, cx| {
-                                    cx.emit(Event::ThemeSelected(choice))
-                                }),
-                            )
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.reset_theme = false;
+                                cx.emit(Event::ThemeSelected(choice))
+                            }))
                     }),
                 ),
             theme,

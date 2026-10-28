@@ -317,7 +317,7 @@ impl Panel {
             .into_any_element()
     }
     fn category_body(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
-        let body = match self.category {
+        let body = match self.category() {
             Category::General => div().child(self.appearance_section(theme, cx)).child(self.updates_section(theme, cx))
                 .child(self.setting_row("Recent files", "Names and folders of recently opened files, never their contents.", self.scrolled_quiet("recents-clear", "Clear", theme, true, cx).when(cfg!(test), |v| v.debug_selector(|| "recents-clear".into())).on_click(cx.listener(|_, _, _, cx| cx.emit(Event::ClearRecents))), theme))
                 .child(self.setting_row("Keyboard shortcuts", "Browse the keys available in each part of mdoc.", self.scrolled_quiet("settings-shortcuts", "Show", theme, true, cx).when(cfg!(test), |v| v.debug_selector(|| "settings-shortcuts".into())).aria_label("Keyboard shortcuts").on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Shortcuts))), theme)),
@@ -389,6 +389,7 @@ impl Panel {
             .id("settings-categories")
             .role(gpui::Role::TabList)
             .aria_label("Settings categories")
+            .aria_orientation(gpui::accesskit::Orientation::Vertical)
             .flex()
             .flex_col()
             .gap_1()
@@ -406,11 +407,7 @@ impl Panel {
                 ui::focus_ring(("settings-category", category as usize), theme)
                     .role(gpui::Role::Tab)
                     .aria_label(category.label())
-                    .aria_toggled(if selected {
-                        gpui::Toggled::True
-                    } else {
-                        gpui::Toggled::False
-                    })
+                    .aria_selected(selected)
                     .key_context("SettingsCategories UiControl")
                     .tab_stop(selected)
                     .when(selected, |v| v.track_focus(&self.category_focus))
@@ -437,6 +434,9 @@ impl Panel {
                     }))
             }));
         let content = div()
+            .id("settings-content")
+            .role(gpui::Role::TabPanel)
+            .aria_label(self.category.label())
             .flex_1()
             .min_w_0()
             .min_h_0()
