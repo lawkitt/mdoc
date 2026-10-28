@@ -1,5 +1,8 @@
 //! Dev-only screen evidence. TestPlatform owns every window: no native window,
 //! application event loop, activation, clipboard or OS prompt is used.
+#[cfg(target_os = "windows")]
+mod encoder;
+
 use super::{
     Workspace, app_actions::bind as bind_app_actions, cases_ui::bind_keys as bind_case_keys,
     shell::bind_keys as bind_shell_keys,
@@ -36,6 +39,8 @@ struct Driver {
     cx: HeadlessAppContext,
     window: gpui::AnyWindowHandle,
     frames: Vec<Value>,
+    #[cfg(target_os = "windows")]
+    pngs: encoder::Encoder,
 }
 
 impl Driver {
@@ -90,19 +95,10 @@ impl Driver {
             .capture_screenshot(self.window)
             .map_err(|e| e.to_string())?;
         let ms = start.elapsed().as_secs_f64() * 1000.;
-        let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
-        image::codecs::png::PngEncoder::new_with_quality(
-            std::io::BufWriter::new(file),
-            image::codecs::png::CompressionType::Fast,
-            image::codecs::png::FilterType::Sub,
-        )
-        .write_image(
-            image.as_raw(),
-            image.width(),
-            image.height(),
-            image::ExtendedColorType::Rgba8,
-        )
-        .map_err(|e| e.to_string())?;
+        #[cfg(target_os = "windows")]
+        self.pngs.write(path, image)?;
+        #[cfg(target_os = "macos")]
+        write_png(path, &image)?;
         Ok(ms)
     }
 
@@ -164,6 +160,22 @@ impl Driver {
             "tab_order": sequence, "cycle_to": cycle, "truncated": cycle.is_none(), "frames": self.frames}),
         )
     }
+}
+
+fn write_png(path: &Path, image: &image::RgbaImage) -> Result<()> {
+    let file = std::fs::File::create(path).map_err(|e| e.to_string())?;
+    image::codecs::png::PngEncoder::new_with_quality(
+        std::io::BufWriter::new(file),
+        image::codecs::png::CompressionType::Fast,
+        image::codecs::png::FilterType::Sub,
+    )
+    .write_image(
+        image.as_raw(),
+        image.width(),
+        image.height(),
+        image::ExtendedColorType::Rgba8,
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// Use the existing public annotation corpus directly, without a detector or
@@ -567,13 +579,15 @@ pub(crate) fn run(out: &Path) -> Result<()> {
                 })
             })
             .map_err(|e| e.to_string())?;
+        let dir = out.join(tag);
+        std::fs::create_dir(&dir).map_err(|e| e.to_string())?;
         let mut d = Driver {
             cx,
             window: window.into(),
             frames: Vec::new(),
+            #[cfg(target_os = "windows")]
+            pngs: encoder::Encoder::new()?,
         };
-        let dir = out.join(tag);
-        std::fs::create_dir(&dir).map_err(|e| e.to_string())?;
         d.change(|w, window, cx| {
             w.theme_choice = theme;
             w.apply_theme(window, cx);
@@ -584,6 +598,9 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             record["theme"] = json!(tag);
             screens.push(record);
         }
+        // No summary can pass while an encoder is still writing or has failed.
+        #[cfg(target_os = "windows")]
+        d.pngs.finish()?;
     }
     let renderer = if cfg!(target_os = "windows") {
         "headless-directx-warp"

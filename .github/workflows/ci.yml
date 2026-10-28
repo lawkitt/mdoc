@@ -114,6 +114,15 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Runner CPU (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Get-CimInstance Win32_Processor | Format-List Name, NumberOfLogicalProcessors
+
+      - name: Runner CPU (macOS)
+        if: runner.os == 'macOS'
+        run: sysctl machdep.cpu.brand_string hw.logicalcpu
+
       - uses: ./.github/actions/setup
 
       - run: just test
