@@ -1,6 +1,7 @@
 # Roadmap upkeep and scope after 0.1.0
 
-Status: Accepted, 2026-10-20. Amends [ADR 0051](0051-roadmap-structure-and-stable-scope.md)
+Status: Accepted, 2026-10-20. Amended by [ADR 0072](0072-changelog-fragments.md)
+(changelog fragments). Amends [ADR 0051](0051-roadmap-structure-and-stable-scope.md)
 (structure); [ROADMAP.md](../../ROADMAP.md) applies it.
 
 ## Problem
@@ -38,7 +39,8 @@ mechanics.
   carry full items; everything beyond is Later, one line each in rough order,
   promoted and written out at grooming.
 - **Done means deleted.** The commit that finishes an item removes it from
-  ROADMAP.md and adds the CHANGELOG entry.
+  ROADMAP.md and adds the CHANGELOG entry as a fragment
+  ([ADR 0072](0072-changelog-fragments.md)).
 - **Grooming happens after each release and each acceptance run.** Between
   groomings, new bugs go to Issues and new ideas to the end of Later, without
   reordering.
