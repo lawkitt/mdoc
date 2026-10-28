@@ -29,7 +29,6 @@ pub(crate) struct RestoredReply {
 pub(crate) struct RestoreState {
     pub map: RestoreMap,
     pub restored: usize,
-    pub values: usize,
     /// Token texts the user chose to leave as they are.
     ignored: HashSet<String>,
     summary_dismissed: bool,
@@ -191,7 +190,6 @@ impl DocumentView {
         self.pii.restore = Some(RestoreState {
             map,
             restored: restoration.restored,
-            values: restoration.values,
             ignored: HashSet::new(),
             summary_dismissed: false,
             popup: None,
@@ -372,7 +370,7 @@ impl DocumentView {
         self.activate_unresolved(range.start, window, cx);
     }
 
-    /// "Restored N mentions of M values · K unresolved" above a restored reply.
+    /// "AI reply restored" and what the restored names are, above a restored reply.
     pub(crate) fn restore_summary(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let state = self.pii.restore.as_ref()?;
         if state.summary_dismissed {
@@ -381,7 +379,7 @@ impl DocumentView {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let unresolved = self.unresolved_tokens(cx).len();
-        let (headline, detail) = summary_text(state.restored, state.values, unresolved);
+        let (headline, detail) = summary_text(state.restored, unresolved);
         let accent = if unresolved > 0 {
             crate::style::markdown_style(theme).alert_caution
         } else {
@@ -606,9 +604,10 @@ impl DocumentView {
     }
 }
 
-/// The restore bar's headline and detail. A reply without any placeholder says
-/// so rather than "Restored 0 mentions of 0 values" (ADR 0046).
-fn summary_text(restored: usize, values: usize, unresolved: usize) -> (&'static str, String) {
+/// The restore bar's headline and detail: the first sentence says the restored
+/// names are proposals and what Apply does. A reply without any placeholder
+/// says so instead (ADR 0046).
+fn summary_text(restored: usize, unresolved: usize) -> (&'static str, String) {
     let plural = |n: usize, one: &'static str, many: &'static str| if n == 1 { one } else { many };
     if restored == 0 && unresolved == 0 {
         return (
@@ -618,12 +617,14 @@ fn summary_text(restored: usize, values: usize, unresolved: usize) -> (&'static 
     }
     let mut detail = if restored == 0 {
         "No known placeholders were restored.".to_string()
+    } else if restored == 1 {
+        "The restored name is a proposal. Apply turns it back into an alias \
+         before you send the text to the AI again."
+            .to_string()
     } else {
         format!(
-            "Restored {restored} {} of {values} {} as proposals that keep their aliases. \
-             Apply them before copying the text back to the AI.",
-            plural(restored, "mention", "mentions"),
-            plural(values, "value", "values"),
+            "The {restored} restored names are proposals. Apply turns them back into \
+             aliases before you send the text to the AI again."
         )
     };
     if unresolved > 0 {
@@ -642,19 +643,34 @@ mod summary_tests {
     #[test]
     fn a_reply_without_placeholders_says_so() {
         assert_eq!(
-            summary_text(0, 0, 0),
+            summary_text(0, 0),
             (
                 "Nothing to restore",
                 "No placeholders found in this reply.".into()
             )
         );
-        let (_, detail) = summary_text(0, 0, 2);
+        let (_, detail) = summary_text(0, 2);
         assert_eq!(
             detail,
             "No known placeholders were restored. 2 unrecognized placeholders are highlighted in red."
         );
-        let (headline, detail) = summary_text(3, 1, 0);
+    }
+
+    #[test]
+    fn the_first_sentence_says_names_are_proposals_and_what_apply_does() {
+        let (headline, detail) = summary_text(3, 0);
         assert_eq!(headline, "AI reply restored");
-        assert!(detail.starts_with("Restored 3 mentions of 1 value as proposals"));
+        assert_eq!(
+            detail,
+            "The 3 restored names are proposals. Apply turns them back into aliases \
+             before you send the text to the AI again."
+        );
+        let (_, detail) = summary_text(1, 2);
+        assert_eq!(
+            detail,
+            "The restored name is a proposal. Apply turns it back into an alias \
+             before you send the text to the AI again. \
+             2 unrecognized placeholders are highlighted in red."
+        );
     }
 }
