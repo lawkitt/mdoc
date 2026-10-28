@@ -41,10 +41,6 @@ merges to `main` on its own when green.
    the close and quit prompts ([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md))
    and VoiceOver tell unsaved tabs apart. *From the rc.4 acceptance run.*
    *Done when:* each new untitled tab gets the next free number.
-2. **[Cases] Restore banner wording.** Say plainly that restored names are
-   proposals and what Apply does. *From the UX review.*
-   *Done when:* the banner's first sentence says the names are proposals and
-   what Apply does, in the headless renders.
 3. **[UI] Keyboard shortcuts panel.** `?` and a palette action list every
    shortcut by context (everywhere, editor, popup, panel). *From Anoni 0.86.1.*
    *Done when:* every bound action appears, from one source of truth.
