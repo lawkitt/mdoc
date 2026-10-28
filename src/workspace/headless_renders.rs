@@ -9,6 +9,7 @@ use crate::{
     document_view::DocumentView,
     pii::ui::{PiiApplyAll, PiiClosePopup},
     search_session::CloseMarkdownSearch,
+    settings_ui::Category,
 };
 use gpui::{
     Context, Entity, Focusable, HeadlessAppContext, Keystroke, PromptLevel, Window, prelude::*, px,
@@ -128,6 +129,7 @@ impl Driver {
                     "palette": w.shell.palette.is_some(),
                     "shortcuts": w.shell.shortcuts.is_some(),
                     "settings": w.settings.read(cx).open,
+                    "settings_category": w.settings.read(cx).category().label(),
                     "settings_theme_choice": w.settings.read(cx).selected_theme(),
                     "appearance_in_view": w.settings.read(cx).appearance_in_view(),
                     "theme_choice": match w.theme_choice {
@@ -431,27 +433,31 @@ fn scenarios(
             cx.notify();
         })
     })?;
-    d.change(|w, window, cx| {
-        // show_settings activates native windows. Call the panel's state flow
-        // directly, even though TestPlatform cannot show a native window.
-        w.settings.update(cx, |p, cx| p.show(window, cx));
-    })?;
-    d.settle()?;
-    // Capture before the Tab walk scrolls the panel away from Appearance.
-    records.push(d.capture(out, "settings")?);
-    // Start a fresh walk at the panel: the first three stops are Appearance,
-    // followed by the first model row used by the focus-ring contract.
-    d.change(|w, window, cx| {
-        w.settings.update(cx, |p, cx| {
-            p.close(window, cx);
-            p.show(window, cx);
-        });
-    })?;
-    d.settle()?;
-    for _ in 0..4 {
-        d.key("tab")?;
-        d.settle()?;
+    // show_settings activates native windows. Call the panel's state flow
+    // directly, even though TestPlatform cannot show a native window.
+    for (category, name) in [
+        (Category::General, "settings-general"),
+        (Category::Detection, "settings-detection"),
+        (Category::Recognition, "settings-recognition"),
+        (Category::Spelling, "settings-spelling"),
+        (Category::Cases, "settings-cases"),
+        (Category::About, "settings-about"),
+    ] {
+        d.change(|w, window, cx| {
+            w.settings
+                .update(cx, |p, cx| p.show_category(category, window, cx));
+        })?;
+        // Each baseline precedes its Tab walk, including Appearance in General.
+        records.push(d.capture(out, name)?);
     }
+    // Detection starts on its category tab; one Tab enters the first model radio.
+    d.change(|w, window, cx| {
+        w.settings
+            .update(cx, |p, cx| p.show_category(Category::Detection, window, cx));
+    })?;
+    d.settle()?;
+    d.key("tab")?;
+    d.settle()?;
     let row = d.change(|_, window, cx| window.focused(cx).expect("first Settings row"))?;
     d.focus_pair(out, "settings-row", row)?;
     d.change(|w, window, cx| w.settings.update(cx, |p, cx| p.open_dictionary(window, cx)))?;

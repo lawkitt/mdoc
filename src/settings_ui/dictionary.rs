@@ -64,6 +64,7 @@ enum Typed {
 
 impl Panel {
     pub fn open_dictionary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.category = super::Category::Spelling;
         let query = cx.new(|cx| {
             SearchInput::new(cx)
                 .with_theme(self.theme.clone())
@@ -98,7 +99,15 @@ impl Panel {
 
     pub fn close_dictionary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.dictionary = None;
-        window.focus(&self.focus, cx);
+        if let Some(focus) = self
+            .controls
+            .borrow()
+            .get(&gpui::ElementId::from("manage-dictionary"))
+        {
+            window.focus(focus, cx);
+        } else {
+            window.focus(&self.category_focus, cx);
+        }
         cx.notify();
     }
 
@@ -174,7 +183,6 @@ impl Panel {
 
     /// The Settings → Spelling summary line with Manage….
     pub(super) fn dictionary_summary(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
-        let p = theme.pdf_style();
         let (count, error) = {
             let store = self.shared.borrow();
             (store.words.words.len(), store.words.error.clone())
@@ -187,31 +195,19 @@ impl Panel {
         div()
             .flex()
             .flex_col()
-            .gap_1()
-            .mt_1()
             .child(
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap_2()
-                    .child(div().text_size(px(12.)).child("Your dictionary"))
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(p.header_muted)
-                            .child(summary),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        self.scrolled_quiet("manage-dictionary", "Manage…", theme, true, cx)
-                            .when(cfg!(test), |v| {
-                                v.debug_selector(|| "manage-dictionary".into())
-                            })
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.open_dictionary(window, cx)),
-                            ),
-                    ),
+                self.setting_row(
+                    "Your dictionary",
+                    summary,
+                    self.scrolled_quiet("manage-dictionary", "Manage…", theme, true, cx)
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "manage-dictionary".into())
+                        })
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.open_dictionary(window, cx)),
+                        ),
+                    theme,
+                ),
             )
             .children(error.map(|e| {
                 div()

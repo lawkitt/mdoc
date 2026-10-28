@@ -111,6 +111,7 @@ enum Command {
     OpenCase,
     Home,
     Settings,
+    SettingsCategory(crate::settings_ui::Category),
     Shortcuts,
     Theme,
     /// The active document's heading whose line starts at this offset.
@@ -145,6 +146,7 @@ impl Command {
             | Command::ExpandIdentities
             | Command::CollapseIdentities
             | Command::Theme
+            | Command::SettingsCategory(_)
             | Command::Heading(_)
             | Command::Tab(_)
             | Command::Case(_)
@@ -1469,6 +1471,16 @@ impl Workspace {
                 command: Command::Settings,
             },
         ]);
+        rows.extend(
+            crate::settings_ui::Category::ALL
+                .into_iter()
+                .map(|category| Row {
+                    section: "Go to",
+                    label: format!("Settings › {}", category.label()),
+                    detail: None,
+                    command: Command::SettingsCategory(category),
+                }),
+        );
         // The active document's headings (from MiaoYan's table of contents).
         if let Some(view) = self.active_view().filter(|_| has_document) {
             let view = view.read(cx);
@@ -1610,6 +1622,9 @@ impl Workspace {
             Command::OpenCase => dispatch(window, cx, Box::new(OpenCase)),
             Command::Home => self.show_home(window, cx),
             Command::Settings => dispatch(window, cx, Box::new(Settings)),
+            Command::SettingsCategory(category) => self
+                .settings
+                .update(cx, |panel, cx| panel.show_category(category, window, cx)),
             Command::Shortcuts => dispatch(window, cx, Box::new(ShowShortcuts)),
             Command::Theme => self.cycle_theme(window, cx),
             Command::Heading(offset) => {
@@ -1661,7 +1676,7 @@ impl Workspace {
                 Command::Tab(_) | Command::Recent(_) => ui::Icon::Source,
                 Command::Heading(_) => ui::Icon::ChevronRight,
                 Command::Home => ui::Icon::Home,
-                Command::Settings => ui::Icon::Settings,
+                Command::Settings | Command::SettingsCategory(_) => ui::Icon::Settings,
                 Command::Shortcuts => ui::Icon::Help,
                 Command::Theme => ui::Icon::ThemeSystem,
                 Command::RestoreReply => ui::Icon::Reply,

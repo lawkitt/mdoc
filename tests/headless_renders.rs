@@ -20,7 +20,12 @@ const SCREENS: &[&str] = &[
     "mention-popup",
     "setup-consent",
     "setup-consent-fp32",
-    "settings",
+    "settings-general",
+    "settings-detection",
+    "settings-recognition",
+    "settings-spelling",
+    "settings-cases",
+    "settings-about",
     "dictionary",
     "command-palette",
     "keyboard-shortcuts",
@@ -112,7 +117,11 @@ fn native_windows_present(pid: u32) -> Result<bool, String> {
 #[test]
 fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
     let temp = tempfile::tempdir().unwrap();
-    let out = temp.path().join("renders with spaces");
+    // CI retains the same contract-tested run as an artifact. Local runs keep
+    // the temporary output (including the spaces-in-path check) by default.
+    let out = std::env::var_os("MDOC_HEADLESS_ARTIFACTS")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| temp.path().join("renders with spaces"));
     let mut child = render_command()
         .arg("--headless-renders")
         .arg(&out)
@@ -205,7 +214,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 );
                 assert_eq!(
                     record["state"]["settings"],
-                    matches!(*name, "settings" | "dictionary"),
+                    name.starts_with("settings-") || *name == "dictionary",
                     "stale settings on {theme}/{name}"
                 );
                 // ADR 0075: the primary button and the 20-file cap.
@@ -222,7 +231,27 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     record["state"]["folder_sheet_ticked"], ticked,
                     "{theme}/{name}"
                 );
-                if *name == "settings" {
+                let expected_category = match *name {
+                    "settings-general" => Some("General"),
+                    "settings-detection" => Some("Detection"),
+                    "settings-recognition" => Some("Recognition"),
+                    "settings-spelling" | "dictionary" => Some("Spelling"),
+                    "settings-cases" => Some("Cases"),
+                    "settings-about" => Some("About"),
+                    _ => None,
+                };
+                if let Some(category) = expected_category {
+                    assert_eq!(
+                        record["state"]["settings_category"], category,
+                        "wrong settings category on {theme}/{name}"
+                    );
+                }
+                assert_eq!(
+                    record["state"]["dictionary"],
+                    *name == "dictionary",
+                    "stale dictionary on {theme}/{name}"
+                );
+                if *name == "settings-general" {
                     assert_eq!(record["state"]["theme_choice"], theme);
                     assert_eq!(
                         record["state"]["settings_theme_choice"],
@@ -351,18 +380,4 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
         .unwrap();
     assert!(!rejected.status.success());
     assert_eq!(std::fs::read(out.join("summary.json")).unwrap(), before);
-    // CI keeps each screen's baseline PNGs (not the Tab walks) as an artifact.
-    if let Some(keep) = std::env::var_os("MDOC_HEADLESS_RENDERS_ARTIFACT") {
-        let keep = Path::new(&keep);
-        for theme in ["light", "dark"] {
-            std::fs::create_dir_all(keep.join(theme)).unwrap();
-            for entry in std::fs::read_dir(out.join(theme)).unwrap().flatten() {
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "png") {
-                    std::fs::copy(&path, keep.join(theme).join(entry.file_name())).unwrap();
-                }
-            }
-        }
-        std::fs::copy(out.join("summary.json"), keep.join("summary.json")).unwrap();
-    }
 }

@@ -102,6 +102,7 @@ dependency forks.
 | `src/shortcuts.rs`, `src/workspace/shortcuts_ui.rs` | The one table of user-facing key bindings, which every `bind_keys` and the palette read, and the Keyboard Shortcuts sheet that lists it ([ADR 0073](adr/0073-keyboard-shortcuts-panel.md)) |
 | `src/workspace.rs`, `src/workspace/` | The window shell: document sidebar, tab identity, admission, scheduling and session persistence |
 | `src/workspace/{tab_set,sidebar,focus_regions,notices,session_writer,docx_queue,quit_flow,case_coordinator}.rs` | The window's owners: tabs and the active tab, the sidebar and its reveal, F6 regions, the bell's notices, session saves, the DOCX worker queue, closing and quitting, and case coordination |
+| `src/settings_ui.rs`, `src/settings_ui/` | Settings categories, save-on-change rows, model actions and the Spelling dictionary drill-in ([ADR 0076](adr/0076-settings-categories.md)) |
 | `src/workspace/folder_sheet.rs`, `src/workspace/folder_sheet_ui.rs` | The folder sheet: a dropped folder's files, ticks and 20-file cap, and the queue of folders waiting their turn; the dialog and its case actions ([ADR 0075](adr/0075-folder-sheet.md)) |
 | `src/document_view.rs`, `src/document_view/` | One tab's document view: editor, source preview, import/OCR state, actions and toolbar chrome |
 | `src/document_view/case_link.rs` | The tab's case-link owner: its case, the case's identities and skipped categories, and the pending save into the case |
@@ -276,6 +277,8 @@ mdoc-renders/
 
 The output also includes paired `focus-toggle-on`, `focus-sidebar-row` and
 `focus-settings-row` PNGs in both themes, each with a `-rest` counterpart.
+The Settings pair targets the first Detection model radio, reached by one Tab
+from the selected category tab.
 `focus-beside-selected-tab` also checks a focused Review tab beside the
 selected Share tab.
 `focus-comments-toggle` uses the public DOCX comments fixture to check the
@@ -286,7 +289,8 @@ preserving the control's fill and label and checking that both sides of the
 ring remain visible.
 
 Both themes cover Home, a document and its ⋯ menu, Review, the mention popup, model setup
-consent, Settings, the dictionary, command palette, the keyboard shortcuts
+consent, all six Settings categories (General, Detection, Recognition,
+Spelling, Cases and About), the dictionary, command palette, the keyboard shortcuts
 sheet, Find and Replace,
 before/after, Open Case, case rename/categories, the Keychain explainer preview,
 the folder sheet (a small folder, one over the 20-file cap, and Add to a
@@ -296,9 +300,10 @@ and a restored AI reply. The legal review uses
 `pseudonymization/corpus.json` annotations as deterministic proposals; Restore
 uses the captured `restore/claude-en` fixture. No detector runs. Platform file
 pickers and the OS Keychain password prompt are outside this app-owned set.
-The Settings baseline starts at Appearance with System, Light and Dark visible;
-its state records both controls' theme choices and checks the actual segments'
-bounds against the scroll viewport for each render.
+Each Settings baseline records and checks the selected category; the dictionary
+opens in Spelling. The General baseline shows Appearance with System, Light and
+Dark visible; its state records both controls' theme choices and checks the
+actual segments' bounds against the scroll viewport for each render.
 
 PNGs are 2200 × 1520 (1100 × 760 points at 2×). `summary.json` schema version 1
 contains a record per screen/theme: baseline PNG, ordered `tab_order` entries

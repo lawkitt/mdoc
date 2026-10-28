@@ -489,6 +489,7 @@ impl Workspace {
                         this.shell.recents.clear();
                         cx.notify();
                     }
+                    settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),
                 }),
             );
         this

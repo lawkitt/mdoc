@@ -82,7 +82,11 @@ fn update_banner_opens_settings_and_dismisses_per_version(cx: &mut TestAppContex
         "the banner carries the only dot"
     );
     click_toolbar(cx, "update-banner");
-    cx.update(|_, cx| assert!(tabs.read(cx).settings.read(cx).open));
+    cx.update(|_, cx| {
+        let settings = tabs.read(cx).settings.read(cx);
+        assert!(settings.open);
+        assert_eq!(settings.category(), settings_ui::Category::General);
+    });
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.settings
             .update(cx, |panel, cx| panel.close(window, cx))

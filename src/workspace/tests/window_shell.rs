@@ -101,20 +101,20 @@ fn toolbar_settings_opens_and_closes_without_editor_focus(cx: &mut TestAppContex
         window.draw(cx).clear(cx);
     });
     assert!(cx.debug_bounds("settings-dialog").is_some());
-    click_toolbar(cx, "settings-advanced");
+    click_toolbar(cx, "settings-category-Detection");
     click_toolbar(cx, "settings-details-fp16");
     cx.update(|_, cx| {
         assert_eq!(
             panel.read(cx).details,
             Some(settings::Model::Pii(settings::PiiModel::Fp16))
         );
-        assert!(panel.read(cx).advanced);
+        assert_eq!(panel.read(cx).category(), settings_ui::Category::Detection);
     });
     cx.simulate_resize(size(px(640.), px(480.)));
     let dialog = cx.debug_bounds("settings-dialog").unwrap();
     assert!(dialog.size.width <= px(640.));
     assert!(dialog.size.height <= px(480.));
-    // Done stays in the footer; Save scrolls with the Advanced fields.
+    // The close control stays in the corner at the minimum viewport.
     let bounds = cx.debug_bounds("settings-close").unwrap();
     assert!(bounds.top() >= px(0.) && bounds.bottom() <= px(480.));
     cx.dispatch_action(settings_ui::CloseSettings);
@@ -270,7 +270,7 @@ fn settings_theme_tracks_sidebar_cycle_and_updates_while_mounted(cx: &mut TestAp
 }
 
 #[gpui::test]
-fn settings_theme_segments_are_first_tab_stops_and_activate_with_enter_and_space(
+fn settings_theme_segments_follow_category_and_activate_with_enter_and_space(
     cx: &mut TestAppContext,
 ) {
     cx.update(settings_ui::bind_keys);
@@ -842,7 +842,7 @@ fn markdown_scrollbar_drags_without_changing_preview_scroll(cx: &mut TestAppCont
 }
 
 #[gpui::test]
-fn settings_keyboard_traversal_does_not_expand_and_restores_opener(cx: &mut TestAppContext) {
+fn settings_keyboard_traversal_stays_in_dialog_and_restores_opener(cx: &mut TestAppContext) {
     cx.update(settings_ui::bind_keys);
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(640.), px(480.)));
@@ -857,7 +857,7 @@ fn settings_keyboard_traversal_does_not_expand_and_restores_opener(cx: &mut Test
         cx.simulate_keystrokes("tab");
         cx.update(|window, cx| {
             assert!(gpui::Focusable::focus_handle(panel.read(cx), cx).contains_focused(window, cx));
-            assert!(!panel.read(cx).advanced);
+            assert_eq!(panel.read(cx).category(), settings_ui::Category::General);
         });
     }
     cx.simulate_keystrokes("shift-tab escape");
@@ -865,6 +865,74 @@ fn settings_keyboard_traversal_does_not_expand_and_restores_opener(cx: &mut Test
         assert!(!panel.read(cx).open);
         assert!(opener.is_focused(window));
     });
+}
+
+#[gpui::test]
+fn settings_categories_use_one_tab_stop_and_arrow_keys(cx: &mut TestAppContext) {
+    cx.update(settings_ui::bind_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    click_toolbar(cx, "Settings");
+    let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
+    let category_focus = cx.update(|window, cx| window.focused(cx).unwrap());
+    for category in [
+        settings_ui::Category::Detection,
+        settings_ui::Category::Recognition,
+        settings_ui::Category::Spelling,
+        settings_ui::Category::Cases,
+        settings_ui::Category::About,
+        settings_ui::Category::General,
+    ] {
+        key(cx, "down");
+        cx.update(|window, cx| {
+            assert_eq!(panel.read(cx).category(), category);
+            assert_eq!(window.focused(cx), Some(category_focus.clone()));
+        });
+    }
+    key(cx, "up");
+    cx.update(|_, cx| assert_eq!(panel.read(cx).category(), settings_ui::Category::About));
+    key(cx, "down");
+    key(cx, "shift-tab");
+    let close_focus = cx.update(|window, cx| window.focused(cx).unwrap());
+    assert_ne!(close_focus, category_focus);
+    activate_control(cx);
+    cx.update(|_, cx| assert!(!panel.read(cx).open));
+    click_toolbar(cx, "Settings");
+    cx.update(|window, cx| assert_eq!(window.focused(cx), Some(category_focus.clone())));
+    key(cx, "tab");
+    let content_focus = cx.update(|window, cx| window.focused(cx).unwrap());
+    assert_ne!(content_focus, category_focus);
+    assert_ne!(content_focus, close_focus);
+    key(cx, "shift-tab");
+    cx.update(|window, cx| assert_eq!(window.focused(cx), Some(category_focus)));
+}
+
+#[gpui::test]
+fn settings_model_and_update_deep_links_choose_their_categories(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
+    for model in settings::Model::ALL {
+        panel.update_in(cx, |panel, window, cx| {
+            panel.show_section(model, window, cx)
+        });
+        draw(cx);
+        let expected = match model {
+            settings::Model::Ocr(_) => settings_ui::Category::Recognition,
+            settings::Model::Pii(_) => settings_ui::Category::Detection,
+        };
+        cx.update(|_, cx| {
+            assert!(panel.read(cx).open);
+            assert_eq!(panel.read(cx).category(), expected, "{model:?}");
+        });
+    }
+    panel.update_in(cx, |panel, window, cx| panel.show_updates(window, cx));
+    cx.update(|_, cx| assert_eq!(panel.read(cx).category(), settings_ui::Category::General));
+    panel.update_in(cx, |panel, window, cx| {
+        panel.show_category(settings_ui::Category::About, window, cx);
+        panel.close(window, cx);
+        panel.show(window, cx);
+    });
+    cx.update(|_, cx| assert_eq!(panel.read(cx).category(), settings_ui::Category::General));
 }
 
 #[gpui::test]
@@ -1011,7 +1079,15 @@ fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mu
         (0..300).map(|i| format!("word{i:03}")).collect();
     cx.update(|_, cx| crate::settings_ui::dictionary::set_words(&shared, words, cx));
     click_toolbar(cx, "Settings");
-    panel.update_in(cx, |panel, window, cx| panel.open_dictionary(window, cx));
+    click_toolbar(cx, "settings-category-Spelling");
+    let scroll = cx.debug_bounds("settings-scroll").unwrap();
+    cx.simulate_event(gpui::ScrollWheelEvent {
+        position: scroll.center(),
+        delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-600.))),
+        ..Default::default()
+    });
+    draw(cx);
+    click_toolbar(cx, "manage-dictionary");
     draw(cx);
     // Only the visible rows exist.
     assert!(cx.debug_bounds("remove-word-0").is_some());
@@ -1054,12 +1130,21 @@ fn dictionary_view_searches_adds_removes_with_undo_and_stays_virtualized(cx: &mu
     click_toolbar(cx, "undo-remove-word");
     cx.update(|_, _| assert!(shared.borrow().words.words.contains("Tebriz")));
 
-    // Escape leaves the dictionary first, then Settings.
-    cx.dispatch_action(settings_ui::CloseSettings);
+    // The back control returns to Spelling; Escape from the drill-in closes Settings.
+    click_toolbar(cx, "close-dictionary");
     cx.update(|_, cx| {
         assert!(panel.read(cx).dictionary.is_none());
         assert!(panel.read(cx).open);
+        assert_eq!(panel.read(cx).category(), settings_ui::Category::Spelling);
     });
+    draw(cx);
+    assert!(cx.debug_bounds("manage-dictionary").is_some());
+    click_toolbar(cx, "manage-dictionary");
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(!panel.read(cx).open));
+    draw(cx);
+    assert!(cx.debug_bounds("settings-dialog").is_none());
 }
 
 #[gpui::test]
@@ -1350,6 +1435,29 @@ fn command_palette_filters_and_runs_actions(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     draw(cx);
     tabs.read_with(cx, |tabs, _| assert_eq!(tabs.sidebar.visible(), !visible));
+}
+
+#[gpui::test]
+fn command_palette_routes_every_settings_category(cx: &mut TestAppContext) {
+    cx.update(shell::bind_keys);
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let panel = cx.update(|_, cx| tabs.read(cx).settings.clone());
+    let labels = tabs.read_with(cx, |tabs, cx| tabs.palette_section("Go to", cx));
+    for category in settings_ui::Category::ALL {
+        assert!(labels.contains(&format!("Settings › {}", category.label())));
+        cx.simulate_keystrokes("secondary-k");
+        cx.simulate_input(&format!("settings {}", category.label()));
+        draw(cx);
+        cx.simulate_keystrokes("enter");
+        draw(cx);
+        cx.update(|_, cx| {
+            assert!(tabs.read(cx).shell.palette.is_none());
+            assert!(panel.read(cx).open);
+            assert_eq!(panel.read(cx).category(), category);
+        });
+        panel.update_in(cx, |panel, window, cx| panel.close(window, cx));
+        draw(cx);
+    }
 }
 
 /// Public synthetic input through the real editor/review/case host. Timings are
