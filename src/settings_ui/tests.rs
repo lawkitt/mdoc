@@ -617,3 +617,190 @@ fn resetting_another_category_preserves_number_text_and_its_error(cx: &mut TestA
         assert!(p.number_errors[0].is_none());
     });
 }
+
+fn hold_next_save(panel: &mut Panel, cx: &mut Context<Panel>) {
+    let gate = cx.background_executor().timer(Duration::from_secs(1));
+    panel.save_gate = Some(cx.background_executor().spawn(gate));
+}
+
+#[gpui::test]
+fn a_failed_number_save_after_close_is_visible_on_reopening(cx: &mut TestAppContext) {
+    let shared = Store::in_memory();
+    let dir = tempfile::tempdir().unwrap();
+    let invalid = dir.path().join("not-a-directory");
+    std::fs::write(&invalid, b"blocked").unwrap();
+    shared.borrow_mut().path = Some(invalid.join("settings.json"));
+    let (panel, cx) = cx
+        .add_window_view(|_, cx| Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx));
+    panel.update_in(cx, |p, w, cx| {
+        p.open = true;
+        p.category = Category::Detection;
+        p.threshold
+            .update(cx, |i, cx| i.set_value("0.7".into(), cx));
+        p.close(w, cx);
+    });
+    cx.run_until_parked();
+    panel.update_in(cx, |p, w, cx| p.show_category(Category::Detection, w, cx));
+    cx.update(|w, cx| {
+        w.refresh();
+        w.draw(cx).clear(cx);
+    });
+    assert!(cx.debug_bounds("settings-error").is_some());
+    panel.update(cx, |p, cx| {
+        assert_eq!(p.threshold.read(cx).value(), "0.5");
+        assert!(
+            p.error
+                .as_ref()
+                .unwrap()
+                .contains("Could not save settings")
+        );
+        assert!(p.error.as_ref().unwrap().contains("Previous defaults"));
+    });
+    assert_eq!(
+        shared
+            .borrow()
+            .snapshot()
+            .unwrap()
+            .pseudonymization
+            .threshold,
+        0.5
+    );
+}
+
+#[gpui::test]
+fn blur_autosave_keeps_the_mouse_click_on_resolution_model_and_reset(cx: &mut TestAppContext) {
+    cx.update(bind_keys);
+    cx.update(ui::bind_keys);
+    for target in ["settings-dpi-300", "settings-select-fp32", "reset-settings"] {
+        let shared = Store::in_memory();
+        let (panel, cx) = cx.add_window_view(|_, cx| {
+            Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx)
+        });
+        cx.simulate_resize(size(px(1100.), px(800.)));
+        cx.update(|w, _| w.activate_window());
+        let recognition = target == "settings-dpi-300";
+        panel.update_in(cx, |p, w, cx| {
+            p.open = true;
+            p.statuses.fill(Status::Ready);
+            p.change_category(
+                if recognition {
+                    Category::Recognition
+                } else {
+                    Category::Detection
+                },
+                w,
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        panel.update_in(cx, |p, w, cx| {
+            let input = if recognition {
+                &p.confidence
+            } else {
+                &p.threshold
+            };
+            input.update(cx, |i, cx| i.set_value("0.7".into(), cx));
+            w.focus(&input.read(cx).focus_handle(cx), cx);
+            hold_next_save(p, cx);
+        });
+        for _ in 0..3 {
+            cx.update(|w, cx| {
+                w.refresh();
+                w.draw(cx).clear(cx);
+            });
+        }
+        let position = cx.debug_bounds(target).unwrap().center();
+        cx.simulate_event(gpui::MouseDownEvent {
+            position,
+            button: gpui::MouseButton::Left,
+            modifiers: gpui::Modifiers::none(),
+            click_count: 1,
+            first_mouse: false,
+        });
+        cx.update(|w, cx| {
+            w.refresh();
+            w.draw(cx).clear(cx);
+        });
+        cx.run_until_parked();
+        panel.update(cx, |p, _| {
+            assert!(p.applying, "{target}: blur must start the held save")
+        });
+        cx.simulate_event(gpui::MouseUpEvent {
+            position,
+            button: gpui::MouseButton::Left,
+            modifiers: gpui::Modifiers::none(),
+            click_count: 1,
+        });
+        cx.run_until_parked();
+        panel.update(cx, |p, _| {
+            assert!(
+                p.save_pending,
+                "{target}: mouse-up must queue the second change"
+            )
+        });
+        cx.executor().advance_clock(Duration::from_secs(1));
+        cx.run_until_parked();
+        let saved = shared.borrow().snapshot().unwrap();
+        match target {
+            "settings-dpi-300" => {
+                assert_eq!(saved.ocr.dpi, 300);
+                assert_eq!(saved.ocr.minimum_confidence, 0.7);
+            }
+            "settings-select-fp32" => {
+                assert_eq!(saved.pseudonymization.model, PiiModel::Fp32);
+                assert_eq!(saved.pseudonymization.threshold, 0.7);
+            }
+            _ => assert_eq!(
+                saved.pseudonymization,
+                Preferences::default().pseudonymization
+            ),
+        }
+    }
+}
+
+#[gpui::test]
+fn a_queued_general_reset_changes_theme_only_if_its_own_save_succeeds(cx: &mut TestAppContext) {
+    let shared = Store::in_memory();
+    shared
+        .borrow_mut()
+        .current
+        .as_mut()
+        .unwrap()
+        .updates
+        .check_automatically = false;
+    let (panel, cx) = cx
+        .add_window_view(|_, cx| Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx));
+    let seen = Rc::new(Cell::new(false));
+    let events = seen.clone();
+    let _subscription = cx.update(|_, cx| {
+        cx.subscribe(&panel, move |_, event, _| {
+            if matches!(event, Event::ThemeSelected(_)) {
+                events.set(true);
+            }
+        })
+    });
+    panel.update(cx, |p, cx| {
+        hold_next_save(p, cx);
+        p.select(Model::Pii(PiiModel::Fp32), cx);
+        p.reset(cx);
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let invalid = dir.path().join("not-a-directory");
+    std::fs::write(&invalid, b"blocked").unwrap();
+    shared.borrow_mut().path = Some(invalid.join("settings.json"));
+    cx.executor().advance_clock(Duration::from_secs(1));
+    cx.run_until_parked();
+    assert!(!seen.get());
+    assert_eq!(
+        shared.borrow().snapshot().unwrap().pseudonymization.model,
+        PiiModel::Fp32
+    );
+    assert!(
+        !shared
+            .borrow()
+            .snapshot()
+            .unwrap()
+            .updates
+            .check_automatically
+    );
+}

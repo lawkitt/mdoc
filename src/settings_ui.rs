@@ -76,6 +76,7 @@ pub struct Panel {
     pub threshold: Entity<SearchInput>,
     pub confidence: Entity<SearchInput>,
     pub error: Option<String>,
+    save_error: Option<String>,
     pub applying: bool,
     pub working: Option<Model>,
     progress: Option<Progress>,
@@ -84,7 +85,10 @@ pub struct Panel {
     number_errors: [Option<String>; 2],
     number_subscriptions: Vec<gpui::Subscription>,
     save_pending: bool,
-    reset_theme: bool,
+    reset_theme: Option<u64>,
+    theme_revision: u64,
+    #[cfg(test)]
+    save_gate: Option<gpui::Task<()>>,
     pub details: Option<Model>,
     theme: Rc<Cell<Theme>>,
     /// The window's current choice, projected into this control.
@@ -255,6 +259,7 @@ impl Panel {
             ),
             draft,
             error: None,
+            save_error: None,
             applying: false,
             working: None,
             progress: None,
@@ -263,7 +268,10 @@ impl Panel {
             number_errors: [None, None],
             number_subscriptions: Vec::new(),
             save_pending: false,
-            reset_theme: false,
+            reset_theme: None,
+            theme_revision: 0,
+            #[cfg(test)]
+            save_gate: None,
             details: None,
             theme,
             theme_choice: ThemeChoice::default(),
@@ -296,7 +304,10 @@ impl Panel {
         self.dictionary = None;
         self.number_errors = [None, None];
         self.scroll.set_offset(gpui::point(px(0.), px(0.)));
-        self.error = self.shared.borrow().error.as_ref().map(ToString::to_string);
+        self.error = self
+            .save_error
+            .clone()
+            .or_else(|| self.shared.borrow().error.as_ref().map(ToString::to_string));
         self.update_fields(cx);
         self.previous = window.focused(cx);
         self.open = true;
@@ -331,7 +342,8 @@ impl Panel {
     pub(crate) fn sync_theme(&mut self, choice: ThemeChoice, cx: &mut Context<Self>) {
         // A newer explicit choice wins over a General reset still being saved.
         if choice != self.theme_choice {
-            self.reset_theme = false;
+            self.theme_revision += 1;
+            self.reset_theme = None;
         }
         self.theme_choice = choice;
         // The resolved theme may change even while System stays selected.
@@ -417,7 +429,7 @@ impl Panel {
     }
     /// Select a model and save the choice at once (ADR 0026).
     pub fn select(&mut self, model: Model, cx: &mut Context<Self>) {
-        if self.applying || matches!(self.statuses[Self::index(model)], Status::Unavailable(_)) {
+        if matches!(self.statuses[Self::index(model)], Status::Unavailable(_)) {
             return;
         }
         match model {
@@ -557,9 +569,6 @@ impl Panel {
     }
     /// Reset only preferences owned by the visible category. About has no preferences.
     pub fn reset(&mut self, cx: &mut Context<Self>) {
-        if self.applying {
-            return;
-        }
         let defaults = Preferences::default();
         match self.category {
             Category::General => self.draft.updates = defaults.updates,
@@ -581,7 +590,9 @@ impl Panel {
             Category::Cases => self.draft.cases = defaults.cases,
             Category::About => return,
         }
-        self.reset_theme = self.category == Category::General;
+        if self.category == Category::General {
+            self.reset_theme = Some(self.theme_revision);
+        }
         self.persist(cx);
     }
     /// Atomically save `draft`. A failure restores the previous choices.
@@ -591,6 +602,8 @@ impl Panel {
             return;
         }
         let prefs = self.draft.clone();
+        let reset_theme = self.reset_theme.take();
+        let saved_updates = prefs.updates;
         let check_updates = self
             .shared
             .borrow()
@@ -600,9 +613,17 @@ impl Panel {
             && prefs.updates.check_automatically;
         let path = self.shared.borrow().path.clone();
         self.applying = true;
+        #[cfg(test)]
+        let save_gate = self.save_gate.take();
         let task = cx.background_executor().spawn({
             let prefs = prefs.clone();
-            async move { path.map_or(Ok(()), |path| save(&path, &prefs)) }
+            async move {
+                #[cfg(test)]
+                if let Some(gate) = save_gate {
+                    gate.await;
+                }
+                path.map_or(Ok(()), |path| save(&path, &prefs))
+            }
         });
         cx.spawn(async move |this, cx| {
             let result = task.await;
@@ -613,11 +634,12 @@ impl Panel {
                         this.shared.borrow_mut().current = Some(prefs);
                         this.shared.borrow_mut().error = None;
                         this.error = None;
-                        if std::mem::take(&mut this.reset_theme) {
+                        this.save_error = None;
+                        if reset_theme == Some(this.theme_revision) {
                             cx.emit(Event::ThemeSelected(ThemeChoice::System));
                         }
-                        if check_updates {
-                            updater::spawn_check(this.draft.updates.include_prereleases, true, cx);
+                        if check_updates && this.draft.updates == saved_updates {
+                            updater::spawn_check(saved_updates.include_prereleases, true, cx);
                         }
                         cx.emit(Event::Applied);
                         if this.save_pending {
@@ -626,13 +648,14 @@ impl Panel {
                         }
                     }
                     Err(e) => {
-                        this.reset_theme = false;
+                        this.reset_theme = None;
                         this.save_pending = false;
                         this.draft = this.shared.borrow().current.clone().unwrap_or_default();
                         this.update_fields(cx);
                         this.error = Some(format!(
                             "Could not save settings: {e}. Previous defaults remain active."
-                        ))
+                        ));
+                        this.save_error = this.error.clone();
                     }
                 }
                 cx.notify();
@@ -978,7 +1001,7 @@ impl Panel {
             Model::Ocr(m) => self.draft.ocr.model == m,
             Model::Pii(m) => self.draft.pseudonymization.model == m,
         };
-        let selectable = !matches!(status, Status::Unavailable(_)) && !self.applying;
+        let selectable = !matches!(status, Status::Unavailable(_));
         let idle = self.working.is_none() && !model_work::busy();
         let working = self.working == Some(model);
         let checking = self.checking && matches!(status, Status::Unknown);
@@ -1156,7 +1179,8 @@ impl Panel {
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                             })
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                this.reset_theme = false;
+                                this.theme_revision += 1;
+                                this.reset_theme = None;
                                 cx.emit(Event::ThemeSelected(choice))
                             }))
                     }),

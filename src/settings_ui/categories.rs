@@ -120,7 +120,6 @@ impl Panel {
         theme: Theme,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let enabled = enabled && !self.applying;
         let accent = theme.search_accent();
         self.scrolled_quiet(id, "", theme, enabled, cx)
             .when(cfg!(test), |v| v.debug_selector(move || id.into()))
@@ -147,7 +146,7 @@ impl Panel {
                 accent
             }))
             .on_click(cx.listener(move |this, _, _, cx| {
-                if enabled && !this.applying {
+                if enabled {
                     flip(&mut this.draft);
                     this.persist(cx);
                 }
@@ -330,10 +329,11 @@ impl Panel {
                 let note = self.section_note("Reads scanned pages in English and Russian.", Model::Ocr(self.draft.ocr.model));
                 div().child(div().text_size(px(11.)).text_color(theme.pdf_style().header_muted).child(note.clone()).when(cfg!(test), |v| v.debug_selector(move || note.clone())))
                     .child(div().id("ocr-models").role(gpui::Role::RadioGroup).aria_label("Text recognition").children(OcrModel::ALL.into_iter().map(|m| self.row(Model::Ocr(m), cx))))
-                    .child(self.setting_row("Resolution", "Pixels per inch for recognized pages.", div().flex().gap_1().children([150, 200, 300].map(|dpi| self.scrolled_control(("dpi", dpi as usize), format!("{dpi}"), theme, !self.applying, cx)
+                    .child(self.setting_row("Resolution", "Pixels per inch for recognized pages.", div().flex().gap_1().children([150, 200, 300].map(|dpi| self.scrolled_control(("dpi", dpi as usize), format!("{dpi}"), theme, true, cx)
+                        .when(cfg!(test), |v| v.debug_selector(move || format!("settings-dpi-{dpi}")))
                         .role(gpui::Role::RadioButton).aria_label(format!("{dpi} DPI")).aria_toggled(if self.draft.ocr.dpi == dpi { gpui::Toggled::True } else { gpui::Toggled::False })
                         .when(self.draft.ocr.dpi == dpi, |v| v.bg(theme.sidebar_selected()).border_color(theme.search_accent()))
-                        .on_click(cx.listener(move |this, _, _, cx| { if !this.applying { this.draft.ocr.dpi = dpi; this.persist(cx); } })))), theme))
+                        .on_click(cx.listener(move |this, _, _, cx| { this.draft.ocr.dpi = dpi; this.persist(cx); })))), theme))
                     .child(self.number_row(1, theme, cx))
                     .child(self.setting_row("Compare text recognition", "Compare models on a snapshot without changing your document or defaults.", self.scrolled_quiet("compare-ocr", "Compare", theme, true, cx).aria_label("Compare text recognition").on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Compare(Model::Ocr(OcrModel::Cyrillic))))), theme))
             },
@@ -353,7 +353,7 @@ impl Panel {
                     "reset-settings",
                     "Reset",
                     theme,
-                    !self.applying && self.category != Category::About,
+                    self.category != Category::About,
                     cx,
                 )
                 .when(cfg!(test), |v| v.debug_selector(|| "reset-settings".into()))
@@ -495,6 +495,8 @@ impl Panel {
             .when_some(self.error.clone(), |v, e| {
                 v.child(
                     div()
+                        .id("settings-error")
+                        .when(cfg!(test), |v| v.debug_selector(|| "settings-error".into()))
                         .px_4()
                         .py_2()
                         .text_size(px(12.))

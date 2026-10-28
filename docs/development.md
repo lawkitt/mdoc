@@ -252,13 +252,15 @@ this dev feature; on both platforms the latter checks the actual generated
 files and profile cleanup. On Windows, PNGs are encoded on a bounded
 background thread, which must finish without error before the summary is
 written. The `test (windows-latest)` CI job runs this test through
-`just test`. With `MDOC_HEADLESS_RENDERS_ARTIFACT` set, it copies
-`summary.json` and each screen's baseline PNGs (not the Tab walks) there;
-both CI test jobs upload them as the `headless-renders-<runner>` artifact.
-On Windows,
+`just test`. On Windows,
 the integration test also polls all top-level HWNDs owned by the child
 (including hidden ones) and fails if it creates any; the check filters by
 child process ID and leaves other apps untouched.
+
+CI sets `MDOC_HEADLESS_ARTIFACTS` to a new directory under the runner's temporary
+folder and uploads that same contract-tested output, with one artifact per
+platform and run attempt. Local `just test` keeps its output temporary unless
+this variable names a new output directory whose parent already exists.
 
 Output layout:
 
