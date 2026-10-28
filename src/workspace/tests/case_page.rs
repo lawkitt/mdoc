@@ -262,8 +262,11 @@ fn page_document_activation_and_open_all_are_explicit(cx: &mut TestAppContext) {
         tabs.create_case(tab, window, cx).unwrap()
     });
     cx.run_until_parked();
-    let closed = dir.path().join("closed.md");
+    // Hosted temp roots can be aliases. Exercise normalization locally too.
+    std::fs::create_dir(dir.path().join("members")).unwrap();
+    let closed = dir.path().join("members").join("..").join("closed.md");
     std::fs::write(&closed, "PERSON_1").unwrap();
+    let closed = session_store::identity(&closed);
     tabs.update(cx, |tabs, _| {
         tabs.case_coordinator.cases_mut()[0]
             .members
@@ -442,6 +445,13 @@ fn cached_page_unlocks_from_home_and_a_missing_case_returns_home(cx: &mut TestAp
 fn removing_a_lazy_member_clears_its_record_before_activation(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (case, path) = saved_case(dir.path());
+    std::fs::create_dir(dir.path().join("members")).unwrap();
+    let path = session_store::identity(
+        &dir.path()
+            .join("members")
+            .join("..")
+            .join(path.file_name().unwrap()),
+    );
     let other = dir.path().join("other.md");
     std::fs::write(&other, "# Other").unwrap();
     let (tabs, cx) = boot_home(
@@ -449,7 +459,7 @@ fn removing_a_lazy_member_clears_its_record_before_activation(cx: &mut TestAppCo
         Session {
             tabs: vec![
                 TabRecord {
-                    markdown: other,
+                    markdown: session_store::identity(&other),
                     ..TabRecord::default()
                 },
                 TabRecord {

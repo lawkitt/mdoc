@@ -42,6 +42,25 @@ fn forgetting_an_identity_preserves_another_homonyms_assigned_mention() {
     assert!(review.identity(first).is_none());
     assert_eq!(review.active_identities(), [second]);
 }
+
+#[test]
+fn forgetting_a_case_alias_also_scrubs_a_pending_document_rename() {
+    for case_alias in ["PERSON_1", "CLIENT"] {
+        let mut review = Review::default();
+        let group = review.add_manual("Ann", 0..3, Category::Person).unwrap();
+        let id = review.variant_identity(group).unwrap();
+        let initial = review.identity_snapshot();
+        review.rename_identity(id, "CLIENT").unwrap();
+        review.commit_identity_snapshot(0, 1, initial);
+        let previous = review.identity_snapshot();
+        // The page can open before the member's debounced save reaches the case.
+        review.rename_identity(id, "BUYER").unwrap();
+        review.commit_identity_snapshot(1, 2, previous);
+        review.forget_aliases(&[case_alias]);
+        assert!(review.identity(id).is_none());
+        assert!(review.export_identities().is_empty());
+    }
+}
 #[test]
 fn mutations_advance_the_revision_and_a_new_review_never_repeats_one() {
     let source = "Ann met Bob";

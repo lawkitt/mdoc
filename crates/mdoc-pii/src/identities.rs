@@ -271,6 +271,17 @@ impl Review {
             .filter(|id| {
                 self.identity(*id)
                     .is_some_and(|identity| aliases.contains(&identity.alias.as_str()))
+                    || self
+                        .identities
+                        .definitions
+                        .get(id)
+                        .is_some_and(|identity| aliases.contains(&identity.alias.as_str()))
+                    || self.identities.history.values().any(|policy| {
+                        policy
+                            .edited
+                            .get(id)
+                            .is_some_and(|identity| aliases.contains(&identity.alias.as_str()))
+                    })
             })
             .collect();
         for id in ids {
