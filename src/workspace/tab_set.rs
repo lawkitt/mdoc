@@ -4,7 +4,7 @@
 //! workspace view creates, releases and focuses the documents.
 
 use mdoc_store::session_store::TabRecord;
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 /// What the workspace view carries out for a tab-set transition.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,6 +166,31 @@ impl<V> TabSet<V> {
             recent_path: None,
         });
         id
+    }
+
+    /// Name new blanks and older unnamed session records (ADR 0071).
+    /// The view supplies current titles, including unopened restored tabs,
+    /// before any unnamed blank is initialized. Existing names stay intact.
+    pub(super) fn name_blank_tabs(&mut self, names: impl IntoIterator<Item = String>) {
+        let mut used: HashSet<_> = names.into_iter().collect();
+        let mut number = 1;
+        for tab in &mut self.tabs {
+            if !tab.record.blank || tab.record.name.is_some() {
+                continue;
+            }
+            loop {
+                let name = if number == 1 {
+                    "Untitled.md".to_string()
+                } else {
+                    format!("Untitled {number}.md")
+                };
+                number += 1;
+                if used.insert(name.clone()) {
+                    tab.record.name = Some(name);
+                    break;
+                }
+            }
+        }
     }
 
     /// The tab was first shown: keep its document view.
