@@ -89,8 +89,10 @@ pub struct Panel {
 }
 impl gpui::EventEmitter<Event> for Panel {}
 pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys(crate::shortcuts::bindings(
+        crate::shortcuts::Owner::Settings,
+    ));
     cx.bind_keys([
-        KeyBinding::new("escape", CloseSettings, Some("ModelSettings")),
         KeyBinding::new("tab", NextSettingsField, Some("ModelSettings")),
         KeyBinding::new("shift-tab", PreviousSettingsField, Some("ModelSettings")),
     ]);

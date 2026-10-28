@@ -24,6 +24,12 @@ use std::{
 
 actions!(model_comparison, [CloseComparison]);
 
+pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys(crate::shortcuts::bindings(
+        crate::shortcuts::Owner::Comparison,
+    ));
+}
+
 pub struct View {
     input_hash: String,
     pub input: Input,

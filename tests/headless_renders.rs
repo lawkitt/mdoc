@@ -23,6 +23,7 @@ const SCREENS: &[&str] = &[
     "settings",
     "dictionary",
     "command-palette",
+    "keyboard-shortcuts",
     "find-replace",
     "before-after",
     "open-case",
@@ -186,6 +187,11 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     record["state"]["palette"],
                     *name == "command-palette",
                     "stale palette on {theme}/{name}"
+                );
+                assert_eq!(
+                    record["state"]["shortcuts"],
+                    *name == "keyboard-shortcuts",
+                    "stale shortcuts sheet on {theme}/{name}"
                 );
                 assert_eq!(
                     record["state"]["find_replace"],

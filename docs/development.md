@@ -90,12 +90,16 @@ dependency forks.
   `mdoc-import`, `mdoc-detect`, `mdoc-pii`, …), with typed errors.
 - A document reaches the window only through `TabEvent`; the window calls
   document methods. No glob imports outside test modules (except
-  `gpui::prelude::*`), no `#[path]`; actions and keybindings live with the
-  feature that handles them.
+  `gpui::prelude::*`), no `#[path]`; actions live with the feature that
+  handles them. A user-facing key binding is a row in `src/shortcuts.rs`
+  naming the `bind_keys` that registers it; plumbing keys (Tab inside a
+  control group, moving inside a menu or list, caret basics) stay with the
+  feature ([ADR 0073](adr/0073-keyboard-shortcuts-panel.md)).
 
 | Location | Responsibility |
 | --- | --- |
-| `src/main.rs` | Application startup, menus, key bindings and window creation |
+| `src/main.rs` | Application startup, menus, key binding order (`bind_all_keys`) and window creation |
+| `src/shortcuts.rs`, `src/workspace/shortcuts_ui.rs` | The one table of user-facing key bindings, which every `bind_keys` and the palette read, and the Keyboard Shortcuts sheet that lists it ([ADR 0073](adr/0073-keyboard-shortcuts-panel.md)) |
 | `src/workspace.rs`, `src/workspace/` | The window shell: document sidebar, tab identity, admission, scheduling and session persistence |
 | `src/workspace/{tab_set,sidebar,focus_regions,notices,session_writer,docx_queue,quit_flow,case_coordinator}.rs` | The window's owners: tabs and the active tab, the sidebar and its reveal, F6 regions, the bell's notices, session saves, the DOCX worker queue, closing and quitting, and case coordination |
 | `src/document_view.rs`, `src/document_view/` | One tab's document view: editor, source preview, import/OCR state, actions and toolbar chrome |
@@ -267,7 +271,8 @@ mdoc-renders/
 ```
 
 Both themes cover Home, a document and its ⋯ menu, Review, the mention popup, model setup
-consent, Settings, the dictionary, command palette, Find and Replace,
+consent, Settings, the dictionary, command palette, the keyboard shortcuts
+sheet, Find and Replace,
 before/after, Open Case, case rename/categories, the Keychain explainer preview,
 confirmations for case deletion, mapping retention, unsaved changes and model
 removal, model comparison, a damaged DOCX's failed conversion and preview,

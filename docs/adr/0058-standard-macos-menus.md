@@ -18,7 +18,8 @@ Save panels had no ⌘C/⌘V, since those come from the Edit menu. Found by the
   AI Response, Close Tab), *Edit* (Undo, Redo, Cut, Copy, Paste, Select All,
   Find…, Find Next, Find Previous, Pseudonymize, Pseudonymize Clipboard),
   *View* (Toggle Sidebar ⌃⌘S, Before / After, Zoom In, Zoom Out, Actual Size) and
-  *Window* (Minimize ⌘M, Zoom, Next Tab, Previous Tab). Hide, Services and
+  *Window* (Minimize ⌘M, Zoom, Next Tab, Previous Tab) and *Help* (Keyboard
+  Shortcuts, [ADR 0073](0073-keyboard-shortcuts-panel.md)). Hide, Services and
   their shortcuts, and ⌃⌘S, are macOS only.
 - **Shortcuts come from the keymap.** Menu items show the binding GPUI finds
   for their action; no shortcut is defined twice.

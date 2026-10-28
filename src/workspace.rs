@@ -50,11 +50,14 @@ pub(crate) use quit_flow::CloseWatch;
 use quit_flow::{QuitEffect, QuitEnd};
 mod session_writer;
 mod shell;
+pub(crate) mod shortcuts_ui;
 use session_writer::SessionEffect;
 mod sidebar;
 mod tab_set;
 pub(crate) use cases_ui::{CancelCaseName, ConfirmCaseName, bind_keys as bind_case_keys};
-pub(crate) use shell::bind_keys as bind_shell_keys;
+pub(crate) use shell::{
+    CloseNotices, OpenPalette, PALETTE, PaletteClose, ShowHome, bind_keys as bind_shell_keys,
+};
 use sidebar::{Reveal, SLIDE, SidebarEffect};
 use tab_set::TabsEffect;
 mod app_actions;
@@ -2951,6 +2954,11 @@ impl Render for Workspace {
             .on_action(
                 cx.listener(|this, _: &shell::ShowHome, window, cx| this.show_home(window, cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &shortcuts_ui::ShowShortcuts, window, cx| {
+                    this.toggle_shortcuts(window, cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &shell::PasteAsNewTab, window, cx| {
                 this.paste_as_new_tab(window, cx)
             }))
@@ -3130,6 +3138,7 @@ impl Render for Workspace {
             .when(self.settings.read(cx).open, |v| {
                 v.child(self.settings.clone())
             })
+            .children(self.shortcuts_view(window, cx))
     }
 }
 
@@ -3289,6 +3298,7 @@ impl Workspace {
             || self.cases.explainer
             || self.cases.categories_open.is_some()
             || self.shell.palette.is_some()
+            || self.shell.shortcuts.is_some()
             || window
                 .context_stack()
                 .iter()
@@ -3308,6 +3318,7 @@ impl Workspace {
             || self.cases.explainer
             || self.cases.categories_open.is_some()
             || self.shell.palette.is_some()
+            || self.shell.shortcuts.is_some()
         {
             return;
         }

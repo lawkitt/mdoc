@@ -3,21 +3,16 @@
 #[cfg(target_os = "windows")]
 mod encoder;
 
-use super::{
-    Workspace, app_actions::bind as bind_app_actions, cases_ui::bind_keys as bind_case_keys,
-    shell::bind_keys as bind_shell_keys,
-};
+use super::{Workspace, app_actions::bind as bind_app_actions};
 use crate::{
-    bind_app_keys, comparison, comparison_ui,
-    document_view::{DocumentView, bind_markdown_search_keys},
-    markdown_search, pii,
+    bind_all_keys, comparison, comparison_ui,
+    document_view::DocumentView,
     pii::ui::{PiiApplyAll, PiiClosePopup},
     search_session::CloseMarkdownSearch,
-    settings_ui, ui,
 };
 use gpui::{
-    Context, Entity, Focusable, HeadlessAppContext, KeyBinding, Keystroke, PromptLevel, Window,
-    prelude::*, px, size,
+    Context, Entity, Focusable, HeadlessAppContext, Keystroke, PromptLevel, Window, prelude::*, px,
+    size,
 };
 use image::ImageEncoder;
 use mdoc_store::session_store::ThemeChoice;
@@ -114,6 +109,7 @@ impl Driver {
                 json!({
                     "home": w.showing_home(cx),
                     "palette": w.shell.palette.is_some(),
+                    "shortcuts": w.shell.shortcuts.is_some(),
                     "settings": w.settings.read(cx).open,
                     "dictionary": w.settings.read(cx).dictionary.is_some(),
                     "case_list": w.cases.list_open,
@@ -325,6 +321,14 @@ fn scenarios(
     // Tab may leave a popover's key context. Reset state explicitly between
     // scenes rather than assuming Escape still reaches the previous overlay.
     d.change(|w, window, cx| w.close_palette(window, cx))?;
+    // The keyboard shortcuts sheet, opened by its key as people do (ADR 0073).
+    d.key(if cfg!(target_os = "macos") {
+        "cmd-/"
+    } else {
+        "ctrl-/"
+    })?;
+    records.push(d.capture(out, "keyboard-shortcuts")?);
+    d.change(|w, window, cx| w.close_shortcuts(window, cx))?;
     d.change(|_, window, cx| view.update(cx, |v, cx| v.open_markdown_search(true, window, cx)))?;
     records.push(d.capture(out, "find-replace")?);
     d.change(|_, window, cx| {
@@ -443,7 +447,7 @@ fn scenarios(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let reply = pii::ui::RestoredReply {
+    let reply = crate::pii::ui::RestoredReply {
         text: include_str!("../../tests/fixtures/restore/claude-en/reply.md").into(),
         identities,
         source_name: "Claude public EN fixture".into(),
@@ -538,22 +542,8 @@ pub(crate) fn run(out: &Path) -> Result<()> {
         });
         cx.update(|cx| {
             cx.set_reduce_motion(true);
-            mdoc_editor::bind_keys(cx);
-            markdown_search::bind_keys(cx);
-            pii::ui::bind_keys(cx);
-            bind_case_keys(cx);
-            bind_shell_keys(cx);
-            settings_ui::bind_keys(cx);
-            ui::bind_keys(cx);
-            gpui_pdf::bind_keys(cx);
-            bind_markdown_search_keys(cx);
-            bind_app_keys(cx);
+            bind_all_keys(cx);
             bind_app_actions(cx);
-            cx.bind_keys([KeyBinding::new(
-                "escape",
-                comparison_ui::CloseComparison,
-                Some("ModelComparison"),
-            )]);
         });
         let window = cx
             .open_window(size(px(WIDTH), px(HEIGHT)), |window, cx| {

@@ -424,13 +424,18 @@ gpui::actions!(
 /// Esc closes it. Call once at startup; the menu's context is deeper than a
 /// host's own Tab bindings, so these win while it has focus.
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([
+    cx.bind_keys(key_bindings());
+}
+
+/// The More menu's key bindings, for a host that registers them itself.
+pub fn key_bindings() -> Vec<gpui::KeyBinding> {
+    vec![
         gpui::KeyBinding::new("tab", MenuNext, Some("PdfMenu")),
         gpui::KeyBinding::new("down", MenuNext, Some("PdfMenu")),
         gpui::KeyBinding::new("shift-tab", MenuPrevious, Some("PdfMenu")),
         gpui::KeyBinding::new("up", MenuPrevious, Some("PdfMenu")),
         gpui::KeyBinding::new("escape", MenuClose, Some("PdfMenu")),
-    ]);
+    ]
 }
 
 /// Toolbar tools in drawn order. At narrow widths the ones that do not fit

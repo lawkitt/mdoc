@@ -9,10 +9,7 @@ use crate::{
     document_view::{DocumentView, Next},
     markdown_search, style, ui,
 };
-use gpui::{
-    AnyElement, App, Context, Entity, Focusable, KeyBinding, PromptLevel, Window, div, prelude::*,
-    px,
-};
+use gpui::{AnyElement, App, Context, Entity, Focusable, PromptLevel, Window, div, prelude::*, px};
 use mdoc_store::{
     cases::{Case, CaseError, CaseLink, Store},
     session_store,
@@ -22,10 +19,7 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 gpui::actions!(cases, [ConfirmCaseName, CancelCaseName]);
 
 pub(crate) fn bind_keys(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("enter", ConfirmCaseName, Some("CaseName")),
-        KeyBinding::new("escape", CancelCaseName, Some("CaseName")),
-    ]);
+    cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Cases));
 }
 
 /// A dropped folder: its supported files, read off the UI thread.

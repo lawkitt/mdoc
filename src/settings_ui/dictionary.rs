@@ -8,8 +8,8 @@ use crate::{
     ui,
 };
 use gpui::{
-    AnyElement, App, Context, Entity, Focusable, KeyBinding, UniformListScrollHandle, Window,
-    actions, div, prelude::*, px, uniform_list,
+    AnyElement, App, Context, Entity, Focusable, UniformListScrollHandle, Window, actions, div,
+    prelude::*, px, uniform_list,
 };
 use mdoc_store::settings::{Shared, Store, valid_word};
 use std::{rc::Rc, time::Duration};
@@ -41,11 +41,9 @@ pub(crate) fn set_words(
 const UNDO_WINDOW: Duration = Duration::from_secs(6);
 
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new(
-        "enter",
-        AddDictionaryWord,
-        Some("DictionarySearch"),
-    )]);
+    cx.bind_keys(crate::shortcuts::bindings(
+        crate::shortcuts::Owner::Dictionary,
+    ));
 }
 
 pub struct DictionaryView {
