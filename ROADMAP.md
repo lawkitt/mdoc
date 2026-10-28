@@ -37,12 +37,6 @@ review's polish shipped in 0.2.0. Items are in priority order. Until
 five-item box this cycle); rc.1 is cut once every item is done. Each item
 merges to `main` on its own when green.
 
-7. **[Workspace] Folder sheet.** A dropped folder opens every file at once and
-   asks for the Keychain before anything is chosen. Show the files first, read
-   the key only for a case, cap 20 per folder
-   ([ADR 0075](docs/adr/0075-folder-sheet.md)). *From the 2026-10-19 rc.1 run.*
-   *Done when:* a folder drop shows the sheet, Open files never reads the key,
-   and one drop opens at most 20 new tabs.
 8. **[UI] Settings categories.** A category list and one row per setting,
    everything saved on change ([ADR 0076](docs/adr/0076-settings-categories.md)).
    *From Anoni 0.86.1.* *Done when:* every current setting is reachable, saved

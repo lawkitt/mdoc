@@ -126,6 +126,16 @@ jobs:
       - uses: ./.github/actions/setup
 
       - run: just test
+        env:
+          # The headless renders' contract test keeps each screen's PNGs here.
+          MDOC_HEADLESS_RENDERS_ARTIFACT: ${{ runner.temp }}/headless-renders
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && !inputs.release-call }}
+        with:
+          name: headless-renders-${{ matrix.runner }}
+          path: ${{ runner.temp }}/headless-renders
+          if-no-files-found: warn
+          retention-days: 14
       # Release gate: real OCR runtime/model download and EN/RU recognition,
       # on the test build just compiled.
       - if: inputs.smoke-ocr

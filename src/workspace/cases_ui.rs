@@ -22,52 +22,6 @@ pub(crate) fn bind_keys(cx: &mut App) {
     cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Cases));
 }
 
-/// A dropped folder: its supported files, read off the UI thread.
-pub(super) struct DroppedFolder {
-    pub name: String,
-    pub files: Vec<PathBuf>,
-    pub skipped_folders: usize,
-    pub skipped_hidden: usize,
-}
-impl DroppedFolder {
-    /// The folder's own supported files, sorted by name; subfolders skipped.
-    pub fn read(
-        path: &std::path::Path,
-        supported: impl Fn(&std::path::Path) -> bool,
-    ) -> Option<Self> {
-        if !path.is_dir() {
-            return None;
-        }
-        let mut files = Vec::new();
-        let mut skipped_folders = 0;
-        let mut skipped_hidden = 0;
-        for entry in std::fs::read_dir(path).ok()?.flatten() {
-            let entry = entry.path();
-            let hidden = entry
-                .file_name()
-                .is_some_and(|n| n.to_string_lossy().starts_with('.'));
-            if entry.is_dir() {
-                skipped_folders += usize::from(!hidden);
-            } else if supported(&entry) {
-                if hidden {
-                    skipped_hidden += 1;
-                } else {
-                    files.push(session_store::identity(&entry));
-                }
-            }
-        }
-        files.sort_by_key(|f| f.file_name().map(|n| n.to_string_lossy().to_lowercase()));
-        Some(Self {
-            name: path
-                .file_name()
-                .map_or_else(|| "Folder".into(), |n| n.to_string_lossy().into_owned()),
-            files,
-            skipped_folders,
-            skipped_hidden,
-        })
-    }
-}
-
 #[derive(Default)]
 pub(super) struct CaseState {
     pub(super) renaming: Option<(String, Entity<markdown_search::SearchInput>)>,
@@ -96,6 +50,9 @@ pub(super) struct CaseState {
     /// What opening the key yields in tests: a store, or an error.
     #[cfg(test)]
     pub(super) test_open: Option<Result<Store, CaseError>>,
+    /// How often the key was read, quietly or not, in tests.
+    #[cfg(test)]
+    pub(super) key_reads: usize,
 }
 
 type AfterUnlock = Box<dyn FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>)>;
@@ -105,6 +62,10 @@ impl Workspace {
     pub(super) fn case_store(&mut self) -> Result<Arc<Store>, CaseError> {
         if let Some(store) = self.case_coordinator.store() {
             return Ok(store.clone());
+        }
+        #[cfg(test)]
+        {
+            self.cases.key_reads += 1;
         }
         // Tests inject a store; they never reach the real key or app data.
         let open = if cfg!(test) {
@@ -156,7 +117,10 @@ impl Workspace {
             return false;
         }
         #[cfg(test)]
-        let staged = self.cases.test_may_ask;
+        let staged = {
+            self.cases.key_reads += 1;
+            self.cases.test_may_ask
+        };
         #[cfg(not(test))]
         let staged = false;
         if cfg!(test) {
@@ -234,7 +198,12 @@ impl Workspace {
                 if matches!(error, CaseError::KeyDenied) {
                     self.cases.then = then;
                 }
-                self.key_failed(error);
+                // A folder sheet waiting on the key opens its files
+                // without a case, and its notice says why (ADR 0075).
+                let folder = self.folder_key_failed(&error, window, cx);
+                if !folder || matches!(error, CaseError::KeyDenied) {
+                    self.key_failed(error);
+                }
                 self.stop_quit_key_wait(window, cx);
             }
         }
@@ -242,7 +211,7 @@ impl Workspace {
     }
     /// Once the store is open, members left locked at launch load and get
     /// their mappings, however the key became readable.
-    fn resume_locked(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn resume_locked(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(CaseLoad::Load) = self.case_coordinator.unlock() {
             self.load_cases(window, cx);
         }
@@ -251,6 +220,8 @@ impl Workspace {
     pub(super) fn cancel_unlock(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_explainer(window, cx);
         self.cases.then = None;
+        // A folder sheet's case action returns to its sheet.
+        self.folder_key_cancelled();
         self.stop_quit_key_wait(window, cx);
         cx.notify();
     }
@@ -510,84 +481,6 @@ impl Workspace {
         cx.notify();
         Some(case_id)
     }
-    /// Opened files of a dropped folder share a new, empty case named after it
-    /// (ADR 0041 #29). Each document joins once it has Markdown.
-    pub(super) fn open_folder_case(
-        &mut self,
-        folder: DroppedFolder,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let mut notes = Vec::new();
-        if folder.skipped_folders > 0 {
-            notes.push(format!(
-                "{} {} inside “{}” skipped",
-                folder.skipped_folders,
-                if folder.skipped_folders == 1 {
-                    "subfolder"
-                } else {
-                    "subfolders"
-                },
-                folder.name
-            ));
-        }
-        if folder.skipped_hidden > 0 {
-            notes.push(format!(
-                "{} hidden {} skipped",
-                folder.skipped_hidden,
-                if folder.skipped_hidden == 1 {
-                    "file"
-                } else {
-                    "files"
-                }
-            ));
-        }
-        if folder.files.is_empty() {
-            notes.insert(0, format!("“{}” has no supported files", folder.name));
-            self.notices.post(notes.join("; ") + ".");
-            cx.notify();
-            return;
-        }
-        if self.key_may_ask() {
-            self.case_key_ready(
-                move |this, window, cx| this.open_folder_case(folder, window, cx),
-                cx,
-            );
-            return;
-        }
-        if let Err(error) = self.case_store() {
-            notes.push(format!("the folder opened without a case: {error}"));
-            self.notices.post(notes.join("; "));
-            cx.notify();
-            return;
-        }
-        self.resume_locked(window, cx);
-        let case = Case::new(folder.name.clone(), &[], None);
-        let case_id = case.id.clone();
-        let effect = self.case_coordinator.create(case);
-        self.carry_out_cases(effect.into_iter().collect(), cx);
-        let mut joined = Vec::new();
-        for path in &folder.files {
-            let Some(tab) = self.tabs.iter().find(|t| {
-                t.identity() == Some(path) || t.record().attachment.as_ref() == Some(path)
-            }) else {
-                continue;
-            };
-            let in_case = tab.view().is_some_and(|v| v.read(cx).case.link().is_some());
-            if !in_case && tab.record().case.is_none() {
-                let id = tab.id();
-                self.tabs.set_case(id, Some(case_id.clone()));
-                joined.push(id);
-            }
-        }
-        for id in joined {
-            self.attach_case(id, window, cx);
-        }
-        notes.insert(0, format!("Opened “{}” as a case", folder.name));
-        self.notices.post(notes.join("; ") + ".");
-        self.checkpoint(window, cx);
-        cx.notify();
-    }
     /// A member tab's mapping changed: fold it into the case and save.
     pub(super) fn case_changed(&mut self, id: u64, cx: &mut Context<Self>) {
         let Some(view) = self.tab_view(id) else {
@@ -831,7 +724,7 @@ impl Workspace {
         let effect = self.case_coordinator.pump();
         self.carry_out_cases(effect.into_iter().collect(), cx);
     }
-    fn carry_out_cases(
+    pub(super) fn carry_out_cases(
         &mut self,
         effects: Vec<CaseEffect<gpui::AnyWindowHandle>>,
         cx: &mut Context<Self>,
@@ -1189,6 +1082,15 @@ impl Workspace {
             .on_drop(cx.listener({
                 let id = link.id.clone();
                 move |this, drag: &TabDrag, window, cx| this.join_case(drag.id, &id, window, cx)
+            }))
+            // A folder dropped here offers Add to this case (ADR 0075).
+            .drag_over::<gpui::ExternalPaths>(move |v, _, _, _| v.bg(theme.sidebar_selected()))
+            .can_drop(super::can_drop_files)
+            .on_drop(cx.listener({
+                let id = link.id.clone();
+                move |this, paths: &gpui::ExternalPaths, window, cx| {
+                    this.drop_on_case(paths, &id, window, cx)
+                }
             }))
             .child(
                 ui::control(

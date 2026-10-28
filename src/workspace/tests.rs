@@ -37,6 +37,7 @@ use std::{
 mod case_coordinator;
 mod docx_queue;
 mod focus_regions;
+mod folder_sheet;
 mod import_flow;
 mod notices;
 mod quit_flow;

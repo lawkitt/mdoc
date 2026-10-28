@@ -782,56 +782,6 @@ fn a_term_added_to_the_case_is_proposed_in_every_member(cx: &mut TestAppContext)
 }
 
 #[gpui::test]
-fn a_dropped_folder_opens_its_files_as_one_case(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let folder = dir.path().join("Petrova v Northwind");
-    std::fs::create_dir_all(folder.join("drafts")).unwrap();
-    std::fs::write(folder.join("b.md"), "Second").unwrap();
-    std::fs::write(folder.join("a.md"), "First").unwrap();
-    std::fs::write(folder.join("notes.bin"), [0u8, 1, 2]).unwrap();
-    std::fs::write(folder.join(".draft.md"), "Hidden").unwrap();
-    let (tabs, cx) = boot_home(cx, Session::default());
-    tabs.update_in(cx, |tabs, window, cx| {
-        tabs.use_case_store(mdoc_store::cases::Store::with_key(
-            dir.path().join("cases"),
-            &[3; 32],
-        ));
-        tabs.open_paths(vec![folder.clone()], window, cx)
-    });
-    cx.run_until_parked();
-    // Members join when their Markdown loads; activate the second too.
-    let ids: Vec<_> = cx.update(|_, cx| tabs.read(cx).tabs.iter().map(|t| t.id()).collect());
-    for id in &ids {
-        tabs.update_in(cx, |tabs, window, cx| tabs.activate(*id, window, cx));
-        cx.run_until_parked();
-    }
-    cx.update(|_, cx| {
-        let tabs = tabs.read(cx);
-        assert_eq!(tabs.case_coordinator.cases().len(), 1);
-        let case = &tabs.case_coordinator.cases()[0];
-        assert_eq!(case.name, "Petrova v Northwind");
-        let names: Vec<_> = tabs
-            .tabs
-            .iter()
-            .filter_map(|t| t.view())
-            .map(|v| {
-                let v = v.read(cx);
-                assert_eq!(v.case.link().unwrap().id, case.id);
-                v.display_name()
-            })
-            .collect();
-        assert_eq!(
-            names,
-            ["a.md", "b.md"],
-            "sorted by name; unsupported skipped"
-        );
-        assert_eq!(case.members.len(), 2, "members are recorded as they join");
-        let notice = tabs.notices.message().unwrap();
-        assert!(notice.contains("1 subfolder") && notice.contains("1 hidden file"));
-    });
-}
-
-#[gpui::test]
 fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());

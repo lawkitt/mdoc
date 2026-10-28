@@ -102,6 +102,7 @@ dependency forks.
 | `src/shortcuts.rs`, `src/workspace/shortcuts_ui.rs` | The one table of user-facing key bindings, which every `bind_keys` and the palette read, and the Keyboard Shortcuts sheet that lists it ([ADR 0073](adr/0073-keyboard-shortcuts-panel.md)) |
 | `src/workspace.rs`, `src/workspace/` | The window shell: document sidebar, tab identity, admission, scheduling and session persistence |
 | `src/workspace/{tab_set,sidebar,focus_regions,notices,session_writer,docx_queue,quit_flow,case_coordinator}.rs` | The window's owners: tabs and the active tab, the sidebar and its reveal, F6 regions, the bell's notices, session saves, the DOCX worker queue, closing and quitting, and case coordination |
+| `src/workspace/folder_sheet.rs`, `src/workspace/folder_sheet_ui.rs` | The folder sheet: a dropped folder's files, ticks and 20-file cap, and the queue of folders waiting their turn; the dialog and its case actions ([ADR 0075](adr/0075-folder-sheet.md)) |
 | `src/document_view.rs`, `src/document_view/` | One tab's document view: editor, source preview, import/OCR state, actions and toolbar chrome |
 | `src/document_view/case_link.rs` | The tab's case-link owner: its case, the case's identities and skipped categories, and the pending save into the case |
 | `src/document_view/document_lifecycle.rs` | The tab's lifecycle owner: loading, availability, source-only, unsaved changes, untouched conversions and placeholders, and its open dialog |
@@ -250,7 +251,10 @@ this dev feature; on both platforms the latter checks the actual generated
 files and profile cleanup. On Windows, PNGs are encoded on a bounded
 background thread, which must finish without error before the summary is
 written. The `test (windows-latest)` CI job runs this test through
-`just test`. On Windows,
+`just test`. With `MDOC_HEADLESS_RENDERS_ARTIFACT` set, it copies
+`summary.json` and each screen's baseline PNGs (not the Tab walks) there;
+both CI test jobs upload them as the `headless-renders-<runner>` artifact.
+On Windows,
 the integration test also polls all top-level HWNDs owned by the child
 (including hidden ones) and fails if it creates any; the check filters by
 child process ID and leaves other apps untouched.
@@ -285,7 +289,8 @@ Both themes cover Home, a document and its ⋯ menu, Review, the mention popup, 
 consent, Settings, the dictionary, command palette, the keyboard shortcuts
 sheet, Find and Replace,
 before/after, Open Case, case rename/categories, the Keychain explainer preview,
-confirmations for case deletion, mapping retention, unsaved changes and model
+the folder sheet (a small folder, one over the 20-file cap, and Add to a
+case), confirmations for case deletion, mapping retention, unsaved changes and model
 removal, model comparison, a damaged DOCX's failed conversion and preview,
 and a restored AI reply. The legal review uses
 `pseudonymization/corpus.json` annotations as deterministic proposals; Restore
