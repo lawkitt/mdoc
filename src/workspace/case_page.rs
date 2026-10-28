@@ -53,6 +53,11 @@ pub(super) enum Place {
 pub(super) struct CasePage {
     id: String,
     swatches: bool,
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
     place: Place,
     filter: Entity<SearchInput>,
     add: Entity<SearchInput>,
@@ -69,6 +74,11 @@ impl CasePage {
         &self.id
     }
 
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
     pub(super) fn categories(&self) -> bool {
         matches!(self.place, Place::Categories)
     }
@@ -289,6 +299,11 @@ impl Workspace {
         let page = CasePage {
             id: id.into(),
             swatches: false,
+            #[cfg(all(
+                debug_assertions,
+                feature = "headless-renders",
+                any(target_os = "macos", target_os = "windows")
+            ))]
             place,
             filter,
             add,
