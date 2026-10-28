@@ -32,7 +32,7 @@
 
 mod focus_ring;
 pub mod scrollbar;
-pub use focus_ring::{FocusRing, focus_ring};
+pub use focus_ring::{FOCUS_RING_OUTSET, FocusRing, focus_ring};
 use gpui::prelude::FluentBuilder;
 
 use std::path::PathBuf;

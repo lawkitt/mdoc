@@ -2,6 +2,7 @@
 
 Status: Accepted, 2026-10-22. Supersedes in part [ADR 0057](0057-native-platform-acceptance.md):
 plain keyboard reach is now required.
+Amended by [ADR 0074](0074-one-focus-ring.md): the one outside focus ring.
 
 ## Problem
 

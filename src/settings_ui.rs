@@ -1155,6 +1155,58 @@ mod tests {
     }
 
     #[gpui::test]
+    fn scrolling_keeps_the_entire_focus_ring_clear_of_the_footer(cx: &mut TestAppContext) {
+        cx.update(bind_keys);
+        cx.update(ui::bind_keys);
+        for theme in [Theme::Light, Theme::Dark] {
+            let (panel, cx) = cx.add_window_view(|_, cx| {
+                Panel::new(Store::in_memory(), Rc::new(Cell::new(theme)), cx)
+            });
+            cx.simulate_resize(size(px(640.), px(480.)));
+            panel.update_in(cx, |p, window, cx| {
+                p.open = true;
+                p.statuses.fill(Status::Ready);
+                window.focus(&p.focus, cx);
+                cx.notify();
+            });
+            for (id, selector, key) in [
+                ("advanced-settings", "settings-advanced", "tab"),
+                ("cases-ask", "cases-ask", "tab"),
+                ("advanced-settings", "settings-advanced", "shift-tab"),
+            ] {
+                let mut reached = false;
+                for _ in 0..40 {
+                    cx.simulate_keystrokes(key);
+                    for _ in 0..3 {
+                        cx.update(|window, cx| {
+                            window.refresh();
+                            window.draw(cx).clear(cx);
+                        });
+                    }
+                    reached = cx.update(|window, cx| {
+                        panel
+                            .read(cx)
+                            .controls
+                            .borrow()
+                            .get(&gpui::ElementId::from(id))
+                            .is_some_and(|focus| focus.is_focused(window))
+                    });
+                    if reached {
+                        break;
+                    }
+                }
+                assert!(reached, "{key} reaches {id} in {theme:?}");
+                let ring = cx.debug_bounds(selector).unwrap().dilate(px(4.));
+                let viewport = cx.debug_bounds("settings-scroll").unwrap();
+                assert!(
+                    ring.top() >= viewport.top() && ring.bottom() <= viewport.bottom(),
+                    "{id}: ring={ring:?}, viewport={viewport:?}"
+                );
+            }
+        }
+    }
+
+    #[gpui::test]
     fn update_choices_save_immediately_and_an_update_offers_its_release(cx: &mut TestAppContext) {
         let shared = Store::in_memory();
         let (panel, cx) = cx.add_window_view(|_, cx| {

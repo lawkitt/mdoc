@@ -150,6 +150,9 @@ impl Driver {
             self.key("tab")?;
             let input_ms = start.elapsed().as_secs_f64() * 1000.;
             self.draw("tab")?;
+            // Focus reveal defers the scroll until after prepaint. Let that
+            // scroll and its resulting layout settle before rasterizing.
+            self.settle()?;
             let (focus, contexts) = self
                 .cx
                 .update_window(self.window, |_, window, cx| {
@@ -292,6 +295,23 @@ fn scenarios(
             .clone()
     })?;
     d.focus_pair(out, "sidebar-row", sidebar)?;
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            v.inspector_share = true;
+            window.focus(&v.replacements_focus(), cx);
+            cx.notify();
+        });
+    })?;
+    d.settle()?;
+    d.key("tab")?;
+    let review_tab = d.change(|_, window, cx| window.focused(cx).expect("Review tab"))?;
+    d.focus_pair(out, "beside-selected-tab", review_tab)?;
+    d.change(|_, _, cx| {
+        view.update(cx, |v, cx| {
+            v.inspector_share = false;
+            cx.notify();
+        })
+    })?;
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
             let variant = &v.pii.review().variants()[0];
@@ -521,6 +541,38 @@ fn scenarios(
             .update(cx, |v, cx| v.start_restored(&reply, window, cx));
     })?;
     records.push(d.capture(out, "restored-reply")?);
+    // The public DOCX comments fixture supplies the actual Original pane and
+    // its full-width comments toggle, including the content card's clip.
+    let source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");
+    let preview = mdoc_import::docx_preview::render_in_process(
+        &source,
+        Arc::new(std::sync::atomic::AtomicBool::new(false)),
+    )
+    .map_err(|e| e.to_string())?;
+    let comments_view = d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        let view = w.active_view().unwrap();
+        view.update(cx, |v, cx| {
+            v.begin_preview(source);
+            v.load_preview(preview.pdf_path.clone(), Some(preview), window, cx);
+        });
+        view
+    })?;
+    d.settle()?;
+    d.change(|_, window, cx| {
+        let view = comments_view.read(cx);
+        assert!(
+            view.preview.comment_panel().is_some(),
+            "comments fixture loaded"
+        );
+        let region = view.comments_region.clone();
+        window.focus(&region, cx);
+    })?;
+    d.key("tab")?;
+    let toggle = d.change(|_, window, cx| window.focused(cx).expect("comments toggle"))?;
+    d.focus_pair(out, "comments-toggle", toggle)?;
+    records.push(d.capture(out, "comments")?);
     Ok(records)
 }
 
@@ -637,6 +689,9 @@ pub(crate) fn run(out: &Path) -> Result<()> {
         #[cfg(target_os = "windows")]
         d.pngs.finish()?;
     }
+    // DOCX fixture previews remove their backing directories off-thread.
+    // Both TestWindow contexts have dropped before this cleanup barrier.
+    mdoc_import::docx_preview::shutdown_workers();
     let renderer = if cfg!(target_os = "windows") {
         "headless-directx-warp"
     } else {

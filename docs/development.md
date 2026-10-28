@@ -270,6 +270,17 @@ mdoc-renders/
     home.png ...
 ```
 
+The output also includes paired `focus-toggle-on`, `focus-sidebar-row` and
+`focus-settings-row` PNGs in both themes, each with a `-rest` counterpart.
+`focus-beside-selected-tab` also checks a focused Review tab beside the
+selected Share tab.
+`focus-comments-toggle` uses the public DOCX comments fixture to check the
+ring at the Original pane's clipped edge.
+`summary.json` lists these under `focus_rings`. The contract test compares
+pixels after focus scrolling settles: only the 2 px accent outline changes,
+preserving the control's fill and label and checking that both sides of the
+ring remain visible.
+
 Both themes cover Home, a document and its ⋯ menu, Review, the mention popup, model setup
 consent, Settings, the dictionary, command palette, the keyboard shortcuts
 sheet, Find and Replace,

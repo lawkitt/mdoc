@@ -915,16 +915,26 @@ pub fn title_bar(
 
 /// Reveal a focused control inside a scrolling panel without moving document state.
 pub fn reveal_focus<E: ParentElement + Styled>(
-    control: E,
+    mut control: E,
     focus: FocusHandle,
     scroll: gpui::ScrollHandle,
 ) -> E {
+    // Absolute children use the padding box, inside the control's border.
+    let border = control.style().border_widths.clone();
     control.relative().child(
         gpui::canvas(
             move |bounds, window, cx| {
                 if !focus.contains_focused(window, cx) {
                     return;
                 }
+                // Reveal the outside outline too, rather than scrolling its
+                // bottom stroke underneath the viewport's fixed footer.
+                let border = [border.top, border.right, border.bottom, border.left]
+                    .into_iter()
+                    .flatten()
+                    .map(|width| width.to_pixels(window.rem_size()))
+                    .fold(px(0.), |a, b| a.max(b));
+                let bounds = bounds.dilate(px(gpui_pdf::FOCUS_RING_OUTSET) + border);
                 let viewport = scroll.bounds();
                 if viewport.size.height <= px(0.) {
                     return;

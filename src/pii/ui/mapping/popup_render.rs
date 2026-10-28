@@ -500,7 +500,7 @@ impl DocumentView {
                                         .child("→"),
                                 )
                                 .child(if identity.is_some() {
-                                    self.alias_field(input_focused, accent, cx)
+                                    self.alias_field(accent, cx)
                                 } else {
                                     div()
                                         .id("direct-alias-kept")
@@ -980,10 +980,9 @@ impl DocumentView {
         })
         .into_any_element()
     }
-    /// The editable alias: a boxed field, accent-bordered while editing.
     /// The alias in its mention's colour (the category's while proposed, the
-    /// applied blue once applied); its field shows on hover and focus.
-    fn alias_field(&self, focused: bool, accent: Hsla, cx: &mut Context<Self>) -> AnyElement {
+    /// applied blue once applied). The shared input draws the focus ring.
+    fn alias_field(&self, accent: Hsla, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
         let mapping = &self.pii.mapping;
@@ -1002,12 +1001,7 @@ impl DocumentView {
             .py(px(2.))
             .rounded_md()
             .border_1()
-            .border_color(if focused {
-                accent
-            } else {
-                gpui::transparent_black()
-            })
-            .when(focused, |v| v.bg(palette.placeholder_bg))
+            .border_color(gpui::transparent_black())
             .text_color(accent)
             .font_weight(gpui::FontWeight::MEDIUM)
             .hover(move |s| s.border_color(palette.border))

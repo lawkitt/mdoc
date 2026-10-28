@@ -32,6 +32,7 @@ impl Render for CommentPanel {
             .border_color(palette.border)
             .child(
                 crate::ui::focus_ring("toggle-comments", self.theme.get())
+                    .m(px(gpui_pdf::FOCUS_RING_OUTSET))
                     .role(gpui::Role::Button)
                     .aria_label("Toggle comments")
                     .key_context("UiControl")

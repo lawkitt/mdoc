@@ -37,6 +37,7 @@ const SCREENS: &[&str] = &[
     "model-comparison",
     "conversion-failed",
     "restored-reply",
+    "comments",
 ];
 
 fn png(path: &Path) {
@@ -221,7 +222,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 png(&out.join(theme).join(step["png"].as_str().unwrap()));
             }
             let frames = record["frames"].as_array().unwrap();
-            assert_eq!(frames.len(), tabs.len() + 3);
+            assert_eq!(frames.len(), tabs.len() * 4 + 3);
             assert!(
                 frames
                     .iter()
@@ -236,9 +237,15 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
     // ADR 0074: actual app controls, not a focus-handle assertion. Focus adds
     // only an accent outline; selected/on-state fills and labels stay intact.
     let rings = summary["focus_rings"].as_array().unwrap();
-    assert_eq!(rings.len(), 6);
+    assert_eq!(rings.len(), 10);
     for theme in ["light", "dark"] {
-        for control in ["toggle-on", "sidebar-row", "settings-row"] {
+        for control in [
+            "toggle-on",
+            "sidebar-row",
+            "settings-row",
+            "beside-selected-tab",
+            "comments-toggle",
+        ] {
             let pair = rings
                 .iter()
                 .find(|r| r["theme"] == theme && r["control"] == control)

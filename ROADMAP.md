@@ -20,7 +20,7 @@ remaining manual rows and the keychain launch check. Windows also ships an
 [initial qualification](tests/fixtures/pseudonymization/README.md). Earlier
 releases: [CHANGELOG](CHANGELOG.md). 0.2.1 (2026-10-27) fixed the seven
 bugs from the 0.2.0 runs; its [smoke run](docs/evidence/platform/2026-10-27/README.md)
-left rows for the maintainer and found #194 (now 0.3.0 item 5).
+left rows for the maintainer and found [#194](https://github.com/lawkitt/mdoc/issues/194).
 
 ## 0.2.x patches
 
@@ -40,12 +40,6 @@ merges to `main` on its own when green.
 4. **[UI] Theme control.** A System / Light / Dark segmented control in a
    new Settings → Appearance section at the top; today the sidebar button cycles without showing the choices.
    *From Anoni 0.86.1.* *Done when:* the choice is visible and persists.
-5. **[A11y] One visible focus style.** Sidebar rows and Settings show focus
-   with the same fill as selection or hover, and a toolbar toggle's "on" fill
-   hides its ring ([#194](https://github.com/lawkitt/mdoc/issues/194)), on both
-   platforms. One focus ring for every control, distinct from selection and
-   hover. *From the rc.4 and 0.2.1 runs.* *Done when:* every Tab stop shows the
-   same ring in light and dark, including toggles that are on, and #194 closes.
 
 ## Later
 
