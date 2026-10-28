@@ -80,49 +80,6 @@ fn render_command() -> Command {
 }
 
 #[cfg(target_os = "windows")]
-fn render_processes(root: u32) -> Result<Vec<u32>, String> {
-    use windows_sys::Win32::{
-        Foundation::{CloseHandle, ERROR_NO_MORE_FILES, INVALID_HANDLE_VALUE},
-        System::Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
-            TH32CS_SNAPPROCESS,
-        },
-    };
-    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
-    if snapshot == INVALID_HANDLE_VALUE {
-        return Err(format!(
-            "process snapshot: {}",
-            std::io::Error::last_os_error()
-        ));
-    }
-    let mut entry: PROCESSENTRY32W = unsafe { std::mem::zeroed() };
-    entry.dwSize = std::mem::size_of::<PROCESSENTRY32W>() as u32;
-    let mut processes = Vec::new();
-    let mut more = unsafe { Process32FirstW(snapshot, &mut entry) };
-    while more != 0 {
-        processes.push((entry.th32ProcessID, entry.th32ParentProcessID));
-        more = unsafe { Process32NextW(snapshot, &mut entry) };
-    }
-    let error = std::io::Error::last_os_error();
-    unsafe { CloseHandle(snapshot) };
-    if error.raw_os_error() != Some(ERROR_NO_MORE_FILES as i32) {
-        return Err(format!("enumerate render processes: {error}"));
-    }
-    let mut descendants = vec![root];
-    loop {
-        let before = descendants.len();
-        for &(pid, parent) in &processes {
-            if descendants.contains(&parent) && !descendants.contains(&pid) {
-                descendants.push(pid);
-            }
-        }
-        if descendants.len() == before {
-            return Ok(descendants);
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
 fn native_windows_present(pid: u32) -> Result<bool, String> {
     use windows_sys::Win32::{
         Foundation::{HWND, LPARAM},
@@ -159,8 +116,6 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
         .spawn()
         .unwrap();
     let start = Instant::now();
-    #[cfg(target_os = "windows")]
-    let mut max_processes = 1;
     // WARP rasterizes every 2x frame in software; allow slower hosted Windows
     // CPUs as well as this workstation. This is a hang watchdog, not a budget.
     let timeout = Duration::from_secs(if cfg!(target_os = "windows") {
@@ -170,21 +125,13 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
     });
     while child.try_wait().unwrap().is_none() {
         #[cfg(target_os = "windows")]
-        {
-            let probe = render_processes(child.id()).and_then(|processes| {
-                max_processes = max_processes.max(processes.len());
-                processes.into_iter().try_fold(false, |found, pid| {
-                    native_windows_present(pid).map(|present| found || present)
-                })
-            });
-            if probe != Ok(false) {
-                child.kill().unwrap();
-                let output = child.wait_with_output().unwrap();
-                panic!(
-                    "native window check failed ({probe:?}): {}",
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
+        if native_windows_present(child.id()) != Ok(false) {
+            child.kill().unwrap();
+            let output = child.wait_with_output().unwrap();
+            panic!(
+                "native window check failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
         if start.elapsed() > timeout {
             child.kill().unwrap();
@@ -202,8 +149,6 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    #[cfg(target_os = "windows")]
-    assert!(max_processes >= 3, "both PNG workers must be observed");
     let summary: Value =
         serde_json::from_slice(&std::fs::read(out.join("summary.json")).unwrap()).unwrap();
     assert_eq!(summary["schema_version"], 1);
@@ -291,28 +236,4 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
         .unwrap();
     assert!(!rejected.status.success());
     assert_eq!(std::fs::read(out.join("summary.json")).unwrap(), before);
-
-    #[cfg(target_os = "windows")]
-    {
-        use std::io::Write;
-        // Closing the render parent's pipe must terminate an idle encoder;
-        // truncated work must fail rather than silently publishing a PNG.
-        for (input, success) in [(&[][..], true), (&[1][..], false)] {
-            let mut worker = render_command()
-                .arg("--headless-encode-png")
-                .arg(&out)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::null())
-                .stderr(Stdio::piped())
-                .spawn()
-                .unwrap();
-            worker.stdin.take().unwrap().write_all(input).unwrap();
-            let result = worker.wait_with_output().unwrap();
-            assert_eq!(result.status.success(), success);
-            if !success {
-                assert!(String::from_utf8_lossy(&result.stderr).contains("truncated PNG header"));
-            }
-        }
-        assert_eq!(std::fs::read(out.join("summary.json")).unwrap(), before);
-    }
 }

@@ -242,13 +242,11 @@ test on macOS runs the child under `sandbox-exec`, denying the real
 profile/update cache and network access. `just lint` and `just test` enable
 this dev feature; on both platforms the latter checks the actual generated
 files and profile cleanup.
-On Windows, two child processes encode PNGs while the render parent advances
-the same screen and Tab sequence. Pipe backpressure bounds queued images;
-the summary is written only after both encoders succeed.
+On Windows, a bounded background encoder thread must join successfully before the summary is written.
 The `test (windows-latest)` CI job runs this test through `just test`. On Windows,
-the integration test also polls all top-level HWNDs owned by the render child
-and its encoders (including hidden ones) and fails if any of these processes
-creates one; the check filters by their process IDs and leaves other apps untouched.
+the integration test also polls all top-level HWNDs owned by the child
+(including hidden ones) and fails if it creates any; the check filters by
+child process ID and leaves other apps untouched.
 
 Output layout:
 

@@ -1,9 +1,7 @@
 //! Dev-only screen evidence. TestPlatform owns every window: no native window,
 //! application event loop, activation, clipboard or OS prompt is used.
 #[cfg(target_os = "windows")]
-mod png;
-#[cfg(target_os = "windows")]
-pub(crate) use png::run_worker as run_png_worker;
+mod encoder;
 
 use super::{
     Workspace, app_actions::bind as bind_app_actions, cases_ui::bind_keys as bind_case_keys,
@@ -42,7 +40,7 @@ struct Driver {
     window: gpui::AnyWindowHandle,
     frames: Vec<Value>,
     #[cfg(target_os = "windows")]
-    pngs: png::Workers,
+    pngs: encoder::Encoder,
 }
 
 impl Driver {
@@ -98,7 +96,7 @@ impl Driver {
             .map_err(|e| e.to_string())?;
         let ms = start.elapsed().as_secs_f64() * 1000.;
         #[cfg(target_os = "windows")]
-        self.pngs.write(path, &image)?;
+        self.pngs.write(path, image)?;
         #[cfg(target_os = "macos")]
         write_png(path, &image)?;
         Ok(ms)
@@ -588,7 +586,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             window: window.into(),
             frames: Vec::new(),
             #[cfg(target_os = "windows")]
-            pngs: png::Workers::new(&dir)?,
+            pngs: encoder::Encoder::new()?,
         };
         d.change(|w, window, cx| {
             w.theme_choice = theme;
