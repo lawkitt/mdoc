@@ -37,10 +37,6 @@ review's polish shipped in 0.2.0. Items are in priority order. Until
 five-item box this cycle); rc.1 is cut once every item is done. Each item
 merges to `main` on its own when green.
 
-2. **[Cases] Restore banner wording.** Say plainly that restored names are
-   proposals and what Apply does. *From the UX review.*
-   *Done when:* the banner's first sentence says the names are proposals and
-   what Apply does, in the headless renders.
 3. **[UI] Keyboard shortcuts panel.** `?` and a palette action list every
    shortcut by context (everywhere, editor, popup, panel). *From Anoni 0.86.1.*
    *Done when:* every bound action appears, from one source of truth.
@@ -53,10 +49,6 @@ merges to `main` on its own when green.
    platforms. One focus ring for every control, distinct from selection and
    hover. *From the rc.4 and 0.2.1 runs.* *Done when:* every Tab stop shows the
    same ring in light and dark, including toggles that are on, and #194 closes.
-6. **[Cases] Save as Case retries a failed case save.** Closing a tab whose
-   case save failed and choosing Save as Case does nothing
-   ([#189](https://github.com/lawkitt/mdoc/issues/189)). *From the ADR 0071
-   Codex review.* *Done when:* #189 closes.
 
 ## Later
 
