@@ -24,17 +24,18 @@ left rows for the maintainer and found #194 (now 0.3.0 item 5).
 
 ## 0.2.x patches
 
-Wrong output, data loss or silent failures that need no design decision
-(GitHub milestones). Open: [0.2.2](https://github.com/lawkitt/mdoc/milestone/6),
-empty so far. Items that are not ready ride
-along with a later patch. Each patch gets a smoke run on both platforms; an item is done when its
-issue closes, with the expected behavior stated there.
+None planned: fixes ride in 0.3.0-rc.1, and new bugs go to the
+[0.3.0 milestone](https://github.com/lawkitt/mdoc/milestone/4). A severe bug
+in 0.2.1 can still get a patch.
 
 ## 0.3.0
 
 Restoring cases without surprises, then shortcut discovery
 ([milestone](https://github.com/lawkitt/mdoc/milestone/4)). The 2026-10-22 UX
-review's polish shipped in 0.2.0. Items are in priority order.
+review's polish shipped in 0.2.0. Items are in priority order. Until
+0.3.0-rc.1 is cut, an item added here with a Done-when line is in scope (no
+five-item box this cycle); rc.1 is cut once every item is done. Each item
+merges to `main` on its own when green.
 
 1. **[UI] Number new tabs.** Untitled 2.md, Untitled 3.md, so the sidebar,
    the close and quit prompts ([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md))
@@ -47,8 +48,8 @@ review's polish shipped in 0.2.0. Items are in priority order.
 3. **[UI] Keyboard shortcuts panel.** `?` and a palette action list every
    shortcut by context (everywhere, editor, popup, panel). *From Anoni 0.86.1.*
    *Done when:* every bound action appears, from one source of truth.
-4. **[UI] Theme control.** A System / Light / Dark segmented control in
-   Settings; today the sidebar button cycles without showing the choices.
+4. **[UI] Theme control.** A System / Light / Dark segmented control in a
+   new Settings → Appearance section at the top; today the sidebar button cycles without showing the choices.
    *From Anoni 0.86.1.* *Done when:* the choice is visible and persists.
 5. **[A11y] One visible focus style.** Sidebar rows and Settings show focus
    with the same fill as selection or hover, and a toolbar toggle's "on" fill
@@ -56,6 +57,10 @@ review's polish shipped in 0.2.0. Items are in priority order.
    platforms. One focus ring for every control, distinct from selection and
    hover. *From the rc.4 and 0.2.1 runs.* *Done when:* every Tab stop shows the
    same ring in light and dark, including toggles that are on, and #194 closes.
+6. **[Cases] Save as Case retries a failed case save.** Closing a tab whose
+   case save failed and choosing Save as Case does nothing
+   ([#189](https://github.com/lawkitt/mdoc/issues/189)). *From the ADR 0071
+   Codex review.* *Done when:* #189 closes.
 
 ## Later
 

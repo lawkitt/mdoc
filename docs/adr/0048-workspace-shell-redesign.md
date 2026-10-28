@@ -29,8 +29,9 @@ step, but as a one-document wizard that hides editing.
    collapsible section (name, count; header hover shows + for a new tab in the
    case and ⋯ for Rename, Categories to detect, Close all, Delete case); tabs
    without a case under "Open". Tabs drag between sections. Foot: an update card
-   while an update waits, then ⚙ Settings · ◐ theme (System / Light / Dark,
-   saved in the session; System follows the window live) · ? Help ↗.
+   while an update waits, then ⚙ Settings · ◐ theme (cycles System / Light / Dark,
+   saved in the session; System follows the window live; Settings shows the
+   same choice as a segmented control) · ? Help ↗.
    Settings opens as an overlay; a click outside the dialog closes it.
    **Collapsed rail (44 px)**: quiet 16 px icons (toggle, Search, Home), a
    hairline, tabs as document glyphs (active on a soft fill, status as a dot,

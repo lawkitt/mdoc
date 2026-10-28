@@ -58,6 +58,15 @@ locally and clearable in Settings.
 
 **Command palette**: ⌘K search over actions, open tabs, cases and recent files.
 
+**Keyboard shortcuts panel**: the read-only sheet listing every shortcut by
+context (Everywhere, Editor, Popup, Panel), opened with `?` outside text
+fields or ⌘/ / Ctrl+/; built from the one binding table
+([ADR 0073](docs/adr/0073-keyboard-shortcuts-panel.md)).
+
+**Focus ring**: the one keyboard-focus indicator, an accent ring outside the
+control; never a fill, so it stays distinct from selection, hover and a toggle
+that is on ([ADR 0074](docs/adr/0074-one-focus-ring.md)).
+
 **Find and Replace**: the find bar with its Replace row (⌘⌥F / Ctrl+H). It
 searches **visible text**, the Markdown with syntax hidden. A match that **crosses formatting** (its
 visible text comes from several source ranges, as "foo bar" in

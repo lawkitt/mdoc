@@ -37,6 +37,10 @@ restore AI replies to it.
 - **No mapping survives quit without a case.** Creating a case stays the
   consent to store originals (ADR 0041); unsaved mappings are not written to
   the session.
+- **Untitled tabs are numbered.** The first new tab is `Untitled.md`, the next
+  ones take the lowest free number (`Untitled 2.md`, `Untitled 3.md`), counted
+  across open tabs, restored tabs included. A closed tab frees its number. A
+  restored unsaved tab keeps its name, and Save As suggests it.
 - **Save as Case on a never-saved document** opens Save As first, as today
   (#75); cancelling it cancels the close or quit.
 
@@ -44,7 +48,7 @@ restore AI replies to it.
 
 - Done when #119 closes: ⌘W on a dirty, pseudonymized tab asks once; ⌘Q with
   an unsaved mapping asks; Discard All quits without asking each tab.
-- Untitled tabs need distinct names in the quit prompts: roadmap 0.3.0
-  "Number new tabs".
+- Untitled tabs have distinct names in the sidebar, the prompts and
+  VoiceOver (roadmap 0.3.0 item 1).
 - The acceptance checklist's close and quit rows gain the combined prompt and
   the summary.
