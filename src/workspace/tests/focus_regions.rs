@@ -508,9 +508,9 @@ fn closing_notices_with_its_button_returns_to_the_document(cx: &mut TestAppConte
 }
 
 #[gpui::test]
-fn opening_a_case_with_enter_closes_the_list_and_focuses_its_document(cx: &mut TestAppContext) {
+fn opening_a_case_with_enter_closes_the_list_and_focuses_its_page(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
-    let (case, path) = saved_case(dir.path());
+    let (case, _) = saved_case(dir.path());
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.stage_case_key(Ok(mdoc_store::cases::Store::with_key(
@@ -518,7 +518,7 @@ fn opening_a_case_with_enter_closes_the_list_and_focuses_its_document(cx: &mut T
             &[3; 32],
         )));
         tabs.cases.test_may_ask = false;
-        tabs.case_coordinator.cases_mut().push(case);
+        tabs.case_coordinator.cases_mut().push(case.clone());
         tabs.show_case_list(window, cx);
     });
     cx.run_until_parked();
@@ -528,12 +528,21 @@ fn opening_a_case_with_enter_closes_the_list_and_focuses_its_document(cx: &mut T
     key(cx, "tab"); // The case's Open button.
     activate_control(cx);
     assert!(!cx.update(|_, cx| tabs.read(cx).cases.list_open));
-    let view = active(&tabs, cx);
-    assert_eq!(
-        cx.update(|_, cx| view.read(cx).session.document.path.clone()),
-        Some(session_store::identity(&path))
-    );
-    assert!(editor_focused(&tabs, cx));
+    cx.update(|window, cx| {
+        let w = tabs.read(cx);
+        assert_eq!(w.cases.page.as_ref().unwrap().id(), case.id);
+        assert!(w.focus_regions.home().contains_focused(window, cx));
+        assert!(
+            w.active_view()
+                .unwrap()
+                .read(cx)
+                .session
+                .document
+                .path
+                .is_none()
+        );
+        assert_eq!(w.cases.member_reads, 0);
+    });
 }
 
 #[gpui::test]
@@ -595,23 +604,32 @@ fn sidebar_case_actions_and_categories_work_without_a_pointer(cx: &mut TestAppCo
     assert!(cx.update(|_, cx| tabs.read(cx).tab_menu.is_some()));
     key(cx, "tab"); // Categories to detect.
     activate_control(cx);
-    assert_eq!(
-        cx.update(|_, cx| tabs.read(cx).cases.categories_open.clone()),
-        Some(case.clone())
-    );
-    for keys in ["tab", "tab", "shift-tab", "f6", "shift-f6"] {
-        key(cx, keys);
-        assert!(
-            cx.update(|window, cx| tabs
-                .read(cx)
-                .case_categories_focus
-                .contains_focused(window, cx)),
-            "{keys}"
-        );
-    }
-    key(cx, "escape");
-    assert!(cx.update(|_, cx| tabs.read(cx).cases.categories_open.is_none()));
-    assert!(cx.update(|window, _| row.is_focused(window)));
+    cx.update(|window, cx| {
+        let w = tabs.read(cx);
+        assert_eq!(w.cases.page.as_ref().unwrap().id(), case);
+        assert!(w.focus_regions.home().contains_focused(window, cx));
+    });
+    activate_control(cx);
+    assert!(cx.update(|_, cx| {
+        tabs.read(cx)
+            .case_coordinator
+            .case(&case)
+            .unwrap()
+            .skipped()
+            .contains(&mdoc_pii::Category::Person)
+    }));
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
+    key(cx, "shift-f6");
+    assert!(cx.update(|window, cx| {
+        tabs.read(cx)
+            .focus_regions
+            .home()
+            .contains_focused(window, cx)
+    }));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.activate(tabs.tabs.active(), window, cx)
+    });
     collapse(&tabs, cx);
     let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
     let compact = compact_focus(&tabs, cx, id);

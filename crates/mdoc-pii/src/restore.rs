@@ -364,6 +364,19 @@ impl Review {
                 );
             }
         }
+        // A homonym's explicitly assigned occurrence can outlive its group's
+        // default identity, e.g. when that identity was forgotten from a case.
+        for candidate in self.candidates() {
+            if let Some(id) = self.occurrence_identity(candidate.variant, &candidate.range)
+                && active.contains(&id)
+                && let Some(variant) = self.variant(candidate.variant)
+            {
+                push(
+                    &mut entries.entry(id).or_default().originals,
+                    variant.original.clone(),
+                );
+            }
+        }
         entries
             .into_iter()
             .filter_map(|(id, mut entry)| {

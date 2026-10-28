@@ -68,6 +68,9 @@ pub struct Session {
     /// Saved cases folded in the sidebar, by id.
     #[serde(default)]
     pub collapsed_cases: Vec<String>,
+    /// Case labels and counts for locked pages; never originals or member contents.
+    #[serde(default)]
+    pub cases: Vec<crate::cases::CaseSummary>,
     /// The sidebar's System / Light / Dark pick (ADR 0048).
     #[serde(default)]
     pub theme_choice: ThemeChoice,
@@ -81,6 +84,7 @@ impl Default for Session {
             sidebar_visible: true,
             sidebar_choice: None,
             collapsed_cases: Vec::new(),
+            cases: Vec::new(),
             theme_choice: Default::default(),
         }
     }

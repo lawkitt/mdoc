@@ -104,6 +104,7 @@ dependency forks.
 | `src/workspace/{tab_set,sidebar,focus_regions,notices,session_writer,docx_queue,quit_flow,case_coordinator}.rs` | The window's owners: tabs and the active tab, the sidebar and its reveal, F6 regions, the bell's notices, session saves, the DOCX worker queue, closing and quitting, and case coordination |
 | `src/settings_ui.rs`, `src/settings_ui/` | Settings categories, save-on-change rows, model actions and the Spelling dictionary drill-in ([ADR 0076](adr/0076-settings-categories.md)) |
 | `src/workspace/folder_sheet.rs`, `src/workspace/folder_sheet_ui.rs` | The folder sheet: a dropped folder's files, ticks and 20-file cap, and the queue of folders waiting their turn; the dialog and its case actions ([ADR 0075](adr/0075-folder-sheet.md)) |
+| `src/workspace/case_page.rs` | The transient case page: cached overview, documents, names, colour, detection categories and case actions ([ADR 0077](adr/0077-case-page.md)) |
 | `src/document_view.rs`, `src/document_view/` | One tab's document view: editor, source preview, import/OCR state, actions and toolbar chrome |
 | `src/document_view/case_link.rs` | The tab's case-link owner: its case, the case's identities and skipped categories, and the pending save into the case |
 | `src/document_view/document_lifecycle.rs` | The tab's lifecycle owner: loading, availability, source-only, unsaved changes, untouched conversions and placeholders, and its open dialog |
@@ -294,7 +295,7 @@ Both themes cover Home, a document and its ⋯ menu, Review, the mention popup, 
 consent, all six Settings categories (General, Detection, Recognition,
 Spelling, Cases and About), the dictionary, command palette, the keyboard shortcuts
 sheet, Find and Replace,
-before/after, Open Case, case rename/categories, the Keychain explainer preview,
+before/after, Open Case, the unlocked and locked case page, case rename/categories, the Keychain explainer preview,
 the folder sheet (a small folder, one over the 20-file cap, and Add to a
 case), confirmations for case deletion, mapping retention, unsaved changes and model
 removal, model comparison, a damaged DOCX's failed conversion and preview,

@@ -18,8 +18,11 @@ that created it, so ad-hoc and dev builds prompt each other.
 ## Decision
 
 1. **Touch the key only for an action that needs it**: Save mapping as case
-   (including the save-on-close question), folder drop as a case, File → Open
-   Case…, and Unlock. Moving a tab into a case needs a loaded case, so the key
+   (including the save-on-close question), folder drop as a case, and Unlock.
+   Browsing Open Case… and opening its page use cached metadata without reading
+   the key ([ADR 0077](0077-case-page.md)); an explicit Unlock also discovers
+   saved cases when an older session has no cached metadata.
+   Moving a tab into a case needs a loaded case, so the key
    is already open. Sidebar case names come from the session manifest.
 2. **Ask the Keychain whether it may ask.** The key is read with user
    interaction disabled (`SecKeychainSetUserInteractionAllowed`). Success, or a

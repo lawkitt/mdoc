@@ -32,6 +32,8 @@ const SCREENS: &[&str] = &[
     "find-replace",
     "before-after",
     "open-case",
+    "case-page",
+    "case-page-locked",
     "rename-case",
     "case-categories",
     "keychain-explainer",
@@ -217,6 +219,23 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     name.starts_with("settings-") || *name == "dictionary",
                     "stale settings on {theme}/{name}"
                 );
+                assert_eq!(
+                    record["state"]["case_page"],
+                    matches!(
+                        *name,
+                        "case-page" | "case-page-locked" | "rename-case" | "case-categories"
+                    ),
+                    "{theme}/{name}"
+                );
+                assert_eq!(
+                    record["state"]["case_page_locked"],
+                    *name == "case-page-locked",
+                    "{theme}/{name}"
+                );
+                if *name == "case-page" {
+                    assert!(record["state"]["case_page_documents"].as_u64().unwrap() >= 3);
+                    assert!(record["state"]["case_page_names"].as_u64().unwrap() > 0);
+                }
                 // ADR 0075: the primary button and the 20-file cap.
                 let (primary, ticked) = match *name {
                     "folder-sheet" => (Value::from("Open as case"), Value::from(4)),

@@ -16,7 +16,10 @@ use mdoc_store::{
 };
 use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
-gpui::actions!(cases, [ConfirmCaseName, CancelCaseName]);
+gpui::actions!(
+    cases,
+    [ConfirmCaseName, CancelCaseName, AddCaseName, ClearCaseName]
+);
 
 pub(crate) fn bind_keys(cx: &mut App) {
     cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Cases));
@@ -24,6 +27,9 @@ pub(crate) fn bind_keys(cx: &mut App) {
 
 #[derive(Default)]
 pub(super) struct CaseState {
+    pub(super) page: Option<super::case_page::CasePage>,
+    pub(super) header_menu: Option<(String, gpui::Point<gpui::Pixels>)>,
+    pub(super) closing_members: super::case_page::CaseClose,
     pub(super) renaming: Option<(String, Entity<markdown_search::SearchInput>)>,
     pub(super) list_open: bool,
     /// Cases whose member rows are folded under their header.
@@ -53,6 +59,9 @@ pub(super) struct CaseState {
     /// How often the key was read, quietly or not, in tests.
     #[cfg(test)]
     pub(super) key_reads: usize,
+    /// Member loader invocations, including attempts that would fail to read.
+    #[cfg(test)]
+    pub(super) member_reads: usize,
 }
 
 type AfterUnlock = Box<dyn FnOnce(&mut Workspace, &mut Window, &mut Context<Workspace>)>;
@@ -214,6 +223,8 @@ impl Workspace {
     pub(super) fn resume_locked(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(CaseLoad::Load) = self.case_coordinator.unlock() {
             self.load_cases(window, cx);
+        } else if self.case_coordinator.store().is_some() && !self.case_coordinator.loaded() {
+            self.load_cases(window, cx);
         }
     }
     /// The explainer's Not now: the waiting action is cancelled.
@@ -317,6 +328,17 @@ impl Workspace {
             let (cases, failed) = task.await;
             let _ = this.update_in(cx, |this, window, cx| {
                 this.case_coordinator.finish_load(cases);
+                if this
+                    .cases
+                    .page
+                    .as_ref()
+                    .is_some_and(|page| this.case_coordinator.case(page.id()).is_none())
+                {
+                    this.show_home(window, cx);
+                    this.notices.post(
+                        "The saved case could not be opened. It may have been removed or damaged.",
+                    );
+                }
                 if !failed.is_empty() {
                     this.notices.post(format!(
                         "{} saved {} could not be opened. {} damaged or saved with another key.",
@@ -547,14 +569,18 @@ impl Workspace {
     }
     /// A name the case should replace before any document mentions it.
     pub(super) fn add_case_term(&mut self, id: u64, term: &str, cx: &mut Context<Self>) {
-        let term = term.trim();
         let Some(view) = self.tab_view(id) else {
             return;
         };
         let Some(link) = view.read(cx).case.link().cloned() else {
             return;
         };
-        let Some((exported, effect)) = self.case_coordinator.edit(&link.id, |case| {
+        self.add_case_name(&link.id, term, cx);
+    }
+
+    pub(super) fn add_case_name(&mut self, case_id: &str, term: &str, cx: &mut Context<Self>) {
+        let term = term.trim();
+        let Some((exported, effect)) = self.case_coordinator.edit(case_id, |case| {
             if term.is_empty()
                 || case
                     .identities
@@ -579,7 +605,7 @@ impl Workspace {
         self.carry_out_cases(effect.into_iter().collect(), cx);
         for tab in &self.tabs {
             if let Some(view) = tab.view()
-                && view.read(cx).case.link().is_some_and(|l| l.id == link.id)
+                && view.read(cx).case.is(case_id)
             {
                 view.update(cx, |view, cx| view.sync_case_identities(&[], &exported, cx));
             }
@@ -921,6 +947,14 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self
+            .cases
+            .page
+            .as_ref()
+            .is_some_and(|page| page.id() == case_id)
+        {
+            self.show_home(window, cx);
+        }
         self.case_coordinator.delete(case_id);
         self.tabs.forget_case(case_id);
         for tab in &self.tabs {
@@ -968,7 +1002,12 @@ impl Workspace {
         self.cases.renaming = Some((case_id, input));
         cx.notify();
     }
-    fn finish_rename(&mut self, save: bool, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn finish_rename(
+        &mut self,
+        save: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some((case_id, input)) = self.cases.renaming.take() else {
             return;
         };
@@ -990,48 +1029,23 @@ impl Workspace {
         self.focus_active(window, cx);
         cx.notify();
     }
-    /// Open the documents of a case from the Open Case list.
+    /// Show the cached case page. This path never opens a key or a member file.
     pub(super) fn open_case(&mut self, case_id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        // Focus goes back first; opening a document then takes it.
-        self.close_case_list(window, cx);
-        let Some(case) = self.case_coordinator.case(case_id) else {
-            return;
-        };
-        let existing: Vec<_> = case
-            .members
-            .iter()
-            .filter(|p| p.exists())
-            .cloned()
-            .collect();
-        if existing.is_empty() {
-            self.notices.post(format!(
-                "None of the documents in “{}” are where they were saved. Open a document \
-                 and save the mapping as a new case.",
-                case.name
-            ));
-            cx.notify();
-            return;
-        }
-        if let Some(open) = existing
-            .iter()
-            .find_map(|path| self.find_path(path, None, cx))
-        {
-            self.activate(open, window, cx);
-        }
-        self.open_paths(existing, window, cx);
-        cx.notify();
+        self.show_case_page(case_id, super::case_page::Place::Header, window, cx);
     }
     pub(super) fn show_case_list(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self.case_key_ready(|this, window, cx| this.show_case_list(window, cx), cx) {
+        // An existing modal keeps focus. Browsing itself needs no key, but
+        // waits for that modal to finish before it is shown.
+        if self.cases.explainer {
+            let earlier = self.cases.then.take();
+            self.cases.then = Some(Box::new(move |this, window, cx| {
+                if let Some(earlier) = earlier {
+                    earlier(this, window, cx);
+                }
+                this.show_case_list(window, cx);
+            }));
             return;
         }
-        if let Err(error) = self.case_store() {
-            self.key_failed(error);
-            cx.notify();
-            return;
-        }
-        self.resume_locked(window, cx);
-        self.load_cases(window, cx);
         self.cases.list_open = true;
         self.case_list_return = window.focused(cx).filter(|f| *f != self.case_list_focus);
         // After the palette, if it ran this, has restored its own focus.
@@ -1054,18 +1068,12 @@ impl Workspace {
     pub(super) fn case_header(
         &self,
         link: &CaseLink,
-        first: u64,
+        _first: u64,
         count: usize,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let theme = self.theme.get();
         let palette = theme.pdf_style();
-        let renaming = self
-            .cases
-            .renaming
-            .as_ref()
-            .filter(|(id, _)| *id == link.id)
-            .map(|(_, input)| input.clone());
         let id = link.id.clone();
         div()
             .id(gpui::SharedString::from(format!("case-{}", link.id)))
@@ -1078,6 +1086,13 @@ impl Workspace {
             .pb_1()
             .text_size(px(11.))
             .text_color(palette.header_muted)
+            .when(
+                self.cases
+                    .page
+                    .as_ref()
+                    .is_some_and(|page| page.id() == link.id),
+                |v| v.bg(theme.sidebar_selected()),
+            )
             .drag_over::<TabDrag>(move |v, _, _, _| v.bg(theme.sidebar_selected()))
             .on_drop(cx.listener({
                 let id = link.id.clone();
@@ -1128,33 +1143,56 @@ impl Workspace {
                     .size(px(8.))
                     .flex_shrink_0()
                     .rounded_full()
-                    .bg(style::case_color(link.hue())),
+                    .bg(style::case_color(link.hue(), theme)),
             )
-            .child(match renaming {
-                Some(input) => div()
-                    .flex_1()
-                    .min_w_0()
-                    .px_1()
-                    .rounded_sm()
-                    .border_1()
-                    .border_color(theme.search_accent())
-                    .text_color(palette.header_fg)
-                    .on_action(cx.listener(|this, _: &ConfirmCaseName, window, cx| {
-                        this.finish_rename(true, window, cx)
-                    }))
-                    .on_action(cx.listener(|this, _: &CancelCaseName, window, cx| {
-                        this.finish_rename(false, window, cx)
-                    }))
-                    .child(input)
-                    .into_any_element(),
-                None => div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .child(link.name.clone())
-                    .into_any_element(),
-            })
+            .child(
+                ui::control(
+                    gpui::SharedString::from(format!("case-page-link-{}", link.id)),
+                    link.name.clone(),
+                    theme,
+                    true,
+                )
+                .when(cfg!(test), |v| v.debug_selector(|| "case-page-link".into()))
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .px_1()
+                .py_1()
+                .aria_label(format!("Open case {}", link.name))
+                .aria_selected(
+                    self.cases
+                        .page
+                        .as_ref()
+                        .is_some_and(|page| page.id() == link.id),
+                )
+                .on_click(cx.listener({
+                    let id = id.clone();
+                    move |this, _, window, cx| this.open_case(&id, window, cx)
+                })),
+            )
+            .child(
+                ui::control(
+                    gpui::SharedString::from(format!("case-menu-{}", link.id)),
+                    "⋯",
+                    theme,
+                    true,
+                )
+                .when(cfg!(test), |v| {
+                    v.debug_selector(|| "case-header-menu".into())
+                })
+                .aria_label(format!("Actions for case {}", link.name))
+                .px_1()
+                .py_0()
+                .on_click(cx.listener({
+                    let id = id.clone();
+                    move |this, event: &gpui::ClickEvent, window, cx| {
+                        this.menu_return = window.focused(cx);
+                        this.cases.header_menu = Some((id.clone(), event.position()));
+                        window.focus(&this.menu_focus, cx);
+                        cx.notify();
+                    }
+                })),
+            )
             .when(count > 1, |v| v.child(div().child(count.to_string())))
             .tooltip(style::tooltip(
                 format!("Case “{}” · its replacement mapping is saved", link.name),
@@ -1165,15 +1203,8 @@ impl Workspace {
                 cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
                     this.menu_return = window.focused(cx);
                     window.focus(&this.menu_focus, cx);
-                    this.tab_menu = Some((first, event.position));
+                    this.cases.header_menu = Some((id.clone(), event.position));
                     cx.notify();
-                }),
-            )
-            .on_click(
-                cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
-                    if event.click_count() == 2 {
-                        this.start_rename_case(id.clone(), window, cx);
-                    }
                 }),
             )
             .into_any_element()
@@ -1408,16 +1439,23 @@ impl Workspace {
                     row("context-case-categories", "Categories to detect…")
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.tab_menu = None;
-                            this.case_categories_return = this.menu_return.take();
-                            this.cases.categories_open = Some(categories.clone());
-                            window.focus(&this.case_categories_focus, cx);
-                            cx.notify();
+                            this.show_case_page(
+                                &categories,
+                                super::case_page::Place::Categories,
+                                window,
+                                cx,
+                            );
                         }))
                         .into_any_element(),
                     row("context-rename-case", "Rename case…")
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.tab_menu = None;
-                            this.start_rename_case(rename.clone(), window, cx);
+                            this.show_case_page(
+                                &rename,
+                                super::case_page::Place::Rename,
+                                window,
+                                cx,
+                            );
                         }))
                         .into_any_element(),
                     row("context-leave-case", "Remove from case")
@@ -1429,7 +1467,12 @@ impl Workspace {
                     row("context-delete-case", "Delete case and forget originals…")
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.tab_menu = None;
-                            this.delete_case(delete.clone(), window, cx);
+                            this.show_case_page(
+                                &delete,
+                                super::case_page::Place::Delete,
+                                window,
+                                cx,
+                            );
                         }))
                         .into_any_element(),
                 ]
@@ -1450,7 +1493,7 @@ impl Workspace {
 
     /// File → Open Case…: every saved case, newest first.
     pub(super) fn case_list(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if !self.cases.list_open {
+        if !self.cases.list_open || self.cases.explainer {
             return None;
         }
         let theme = self.theme.get();
@@ -1462,13 +1505,13 @@ impl Workspace {
             .collect();
         let rows: Vec<AnyElement> = self
             .case_coordinator
-            .cases()
+            .summaries()
             .iter()
             .map(|case| {
-                let link = CaseLink::of(case);
+                let link = case.link();
                 let open_id = case.id.clone();
                 let delete_id = case.id.clone();
-                let documents = case.members.len();
+                let documents = case.documents;
                 div()
                     .id(gpui::SharedString::from(format!("case-row-{}", case.id)))
                     .flex()
@@ -1483,7 +1526,7 @@ impl Workspace {
                             .size(px(8.))
                             .flex_shrink_0()
                             .rounded_full()
-                            .bg(style::case_color(link.hue())),
+                            .bg(style::case_color(link.hue(), theme)),
                     )
                     .child(
                         crate::ui::focus_ring(
@@ -1510,8 +1553,14 @@ impl Workspace {
                                 .text_color(palette.header_muted)
                                 .child(format!(
                                     "{} {} · {} {}{}",
-                                    case.identities.len(),
-                                    if case.identities.len() == 1 {
+                                    self.case_coordinator
+                                        .case(&case.id)
+                                        .map_or(0, |case| case.exported().len()),
+                                    if self
+                                        .case_coordinator
+                                        .case(&case.id)
+                                        .is_some_and(|case| case.exported().len() == 1)
+                                    {
                                         "name"
                                     } else {
                                         "names"
@@ -1543,7 +1592,12 @@ impl Workspace {
                         .on_click(cx.listener(
                             move |this, _, window, cx| {
                                 this.close_case_list(window, cx);
-                                this.delete_case(delete_id.clone(), window, cx)
+                                this.show_case_page(
+                                    &delete_id,
+                                    super::case_page::Place::Delete,
+                                    window,
+                                    cx,
+                                )
                             },
                         )),
                     )
@@ -1632,7 +1686,23 @@ impl Workspace {
                                         ),
                                 )
                             })
-                            .children(rows),
+                            .children(rows)
+                            .when(!self.case_coordinator.loaded(), |v| {
+                                v.child(
+                                    ui::control(
+                                        "case-list-unlock",
+                                        "Unlock saved cases…",
+                                        theme,
+                                        true,
+                                    )
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "case-list-unlock".into())
+                                    })
+                                    .on_click(cx.listener(
+                                        |this, _, window, cx| this.unlock_cases(window, cx),
+                                    )),
+                                )
+                            }),
                     ),
             )
             .with_priority(2)
@@ -1887,6 +1957,7 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.cases.closing_members.cancel();
         self.case_coordinator.forget_asked(id);
         if quitting {
             self.event(id, &CLOSE_CANCELLED, window, cx);

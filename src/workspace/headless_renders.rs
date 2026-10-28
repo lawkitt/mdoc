@@ -139,6 +139,10 @@ impl Driver {
                     },
                     "dictionary": w.settings.read(cx).dictionary.is_some(),
                     "case_list": w.cases.list_open,
+                    "case_page": w.cases.page.is_some(),
+                    "case_page_locked": w.cases.page.as_ref().is_some_and(|page| w.case_coordinator.case(page.id()).is_none()),
+                    "case_page_documents": w.cases.page.as_ref().and_then(|page| w.case_coordinator.case(page.id())).map(|case| case.members.len()),
+                    "case_page_names": w.cases.page.as_ref().and_then(|page| w.case_coordinator.case(page.id())).map(|case| case.exported().len()),
                     "case_rename": w.cases.renaming.is_some(),
                     "case_categories": w.cases.categories_open.is_some(),
                     "keychain_explainer": w.cases.explainer,
@@ -496,6 +500,39 @@ fn scenarios(
     records.push(d.capture(out, "open-case")?);
     d.change(|w, window, cx| w.close_case_list(window, cx))?;
     let id = d.change(|w, _, _| w.case_coordinator.cases()[0].id.clone())?;
+    d.change(|w, window, cx| {
+        w.join_case(w.tabs.active(), &id, window, cx);
+        let closed = path.with_file_name("Witness statement.md");
+        std::fs::write(&closed, "# Public witness statement\n").expect("temporary fixture");
+        let (_, effect) = w
+            .case_coordinator
+            .edit(&id, |case| {
+                case.created = 1791763200;
+                case.members
+                    .extend([closed, path.with_file_name("Missing exhibit.md")]);
+                Some(())
+            })
+            .unwrap();
+        w.carry_out_cases(effect.into_iter().collect(), cx);
+        w.open_case(&id, window, cx);
+    })?;
+    records.push(d.capture(out, "case-page")?);
+    // Leave only the cached public name/count, exactly as on a locked launch.
+    let unlocked = d.change(|w, window, cx| {
+        let case = w.case_coordinator.case(&id).unwrap().clone();
+        w.case_coordinator
+            .restore_summaries(vec![mdoc_store::cases::CaseSummary::of(&case)]);
+        w.case_coordinator.hide_for_locked_render();
+        w.open_case(&id, window, cx);
+        case
+    })?;
+    records.push(d.capture(out, "case-page-locked")?);
+    d.change(|w, window, cx| {
+        w.case_coordinator.finish_load(vec![unlocked]);
+        w.show_home(window, cx);
+        w.activate(w.tabs.active(), window, cx);
+        w.open_case(&id, window, cx);
+    })?;
     d.change(|w, window, cx| w.start_rename_case(id.clone(), window, cx))?;
     records.push(d.capture(out, "rename-case")?);
     d.key("escape")?;
@@ -506,6 +543,7 @@ fn scenarios(
     })?;
     records.push(d.capture(out, "case-categories")?);
     d.change(|w, window, cx| w.close_case_categories(window, cx))?;
+    d.change(|w, window, cx| w.activate(w.tabs.active(), window, cx))?;
     d.change(|w, _, cx| {
         // Preview only. Continue is never invoked and no OS key is read.
         w.cases.explainer = true;
@@ -738,6 +776,7 @@ pub(crate) fn run(out: &Path) -> Result<()> {
                     let case = mdoc_store::cases::Case::new("Public fixture".into(), &[], None);
                     store.save(&case).expect("temporary fixture case");
                     workspace.use_case_store(store);
+                    workspace.case_coordinator.finish_load(vec![case]);
                     workspace.restore(
                         Session {
                             theme_choice: theme,

@@ -37,12 +37,6 @@ review's polish shipped in 0.2.0. Items are in priority order. Until
 five-item box this cycle); rc.1 is cut once every item is done. Each item
 merges to `main` on its own when green.
 
-9. **[Cases] Case page.** Documents, names, rename, recolour, categories and
-   delete on one page; Open Case… opens it
-   ([ADR 0077](docs/adr/0077-case-page.md)). *From the 2026-10-17 grooming.*
-   *Done when:* the page ships with those actions, never reads the key on open,
-   and is verified in both themes.
-
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
