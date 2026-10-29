@@ -1,6 +1,6 @@
 //! Actual destination, keyboard and pointer dispatch (ADR 0081).
 use super::*;
-use crate::workspace::navigation::Stop;
+use crate::workspace::navigation::{Arrival, Stop};
 
 fn back_key() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -296,4 +296,246 @@ fn f6_remembers_navigation_focus_across_sidebar_layouts(cx: &mut TestAppContext)
             "Back remains the sidebar's remembered control, expanded={expanded}"
         );
     }
+}
+
+#[gpui::test]
+fn closing_the_active_or_the_last_tab_never_offers_the_page_shown(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |w, window, cx| {
+        let first = w.new_tab(window, cx);
+        let second = w.new_tab(window, cx);
+        // Home → first → second; closing second shows first.
+        w.close_tab(second, window, cx);
+        assert_eq!(w.tabs.active(), first);
+        assert_eq!(w.navigation_target(true, cx), Some(&Stop::Home));
+        assert_eq!(w.navigation_label(true, cx), "Back to Home");
+        assert_eq!(w.navigation_target(false, cx), None);
+        // Closing the last tab shows Home: nothing either way.
+        w.close_tab(first, window, cx);
+        assert!(w.showing_home(cx));
+        assert_eq!(w.navigation_target(true, cx), None);
+        assert_eq!(w.navigation_target(false, cx), None);
+    });
+}
+
+#[gpui::test]
+fn closing_the_active_tab_after_back_keeps_forward(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |w, window, cx| {
+        let first = w.new_tab(window, cx);
+        let second = w.new_tab(window, cx);
+        let third = w.new_tab(window, cx);
+        w.navigate(true, window, cx);
+        w.navigate(true, window, cx);
+        assert_eq!(w.tabs.active(), first);
+        // The tab after it takes its page and its stop.
+        w.close_tab(first, window, cx);
+        assert_eq!(w.tabs.active(), second);
+        assert_eq!(w.navigation_target(true, cx), Some(&Stop::Home));
+        assert_eq!(w.navigation_target(false, cx), Some(&Stop::Tab(third)));
+        w.navigate(false, window, cx);
+        assert_eq!(w.tabs.active(), third);
+    });
+}
+
+#[gpui::test]
+fn deleting_a_case_from_its_page_shows_home_and_keeps_forward(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let case = mdoc_store::cases::Case::new("Raman".into(), &[], None);
+    let id = case.id.clone();
+    let tab = tabs.update_in(cx, |w, window, cx| {
+        w.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ));
+        w.case_coordinator.finish_load(vec![case]);
+        w.open_case(&id, window, cx);
+        let tab = w.new_tab(window, cx);
+        w.navigate(true, window, cx);
+        assert_eq!(w.cases.page.as_ref().unwrap().id(), id);
+        tab
+    });
+    tabs.update_in(cx, |w, window, cx| w.delete_case(id.clone(), window, cx));
+    cx.simulate_prompt_answer("Delete Case");
+    cx.run_until_parked();
+    tabs.read_with(cx, |w, cx| {
+        assert!(w.showing_home(cx));
+        // Home took the case page's stop: Back doesn't offer Home again.
+        assert_eq!(w.navigation_target(true, cx), None);
+        assert_eq!(w.navigation_target(false, cx), Some(&Stop::Tab(tab)));
+        assert_eq!(w.navigation_label(false, cx), "Forward to Untitled.md");
+    });
+}
+
+#[gpui::test]
+fn each_case_page_is_its_own_stop(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    let raman = mdoc_store::cases::Case::new("Raman".into(), &[], None);
+    let petrova = mdoc_store::cases::Case::new("Petrova".into(), &[], None);
+    let (first, second) = (raman.id.clone(), petrova.id.clone());
+    tabs.update_in(cx, |w, window, cx| {
+        w.case_coordinator.finish_load(vec![raman, petrova]);
+        w.open_case(&first, window, cx);
+        w.open_case(&second, window, cx);
+        assert_eq!(w.navigation_label(true, cx), "Back to Case “Raman”");
+        w.navigate(true, window, cx);
+        assert_eq!(w.cases.page.as_ref().unwrap().id(), first);
+        assert_eq!(w.navigation_label(true, cx), "Back to Home");
+        assert_eq!(w.navigation_label(false, cx), "Forward to Case “Petrova”");
+        w.navigate(false, window, cx);
+        assert_eq!(w.cases.page.as_ref().unwrap().id(), second);
+        assert_eq!(w.navigation_target(false, cx), None);
+    });
+}
+
+#[gpui::test]
+fn a_restored_workspace_starts_with_no_history(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let records = ["one.md", "two.md"].map(|name| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, name).unwrap();
+        TabRecord {
+            markdown: path,
+            ..TabRecord::default()
+        }
+    });
+    let (tabs, cx) = boot(
+        cx,
+        Session {
+            tabs: records.to_vec(),
+            active: 1,
+            ..Session::default()
+        },
+    );
+    tabs.read_with(cx, |w, cx| {
+        assert_eq!(w.tabs.len(), 2);
+        assert_eq!(w.navigation_target(true, cx), None);
+        assert_eq!(w.navigation_target(false, cx), None);
+        assert_eq!(w.navigation_label(true, cx), "Back");
+        assert_eq!(w.navigation_label(false, cx), "Forward");
+    });
+}
+
+#[gpui::test]
+fn a_cancelled_close_or_quit_prompt_is_not_a_stop_and_keeps_forward(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_input("unsaved");
+    let dirty = tabs.read_with(cx, |w, _| w.tabs.active());
+    let (second, third) = tabs.update_in(cx, |w, window, cx| {
+        let second = w.new_tab(window, cx);
+        let third = w.new_tab(window, cx);
+        w.navigate(true, window, cx);
+        (second, third)
+    });
+    let unchanged = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        tabs.read_with(cx, |w, cx| {
+            assert_eq!(w.tabs.active(), dirty, "the prompt's tab stays in front");
+            assert_eq!(w.navigation_target(false, cx), Some(&Stop::Tab(third)));
+            assert_eq!(w.navigation_target(true, cx), Some(&Stop::Tab(second)));
+        });
+    };
+    tabs.update_in(cx, |w, window, cx| w.close_tab(dirty, window, cx));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    unchanged(&tabs, cx);
+    cx.dispatch_action(Quit);
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    unchanged(&tabs, cx);
+    tabs.update_in(cx, |w, window, cx| {
+        w.navigate(true, window, cx);
+        assert_eq!(w.tabs.active(), second);
+        w.navigate(false, window, cx);
+        assert_eq!(w.tabs.active(), third);
+    });
+}
+
+#[gpui::test]
+fn buttons_and_actions_share_one_liveness_rule(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |w, window, cx| {
+        // A stop on the tab now under Home: the button is off, and the
+        // action must not move either.
+        let placeholder = w.tabs.active();
+        w.navigation = Default::default();
+        w.navigation.arrive(Stop::Tab(placeholder), Arrival::Visit);
+        w.navigation.arrive(Stop::Home, Arrival::Visit);
+        assert_eq!(w.navigation_target(true, cx), None);
+        assert_eq!(w.navigation_label(true, cx), "Back");
+        w.navigate(true, window, cx);
+        assert_eq!(w.navigation.current(), Some(&Stop::Home));
+        assert_eq!(w.navigation_target(false, cx), None);
+    });
+}
+
+#[gpui::test]
+fn navigating_closes_the_tab_and_case_header_menus(cx: &mut TestAppContext) {
+    cx.update(crate::bind_all_keys);
+    let (tabs, cx) = boot(cx, Session::default());
+    let first = tabs.read_with(cx, |w, _| w.tabs.active());
+    let second = tabs.update_in(cx, |w, window, cx| w.new_tab(window, cx));
+    draw(cx);
+    let row = cx.update(|_, cx| tabs.read(cx).sidebar_row_focus.borrow()[&second].clone());
+    cx.update(|window, cx| window.focus(&row, cx));
+    key(cx, "shift-f10");
+    assert!(tabs.read_with(cx, |w, _| w.tab_menu.is_some()));
+    key(cx, back_key());
+    tabs.read_with(cx, |w, _| {
+        assert_eq!(w.tabs.active(), first);
+        assert!(w.tab_menu.is_none());
+    });
+    tabs.update_in(cx, |w, window, cx| {
+        w.cases.header_menu = Some(("case".into(), gpui::point(px(10.), px(10.))));
+        w.navigate(false, window, cx);
+        assert_eq!(w.tabs.active(), second);
+        assert!(w.cases.header_menu.is_none());
+    });
+}
+
+#[gpui::test]
+fn closing_the_first_stop_behind_a_prompts_tab_keeps_forward_ahead(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let records = ["a.md", "b.md", "c.md"].map(|name| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, name).unwrap();
+        TabRecord {
+            markdown: path,
+            ..TabRecord::default()
+        }
+    });
+    let (tabs, cx) = boot(
+        cx,
+        Session {
+            tabs: records.to_vec(),
+            ..Session::default()
+        },
+    );
+    let ids: Vec<u64> = tabs.read_with(cx, |w, _| w.tabs.iter().map(|tab| tab.id()).collect());
+    let (a, b, c) = (ids[0], ids[1], ids[2]);
+    tabs.update_in(cx, |w, window, cx| w.activate(b, window, cx));
+    cx.run_until_parked();
+    cx.simulate_input("unsaved");
+    tabs.update_in(cx, |w, window, cx| {
+        w.navigate(true, window, cx);
+        w.activate(c, window, cx);
+        w.navigate(true, window, cx);
+        assert_eq!(w.tabs.active(), a);
+        w.close_tab(b, window, cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    // History [a, c] with b in front; a closes in the background.
+    tabs.update_in(cx, |w, window, cx| {
+        assert_eq!(w.tabs.active(), b);
+        w.close_tab(a, window, cx);
+        assert_eq!(w.tabs.active(), b);
+        assert_eq!(w.navigation_target(true, cx), None);
+        assert_eq!(w.navigation_target(false, cx), Some(&Stop::Tab(c)));
+        w.navigate(false, window, cx);
+        assert_eq!(w.tabs.active(), c);
+    });
 }
