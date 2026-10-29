@@ -1050,12 +1050,24 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some((case_id, input)) = self.cases.renaming.take() else {
+        let Some(input) = self.end_rename(save, cx) else {
             return;
         };
-        self.cases.rename_blur = None;
         // A click on another control has already moved focus there; keep it.
-        let had_focus = input.read(cx).focus_handle(cx).contains_focused(window, cx);
+        if input.read(cx).focus_handle(cx).contains_focused(window, cx) {
+            self.focus_active(window, cx);
+        }
+        cx.notify();
+    }
+    /// End a rename in progress, saving a non-empty name when `save`. Leaving
+    /// the case page for a tab, Home or another case saves, as a click away does.
+    pub(super) fn end_rename(
+        &mut self,
+        save: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<markdown_search::SearchInput>> {
+        let (case_id, input) = self.cases.renaming.take()?;
+        self.cases.rename_blur = None;
         let name = input.read(cx).value().trim().to_string();
         if save && !name.is_empty() {
             if let Some(((), effect)) = self.case_coordinator.edit(&case_id, |case| {
@@ -1071,10 +1083,7 @@ impl Workspace {
                 });
             }
         }
-        if had_focus {
-            self.focus_active(window, cx);
-        }
-        cx.notify();
+        Some(input)
     }
     /// Show the cached case page. This path never opens a key or a member file.
     pub(super) fn open_case(&mut self, case_id: &str, window: &mut Window, cx: &mut Context<Self>) {

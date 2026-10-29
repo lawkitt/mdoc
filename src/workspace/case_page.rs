@@ -281,7 +281,7 @@ impl Workspace {
         }
         self.cases.list_open = false;
         self.case_list_return = None;
-        self.cases.renaming = None;
+        self.end_rename(true, cx);
         let input = |cx: &mut gpui::Context<SearchInput>, placeholder, context| {
             SearchInput::new(cx)
                 .with_theme(self.theme.clone())

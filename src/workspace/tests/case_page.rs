@@ -1214,4 +1214,19 @@ fn leaving_the_rename_field_saves_and_escape_still_cancels(cx: &mut TestAppConte
     draw(cx);
     assert!(!renaming(cx));
     assert_eq!(name(cx), "Saved by Tab");
+
+    // Keyboard navigation away from the page saves too: switching to a tab
+    // and going Home both end the rename before the page goes.
+    rename(cx, "Saved by switching tabs");
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(tab, window, cx));
+    draw(cx);
+    assert!(!renaming(cx));
+    assert_eq!(name(cx), "Saved by switching tabs");
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_case(&id, window, cx));
+    draw(cx);
+    rename(cx, "Saved by going Home");
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_home(window, cx));
+    draw(cx);
+    assert!(!renaming(cx));
+    assert_eq!(name(cx), "Saved by going Home");
 }
