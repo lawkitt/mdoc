@@ -243,6 +243,17 @@ pub struct Case {
     /// Category tokens scans in member documents skip.
     #[serde(default)]
     pub skip: Vec<String>,
+    /// Each member's AI reply as pasted, aliases and all (ADR 0078).
+    #[serde(default)]
+    pub replies: Vec<CaseReply>,
+}
+
+/// One member document's AI reply, kept for its Reply view (ADR 0078).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CaseReply {
+    /// The member, as in [`Case::members`].
+    pub member: PathBuf,
+    pub text: String,
 }
 impl Case {
     pub fn new(name: String, identities: &[ExportedIdentity], member: Option<PathBuf>) -> Self {
@@ -258,9 +269,48 @@ impl Case {
             members: member.into_iter().collect(),
             revision: 0,
             skip: Vec::new(),
+            replies: Vec::new(),
         };
         case.merge(identities);
         case
+    }
+    /// The AI reply kept for `member`.
+    pub fn reply(&self, member: &Path) -> Option<&str> {
+        self.replies
+            .iter()
+            .find(|r| r.member == member)
+            .map(|r| r.text.as_str())
+    }
+    /// Keep `text` as `member`'s reply, or remove it with `None`. Returns
+    /// whether the case changed.
+    pub fn set_reply(&mut self, member: &Path, text: Option<String>) -> bool {
+        let at = self.replies.iter().position(|r| r.member == member);
+        match (at, text) {
+            (Some(at), None) => {
+                self.replies.remove(at);
+                true
+            }
+            (Some(at), Some(text)) if self.replies[at].text != text => {
+                self.replies[at].text = text;
+                true
+            }
+            (None, Some(text)) => {
+                self.replies.push(CaseReply {
+                    member: member.to_path_buf(),
+                    text,
+                });
+                true
+            }
+            _ => false,
+        }
+    }
+    /// A member renamed from `from` to `to` keeps its reply.
+    pub fn move_reply(&mut self, from: &Path, to: &Path) {
+        if self.reply(to).is_none()
+            && let Some(reply) = self.replies.iter_mut().find(|r| r.member == from)
+        {
+            reply.member = to.to_path_buf();
+        }
     }
     /// The next generated alias of `category` that no identity has ever used.
     pub fn next_alias(&self, category: Category) -> String {
@@ -989,6 +1039,33 @@ mod tests {
         assert_eq!(listed, std::slice::from_ref(&case));
         assert!(failed.is_empty());
         assert_eq!(case.exported()[0].wording(), "Anna Petrova");
+    }
+
+    #[test]
+    fn a_member_reply_is_kept_encrypted_moved_and_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store(dir.path());
+        let mut case = fixture_case();
+        assert_eq!(case.reply(Path::new("/docs/contract.md")), None);
+        let reply = "PERSON_1 owes ORG_1 a reply-only sentence.".to_string();
+        assert!(case.set_reply(Path::new("/docs/contract.md"), Some(reply.clone())));
+        assert!(!case.set_reply(Path::new("/docs/contract.md"), Some(reply.clone())));
+        store.save(&case).unwrap();
+        let bytes = std::fs::read(dir.path().join(format!("{}.case", case.id))).unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("reply-only"));
+        let mut loaded = store.load(&case.id).unwrap();
+        assert_eq!(
+            loaded.reply(Path::new("/docs/contract.md")),
+            Some(reply.as_str())
+        );
+        loaded.move_reply(
+            Path::new("/docs/contract.md"),
+            Path::new("/docs/renamed.md"),
+        );
+        assert_eq!(loaded.reply(Path::new("/docs/contract.md")), None);
+        assert!(loaded.reply(Path::new("/docs/renamed.md")).is_some());
+        assert!(loaded.set_reply(Path::new("/docs/renamed.md"), None));
+        assert!(loaded.replies.is_empty());
     }
 
     #[test]

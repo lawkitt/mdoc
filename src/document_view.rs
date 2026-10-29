@@ -140,6 +140,12 @@ pub(crate) struct DocumentView {
     pub(crate) inspector_share: bool,
     /// The running copy feedback belongs to Copy for AI, not Copy Markdown.
     pub(crate) copied_for_ai: bool,
+    /// The running copy feedback belongs to Copy reply (ADR 0078).
+    pub(crate) copied_reply: bool,
+    /// The tab's AI reply and its restoration (ADR 0078).
+    pub(crate) reply: pii::ui::ReplyBox,
+    /// The Share panel's reply box, made when Share first draws.
+    pub(crate) reply_box: Option<(Entity<EditorState>, Subscription)>,
     /// The saved case this tab's mapping belongs to (ADR 0041).
     pub(crate) case: case_link::CaseLink,
     /// The waiting save of the mapping into the case.
@@ -343,6 +349,9 @@ impl DocumentView {
             zoom: 1.,
             inspector_share: false,
             copied_for_ai: false,
+            copied_reply: false,
+            reply: Default::default(),
+            reply_box: None,
             case: Default::default(),
             case_save: None,
             case_names_open: false,
@@ -423,6 +432,7 @@ impl DocumentView {
             self.editor.read(cx).text().to_owned(),
         ));
         self.copied_for_ai = false;
+        self.copied_reply = false;
         self.show_copy_feedback(cx);
     }
     pub(crate) fn show_copy_feedback(&mut self, cx: &mut Context<Self>) {
@@ -1694,6 +1704,11 @@ impl Render for DocumentView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // The before/after view follows the applied replacements (ADR 0042).
         self.refresh_compare(window, cx);
+        // The Share panel's reply box restores against the live mapping (ADR 0078).
+        if self.inspector_share && self.replacements_open() {
+            self.ensure_reply_box(window, cx);
+            self.refresh_reply();
+        }
         self.release_closed_popup_focus(window, cx);
         // Derived display state; set_outlines only notifies on change.
         self.sync_scope_outlines(cx);

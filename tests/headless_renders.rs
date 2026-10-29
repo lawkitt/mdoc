@@ -31,6 +31,8 @@ const SCREENS: &[&str] = &[
     "keyboard-shortcuts",
     "find-replace",
     "before-after",
+    "reply-view",
+    "share-reply",
     "open-case",
     "case-page",
     "case-page-locked",
@@ -213,6 +215,21 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     record["state"]["find_replace"],
                     *name == "find-replace",
                     "stale find bar on {theme}/{name}"
+                );
+                // ADR 0078: the Reply view marks the one invented alias.
+                assert_eq!(
+                    record["state"]["reply_view"],
+                    *name == "reply-view",
+                    "{theme}/{name}"
+                );
+                assert_eq!(
+                    record["state"]["reply_unresolved"],
+                    if matches!(*name, "reply-view" | "share-reply") {
+                        Value::from(1)
+                    } else {
+                        Value::Null
+                    },
+                    "{theme}/{name}"
                 );
                 assert_eq!(
                     record["state"]["settings"],

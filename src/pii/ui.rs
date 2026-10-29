@@ -2,10 +2,12 @@
 mod case_sync;
 mod chooser;
 mod compare;
-pub(crate) use compare::{CompareState, SwitcherRest};
+pub(crate) use compare::{CompareMode, CompareState, SwitcherRest};
 mod discovery;
 mod mapping;
 mod render;
+mod reply;
+pub(crate) use reply::ReplyBox;
 pub(crate) mod restore;
 mod scan;
 pub(crate) use restore::RestoredReply;
@@ -262,7 +264,8 @@ impl ReviewUi {
 
 /// The Replacements checklist (ADR 0048): Space ticks, Enter jumps to the
 /// mention, →/← show and hide mentions, ⌫ keeps the original.
-pub(crate) const LIST: &str = "IdentityPanel && !ReplacementSearch && !SettingsInput && !UiControl";
+pub(crate) const LIST: &str =
+    "IdentityPanel && !ReplacementSearch && !SettingsInput && !UiControl && !ReplyBox";
 /// The mention bar: Enter applies in the selected scope and moves on, Space
 /// unticks in it, ⌫ / ⌘⌫ / ⇧⌘⌫ keep this / same wording / all (ADR 0055).
 pub(crate) const POPUP: &str = "PseudonymReview && !PseudonymReplacement && !UiControl && !UiMenu";

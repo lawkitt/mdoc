@@ -80,6 +80,7 @@ impl DocumentView {
         };
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(copied));
         self.copied_for_ai = true;
+        self.copied_reply = false;
         self.show_copy_feedback(cx);
     }
     /// Replace the clipboard text with this tab's aliases (ADR 0041 #30):
@@ -160,6 +161,12 @@ impl DocumentView {
             cx.notify();
             return;
         }
+        self.open_restore_tab(text, cx);
+    }
+    /// A new tab with `text` restored against this tab's mapping: Paste AI
+    /// Response, and the reply box's Open as tab (ADR 0078).
+    pub(crate) fn open_restore_tab(&mut self, text: String, cx: &mut Context<Self>) {
+        let identities = self.pii.review.export_identities();
         let name = self.display_name();
         let stem = name.strip_suffix(".md").unwrap_or(&name).to_string();
         cx.emit(crate::workspace::TabEvent::Tabs(
