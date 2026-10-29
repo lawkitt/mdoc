@@ -207,6 +207,8 @@ export LOCAL_CI_REPO=example/mdoc LOCAL_CI_URL=https://ci.example/ci
 export LOCAL_CI_POLL=1 LOCAL_CI_TICK=1 LOCAL_CI_TEST_TIMEOUT=3
 export LOCAL_CI_MIN_FREE_GB=0 LOCAL_CI_MAX_SWAP_MB=999999999
 export CARGO_TARGET_DIR="$tmp/shared-target"
+# As in hosted CI: only the runner's test step may name the renders folder.
+export MDOC_HEADLESS_ARTIFACTS="$tmp/outer-renders"
 export PATH="$tmp/bin:$PATH"
 
 # Once PR 9's old head is running, move its merge ref to the new head.

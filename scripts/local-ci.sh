@@ -263,7 +263,7 @@ job() { # merge-ref dir
   set +m
   local dir=$2 step start rc
   cd "$checkout" || exit 3
-  unset CARGO_TARGET_DIR RUSTFLAGS
+  unset CARGO_TARGET_DIR RUSTFLAGS MDOC_HEADLESS_ARTIFACTS
   echo "local-ci: checkout $(git rev-parse "$1")"
   git checkout --quiet --force --detach "$1" || exit 3
   git clean -ffdxq -e /target/ || exit 3
