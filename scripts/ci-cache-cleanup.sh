@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci-cache-cleanup.sh
 # Run by ci.yml on main after the jobs that save cargo caches (ADR 0082):
-# deletes every older generation of each Swatinem/rust-cache key on main and
-# keeps the newest. Its keys are `v0-rust-<job>-<os>-<arch>-<env hash>-<lock
-# hash>` and a job restores only by the part before the lock hash, so an entry
-# is an older generation when a newer one shares that part. An entry with
-# another env hash (another runner image or toolchain) is left to GitHub's
-# 7-day eviction. Needs GH_TOKEN with actions: write and GH_REPO.
+# keeps the newest cache of each job and deletes its older generations.
+# Swatinem/rust-cache keys are `v0-rust-<job>-<os>-<arch>-<env hash>-<lock
+# hash>`; a generation differs in its lock hash (Cargo files) or env hash
+# (toolchain, CARGO* variables, the runner image's installed Rust versions).
+# While a new runner image rolls out, two env hashes alternate and a run on
+# the other image restores nothing; main runs have no time target, and the
+# alternative is a second full cache set for every toolchain change, over
+# the 10 GB repository limit. Needs GH_TOKEN with actions: write and GH_REPO.
 source "$(dirname "$0")/lib.sh"
 
 entries=$(gh cache list --ref refs/heads/main --key v0-rust- --sort created_at \
   --order desc --limit 100 --json id,key --jq '.[] | "\(.id) \(.key)"')
-# Newest first, so every entry after the first of its restore key is older.
+# Newest first, so every entry after the first of its job's key is older.
 older=$(awk '{
-  restore = $2
-  sub(/-[^-]*$/, "", restore)
-  if (restore in newest) print $1, $2, newest[restore]
-  else newest[restore] = $2
+  job = $2
+  sub(/-[^-]*-[^-]*$/, "", job)
+  if (job in newest) print $1, $2, newest[job]
+  else newest[job] = $2
 }' <<<"$entries")
 
 deleted=0
