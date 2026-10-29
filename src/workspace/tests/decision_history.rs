@@ -104,7 +104,12 @@ fn decision_history_case_join_is_one_entry_on_its_undo_step(cx: &mut TestAppCont
     view.read_with(cx, |view, cx| {
         assert_eq!(view.editor.read(cx).history_id(), before);
         assert_eq!(lines(view, cx).last().unwrap().1, EntryState::Undone);
+        // The case names it proposed leave with it, and come back on redo.
+        assert_eq!(view.pii.review().remaining(), 0);
     });
+    cx.dispatch_action(mdoc_editor::Redo);
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| assert_eq!(view.pii.review().remaining(), 1));
 }
 
 #[gpui::test]
@@ -176,6 +181,61 @@ fn decision_history_join_that_only_proposes_is_listed_and_nothing_reaches_disk(
     for secret in ["Joined case", "14:02"] {
         assert!(!on_disk.contains(secret), "a file contains {secret}");
     }
+}
+
+#[gpui::test]
+fn decision_history_undoing_a_join_that_only_proposes_withdraws_its_proposals(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let case = tabs
+        .update_in(cx, |tabs, window, cx| {
+            tabs.create_case(tabs.tabs.active(), window, cx)
+        })
+        .unwrap();
+    cx.run_until_parked();
+    let text = "Anna Petrova wrote back.";
+    let reply = open_applied(&tabs, cx, dir.path(), "reply.md", text, &[]);
+    let view = active(&tabs, cx);
+    view.update(cx, |view, _| view.pii.set_decision_clock(|| "14:02".into()));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(reply, &case, window, cx)
+    });
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| assert_eq!(view.pii.review().remaining(), 1));
+    let undo_redo = |cx: &mut VisualTestContext, undo: bool| {
+        view.update_in(cx, |view, window, cx| {
+            window.focus(&view.editor.read(cx).focus_handle(cx), cx)
+        });
+        if undo {
+            cx.dispatch_action(mdoc_editor::Undo);
+        } else {
+            cx.dispatch_action(mdoc_editor::Redo);
+        }
+        cx.run_until_parked();
+    };
+    undo_redo(cx, true);
+    view.read_with(cx, |view, cx| {
+        assert_eq!(view.pii.review().remaining(), 0);
+        assert!(view.pii.review().candidates().is_empty());
+        assert_eq!(lines(view, cx)[0].1, EntryState::Undone);
+    });
+    // Redo brings the proposal back with the entry.
+    undo_redo(cx, false);
+    view.read_with(cx, |view, cx| {
+        assert_eq!(view.pii.review().remaining(), 1);
+        assert_eq!(lines(view, cx)[0].1, EntryState::Done);
+    });
+    undo_redo(cx, true);
+    view.update_in(cx, |view, window, cx| {
+        view.apply_all_pii(&PiiApplyAll, window, cx)
+    });
+    cx.run_until_parked();
+    view.read_with(cx, |view, cx| {
+        assert_eq!(view.editor.read(cx).text(), text);
+        assert!(view.pii.review().applied().is_empty());
+    });
 }
 
 fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {

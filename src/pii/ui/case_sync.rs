@@ -77,18 +77,27 @@ impl DocumentView {
         let plan = plan_join(case, &document, reserved);
         self.pii.review.reserve_aliases(reserved);
         self.case.set_names(case.to_vec());
+        let history = self.editor.read(cx).history_id();
+        let old = self.pii.review.identity_snapshot();
         self.retag_identities(&plan.changes, cx)?;
         let before = self.pii.review.remaining();
         if !plan.unmatched.is_empty() {
             let text = self.editor.read(cx).text().to_owned();
             // A join that only proposes still makes its own undo point, so
             // What you did lists it (ADR 0079).
-            let seeded = plan.changes.is_empty()
-                && self
-                    .checkpoint_review(cx, |review| review.seed(&plan.unmatched, &text))
-                    .is_some();
-            if !seeded {
+            if plan.changes.is_empty() {
+                self.checkpoint_review(cx, |_| ());
+            }
+            let after = self.editor.read(cx).history_id();
+            if after == history {
                 self.pii.review.seed(&plan.unmatched, &text);
+            } else {
+                // The proposals belong to the join's step: undoing it
+                // withdraws them, and redo brings them back.
+                self.pii.review.seed_on_step(&plan.unmatched, &text);
+                self.pii
+                    .review
+                    .commit_identity_snapshot(history, after, old);
             }
         }
         let summary = JoinSummary {
