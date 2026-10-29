@@ -3,6 +3,89 @@ use super::*;
 use mdoc_store::cases::{CaseColor, CaseSummary};
 
 #[gpui::test]
+fn dropped_document_join_uses_the_open_tabs_identity_and_live_mentions(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("incoming")).unwrap();
+    // Force the same raw/canonical mismatch as /var vs /private/var on macOS.
+    let path = dir
+        .path()
+        .join("incoming")
+        .join("..")
+        .join("Services Agreement.md");
+    let source = "Anna met Anna";
+    std::fs::write(&path, source).unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ));
+        tabs.case_coordinator
+            .finish_load(vec![mdoc_store::cases::Case::new(
+                "Public fixture".into(),
+                &[],
+                None,
+            )]);
+        tabs.drop_files(
+            &gpui::ExternalPaths(vec![path.clone()].into()),
+            false,
+            window,
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.pii
+            .review_mut()
+            .add_manual(source, 0..4, mdoc_pii::Category::Person)
+            .unwrap();
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    let (case_id, tab) = tabs.update_in(cx, |tabs, window, cx| {
+        let id = tabs.case_coordinator.cases()[0].id.clone();
+        let tab = tabs.tabs.active();
+        tabs.join_case(tab, &id, window, cx);
+        tabs.open_case(&id, window, cx);
+        (id, tab)
+    });
+    cx.run_until_parked();
+    let (member, tab_count) = cx.update(|_, cx| {
+        let w = tabs.read(cx);
+        let case = w.case_coordinator.case(&case_id).unwrap();
+        let member = case.members[0].clone();
+        assert_ne!(member, path);
+        assert_eq!(member, session_store::identity(&path));
+        assert_eq!(w.tabs.get(tab).unwrap().identity(), Some(&member));
+        assert_eq!(
+            w.find_path(&member, None, cx),
+            Some(tab),
+            "page must show Open"
+        );
+        let review = view.read(cx).pii.review();
+        let identity = review.identity_by_alias(&case.exported()[0].alias).unwrap();
+        assert_eq!(
+            review.identity_count(identity),
+            2,
+            "page must show live mentions"
+        );
+        (member, w.tabs.len())
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_case_member(member, window, cx)
+    });
+    cx.update(|_, cx| {
+        let w = tabs.read(cx);
+        assert_eq!(w.tabs.active(), tab);
+        assert_eq!(
+            w.tabs.len(),
+            tab_count,
+            "activate the open member without duplicating it"
+        );
+    });
+}
+#[gpui::test]
 fn opening_a_case_is_a_transient_page_without_key_or_member_reads(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());

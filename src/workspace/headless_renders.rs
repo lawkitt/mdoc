@@ -17,7 +17,7 @@ use gpui::{
 };
 use image::ImageEncoder;
 use mdoc_store::session_store::ThemeChoice;
-use mdoc_store::{document::Document, session_store::Session, settings};
+use mdoc_store::{session_store::Session, settings};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -124,6 +124,19 @@ impl Driver {
         self.settle()?;
         let state = if self.window.downcast::<Workspace>().is_some() {
             self.change(|w, _, cx| {
+                let members = w.cases.page.as_ref()
+                    .and_then(|page| w.case_coordinator.case(page.id()))
+                    .map(|case| case.members.iter().map(|path| {
+                        let tab = w.find_path(path, None, cx);
+                        let mentions = tab.and_then(|tab| w.tabs.get(tab)?.view()).map(|view| {
+                            let review = view.read(cx).pii.review();
+                            case.exported().iter().map(|identity| {
+                                review.identity_by_alias(&identity.alias)
+                                    .map_or(0, |id| review.identity_count(id))
+                            }).collect::<Vec<_>>()
+                        });
+                        json!({"open": tab.is_some(), "mentions": mentions})
+                    }).collect::<Vec<_>>());
                 json!({
                     "home": w.showing_home(cx),
                     "palette": w.shell.palette.is_some(),
@@ -143,6 +156,7 @@ impl Driver {
                     "case_page_locked": w.cases.page.as_ref().is_some_and(|page| w.case_coordinator.case(page.id()).is_none()),
                     "case_page_documents": w.cases.page.as_ref().and_then(|page| w.case_coordinator.case(page.id())).map(|case| case.members.len()),
                     "case_page_names": w.cases.page.as_ref().and_then(|page| w.case_coordinator.case(page.id())).map(|case| case.exported().len()),
+                    "case_page_members": members,
                     "case_rename": w.cases.renaming.is_some(),
                     "case_categories": w.cases.page.as_ref().is_some_and(|page| page.categories()),
                     "keychain_explainer": w.cases.explainer,
@@ -244,19 +258,26 @@ fn fixture() -> Result<(String, Vec<mdoc_pii::Detection>)> {
 }
 
 fn document(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>> {
-    let document = Document::open(path.to_path_buf()).map_err(|e| e.to_string())?;
+    // Use the same admission and identity normalization as an OS file drop.
+    // Injecting Document::open into a blank tab bypasses its identity and can
+    // leave /var and /private/var spellings on opposite sides of a case join.
     d.change(|w, window, cx| {
-        w.new_tab(window, cx);
-        let view = w.active_view().unwrap();
-        view.update(cx, |v, cx| {
-            v.editor
-                .update(cx, |e, cx| e.set_text(document.saved.clone(), cx));
-            v.session.replace(document);
-            v.lifecycle.keep_blank();
-        });
+        w.drop_files(
+            &gpui::ExternalPaths(vec![path.to_path_buf()].into()),
+            false,
+            window,
+            cx,
+        );
+    })?;
+    d.settle()?;
+    d.change(|w, window, cx| {
         window.focus(&w.focus, cx);
-        view
-    })
+        w.active_view().filter(|view| {
+            let view = view.read(cx);
+            !view.lifecycle.loading() && view.session.document.path.is_some()
+        })
+    })?
+    .ok_or_else(|| "fixture drop did not open its document".into())
 }
 
 /// The folder sheet (ADR 0075) for synthetic folders in the temporary
