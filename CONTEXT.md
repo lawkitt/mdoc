@@ -395,6 +395,17 @@ and Windows x64. Other platforms build from source, unsupported.
 **Update check**: detection-only comparison of the running version with the
 newest GitHub Release; shows Settings → Updates and never installs ([ADR 0038](docs/adr/0038-update-check.md)).
 
+**Local CI**: the pre-merge test gate on the maintainer's Windows PC and Mac:
+a runner that tests PR heads from branches in the repository and posts a
+local status for each OS. Hosted CI keeps the Ubuntu lint on PRs, `main` and
+releases ([ADR 0082](docs/adr/0082-local-ci.md)).
+
+**Local status**: the `local/windows` or `local/macos` commit status local CI
+posts on a PR head; with `lint (ubuntu)`, the checks a code PR needs green.
+
+**CI checkout**: local CI's own clone of the repository on a machine, separate
+from lanes and worktrees, with its own `target/`.
+
 **Release gate**: checks a release must pass on every shipped target: the OCR
 smoke test before packaging, and the packaged-app self-test (`just
 smoke-package`) on the built artifact itself.

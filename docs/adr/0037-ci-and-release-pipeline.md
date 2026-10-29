@@ -1,7 +1,8 @@
 # CI and release pipeline
 
 Status: Accepted, 2026-10-10. Signing amended by [ADR 0039](0039-macos-signing-and-notarization.md);
-CI jobs and cache amended by [ADR 0070](0070-ci-speed-and-script-hygiene.md).
+CI jobs and cache amended by [ADR 0070](0070-ci-speed-and-script-hygiene.md);
+the pre-merge test gate moved to local CI by [ADR 0082](0082-local-ci.md).
 
 ## Problem
 

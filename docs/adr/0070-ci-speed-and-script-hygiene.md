@@ -1,7 +1,8 @@
 # CI speed and script hygiene
 
 Status: Accepted, 2026-10-26; amended 2026-10-28. Amends
-[ADR 0037](0037-ci-and-release-pipeline.md) (CI jobs and cache).
+[ADR 0037](0037-ci-and-release-pipeline.md) (CI jobs and cache). Runners,
+target, test runner and the PR gate amended by [ADR 0082](0082-local-ci.md).
 
 ## Problem
 
