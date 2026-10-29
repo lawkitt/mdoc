@@ -533,6 +533,38 @@ fn without_aliases_the_box_hides_and_a_left_reply_restores_nothing(cx: &mut Test
     });
 }
 
+/// The reply editor is one Tab stop: the box only rings it. Tracking the
+/// editor's handle on the box too left a duplicate stop that ⇧Tab looped on,
+/// which hung the What-you-did popover's Tab containment (ADR 0079).
+#[gpui::test]
+fn the_reply_box_is_one_tab_stop(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    open_share(&view, cx);
+    let editor = cx.update(|_, cx| view.read(cx).reply_box().unwrap().focus_handle(cx));
+    for backwards in [true, false] {
+        cx.update(|window, cx| {
+            window.focus(&editor, cx);
+            if backwards {
+                window.focus_prev(cx);
+            } else {
+                window.focus_next(cx);
+            }
+            assert!(!editor.is_focused(window), "backwards: {backwards}");
+            if backwards {
+                window.focus_next(cx);
+            } else {
+                window.focus_prev(cx);
+            }
+            assert!(
+                editor.is_focused(window),
+                "and back, backwards: {backwards}"
+            );
+        });
+    }
+}
+
 /// Space, ⌫ and Enter typed in the box edit the reply; none reaches the
 /// Replacements list's bindings (ADR 0048). Share does not mount the list's
 /// handlers today; `!ReplyBox` in `LIST` keeps this true if it ever does.

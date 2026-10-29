@@ -37,6 +37,14 @@ impl FocusRing {
         self.deferred = false;
         self
     }
+
+    /// Ring a child that tracks `focus` itself, such as an editor. GPUI
+    /// inserts every tracked handle into the Tab order, and the same handle
+    /// tracked twice leaves a duplicate stop that `focus_prev` loops on.
+    pub fn ring_for(mut self, focus: &FocusHandle) -> Self {
+        self.focus = Some(focus.clone());
+        self
+    }
 }
 
 struct RingFocus(FocusHandle);

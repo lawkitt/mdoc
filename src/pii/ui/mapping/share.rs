@@ -242,8 +242,9 @@ impl DocumentView {
                         .child("AI REPLY"),
                 )
                 .child(
+                    // The editor tracks its own handle; the box only rings it.
                     ui::focus_ring("share-reply-box", theme)
-                        .track_focus(&focus)
+                        .ring_for(&focus)
                         .aria_label("AI reply")
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "share-reply-box".into())
