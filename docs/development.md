@@ -213,6 +213,14 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 Heavy, download and machine-dependent tests run only through these recipes, on
 the Apple Silicon Mac and the Windows x64 PC.
 
+`just test` runs the workspace tests with cargo-nextest, configured in
+`.config/nextest.toml`: a slow-test warning at 60 s, a kill at 2 minutes, and
+the render test one minute past its own watchdog (10 minutes on macOS, 20 on
+Windows); no retries. Doctests, which nextest does not run, follow through
+`cargo test --doc` ([ADR 0082](adr/0082-local-ci.md)). Hosted CI jobs stop at
+15 (lint), 20 (clippy) and 30 (test) minutes, and after each `main` run a
+cache cleanup job deletes older generations of the cargo caches it saved.
+
 ### Shell scripts
 
 Recipes stay one command; anything longer is a Bash script in `scripts/`
