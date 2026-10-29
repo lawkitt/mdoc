@@ -402,6 +402,52 @@ skill) read this section for mdoc's needs.
   stay with the maintainer.
 - **Release runs** follow [release-run.md](release-run.md).
 
+**Profile.** The fleet tools (`fleet-brief`, `fleet-review` in the
+maintainer's config repository) read this block; it restates the rules
+above for them, so change both together.
+
+```toml fleet-profile
+version = 1
+base = "main"
+roadmap = "ROADMAP.md"
+read_first = [
+  "`docs/development.md` (Fleet, Code layout, repository gate)",
+  "`CONTEXT.md` (the terms the item uses)",
+]
+gate = ["just lint", "just test"]
+rules = [
+  "Never run the app against the real profile (`~/Library/Application Support/mdoc`, `%LOCALAPPDATA%\\mdoc`) or touch the real Keychain key; tests use injected stores.",
+]
+stored_data = "`mdoc-store`, encryption or the case file"
+
+[disk]
+per_worktree_gib = 30
+free_gib = 40
+
+[renders]
+produce = "just headless-renders <new-directory>"
+fetch = "gh run download <run-id> --repo lawkitt/mdoc --pattern 'headless-renders-*'"
+done_when = "headless renders of {what}, light and dark (CI uploads them)"
+
+[bookkeeping]
+roadmap_item = "remove item {number} from `{roadmap}` {milestone} in the commit that finishes it (delete only its own lines; do not renumber)"
+issue = "the commit that finishes it says `fixes #{number}`"
+fragment = "add `changes/{slug}.md` (format in `changes/README.md`)"
+
+[machines.macbook-air]
+setup = "Never set `CARGO_TARGET_DIR`: this worktree builds into its own `target/` (a shared one gives stale builds). First build is cold."
+
+[machines.windows]
+disk_check = "check free space on C: (`Get-PSDrive C`; at least 40 GiB; not `just disk`, which fails while another lane builds)"
+lanes = { windows-lane-1 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-2' }
+
+[machines.wsl]
+disk_check = "check free space with `df -h ~` (at least 40 GiB)"
+lanes = { wsl-lane-1 = "~/.t3/worktrees/mdoc/wsl-lane-1" }
+gate = ["cargo test -p mdoc-pii -p mdoc-editor -p mdoc-history"]
+notes = "Only the platform-neutral crates build here; a Linux build of the app is not a shipped target."
+```
+
 ## Releasing
 
 Releases ship only for Apple Silicon macOS (`.dmg`) and Windows x64 (NSIS
