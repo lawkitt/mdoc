@@ -562,9 +562,11 @@ pub fn bind_keys(cx: &mut App) {
 
 pub fn cycle(window: &mut Window, cx: &mut App, group: Option<&FocusHandle>, backwards: bool) {
     let start = window.focused(cx);
-    let mut first = None;
+    let mut seen = Vec::new();
     // One full lap of the window's Tab stops at most; with no stop inside
-    // `group`, focus goes back where it was.
+    // `group`, focus goes back where it was. Stop at any repeat, not only
+    // the first stop: a handle tracked by two elements leaves a duplicate
+    // stop, and the walk from it never comes back to where it began.
     loop {
         if backwards {
             window.focus_prev(cx);
@@ -574,12 +576,9 @@ pub fn cycle(window: &mut Window, cx: &mut App, group: Option<&FocusHandle>, bac
         if group.is_none_or(|group| group.contains_focused(window, cx)) {
             return;
         }
-        let now = window.focused(cx);
-        match &first {
-            None if now.is_some() => first = now,
-            Some(_) if now == first || now.is_none() => break,
-            None => break,
-            _ => {}
+        match window.focused(cx) {
+            Some(now) if !seen.contains(&now) => seen.push(now),
+            _ => break,
         }
     }
     if let Some(start) = start {

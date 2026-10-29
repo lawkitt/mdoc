@@ -39,12 +39,6 @@ merges to `main` on its own when green.
 
 Added at the 2026-10-29 grill ([record](docs/design/roadmap-grill-2026-10-29.md)):
 
-1. **[Cases] Restore in place** ([ADR 0078](docs/adr/0078-restore-in-place.md)).
-   *From Anoni 0.86.1.* An AI reply box in Share restores live into a
-   read-only Reply view, "N values restored · M unrecognised", Copy reply and
-   Open as tab; the reply is kept encrypted in the case.
-   *Done when:* the captured replies restore completely in the Reply view, and
-   a reply survives closing and reopening a case member.
 5. **[PII] Selection bar** ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
    *From Anoni 0.86.1.* The Replace pill splits into "Replace · Person ▾".
    *Done when:* a mouse and a keyboard-only run add a selection in a picked

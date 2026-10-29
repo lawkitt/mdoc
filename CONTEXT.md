@@ -38,10 +38,13 @@ UI label: **Paste AI Response**.
 
 **Reply box**: the Share panel's "AI reply" field that restores a pasted
 reply in place; its summary reads "N values restored · M unrecognised"
+with Next unrecognised, Copy reply and Open as tab. The reply as pasted is
+kept encrypted in its case, or only while the tab is open without a case
 ([ADR 0078](docs/adr/0078-restore-in-place.md)).
 
 **Reply view**: the view switcher's read-only Reply segment showing the
-restored reply; live, like Before / after. Open as tab turns it into a
+restored reply; live, like Before / after, and shown while a reply exists.
+Filling the reply box switches to it. Open as tab turns it into a
 Restore tab.
 
 **Unresolved token**: an alias-shaped token in AI output that matches no case

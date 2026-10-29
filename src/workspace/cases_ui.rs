@@ -409,6 +409,16 @@ impl Workspace {
                     .path
                     .as_deref()
                     .map(session_store::identity);
+                // Its AI reply comes back with it (ADR 0078).
+                let reply = path.as_deref().and_then(|path| {
+                    self.case_coordinator
+                        .case(&case_id)
+                        .and_then(|case| case.reply(path))
+                        .map(str::to_owned)
+                });
+                if let Some(reply) = reply {
+                    view.update(cx, |view, cx| view.load_reply(reply, cx));
+                }
                 if let Some(path) = path
                     && let Some(((), effect)) = self.case_coordinator.edit(&case_id, |case| {
                         (!case.members.contains(&path)).then(|| case.members.push(path))
@@ -526,6 +536,7 @@ impl Workspace {
             cx.notify();
         });
         self.tabs.set_case(id, Some(link.id));
+        self.case_reply_changed(id, cx);
         self.checkpoint(window, cx);
         cx.notify();
         Some(case_id)
@@ -753,6 +764,7 @@ impl Workspace {
             }
         };
         self.tabs.set_case(id, Some(link.id.clone()));
+        self.case_reply_changed(id, cx);
         // Keep members together in the sidebar.
         let last = self.tabs.iter().rposition(|t| {
             t.id() != id
@@ -812,6 +824,8 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         let Some(previous) = previous.as_deref().map(session_store::identity) else {
+            // An untitled member's reply lived only in its tab until now.
+            self.case_reply_changed(id, cx);
             return;
         };
         let Some(view) = self.tab_view(id) else {
@@ -835,10 +849,41 @@ impl Workspace {
             return;
         }
         if let Some(((), effect)) = self.case_coordinator.edit(&link.id, |case| {
-            case.members
-                .contains(&previous)
+            let kept = case.set_reply(&previous, None);
+            (case.members.contains(&previous) || kept)
                 .then(|| case.members.retain(|m| *m != previous))
         }) {
+            self.carry_out_cases(effect.into_iter().collect(), cx);
+        }
+        // The reply follows the member to its new path.
+        self.case_reply_changed(id, cx);
+    }
+    /// Keep the tab's AI reply in its case under the member's path, or drop
+    /// it when cleared (ADR 0078). A member without a path keeps its reply
+    /// only in the tab.
+    pub(super) fn case_reply_changed(&mut self, id: u64, cx: &mut Context<Self>) {
+        let Some(view) = self.tab_view(id) else {
+            return;
+        };
+        let (link, path, reply) = {
+            let v = view.read(cx);
+            (
+                v.case.link().cloned(),
+                v.session
+                    .document
+                    .path
+                    .as_deref()
+                    .map(session_store::identity),
+                v.reply.stored(),
+            )
+        };
+        let (Some(link), Some(path)) = (link, path) else {
+            return;
+        };
+        if let Some(((), effect)) = self
+            .case_coordinator
+            .edit(&link.id, |case| case.set_reply(&path, reply).then_some(()))
+        {
             self.carry_out_cases(effect.into_iter().collect(), cx);
         }
     }
@@ -996,9 +1041,9 @@ impl Workspace {
         self.tabs.set_case(id, None);
         if let Some(path) = path
             && let Some(((), effect)) = self.case_coordinator.edit(&link.id, |case| {
-                case.members
-                    .contains(&path)
-                    .then(|| case.members.retain(|m| *m != path))
+                // The reply stays with the tab, not the case it left.
+                let kept = case.set_reply(&path, None);
+                (case.members.contains(&path) || kept).then(|| case.members.retain(|m| *m != path))
             })
         {
             self.carry_out_cases(effect.into_iter().collect(), cx);

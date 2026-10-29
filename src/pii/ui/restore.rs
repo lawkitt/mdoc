@@ -83,6 +83,7 @@ impl DocumentView {
         };
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(copied));
         self.copied_for_ai = true;
+        self.copied_reply = false;
         self.show_copy_feedback(cx);
     }
     /// Replace the clipboard text with this tab's aliases (ADR 0041 #30):
@@ -138,20 +139,7 @@ impl DocumentView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.can_copy_markdown() {
-            return;
-        }
-        let identities = self.pii.review.export_identities();
-        if identities.is_empty() {
-            self.error = Some(
-                "Paste AI Response needs a document whose names were replaced with aliases. \
-                 Apply replacements, copy the text for the AI, then paste its reply here."
-                    .into(),
-            );
-            cx.emit(crate::workspace::TabEvent::Case(
-                crate::workspace::CaseEvent::MappingMissing,
-            ));
-            cx.notify();
+        if !self.can_copy_markdown() || !self.has_identities_to_restore("Paste AI Response", cx) {
             return;
         }
         let text = cx
@@ -163,6 +151,32 @@ impl DocumentView {
             cx.notify();
             return;
         }
+        self.open_restore_tab(text, cx);
+    }
+    /// Restoring needs identities: without any, `action` explains why and
+    /// a locked case key gets its banner. Returns whether there are some.
+    pub(crate) fn has_identities_to_restore(
+        &mut self,
+        action: &str,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.pii.review.export_identities().is_empty() {
+            return true;
+        }
+        self.error = Some(format!(
+            "{action} needs a document whose names were replaced with aliases. \
+             Apply replacements, copy the text for the AI, then paste its reply here."
+        ));
+        cx.emit(crate::workspace::TabEvent::Case(
+            crate::workspace::CaseEvent::MappingMissing,
+        ));
+        cx.notify();
+        false
+    }
+    /// A new tab with `text` restored against this tab's mapping: Paste AI
+    /// Response, and the reply box's Open as tab (ADR 0078).
+    pub(crate) fn open_restore_tab(&mut self, text: String, cx: &mut Context<Self>) {
+        let identities = self.pii.review.export_identities();
         let name = self.display_name();
         let stem = name.strip_suffix(".md").unwrap_or(&name).to_string();
         cx.emit(crate::workspace::TabEvent::Tabs(

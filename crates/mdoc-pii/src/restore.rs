@@ -206,6 +206,52 @@ impl RestoreMap {
             .map(|t| t.range)
             .collect()
     }
+    /// [`Self::restore`] applied to `text` for reading in place (ADR 0078):
+    /// the restored text, where each restored wording landed and where each
+    /// unresolved token sits in it. Same matching as the restore tab.
+    pub fn restore_in_place(&self, text: &str) -> RestoredText {
+        let restoration = self.restore(text);
+        let mut out = String::with_capacity(text.len());
+        let mut at = 0;
+        for (range, value) in &restoration.edits {
+            out.push_str(&text[at..range.start]);
+            out.push_str(value);
+            at = range.end;
+        }
+        out.push_str(&text[at..]);
+        // An unresolved token moves by the length change of the edits before it.
+        let mut edits = restoration.edits.iter().peekable();
+        let mut delta = 0isize;
+        let unresolved = self
+            .unresolved(text)
+            .into_iter()
+            .map(|range| {
+                while let Some((edit, value)) = edits.next_if(|(e, _)| e.end <= range.start) {
+                    delta += value.len() as isize - edit.len() as isize;
+                }
+                let start = range.start.saturating_add_signed(delta);
+                start..start + range.len()
+            })
+            .collect();
+        RestoredText {
+            restored: restoration.restored_ranges(),
+            values: restoration.values,
+            text: out,
+            unresolved,
+        }
+    }
+}
+
+/// A reply restored for reading in place (ADR 0078).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RestoredText {
+    pub text: String,
+    /// Each restored wording's span in `text`, with its identity index.
+    pub restored: Vec<(Range<usize>, usize)>,
+    /// Distinct identities restored ([`Restoration::values`]).
+    pub values: usize,
+    /// Unresolved alias-shaped tokens' spans in `text`, in order.
+    pub unresolved: Vec<Range<usize>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

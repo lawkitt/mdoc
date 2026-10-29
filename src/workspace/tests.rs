@@ -45,6 +45,7 @@ mod import_flow;
 mod navigation;
 mod notices;
 mod quit_flow;
+mod restore_in_place;
 mod session_writer;
 mod shortcuts_sheet;
 mod sidebar;

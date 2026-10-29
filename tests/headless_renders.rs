@@ -36,6 +36,8 @@ const SCREENS: &[&str] = &[
     "keyboard-shortcuts",
     "find-replace",
     "before-after",
+    "reply-view",
+    "share-reply",
     "decision-history",
     "open-case",
     "case-page",
@@ -245,6 +247,31 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     *name == "find-replace",
                     "stale find bar on {theme}/{name}"
                 );
+                // ADR 0078: the Reply view marks the one invented alias.
+                assert_eq!(
+                    record["state"]["reply_view"],
+                    *name == "reply-view",
+                    "{theme}/{name}"
+                );
+                assert_eq!(
+                    record["state"]["reply_unresolved"],
+                    if matches!(*name, "reply-view" | "share-reply") {
+                        Value::from(1)
+                    } else {
+                        Value::Null
+                    },
+                    "{theme}/{name}"
+                );
+                if matches!(*name, "reply-view" | "share-reply") {
+                    assert!(
+                        record["tab_order"].as_array().unwrap().iter().any(|step| {
+                            step["key_contexts"]
+                                .as_str()
+                                .is_some_and(|contexts| contexts.contains("ReplyBox"))
+                        }),
+                        "reply box missing from Tab walk on {theme}/{name}"
+                    );
+                }
                 assert_eq!(
                     record["state"]["ocr_consent"],
                     *name == "ocr-consent",

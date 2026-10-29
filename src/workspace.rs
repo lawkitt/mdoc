@@ -156,6 +156,9 @@ pub(super) enum CaseEvent {
     OpenPage,
     /// The tab's mapping changed; save it into the tab's case.
     Changed,
+    /// The tab's AI reply changed or was cleared; keep it in the tab's case
+    /// (ADR 0078).
+    Reply,
     /// Add a name to the tab's case before it appears (ADR 0041 #11).
     AddTerm(String),
     /// Keep a dismissed merge hint, as its (shorter, fuller) primary wordings, in the
@@ -1430,6 +1433,7 @@ impl Workspace {
                 self.case_changed(id, cx);
             }
             TabEvent::Case(CaseEvent::Changed) => self.case_changed(id, cx),
+            TabEvent::Case(CaseEvent::Reply) => self.case_reply_changed(id, cx),
             TabEvent::Case(CaseEvent::OpenPage) => {
                 if let Some(case) = self.tabs.get(id).and_then(|tab| tab.record().case.clone()) {
                     self.open_case(&case, window, cx);

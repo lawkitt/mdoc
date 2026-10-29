@@ -601,7 +601,41 @@ fn captured_replies_restore_completely() {
             "{name}: aliases left after Restore: {left:?}"
         );
         assert_eq!(restored, read(&dir.join("expected.md")), "{name}");
+        // The Reply view (ADR 0078) shows the same text, nothing unresolved.
+        let in_place = map.restore_in_place(&reply);
+        assert_eq!(in_place.text, restored, "{name}: in place");
+        assert!(in_place.unresolved.is_empty(), "{name}: in place");
     }
+}
+
+#[test]
+fn restoring_in_place_matches_the_restore_tab_and_marks_what_is_left() {
+    let map = fixture_map();
+    let reply = "**PERSON_1** met PERSON_9, then person 1 and PERSON_2. PERSON_8 left.";
+    let shown = map.restore_in_place(reply);
+    assert_eq!(shown.text, apply(&map, reply));
+    let restored: Vec<_> = shown
+        .restored
+        .iter()
+        .map(|(r, i)| (&shown.text[r.clone()], *i))
+        .collect();
+    assert_eq!(
+        restored,
+        [
+            ("Anna Petrova", 0),
+            ("Anna Petrova", 0),
+            ("Иван Сергеевич Кузнецов", 1)
+        ]
+    );
+    let left: Vec<_> = shown
+        .unresolved
+        .iter()
+        .map(|r| &shown.text[r.clone()])
+        .collect();
+    assert_eq!(left, ["PERSON_9", "PERSON_8"]);
+    assert_eq!(shown.values, 2, "two identities, three mentions");
+    assert_eq!(map.restore(reply).unresolved, shown.unresolved.len());
+    assert_eq!(map.restore_in_place(""), RestoredText::default());
 }
 
 #[test]

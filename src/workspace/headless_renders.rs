@@ -7,7 +7,7 @@ use super::{Workspace, app_actions::bind as bind_app_actions};
 use crate::{
     bind_all_keys, comparison, comparison_ui,
     document_view::DocumentView,
-    pii::ui::{APPLIED_ID, KeepThis, PiiApplyAll, PiiClosePopup},
+    pii::ui::{APPLIED_ID, CompareMode, KeepThis, PiiApplyAll, PiiClosePopup},
     search_session::CloseMarkdownSearch,
     settings_ui::Category,
 };
@@ -167,6 +167,8 @@ impl Driver {
                     "folder_sheet": w.folder_sheets.sheet().map(|s| s.primary_label()),
                     "folder_sheet_ticked": w.folder_sheets.sheet().map(|s| s.ticked_count()),
                     "find_replace": w.active_view().is_some_and(|v| v.read(cx).search.open()),
+                    "reply_view": w.active_view().is_some_and(|v| v.read(cx).compare.as_ref().is_some_and(|c| c.mode == CompareMode::Reply)),
+                    "reply_unresolved": w.active_view().map(|v| v.read(cx)).filter(|v| v.reply.exists()).map(|v| v.reply.restored().unresolved.len()),
                     "decision_history": w.active_view().is_some_and(|v| v.read(cx).history.open),
                     // Counts only: labels name originals, which What you
                     // did never writes to disk (ADR 0079).
@@ -591,6 +593,45 @@ fn scenarios(
     })?;
     records.push(d.capture(out, "before-after")?);
     d.change(|_, window, cx| view.update(cx, |v, cx| v.close_compare(window, cx)))?;
+    // Restore in place (ADR 0078): a reply with one invented alias, in the
+    // Reply view beside Share, then Share alone.
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            v.inspector_share = true;
+            if !v.replacements_open() {
+                v.toggle_replacements_panel(window, cx);
+            }
+            cx.notify();
+        })
+    })?;
+    d.settle()?;
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            let alias = v.pii.review().export_identities()[0].alias.clone();
+            let reply = format!(
+                "## Summary\n\n{alias} keeps the deposit. PERSON_99 is not named in \
+                 the document, so the reply view leaves it marked.\n"
+            );
+            v.fill_reply(&reply, window, cx);
+        })
+    })?;
+    records.push(d.capture(out, "reply-view")?);
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            v.set_view_mode(None, window, cx);
+            // Start this Share Tab walk in the panel. The document editor's
+            // Tab indents text and intentionally stays in its own region.
+            window.focus(&v.replacements_focus(), cx);
+        })
+    })?;
+    records.push(d.capture(out, "share-reply")?);
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            v.fill_reply("", window, cx);
+            v.inspector_share = false;
+            cx.notify();
+        })
+    })?;
     // Undo one replacement, then keep the proposal, as two explicit decisions.
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {

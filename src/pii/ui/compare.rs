@@ -23,14 +23,21 @@ pub(crate) enum CompareMode {
     Side,
     Original,
     Pseudonymized,
+    /// The restored AI reply, read-only (ADR 0078).
+    Reply,
 }
 
 /// The two read-only editors of an open before/after view.
 pub(crate) struct CompareState {
     original: Entity<mdoc_editor::EditorState>,
     current: Entity<mdoc_editor::EditorState>,
+    /// The Reply view's editor (ADR 0078).
+    reply: Entity<mdoc_editor::EditorState>,
     pub(super) left: gpui::ScrollHandle,
     pub(super) right: gpui::ScrollHandle,
+    reply_scroll: gpui::ScrollHandle,
+    /// Reply/review revisions and theme the Reply view shows.
+    reply_key: Option<(u64, u64, style::Theme)>,
     /// Scroll offsets at the last render, to tell which pane moved.
     last: std::cell::Cell<(Pixels, Pixels)>,
     focus: FocusHandle,
@@ -104,8 +111,18 @@ fn mapped_offset(offset: usize, marks: &[(Range<usize>, Range<usize>)], reverse:
     offset.saturating_add_signed(shift)
 }
 
+impl CompareState {
+    pub(super) fn reply_editor(&self) -> &Entity<mdoc_editor::EditorState> {
+        &self.reply
+    }
+}
+
 #[cfg(test)]
 impl CompareState {
+    /// The Reply view's text.
+    pub(crate) fn reply_text(&self, cx: &gpui::App) -> String {
+        self.reply.read(cx).text().to_owned()
+    }
     pub(super) fn current_focus(&self, cx: &gpui::App) -> FocusHandle {
         self.current.read(cx).focus_handle(cx)
     }
@@ -158,6 +175,9 @@ impl DocumentView {
             self.close_compare(window, cx);
             return;
         }
+        self.open_compare(CompareMode::Side, window, cx);
+    }
+    fn open_compare(&mut self, mode: CompareMode, window: &mut Window, cx: &mut Context<Self>) {
         let theme = self.theme.get();
         let pane = |scroll: &gpui::ScrollHandle, window: &mut Window, cx: &mut Context<Self>| {
             let editor = cx.new(|cx| {
@@ -187,6 +207,14 @@ impl DocumentView {
         let (left_scroll, right_scroll) = (gpui::ScrollHandle::new(), gpui::ScrollHandle::new());
         let (original, left) = pane(&left_scroll, window, cx);
         let (current, right) = pane(&right_scroll, window, cx);
+        let reply_scroll = gpui::ScrollHandle::new();
+        let reply = cx.new(|cx| {
+            let mut editor = mdoc_editor::EditorState::new(window, cx);
+            editor.set_markdown_style(crate::style::markdown_style(theme), cx);
+            editor.set_read_only(true, cx);
+            editor.set_autoscroll(reply_scroll.clone());
+            editor
+        });
         self.pii.dismiss_popup();
         let hid_preview = self.preview.hide();
         let focus = cx.focus_handle();
@@ -194,8 +222,11 @@ impl DocumentView {
         self.compare = Some(CompareState {
             original,
             current,
+            reply,
             left: left_scroll,
             right: right_scroll,
+            reply_scroll,
+            reply_key: None,
             last: Default::default(),
             focus,
             key: None,
@@ -204,7 +235,7 @@ impl DocumentView {
             marks: Vec::new(),
             hid_preview,
             original_only: false,
-            mode: CompareMode::Side,
+            mode,
             _subscriptions: [left, right],
         });
         self.refresh_compare(window, cx);
@@ -224,13 +255,16 @@ impl DocumentView {
                     self.close_compare(window, cx);
                 }
             }
+            Some(CompareMode::Reply) if !self.reply.exists() => {}
+            Some(mode) if mode != CompareMode::Reply && !self.has_applied_aliases() => {}
             Some(mode) => {
                 if self.compare.is_none() {
-                    self.toggle_compare(window, cx);
+                    self.open_compare(mode, window, cx);
                 }
                 if let Some(state) = self.compare.as_mut() {
                     state.mode = mode;
                 }
+                self.refresh_compare(window, cx);
                 cx.notify();
             }
         }
@@ -265,7 +299,7 @@ impl DocumentView {
     }
     /// The floating pill at the bottom of the document (ADR 0048): zoom
     /// always; Edit · Original · Pseudonymized · Side by side once aliases are
-    /// applied (ADR 0046).
+    /// applied (ADR 0046), and Reply while a reply exists (ADR 0078).
     pub(crate) fn view_switcher(
         &self,
         window: &mut Window,
@@ -362,24 +396,31 @@ impl DocumentView {
                                 this.wake_switcher(cx);
                             }
                         }))
-                        .when(views, |v| {
+                        .when(views || self.reply.exists(), |v| {
                             v.child(segment("view-edit", "Edit", None))
-                                .child(segment(
-                                    "view-original",
-                                    "Original",
-                                    Some(CompareMode::Original),
-                                ))
-                                .child(segment(
-                                    "view-pseudonymized",
-                                    "Pseudonymized",
-                                    Some(CompareMode::Pseudonymized),
-                                ))
-                                .child(segment(
-                                    "view-side",
-                                    "Side by side",
-                                    Some(CompareMode::Side),
-                                ))
-                                .child(div().w(px(1.)).h(px(16.)).mx_1().bg(palette.border))
+                        })
+                        .when(views, |v| {
+                            v.child(segment(
+                                "view-original",
+                                "Original",
+                                Some(CompareMode::Original),
+                            ))
+                            .child(segment(
+                                "view-pseudonymized",
+                                "Pseudonymized",
+                                Some(CompareMode::Pseudonymized),
+                            ))
+                            .child(segment(
+                                "view-side",
+                                "Side by side",
+                                Some(CompareMode::Side),
+                            ))
+                        })
+                        .when(self.reply.exists(), |v| {
+                            v.child(segment("view-reply", "Reply", Some(CompareMode::Reply)))
+                        })
+                        .when(views || self.reply.exists(), |v| {
+                            v.child(div().w(px(1.)).h(px(16.)).mx_1().bg(palette.border))
                         })
                         .child(zoom_step(
                             "zoom-out",
@@ -430,6 +471,16 @@ impl DocumentView {
         // moves to the view, so Esc still reaches it.
         if self.editor.read(cx).focus_handle(cx).is_focused(window) {
             window.focus(&state.focus, cx);
+        }
+        // The Reply view without a reply goes back to the editor. Only the
+        // showing view is refreshed: switching to Reply refreshes it then.
+        if state.mode == CompareMode::Reply {
+            if self.reply.exists() {
+                self.refresh_reply_view(cx);
+            } else {
+                self.close_compare(window, cx);
+            }
+            return;
         }
         let editor = self.editor.read(cx);
         let key = Some((
@@ -576,6 +627,71 @@ impl DocumentView {
         state.shown = shown;
         state.before = before;
         state.marks = spans;
+    }
+    /// The Reply view follows the reply and the mapping (ADR 0078); cheap
+    /// when neither changed.
+    fn refresh_reply_view(&mut self, cx: &mut Context<Self>) {
+        self.refresh_reply();
+        let Some(state) = self.compare.as_ref() else {
+            return;
+        };
+        let key = Some((
+            self.reply.revision(),
+            self.pii.review.revision(),
+            self.theme.get(),
+        ));
+        if key == state.reply_key {
+            return;
+        }
+        let theme = self.theme.get();
+        let text = self.reply.restored().text.clone();
+        let marks = self.reply_annotations();
+        state.reply.clone().update(cx, |editor, cx| {
+            editor.set_markdown_style(crate::style::markdown_style(theme), cx);
+            if editor.text() != text {
+                editor.set_text(text, cx);
+            }
+            let revision = editor.revision();
+            editor.set_annotations(revision, marks, cx);
+        });
+        if let Some(state) = self.compare.as_mut() {
+            state.reply_key = key;
+        }
+    }
+    /// Scroll the Reply view to `offset` in the restored text and flash the
+    /// token there.
+    pub(super) fn reveal_in_reply(&mut self, offset: usize, cx: &mut Context<Self>) {
+        let Some(state) = self.compare.as_ref() else {
+            return;
+        };
+        let scroll = &state.reply_scroll;
+        let viewport = scroll.bounds();
+        if let Some(top) = state.reply.read(cx).offset_screen_top(offset)
+            && (top < viewport.top() || top + px(24.) > viewport.bottom())
+        {
+            let delta = top - viewport.top() - px(48.);
+            let mut position = scroll.offset();
+            position.y = (position.y - delta).clamp(-scroll.max_offset().y, px(0.));
+            scroll.set_offset(position);
+        }
+        if !cx.reduce_motion() {
+            let red = crate::style::markdown_style(self.theme.get()).alert_caution;
+            let id = super::restore::UNRESOLVED_ID | offset as u64;
+            state.reply.clone().update(cx, |editor, cx| {
+                let strong = (Hsla { a: 0.45, ..red }, Hsla { a: 0.95, ..red });
+                editor.flash_annotations(
+                    mdoc_editor::AnnotationFlash {
+                        ids: HashSet::from([id]),
+                        from: strong,
+                        peak: strong,
+                        duration: std::time::Duration::from_millis(900),
+                        mark: None,
+                    },
+                    cx,
+                );
+            });
+        }
+        cx.notify();
     }
     /// Show the replacement at `offset` (in the editor text) in both columns:
     /// scroll it into view when it is outside, then mark and flash it.
@@ -747,7 +863,9 @@ impl DocumentView {
                 )
                 .child(label)
         };
+        let reply = state.mode == CompareMode::Reply;
         let (show_left, show_right) = match state.mode {
+            CompareMode::Reply => (false, false),
             CompareMode::Original => (true, false),
             CompareMode::Pseudonymized => (false, true),
             CompareMode::Side => (
@@ -757,7 +875,11 @@ impl DocumentView {
         };
         let close = ui::floating_button(
             "close-compare",
-            "Close before / after (Esc)",
+            if reply {
+                "Close reply (Esc)"
+            } else {
+                "Close before / after (Esc)"
+            },
             ui::Icon::Close,
             "Close",
             theme,
@@ -803,6 +925,23 @@ impl DocumentView {
                     )
                     .when(!show_right, |v| v.absolute().inset_0().invisible()),
                 )
+                // The restored reply over both, read-only (ADR 0078).
+                .when(reply, |v| {
+                    v.child(
+                        div()
+                            .when(cfg!(test), |v| v.debug_selector(|| "reply-view".into()))
+                            .absolute()
+                            .inset_0()
+                            .flex()
+                            .bg(palette.bg)
+                            .child(column(
+                                "compare-reply",
+                                &state.reply_scroll,
+                                &state.reply,
+                                label("compare-label-reply", "Reply", &state.reply_scroll),
+                            )),
+                    )
+                })
                 .child(div().absolute().top(px(12.)).right(px(20.)).child(close))
                 .into_any_element(),
         )

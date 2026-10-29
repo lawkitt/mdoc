@@ -1,13 +1,13 @@
 //! The Inspector's Share tab (ADR 0048 variant C): everything that takes the
-//! pseudonymized document out, and brings the AI's reply back.
+//! pseudonymized document out, and an AI reply box that restores in place
+//! with Copy reply and Open as tab (ADR 0078).
 use super::Selection;
 use crate::{
     document_view::{CopyMarkdown, DocumentView, SaveAs},
     pii::ui::{APPLIED_ID, CopyForAi, KEPT_ID},
     style, ui,
-    workspace::PasteAiResponse,
 };
-use gpui::{AnyElement, App, Context, Window, div, prelude::*, px};
+use gpui::{AnyElement, App, Context, Focusable, Window, div, prelude::*, px};
 
 impl DocumentView {
     /// Review | Share, the Inspector's two tabs.
@@ -161,7 +161,7 @@ impl DocumentView {
                             .flex_wrap()
                             .gap_2()
                             .child(
-                                ui::primary_button("share-copy-markdown", if copied && !self.copied_for_ai { "Copied" } else { "Copy Markdown" }, theme, true)
+                                ui::primary_button("share-copy-markdown", if copied && !self.copied_for_ai && !self.copied_reply { "Copied" } else { "Copy Markdown" }, theme, true)
                                     .when(cfg!(test), |v| v.debug_selector(|| "share-copy-markdown".into()))
                                     .on_click(cx.listener(|this, _, window, cx| this.copy_markdown(&CopyMarkdown, window, cx))),
                             )
@@ -170,17 +170,7 @@ impl DocumentView {
                                     .on_click(|_, window, cx| window.dispatch_action(Box::new(SaveAs), cx)),
                             ),
                     )
-                    .child(section("Bring the reply back"))
-                    .child(note("Copy the AI's answer, then paste it here: a new tab shows it with the real names restored.".into()))
-                    .child(
-                        ui::primary_button("share-paste-reply", "Paste AI reply", theme, aliases)
-                            .when(cfg!(test), |v| v.debug_selector(|| "share-paste-reply".into()))
-                            .on_click(move |_, window, cx| {
-                                if aliases {
-                                    window.dispatch_action(Box::new(PasteAiResponse), cx)
-                                }
-                            }),
-                    )
+                    .when(aliases || self.reply.exists(), |v| v.children(self.reply_section(cx)))
                     .child(section("Case"))
                     .child(match case {
                         Some(link) => ui::control("share-case-page", "", theme, true)
@@ -220,6 +210,147 @@ impl DocumentView {
 }
 
 impl DocumentView {
+    /// The "AI reply" box under Copy for AI (ADR 0078): pasting restores at
+    /// once into the Reply view; the summary counts what came back.
+    fn reply_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let editor = self.reply_box()?.clone();
+        let theme = self.theme.get();
+        let p = theme.pdf_style();
+        let focus = editor.read(cx).focus_handle(cx);
+        let exists = self.reply.exists();
+        let restorable = self.reply.restorable();
+        let unresolved = self.reply.restored().unresolved.len();
+        let copied = self.copy_feedback.is_some() && self.copied_reply;
+        let muted = |text: String| {
+            div()
+                .text_size(px(12.))
+                .text_color(p.header_muted)
+                .child(text)
+        };
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(
+                    div()
+                        .pt_3()
+                        .pb_1()
+                        .text_size(px(11.))
+                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .text_color(p.header_muted)
+                        .child("AI REPLY"),
+                )
+                .child(
+                    // The editor tracks its own handle; the box only rings it.
+                    ui::focus_ring("share-reply-box", theme)
+                        .ring_for(&focus)
+                        .aria_label("AI reply")
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "share-reply-box".into())
+                        })
+                        .key_context("ReplyBox")
+                        .min_h(px(72.))
+                        .max_h(px(180.))
+                        .overflow_y_scroll()
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .border_1()
+                        .border_color(p.border)
+                        .bg(p.bg)
+                        .text_size(px(13.))
+                        .cursor_text()
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.focus_reply_box(window, cx)),
+                        )
+                        .child(editor),
+                )
+                .child(if exists {
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_start()
+                        .gap_1()
+                        .child(muted(self.reply.summary()).when(cfg!(test), |v| {
+                            v.debug_selector(|| "share-reply-summary".into())
+                        }))
+                        .when(unresolved > 0, |v| {
+                            v.child(
+                                ui::control(
+                                    "share-next-unrecognised",
+                                    "Next unrecognised",
+                                    theme,
+                                    true,
+                                )
+                                .when(cfg!(test), |v| {
+                                    v.debug_selector(|| "share-next-unrecognised".into())
+                                })
+                                .text_size(px(12.))
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| this.next_unrecognised(window, cx),
+                                )),
+                            )
+                        })
+                        .when(!restorable, |v| {
+                            v.child(
+                                muted("No aliases are applied, so nothing can be restored.".into())
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "share-reply-nothing".into())
+                                    }),
+                            )
+                        })
+                        .into_any_element()
+                } else {
+                    muted("Paste the AI's answer: the real names come back here at once.".into())
+                        .into_any_element()
+                })
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap_2()
+                        .child(
+                            ui::primary_button(
+                                "share-copy-reply",
+                                if copied { "Copied" } else { "Copy reply" },
+                                theme,
+                                restorable,
+                            )
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "share-copy-reply".into())
+                            })
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    if restorable {
+                                        this.copy_reply(cx)
+                                    }
+                                },
+                            )),
+                        )
+                        .child(
+                            ui::primary_button(
+                                "share-open-reply",
+                                "Open as tab",
+                                theme,
+                                restorable,
+                            )
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "share-open-reply".into())
+                            })
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    if restorable {
+                                        this.open_reply_as_tab(cx)
+                                    }
+                                },
+                            )),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
     /// Hovering a replacement shows what it is; a click opens the mention
     /// bar (ADR 0048).
     pub(crate) fn replacement_tip(&self, window: &Window, cx: &App) -> Option<AnyElement> {
