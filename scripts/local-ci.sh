@@ -329,7 +329,7 @@ check_job() {
   local step since limit rc=0 on
   on="$run_base@$(short "$run_base_sha")"
   if kill -0 "$run_pid" 2>/dev/null; then
-    read -r step since <"$run_dir/.step" 2>/dev/null || return 0
+    read -r step since 2>/dev/null <"$run_dir/.step" || return 0
     limit=$(timeout_for "$step")
     if [ $(($(date +%s) - since)) -gt "$limit" ]; then
       log "#$run_pr: just $step passed its $((limit / 60)) min limit"
@@ -343,7 +343,7 @@ check_job() {
   case "$rc" in
     0) finish success "Passed on $on in $(duration $(($(date +%s) - run_start)))" ;;
     1)
-      read -r step _ <"$run_dir/.step" 2>/dev/null || step='?'
+      read -r step _ 2>/dev/null <"$run_dir/.step" || step='?'
       finish failure "Failed in just $step on $on"
       ;;
     *) finish error "Runner error (exit $rc) on $on; see the log" ;;
@@ -416,7 +416,7 @@ write_status() {
     echo "updated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     if [ -n "${run_pr:-}" ]; then
       local step='?' since
-      read -r step since <"$run_dir/.step" 2>/dev/null || since=$run_start
+      read -r step since 2>/dev/null <"$run_dir/.step" || since=$run_start
       echo "running: #$run_pr $(short "$run_head") on $run_base@$(short "$run_base_sha"), just $step for $(duration $(($(date +%s) - since))) ${run_url:-$run_dir}"
     else
       echo "running: nothing"
