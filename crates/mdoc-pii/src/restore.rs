@@ -443,20 +443,19 @@ impl Review {
                 if entry.originals.is_empty() {
                     return None;
                 }
-                // A merge keeps its target's primary. Otherwise use the fullest
-                // form: most characters, then first seen.
-                let primary = self
-                    .identities
-                    .primary_wording(id)
-                    .and_then(|primary| entry.originals.iter().position(|o| o == primary))
-                    .unwrap_or_else(|| {
-                        entry
-                            .originals
-                            .iter()
-                            .enumerate()
-                            .max_by_key(|(i, o)| (o.chars().count(), std::cmp::Reverse(*i)))
-                            .map_or(0, |(i, _)| i)
-                    });
+                // The primary wording is the fullest form: most characters,
+                // then the saved or merge target's primary, then first seen.
+                // The pin only breaks ties, so a longer wording linked later
+                // still becomes primary.
+                let pinned = self.identities.primary_wording(id);
+                let primary = entry
+                    .originals
+                    .iter()
+                    .enumerate()
+                    .max_by_key(|(i, o)| {
+                        (o.chars().count(), pinned == Some(o), std::cmp::Reverse(*i))
+                    })
+                    .map_or(0, |(i, _)| i);
                 entry.originals.swap(0, primary);
                 let wording = entry.originals.remove(0);
                 entry
@@ -521,6 +520,7 @@ impl Review {
                     kept: false,
                     keep_default: false,
                     priority: 0,
+                    detected: false,
                 });
                 self.identities
                     .remember_normalized(original, exported.category, id);

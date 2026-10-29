@@ -531,6 +531,25 @@ fn scenarios(
         // Each baseline precedes its Tab walk, including Appearance in General.
         records.push(d.capture(out, name)?);
     }
+    // Categories to detect with Address and Email off; focus on a chip
+    // scrolls the row into view and shows its ring (ADR 0076).
+    d.change(|w, window, cx| {
+        w.settings.update(cx, |p, cx| {
+            p.show_category(Category::Detection, window, cx);
+            p.render_categories(
+                &[mdoc_pii::Category::Address, mdoc_pii::Category::Email],
+                "PHONE",
+                window,
+                cx,
+            )
+        });
+    })?;
+    d.settle()?;
+    records.push(d.capture(out, "settings-detection-categories")?);
+    d.change(|w, window, cx| {
+        w.settings
+            .update(cx, |p, cx| p.render_categories(&[], "", window, cx))
+    })?;
     // Detection starts on its category tab; one Tab enters the first model radio.
     d.change(|w, window, cx| {
         w.settings

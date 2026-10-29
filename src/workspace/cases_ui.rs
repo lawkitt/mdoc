@@ -452,6 +452,24 @@ impl Workspace {
                     || !view.pii.review().variants().is_empty())
         })
     }
+    /// A new case whose Categories to detect start from Settings › Detection
+    /// (ADR 0076). Existing cases keep their own lists.
+    pub(super) fn new_case(
+        &self,
+        name: String,
+        identities: &[mdoc_pii::restore::ExportedIdentity],
+        member: Option<PathBuf>,
+    ) -> Case {
+        let mut case = Case::new(name, identities, member);
+        case.skip = self
+            .preferences
+            .borrow()
+            .current
+            .as_ref()
+            .map(|p| p.categories.skip.clone())
+            .unwrap_or_default();
+        case
+    }
     /// Save this tab's mapping as a new case named after the document.
     pub(super) fn create_case(
         &mut self,
@@ -464,13 +482,14 @@ impl Workspace {
         if view.read(cx).case.link().is_some() {
             return None;
         }
-        let (name, identities, path) = {
+        let (name, identities, dismissed, path) = {
             let v = view.read(cx);
             let name = v.display_name();
             let name = name.strip_suffix(".md").unwrap_or(&name).to_string();
             (
                 name,
                 v.pii.review().export_identities(),
+                v.dismissed_merge_hints(),
                 v.session.document.path.clone(),
             )
         };
@@ -498,16 +517,21 @@ impl Workspace {
             return None;
         }
         self.resume_locked(window, cx);
-        let case = Case::new(
+        let mut case = self.new_case(
             name,
             &identities,
             path.as_deref().map(session_store::identity),
         );
+        // Hints dismissed before the case existed stay dismissed (ADR 0080).
+        case.dismissed_hints = dismissed;
         let link = CaseLink::of(&case);
         let case_id = case.id.clone();
+        let skip = case.skipped();
         let effect = self.case_coordinator.create(case);
         self.carry_out_cases(effect.into_iter().collect(), cx);
         view.update(cx, |view, cx| {
+            // The case's list, seeded from Settings, now decides its scans.
+            view.case.set_skip(skip);
             view.case.attach(Some(link.clone()));
             cx.notify();
         });

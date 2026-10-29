@@ -358,23 +358,46 @@ impl Case {
                 continue;
             }
             let incoming = StoredIdentity::from_exported(e);
-            // Same alias first, so homonyms stay apart; then a shared original,
-            // whatever the category (a category change renames the alias).
-            let found = self
-                .identities
-                .iter()
-                .position(|s| {
-                    s.names(&incoming.alias) || incoming.previous.iter().any(|p| s.names(p))
+            // The current alias first, so homonyms stay apart and a merge
+            // finds its target rather than the identity it absorbed; then an
+            // earlier alias; then a shared original, whatever the category (a
+            // category change renames the alias).
+            let position = |matches: &dyn Fn(&StoredIdentity) -> bool| {
+                self.identities.iter().position(matches)
+            };
+            let found = position(&|s| s.alias == incoming.alias)
+                .or_else(|| {
+                    position(&|s| {
+                        s.names(&incoming.alias) || incoming.previous.iter().any(|p| s.names(p))
+                    })
                 })
                 .or_else(|| {
-                    self.identities
-                        .iter()
-                        .position(|s| incoming.originals.iter().any(|o| s.originals.contains(o)))
+                    position(&|s| incoming.originals.iter().any(|o| s.originals.contains(o)))
                 });
+            // Identities the member merged into this one are now named only by
+            // its earlier aliases: fold them in, so no two entries share an
+            // alias (ADR 0080).
+            let mut absorbed = Vec::new();
+            let found = found.map(|index| {
+                let mut kept = Vec::with_capacity(self.identities.len());
+                let mut shifted = index;
+                for (i, s) in std::mem::take(&mut self.identities).into_iter().enumerate() {
+                    if i != index && incoming.previous.contains(&s.alias) {
+                        shifted -= usize::from(i < index);
+                        absorbed.push(s);
+                    } else {
+                        kept.push(s);
+                    }
+                }
+                self.identities = kept;
+                shifted
+            });
             // An alias moves to one identity only.
             for (i, other) in self.identities.iter_mut().enumerate() {
                 if Some(i) != found && other.alias != incoming.alias {
-                    other.previous.retain(|p| *p != incoming.alias);
+                    other
+                        .previous
+                        .retain(|p| *p != incoming.alias && !incoming.previous.contains(p));
                 }
             }
             match found {
@@ -386,7 +409,12 @@ impl Case {
                     }
                     stored.alias = incoming.alias.clone();
                     stored.category = incoming.category.clone();
-                    for p in incoming.previous {
+                    let earlier = incoming.previous.into_iter().chain(
+                        absorbed
+                            .iter()
+                            .flat_map(|a| std::iter::once(&a.alias).chain(&a.previous).cloned()),
+                    );
+                    for p in earlier {
                         if !stored.previous.contains(&p) {
                             stored.previous.push(p);
                         }
@@ -394,7 +422,11 @@ impl Case {
                     stored.previous.retain(|p| *p != stored.alias);
                     stored.custom = incoming.custom;
                     let mut originals = incoming.originals;
-                    for o in std::mem::take(&mut stored.originals) {
+                    let known = std::mem::take(&mut stored.originals);
+                    for o in known
+                        .into_iter()
+                        .chain(absorbed.into_iter().flat_map(|a| a.originals))
+                    {
                         if !originals.contains(&o) {
                             originals.push(o);
                         }
@@ -1201,6 +1233,99 @@ mod tests {
         assert!(store.load(&case.id).is_err());
         assert!(store.list().0.is_empty());
         store.delete(&case.id).unwrap();
+    }
+
+    /// Every alias, current or earlier, names one case entry.
+    fn assert_aliases_unique(case: &Case) {
+        let mut seen = std::collections::HashSet::new();
+        for identity in &case.identities {
+            for alias in std::iter::once(&identity.alias).chain(&identity.previous) {
+                assert!(seen.insert(alias.clone()), "{alias} names two entries");
+            }
+        }
+    }
+
+    #[test]
+    fn a_merge_into_a_later_case_identity_folds_the_earlier_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store(dir.path());
+        let mut case = Case::new(
+            "Bennett".into(),
+            &[
+                identity("PERSON_1", Category::Person, &["Ms Bennett"]),
+                identity("ORG_1", Category::Organization, &["Northwind Ltd"]),
+                identity("PERSON_2", Category::Person, &["Maya Bennett"]),
+            ],
+            None,
+        );
+        // The member merged PERSON_1 into PERSON_2, which keeps its alias.
+        let mut merged = identity(
+            "PERSON_2",
+            Category::Person,
+            &["Maya Bennett", "Ms Bennett"],
+        );
+        merged.previous = vec!["PERSON_1".into()];
+        case.merge(&[merged.clone()]);
+        assert_aliases_unique(&case);
+        let people: Vec<_> = case
+            .identities
+            .iter()
+            .filter(|i| i.category == "PERSON")
+            .collect();
+        assert_eq!(people.len(), 1, "{:?}", case.identities);
+        assert_eq!(people[0].alias, "PERSON_2");
+        assert_eq!(people[0].previous, ["PERSON_1"]);
+        assert_eq!(people[0].originals, ["Maya Bennett", "Ms Bennett"]);
+        assert_eq!(case.identities[0].alias, "ORG_1", "order otherwise kept");
+        // Saving and reopening keeps one entry; merging again changes nothing.
+        store.save(&case).unwrap();
+        let mut reopened = store.load(&case.id).unwrap();
+        assert_eq!(reopened, case);
+        reopened.merge(&[merged]);
+        assert_eq!(reopened.identities, case.identities);
+        assert_eq!(reopened.next_alias(Category::Person), "PERSON_3");
+        let exported = reopened.exported();
+        assert_eq!(exported.len(), 2);
+        assert!(
+            exported
+                .iter()
+                .any(|e| e.alias == "PERSON_2" && e.previous == ["PERSON_1"])
+        );
+    }
+
+    #[test]
+    fn a_merge_into_an_earlier_case_identity_keeps_one_entry() {
+        let mut case = Case::new(
+            "Bennett".into(),
+            &[
+                identity("PERSON_1", Category::Person, &["Maya Bennett"]),
+                identity("PERSON_2", Category::Person, &["Ms Bennett"]),
+            ],
+            None,
+        );
+        let mut merged = identity(
+            "PERSON_1",
+            Category::Person,
+            &["Maya Bennett", "Ms Bennett"],
+        );
+        merged.previous = vec!["PERSON_2".into()];
+        case.merge(&[merged]);
+        assert_aliases_unique(&case);
+        assert_eq!(case.identities.len(), 1);
+        assert_eq!(case.identities[0].alias, "PERSON_1");
+        assert_eq!(case.identities[0].previous, ["PERSON_2"]);
+    }
+
+    #[test]
+    fn an_old_case_without_dismissed_hints_opens() {
+        let mut json = serde_json::to_value(fixture_case()).unwrap();
+        json.as_object_mut()
+            .unwrap()
+            .remove("dismissed_hints")
+            .unwrap();
+        let old: Case = serde_json::from_value(json).unwrap();
+        assert!(old.dismissed_hints.is_empty());
+        assert_eq!(old, fixture_case());
     }
 
     #[test]

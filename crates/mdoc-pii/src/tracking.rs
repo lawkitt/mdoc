@@ -141,6 +141,30 @@ fn compose_adjacent(first: &SourceEdit, next: &SourceEdit) -> Option<SourceEdit>
     })
 }
 impl Tracking {
+    /// Whether identity `id` replaced text now or anywhere in undo history,
+    /// or owns a mention by assignment.
+    pub(crate) fn uses_identity(&self, id: u64) -> bool {
+        let names = |applied: &Applied| {
+            let mut step = Some(applied.step.as_ref());
+            while let Some(current) = step {
+                if current.identity == id {
+                    return true;
+                }
+                step = current.predecessor.as_deref();
+            }
+            false
+        };
+        self.applied.iter().any(names)
+            || self.assignments.iter().any(|a| a.identity == id)
+            || self.journal.values().any(|delta| {
+                delta.removed.iter().chain(&delta.added).any(names)
+                    || delta
+                        .removed_assignments
+                        .iter()
+                        .chain(&delta.added_assignments)
+                        .any(|a| a.identity == id)
+            })
+    }
     pub(crate) fn forget_identity(&mut self, id: u64) {
         let keep = |applied: &Applied| {
             let mut step = Some(applied.step.as_ref());

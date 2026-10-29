@@ -213,6 +213,72 @@ impl Panel {
         rows.child(self.dictionary_summary(theme, cx))
             .into_any_element()
     }
+    /// Tick or untick a category to detect and save; a failed save restores
+    /// the previous list (ADR 0076).
+    pub(crate) fn set_detects(
+        &mut self,
+        category: mdoc_pii::Category,
+        on: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.draft.categories.set(category, on);
+        self.persist(cx);
+    }
+    /// Categories to detect (ADR 0076): one chip per category scans can
+    /// return, all on by default. Saves on change.
+    fn categories_row(&self, theme: Theme, cx: &mut Context<Self>) -> AnyElement {
+        let p = theme.pdf_style();
+        div()
+            .id("settings-detect-categories")
+            .flex()
+            .flex_col()
+            .gap_2()
+            .py_3()
+            .border_b_1()
+            .border_color(p.border)
+            .child(div().text_size(px(13.)).child("Categories to detect"))
+            .child(div().text_size(px(11.)).text_color(p.header_muted).child(
+                "Scans of documents without a case skip categories that are off, and new \
+                 cases start with this list. Names you mark yourself are still replaced.",
+            ))
+            .child(
+                div()
+                    .id("settings-detect-chips")
+                    .role(gpui::Role::Group)
+                    .aria_label("Categories to detect")
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .children(mdoc_pii::Category::DETECTED.into_iter().map(|category| {
+                        let on = self.draft.categories.detects(category);
+                        let id = format!("settings-detect-{}", category.token());
+                        self.scrolled_control(
+                            gpui::SharedString::from(id.clone()),
+                            format!("{} {}", if on { "✓" } else { "○" }, category.label()),
+                            theme,
+                            true,
+                            cx,
+                        )
+                        .when(cfg!(test), move |v| v.debug_selector(move || id.clone()))
+                        .role(gpui::Role::CheckBox)
+                        .aria_label(category.label())
+                        .aria_toggled(if on {
+                            gpui::Toggled::True
+                        } else {
+                            gpui::Toggled::False
+                        })
+                        .when(on, |v| {
+                            v.bg(theme.sidebar_selected())
+                                .border_color(theme.search_accent())
+                        })
+                        .when(!on, |v| v.text_color(p.header_muted))
+                        .on_click(
+                            cx.listener(move |this, _, _, cx| this.set_detects(category, !on, cx)),
+                        )
+                    })),
+            )
+            .into_any_element()
+    }
     fn number_row(&self, index: usize, theme: Theme, cx: &App) -> AnyElement {
         let (id, title, description, input) = if index == 0 {
             (
@@ -324,6 +390,7 @@ impl Panel {
                 .child(div().text_size(px(11.)).text_color(theme.pdf_style().header_muted).child(self.section_note("Detection can miss names and identifiers — review the whole document before sharing.", Model::Pii(self.draft.pseudonymization.model))))
                 .child(div().id("pii-models").role(gpui::Role::RadioGroup).aria_label("Pseudonymization").children(PiiModel::ALL.into_iter().map(|m| self.row(Model::Pii(m), cx))))
                 .child(self.number_row(0, theme, cx))
+                .child(self.categories_row(theme, cx))
                 .child(self.setting_row("Compare pseudonymization", "Compare models on a snapshot without changing your document or defaults.", self.scrolled_quiet("compare-pii", "Compare", theme, true, cx).aria_label("Compare pseudonymization").on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Compare(Model::Pii(PiiModel::Fp16))))), theme)),
             Category::Recognition => {
                 let note = self.section_note("Default when a document suggests no language. Each document’s card picks its own.", Model::Ocr(self.draft.ocr.model));

@@ -24,7 +24,8 @@ pub struct IdentityPolicy {
     kept: HashMap<u64, bool>,
     /// Earlier aliases of merged or seeded identities, following mapping undo.
     retired: HashMap<u64, Vec<String>>,
-    /// A merge keeps the target's primary even for equally long wordings.
+    /// A saved or merge target's primary wording: it wins only among equally
+    /// long wordings, since the primary is the longest full form.
     primary: HashMap<u64, Arc<str>>,
 }
 pub type IdentitySnapshot = Arc<IdentityPolicy>;
@@ -332,6 +333,31 @@ impl Review {
         for id in ids {
             self.forget_identity(id);
         }
+    }
+    /// Stop proposing `category` (ADR 0076): forget its identities that are
+    /// scan proposals only. An identity that replaced text (now or in undo
+    /// history), or that has a manual, case or restored variant, stays.
+    /// Returns how many identities were forgotten.
+    pub fn withdraw_detected(&mut self, category: Category) -> usize {
+        let ids: Vec<_> = self
+            .identities
+            .ids()
+            .filter(|&id| {
+                let mut variants = self
+                    .variants()
+                    .iter()
+                    .filter(|variant| self.variant_identity(variant.id) == Some(id))
+                    .peekable();
+                self.identity(id).is_some_and(|i| i.category == category)
+                    && variants.peek().is_some()
+                    && variants.all(|variant| variant.detected && variant.priority == 0)
+                    && !self.tracking.uses_identity(id)
+            })
+            .collect();
+        for &id in &ids {
+            self.forget_identity(id);
+        }
+        ids.len()
     }
     /// Forget the mapping in live state and metadata history. Text is untouched;
     /// undo/redo cannot bring this mapping back (ADR 0041, ADR 0077).
@@ -706,11 +732,22 @@ impl Review {
         self.sync_identity_variants();
         Ok(())
     }
+    /// Link `from` into `target`, which keeps its alias; `from`'s alias
+    /// retires and keeps restoring (ADR 0041, ADR 0080). All or nothing: an
+    /// error leaves the identities as they were.
     pub fn merge_identity(&mut self, from: u64, target: u64) -> Result<(), String> {
         self.revision.advance();
         if from == target {
             return Ok(());
         }
+        let old = self.identity_snapshot();
+        let merged = self.merge_identity_into(from, target);
+        if merged.is_err() {
+            self.restore_identity_snapshot(old);
+        }
+        merged
+    }
+    fn merge_identity_into(&mut self, from: u64, target: u64) -> Result<(), String> {
         self.identity(target)
             .ok_or("Identity is no longer available.")?;
         let alias = self
