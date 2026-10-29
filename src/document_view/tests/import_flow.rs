@@ -97,6 +97,52 @@ fn set_default_ocr(app: &DocumentView, model: mdoc_store::settings::OcrModel) {
     store.current.as_mut().unwrap().ocr.model = model;
 }
 
+#[gpui::test]
+fn ocr_card_explains_that_a_pick_never_changes_the_default(cx: &mut TestAppContext) {
+    use mdoc_import::recognition::{ENGLISH, RUSSIAN};
+    for theme in [Theme::Light, Theme::Dark] {
+        let (app, cx) = boot(cx);
+        app.update_in(cx, |app, window, cx| {
+            app.theme.set(theme);
+            app.lifecycle.show_source();
+            app.import.job_mut().complete(
+                app.session.generation,
+                Err(import::ImportError::NeedsOcr(
+                    "scan.pdf".into(),
+                    vec![1],
+                    Vec::new(),
+                    1,
+                )),
+            );
+            app.resume_import(window, cx);
+            app.ocr_state = OcrState::Missing;
+        });
+        for languages in [vec![ENGLISH], vec![ENGLISH, RUSSIAN]] {
+            app.update(cx, |app, cx| app.pick_recognition(languages, cx));
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            let reason = cx.debug_bounds("ocr-language-hint").unwrap();
+            let note = cx.debug_bounds("ocr-document-only").unwrap();
+            assert!(note.top() >= reason.bottom());
+            assert!(note.bottom() <= px(760.));
+            cx.update(|_, cx| {
+                assert_eq!(
+                    app.read(cx)
+                        .preferences
+                        .borrow()
+                        .snapshot()
+                        .unwrap()
+                        .ocr
+                        .model,
+                    mdoc_store::settings::OcrModel::V6Small
+                )
+            });
+        }
+    }
+}
+
 /// A pick, a run's choice and a setup's captured model all survive a
 /// Settings change, and setup never leaves the shared state Installing.
 #[gpui::test]

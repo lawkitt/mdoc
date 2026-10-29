@@ -46,6 +46,7 @@ const SCREENS: &[&str] = &[
     "confirm-remove-model",
     "model-comparison",
     "conversion-failed",
+    "ocr-consent",
     "restored-reply",
     "comments",
 ];
@@ -213,6 +214,11 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     record["state"]["find_replace"],
                     *name == "find-replace",
                     "stale find bar on {theme}/{name}"
+                );
+                assert_eq!(
+                    record["state"]["ocr_consent"],
+                    *name == "ocr-consent",
+                    "{theme}/{name}"
                 );
                 assert_eq!(
                     record["state"]["settings"],

@@ -292,7 +292,7 @@ preserving the control's fill and label and checking that both sides of the
 ring remain visible.
 
 Both themes cover Home, a document and its ⋯ menu, Review, the mention popup, model setup
-consent, all six Settings categories (General, Detection, Recognition,
+consent, the OCR language card, all six Settings categories (General, Detection, Recognition,
 Spelling, Cases and About), the dictionary, command palette, the keyboard shortcuts
 sheet, Find and Replace,
 before/after, Open Case, the unlocked and locked case page, case rename/categories, the Keychain explainer preview,
