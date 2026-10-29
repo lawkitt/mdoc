@@ -260,7 +260,7 @@ impl Workspace {
         let (case_id, at) = match target {
             Some(target) => (target.id.clone(), None),
             None => {
-                let case = Case::new(sheet.name().to_string(), &[], None);
+                let case = self.new_case(sheet.name().to_string(), &[], None);
                 let id = case.id.clone();
                 let effect = self.case_coordinator.create(case);
                 self.carry_out_cases(effect.into_iter().collect(), cx);

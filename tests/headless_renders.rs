@@ -30,6 +30,7 @@ const SCREENS: &[&str] = &[
     "settings-spelling",
     "settings-cases",
     "settings-about",
+    "settings-detection-categories",
     "dictionary",
     "command-palette",
     "keyboard-shortcuts",
@@ -312,7 +313,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 );
                 let expected_category = match *name {
                     "settings-general" => Some("General"),
-                    "settings-detection" => Some("Detection"),
+                    "settings-detection" | "settings-detection-categories" => Some("Detection"),
                     "settings-recognition" => Some("Recognition"),
                     "settings-spelling" | "dictionary" => Some("Spelling"),
                     "settings-cases" => Some("Cases"),

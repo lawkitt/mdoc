@@ -283,6 +283,38 @@ impl Default for CasesConfig {
         }
     }
 }
+/// Settings › Detection › Categories to detect (ADR 0076): scans of
+/// documents without a case skip these, and a new case's list starts here.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CategoriesConfig {
+    /// Category tokens scans skip, as in a case's `skip`.
+    pub skip: Vec<String>,
+}
+impl CategoriesConfig {
+    fn is_default(&self) -> bool {
+        self.skip.is_empty()
+    }
+    pub fn skipped(&self) -> std::collections::HashSet<mdoc_pii::Category> {
+        mdoc_pii::Category::ALL
+            .into_iter()
+            .filter(|c| self.skip.iter().any(|s| s == c.token()))
+            .collect()
+    }
+    /// Whether scans of documents without a case detect `category`.
+    pub fn detects(&self, category: mdoc_pii::Category) -> bool {
+        !self.skip.iter().any(|s| s == category.token())
+    }
+    /// Tick or untick `category`; unticking appends it once.
+    pub fn set(&mut self, category: mdoc_pii::Category, detect: bool) {
+        let token = category.token();
+        if detect {
+            self.skip.retain(|s| s != token);
+        } else if self.detects(category) {
+            self.skip.push(token.to_string());
+        }
+    }
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Preferences {
@@ -298,6 +330,10 @@ pub struct Preferences {
     /// Absent in settings saved before saved cases existed.
     #[serde(default)]
     pub cases: CasesConfig,
+    /// Absent while every category is detected, so older files and the
+    /// default file stay as they were.
+    #[serde(default, skip_serializing_if = "CategoriesConfig::is_default")]
+    pub categories: CategoriesConfig,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -308,6 +344,7 @@ impl Default for Preferences {
             spelling: SpellingConfig::default(),
             updates: UpdatesConfig::default(),
             cases: CasesConfig::default(),
+            categories: CategoriesConfig::default(),
         }
     }
 }
@@ -599,6 +636,32 @@ mod tests {
         assert_eq!(load(&path).unwrap(), prefs);
         prefs.spelling.english = false;
         assert_eq!(prefs.spelling.options(), None);
+    }
+    #[test]
+    fn default_categories_detect_everything_and_unticked_ones_roundtrip() {
+        use mdoc_pii::Category;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let defaults = Preferences::default();
+        assert!(
+            Category::ALL
+                .into_iter()
+                .all(|c| defaults.categories.detects(c))
+        );
+        let mut prefs = Preferences::default();
+        prefs.categories.set(Category::Address, false);
+        prefs.categories.set(Category::Email, false);
+        prefs.categories.set(Category::Address, false);
+        assert_eq!(prefs.categories.skip, ["ADDRESS", "EMAIL"]);
+        save(&path, &prefs).unwrap();
+        let loaded = load(&path).unwrap();
+        assert_eq!(loaded, prefs);
+        assert_eq!(
+            loaded.categories.skipped(),
+            [Category::Address, Category::Email].into()
+        );
+        prefs.categories.set(Category::Address, true);
+        assert_eq!(prefs.categories.skip, ["EMAIL"]);
     }
     #[test]
     fn removed_models_require_explicit_reset_without_rewriting_preferences() {

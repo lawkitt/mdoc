@@ -1,10 +1,14 @@
 //! Immutable scan jobs and generation/revision/configuration validation.
 use crate::{document_view::DocumentView, settings_ui};
 use gpui::Context;
+use mdoc_pii::Category;
 use mdoc_store::settings;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    collections::HashSet,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 /// A scan only proposes candidates; Apply edits the document explicitly.
@@ -16,6 +20,39 @@ pub(super) struct ScanJob {
 }
 
 impl DocumentView {
+    /// Categories this tab's scans skip: its case's list once it joined one,
+    /// otherwise the Settings default (ADR 0041, ADR 0076).
+    pub(crate) fn scan_skip(&self) -> HashSet<Category> {
+        if self.case.link().is_some() {
+            return self.case.skip().clone();
+        }
+        self.preferences
+            .borrow()
+            .current
+            .as_ref()
+            .map(|p| p.categories.skipped())
+            .unwrap_or_default()
+    }
+    /// Settings › Detection stopped detecting `categories` (ADR 0076). A tab
+    /// without a case drops their unapplied scan proposals; applied
+    /// replacements and manual additions stay. Members follow their case.
+    pub(crate) fn default_categories_unticked(
+        &mut self,
+        categories: &HashSet<Category>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.case.link().is_some() {
+            return;
+        }
+        let withdrawn: usize = categories
+            .iter()
+            .map(|&category| self.pii.review.withdraw_detected(category))
+            .sum();
+        if withdrawn > 0 {
+            self.review_changed(cx);
+            cx.notify();
+        }
+    }
     pub(crate) fn start_pii_scan(&mut self, cx: &mut Context<Self>) {
         if !self.can_copy_markdown() {
             return;
@@ -94,7 +131,8 @@ impl DocumentView {
         self.pii.mapping.show();
         let source = self.editor.read(cx).text().to_owned();
         // A case can switch categories off (ADR 0041 #31); scans skip them.
-        let skip = self.case.skip().clone();
+        // Without a case, Settings › Detection decides (ADR 0076).
+        let skip = self.scan_skip();
         let result = result.map(|mut detections| {
             detections.retain(|d| !skip.contains(&d.category));
             detections

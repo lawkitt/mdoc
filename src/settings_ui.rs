@@ -58,6 +58,8 @@ pub enum Event {
     /// Forget the recent files Home lists (ADR 0048).
     ClearRecents,
     Shortcuts,
+    /// Saved: Settings › Detection stopped detecting these (ADR 0076).
+    CategoriesUnticked(std::collections::HashSet<mdoc_pii::Category>),
 }
 
 struct SetupCompletion {
@@ -415,6 +417,37 @@ impl Panel {
     pub(crate) fn selected_theme(&self) -> ThemeChoice {
         self.theme_choice
     }
+    /// Show some Categories to detect off, unsaved, with keyboard focus on
+    /// the chip `token`, for the Detection render (ADR 0076).
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn render_categories(
+        &mut self,
+        off: &[mdoc_pii::Category],
+        token: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.draft.categories = self
+            .shared
+            .borrow()
+            .current
+            .as_ref()
+            .map(|p| p.categories.clone())
+            .unwrap_or_default();
+        for &category in off {
+            self.draft.categories.set(category, false);
+        }
+        let id =
+            gpui::ElementId::from(gpui::SharedString::from(format!("settings-detect-{token}")));
+        if let Some(focus) = self.controls.borrow().get(&id) {
+            window.focus(focus, cx);
+        }
+        cx.notify();
+    }
     /// Geometry from the three actual segments, cleared before each render:
     /// an omitted section or a choice below the fold cannot pass the contract.
     #[cfg(all(
@@ -703,6 +736,7 @@ impl Panel {
             Category::General => self.draft.updates = defaults.updates,
             Category::Detection => {
                 self.draft.pseudonymization = defaults.pseudonymization;
+                self.draft.categories = defaults.categories;
                 self.threshold.update(cx, |i, cx| {
                     i.set_value(self.draft.pseudonymization.threshold.to_string(), cx)
                 });
@@ -740,6 +774,18 @@ impl Panel {
             .as_ref()
             .is_some_and(|old| old.updates != prefs.updates)
             && prefs.updates.check_automatically;
+        let unticked: std::collections::HashSet<_> = self
+            .shared
+            .borrow()
+            .current
+            .as_ref()
+            .map(|old| {
+                mdoc_pii::Category::ALL
+                    .into_iter()
+                    .filter(|&c| old.categories.detects(c) && !prefs.categories.detects(c))
+                    .collect()
+            })
+            .unwrap_or_default();
         let path = self.shared.borrow().path.clone();
         self.applying = true;
         #[cfg(test)]
@@ -771,6 +817,9 @@ impl Panel {
                             updater::spawn_check(saved_updates.include_prereleases, true, cx);
                         }
                         cx.emit(Event::Applied);
+                        if !unticked.is_empty() {
+                            cx.emit(Event::CategoriesUnticked(unticked));
+                        }
                         if this.save_pending {
                             this.save_pending = false;
                             this.persist(cx);

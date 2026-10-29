@@ -628,6 +628,75 @@ fn reseeding_and_applying_preserves_the_saved_primary_and_retired_alias() {
     );
 }
 
+fn found(source: &str, text: &str, category: Category) -> Detection {
+    let start = source.find(text).unwrap();
+    Detection {
+        range: start..start + text.len(),
+        category,
+        score: 0.9,
+        recognizer: Recognizer::Model,
+    }
+}
+
+#[test]
+fn withdrawing_a_category_forgets_only_unapplied_scan_proposals() {
+    let source = "Ann Lee met Bob Day, Cara and Acme Ltd.";
+    let mut review = Review::default();
+    review
+        .ingest(source, vec![found(source, "Ann Lee", Category::Person)])
+        .unwrap();
+    let text = apply_pending(&mut review, source, 1);
+    assert_eq!(text, "PERSON_1 met Bob Day, Cara and Acme Ltd.");
+    review
+        .ingest(
+            &text,
+            vec![
+                found(&text, "Bob Day", Category::Person),
+                found(&text, "Acme Ltd", Category::Organization),
+            ],
+        )
+        .unwrap();
+    let cara = text.find("Cara").unwrap();
+    review
+        .add_manual(&text, cara..cara + 4, Category::Person)
+        .unwrap();
+
+    assert_eq!(review.withdraw_detected(Category::Person), 1);
+    let originals: Vec<_> = review
+        .variants()
+        .iter()
+        .map(|v| v.original.as_ref())
+        .collect();
+    assert!(!originals.contains(&"Bob Day"), "{originals:?}");
+    assert!(originals.contains(&"Cara") && originals.contains(&"Acme Ltd"));
+    // The applied replacement and its mapping stay.
+    assert_eq!(review.applied().len(), 1);
+    assert!(
+        review
+            .export_identities()
+            .iter()
+            .any(|i| i.alias == "PERSON_1" && i.originals[0].as_ref() == "Ann Lee")
+    );
+    assert_eq!(review.withdraw_detected(Category::Person), 0);
+}
+
+#[test]
+fn withdrawing_a_category_keeps_restored_wordings() {
+    let source = "Dan met Eve.";
+    let mut review = Review::default();
+    review.seed(&[identity("PERSON_1", Category::Person, &["Dan"])], source);
+    review
+        .ingest(source, vec![found(source, "Eve", Category::Person)])
+        .unwrap();
+    assert_eq!(review.withdraw_detected(Category::Person), 1);
+    let originals: Vec<_> = review
+        .variants()
+        .iter()
+        .map(|v| v.original.as_ref())
+        .collect();
+    assert_eq!(originals, ["Dan"]);
+}
+
 #[test]
 fn same_as_into_a_shorter_seeded_identity_restores_the_longest_full_form() {
     // A case knows PERSON_1 only as "Ms Bennett"; this member links the full

@@ -503,6 +503,13 @@ impl Workspace {
                         cx.notify();
                     }
                     settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),
+                    settings_ui::Event::CategoriesUnticked(categories) => {
+                        for view in this.tabs.iter().filter_map(|tab| tab.view().cloned()) {
+                            view.update(cx, |view, cx| {
+                                view.default_categories_unticked(categories, cx)
+                            });
+                        }
+                    }
                 }),
             );
         this

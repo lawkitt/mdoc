@@ -334,6 +334,31 @@ impl Review {
             self.forget_identity(id);
         }
     }
+    /// Stop proposing `category` (ADR 0076): forget its identities that are
+    /// scan proposals only. An identity that replaced text (now or in undo
+    /// history), or that has a manual, case or restored variant, stays.
+    /// Returns how many identities were forgotten.
+    pub fn withdraw_detected(&mut self, category: Category) -> usize {
+        let ids: Vec<_> = self
+            .identities
+            .ids()
+            .filter(|&id| {
+                let mut variants = self
+                    .variants()
+                    .iter()
+                    .filter(|variant| self.variant_identity(variant.id) == Some(id))
+                    .peekable();
+                self.identity(id).is_some_and(|i| i.category == category)
+                    && variants.peek().is_some()
+                    && variants.all(|variant| variant.detected && variant.priority == 0)
+                    && !self.tracking.uses_identity(id)
+            })
+            .collect();
+        for &id in &ids {
+            self.forget_identity(id);
+        }
+        ids.len()
+    }
     /// Forget the mapping in live state and metadata history. Text is untouched;
     /// undo/redo cannot bring this mapping back (ADR 0041, ADR 0077).
     pub fn forget_identity(&mut self, id: u64) {

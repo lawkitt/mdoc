@@ -52,6 +52,18 @@ impl Category {
             Self::Other => "Other",
         }
     }
+    /// What scans can return, in picker order: Categories to detect lists
+    /// these (ADR 0041, ADR 0076).
+    pub const DETECTED: [Self; 8] = [
+        Self::Person,
+        Self::Organization,
+        Self::Email,
+        Self::Phone,
+        Self::Address,
+        Self::Identity,
+        Self::Tax,
+        Self::Bank,
+    ];
     /// Picker order; Other is the catch-all and comes last.
     pub const ALL: [Self; 10] = [
         Self::Person,
@@ -99,6 +111,8 @@ pub struct Variant {
     keep_default: bool,
     /// Manual additions win discovery overlaps, the latest first; 0 when detected.
     priority: u64,
+    /// Seeded by a scan, not by the user, a case or a restored mapping.
+    detected: bool,
 }
 
 #[derive(Clone)]
@@ -509,12 +523,17 @@ impl Review {
             selected.push(detection);
         }
         self.refresh(source);
+        let first = self.next_id;
         selected.sort_by_key(|detection| detection.range.start);
         for detection in selected {
             self.add_seed(&source[detection.range], detection.category);
         }
         self.discover_initial_variants(source);
         self.discover_short_variants(source);
+        // Variants this scan seeded, including the name forms derived from them.
+        for variant in &mut self.candidates.variants {
+            variant.detected |= variant.id > first;
+        }
         self.refresh(source);
         Ok(())
     }
@@ -552,6 +571,7 @@ impl Review {
             kept: false,
             keep_default: false,
             priority: 0,
+            detected: false,
         });
         id
     }

@@ -45,11 +45,6 @@ Added at the 2026-10-29 grill ([record](docs/design/roadmap-grill-2026-10-29.md)
    Open as tab; the reply is kept encrypted in the case.
    *Done when:* the captured replies restore completely in the Reply view, and
    a reply survives closing and reopening a case member.
-4. **[PII] Default categories to detect** ([ADR 0076](docs/adr/0076-settings-categories.md)).
-   *From Anoni 0.86.1.* Settings › Detection chips filter scans without a
-   case and seed new cases.
-   *Done when:* tests cover a caseless scan, a new case's seed, an existing
-   case unchanged, and unticking removing only unapplied proposals.
 5. **[PII] Selection bar** ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
    *From Anoni 0.86.1.* The Replace pill splits into "Replace · Person ▾".
    *Done when:* a mouse and a keyboard-only run add a selection in a picked
