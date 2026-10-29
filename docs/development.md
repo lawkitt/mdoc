@@ -120,7 +120,7 @@ dependency forks.
 | `crates/mdoc-detect` | GUI-free offline detection: the GLiNER2 detector, its verified setup and the structured rules |
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
 | `src/document_view/tests.rs`, `src/workspace/tests.rs` and their `tests/` folders, `src/perf_tests.rs` | Headless flows, one file per owner beside shared helpers, ownership/lifetime checks, and opt-in performance measurements |
-| `src/workspace/headless_renders.rs`, `tests/headless_renders.rs` | Dev-only offscreen screen/Tab evidence and the output contract test |
+| `src/workspace/headless_renders.rs`, `src/workspace/headless_renders/`, `tests/headless_renders.rs`, `tests/headless_screens.txt` | Dev-only offscreen screen/Tab evidence: the driver, one scene module per feature, the output contract test and its screen list (one name per line, `merge=union`) |
 | `crates/mdoc-editor` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |
 | `crates/mdoc-pii`, `crates/mdoc-history` | GUI-free pseudonymization review model and the plain edit transactions it follows |
 | `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |
@@ -213,6 +213,14 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 
 Heavy, download and machine-dependent tests run only through these recipes, on
 the Apple Silicon Mac and the Windows x64 PC.
+
+`just test` runs the workspace tests with cargo-nextest, configured in
+`.config/nextest.toml`: a slow-test warning at 60 s, a kill at 2 minutes, and
+the render test one minute past its own watchdog (10 minutes on macOS, 20 on
+Windows); no retries. Doctests, which nextest does not run, follow through
+`cargo test --doc` ([ADR 0082](adr/0082-local-ci.md)). Hosted CI jobs stop at
+15 (lint), 20 (clippy) and 30 (test) minutes, and after each `main` run a
+cache cleanup job deletes older generations of the cargo caches it saved.
 
 ### Shell scripts
 
@@ -460,9 +468,9 @@ skill) read this section for mdoc's needs.
   `windows-lane-2` on `windows`, `wsl-lane-1` on `wsl`. Each task starts with
   `git switch -c <machine>/<topic> origin/main`.
   Retire other worktrees with `just retire-worktree <path>` once merged.
-  `C:` has about 31 GB free, so new Windows lanes live on `D:` beside the
-  CI checkout: `windows-lane-3` at `D:\t3\worktrees\mdoc\windows-lane-3`,
-  and lanes 1 and 2 move there when free (update the profile with each move). Claude Desktop SSH sessions use these lane
+  `C:` has about 31 GB free, so Windows lanes move to `D:` beside the CI
+  checkout (`D:\t3\worktrees\mdoc\windows-lane-N`), with a third lane
+  there; the profile names each lane once its folder exists. Claude Desktop SSH sessions use these lane
   folders too (`use_worktree: false`), one session or T3 thread per lane.
 - **Models and reviews** follow the fleet skill (fleet ADRs 0016, 0017):
   Opus 5.5 builds, Windows-specific items included; Codex Sol builds only
@@ -523,7 +531,7 @@ setup = "Never set `CARGO_TARGET_DIR`: this worktree builds into its own `target
 
 [machines.windows]
 disk_check = "`Get-PSDrive C, D` for the lane's drive (not `just disk`, which fails while another lane builds)"
-lanes = { windows-lane-1 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-2', windows-lane-3 = 'D:\t3\worktrees\mdoc\windows-lane-3' }
+lanes = { windows-lane-1 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-2' }
 
 [machines.wsl]
 disk_check = "`df -h ~`"

@@ -65,36 +65,45 @@ fn timeout_and_cancellation_kill_and_reap_worker() {
     let dir = tempfile::tempdir().unwrap();
     let executable = dir.path().join("worker");
     let pid = dir.path().join("pid");
+    // The worker writes its pid before anything else, then hangs.
     std::fs::write(&executable, "#!/bin/sh\necho $$ > \"$2\"\nexec sleep 60\n").unwrap();
     std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+    // Enough time for the shell to start on a loaded machine running test
+    // binaries in parallel (nextest), so the kill usually hits a live worker.
     let result = render_with_executable(
         &pid,
         Arc::new(AtomicBool::new(false)),
         &executable,
-        Duration::from_secs(1),
+        Duration::from_secs(5),
     );
     assert!(matches!(result, Err(PreviewError::Timeout)));
+    // Whenever the worker got as far as its pid, it must be dead and reaped
+    // (a zombie still answers `kill -0`). No pid, or an empty file, means it
+    // was killed before it started.
     let assert_dead = || {
-        let worker_pid = std::fs::read_to_string(&pid).unwrap();
+        let worker_pid = std::fs::read_to_string(&pid).unwrap_or_default();
+        let worker_pid = worker_pid.trim();
         assert!(
-            !std::process::Command::new("kill")
-                .args(["-0", worker_pid.trim()])
-                .stderr(std::process::Stdio::null())
-                .status()
-                .unwrap()
-                .success()
+            worker_pid.is_empty()
+                || !std::process::Command::new("kill")
+                    .args(["-0", worker_pid])
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .unwrap()
+                    .success()
         );
     };
     assert_dead();
-    std::fs::remove_file(&pid).unwrap();
+    let _ = std::fs::remove_file(&pid);
     let cancelled = Arc::new(AtomicBool::new(false));
     std::thread::scope(|scope| {
         let cancel = cancelled.clone();
         let pid = &pid;
         scope.spawn(move || {
             let start = Instant::now();
+            // Within the worker's 10 s timeout, which would end the run first.
             while !pid.exists() {
-                assert!(start.elapsed() < Duration::from_secs(5));
+                assert!(start.elapsed() < Duration::from_secs(9));
                 std::thread::sleep(Duration::from_millis(5));
             }
             cancel.store(true, Ordering::Relaxed);

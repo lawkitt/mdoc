@@ -129,12 +129,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   older cache generations after `main` saves, renders retention 7 days, and
   `pull_request` CI for any base branch (stacked PRs, fleet ADR 0016).
   *Done when:* a green `main` run shows them and cache usage is under 10 GB.
-- **Local CI, render speed and render files** ([ADR 0082](docs/adr/0082-local-ci.md)):
-  `opt-level` 2 for `gpui-pre-apple`, `image` and `fdeflate` under ADR 0070's
-  ≤30% cold-build rule, the background PNG encoder on macOS, sharding only on
-  a miss; then scenes in one module per feature and the screen list as a
-  `merge=union` file. *Done when:* the M4 render run is measured against the
-  4-minute `local/macos` target.
 - **Local CI runner** ([ADR 0082](docs/adr/0082-local-ci.md)):
   `scripts/local-ci.sh` and `just local-ci`, the Mac launchd agent, the
   Windows Task Scheduler task and `D:\ci\mdoc` clone, `tailscale serve`

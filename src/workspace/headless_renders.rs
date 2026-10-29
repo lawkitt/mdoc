@@ -1,23 +1,29 @@
 //! Dev-only screen evidence. TestPlatform owns every window: no native window,
 //! application event loop, activation, clipboard or OS prompt is used.
-#[cfg(target_os = "windows")]
+//!
+//! Scenes live in one module per feature; `scenarios` runs them in order, in
+//! each theme. Every screen a scene captures is listed in
+//! `tests/headless_screens.txt`.
+mod cases;
+mod comments;
+mod comparison;
+mod confirm;
+mod decisions;
 mod encoder;
+mod folder_sheet;
+mod import;
+mod navigation;
+mod restore;
+mod review;
+mod search;
+mod settings;
+mod shell;
 
 use super::{Workspace, app_actions::bind as bind_app_actions};
-use crate::{
-    bind_all_keys, comparison, comparison_ui,
-    document_view::DocumentView,
-    pii::ui::{APPLIED_ID, CompareMode, KeepThis, PiiApplyAll, PiiClosePopup},
-    search_session::CloseMarkdownSearch,
-    settings_ui::Category,
-};
-use gpui::{
-    Context, Entity, Focusable, HeadlessAppContext, Keystroke, PromptLevel, Window, prelude::*, px,
-    size,
-};
+use crate::{bind_all_keys, pii::ui::CompareMode};
+use gpui::{Context, HeadlessAppContext, Keystroke, Window, prelude::*, px, size};
 use image::ImageEncoder;
-use mdoc_store::session_store::ThemeChoice;
-use mdoc_store::{session_store::Session, settings};
+use mdoc_store::session_store::{Session, ThemeChoice};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -34,16 +40,21 @@ const MAX_TABS: usize = 128;
 struct Driver {
     cx: HeadlessAppContext,
     window: gpui::AnyWindowHandle,
+    /// This theme's output directory.
+    out: PathBuf,
+    /// One record per captured screen, in capture order.
+    records: Vec<Value>,
     frames: Vec<Value>,
     focus_rings: Vec<Value>,
-    #[cfg(target_os = "windows")]
+    /// PNG encoding overlaps the next frames on a background thread.
     pngs: encoder::Encoder,
 }
 
 impl Driver {
     /// Paired images of the same state: only keyboard focus changes. The
     /// contract test checks pixels, including that the control keeps its fill.
-    fn focus_pair(&mut self, out: &Path, name: &str, target: gpui::FocusHandle) -> Result<()> {
+    fn focus_pair(&mut self, name: &str, target: gpui::FocusHandle) -> Result<()> {
+        let out = self.out.clone();
         let rest = format!("focus-{name}-rest.png");
         let focused = format!("focus-{name}.png");
         self.change(|w, window, cx| window.focus(&w.focus, cx))?;
@@ -108,14 +119,13 @@ impl Driver {
             .capture_screenshot(self.window)
             .map_err(|e| e.to_string())?;
         let ms = start.elapsed().as_secs_f64() * 1000.;
-        #[cfg(target_os = "windows")]
         self.pngs.write(path, image)?;
-        #[cfg(target_os = "macos")]
-        write_png(path, &image)?;
         Ok(ms)
     }
 
-    fn capture(&mut self, out: &Path, name: &str) -> Result<Value> {
+    /// Settles, records the screen's state, its PNG and its Tab walk.
+    fn capture(&mut self, name: &str) -> Result<()> {
+        let out = self.out.clone();
         eprintln!(
             "Rendering {}/{name}",
             out.file_name().unwrap().to_string_lossy()
@@ -227,10 +237,11 @@ impl Driver {
                 break;
             }
         }
-        Ok(
+        self.records.push(
             json!({"screen": name, "state": state, "png": format!("{name}.png"), "raster_readback_ms": raster_ms,
             "tab_order": sequence, "cycle_to": cycle, "truncated": cycle.is_none(), "frames": self.frames}),
-        )
+        );
+        Ok(())
     }
 }
 
@@ -284,648 +295,26 @@ fn fixture() -> Result<(String, Vec<mdoc_pii::Detection>)> {
     Ok((text, detections))
 }
 
-fn document(d: &mut Driver, path: &Path) -> Result<Entity<DocumentView>> {
-    // Use the same admission and identity normalization as an OS file drop.
-    // Injecting Document::open into a blank tab bypasses its identity and can
-    // leave /var and /private/var spellings on opposite sides of a case join.
-    d.change(|w, window, cx| {
-        w.drop_files(
-            &gpui::ExternalPaths(vec![path.to_path_buf()].into()),
-            false,
-            window,
-            cx,
-        );
-    })?;
-    d.settle()?;
-    d.change(|w, window, cx| {
-        window.focus(&w.focus, cx);
-        w.active_view().filter(|view| {
-            let view = view.read(cx);
-            !view.lifecycle.loading() && view.session.document.path.is_some()
-        })
-    })?
-    .ok_or_else(|| "fixture drop did not open its document".into())
-}
-
-/// The folder sheet (ADR 0075) for synthetic folders in the temporary
-/// profile: a small one, one over the 20-file cap, and Add to a loaded case.
-/// Each is cancelled: nothing opens and no key is read.
-fn folder_sheets(
-    d: &mut Driver,
-    out: &Path,
-    document: &Path,
-    case: &str,
-    records: &mut Vec<Value>,
-) -> Result<()> {
-    let root = document.parent().ok_or("fixture directory")?;
-    let write = |folder: &Path, names: &[String]| -> Result<()> {
-        std::fs::create_dir_all(folder).map_err(|e| e.to_string())?;
-        for name in names {
-            std::fs::write(folder.join(name), format!("# {name}\n")).map_err(|e| e.to_string())?;
-        }
-        Ok(())
-    };
-    let matter = root.join("Petrova v Northwind");
-    write(
-        &matter,
-        &[
-            "Engagement letter.md",
-            "README.md",
-            "Timeline.md",
-            "Witness statement.md",
-        ]
-        .map(String::from),
-    )?;
-    write(&matter.join("drafts"), &[])?;
-    write(&matter, &[".notes.md".into()])?;
-    let exhibits = root.join("Exhibits");
-    write(
-        &exhibits,
-        &(1..=24)
-            .map(|n| format!("Exhibit {n:02}.md"))
-            .collect::<Vec<_>>(),
-    )?;
-    for (name, folder, case) in [
-        ("folder-sheet", &matter, None),
-        ("folder-sheet-over-cap", &exhibits, None),
-        ("folder-sheet-add-to-case", &matter, Some(case.to_string())),
-    ] {
-        let folder = super::folder_sheet::DroppedFolder::read(folder, |p| {
-            mdoc_store::document::is_markdown(p)
-        })
-        .ok_or("fixture folder")?;
-        d.change(|w, window, cx| {
-            let pending = super::folder_sheet::Pending {
-                folder,
-                case,
-                at: None,
-            };
-            w.queue_folder(pending, window, cx)
-        })?;
-        records.push(d.capture(out, name)?);
-        d.key("escape")?;
-    }
-    Ok(())
-}
-
-fn scenarios(
-    d: &mut Driver,
-    out: &Path,
-    path: &Path,
-    detections: &[mdoc_pii::Detection],
-) -> Result<Vec<Value>> {
-    let mut records = vec![d.capture(out, "home")?];
-    d.change(|w, _, cx| {
-        w.sidebar.restore(false, Some(false));
-        cx.notify();
-    })?;
-    records.push(d.capture(out, "navigation-disabled")?);
-    d.change(|w, _, cx| {
-        w.sidebar.restore(true, Some(true));
-        cx.notify();
-    })?;
-    let view = document(d, path)?;
-    records.push(d.capture(out, "document")?);
-    d.change(|w, window, cx| {
-        w.sidebar.restore(false, Some(false));
-        window.focus(&w.focus, cx);
-        cx.notify();
-    })?;
-    records.push(d.capture(out, "navigation-enabled")?);
-    // The document is in the middle: Home behind it and a second tab ahead.
-    d.change(|w, window, cx| {
-        w.new_tab(window, cx);
-        w.navigate(true, window, cx);
-        window.focus(&w.focus, cx);
-    })?;
-    records.push(d.capture(out, "navigation-middle")?);
-    let (back, forward) = d.change(|w, _, _| (w.back_focus.clone(), w.forward_focus.clone()))?;
-    d.focus_pair(out, "navigation-back", back)?;
-    d.focus_pair(out, "navigation-forward", forward)?;
-    d.change(|w, _, cx| {
-        w.sidebar.restore(true, Some(true));
-        cx.notify();
-    })?;
-    // Nothing is pseudonymized yet: Copy for AI says why it is off.
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            v.more_open = true;
-            window.focus(&v.more_menu_focus, cx);
-            cx.notify();
-        })
-    })?;
-    records.push(d.capture(out, "more-menu")?);
-    d.change(|_, window, cx| view.update(cx, |v, cx| v.close_more(window, cx)))?;
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            // A Tab in the editor edits text. Restore the fixture before review.
-            let text = std::fs::read_to_string(path).expect("copied fixture");
-            v.editor.update(cx, |e, cx| e.set_text(text.clone(), cx));
-            v.pii
-                .review_mut()
-                .ingest(&text, detections.to_vec())
-                .expect("fixture review");
-            v.review_changed(cx);
-            v.toggle_replacements_panel(window, cx);
-        })
-    })?;
-    records.push(d.capture(out, "review")?);
-    d.change(|_, window, cx| {
-        let region = view.read(cx).toolbar_region.clone();
-        window.focus(&region, cx);
-    })?;
-    d.key("tab")?;
-    let toggle = d.change(|_, window, cx| {
-        assert!(view.read(cx).replacements_open());
-        window.focused(cx).expect("first toolbar control")
-    })?;
-    d.focus_pair(out, "toggle-on", toggle)?;
-    let sidebar = d.change(|w, _, _| {
-        w.sidebar_row_focus
-            .borrow()
-            .get(&w.tabs.active())
-            .expect("selected sidebar row")
-            .clone()
-    })?;
-    d.focus_pair(out, "sidebar-row", sidebar)?;
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            v.inspector_share = true;
-            window.focus(&v.replacements_focus(), cx);
-            cx.notify();
-        });
-    })?;
-    d.settle()?;
-    d.key("tab")?;
-    let review_tab = d.change(|_, window, cx| window.focused(cx).expect("Review tab"))?;
-    d.focus_pair(out, "beside-selected-tab", review_tab)?;
-    d.change(|_, _, cx| {
-        view.update(cx, |v, cx| {
-            v.inspector_share = false;
-            cx.notify();
-        })
-    })?;
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            let variant = &v.pii.review().variants()[0];
-            let id = v
-                .pii
-                .review()
-                .annotation_id(variant.id, &variant.mentions[0])
-                .unwrap();
-            v.activate_annotation(id, window, cx);
-        })
-    })?;
-    records.push(d.capture(out, "mention-popup")?);
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| v.close_pii_popup(&PiiClosePopup, window, cx))
-    })?;
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            v.pii.show_setup(true);
-            window.focus(&v.replacements_focus(), cx);
-            cx.notify();
-        })
-    })?;
-    records.push(d.capture(out, "setup-consent")?);
-    d.change(|_, _, cx| {
-        view.update(cx, |v, cx| {
-            v.preferences
-                .borrow_mut()
-                .current
-                .as_mut()
-                .expect("sandbox preferences")
-                .pseudonymization
-                .model = settings::PiiModel::Fp32;
-            cx.notify();
-        })
-    })?;
-    records.push(d.capture(out, "setup-consent-fp32")?);
-    d.change(|_, _, cx| {
-        view.update(cx, |v, cx| {
-            v.preferences
-                .borrow_mut()
-                .current
-                .as_mut()
-                .expect("sandbox preferences")
-                .pseudonymization
-                .model = settings::PiiModel::Fp16;
-            v.pii.show_setup(false);
-            cx.notify();
-        })
-    })?;
-    // show_settings activates native windows. Call the panel's state flow
-    // directly, even though TestPlatform cannot show a native window.
-    for (category, name) in [
-        (Category::General, "settings-general"),
-        (Category::Detection, "settings-detection"),
-        (Category::Recognition, "settings-recognition"),
-        (Category::Spelling, "settings-spelling"),
-        (Category::Cases, "settings-cases"),
-        (Category::About, "settings-about"),
-    ] {
-        d.change(|w, window, cx| {
-            w.settings
-                .update(cx, |p, cx| p.show_category(category, window, cx));
-        })?;
-        // Each baseline precedes its Tab walk, including Appearance in General.
-        records.push(d.capture(out, name)?);
-    }
-    // Categories to detect with Address and Email off; focus on a chip
-    // scrolls the row into view and shows its ring (ADR 0076).
-    d.change(|w, window, cx| {
-        w.settings.update(cx, |p, cx| {
-            p.show_category(Category::Detection, window, cx);
-            p.render_categories(
-                &[mdoc_pii::Category::Address, mdoc_pii::Category::Email],
-                "PHONE",
-                window,
-                cx,
-            )
-        });
-    })?;
-    d.settle()?;
-    records.push(d.capture(out, "settings-detection-categories")?);
-    d.change(|w, window, cx| {
-        w.settings
-            .update(cx, |p, cx| p.render_categories(&[], "", window, cx))
-    })?;
-    // Detection starts on its category tab; one Tab enters the first model radio.
-    d.change(|w, window, cx| {
-        w.settings
-            .update(cx, |p, cx| p.show_category(Category::Detection, window, cx));
-    })?;
-    d.settle()?;
-    d.key("tab")?;
-    d.settle()?;
-    let row = d.change(|_, window, cx| window.focused(cx).expect("first Settings row"))?;
-    d.focus_pair(out, "settings-row", row)?;
-    d.change(|w, window, cx| w.settings.update(cx, |p, cx| p.open_dictionary(window, cx)))?;
-    records.push(d.capture(out, "dictionary")?);
-    d.key("escape")?;
-    d.change(|w, window, cx| w.settings.update(cx, |p, cx| p.close(window, cx)))?;
-    d.change(|w, window, cx| w.open_palette(window, cx))?;
-    records.push(d.capture(out, "command-palette")?);
-    // Tab may leave a popover's key context. Reset state explicitly between
-    // scenes rather than assuming Escape still reaches the previous overlay.
-    d.change(|w, window, cx| w.close_palette(window, cx))?;
-    // The keyboard shortcuts sheet, opened by its key as people do (ADR 0073).
-    d.key(if cfg!(target_os = "macos") {
-        "cmd-/"
-    } else {
-        "ctrl-/"
-    })?;
-    records.push(d.capture(out, "keyboard-shortcuts")?);
-    d.change(|w, window, cx| w.close_shortcuts(window, cx))?;
-    d.change(|_, window, cx| view.update(cx, |v, cx| v.open_markdown_search(true, window, cx)))?;
-    records.push(d.capture(out, "find-replace")?);
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            v.close_markdown_search(&CloseMarkdownSearch, window, cx)
-        })
-    })?;
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            v.pii.set_decision_clock(|| "14:02".into());
-            v.apply_all_pii(&PiiApplyAll, window, cx);
-            v.toggle_compare(window, cx);
-        })
-    })?;
-    records.push(d.capture(out, "before-after")?);
-    d.change(|_, window, cx| view.update(cx, |v, cx| v.close_compare(window, cx)))?;
-    // Restore in place (ADR 0078): a reply with one invented alias, in the
-    // Reply view beside Share, then Share alone.
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            v.inspector_share = true;
-            if !v.replacements_open() {
-                v.toggle_replacements_panel(window, cx);
-            }
-            cx.notify();
-        })
-    })?;
-    d.settle()?;
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            let alias = v.pii.review().export_identities()[0].alias.clone();
-            let reply = format!(
-                "## Summary\n\n{alias} keeps the deposit. PERSON_99 is not named in \
-                 the document, so the reply view leaves it marked.\n"
-            );
-            v.fill_reply(&reply, window, cx);
-        })
-    })?;
-    records.push(d.capture(out, "reply-view")?);
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            v.set_view_mode(None, window, cx);
-            // Start this Share Tab walk in the panel. The document editor's
-            // Tab indents text and intentionally stays in its own region.
-            window.focus(&v.replacements_focus(), cx);
-        })
-    })?;
-    records.push(d.capture(out, "share-reply")?);
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            v.fill_reply("", window, cx);
-            v.inspector_share = false;
-            cx.notify();
-        })
-    })?;
-    // Undo one replacement, then keep the proposal, as two explicit decisions.
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            let id = v.pii.review().applied()[0].id;
-            v.activate_annotation(APPLIED_ID | id, window, cx);
-        })
-    })?;
-    d.settle()?;
-    d.change(|_, window, cx| window.dispatch_action(Box::new(KeepThis), cx))?;
-    d.settle()?;
-    d.change(|_, window, cx| window.dispatch_action(Box::new(KeepThis), cx))?;
-    d.settle()?;
-    let last = d.change(|_, _, cx| {
-        let v = view.read(cx);
-        v.pii
-            .decisions()
-            .rows(&v.editor.read(cx).history_path())
-            .count()
-            - 1
-    })?;
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            v.close_pii_popup(&PiiClosePopup, window, cx);
-            v.travel_to_decision(last - 1, window, cx);
-            v.open_decision_history(window, cx);
-        })
-    })?;
-    records.push(d.capture(out, "decision-history")?);
-    d.change(|_, window, cx| {
-        let menu = view.read(cx).history.menu.clone();
-        window.focus(&menu, cx);
-    })?;
-    d.settle()?;
-    d.key("tab")?;
-    let row = d.change(|_, window, cx| window.focused(cx).expect("first decision"))?;
-    d.focus_pair(out, "decision-row", row)?;
-    d.change(|_, window, cx| {
-        view.update(cx, |v, cx| {
-            v.travel_to_decision(last, window, cx);
-            v.close_decision_history(window, cx);
-        })
-    })?;
-    d.settle()?;
-    d.change(|w, window, cx| w.show_case_list(window, cx))?;
-    records.push(d.capture(out, "open-case")?);
-    d.change(|w, window, cx| w.close_case_list(window, cx))?;
-    let id = d.change(|w, _, _| w.case_coordinator.cases()[0].id.clone())?;
-    d.change(|w, window, cx| {
-        w.join_case(w.tabs.active(), &id, window, cx);
-        let closed = path.with_file_name("Witness statement.md");
-        std::fs::write(&closed, "# Public witness statement\n").expect("temporary fixture");
-        let (_, effect) = w
-            .case_coordinator
-            .edit(&id, |case| {
-                case.created = 1791763200;
-                case.members
-                    .extend([closed, path.with_file_name("Missing exhibit.md")]);
-                Some(())
-            })
-            .unwrap();
-        w.carry_out_cases(effect.into_iter().collect(), cx);
-        w.open_case(&id, window, cx);
-    })?;
-    records.push(d.capture(out, "case-page")?);
-    // Leave only the cached public name/count, exactly as on a locked launch.
-    let unlocked = d.change(|w, window, cx| {
-        let case = w.case_coordinator.case(&id).unwrap().clone();
-        w.case_coordinator
-            .restore_summaries(vec![mdoc_store::cases::CaseSummary::of(&case)]);
-        w.case_coordinator.hide_for_locked_render();
-        w.open_case(&id, window, cx);
-        case
-    })?;
-    records.push(d.capture(out, "case-page-locked")?);
-    d.change(|w, window, cx| {
-        w.case_coordinator.finish_load(vec![unlocked]);
-        w.show_home(window, cx);
-        w.activate(w.tabs.active(), window, cx);
-        w.open_case(&id, window, cx);
-    })?;
-    d.change(|w, window, cx| w.start_rename_case(id.clone(), window, cx))?;
-    records.push(d.capture(out, "rename-case")?);
-    d.key("escape")?;
-    d.change(|w, window, cx| {
-        w.show_case_page(&id, super::case_page::Place::Categories, window, cx);
-    })?;
-    records.push(d.capture(out, "case-categories")?);
-    d.change(|w, window, cx| w.activate(w.tabs.active(), window, cx))?;
-    d.change(|w, _, cx| {
-        // Preview only. Continue is never invoked and no OS key is read.
-        w.cases.explainer = true;
-        w.explainer_focus_pending = true;
-        cx.notify();
-    })?;
-    records.push(d.capture(out, "keychain-explainer")?);
-    d.change(|w, window, cx| w.cancel_unlock(window, cx))?;
-    folder_sheets(d, out, path, &id, &mut records)?;
-    d.change(|w, window, cx| w.delete_case(id, window, cx))?;
-    records.push(d.capture(out, "confirm-delete-case")?);
-    d.key("escape")?;
-    d.change(|w, window, cx| w.close_tab(w.tabs.active(), window, cx))?;
-    records.push(d.capture(out, "confirm-keep-mapping")?);
-    d.key("escape")?;
-    d.change(|w, window, cx| {
-        w.case_coordinator.note_asked(w.tabs.active());
-        w.close_tab(w.tabs.active(), window, cx);
-    })?;
-    records.push(d.capture(out, "confirm-unsaved")?);
-    d.key("escape")?;
-    d.cx.update_window(d.window, |_, window, cx| {
-        // Render the shared confirm component without starting a removal job.
-        drop(window.prompt(
-            PromptLevel::Warning,
-            &format!(
-                "Remove {} model files?",
-                settings::Model::Pii(settings::PiiModel::Fp16).name()
-            ),
-            Some("Shared runtimes and documents are retained."),
-            &["Remove", "Cancel"],
-            cx,
-        ));
-    })
-    .map_err(|e| e.to_string())?;
-    records.push(d.capture(out, "confirm-remove-model")?);
-    d.key("escape")?;
-    // The comparison uses a second TestWindow, never a native window.
-    let (owner, panel, theme, defaults, input) = d.change(|w, _, cx| {
-        (
-            cx.entity().downgrade(),
-            w.settings.clone(),
-            w.theme.clone(),
-            w.preferences
-                .borrow()
-                .snapshot()
-                .expect("temporary preferences"),
-            comparison::Input::Markdown(Arc::new(view.read(cx).editor.read(cx).text().to_owned())),
-        )
-    })?;
-    let hash = input.hash();
-    let comparison =
-        d.cx.open_window(size(px(WIDTH), px(HEIGHT)), |window, cx| {
-            let view = cx.new(|cx| {
-                comparison_ui::View::new((input, hash), defaults, theme, owner, panel, vec![], cx)
-            });
-            window.focus(&view.read(cx).focus_handle(cx), cx);
-            view
-        })
-        .map_err(|e| e.to_string())?;
-    let workspace_window = d.window;
-    d.window = comparison.into();
-    records.push(d.capture(out, "model-comparison")?);
-    d.cx.update_window(d.window, |_, window, _| window.remove_window())
-        .map_err(|e| e.to_string())?;
-    d.window = workspace_window;
-    let mapping: Vec<Value> = serde_json::from_str(include_str!(
-        "../../tests/fixtures/restore/claude-en/identities.json"
-    ))
-    .map_err(|e| e.to_string())?;
-    let identities = mapping
-        .iter()
-        .map(|identity| {
-            Ok(mdoc_pii::restore::ExportedIdentity {
-                alias: identity["alias"].as_str().ok_or("fixture alias")?.into(),
-                previous: vec![],
-                custom: false,
-                category: mdoc_pii::Category::ALL
-                    .into_iter()
-                    .find(|c| Some(c.token()) == identity["category"].as_str())
-                    .ok_or("fixture category")?,
-                originals: identity["originals"]
-                    .as_array()
-                    .ok_or("fixture originals")?
-                    .iter()
-                    .map(|v| v.as_str().map(Arc::from).ok_or("fixture original"))
-                    .collect::<std::result::Result<_, _>>()?,
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let reply = crate::pii::ui::RestoredReply {
-        text: include_str!("../../tests/fixtures/restore/claude-en/reply.md").into(),
-        identities,
-        source_name: "Claude public EN fixture".into(),
-        case: None,
-    };
-    // A damaged DOCX: the conversion and preview failures as their panes
-    // state them, set directly so no converter or worker runs.
-    d.change(|w, window, cx| {
-        w.new_tab(window, cx);
-        w.active_view().unwrap().update(cx, |v, cx| {
-            let source = PathBuf::from("Damaged agreement.docx");
-            v.lifecycle.show_source();
-            v.preview.show_failure(
-                source,
-                crate::preview::docx_message(&mdoc_import::docx_preview::PreviewError::Package(
-                    "invalid ZIP".into(),
-                ))
-                .to_string(),
-            );
-            v.error = Some(
-                "This document could not be converted because its contents are damaged or incomplete."
-                    .into(),
-            );
-            cx.notify();
-        });
-    })?;
-    records.push(d.capture(out, "conversion-failed")?);
-    // The consent card only: no converter, model download or native runtime.
-    d.change(|w, window, cx| {
-        w.new_tab(window, cx);
-        w.active_view().unwrap().update(cx, |v, cx| {
-            v.lifecycle.show_source();
-            v.import.show_ocr_fixture(v.session.generation);
-            v.resume_import(window, cx);
-            v.ocr_state = crate::document_view::OcrState::Missing;
-            cx.notify();
-        });
-    })?;
-    records.push(d.capture(out, "ocr-consent")?);
-    d.change(|w, window, cx| {
-        w.new_tab(window, cx);
-        w.active_view()
-            .unwrap()
-            .update(cx, |v, cx| v.start_restored(&reply, window, cx));
-    })?;
-    records.push(d.capture(out, "restored-reply")?);
-    // The public DOCX comments fixture supplies the actual Original pane and
-    // its full-width comments toggle, including the content card's clip.
-    let source =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docx-preview/comments.docx");
-    let preview = mdoc_import::docx_preview::render_in_process(
-        &source,
-        Arc::new(std::sync::atomic::AtomicBool::new(false)),
-    )
-    .map_err(|e| e.to_string())?;
-    let comments_view = d.change(|w, window, cx| {
-        w.new_tab(window, cx);
-        let view = w.active_view().unwrap();
-        view.update(cx, |v, cx| {
-            v.begin_preview(source);
-            v.load_preview(preview.pdf_path.clone(), Some(preview), window, cx);
-        });
-        view
-    })?;
-    d.settle()?;
-    d.change(|_, window, cx| {
-        let view = comments_view.read(cx);
-        assert!(
-            view.preview.comment_panel().is_some(),
-            "comments fixture loaded"
-        );
-        let region = view.comments_region.clone();
-        window.focus(&region, cx);
-    })?;
-    d.key("tab")?;
-    let toggle = d.change(|_, window, cx| window.focused(cx).expect("comments toggle"))?;
-    d.focus_pair(out, "comments-toggle", toggle)?;
-    records.push(d.capture(out, "comments")?);
-    // ADR 0080: a synthetic proposal pair, rendered on both shipped targets
-    // in each theme. No scan, model, case key or native window is involved.
-    d.change(|w, window, cx| {
-        w.new_tab(window, cx);
-        w.active_view().unwrap().update(cx, |v, cx| {
-            v.editor.update(cx, |e, cx| {
-                e.set_text("Maya Bennett signed. Ms Bennett agreed.", cx)
-            });
-        });
-    })?;
-    d.settle()?;
-    d.change(|w, window, cx| {
-        w.active_view().unwrap().update(cx, |v, cx| {
-            let text = v.editor.read(cx).text().to_string();
-            v.pii
-                .review_mut()
-                .ingest(
-                    &text,
-                    vec![mdoc_pii::Detection {
-                        range: 0..12,
-                        category: mdoc_pii::Category::Person,
-                        score: 1.,
-                        recognizer: mdoc_pii::Recognizer::Model,
-                    }],
-                )
-                .expect("merge hint fixture");
-            assert_eq!(v.pii.review().merge_hints().len(), 1);
-            v.review_changed(cx);
-            if !v.replacements_open() {
-                v.toggle_replacements_panel(window, cx);
-            }
-            window.focus(&v.replacements_focus(), cx);
-        });
-    })?;
-    records.push(d.capture(out, "merge-hint")?);
-
-    Ok(records)
+/// Every scene in order. Later scenes build on earlier state: the fixture
+/// document, its review and its case.
+fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) -> Result<()> {
+    let view = navigation::scenes(d, path)?;
+    review::scenes(d, &view, path, detections)?;
+    settings::scenes(d)?;
+    shell::scenes(d)?;
+    search::scenes(d, &view)?;
+    review::before_after(d, &view)?;
+    restore::reply_view(d, &view)?;
+    decisions::scenes(d, &view)?;
+    let case = cases::scenes(d, path)?;
+    folder_sheet::scenes(d, path, &case)?;
+    cases::delete(d, case)?;
+    confirm::scenes(d)?;
+    comparison::scenes(d, &view)?;
+    import::scenes(d)?;
+    restore::restored_reply(d)?;
+    comments::scenes(d)?;
+    review::merge_hint(d)
 }
 
 pub(crate) fn run(out: &Path) -> Result<()> {
@@ -1019,9 +408,10 @@ pub(crate) fn run(out: &Path) -> Result<()> {
         let mut d = Driver {
             cx,
             window: window.into(),
+            out: dir,
+            records: Vec::new(),
             frames: Vec::new(),
             focus_rings: Vec::new(),
-            #[cfg(target_os = "windows")]
             pngs: encoder::Encoder::new()?,
         };
         d.change(|w, window, cx| {
@@ -1030,7 +420,8 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             w.show_home(window, cx);
             window.focus(w.focus_regions.home(), cx);
         })?;
-        for mut record in scenarios(&mut d, &dir, &path, &detections)? {
+        scenarios(&mut d, &path, &detections)?;
+        for mut record in d.records.drain(..) {
             record["theme"] = json!(tag);
             screens.push(record);
         }
@@ -1039,7 +430,6 @@ pub(crate) fn run(out: &Path) -> Result<()> {
             focus_rings.push(record);
         }
         // No summary can pass while an encoder is still writing or has failed.
-        #[cfg(target_os = "windows")]
         d.pngs.finish()?;
     }
     // DOCX fixture previews remove their backing directories off-thread.
