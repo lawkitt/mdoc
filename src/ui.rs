@@ -913,7 +913,9 @@ pub fn title_bar(
         .into_any_element()
 }
 
-/// Reveal a focused control inside a scrolling panel without moving document state.
+/// Reveal a control inside a scrolling panel when it gains focus, without
+/// moving document state. Revealing only on arrival leaves the wheel free to
+/// move a focused control away.
 pub fn reveal_focus<E: ParentElement + Styled>(
     mut control: E,
     focus: FocusHandle,
@@ -924,7 +926,22 @@ pub fn reveal_focus<E: ParentElement + Styled>(
     control.relative().child(
         gpui::canvas(
             move |bounds, window, cx| {
-                if !focus.contains_focused(window, cx) {
+                let focused = focus.contains_focused(window, cx);
+                let viewport = scroll.bounds();
+                let ready = viewport.size.height > px(0.);
+                // Whether the control was focused when it last drew. The state
+                // lives only while the control draws in consecutive frames, so a
+                // control that was unmounted counts focus on return as new.
+                let arrived = window.with_global_id(
+                    gpui::ElementId::Name(format!("reveal-{focus:?}").into()),
+                    |id, window| {
+                        window.with_element_state(id, |was: Option<bool>, _| {
+                            let was = was.unwrap_or(false);
+                            (focused && !was && ready, focused && (was || ready))
+                        })
+                    },
+                );
+                if !arrived {
                     return;
                 }
                 // Reveal the outside outline too, rather than scrolling its
@@ -935,10 +952,6 @@ pub fn reveal_focus<E: ParentElement + Styled>(
                     .map(|width| width.to_pixels(window.rem_size()))
                     .fold(px(0.), |a, b| a.max(b));
                 let bounds = bounds.dilate(px(gpui_pdf::FOCUS_RING_OUTSET) + border);
-                let viewport = scroll.bounds();
-                if viewport.size.height <= px(0.) {
-                    return;
-                }
                 let delta = if bounds.top() < viewport.top() {
                     viewport.top() - bounds.top()
                 } else if bounds.bottom() > viewport.bottom() {
@@ -986,5 +999,101 @@ mod tests {
         assert_eq!(super::page_ranges(&[1], 8), "1");
         assert_eq!(super::page_ranges(&[1, 3, 5, 7], 2), "1, 3, …");
         assert_eq!(super::page_ranges(&[], 8), "");
+    }
+}
+
+#[cfg(test)]
+mod reveal_tests {
+    use gpui::prelude::FluentBuilder as _;
+    use gpui::{
+        Context, FocusHandle, InteractiveElement, IntoElement, ParentElement, Render, ScrollHandle,
+        StatefulInteractiveElement, Styled, TestAppContext, Window, div, px, size,
+    };
+
+    struct Panel {
+        focus: FocusHandle,
+        scroll: ScrollHandle,
+        shown: bool,
+    }
+
+    impl Render for Panel {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let control = super::reveal_focus(
+                div().h(px(20.)).track_focus(&self.focus),
+                self.focus.clone(),
+                self.scroll.clone(),
+            );
+            div().size_full().flex().flex_col().child(
+                div()
+                    .id("panel-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .track_scroll(&self.scroll)
+                    .child(div().h(px(2000.)))
+                    .when(self.shown, |v| v.child(control)),
+            )
+        }
+    }
+
+    #[gpui::test]
+    fn focus_is_revealed_on_arrival_only(cx: &mut TestAppContext) {
+        let (panel, cx) = cx.add_window_view(|_, cx| Panel {
+            focus: cx.focus_handle(),
+            scroll: ScrollHandle::new(),
+            shown: true,
+        });
+        cx.simulate_resize(size(px(400.), px(300.)));
+        let draw = |cx: &mut gpui::VisualTestContext| {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            cx.run_until_parked();
+        };
+        let offset =
+            |cx: &mut gpui::VisualTestContext| cx.update(|_, cx| panel.read(cx).scroll.offset().y);
+        draw(cx);
+        cx.update(|window, cx| {
+            let focus = panel.read(cx).focus.clone();
+            window.focus(&focus, cx);
+        });
+        draw(cx);
+        draw(cx);
+        assert!(offset(cx) < px(-1500.), "focus revealed: {:?}", offset(cx));
+
+        // The wheel may move the focused control away.
+        cx.simulate_event(gpui::ScrollWheelEvent {
+            position: gpui::point(px(200.), px(150.)),
+            delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(800.))),
+            ..Default::default()
+        });
+        draw(cx);
+        draw(cx);
+        assert!(offset(cx) > px(-1500.), "scrolled away: {:?}", offset(cx));
+
+        // Unmounted and shown again, it counts as arriving.
+        panel.update(cx, |panel, cx| {
+            panel.shown = false;
+            cx.notify();
+        });
+        draw(cx);
+        cx.update(|_, cx| {
+            panel
+                .read(cx)
+                .scroll
+                .set_offset(gpui::point(px(0.), px(0.)))
+        });
+        panel.update(cx, |panel, cx| {
+            panel.shown = true;
+            cx.notify();
+        });
+        draw(cx);
+        draw(cx);
+        assert!(
+            offset(cx) < px(-1500.),
+            "revealed on return: {:?}",
+            offset(cx)
+        );
     }
 }

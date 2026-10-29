@@ -247,7 +247,7 @@ impl Workspace {
             old.update(cx, |view, _| view.pii.dismiss_popup());
         }
         self.cases.page = None;
-        self.cases.renaming = None;
+        self.end_rename(true, cx);
         self.tabs.show_home();
         window.focus(&self.focus, cx);
         cx.notify();

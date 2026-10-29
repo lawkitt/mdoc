@@ -1060,7 +1060,7 @@ impl Workspace {
             return;
         }
         self.cases.page = None;
-        self.cases.renaming = None;
+        self.end_rename(true, cx);
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| {
                 view.active = false;

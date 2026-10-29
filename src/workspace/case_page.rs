@@ -107,6 +107,10 @@ impl CasePage {
     pub(super) fn test_scroll_bounds(&self) -> gpui::Bounds<gpui::Pixels> {
         self.scroll.bounds()
     }
+    #[cfg(test)]
+    pub(super) fn test_scroll_offset(&self) -> gpui::Pixels {
+        self.scroll.offset().y
+    }
 }
 
 impl Workspace {
@@ -277,7 +281,7 @@ impl Workspace {
         }
         self.cases.list_open = false;
         self.case_list_return = None;
-        self.cases.renaming = None;
+        self.end_rename(true, cx);
         let input = |cx: &mut gpui::Context<SearchInput>, placeholder, context| {
             SearchInput::new(cx)
                 .with_theme(self.theme.clone())
@@ -478,9 +482,21 @@ impl Workspace {
             .flex_col()
             .child(header)
             .child(if detached {
-                ui::card_surface(body.ml(px(style::CARD_MARGIN)), theme)
+                // The card clips its corners; it wraps the scroll area so its
+                // overflow_hidden does not replace the area's scrolling.
+                ui::card_surface(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .flex()
+                        .flex_col()
+                        .ml(px(style::CARD_MARGIN))
+                        .child(body),
+                    theme,
+                )
+                .into_any_element()
             } else {
-                body
+                body.into_any_element()
             })
             .into_any_element()
     }
@@ -566,6 +582,10 @@ impl Workspace {
                 .on_action(cx.listener(|this, _: &CancelCaseName, window, cx| {
                     this.finish_rename(false, window, cx);
                     cx.stop_propagation();
+                }))
+                // A click anywhere else saves the name, like Enter.
+                .on_mouse_down_out(cx.listener(|this, _, window, cx| {
+                    this.finish_rename(true, window, cx);
                 }))
                 .child(input.clone())
                 .into_any_element(),

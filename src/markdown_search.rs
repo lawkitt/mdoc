@@ -30,8 +30,9 @@ actions!(
     ]
 );
 
-/// Every text field's key context.
-pub(crate) const TEXT_FIELDS: &str = "MarkdownSearch || MarkdownReplace || PreviewSearch || PseudonymReplacement || SettingsInput || ReplacementSearch || CommandPalette || ShortcutsFilter";
+/// Every text field's key context. Each `SearchInput` adds `TextInput` to its
+/// own context, so a new field gets the editing keys without being listed.
+pub(crate) const TEXT_FIELDS: &str = "TextInput";
 
 /// Bind the text fields' editing keys: caret and deletion basics here, the
 /// clipboard keys from the shortcuts table (ADR 0073).
