@@ -246,13 +246,23 @@ impl Workspace {
     }
 
     pub(super) fn show_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_home_as(super::navigation::Arrival::Visit, window, cx);
+    }
+
+    /// Show Home, recording it in Back/Forward as `arrival` says.
+    pub(super) fn show_home_as(
+        &mut self,
+        arrival: super::navigation::Arrival,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| view.pii.dismiss_popup());
         }
         self.cases.page = None;
         self.end_rename(true, cx);
         self.tabs.show_home();
-        self.note_destination(cx);
+        self.note_destination(arrival, cx);
         window.focus(&self.focus, cx);
         cx.notify();
     }

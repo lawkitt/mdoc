@@ -36,6 +36,56 @@ fn workspace_navigation_is_everywhere_with_platform_keys_and_text_context_guards
     }
 }
 
+/// Back/Forward keys as each platform's whole keymap resolves them, checked
+/// on any OS (ADR 0061, 0081): on Windows and Linux Alt+← / Alt+→ stay word
+/// moves in the editor, do nothing in a text field and navigate elsewhere;
+/// on macOS ⌘[ / ⌘] navigate from the editor too and ⌥←/→ never navigate.
+#[test]
+fn navigation_keys_resolve_by_focus_on_both_platforms_keymaps() {
+    let context = |names: &[&str]| -> Vec<gpui::KeyContext> {
+        names
+            .iter()
+            .map(|name| gpui::KeyContext::parse(name).unwrap())
+            .collect()
+    };
+    let editor = context(&["Workspace", "Editor"]);
+    let field = context(&["Workspace", "TextInput SearchInput"]);
+    let chrome = context(&["Workspace", "UiControl"]);
+    for mac in [true, false] {
+        // Registered as bind_all_keys does: the editor's plumbing, then the table.
+        let mut bindings = mdoc_editor::key_bindings(mac);
+        bindings.extend(specs(mac).into_iter().map(Spec::binding));
+        let keymap = gpui::Keymap::new(bindings);
+        let first = |key: &str, stack: &[gpui::KeyContext]| {
+            let (found, _) = keymap.bindings_for_input(&[Keystroke::parse(key).unwrap()], stack);
+            found.first().map(|binding| binding.action().name())
+        };
+        let (back, forward) = (workspace::Back.name(), workspace::Forward.name());
+        if mac {
+            for stack in [&editor, &field, &chrome] {
+                assert_eq!(first("cmd-[", stack), Some(back));
+                assert_eq!(first("cmd-]", stack), Some(forward));
+            }
+            assert_eq!(first("alt-left", &chrome), None);
+            assert_eq!(first("alt-right", &chrome), None);
+        } else {
+            assert_eq!(
+                first("alt-left", &editor),
+                Some(mdoc_editor::WordLeft.name())
+            );
+            assert_eq!(
+                first("alt-right", &editor),
+                Some(mdoc_editor::WordRight.name())
+            );
+            assert_ne!(first("alt-left", &field), Some(back));
+            assert_ne!(first("alt-right", &field), Some(forward));
+            assert_eq!(first("alt-left", &chrome), Some(back));
+            assert_eq!(first("alt-right", &chrome), Some(forward));
+            assert_eq!(first("cmd-[", &chrome), None);
+        }
+    }
+}
+
 /// Plumbing, by action: Tab inside a control group, moving inside menus,
 /// choosers and the palette's list, caret and deletion basics in the editor
 /// and text fields, Esc dismissing the editor's own transient state, and the

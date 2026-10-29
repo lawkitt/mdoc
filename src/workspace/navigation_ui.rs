@@ -1,5 +1,9 @@
 //! Carry out destination history without reopening closed tabs or reading case keys.
-use super::{Workspace, case_page::Place, navigation::Stop};
+use super::{
+    Workspace,
+    case_page::Place,
+    navigation::{Arrival, Stop},
+};
 use crate::{style, ui};
 use gpui::{
     AnyElement, App, Context, MouseButton, MouseDownEvent, Window, actions, div, prelude::*, px,
@@ -8,49 +12,64 @@ use gpui::{
 actions!(mdoc_navigation, [Back, Forward]);
 
 impl Workspace {
-    pub(super) fn note_destination(&mut self, cx: &App) {
-        let stop = if let Some(page) = &self.cases.page {
+    /// The place on screen, as a stop.
+    pub(super) fn place(&self, cx: &App) -> Stop {
+        if let Some(page) = &self.cases.page {
             Stop::Case(page.id().into())
         } else if self.showing_home(cx) {
             Stop::Home
         } else {
             Stop::Tab(self.tabs.active())
-        };
-        self.navigation.visit(stop);
+        }
     }
 
-    pub(super) fn navigation_target(&self, backwards: bool, cx: &App) -> Option<&Stop> {
-        self.navigation.target(backwards, |stop| match stop {
+    pub(super) fn note_destination(&mut self, arrival: Arrival, cx: &App) {
+        let stop = self.place(cx);
+        self.navigation.arrive(stop, arrival);
+    }
+
+    /// The one liveness rule for the buttons, their tooltips and the
+    /// actions: Home, an open tab that isn't Home's placeholder, a case
+    /// that still exists.
+    fn live_stops<'a>(&'a self, cx: &'a App) -> impl Fn(&Stop) -> bool + 'a {
+        let cases: Vec<String> = self
+            .case_coordinator
+            .summaries()
+            .into_iter()
+            .map(|case| case.id)
+            .collect();
+        move |stop| match stop {
             Stop::Home => true,
             Stop::Tab(id) => self
                 .tabs
                 .get(*id)
                 .is_some_and(|tab| !self.is_placeholder(tab, cx)),
-            Stop::Case(id) => self
-                .case_coordinator
-                .summaries()
-                .iter()
-                .any(|case| &case.id == id),
-        })
+            Stop::Case(id) => cases.contains(id),
+        }
+    }
+
+    pub(super) fn navigation_target(&self, backwards: bool, cx: &App) -> Option<&Stop> {
+        self.navigation
+            .target(backwards, &self.place(cx), self.live_stops(cx))
     }
 
     pub(super) fn navigation_label(&self, backwards: bool, cx: &App) -> String {
         let direction = if backwards { "Back" } else { "Forward" };
         let destination = match self.navigation_target(backwards, cx) {
-            Some(Stop::Home) => "Home".into(),
-            Some(Stop::Tab(id)) => super::tab_label(self.tabs.get(*id).unwrap(), cx).name,
-            Some(Stop::Case(id)) => {
-                let summary = self
-                    .case_coordinator
-                    .summaries()
-                    .into_iter()
-                    .find(|case| &case.id == id)
-                    .unwrap();
-                format!("Case “{}”", summary.name)
-            }
-            None => return direction.into(),
+            Some(Stop::Home) => Some("Home".into()),
+            Some(Stop::Tab(id)) => self.tabs.get(*id).map(|tab| super::tab_label(tab, cx).name),
+            Some(Stop::Case(id)) => self
+                .case_coordinator
+                .summaries()
+                .into_iter()
+                .find(|case| &case.id == id)
+                .map(|case| format!("Case “{}”", case.name)),
+            None => None,
         };
-        format!("{direction} to {destination}")
+        match destination {
+            Some(destination) => format!("{direction} to {destination}"),
+            None => direction.into(),
+        }
     }
 
     pub(super) fn navigate(
@@ -70,17 +89,21 @@ impl Workspace {
         {
             return;
         }
-        let tabs = &self.tabs;
-        let summaries = self.case_coordinator.summaries();
-        let stop = self.navigation.travel(backwards, |stop| match stop {
-            Stop::Home => true,
-            Stop::Tab(id) => tabs.contains(*id),
-            Stop::Case(id) => summaries.iter().any(|case| &case.id == id),
-        });
-        let Some(stop) = stop else { return };
+        let here = self.place(cx);
+        let Some(index) = self
+            .navigation
+            .target_index(backwards, &here, self.live_stops(cx))
+        else {
+            return;
+        };
+        let stop = self.navigation.go(index);
         self.close_shortcuts(window, cx);
-        // Travel already selected this stop, so the normal destination entry
-        // point's visit is a no-op and preserves the forward branch.
+        // A menu belongs to the page it was opened over.
+        self.tab_menu = None;
+        self.cases.header_menu = None;
+        self.menu_return = None;
+        // The cursor is already on this stop, so the destination's own
+        // visit is a no-op and preserves the forward branch.
         match stop {
             Stop::Home => self.show_home(window, cx),
             Stop::Tab(id) => self.activate(id, window, cx),
