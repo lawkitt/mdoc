@@ -235,6 +235,7 @@ impl RestoreMap {
             .collect();
         RestoredText {
             restored: restoration.restored_ranges(),
+            values: restoration.values,
             text: out,
             unresolved,
         }
@@ -247,6 +248,8 @@ pub struct RestoredText {
     pub text: String,
     /// Each restored wording's span in `text`, with its identity index.
     pub restored: Vec<(Range<usize>, usize)>,
+    /// Distinct identities restored ([`Restoration::values`]).
+    pub values: usize,
     /// Unresolved alias-shaped tokens' spans in `text`, in order.
     pub unresolved: Vec<Range<usize>>,
 }

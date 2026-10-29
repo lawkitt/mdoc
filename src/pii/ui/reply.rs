@@ -14,7 +14,7 @@ use std::ops::Range;
 pub(crate) enum ReplyEffect {
     /// Keep the reply in the tab's case, or remove it there.
     Store,
-    /// The box was filled: show the Reply view.
+    /// The box holds a changed reply: show the Reply view.
     ShowReply,
     /// The box was cleared: leave the Reply view.
     LeaveReply,
@@ -31,6 +31,8 @@ pub(crate) struct ReplyBox {
     restored: RestoredText,
     /// The unresolved token Next unrecognised moves to after the last.
     next: usize,
+    /// Whether the mapping of the last restoration had identities to restore.
+    restorable: bool,
 }
 
 impl ReplyBox {
@@ -54,18 +56,22 @@ impl ReplyBox {
         self.exists().then(|| self.text.clone())
     }
 
-    /// The user typed, pasted or cleared the box.
-    pub(crate) fn edited(&mut self, text: &str) -> Vec<ReplyEffect> {
+    /// The user typed, pasted or cleared the box. Any change that leaves a
+    /// reply shows the Reply view unless it is already showing, a paste over
+    /// an earlier reply included; clearing leaves it.
+    pub(crate) fn edited(&mut self, text: &str, showing_reply: bool) -> Vec<ReplyEffect> {
         if text == self.text {
             return Vec::new();
         }
         let had = self.exists();
         self.set(text.to_owned());
         let mut effects = vec![ReplyEffect::Store];
-        match (had, self.exists()) {
-            (false, true) => effects.push(ReplyEffect::ShowReply),
-            (true, false) => effects.push(ReplyEffect::LeaveReply),
-            _ => {}
+        if self.exists() {
+            if !showing_reply {
+                effects.push(ReplyEffect::ShowReply);
+            }
+        } else if had {
+            effects.push(ReplyEffect::LeaveReply);
         }
         effects
     }
@@ -94,8 +100,11 @@ impl ReplyBox {
         }
         self.made_from = key;
         let restored = if self.exists() {
-            map().restore_in_place(&self.text)
+            let map = map();
+            self.restorable = !map.is_empty();
+            map.restore_in_place(&self.text)
         } else {
+            self.restorable = false;
             RestoredText::default()
         };
         if restored == self.restored {
@@ -106,19 +115,39 @@ impl ReplyBox {
         true
     }
 
+    /// Whether Copy reply and Open as tab have anything to restore: a reply,
+    /// and a mapping with identities (refresh first).
+    pub(crate) fn restorable(&self) -> bool {
+        self.exists() && self.restorable
+    }
+
     /// The last restoration (refresh first).
     pub(crate) fn restored(&self) -> &RestoredText {
         &self.restored
     }
 
-    /// "N values restored · M unrecognised".
+    /// "N values restored · M unrecognised": distinct identities restored
+    /// and distinct unknown tokens, as Anoni counts (ADR 0078). Next
+    /// unrecognised still visits every occurrence.
     pub(crate) fn summary(&self) -> String {
-        let restored = self.restored.restored.len();
-        let unresolved = self.restored.unresolved.len();
+        let restored = self.restored.values;
+        let unresolved = self.unrecognised();
         format!(
             "{restored} {} restored · {unresolved} unrecognised",
             if restored == 1 { "value" } else { "values" }
         )
+    }
+
+    /// Distinct unresolved tokens in the restored text.
+    pub(crate) fn unrecognised(&self) -> usize {
+        let text = &self.restored.text;
+        let tokens: std::collections::HashSet<_> = self
+            .restored
+            .unresolved
+            .iter()
+            .filter_map(|range| text.get(range.clone()))
+            .collect();
+        tokens.len()
     }
 
     /// The unresolved token Next unrecognised last moved to.
@@ -162,7 +191,7 @@ impl DocumentView {
         let subscription = cx.subscribe_in(&editor, window, |this, editor, event, window, cx| {
             if let mdoc_editor::EditorEvent::Changed = event {
                 let text = editor.read(cx).text().to_owned();
-                let effects = this.reply.edited(&text);
+                let effects = this.reply.edited(&text, this.showing_reply());
                 this.carry_out_reply(effects, window, cx);
             }
         });
@@ -187,8 +216,13 @@ impl DocumentView {
         if let Some(editor) = self.reply_box().cloned() {
             editor.update(cx, |editor, cx| editor.set_text(text.to_owned(), cx));
         }
-        let effects = self.reply.edited(text);
+        let effects = self.reply.edited(text, self.showing_reply());
         self.carry_out_reply(effects, window, cx);
+    }
+
+    /// Whether the Reply view is the one open.
+    fn showing_reply(&self) -> bool {
+        self.compare.as_ref().map(|c| c.mode) == Some(CompareMode::Reply)
     }
 
     /// The case gave this reopened member its reply (ADR 0078).
@@ -224,7 +258,7 @@ impl DocumentView {
                     }
                 }
                 ReplyEffect::LeaveReply => {
-                    if self.compare.as_ref().map(|c| c.mode) == Some(CompareMode::Reply) {
+                    if self.showing_reply() {
                         let focused = window.focused(cx);
                         self.close_compare(window, cx);
                         if let Some(focus) = focused {
@@ -248,7 +282,7 @@ impl DocumentView {
     /// Copy reply: the restored text.
     pub(crate) fn copy_reply(&mut self, cx: &mut Context<Self>) {
         self.refresh_reply();
-        if !self.reply.exists() {
+        if !self.reply.restorable() {
             return;
         }
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(
@@ -259,12 +293,14 @@ impl DocumentView {
         self.show_copy_feedback(cx);
     }
 
-    /// Open as tab: the restore tab Paste AI Response makes, from this reply.
+    /// Open as tab: the restore tab Paste AI Response makes, from this reply,
+    /// with its guard when no identities are left to restore.
     pub(crate) fn open_reply_as_tab(&mut self, cx: &mut Context<Self>) {
-        if self.reply.exists() {
-            let text = self.reply.text().to_owned();
-            self.open_restore_tab(text, cx);
+        if !self.reply.exists() || !self.has_identities_to_restore("Open as tab", cx) {
+            return;
         }
+        let text = self.reply.text().to_owned();
+        self.open_restore_tab(text, cx);
     }
 
     /// Next unrecognised: show the Reply view at the next unresolved token.
@@ -273,7 +309,7 @@ impl DocumentView {
         let Some(range) = self.reply.next_unresolved() else {
             return;
         };
-        if self.compare.as_ref().map(|c| c.mode) != Some(CompareMode::Reply) {
+        if !self.showing_reply() {
             self.set_view_mode(Some(CompareMode::Reply), window, cx);
         }
         let id = UNRESOLVED_ID | range.start as u64;
@@ -350,36 +386,48 @@ mod tests {
         let mut reply = ReplyBox::default();
         assert!(!reply.exists() && reply.stored().is_none());
         assert_eq!(
-            reply.edited("PERSON_1"),
+            reply.edited("PERSON_1", false),
             [ReplyEffect::Store, ReplyEffect::ShowReply]
         );
-        assert_eq!(reply.edited("PERSON_1 left"), [ReplyEffect::Store]);
-        assert_eq!(reply.edited("PERSON_1 left"), []);
-        assert_eq!(reply.stored().as_deref(), Some("PERSON_1 left"));
+        // Typing on while the Reply view shows only stores.
+        assert_eq!(reply.edited("PERSON_1 left", true), [ReplyEffect::Store]);
+        assert_eq!(reply.edited("PERSON_1 left", false), []);
+        // A different reply pasted over this one while on Edit shows it.
         assert_eq!(
-            reply.edited("  "),
+            reply.edited("PERSON_1 came back", false),
+            [ReplyEffect::Store, ReplyEffect::ShowReply]
+        );
+        assert_eq!(reply.stored().as_deref(), Some("PERSON_1 came back"));
+        assert_eq!(
+            reply.edited("  ", true),
             [ReplyEffect::Store, ReplyEffect::LeaveReply]
         );
         assert!(reply.stored().is_none(), "a blank box keeps nothing");
+        assert_eq!(reply.edited("", false), [ReplyEffect::Store]);
         reply.loaded("PERSON_1".into());
         assert!(reply.exists(), "a kept reply comes back without effects");
     }
 
     #[test]
-    fn the_summary_counts_and_next_unrecognised_wraps() {
+    fn the_summary_counts_distinct_values_and_next_unrecognised_wraps() {
         let mut reply = ReplyBox::default();
-        reply.edited("PERSON_1 and PERSON_1 met PERSON_8 and PERSON_9.");
+        reply.edited(
+            "PERSON_1 and PERSON_1 met PERSON_8, PERSON_9 and PERSON_8.",
+            false,
+        );
         assert!(reply.refresh(1, map));
         assert!(!reply.refresh(1, || unreachable!("cached")));
-        assert_eq!(reply.summary(), "2 values restored · 2 unrecognised");
+        // One identity twice is one value; PERSON_8 twice is one unknown.
+        assert_eq!(reply.summary(), "1 value restored · 2 unrecognised");
         let text = reply.restored().text.clone();
         let mut seen = Vec::new();
-        for _ in 0..3 {
+        for _ in 0..4 {
             let range = reply.next_unresolved().unwrap();
             seen.push(text[range].to_string());
         }
-        assert_eq!(seen, ["PERSON_8", "PERSON_9", "PERSON_8"]);
-        reply.edited("PERSON_1");
+        // Next unrecognised visits every occurrence, then wraps.
+        assert_eq!(seen, ["PERSON_8", "PERSON_9", "PERSON_8", "PERSON_8"]);
+        reply.edited("PERSON_1", false);
         reply.refresh(1, map);
         assert_eq!(reply.summary(), "1 value restored · 0 unrecognised");
         assert_eq!(reply.next_unresolved(), None);

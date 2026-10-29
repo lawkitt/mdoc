@@ -309,14 +309,6 @@ impl Case {
             _ => false,
         }
     }
-    /// A member renamed from `from` to `to` keeps its reply.
-    pub fn move_reply(&mut self, from: &Path, to: &Path) {
-        if self.reply(to).is_none()
-            && let Some(reply) = self.replies.iter_mut().find(|r| r.member == from)
-        {
-            reply.member = to.to_path_buf();
-        }
-    }
     /// The next generated alias of `category` that no identity has ever used.
     pub fn next_alias(&self, category: Category) -> String {
         let used = |alias: &str| self.identities.iter().any(|i| i.names(alias));
@@ -1052,7 +1044,7 @@ mod tests {
     }
 
     #[test]
-    fn a_member_reply_is_kept_encrypted_moved_and_removed() {
+    fn a_member_reply_is_kept_encrypted_replaced_and_removed() {
         let dir = tempfile::tempdir().unwrap();
         let store = store(dir.path());
         let mut case = fixture_case();
@@ -1068,13 +1060,19 @@ mod tests {
             loaded.reply(Path::new("/docs/contract.md")),
             Some(reply.as_str())
         );
-        loaded.move_reply(
-            Path::new("/docs/contract.md"),
-            Path::new("/docs/renamed.md"),
+        // A different reply replaces it, still one per member.
+        let other = "PERSON_1 sent ORG_1 a second answer.".to_string();
+        assert!(loaded.set_reply(Path::new("/docs/contract.md"), Some(other.clone())));
+        assert_eq!(loaded.replies.len(), 1);
+        loaded.revision += 1;
+        store.save(&loaded).unwrap();
+        let mut loaded = store.load(&case.id).unwrap();
+        assert_eq!(
+            loaded.reply(Path::new("/docs/contract.md")),
+            Some(other.as_str())
         );
-        assert_eq!(loaded.reply(Path::new("/docs/contract.md")), None);
-        assert!(loaded.reply(Path::new("/docs/renamed.md")).is_some());
-        assert!(loaded.set_reply(Path::new("/docs/renamed.md"), None));
+        assert!(loaded.set_reply(Path::new("/docs/contract.md"), None));
+        assert!(!loaded.set_reply(Path::new("/docs/contract.md"), None));
         assert!(loaded.replies.is_empty());
     }
 

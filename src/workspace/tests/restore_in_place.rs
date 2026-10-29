@@ -212,7 +212,8 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
     let restored = "**Anna Petrova** owes Northwind Traders Ltd; Anna Petrova and PERSON_7 \
                     disagree with PERSON_8.";
     assert_eq!(reply_view_text(&source, cx), restored);
-    assert_eq!(summary(&source, cx), "3 values restored · 2 unrecognised");
+    // Three mentions of two identities: two values.
+    assert_eq!(summary(&source, cx), "2 values restored · 2 unrecognised");
     // Unresolved tokens are marked in the view, nothing guessed.
     cx.update(|_, cx| {
         let shown = source.read(cx).reply.restored().clone();
@@ -463,4 +464,151 @@ fn a_reply_follows_case_creation_member_rename_leave_and_join(cx: &mut TestAppCo
     assert_eq!(store.load(&case).unwrap().reply(&member), Some(reply));
     fill(&view, " \n  ", cx);
     assert!(store.load(&case).unwrap().replies.is_empty());
+}
+
+/// The box shows while aliases are applied or a reply exists. With the
+/// aliases gone, Copy reply and Open as tab are off and say why, and Open as
+/// tab has Paste AI Response's guard.
+#[gpui::test]
+fn without_aliases_the_box_hides_and_a_left_reply_restores_nothing(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let source = active(&tabs, cx);
+    let source_id = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let plain = dir.path().join("plain.md");
+    std::fs::write(&plain, "Nothing here was replaced.").unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![plain], window, cx)
+    });
+    cx.run_until_parked();
+    let other = active(&tabs, cx);
+    open_share(&other, cx);
+    assert!(
+        cx.debug_bounds("share-reply-box").is_none(),
+        "no aliases, no reply"
+    );
+    assert!(cx.debug_bounds("share-copy-reply").is_none());
+
+    tabs.update_in(cx, |tabs, window, cx| tabs.activate(source_id, window, cx));
+    cx.run_until_parked();
+    open_share(&source, cx);
+    assert!(cx.debug_bounds("share-reply-box").is_some());
+    fill(&source, "PERSON_1 wrote back to ORG_1.", cx);
+    assert!(cx.debug_bounds("share-reply-nothing").is_none());
+    cx.update(|_, cx| assert!(source.read(cx).reply.restorable()));
+
+    source.update(cx, |view, cx| {
+        view.forget_case_identity(&["PERSON_1"], &["Anna Petrova".into()], &[], cx);
+        view.forget_case_identity(&["ORG_1"], &["Northwind Traders Ltd".into()], &[], cx);
+    });
+    draw(cx);
+    cx.update(|_, cx| assert!(!source.read(cx).has_applied_aliases()));
+    assert!(
+        cx.debug_bounds("share-reply-box").is_some(),
+        "the reply keeps the box"
+    );
+    assert!(cx.debug_bounds("share-reply-nothing").is_some());
+    cx.update(|_, cx| assert!(!source.read(cx).reply.restorable()));
+    let tab_count = |cx: &mut VisualTestContext| cx.update(|_, cx| tabs.read(cx).tabs.len());
+    let before = tab_count(cx);
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("untouched".into()));
+    click_toolbar(cx, "share-copy-reply");
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().unwrap(),
+            "untouched"
+        )
+    });
+    click_toolbar(cx, "share-open-reply");
+    assert_eq!(tab_count(cx), before, "Open as tab is off");
+    source.update(cx, |view, cx| view.open_reply_as_tab(cx));
+    cx.run_until_parked();
+    assert_eq!(tab_count(cx), before);
+    cx.update(|_, cx| {
+        let error = source.read(cx).error.clone().unwrap_or_default();
+        assert!(
+            error.starts_with("Open as tab needs a document whose names were replaced"),
+            "{error}"
+        );
+    });
+}
+
+/// Space, ⌫ and Enter typed in the box edit the reply; none reaches the
+/// Replacements list's bindings (ADR 0048). Share does not mount the list's
+/// handlers today; `!ReplyBox` in `LIST` keeps this true if it ever does.
+#[gpui::test]
+fn typing_in_the_reply_box_stays_out_of_the_replacements_list(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    cx.update(|_, cx| crate::pii::ui::bind_keys(cx));
+    let view = active(&tabs, cx);
+    open_share(&view, cx);
+    let state = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let view = view.read(cx);
+            (
+                view.pii.review().applied().len(),
+                view.pii.review().remaining(),
+                view.editor.read(cx).text().to_owned(),
+            )
+        })
+    };
+    let before = state(cx);
+    cx.update(|window, cx| {
+        let editor = view.read(cx).reply_box().unwrap().clone();
+        window.focus(&editor.read(cx).focus_handle(cx), cx);
+    });
+    cx.simulate_keystrokes("P space x backspace enter Q");
+    cx.run_until_parked();
+    draw(cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.reply_box().unwrap().read(cx).text(), "P \n\nQ");
+        assert_eq!(view.reply.text(), "P \n\nQ");
+    });
+    assert_eq!(state(cx), before, "the list and document are untouched");
+}
+
+/// An untitled restore tab in a case keeps its reply in memory until its
+/// first Save As, which stores it in the case under the new path.
+#[gpui::test]
+fn an_untitled_case_tab_stores_its_reply_on_first_save_as(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    let member = active(&tabs, cx);
+    member.update(cx, |view, cx| view.write(path.clone(), None, cx));
+    cx.run_until_parked();
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let case = tabs
+        .update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx))
+        .unwrap();
+    cx.run_until_parked();
+    open_share(&member, cx);
+    let first = "PERSON_1 owes ORG_1 the member's reply.";
+    fill(&member, first, cx);
+    click_toolbar(cx, "share-open-reply");
+    let restored = active(&tabs, cx);
+    cx.update(|_, cx| {
+        let view = restored.read(cx);
+        assert_ne!(restored.entity_id(), member.entity_id());
+        assert!(view.session.document.path.is_none(), "an untitled tab");
+        assert_eq!(view.case.link().map(|l| l.id.as_str()), Some(case.as_str()));
+    });
+    let second = "PERSON_1 answered in the untitled tab.";
+    restored.update_in(cx, |view, window, cx| view.fill_reply(second, window, cx));
+    cx.run_until_parked();
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let saved = store.load(&case).unwrap();
+    assert_eq!(saved.replies.len(), 1, "only in memory until saved");
+    assert_eq!(saved.reply(&session_store::identity(&path)), Some(first));
+
+    let new_path = dir.path().join("restored.md");
+    restored.update(cx, |view, cx| view.write(new_path.clone(), None, cx));
+    cx.run_until_parked();
+    let saved = store.load(&case).unwrap();
+    assert_eq!(
+        saved.reply(&session_store::identity(&new_path)),
+        Some(second)
+    );
+    assert_eq!(saved.reply(&session_store::identity(&path)), Some(first));
 }

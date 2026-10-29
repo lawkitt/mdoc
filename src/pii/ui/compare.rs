@@ -472,16 +472,14 @@ impl DocumentView {
         if self.editor.read(cx).focus_handle(cx).is_focused(window) {
             window.focus(&state.focus, cx);
         }
-        // The Reply view without a reply goes back to the editor.
-        if state.mode == CompareMode::Reply && !self.reply.exists() {
-            self.close_compare(window, cx);
-            return;
-        }
-        self.refresh_reply_view(cx);
-        let Some(state) = self.compare.as_ref() else {
-            return;
-        };
+        // The Reply view without a reply goes back to the editor. Only the
+        // showing view is refreshed: switching to Reply refreshes it then.
         if state.mode == CompareMode::Reply {
+            if self.reply.exists() {
+                self.refresh_reply_view(cx);
+            } else {
+                self.close_compare(window, cx);
+            }
             return;
         }
         let editor = self.editor.read(cx);

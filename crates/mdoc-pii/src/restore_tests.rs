@@ -633,6 +633,7 @@ fn restoring_in_place_matches_the_restore_tab_and_marks_what_is_left() {
         .map(|r| &shown.text[r.clone()])
         .collect();
     assert_eq!(left, ["PERSON_9", "PERSON_8"]);
+    assert_eq!(shown.values, 2, "two identities, three mentions");
     assert_eq!(map.restore(reply).unresolved, shown.unresolved.len());
     assert_eq!(map.restore_in_place(""), RestoredText::default());
 }

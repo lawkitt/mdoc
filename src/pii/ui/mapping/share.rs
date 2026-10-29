@@ -218,6 +218,7 @@ impl DocumentView {
         let p = theme.pdf_style();
         let focus = editor.read(cx).focus_handle(cx);
         let exists = self.reply.exists();
+        let restorable = self.reply.restorable();
         let unresolved = self.reply.restored().unresolved.len();
         let copied = self.copy_feedback.is_some() && self.copied_reply;
         let muted = |text: String| {
@@ -290,6 +291,14 @@ impl DocumentView {
                                 )),
                             )
                         })
+                        .when(!restorable, |v| {
+                            v.child(
+                                muted("No aliases are applied, so nothing can be restored.".into())
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "share-reply-nothing".into())
+                                    }),
+                            )
+                        })
                         .into_any_element()
                 } else {
                     muted("Paste the AI's answer: the real names come back here at once.".into())
@@ -305,19 +314,36 @@ impl DocumentView {
                                 "share-copy-reply",
                                 if copied { "Copied" } else { "Copy reply" },
                                 theme,
-                                exists,
+                                restorable,
                             )
                             .when(cfg!(test), |v| {
                                 v.debug_selector(|| "share-copy-reply".into())
                             })
-                            .on_click(cx.listener(|this, _, _, cx| this.copy_reply(cx))),
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    if restorable {
+                                        this.copy_reply(cx)
+                                    }
+                                },
+                            )),
                         )
                         .child(
-                            ui::primary_button("share-open-reply", "Open as tab", theme, exists)
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "share-open-reply".into())
-                                })
-                                .on_click(cx.listener(|this, _, _, cx| this.open_reply_as_tab(cx))),
+                            ui::primary_button(
+                                "share-open-reply",
+                                "Open as tab",
+                                theme,
+                                restorable,
+                            )
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(|| "share-open-reply".into())
+                            })
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
+                                    if restorable {
+                                        this.open_reply_as_tab(cx)
+                                    }
+                                },
+                            )),
                         ),
                 )
                 .into_any_element(),
