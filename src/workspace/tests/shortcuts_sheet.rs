@@ -40,6 +40,11 @@ fn question_mark_on_home_opens_every_shortcut(cx: &mut TestAppContext) {
     let rows = shortcuts::rows().count();
     assert!(rows > 80, "{rows} rows");
     assert_eq!(drawn_rows(cx), rows);
+    for label in ["Back", "Forward"] {
+        assert!(shortcuts_ui::visible(label).iter().any(|(group, rows)| {
+            *group == shortcuts::Group::Everywhere && rows.iter().any(|row| row.label == label)
+        }));
+    }
     // The filter has focus: `?` types there instead of closing the sheet.
     cx.simulate_input("zoom");
     cx.simulate_keystrokes("?");

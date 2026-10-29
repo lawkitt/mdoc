@@ -397,21 +397,29 @@ impl Review {
                 if entry.originals.is_empty() {
                     return None;
                 }
-                // The primary wording is the fullest form: most characters,
-                // then first seen.
-                let primary = entry
-                    .originals
-                    .iter()
-                    .enumerate()
-                    .max_by_key(|(i, o)| (o.chars().count(), std::cmp::Reverse(*i)))
-                    .map(|(i, _)| i)
-                    .unwrap_or(0);
+                // A merge keeps its target's primary. Otherwise use the fullest
+                // form: most characters, then first seen.
+                let primary = self
+                    .identities
+                    .primary_wording(id)
+                    .and_then(|primary| entry.originals.iter().position(|o| o == primary))
+                    .unwrap_or_else(|| {
+                        entry
+                            .originals
+                            .iter()
+                            .enumerate()
+                            .max_by_key(|(i, o)| (o.chars().count(), std::cmp::Reverse(*i)))
+                            .map_or(0, |(i, _)| i)
+                    });
                 entry.originals.swap(0, primary);
                 let wording = entry.originals.remove(0);
                 entry
                     .originals
                     .sort_by_key(|o| std::cmp::Reverse(o.chars().count()));
                 entry.originals.insert(0, wording);
+                for alias in self.identities.retired_aliases(id) {
+                    push(&mut entry.aliases, alias.clone());
+                }
                 entry.aliases.retain(|a| *a != identity.alias);
                 Some((
                     id,
@@ -443,6 +451,8 @@ impl Review {
                 owner: None,
                 custom_alias: exported.custom,
             });
+            self.identities
+                .seed_restoration(id, &exported.previous, exported.originals.first());
             for alias in std::iter::once(&exported.alias).chain(&exported.previous) {
                 self.occupied_tokens.insert(alias.clone());
                 if let Some((category, number)) = parse_alias(alias) {

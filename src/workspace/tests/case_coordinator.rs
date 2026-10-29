@@ -1395,3 +1395,126 @@ fn case_quit_checks_edits_made_while_final_saves_are_pending(cx: &mut TestAppCon
             .ends_with(" New edit.")
     );
 }
+
+#[gpui::test]
+fn merge_hint_dismissal_survives_case_reopen(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let path = session_store::identity(&dir.path().join("contract.md"));
+    std::fs::write(&path, "Maya Bennett signed. Ms Bennett agreed.").unwrap();
+    let case = mdoc_store::cases::Case::new(
+        "Bennett".into(),
+        &[
+            mdoc_pii::restore::ExportedIdentity {
+                alias: "PERSON_1".into(),
+                previous: vec![],
+                category: mdoc_pii::Category::Person,
+                custom: false,
+                originals: vec!["Maya Bennett".into()],
+            },
+            mdoc_pii::restore::ExportedIdentity {
+                alias: "PERSON_2".into(),
+                previous: vec![],
+                category: mdoc_pii::Category::Person,
+                custom: false,
+                originals: vec!["Ms Bennett".into()],
+            },
+        ],
+        Some(path.clone()),
+    );
+    store().save(&case).unwrap();
+    let session = Session {
+        tabs: vec![TabRecord {
+            markdown: path,
+            case: Some(case.id.clone()),
+            ..TabRecord::default()
+        }],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.use_case_store(store());
+        tabs.restore(session.clone(), window, cx);
+        tabs.activate(tabs.tabs.last().unwrap().id(), window, cx);
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    let from = cx.update(|_, cx| view.read(cx).pii.review().merge_hints()[0].from);
+    let selector: &'static str = Box::leak(format!("merge-hint-dismiss-{from}").into_boxed_str());
+    let button = cx.debug_bounds(selector).expect("live case hint").center();
+    cx.simulate_click(button, Default::default());
+    cx.run_until_parked();
+    draw(cx);
+    assert!(cx.debug_bounds(selector).is_none());
+    assert_eq!(store().load(&case.id).unwrap().dismissed_hints.len(), 1);
+    // Reload the encrypted case through a fresh coordinator, not shared tab state.
+    let restored = cx.update(|window, cx| {
+        window.replace_root(cx, |window, cx| {
+            let mut tabs = Workspace::empty(window, cx);
+            tabs.use_case_store(store());
+            tabs.restore(session, window, cx);
+            tabs.activate(tabs.tabs.last().unwrap().id(), window, cx);
+            tabs
+        })
+    });
+    cx.run_until_parked();
+    let reopened = active(&restored, cx);
+    reopened.update_in(cx, |view, window, cx| {
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    cx.update(|_, cx| {
+        assert_ne!(view.entity_id(), reopened.entity_id());
+        assert_eq!(reopened.read(cx).pii.review().merge_hints().len(), 1);
+    });
+    let from = cx.update(|_, cx| reopened.read(cx).pii.review().merge_hints()[0].from);
+    assert!(
+        cx.debug_bounds(Box::leak(
+            format!("merge-hint-dismiss-{from}").into_boxed_str()
+        ))
+        .is_none()
+    );
+
+    // Paste AI Response creates a different case member through start_restored.
+    restored.update_in(cx, |tabs, window, cx| {
+        let reply = crate::pii::ui::RestoredReply {
+            text: "PERSON_1 met PERSON_2".into(),
+            identities: case.exported(),
+            source_name: "contract".into(),
+            case: reopened.read(cx).case.link().cloned(),
+        };
+        tabs.event(
+            tabs.tabs.active(),
+            &TabEvent::Tabs(TabsEvent::Restored(reply.into())),
+            window,
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    let reply = active(&restored, cx);
+    reply.update_in(cx, |view, window, cx| {
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    let from = cx.update(|_, cx| {
+        assert_ne!(reply.entity_id(), reopened.entity_id());
+        assert!(reply.read(cx).case.is(&case.id));
+        reply.read(cx).pii.review().merge_hints()[0].from
+    });
+    assert!(
+        cx.debug_bounds(Box::leak(
+            format!("merge-hint-dismiss-{from}").into_boxed_str()
+        ))
+        .is_none()
+    );
+}

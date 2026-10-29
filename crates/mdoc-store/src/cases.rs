@@ -243,6 +243,10 @@ pub struct Case {
     /// Category tokens scans in member documents skip.
     #[serde(default)]
     pub skip: Vec<String>,
+    /// Dismissed merge hints, as the identities’ primary wordings (shorter, fuller)
+    /// (ADR 0080).
+    #[serde(default)]
+    pub dismissed_hints: Vec<(String, String)>,
 }
 impl Case {
     pub fn new(name: String, identities: &[ExportedIdentity], member: Option<PathBuf>) -> Self {
@@ -258,6 +262,7 @@ impl Case {
             members: member.into_iter().collect(),
             revision: 0,
             skip: Vec::new(),
+            dismissed_hints: Vec::new(),
         };
         case.merge(identities);
         case
@@ -371,6 +376,9 @@ impl Case {
         if identity.originals.is_empty() {
             return false;
         }
+        self.dismissed_hints.retain(|(from, into)| {
+            !identity.originals.contains(from) && !identity.originals.contains(into)
+        });
         identity.originals.clear();
         true
     }
@@ -970,16 +978,18 @@ mod tests {
     fn cases_round_trip_encrypted_and_never_in_plaintext() {
         let dir = tempfile::tempdir().unwrap();
         let store = store(dir.path());
-        let case = Case::new(
+        let mut case = Case::new(
             "Petrova v Northwind".into(),
             &[identity("PERSON_1", Category::Person, &["Anna Petrova"])],
             Some("/docs/contract.md".into()),
         );
+        case.dismissed_hints
+            .push(("Ms Petrova".into(), "Anna Petrova".into()));
         store.save(&case).unwrap();
         assert_eq!(store.load(&case.id).unwrap(), case);
         let bytes = std::fs::read(dir.path().join(format!("{}.case", case.id))).unwrap();
         let text = String::from_utf8_lossy(&bytes);
-        for secret in ["Anna", "Petrova", "PERSON_1", "contract.md"] {
+        for secret in ["Anna", "Petrova", "Ms Petrova", "PERSON_1", "contract.md"] {
             assert!(
                 !text.contains(secret),
                 "{secret} must not be stored in plaintext"
@@ -1028,7 +1038,17 @@ mod tests {
         let mut case = fixture_case();
         let old = case.exported();
         let alias = old[0].alias.clone();
+        let wording = old[0].wording().to_string();
+        case.dismissed_hints = vec![
+            ("Short form".into(), wording.clone()),
+            (wording, "Other variant".into()),
+            ("Unrelated short".into(), "Unrelated full".into()),
+        ];
         assert!(case.forget_identity(&alias));
+        assert_eq!(
+            case.dismissed_hints,
+            [("Unrelated short".into(), "Unrelated full".into())]
+        );
         assert!(!case.forget_identity(&alias));
         case.merge(&old);
         assert!(

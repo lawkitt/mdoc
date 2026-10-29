@@ -139,6 +139,10 @@ impl Driver {
                     }).collect::<Vec<_>>());
                 json!({
                     "home": w.showing_home(cx),
+                    "back_enabled": w.navigation_target(true, cx).is_some(),
+                    "forward_enabled": w.navigation_target(false, cx).is_some(),
+                    "back_label": w.navigation_label(true, cx),
+                    "forward_label": w.navigation_label(false, cx),
                     "palette": w.shell.palette.is_some(),
                     "shortcuts": w.shell.shortcuts.is_some(),
                     "settings": w.settings.read(cx).open,
@@ -178,6 +182,11 @@ impl Driver {
                             "undone": count(EntryState::Undone),
                             "past_limit": count(EntryState::PastLimit),
                         })
+                    }),
+                    "merge_hints": w.active_view().map_or(0, |v| v.read(cx).pii.review().merge_hints().len()),
+                    "ocr_consent": w.active_view().is_some_and(|v| {
+                        let v = v.read(cx);
+                        v.lifecycle.source_only() && v.import.ocr_required().is_some()
                     }),
                 })
             })?
@@ -364,8 +373,37 @@ fn scenarios(
     detections: &[mdoc_pii::Detection],
 ) -> Result<Vec<Value>> {
     let mut records = vec![d.capture(out, "home")?];
+    d.change(|w, _, cx| {
+        w.sidebar.restore(false, Some(false));
+        cx.notify();
+    })?;
+    records.push(d.capture(out, "navigation-disabled")?);
+    d.change(|w, _, cx| {
+        w.sidebar.restore(true, Some(true));
+        cx.notify();
+    })?;
     let view = document(d, path)?;
     records.push(d.capture(out, "document")?);
+    d.change(|w, window, cx| {
+        w.sidebar.restore(false, Some(false));
+        window.focus(&w.focus, cx);
+        cx.notify();
+    })?;
+    records.push(d.capture(out, "navigation-enabled")?);
+    // The document is in the middle: Home behind it and a second tab ahead.
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.navigate(true, window, cx);
+        window.focus(&w.focus, cx);
+    })?;
+    records.push(d.capture(out, "navigation-middle")?);
+    let (back, forward) = d.change(|w, _, _| (w.back_focus.clone(), w.forward_focus.clone()))?;
+    d.focus_pair(out, "navigation-back", back)?;
+    d.focus_pair(out, "navigation-forward", forward)?;
+    d.change(|w, _, cx| {
+        w.sidebar.restore(true, Some(true));
+        cx.notify();
+    })?;
     // Nothing is pseudonymized yet: Copy for AI says why it is off.
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
@@ -740,6 +778,18 @@ fn scenarios(
         });
     })?;
     records.push(d.capture(out, "conversion-failed")?);
+    // The consent card only: no converter, model download or native runtime.
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.lifecycle.show_source();
+            v.import.show_ocr_fixture(v.session.generation);
+            v.resume_import(window, cx);
+            v.ocr_state = crate::document_view::OcrState::Missing;
+            cx.notify();
+        });
+    })?;
+    records.push(d.capture(out, "ocr-consent")?);
     d.change(|w, window, cx| {
         w.new_tab(window, cx);
         w.active_view()
@@ -779,6 +829,42 @@ fn scenarios(
     let toggle = d.change(|_, window, cx| window.focused(cx).expect("comments toggle"))?;
     d.focus_pair(out, "comments-toggle", toggle)?;
     records.push(d.capture(out, "comments")?);
+    // ADR 0080: a synthetic proposal pair, rendered on both shipped targets
+    // in each theme. No scan, model, case key or native window is involved.
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.editor.update(cx, |e, cx| {
+                e.set_text("Maya Bennett signed. Ms Bennett agreed.", cx)
+            });
+        });
+    })?;
+    d.settle()?;
+    d.change(|w, window, cx| {
+        w.active_view().unwrap().update(cx, |v, cx| {
+            let text = v.editor.read(cx).text().to_string();
+            v.pii
+                .review_mut()
+                .ingest(
+                    &text,
+                    vec![mdoc_pii::Detection {
+                        range: 0..12,
+                        category: mdoc_pii::Category::Person,
+                        score: 1.,
+                        recognizer: mdoc_pii::Recognizer::Model,
+                    }],
+                )
+                .expect("merge hint fixture");
+            assert_eq!(v.pii.review().merge_hints().len(), 1);
+            v.review_changed(cx);
+            if !v.replacements_open() {
+                v.toggle_replacements_panel(window, cx);
+            }
+            window.focus(&v.replacements_focus(), cx);
+        });
+    })?;
+    records.push(d.capture(out, "merge-hint")?);
+
     Ok(records)
 }
 

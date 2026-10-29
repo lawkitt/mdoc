@@ -47,7 +47,10 @@ mod folder_sheet_ui;
 ))]
 pub(crate) mod headless_renders;
 mod keychain_ui;
+mod navigation;
+mod navigation_ui;
 mod notices;
+pub(crate) use navigation_ui::{Back, Forward};
 mod quit_flow;
 pub(crate) use quit_flow::CloseWatch;
 use quit_flow::{QuitEffect, QuitEnd};
@@ -155,6 +158,9 @@ pub(super) enum CaseEvent {
     Changed,
     /// Add a name to the tab's case before it appears (ADR 0041 #11).
     AddTerm(String),
+    /// Keep a dismissed merge hint, as its (shorter, fuller) primary wordings, in the
+    /// tab's case (ADR 0080).
+    DismissHint(String, String),
     /// Save the tab's mapping as a case, from the Inspector (ADR 0048, C),
     /// or once the document is saved; `close` closes the tab after.
     Create { close: bool },
@@ -220,6 +226,9 @@ pub(super) struct Workspace {
     pub(super) case_list_return: Option<gpui::FocusHandle>,
     pub(super) notices_focus: gpui::FocusHandle,
     tabs: tab_set::TabSet<Entity<DocumentView>>,
+    navigation: navigation::History,
+    back_focus: gpui::FocusHandle,
+    forward_focus: gpui::FocusHandle,
     /// Each shown tab's event and change subscriptions, dropped with it.
     tab_subscriptions: std::collections::HashMap<u64, Vec<Subscription>>,
     sidebar: sidebar::Sidebar<gpui::FocusHandle>,
@@ -385,6 +394,9 @@ impl Workspace {
             case_list_return: None,
             notices_focus: cx.focus_handle(),
             tabs: tab_set::TabSet::default(),
+            navigation: Default::default(),
+            back_focus: cx.focus_handle().tab_stop(true),
+            forward_focus: cx.focus_handle().tab_stop(true),
             tab_subscriptions: std::collections::HashMap::new(),
             sidebar: sidebar::Sidebar::default(),
             reveal_focus: cx.focus_handle(),
@@ -1087,6 +1099,7 @@ impl Workspace {
         if self.showing_overview(cx) {
             window.focus(&self.focus, cx);
         }
+        self.note_destination(cx);
         cx.notify();
     }
 
@@ -1383,8 +1396,10 @@ impl Workspace {
                         .and_then(|link| self.case_coordinator.case(&link.id))
                     {
                         let reserved = case.reserved_aliases();
-                        view.update(cx, |view, _| {
-                            view.pii.review_mut().reserve_aliases(&reserved)
+                        let dismissed = case.dismissed_hints.clone();
+                        view.update(cx, |view, cx| {
+                            view.pii.review_mut().reserve_aliases(&reserved);
+                            view.dismiss_case_hints(&dismissed, cx);
                         });
                     }
                 }
@@ -1422,6 +1437,9 @@ impl Workspace {
                 }
             }
             TabEvent::Case(CaseEvent::AddTerm(term)) => self.add_case_term(id, term, cx),
+            TabEvent::Case(CaseEvent::DismissHint(from, into)) => {
+                self.dismiss_case_hint(id, from, into, cx)
+            }
             TabEvent::Case(CaseEvent::Create { close: true }) => {
                 self.save_case_and_close(id, window, cx)
             }
@@ -2556,9 +2574,19 @@ impl Workspace {
                         this.drop_files(paths, true, window, cx)
                     }),
                 )
-                .child(self.sidebar_top(
-                    sidebar_toggle(&self.panel_toggle_focus, expanded, theme).into_any_element(),
-                ))
+                .child(
+                    self.sidebar_top(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(sidebar_toggle(&self.panel_toggle_focus, expanded, theme))
+                            .when(expanded || revealed, |v| {
+                                v.child(self.navigation_buttons(cx))
+                            })
+                            .into_any_element(),
+                    ),
+                )
                 .child(self.sidebar_nav(cx))
                 // Above the scrolling list, so it shows however long it is.
                 .when(self.sidebar.drop_refused(), |v| {
@@ -2711,6 +2739,26 @@ impl Workspace {
             .flex_shrink_0()
             .h_full()
             .text_size(px(13.))
+            // Keep the collapsed title controls in the sidebar's focus region
+            // and before its list in Tab order. Deferred painting leaves them
+            // above the adjacent content card without clipping to the rail.
+            .when(!expanded && !revealed, |v| {
+                v.child(gpui::deferred(
+                    div()
+                        .id("collapsed-title-controls")
+                        .tab_index(-1)
+                        .tab_group()
+                        .tab_stop(false)
+                        .absolute()
+                        .left(px(style::TRAFFIC_LIGHT_INSET))
+                        .top(px(style::CARD_MARGIN + (style::HEADER_HEIGHT - 32.) / 2.))
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(sidebar_toggle(&self.rail_toggle_focus, false, theme))
+                        .child(self.navigation_buttons(cx)),
+                ))
+            })
             .child(div().size_full().overflow_hidden().child(content))
             .when(!expanded, |v| {
                 v.on_hover(cx.listener(|this, hovered: &bool, window, cx| {
@@ -2983,7 +3031,8 @@ impl Render for Workspace {
         self.title.inset.set(if self.sidebar.visible() {
             0.
         } else {
-            (style::TRAFFIC_LIGHT_INSET + 32. + 12. - RAIL_WIDTH - 16.).max(0.)
+            (style::TRAFFIC_LIGHT_INSET + style::WORKSPACE_NAV_WIDTH + 12. - RAIL_WIDTH - 16.)
+                .max(0.)
         });
         div()
             .track_focus(&self.focus)
@@ -2993,6 +3042,13 @@ impl Render for Workspace {
             .flex()
             .flex_col()
             .bg(theme.sidebar_bg())
+            .child(self.navigation_mouse(cx))
+            .on_action(cx.listener(|this, _: &Back, window, cx| {
+                this.navigate(true, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &Forward, window, cx| {
+                this.navigate(false, window, cx);
+            }))
             .on_action(cx.listener(|this, _: &ui::NextRegion, window, cx| {
                 this.cycle_region(false, window, cx)
             }))
@@ -3187,24 +3243,6 @@ impl Render for Workspace {
                     .child(self.sidebar(cx))
                     .child(self.card(home, window, cx)),
             )
-            // Collapsed: the expand toggle sits right of the traffic lights in
-            // the title row, before the document header (ADR 0048).
-            .when(!self.sidebar.visible(), |v| {
-                v.child(
-                    div()
-                        .absolute()
-                        .left(px(style::TRAFFIC_LIGHT_INSET))
-                        .top(px(style::CARD_MARGIN + (style::HEADER_HEIGHT - 32.) / 2.))
-                        .child(sidebar_toggle(
-                            &self
-                                .rail_toggle_focus
-                                .clone()
-                                .tab_stop(self.sidebar.reveal() == Reveal::Hidden),
-                            false,
-                            theme,
-                        )),
-                )
-            })
             .children(self.notices_view(window, cx))
             .children(self.palette_view(cx))
             .when(self.settings.read(cx).open, |v| {
@@ -3402,6 +3440,16 @@ impl Workspace {
                     last.filter(|focus| self.region_holds(&region, focus, window, cx))
                 {
                     window.focus(&last, cx);
+                } else if region == *self.focus_regions.sidebar() && !self.sidebar.visible() {
+                    // The deferred title/reveal group precedes the sidebar
+                    // container in window Tab order. Enter its first control
+                    // explicitly, so Shift+Tab leaves from the region's edge.
+                    let toggle = if self.sidebar.reveal() == Reveal::Hidden {
+                        &self.rail_toggle_focus
+                    } else {
+                        &self.panel_toggle_focus
+                    };
+                    window.focus(toggle, cx);
                 } else {
                     window.focus(&region, cx);
                     ui::cycle(window, cx, Some(&region), false);
@@ -3418,6 +3466,13 @@ impl Workspace {
     /// collapsed rail. Each layout has its own handles, and only the drawn
     /// one can take focus (ADR 0062). Any other focus is returned unchanged.
     fn tab_row_in_layout(&self, focus: &gpui::FocusHandle, cx: &App) -> gpui::FocusHandle {
+        // A navigation end may have disabled the button remembered on departure.
+        // Enter the sidebar at its first enabled control instead.
+        if (focus == &self.back_focus && self.navigation_target(true, cx).is_none())
+            || (focus == &self.forward_focus && self.navigation_target(false, cx).is_none())
+        {
+            return self.focus_regions.sidebar().clone();
+        }
         let tab = [&self.sidebar_row_focus, &self.compact_row_focus]
             .iter()
             .find_map(|rows| {

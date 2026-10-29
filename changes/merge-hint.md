@@ -1,0 +1,1 @@
+- **Merge likely duplicate identities.** The Replacements panel offers “Looks like … · Merge” for unambiguous short or inflected names, punctuation and case variants, long-name typos and reversed Russian names. Merge keeps the fuller identity’s alias and takes one Undo; dismissed pairs stay hidden for the tab or its saved case.
