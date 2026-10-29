@@ -46,18 +46,26 @@ impl RestoreMap {
     pub fn new(identities: Vec<ExportedIdentity>) -> Self {
         let mut generated = HashMap::new();
         let mut custom = Vec::new();
-        for (index, identity) in identities.iter().enumerate() {
-            for (current, alias) in std::iter::once((true, &identity.alias))
-                .chain(identity.previous.iter().map(|p| (false, p)))
-            {
-                // A custom alias matches exactly, even one that looks generated.
-                let custom_alias = current && identity.custom;
-                match parse_alias(alias).filter(|_| !custom_alias) {
-                    Some(key) => {
-                        generated.entry(key).or_insert(index);
-                    }
-                    None => custom.push((alias.clone(), index)),
+        // Current aliases first: an alias that is one identity's own names it,
+        // never another identity that used it before (a join can hand a
+        // document's old alias to a different case identity).
+        let current = identities
+            .iter()
+            .enumerate()
+            .map(|(index, identity)| (true, &identity.alias, index));
+        let previous = identities
+            .iter()
+            .enumerate()
+            .flat_map(|(index, identity)| identity.previous.iter().map(move |p| (false, p, index)));
+        for (current, alias, index) in current.chain(previous) {
+            // A custom alias matches exactly, even one that looks generated.
+            let custom_alias = current && identities[index].custom;
+            match parse_alias(alias).filter(|_| !custom_alias) {
+                Some(key) => {
+                    generated.entry(key).or_insert(index);
                 }
+                None if custom.iter().any(|(a, _)| a == alias) => {}
+                None => custom.push((alias.clone(), index)),
             }
         }
         // Longer custom aliases win where one contains another.
@@ -239,6 +247,45 @@ impl RestoreMap {
             text: out,
             unresolved,
         }
+    }
+    /// Rewrite `text`'s alias tokens so they keep naming the same identities
+    /// after their aliases change (ADR 0078): a token naming identity `i` of
+    /// this map takes `aliases[i]` when that is `Some`. All tokens are read
+    /// against this map first, so swapped aliases swap back correctly. A
+    /// reshaped generated token (`person 1`) keeps its shape and takes the
+    /// new number when the category stays; any other token becomes the new
+    /// alias. Returns `None` when nothing changed.
+    pub fn realias(&self, text: &str, aliases: &[Option<String>]) -> Option<String> {
+        let mut out = String::with_capacity(text.len());
+        let mut at = 0;
+        for token in self.tokens(text) {
+            let Some(alias) = token
+                .identity
+                .and_then(|index| aliases.get(index))
+                .and_then(Option::as_deref)
+            else {
+                continue;
+            };
+            let old = &text[token.range.clone()];
+            let new = match (generated_tokens(old).first(), parse_alias(alias)) {
+                (Some((range, (category, _), _)), Some((new_category, number)))
+                    if range.len() == old.len() && *category == new_category =>
+                {
+                    let digits = old.bytes().rev().take_while(u8::is_ascii_digit).count();
+                    format!("{}{number}", &old[..old.len() - digits])
+                }
+                _ => alias.to_string(),
+            };
+            if new != old {
+                out.push_str(&text[at..token.range.start]);
+                out.push_str(&new);
+                at = token.range.end;
+            }
+        }
+        (at > 0).then(|| {
+            out.push_str(&text[at..]);
+            out
+        })
     }
 }
 

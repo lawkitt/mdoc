@@ -347,12 +347,6 @@ impl DocumentView {
     }
     pub(crate) fn sync_pii_theme(&mut self, cx: &mut Context<Self>) {
         self.sync_annotations(cx);
-        if let Some(editor) = self.reply_box().cloned() {
-            let theme = self.theme.get();
-            editor.update(cx, |editor, cx| {
-                editor.set_markdown_style(crate::style::markdown_style(theme), cx);
-            });
-        }
     }
     /// Domain changes schedule spellcheck and a case save. Derived review data
     /// needs no bump here: it follows `Review::revision`.

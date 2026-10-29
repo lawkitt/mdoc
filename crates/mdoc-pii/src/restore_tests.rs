@@ -639,6 +639,45 @@ fn restoring_in_place_matches_the_restore_tab_and_marks_what_is_left() {
 }
 
 #[test]
+fn realiasing_follows_swapped_and_renamed_identities() {
+    let anna = identity("PERSON_1", Category::Person, &["Anna Petrova"]);
+    let boris = identity("PERSON_2", Category::Person, &["Boris Ivanov"]);
+    let map = RestoreMap::new(vec![anna.clone(), boris.clone()]);
+    let reply = "**PERSON_1** owes PERSON_2; person 1 and Person-2 agree. PERSON_9 left.";
+    // A join swaps the two aliases: every token is read before any changes.
+    assert_eq!(
+        map.realias(reply, &[Some("PERSON_2".into()), Some("PERSON_1".into())])
+            .as_deref(),
+        Some("**PERSON_2** owes PERSON_1; person 2 and Person-1 agree. PERSON_9 left.")
+    );
+    // A custom alias replaces the token; untouched identities stay.
+    assert_eq!(
+        map.realias(reply, &[Some("BUYER".into()), None]).as_deref(),
+        Some("**BUYER** owes PERSON_2; BUYER and Person-2 agree. PERSON_9 left.")
+    );
+    assert_eq!(map.realias(reply, &[None, None]), None);
+    assert_eq!(
+        map.realias(reply, &[Some("PERSON_1".into()), None]),
+        None,
+        "an unchanged alias is no change"
+    );
+}
+
+#[test]
+fn a_current_alias_wins_over_another_identitys_retired_one() {
+    // After a join Anna's old PERSON_1 is retired while Boris holds it now.
+    let mut anna = identity("PERSON_2", Category::Person, &["Anna Petrova"]);
+    anna.previous = vec!["PERSON_1".into(), "CLIENT".into()];
+    let boris = identity("CLIENT", Category::Person, &["Boris Ivanov"]);
+    let carol = identity("PERSON_1", Category::Person, &["Carol Smith"]);
+    let map = RestoreMap::new(vec![anna, boris, carol]);
+    assert_eq!(
+        apply(&map, "PERSON_1, CLIENT and PERSON_2"),
+        "Carol Smith, Boris Ivanov and Anna Petrova"
+    );
+}
+
+#[test]
 fn reseeding_and_applying_preserves_the_saved_primary_and_retired_alias() {
     let source = "Марина Павлова met Павлова Марина";
     let mut saved = identity(

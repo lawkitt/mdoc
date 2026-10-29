@@ -38,9 +38,10 @@ UI label: **Paste AI Response**.
 
 **Reply box**: the Share panel's "AI reply" field that restores a pasted
 reply in place; its summary reads "N values restored · M unrecognised"
-with Next unrecognised, Copy reply and Open as tab. The reply as pasted is
-kept encrypted in its case, or only while the tab is open without a case
-([ADR 0078](docs/adr/0078-restore-in-place.md)).
+with Next unrecognised, Copy reply and Open as tab. Plain text: a paste is
+kept exactly. The reply, in alias form, is kept encrypted in its case, or
+only while the tab is open without a case; its aliases follow the document's
+renumbering ([ADR 0078](docs/adr/0078-restore-in-place.md)).
 
 **Reply view**: the view switcher's read-only Reply segment showing the
 restored reply; live, like Before / after, and shown while a reply exists.

@@ -605,6 +605,8 @@ pub struct EditorState {
     /// Shown for reading only: no user edit changes the text. The host can
     /// still replace it (`set_text`, `replace_ranges`).
     read_only: bool,
+    /// A plain-text field (see [`Self::set_plain_text`]).
+    plain: bool,
     focus_handle: FocusHandle,
     /// The whole document, newline-separated. Byte offsets index into this.
     content: String,
@@ -886,6 +888,7 @@ impl EditorState {
     pub fn new(_window: &mut Window, cx: &mut Context<Self>) -> Self {
         Self {
             read_only: false,
+            plain: false,
             focus_handle: cx.focus_handle(),
             content: String::new(),
             placeholder: SharedString::default(),
@@ -997,6 +1000,15 @@ impl EditorState {
     }
     pub fn is_read_only(&self) -> bool {
         self.read_only
+    }
+
+    /// Make this a plain-text field whose text is exactly what was typed or
+    /// pasted: a paste inserts the clipboard text as it is (line endings
+    /// normalized), Enter and ⇧Enter type one newline, and ⌫ / ⌦ remove one
+    /// character. No Markdown paste or Enter rules apply. Leave Markdown
+    /// styling off for such a field.
+    pub fn set_plain_text(&mut self, plain: bool) {
+        self.plain = plain;
     }
 
     /// Keep the caret visible in the host's scroll view: keyboard moves fit

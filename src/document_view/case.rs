@@ -10,6 +10,9 @@ impl DocumentView {
     /// Ask the workspace to save this tab's mapping into its case, once
     /// changes settle.
     pub(crate) fn schedule_case_save(&mut self, cx: &mut Context<Self>) {
+        // Every mapping change passes here, in a case or not: the AI reply's
+        // aliases follow renumbering (ADR 0078).
+        self.follow_reply_aliases_soon(cx);
         let effect = self.case.mapping_changed();
         self.carry_out_case_link(effect, cx);
     }

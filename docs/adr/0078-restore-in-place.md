@@ -36,11 +36,22 @@ reply box beside the export controls, live, in the same document.
 - **Paste AI Response stays.** The File menu item, ⌥⇧⌘V and case actions keep
   opening a restore tab as in ADR 0041. The box replaces Share's old
   "Paste AI reply" button.
+- **Plain text box.** The box keeps exactly what is pasted or typed: no
+  Markdown paste or Enter rules (math fences, table cells, paragraph breaks),
+  one newline per Enter. A long reply scrolls inside the box with the caret
+  kept in view.
 - **Kept with the document.** One reply per document. In a case it is stored in
   the case file, encrypted like the mapping; without a case it lives only while
   the tab is open. An unsaved (untitled) tab in a case keeps its reply in
   memory until its first save, which stores it. Clearing the box removes it,
   from the case too.
+- **Aliases followed.** The reply is kept in alias form, never as restored
+  text. When the document's aliases change under it (joining a case
+  renumbers them, a case-wide rename arrives, or Undo / Redo of either), the
+  reply's alias tokens are rewritten to the aliases their identities hold
+  now, so it keeps restoring to the same people; the case stores the
+  rewritten reply. A reshaped generated token (`person 1`) keeps its shape.
+  Restoring prefers an identity's current alias over another's retired one.
 
 ## Invariants
 

@@ -123,6 +123,15 @@ impl CompareState {
     pub(crate) fn reply_text(&self, cx: &gpui::App) -> String {
         self.reply.read(cx).text().to_owned()
     }
+    /// Whether the Reply view, as last painted, shows the row holding
+    /// `offset` inside its viewport.
+    pub(crate) fn reply_shows(&self, offset: usize, cx: &gpui::App) -> bool {
+        let viewport = self.reply_scroll.bounds();
+        self.reply
+            .read(cx)
+            .offset_screen_top(offset)
+            .is_some_and(|top| top >= viewport.top() && top + px(16.) <= viewport.bottom())
+    }
     pub(super) fn current_focus(&self, cx: &gpui::App) -> FocusHandle {
         self.current.read(cx).focus_handle(cx)
     }
@@ -659,21 +668,16 @@ impl DocumentView {
         }
     }
     /// Scroll the Reply view to `offset` in the restored text and flash the
-    /// token there.
+    /// token there. The editor scrolls once it has painted the text, so a
+    /// view opened by this same click, not laid out yet, still reveals it.
     pub(super) fn reveal_in_reply(&mut self, offset: usize, cx: &mut Context<Self>) {
         let Some(state) = self.compare.as_ref() else {
             return;
         };
-        let scroll = &state.reply_scroll;
-        let viewport = scroll.bounds();
-        if let Some(top) = state.reply.read(cx).offset_screen_top(offset)
-            && (top < viewport.top() || top + px(24.) > viewport.bottom())
-        {
-            let delta = top - viewport.top() - px(48.);
-            let mut position = scroll.offset();
-            position.y = (position.y - delta).clamp(-scroll.max_offset().y, px(0.));
-            scroll.set_offset(position);
-        }
+        state
+            .reply
+            .clone()
+            .update(cx, |editor, cx| editor.reveal_offset(offset, cx));
         if !cx.reduce_motion() {
             let red = crate::style::markdown_style(self.theme.get()).alert_caution;
             let id = super::restore::UNRESOLVED_ID | offset as u64;

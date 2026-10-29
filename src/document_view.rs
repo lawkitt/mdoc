@@ -149,6 +149,8 @@ pub(crate) struct DocumentView {
     pub(crate) reply: pii::ui::ReplyBox,
     /// The Share panel's reply box, made when Share first draws.
     pub(crate) reply_box: Option<(Entity<EditorState>, Subscription)>,
+    /// The reply box's scroll, which keeps its caret in view.
+    pub(crate) reply_scroll: gpui::ScrollHandle,
     /// The saved case this tab's mapping belongs to (ADR 0041).
     pub(crate) case: case_link::CaseLink,
     /// The waiting save of the mapping into the case.
@@ -356,6 +358,7 @@ impl DocumentView {
             copied_reply: false,
             reply: Default::default(),
             reply_box: None,
+            reply_scroll: gpui::ScrollHandle::new(),
             case: Default::default(),
             case_save: None,
             case_names_open: false,
