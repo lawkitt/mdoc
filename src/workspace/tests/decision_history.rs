@@ -236,6 +236,32 @@ fn decision_history_undoing_a_join_that_only_proposes_withdraws_its_proposals(
         assert_eq!(view.editor.read(cx).text(), text);
         assert!(view.pii.review().applied().is_empty());
     });
+
+    // Removed from the case and joined again, the withdrawn name is
+    // proposed anew, on the new join's step.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.remove_from_case(reply, window, cx)
+    });
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(reply, &case, window, cx)
+    });
+    cx.run_until_parked();
+    view.read_with(cx, |view, _| assert_eq!(view.pii.review().remaining(), 1));
+    view.update_in(cx, |view, window, cx| {
+        view.apply_all_pii(&PiiApplyAll, window, cx)
+    });
+    cx.run_until_parked();
+    view.read_with(cx, |view, cx| {
+        assert_eq!(view.editor.read(cx).text(), "PERSON_1 wrote back.");
+    });
+    undo_redo(cx, true);
+    view.read_with(cx, |view, cx| {
+        assert_eq!(view.editor.read(cx).text(), text);
+        assert_eq!(view.pii.review().remaining(), 1);
+    });
+    undo_redo(cx, true);
+    view.read_with(cx, |view, _| assert_eq!(view.pii.review().remaining(), 0));
 }
 
 fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {

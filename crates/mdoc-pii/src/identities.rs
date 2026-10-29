@@ -494,6 +494,12 @@ impl Review {
                 .filter(|o| o.step.identity == id)
                 .count()
     }
+    /// A variant off only by default: an undone step that switched it on
+    /// (a case join, a manual addition) withdrew it. No Keep of its own.
+    pub(super) fn withdrawn(&self, group: u64) -> bool {
+        self.variant(group).is_some_and(|g| g.keep_default)
+            && !self.identities.policy.kept.contains_key(&group)
+    }
     pub(super) fn set_kept(&mut self, group: u64, kept: bool) {
         Arc::make_mut(&mut self.identities.policy)
             .kept

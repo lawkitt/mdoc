@@ -475,7 +475,13 @@ impl Review {
                 }
             }
             for original in &exported.originals {
-                if self.candidates.by_original(original).is_some() {
+                if let Some(group) = self.candidates.by_original(original) {
+                    // A proposal an undone join withdrew returns on this
+                    // step, for the identity seeded now; a Keep stays.
+                    if on_step && self.withdrawn(group) {
+                        self.set_kept(group, false);
+                        let _ = self.assign_variant(group, id);
+                    }
                     continue;
                 }
                 self.next_id += 1;
