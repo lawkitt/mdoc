@@ -4473,6 +4473,7 @@ dependencies = [
 name = "mdoc"
 version = "0.2.1"
 dependencies = [
+ "chrono",
  "dirs 7.0.0",
  "dunce",
  "embed-resource",

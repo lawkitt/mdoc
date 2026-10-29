@@ -81,7 +81,15 @@ impl DocumentView {
         let before = self.pii.review.remaining();
         if !plan.unmatched.is_empty() {
             let text = self.editor.read(cx).text().to_owned();
-            self.pii.review.seed(&plan.unmatched, &text);
+            // A join that only proposes still makes its own undo point, so
+            // What you did lists it (ADR 0079).
+            let seeded = plan.changes.is_empty()
+                && self
+                    .checkpoint_review(cx, |review| review.seed(&plan.unmatched, &text))
+                    .is_some();
+            if !seeded {
+                self.pii.review.seed(&plan.unmatched, &text);
+            }
         }
         let summary = JoinSummary {
             renumbered: plan.changes.len(),
@@ -92,6 +100,20 @@ impl DocumentView {
         }
         self.review_changed(cx);
         cx.notify();
+        Ok(summary)
+    }
+    /// Join case `name` (ADR 0041) as one decision in What you did (ADR 0079).
+    pub(crate) fn join_case(
+        &mut self,
+        name: &str,
+        case: &[ExportedIdentity],
+        reserved: &[String],
+        cx: &mut Context<Self>,
+    ) -> Result<JoinSummary, String> {
+        let before = self.editor.read(cx).history_id();
+        let summary = self.join_case_identities(case, reserved, cx)?;
+        let decision = mdoc_pii::decisions::Decision::JoinCase { case: name.into() };
+        self.record_decision(before, decision, cx);
         Ok(summary)
     }
     /// Follow changes another member made: `renames` maps an alias this tab

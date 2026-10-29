@@ -48,11 +48,6 @@ Added at the 2026-10-29 grill ([record](docs/design/roadmap-grill-2026-10-29.md)
    *From Anoni 0.86.1.* The Replace pill splits into "Replace · Person ▾".
    *Done when:* a mouse and a keyboard-only run add a selection in a picked
    category, and ⌘⌥P still adds with the guess.
-6. **[Workspace] What you did** ([ADR 0079](docs/adr/0079-decision-history.md)).
-   *From Anoni 0.86.1.* A header popover lists the document's decisions with
-   times; a click travels the undo history to that entry.
-   *Done when:* tests show each listed decision kind, travel equal to ⌘Z/⇧⌘Z,
-   undone entries dropped by a new decision, and nothing written to disk.
 
 ## Later
 

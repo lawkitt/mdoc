@@ -5,6 +5,7 @@
 use super::KeptName;
 use crate::{document_view::DocumentView, pii::ui::APPLIED_ID};
 use gpui::Context;
+use mdoc_pii::decisions::{Decision, Mentions};
 use std::{ops::Range, sync::Arc};
 
 /// What a row's checkbox shows.
@@ -137,10 +138,24 @@ impl DocumentView {
             return false;
         }
         let source = self.editor.read(cx).text().to_owned();
+        let before = self.editor.read(cx).history_id();
         let added =
             self.checkpoint_review(cx, |review| review.propose_kept_mentions(&source, &ranges));
-        let proposed = added.unwrap_or(0) > 0;
+        let added = added.unwrap_or(0);
+        let proposed = added > 0;
         if proposed {
+            // Listed like the Keep it reverses (ADR 0079). A kept mention is
+            // still its original in the text.
+            let mentions = if added == ranges.len() {
+                Mentions::of(
+                    ranges
+                        .iter()
+                        .filter_map(|r| source.get(r.clone()).map(Arc::from)),
+                )
+            } else {
+                Mentions::Many(added)
+            };
+            self.record_decision(before, Decision::Repropose(mentions), cx);
             self.pii.reviewing = true;
             self.pii.error = None;
             self.review_changed(cx);

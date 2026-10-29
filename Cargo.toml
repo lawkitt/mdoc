@@ -49,6 +49,8 @@ serde_json = "1"
 semver = "1"
 # canonicalize without Windows verbatim (`\\?\`) prefixes in user-visible paths.
 dunce = "1"
+# Local wall-clock times of decisions in What you did (ADR 0079).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 gpui = { workspace = true }
 gpui_platform = { workspace = true }
 mdoc-editor = { path = "crates/mdoc-editor" }

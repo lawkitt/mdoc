@@ -5,7 +5,10 @@ use crate::{
     pii::ui::{APPLIED_ID, KEPT_ID, PiiClosePopup},
 };
 use gpui::{App, Context, Focusable, Window, px};
-use mdoc_pii::Category;
+use mdoc_pii::{
+    Category,
+    decisions::{Decision, Mentions},
+};
 use std::{ops::Range, sync::Arc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -570,6 +573,8 @@ impl DocumentView {
             cx.notify();
             return;
         };
+        let applied = Mentions::of(plans.iter().map(|p| p.before.clone()));
+        self.record_decision(before, Decision::Apply(applied), cx);
         self.pii.mapping.record_apply(before, after);
         self.pii.review.refresh(self.editor.read(cx).text());
         self.pii.error = None;
@@ -732,9 +737,12 @@ impl DocumentView {
             return;
         }
         let active = self.active_replacement_range();
+        let before = self.editor.read(cx).history_id();
+        let undone = Mentions::of(self.applied_originals(&ids));
         let Some(edits) = self.revert_applied(&ids, false, cx) else {
             return;
         };
+        self.record_decision(before, Decision::UndoReplacement(undone), cx);
         self.review_changed(cx);
         let restored: std::collections::HashSet<_> = Self::edited_ranges(&edits)
             .into_iter()
@@ -784,6 +792,15 @@ impl DocumentView {
             return false;
         }
         let active = self.active_replacement_range();
+        let before = self.editor.read(cx).history_id();
+        let kept = {
+            let review = &self.pii.review;
+            let proposed = candidates
+                .iter()
+                .filter_map(|(group, _)| review.variant(*group).map(|v| v.original.clone()));
+            let applied = self.applied_originals(&applied.iter().copied().collect());
+            Mentions::of(proposed.chain(applied).collect::<Vec<_>>())
+        };
         let mut moved = Vec::new();
         let mut faded: Vec<(Range<usize>, bool)> = Vec::new();
         if applied.is_empty() {
@@ -818,6 +835,7 @@ impl DocumentView {
             faded.extend(shifted.iter().map(|(_, r)| (r.clone(), false)));
             self.pii.review.keep_mentions(shifted);
         }
+        self.record_decision(before, Decision::Keep(kept), cx);
         let history = self.editor.read(cx).history_id();
         self.pii.mapping.record_kept(count, history);
         self.flash_notice(cx);
@@ -861,21 +879,31 @@ impl DocumentView {
         }
         let active = self.active_replacement_range();
         let review = &self.pii.review;
-        let mut edits: Vec<_> = review
-            .candidates()
-            .iter()
-            .filter_map(|c| {
-                let id = review.occurrence_identity(c.variant, &c.range)?;
-                Some((c.range.clone(), review.identity(id)?.alias.clone()))
-            })
-            .collect();
-        edits.extend(review.applied().iter().filter_map(|a| {
-            let alias = &review.identity(a.step.identity)?.alias;
-            (a.step.after.as_ref() != alias).then(|| (a.range.clone(), alias.clone()))
-        }));
+        // Each edit with the original it replaces: proposals, and applied
+        // mentions whose alias is corrected. Both count as applied.
+        let mut edits = Vec::new();
+        let mut applied = Vec::new();
+        for c in review.candidates() {
+            let Some(id) = review.occurrence_identity(c.variant, &c.range) else {
+                continue;
+            };
+            if let Some(identity) = review.identity(id) {
+                edits.push((c.range.clone(), identity.alias.clone()));
+            }
+            applied.extend(review.variant(c.variant).map(|v| v.original.clone()));
+        }
+        for a in review.applied() {
+            if let Some(identity) = review.identity(a.step.identity)
+                && a.step.after.as_ref() != identity.alias
+            {
+                edits.push((a.range.clone(), identity.alias.clone()));
+                applied.push(a.step.original_shared().clone());
+            }
+        }
         edits.sort_by_key(|(r, _)| r.start);
         let before = self.editor.read(cx).history_id();
         self.apply_aliases(cx);
+        self.record_decision(before, Decision::Apply(Mentions::of(applied)), cx);
         let after = self.editor.read(cx).history_id();
         if after != before {
             self.pii.mapping.record_applied(edits.len(), after);
