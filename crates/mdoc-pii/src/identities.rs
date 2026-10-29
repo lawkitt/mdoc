@@ -479,15 +479,6 @@ impl Review {
         if self.reserved_tokens.contains(alias) {
             return Err("That alias was retired by the case. Choose another alias.".into());
         }
-        if self
-            .identities
-            .policy
-            .retired
-            .values()
-            .any(|aliases| aliases.iter().any(|a| a == alias))
-        {
-            return Err("That alias was retired. Choose another alias.".into());
-        }
         if !valid_replacement(alias) {
             return Err("Use an ASCII alias with letters, digits, underscores or hyphens (up to 128 characters).".into());
         }

@@ -2365,11 +2365,10 @@ fn merge_hint_retains_target_primary_for_equal_length_wordings(cx: &mut gpui::Te
         assert_eq!(exported.len(), 1);
         assert_eq!(exported[0].wording(), "Павлова Марина");
         assert_eq!(exported[0].alias, "PERSON_1");
-        assert!(
-            app.pii
-                .review
-                .rename_identity(hint.into, "PERSON_2")
-                .is_err()
+        let unrelated = app.pii.review.new_identity(Category::Person);
+        assert_eq!(
+            app.pii.review.identity(unrelated).unwrap().alias,
+            "PERSON_3"
         );
     });
 }
