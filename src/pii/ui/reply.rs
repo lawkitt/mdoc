@@ -154,6 +154,9 @@ impl DocumentView {
                 .with_placeholder("Paste the AI's reply here");
             editor.set_markdown_style(crate::style::markdown_style(theme), cx);
             editor.set_text(text, cx);
+            // Unlike the document editor, this field participates in the
+            // Share panel's Tab order. Clones share the focus metadata.
+            editor.focus_handle(cx).tab_index(0).tab_stop(true);
             editor
         });
         let subscription = cx.subscribe_in(&editor, window, |this, editor, event, window, cx| {

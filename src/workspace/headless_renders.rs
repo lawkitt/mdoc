@@ -542,7 +542,14 @@ fn scenarios(
         })
     })?;
     records.push(d.capture(out, "reply-view")?);
-    d.change(|_, window, cx| view.update(cx, |v, cx| v.set_view_mode(None, window, cx)))?;
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            v.set_view_mode(None, window, cx);
+            // Start this Share Tab walk in the panel. The document editor's
+            // Tab indents text and intentionally stays in its own region.
+            window.focus(&v.replacements_focus(), cx);
+        })
+    })?;
     records.push(d.capture(out, "share-reply")?);
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {

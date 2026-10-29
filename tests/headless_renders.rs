@@ -231,6 +231,16 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     },
                     "{theme}/{name}"
                 );
+                if matches!(*name, "reply-view" | "share-reply") {
+                    assert!(
+                        record["tab_order"].as_array().unwrap().iter().any(|step| {
+                            step["key_contexts"]
+                                .as_str()
+                                .is_some_and(|contexts| contexts.contains("ReplyBox"))
+                        }),
+                        "reply box missing from Tab walk on {theme}/{name}"
+                    );
+                }
                 assert_eq!(
                     record["state"]["settings"],
                     name.starts_with("settings-") || *name == "dictionary",

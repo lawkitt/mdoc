@@ -2,7 +2,16 @@
 mod case_sync;
 mod chooser;
 mod compare;
-pub(crate) use compare::{CompareMode, CompareState, SwitcherRest};
+#[cfg(any(
+    test,
+    all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    )
+))]
+pub(crate) use compare::CompareMode;
+pub(crate) use compare::{CompareState, SwitcherRest};
 mod discovery;
 mod mapping;
 mod render;
@@ -282,6 +291,14 @@ pub(crate) const POPUP_UNDO: &str = "PseudonymReview && !PseudonymReplacement";
 pub(crate) fn bind_keys(cx: &mut App) {
     cx.bind_keys(crate::shortcuts::bindings(crate::shortcuts::Owner::Pii));
     cx.bind_keys([
+        // This multiline field is a Share control: Tab moves between
+        // controls instead of indenting the pasted reply.
+        KeyBinding::new("tab", crate::ui::NextControl, Some("ReplyBox > Editor")),
+        KeyBinding::new(
+            "shift-tab",
+            crate::ui::PreviousControl,
+            Some("ReplyBox > Editor"),
+        ),
         KeyBinding::new("down", PiiNextChoice, Some("PiiChooser")),
         KeyBinding::new("up", PiiPreviousChoice, Some("PiiChooser")),
         KeyBinding::new("enter", PiiOpenChoice, Some("PiiChooser")),
@@ -322,6 +339,12 @@ impl DocumentView {
     }
     pub(crate) fn sync_pii_theme(&mut self, cx: &mut Context<Self>) {
         self.sync_annotations(cx);
+        if let Some(editor) = self.reply_box().cloned() {
+            let theme = self.theme.get();
+            editor.update(cx, |editor, cx| {
+                editor.set_markdown_style(crate::style::markdown_style(theme), cx);
+            });
+        }
     }
     /// Domain changes schedule spellcheck and a case save. Derived review data
     /// needs no bump here: it follows `Review::revision`.

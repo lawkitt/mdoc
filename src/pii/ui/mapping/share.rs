@@ -1,5 +1,6 @@
 //! The Inspector's Share tab (ADR 0048 variant C): everything that takes the
-//! pseudonymized document out, and brings the AI's reply back.
+//! pseudonymized document out, and an AI reply box that restores in place
+//! with Copy reply and Open as tab (ADR 0078).
 use super::Selection;
 use crate::{
     document_view::{CopyMarkdown, DocumentView, SaveAs},
@@ -160,7 +161,7 @@ impl DocumentView {
                             .flex_wrap()
                             .gap_2()
                             .child(
-                                ui::primary_button("share-copy-markdown", if copied && !self.copied_for_ai { "Copied" } else { "Copy Markdown" }, theme, true)
+                                ui::primary_button("share-copy-markdown", if copied && !self.copied_for_ai && !self.copied_reply { "Copied" } else { "Copy Markdown" }, theme, true)
                                     .when(cfg!(test), |v| v.debug_selector(|| "share-copy-markdown".into()))
                                     .on_click(cx.listener(|this, _, window, cx| this.copy_markdown(&CopyMarkdown, window, cx))),
                             )
@@ -169,7 +170,7 @@ impl DocumentView {
                                     .on_click(|_, window, cx| window.dispatch_action(Box::new(SaveAs), cx)),
                             ),
                     )
-                    .when(aliases, |v| v.children(self.reply_section(window, cx)))
+                    .when(aliases || self.reply.exists(), |v| v.children(self.reply_section(cx)))
                     .child(section("Case"))
                     .child(match case {
                         Some(link) => ui::control("share-case-page", "", theme, true)
@@ -211,14 +212,11 @@ impl DocumentView {
 impl DocumentView {
     /// The "AI reply" box under Copy for AI (ADR 0078): pasting restores at
     /// once into the Reply view; the summary counts what came back.
-    fn reply_section(&self, window: &Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+    fn reply_section(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let editor = self.reply_box()?.clone();
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let focused = editor
-            .read(cx)
-            .focus_handle(cx)
-            .contains_focused(window, cx);
+        let focus = editor.read(cx).focus_handle(cx);
         let exists = self.reply.exists();
         let unresolved = self.reply.restored().unresolved.len();
         let copied = self.copy_feedback.is_some() && self.copied_reply;
@@ -243,8 +241,9 @@ impl DocumentView {
                         .child("AI REPLY"),
                 )
                 .child(
-                    div()
-                        .id("share-reply-box")
+                    ui::focus_ring("share-reply-box", theme)
+                        .track_focus(&focus)
+                        .aria_label("AI reply")
                         .when(cfg!(test), |v| {
                             v.debug_selector(|| "share-reply-box".into())
                         })
@@ -256,11 +255,7 @@ impl DocumentView {
                         .py_1()
                         .rounded_md()
                         .border_1()
-                        .border_color(if focused {
-                            theme.search_accent()
-                        } else {
-                            p.border
-                        })
+                        .border_color(p.border)
                         .bg(p.bg)
                         .text_size(px(13.))
                         .cursor_text()
@@ -272,15 +267,12 @@ impl DocumentView {
                 .child(if exists {
                     div()
                         .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(
-                            muted(self.reply.summary())
-                                .when(cfg!(test), |v| {
-                                    v.debug_selector(|| "share-reply-summary".into())
-                                })
-                                .flex_1(),
-                        )
+                        .flex_col()
+                        .items_start()
+                        .gap_1()
+                        .child(muted(self.reply.summary()).when(cfg!(test), |v| {
+                            v.debug_selector(|| "share-reply-summary".into())
+                        }))
                         .when(unresolved > 0, |v| {
                             v.child(
                                 ui::control(

@@ -134,8 +134,49 @@ fn captured_replies_restore_completely_in_the_reply_view(cx: &mut TestAppContext
 fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    cx.update(|_, cx| crate::pii::ui::bind_keys(cx));
     let source = active(&tabs, cx);
     open_share(&source, cx);
+    cx.update(|window, cx| window.focus(&source.read(cx).replacements_focus(), cx));
+    let box_focused = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| {
+            source
+                .read(cx)
+                .reply_box()
+                .unwrap()
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+        })
+    };
+    for _ in 0..20 {
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        if box_focused(cx) {
+            break;
+        }
+    }
+    assert!(box_focused(cx), "the reply box is reachable by Tab");
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    assert!(
+        !box_focused(cx),
+        "Tab leaves the reply box: {:?}",
+        cx.update(|window, cx| (
+            format!("{:?}", window.context_stack()),
+            source
+                .read(cx)
+                .reply_box()
+                .unwrap()
+                .read(cx)
+                .text()
+                .to_owned()
+        ))
+    );
+    cx.simulate_keystrokes("shift-tab");
+    draw(cx);
+    assert!(box_focused(cx), "Shift-Tab returns to the reply box");
+    cx.update(|_, cx| assert_eq!(source.read(cx).reply_box().unwrap().read(cx).text(), ""));
     // Before a reply: no Reply segment, actions off.
     source.update_in(cx, |view, window, cx| {
         view.set_view_mode(Some(CompareMode::Side), window, cx)
@@ -247,6 +288,23 @@ fn the_reply_box_restores_at_once_and_opens_as_the_restore_tab(cx: &mut TestAppC
     );
     assert_eq!(summary(&source, cx), "1 value restored · 3 unrecognised");
 
+    // Reply is independent of the document's before/after views. Removing
+    // the last applied identity must leave the reply readable and editable.
+    source.update(cx, |view, cx| {
+        view.forget_case_identity(&["ORG_1"], &["Northwind Traders Ltd".into()], &[], cx);
+    });
+    draw(cx);
+    assert_eq!(mode(&source, cx), Some(CompareMode::Reply));
+    assert!(cx.debug_bounds("view-reply").is_some());
+    assert!(cx.debug_bounds("share-reply-box").is_some());
+    source.update_in(cx, |view, window, cx| view.set_view_mode(None, window, cx));
+    source.update_in(cx, |view, window, cx| {
+        view.set_view_mode(Some(CompareMode::Reply), window, cx)
+    });
+    draw(cx);
+    assert_eq!(mode(&source, cx), Some(CompareMode::Reply));
+    assert_eq!(reply_view_text(&source, cx), reply);
+
     // Clearing the box removes the reply and leaves the Reply view.
     fill(&source, "", cx);
     assert_eq!(mode(&source, cx), None);
@@ -349,4 +407,60 @@ fn without_a_case_the_reply_lives_only_in_the_tab(cx: &mut TestAppContext) {
             .unwrap()
             .contains("tab-only")
     );
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    // The file is saved; only the memory-only mapping needs a close answer.
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(tab, window, cx));
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    cx.simulate_prompt_answer("Close");
+    cx.run_until_parked();
+    cx.update(|_, cx| assert!(!tabs.read(cx).tabs.contains(tab)));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![path], window, cx)
+    });
+    cx.run_until_parked();
+    let reopened = active(&tabs, cx);
+    cx.update(|_, cx| assert!(!reopened.read(cx).reply.exists()));
+}
+
+#[gpui::test]
+fn a_reply_follows_case_creation_member_rename_leave_and_join(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    open_share(&view, cx);
+    let reply = "PERSON_1 owes ORG_1 a response.";
+    fill(&view, reply, cx);
+    view.update(cx, |view, cx| view.write(path.clone(), None, cx));
+    cx.run_until_parked();
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let case = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(tab, window, cx).unwrap()
+    });
+    cx.run_until_parked();
+    let store = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let old = session_store::identity(&path);
+    assert_eq!(store.load(&case).unwrap().reply(&old), Some(reply));
+
+    let renamed = dir.path().join("renamed.md");
+    view.update(cx, |view, cx| view.write(renamed.clone(), None, cx));
+    cx.run_until_parked();
+    let member = session_store::identity(&renamed);
+    let saved = store.load(&case).unwrap();
+    assert_eq!(saved.reply(&old), None);
+    assert_eq!(saved.reply(&member), Some(reply));
+
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.remove_from_case(tab, window, cx)
+    });
+    cx.run_until_parked();
+    assert!(store.load(&case).unwrap().replies.is_empty());
+    cx.update(|_, cx| assert_eq!(view.read(cx).reply.text(), reply));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(tab, &case, window, cx)
+    });
+    cx.run_until_parked();
+    assert_eq!(store.load(&case).unwrap().reply(&member), Some(reply));
+    fill(&view, " \n  ", cx);
+    assert!(store.load(&case).unwrap().replies.is_empty());
 }

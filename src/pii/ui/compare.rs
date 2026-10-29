@@ -175,6 +175,9 @@ impl DocumentView {
             self.close_compare(window, cx);
             return;
         }
+        self.open_compare(CompareMode::Side, window, cx);
+    }
+    fn open_compare(&mut self, mode: CompareMode, window: &mut Window, cx: &mut Context<Self>) {
         let theme = self.theme.get();
         let pane = |scroll: &gpui::ScrollHandle, window: &mut Window, cx: &mut Context<Self>| {
             let editor = cx.new(|cx| {
@@ -232,7 +235,7 @@ impl DocumentView {
             marks: Vec::new(),
             hid_preview,
             original_only: false,
-            mode: CompareMode::Side,
+            mode,
             _subscriptions: [left, right],
         });
         self.refresh_compare(window, cx);
@@ -253,9 +256,10 @@ impl DocumentView {
                 }
             }
             Some(CompareMode::Reply) if !self.reply.exists() => {}
+            Some(mode) if mode != CompareMode::Reply && !self.has_applied_aliases() => {}
             Some(mode) => {
                 if self.compare.is_none() {
-                    self.toggle_compare(window, cx);
+                    self.open_compare(mode, window, cx);
                 }
                 if let Some(state) = self.compare.as_mut() {
                     state.mode = mode;
@@ -392,32 +396,31 @@ impl DocumentView {
                                 this.wake_switcher(cx);
                             }
                         }))
-                        .when(views, |v| {
+                        .when(views || self.reply.exists(), |v| {
                             v.child(segment("view-edit", "Edit", None))
-                                .child(segment(
-                                    "view-original",
-                                    "Original",
-                                    Some(CompareMode::Original),
-                                ))
-                                .child(segment(
-                                    "view-pseudonymized",
-                                    "Pseudonymized",
-                                    Some(CompareMode::Pseudonymized),
-                                ))
-                                .child(segment(
-                                    "view-side",
-                                    "Side by side",
-                                    Some(CompareMode::Side),
-                                ))
-                                // While a reply exists (ADR 0078).
-                                .when(self.reply.exists(), |v| {
-                                    v.child(segment(
-                                        "view-reply",
-                                        "Reply",
-                                        Some(CompareMode::Reply),
-                                    ))
-                                })
-                                .child(div().w(px(1.)).h(px(16.)).mx_1().bg(palette.border))
+                        })
+                        .when(views, |v| {
+                            v.child(segment(
+                                "view-original",
+                                "Original",
+                                Some(CompareMode::Original),
+                            ))
+                            .child(segment(
+                                "view-pseudonymized",
+                                "Pseudonymized",
+                                Some(CompareMode::Pseudonymized),
+                            ))
+                            .child(segment(
+                                "view-side",
+                                "Side by side",
+                                Some(CompareMode::Side),
+                            ))
+                        })
+                        .when(self.reply.exists(), |v| {
+                            v.child(segment("view-reply", "Reply", Some(CompareMode::Reply)))
+                        })
+                        .when(views || self.reply.exists(), |v| {
+                            v.child(div().w(px(1.)).h(px(16.)).mx_1().bg(palette.border))
                         })
                         .child(zoom_step(
                             "zoom-out",
@@ -478,6 +481,9 @@ impl DocumentView {
         let Some(state) = self.compare.as_ref() else {
             return;
         };
+        if state.mode == CompareMode::Reply {
+            return;
+        }
         let editor = self.editor.read(cx);
         let key = Some((
             editor.revision(),

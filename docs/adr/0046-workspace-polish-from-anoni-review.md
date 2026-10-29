@@ -45,7 +45,8 @@ local-only note and more before/after views.
    replacements are applied. Original and Pseudonymized are the ADR 0042 view
    with one column; the hidden column stays laid out so scrolling and switching
    keep the reading position. ADR 0042's behaviour applies to all three. No
-   Reply mode (a restored reply is its own tab), no zoom.
+   zoom. While a reply exists, a fifth **Reply** segment shows its restored
+   text live and read-only (ADR 0078); Open as tab makes a restore tab.
 
 ## Not adopted
 
