@@ -1482,4 +1482,39 @@ fn merge_hint_dismissal_survives_case_reopen(cx: &mut TestAppContext) {
         ))
         .is_none()
     );
+
+    // Paste AI Response creates a different case member through start_restored.
+    restored.update_in(cx, |tabs, window, cx| {
+        let reply = crate::pii::ui::RestoredReply {
+            text: "PERSON_1 met PERSON_2".into(),
+            identities: case.exported(),
+            source_name: "contract".into(),
+            case: reopened.read(cx).case.link().cloned(),
+        };
+        tabs.event(
+            tabs.tabs.active(),
+            &TabEvent::Tabs(TabsEvent::Restored(reply.into())),
+            window,
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    let reply = active(&restored, cx);
+    reply.update_in(cx, |view, window, cx| {
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    let from = cx.update(|_, cx| {
+        assert_ne!(reply.entity_id(), reopened.entity_id());
+        assert!(reply.read(cx).case.is(&case.id));
+        reply.read(cx).pii.review().merge_hints()[0].from
+    });
+    assert!(
+        cx.debug_bounds(Box::leak(
+            format!("merge-hint-dismiss-{from}").into_boxed_str()
+        ))
+        .is_none()
+    );
 }

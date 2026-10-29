@@ -22,6 +22,10 @@ pub struct IdentityPolicy {
     /// Variant id → identity, overriding the identity the variant was seeded with.
     variants: HashMap<u64, u64>,
     kept: HashMap<u64, bool>,
+    /// Earlier aliases of merged or seeded identities, following mapping undo.
+    retired: HashMap<u64, Vec<String>>,
+    /// A merge keeps the target's primary even for equally long wordings.
+    primary: HashMap<u64, Arc<str>>,
 }
 pub type IdentitySnapshot = Arc<IdentityPolicy>;
 #[derive(Default)]
@@ -32,6 +36,19 @@ pub(super) struct IdentityStore {
     history: HashMap<u64, IdentitySnapshot>,
 }
 impl IdentityStore {
+    pub(super) fn primary_wording(&self, id: u64) -> Option<&Arc<str>> {
+        self.policy.primary.get(&id)
+    }
+    pub(super) fn retired_aliases(&self, id: u64) -> &[String] {
+        self.policy.retired.get(&id).map_or(&[], Vec::as_slice)
+    }
+    pub(super) fn seed_retired_aliases(&mut self, id: u64, aliases: &[String]) {
+        if !aliases.is_empty() {
+            Arc::make_mut(&mut self.policy)
+                .retired
+                .insert(id, aliases.to_vec());
+        }
+    }
     pub(crate) fn normalized_identity(&self, value: &str, category: Category) -> Option<u64> {
         self.normalized
             .get(&(category, canonical(value)))
@@ -339,6 +356,8 @@ impl Review {
         let scrub = |policy: &mut IdentitySnapshot| {
             let policy = Arc::make_mut(policy);
             policy.edited.remove(&id);
+            policy.retired.remove(&id);
+            policy.primary.remove(&id);
             policy
                 .variants
                 .retain(|group, owner| !groups.contains(group) && *owner != id);
@@ -452,6 +471,15 @@ impl Review {
         self.revision.advance();
         if self.reserved_tokens.contains(alias) {
             return Err("That alias was retired by the case. Choose another alias.".into());
+        }
+        if self
+            .identities
+            .policy
+            .retired
+            .values()
+            .any(|aliases| aliases.iter().any(|a| a == alias))
+        {
+            return Err("That alias was retired. Choose another alias.".into());
         }
         if !valid_replacement(alias) {
             return Err("Use an ASCII alias with letters, digits, underscores or hyphens (up to 128 characters).".into());
@@ -687,6 +715,35 @@ impl Review {
         }
         self.identity(target)
             .ok_or("Identity is no longer available.")?;
+        let alias = self
+            .identity(from)
+            .ok_or("Identity is no longer available.")?
+            .alias
+            .clone();
+        let exported = self.export_identities_with_ids();
+        let primary = exported
+            .iter()
+            .find(|(id, _)| *id == target)
+            .map(|(_, e)| e.originals[0].clone());
+        let mut retired = exported
+            .into_iter()
+            .find(|(id, _)| *id == from)
+            .map(|(_, e)| e.previous)
+            .unwrap_or_default();
+        retired.push(alias);
+        let policy = Arc::make_mut(&mut self.identities.policy);
+        if let Some(primary) = primary {
+            policy.primary.insert(target, primary);
+        }
+        if let Some(previous) = policy.retired.remove(&from) {
+            retired.extend(previous);
+        }
+        let previous = policy.retired.entry(target).or_default();
+        for alias in retired {
+            if !previous.contains(&alias) {
+                previous.push(alias);
+            }
+        }
         let groups: Vec<_> = self
             .variants()
             .iter()

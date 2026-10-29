@@ -155,7 +155,7 @@ pub(super) enum CaseEvent {
     Changed,
     /// Add a name to the tab's case before it appears (ADR 0041 #11).
     AddTerm(String),
-    /// Keep a dismissed merge hint, as its (shorter, fuller) wordings, in the
+    /// Keep a dismissed merge hint, as its (shorter, fuller) primary wordings, in the
     /// tab's case (ADR 0080).
     DismissHint(String, String),
     /// Save the tab's mapping as a case, from the Inspector (ADR 0048, C),
@@ -1386,8 +1386,10 @@ impl Workspace {
                         .and_then(|link| self.case_coordinator.case(&link.id))
                     {
                         let reserved = case.reserved_aliases();
-                        view.update(cx, |view, _| {
-                            view.pii.review_mut().reserve_aliases(&reserved)
+                        let dismissed = case.dismissed_hints.clone();
+                        view.update(cx, |view, cx| {
+                            view.pii.review_mut().reserve_aliases(&reserved);
+                            view.dismiss_case_hints(&dismissed, cx);
                         });
                     }
                 }

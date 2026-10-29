@@ -2239,3 +2239,137 @@ fn merge_hint_live_panel_merge_undo_and_dismiss(cx: &mut gpui::TestAppContext) {
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(cx.debug_bounds(merge).is_none());
 }
+
+#[gpui::test]
+fn merge_hint_applied_alias_keeps_restoring_and_merge_is_one_undo(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Maya Bennett signed. Ms Bennett agreed.";
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |e, cx| e.set_text(source, cx))
+    });
+    cx.run_until_parked();
+    let hint = app.update_in(cx, |app, window, cx| {
+        app.pii
+            .review
+            .ingest(
+                source,
+                vec![mdoc_pii::Detection {
+                    range: 0..12,
+                    category: Category::Person,
+                    score: 0.9,
+                    recognizer: mdoc_pii::Recognizer::Model,
+                }],
+            )
+            .unwrap();
+        app.pii.reviewing = true;
+        app.review_changed(cx);
+        app.apply_all_pii(&PiiApplyAll, window, cx);
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "PERSON_1 signed. PERSON_2 agreed."
+        );
+        if !app.replacements_open() {
+            app.toggle_replacements_panel(window, cx);
+        }
+        app.inspector_share = false;
+        cx.notify();
+        app.pii.review.merge_hints().remove(0)
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let selector = Box::leak(format!("merge-hint-merge-{}", hint.from).into_boxed_str());
+    let merge = cx.debug_bounds(selector).unwrap().center();
+    cx.simulate_click(merge, Default::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    app.update(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "PERSON_1 signed. PERSON_1 agreed."
+        );
+        let identities = app.pii.review.export_identities();
+        assert_eq!(identities.len(), 1);
+        assert_eq!(identities[0].previous, ["PERSON_2"]);
+        let restored =
+            mdoc_pii::restore::RestoreMap::new(identities.clone()).restore("PERSON_1 met PERSON_2");
+        assert_eq!(restored.unresolved, 0);
+        assert_eq!(
+            restored
+                .edits
+                .iter()
+                .map(|(_, s)| s.as_str())
+                .collect::<Vec<_>>(),
+            ["Maya Bennett", "Maya Bennett"]
+        );
+        // Case reopen/reseeding must retain the retired alias for later replies.
+        let mut reopened = Review::default();
+        reopened.seed(&identities, "Maya Bennett");
+        let map = mdoc_pii::restore::RestoreMap::new(reopened.export_identities());
+        assert_eq!(map.restore("PERSON_2").restored, 1);
+        let next = reopened.new_identity(Category::Person);
+        assert_eq!(reopened.identity(next).unwrap().alias, "PERSON_3");
+    });
+    let undo = cx.debug_bounds("replacement-notice-undo").unwrap().center();
+    cx.simulate_click(undo, Default::default());
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "PERSON_1 signed. PERSON_2 agreed."
+        );
+        assert_eq!(app.pii.review.export_identities().len(), 2);
+    });
+}
+
+#[gpui::test]
+fn merge_hint_retains_target_primary_for_equal_length_wordings(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Марина Павлова met Павлова Марина";
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |e, cx| e.set_text(source, cx))
+    });
+    cx.run_until_parked();
+    let hint = app.update_in(cx, |app, window, cx| {
+        let identities = ["Павлова Марина", "Марина Павлова"]
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| mdoc_pii::restore::ExportedIdentity {
+                alias: format!("PERSON_{}", i + 1),
+                previous: vec![],
+                category: Category::Person,
+                custom: false,
+                originals: vec![name.into()],
+            })
+            .collect::<Vec<_>>();
+        app.pii.review.seed(&identities, source);
+        app.pii.reviewing = true;
+        app.review_changed(cx);
+        app.apply_all_pii(&PiiApplyAll, window, cx);
+        let hint = app.pii.review.merge_hints().remove(0);
+        assert_eq!(hint.wording.as_ref(), "Павлова Марина");
+        if !app.replacements_open() {
+            app.toggle_replacements_panel(window, cx);
+        }
+        app.inspector_share = false;
+        cx.notify();
+        hint
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let selector = Box::leak(format!("merge-hint-merge-{}", hint.from).into_boxed_str());
+    let merge = cx.debug_bounds(selector).unwrap().center();
+    cx.simulate_click(merge, Default::default());
+    cx.run_until_parked();
+    app.update(cx, |app, _| {
+        let exported = app.pii.review.export_identities();
+        assert_eq!(exported.len(), 1);
+        assert_eq!(exported[0].wording(), "Павлова Марина");
+        assert_eq!(exported[0].alias, "PERSON_1");
+        assert!(
+            app.pii
+                .review
+                .rename_identity(hint.into, "PERSON_2")
+                .is_err()
+        );
+    });
+}

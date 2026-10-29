@@ -40,7 +40,8 @@ pub struct MergeHint {
     pub into: u64,
     /// The fuller identity's primary wording: "Looks like …".
     pub wording: Arc<str>,
-    /// The wordings that matched, `from`'s first. Dismissals hold this pair.
+    /// The identities' primary wordings, `from`'s first. Dismissals hold this
+    /// stable pair even when several variants provide matching signals.
     pub pair: (Arc<str>, Arc<str>),
     pub signal: Signal,
 }
@@ -48,7 +49,6 @@ pub struct MergeHint {
 struct Found {
     from: usize,
     into: usize,
-    pair: (Arc<str>, Arc<str>),
     signal: Signal,
 }
 
@@ -63,12 +63,8 @@ pub fn merge_hints(identities: &[HintIdentity]) -> Vec<MergeHint> {
     let mut record = |from: (usize, &Arc<str>), into: (usize, &Arc<str>), signal| {
         if from.0 != into.0 {
             let key = (from.0.min(into.0), from.0.max(into.0));
-            found.entry(key).or_insert_with(|| Found {
-                from: from.0,
-                into: into.0,
-                pair: (from.1.clone(), into.1.clone()),
-                signal,
-            });
+            let (from, into) = orient(identities, from.0, into.0);
+            found.entry(key).or_insert(Found { from, into, signal });
         }
     };
     let wordings = || {
@@ -76,21 +72,25 @@ pub fn merge_hints(identities: &[HintIdentity]) -> Vec<MergeHint> {
             identity
                 .wordings
                 .iter()
+                .filter(move |w| identity.category != Category::Person || !has_initials(w))
                 .map(move |w| (i, identity.category, w))
         })
     };
 
     // Short and inflected forms: the full names each surname form stands for.
     let mut forms: HashMap<String, Vec<(usize, &Arc<str>)>> = HashMap::new();
+    let mut given = HashSet::new();
     for (i, category, wording) in wordings() {
         if category == Category::Person
-            && let Some((surname, _)) = split_full_name(wording)
+            && let Some((surname, names)) = split_full_name(wording)
         {
+            given.extend(names);
             for form in surname_forms(&surname) {
                 forms.entry(form).or_default().push((i, wording));
             }
         }
     }
+    forms.retain(|form, _| !given.contains(form));
     for (i, category, wording) in wordings() {
         let words = name_words(wording);
         if category != Category::Person || words.len() != 1 {
@@ -126,8 +126,7 @@ pub fn merge_hints(identities: &[HintIdentity]) -> Vec<MergeHint> {
         for (n, a) in group.iter().enumerate() {
             // Identical wordings in two identities were split on purpose.
             for b in group[n + 1..].iter().filter(|b| b.1 != a.1) {
-                let (from, into) = orient(*a, *b);
-                record(from, into, Signal::Spelling);
+                record(*a, *b, Signal::Spelling);
             }
         }
     }
@@ -150,8 +149,7 @@ pub fn merge_hints(identities: &[HintIdentity]) -> Vec<MergeHint> {
     for group in orders.values() {
         for (n, a) in group.iter().enumerate() {
             for b in group[n + 1..].iter().filter(|b| b.2 != a.2) {
-                let (from, into) = orient((a.0, a.1), (b.0, b.1));
-                record(from, into, Signal::Reversed);
+                record((a.0, a.1), (b.0, b.1), Signal::Reversed);
             }
         }
     }
@@ -185,8 +183,7 @@ pub fn merge_hints(identities: &[HintIdentity]) -> Vec<MergeHint> {
                     && compared.insert((a.0, a.1.clone(), b.0, b.1.clone()))
                     && near_duplicate(a.1, b.1, identities[a.0].category)
                 {
-                    let (from, into) = orient(*a, *b);
-                    record(from, into, Signal::NearDuplicate);
+                    record(*a, *b, Signal::NearDuplicate);
                 }
             }
         }
@@ -200,21 +197,32 @@ pub fn merge_hints(identities: &[HintIdentity]) -> Vec<MergeHint> {
             from: identities[f.from].id,
             into: identities[f.into].id,
             wording: identities[f.into].wordings[0].clone(),
-            pair: f.pair,
+            pair: (
+                identities[f.from].wordings[0].clone(),
+                identities[f.into].wordings[0].clone(),
+            ),
             signal: f.signal,
         })
         .collect()
 }
 
-/// (shorter, fuller): the fuller wording has more characters; of equals, the
-/// earlier identity's.
-fn orient<'a>(a: Wording<'a>, b: Wording<'a>) -> (Wording<'a>, Wording<'a>) {
-    let (la, lb) = (a.1.chars().count(), b.1.chars().count());
-    if la > lb || (la == lb && a.0 < b.0) {
+/// (shorter, fuller): compare whole identities, not the variants providing
+/// the signal. Equal primary lengths keep the earlier identity.
+fn orient(identities: &[HintIdentity], a: usize, b: usize) -> (usize, usize) {
+    let length = |i: usize| identities[i].wordings[0].chars().count();
+    let (la, lb) = (length(a), length(b));
+    if la > lb || (la == lb && a < b) {
         (b, a)
     } else {
         (a, b)
     }
+}
+
+fn has_initials(wording: &str) -> bool {
+    name_words(wording).iter().any(|word| {
+        word.chars().filter(|c| c.is_alphabetic()).count() == 1
+            || (word.contains('.') && word.split('.').any(|part| part.chars().count() == 1))
+    })
 }
 
 /// One edit apart inside one word, both wordings 6+ characters. Initials,
@@ -348,6 +356,7 @@ mod tests {
             (Category::Person, &["Daniel Bennett"]),
         ]);
         assert!(hints(&list).is_empty());
+        assert!(hints(&people(&["Paul Smith", "James Paul", "Paul"])).is_empty());
     }
 
     #[test]
@@ -430,6 +439,14 @@ mod tests {
     fn initials_and_transliteration_are_not_signals() {
         assert!(hints(&people(&["Павлова Марина Сергеевна", "Павлова М.С."])).is_empty());
         assert!(hints(&people(&["Maya Bennett", "M. Bennett"])).is_empty());
+        assert!(hints(&people(&["M. Bennett", "M. Benett"])).is_empty());
+        assert!(hints(&people(&["M. Bennett", "M Bennett"])).is_empty());
+        assert!(hints(&people(&["Павлова М.С.", "М.С. Павлова"])).is_empty());
+        assert_eq!(
+            hints(&people(&["Maya O'Neil", "Maya O’Neil"])),
+            [(2, 1, Signal::Spelling)]
+        );
+
         assert!(hints(&people(&["Марина Павлова", "Marina Pavlova"])).is_empty());
         assert!(hints(&people(&["Павлова", "Marina Pavlova"])).is_empty());
     }
@@ -450,6 +467,37 @@ mod tests {
         // The strongest signal names a pair that matches several ways.
         let list = people(&["Maya Bennett.", "maya bennett"]);
         assert_eq!(hints(&list), [(2, 1, Signal::Spelling)]);
+    }
+
+    #[test]
+    fn matching_a_short_variant_still_keeps_the_fuller_identity() {
+        let list = identities(&[
+            (Category::Organization, &["Northwind Traders Ltd", "NW Ltd"]),
+            (Category::Organization, &["NW Ltd."]),
+        ]);
+        let hint = merge_hints(&list).remove(0);
+        assert_eq!((hint.from, hint.into), (2, 1));
+        assert_eq!(hint.wording.as_ref(), "Northwind Traders Ltd");
+        assert_eq!(
+            hint.pair,
+            (Arc::from("NW Ltd."), Arc::from("Northwind Traders Ltd"))
+        );
+    }
+
+    #[test]
+    fn dismissal_pair_is_stable_across_matching_variants_and_recomputations() {
+        let list = identities(&[
+            (Category::Person, &["Maya Bennett", "Ms Bennett"]),
+            (Category::Person, &["Maya Bennett.", "Ms Bennett."]),
+        ]);
+        let expected = merge_hints(&list);
+        for _ in 0..32 {
+            assert_eq!(merge_hints(&list), expected);
+        }
+        assert_eq!(
+            expected[0].pair,
+            (Arc::from("Maya Bennett"), Arc::from("Maya Bennett."))
+        );
     }
 
     #[test]

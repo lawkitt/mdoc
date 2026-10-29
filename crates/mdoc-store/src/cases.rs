@@ -243,7 +243,7 @@ pub struct Case {
     /// Category tokens scans in member documents skip.
     #[serde(default)]
     pub skip: Vec<String>,
-    /// Dismissed merge hints, as the (shorter, fuller) wordings that matched
+    /// Dismissed merge hints, as the identities’ primary wordings (shorter, fuller)
     /// (ADR 0080).
     #[serde(default)]
     pub dismissed_hints: Vec<(String, String)>,
