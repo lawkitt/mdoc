@@ -483,6 +483,21 @@ impl Review {
     /// original becomes a known wording proposed with its existing alias.
     /// Returns the new identity ids, in the order of `identities`.
     pub fn seed(&mut self, identities: &[ExportedIdentity], source: &str) -> Vec<u64> {
+        self.seed_with(identities, source, false)
+    }
+    /// [`Self::seed`] as part of the undo step being recorded: its new
+    /// proposals are switched on in the identity policy, so undoing the step
+    /// (to a policy from before it) withdraws them, as with a manual
+    /// addition. The caller commits the policy to that step.
+    pub fn seed_on_step(&mut self, identities: &[ExportedIdentity], source: &str) -> Vec<u64> {
+        self.seed_with(identities, source, true)
+    }
+    fn seed_with(
+        &mut self,
+        identities: &[ExportedIdentity],
+        source: &str,
+        on_step: bool,
+    ) -> Vec<u64> {
         self.revision.advance();
         let mut ids = Vec::with_capacity(identities.len());
         for exported in identities {
@@ -506,7 +521,13 @@ impl Review {
                 }
             }
             for original in &exported.originals {
-                if self.candidates.by_original(original).is_some() {
+                if let Some(group) = self.candidates.by_original(original) {
+                    // A proposal an undone join withdrew returns on this
+                    // step, for the identity seeded now; a Keep stays.
+                    if on_step && self.withdrawn(group) {
+                        self.set_kept(group, false);
+                        let _ = self.assign_variant(group, id);
+                    }
                     continue;
                 }
                 self.next_id += 1;
@@ -518,10 +539,13 @@ impl Review {
                     replacement: exported.alias.clone(),
                     mentions: Vec::new(),
                     kept: false,
-                    keep_default: false,
+                    keep_default: on_step,
                     priority: 0,
                     detected: false,
                 });
+                if on_step {
+                    self.set_kept(self.next_id, false);
+                }
                 self.identities
                     .remember_normalized(original, exported.category, id);
             }

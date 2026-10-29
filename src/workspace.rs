@@ -48,6 +48,7 @@ mod folder_sheet_ui;
 pub(crate) mod headless_renders;
 mod keychain_ui;
 mod navigation;
+use navigation::Arrival;
 mod navigation_ui;
 mod notices;
 pub(crate) use navigation_ui::{Back, Forward};
@@ -1078,6 +1079,17 @@ impl Workspace {
     }
 
     fn activate(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.activate_as(id, Arrival::Visit, window, cx);
+    }
+
+    /// Activate tab `id`, recording it in Back/Forward as `arrival` says.
+    fn activate_as(
+        &mut self,
+        id: u64,
+        arrival: Arrival,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.quit_flow.finishing() || !self.tabs.contains(id) {
             return;
         }
@@ -1109,7 +1121,7 @@ impl Workspace {
         if self.showing_overview(cx) {
             window.focus(&self.focus, cx);
         }
-        self.note_destination(cx);
+        self.note_destination(arrival, cx);
         cx.notify();
     }
 
@@ -1639,9 +1651,22 @@ impl Workspace {
         };
         self.tab_subscriptions.remove(&id);
         self.docx_queue.forget(id);
-        if let Some(TabsEffect::Activate(next)) = effect {
-            self.activate(next, window, cx);
-        } else if closed_reveal {
+        // The tab that takes a closed tab's page takes its stop too; it is
+        // no new stop when the closed tab wasn't the current one (ADR 0081).
+        let gone = navigation::Stop::Tab(id);
+        let arrival = if self.navigation.current() == Some(&gone) {
+            Arrival::Replace
+        } else {
+            Arrival::Unrecorded
+        };
+        let activated = if let Some(TabsEffect::Activate(next)) = effect {
+            self.activate_as(next, arrival, window, cx);
+            true
+        } else {
+            false
+        };
+        self.navigation.forget(&gone);
+        if !activated && closed_reveal {
             self.dismiss_reveal(window, cx);
             self.focus_active(window, cx);
         }
@@ -1737,14 +1762,15 @@ impl Workspace {
                 if self.quit_flow.quitting() && self.ask_quit_mapping(id, window, cx) {
                     return;
                 }
-                self.activate(id, window, cx);
+                // The prompt's tab comes to the front; it isn't a stop.
+                self.activate_as(id, Arrival::Unrecorded, window, cx);
                 if let Some(view) = self.active_view() {
                     view.update(cx, |view, cx| view.request(Next::Close, window, cx));
                 }
             }
             QuitEffect::Settle { restore } => {
                 if let Some(active) = restore {
-                    self.activate(active, window, cx);
+                    self.activate_as(active, Arrival::Unrecorded, window, cx);
                 }
                 let histories: Vec<_> = self
                     .tabs

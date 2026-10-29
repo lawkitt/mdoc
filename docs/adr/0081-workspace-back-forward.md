@@ -16,6 +16,10 @@ user must find the previous place in the sidebar.
   scroll positions and mention selection are not stops. A closed tab's stops
   are skipped. The history is per window, about 50 stops, not restored at
   launch.
+- **Closing.** A closed tab's or deleted case's stops go; the place that takes
+  over the page shown takes its stop, keeping Forward. Tabs a close or quit
+  prompt brings to the front are not stops. Back and Forward never offer the
+  page shown.
 - **Keys.** macOS ⌘[ / ⌘]. Windows and Linux Alt+← / Alt+→ outside text
   fields; in the editor Alt+← stays Previous word (ADR 0061). Mouse buttons
   4 and 5 everywhere.

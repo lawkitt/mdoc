@@ -1086,8 +1086,11 @@ impl Workspace {
             .as_ref()
             .is_some_and(|page| page.id() == case_id)
         {
-            self.show_home(window, cx);
+            // Home takes the deleted case page's stop (ADR 0081).
+            self.show_home_as(super::navigation::Arrival::Replace, window, cx);
         }
+        self.navigation
+            .forget(&super::navigation::Stop::Case(case_id.into()));
         self.case_coordinator.delete(case_id);
         self.tabs.forget_case(case_id);
         for tab in &self.tabs {
@@ -1777,7 +1780,13 @@ impl Workspace {
         if view.read(cx).session.document.path.is_some() {
             return false;
         }
-        self.activate(id, window, cx);
+        // Answering a close or quit prompt is not a stop (ADR 0081).
+        let arrival = if close {
+            super::navigation::Arrival::Unrecorded
+        } else {
+            super::navigation::Arrival::Visit
+        };
+        self.activate_as(id, arrival, window, cx);
         view.update(cx, |view, cx| {
             view.save(true, Some(Next::CreateCase { close }), window, cx)
         });
@@ -1856,7 +1865,8 @@ impl Workspace {
             self.cases.quit_asked.push(id);
         }
         self.cases.mapping_prompt = true;
-        self.activate(id, window, cx);
+        // The prompt's tab comes to the front; it isn't a stop (ADR 0081).
+        self.activate_as(id, super::navigation::Arrival::Unrecorded, window, cx);
         if dirty {
             self.ask_changes_and_mapping(id, quitting, window, cx);
         } else {

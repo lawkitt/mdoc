@@ -10,8 +10,8 @@ use std::{
 use crate::recognition::{ENGLISH, Language, RUSSIAN};
 use mdoc_store::settings::OcrModel;
 use pdf_inspector::vision::{
-    ModelArtifactKind, ModelDownloadPolicy, ModelStore, OarOcrEngine, OcrMode, OcrOptions,
-    OcrPdfOptions, PdfiumRenderer,
+    ModelArtifactKind, ModelDownloadPolicy, ModelStore, ModelStoreError, OarOcrEngine, OcrMode,
+    OcrOptions, OcrPdfOptions, PdfiumRenderer,
 };
 use sha2::{Digest, Sha256};
 
@@ -30,7 +30,7 @@ pub enum SetupError {
     OcrUnsupported,
     /// pdf-inspector's model store, in its words.
     #[error("OCR models are missing or damaged: {0}")]
-    Models(String),
+    Models(Arc<ModelStoreError>),
     #[error("OCR detector is missing.")]
     NoDetector,
     /// PDFium or the OCR engine failed to load, in its words.
@@ -59,6 +59,25 @@ pub enum SetupError {
     Archive(Arc<zip::result::ZipError>),
     #[error("{0}")]
     Persist(Arc<tempfile::PersistError>),
+}
+impl SetupError {
+    /// Only absent or wrong-size files mean setup has bytes left to download.
+    pub fn is_missing(&self) -> bool {
+        match self {
+            Self::Models(error) => {
+                matches!(
+                    error.as_ref(),
+                    ModelStoreError::MissingArtifact { .. } | ModelStoreError::SizeMismatch { .. }
+                ) || matches!(error.as_ref(), ModelStoreError::Io { source, .. }
+                    if source.kind() == std::io::ErrorKind::NotFound)
+            }
+            Self::Open { source, .. } | Self::Io(source) => {
+                source.kind() == std::io::ErrorKind::NotFound
+            }
+            Self::Download(error) => error.is_missing(),
+            _ => false,
+        }
+    }
 }
 impl From<std::io::Error> for SetupError {
     fn from(error: std::io::Error) -> Self {
@@ -292,12 +311,30 @@ pub fn check_reserved(
     if !SUPPORTED || cfg!(test) {
         return Ok(None);
     }
-    let root = root()?;
-    let model = model_root(&root, config.model);
-    if !model.exists() {
-        return Ok(None);
+    check_reserved_in(&root()?, config)
+}
+
+/// The real reserved check with an explicit profile root, also used by isolated tests.
+pub fn check_reserved_in(
+    root: &Path,
+    config: &mdoc_store::settings::OcrConfig,
+) -> Result<Option<Installed>, SetupError> {
+    let model = model_root(root, config.model);
+    match fs::metadata(&model) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(SetupError::Open {
+                path: model,
+                source: Arc::new(error),
+            });
+        }
+        Ok(_) => {}
     }
-    validate_config(&root, config).map(Some)
+    match validate_config(root, config) {
+        Ok(installed) => Ok(Some(installed)),
+        Err(error) if error.is_missing() => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 pub fn model_root(root: &Path, model: mdoc_store::settings::OcrModel) -> PathBuf {
@@ -341,7 +378,7 @@ fn validate_config(
     }
     let models = ModelStore::new(root.join("models"))
         .resolve(manifest::for_model(config.model))
-        .map_err(|e| SetupError::Models(e.to_string()))?;
+        .map_err(|e| SetupError::Models(Arc::new(e)))?;
     let installed = Installed {
         config: config.clone(),
         models: models
@@ -424,6 +461,14 @@ pub fn onnx_runtime(install: bool) -> Result<PathBuf, SetupError> {
         fs::create_dir_all(&root)?;
         install_runtime(&root, runtime)?;
     }
+    verify(&path, runtime.library_sha)?;
+    Ok(path)
+}
+
+/// Verify the shared runtime without downloading or consulting platform paths.
+pub fn onnx_runtime_in(root: &Path) -> Result<PathBuf, SetupError> {
+    let runtime = &RUNTIMES[1];
+    let path = root.join(runtime.library);
     verify(&path, runtime.library_sha)?;
     Ok(path)
 }
@@ -769,6 +814,71 @@ mod tests {
                 .to_string()
                 .contains("integrity")
         );
+    }
+
+    #[test]
+    fn tracked_files_match_model_store_and_runtime_verification() {
+        let dir = tempfile::tempdir().unwrap();
+        for model in OcrModel::ALL {
+            let paths = model_files(dir.path(), model);
+            let manifest = manifest::for_model(model);
+            let expected = manifest
+                .artifacts
+                .iter()
+                .map(|artifact| {
+                    dir.path()
+                        .join("models")
+                        .join(manifest.id)
+                        .join(manifest.revision)
+                        .join(artifact.filename)
+                })
+                .chain(
+                    RUNTIMES
+                        .iter()
+                        .map(|runtime| dir.path().join(runtime.library)),
+                )
+                .collect::<Vec<_>>();
+            assert_eq!(paths, expected);
+            assert_eq!(paths.len(), manifest.artifacts.len() + 2);
+            let error = ModelStore::new(dir.path().join("models"))
+                .resolve(manifest)
+                .unwrap_err();
+            assert!(
+                matches!(error, ModelStoreError::MissingArtifact { path, .. } if path == paths[0])
+            );
+        }
+    }
+
+    #[test]
+    fn only_missing_and_wrong_size_errors_mean_not_downloaded() {
+        let path = PathBuf::from("model.onnx");
+        assert!(
+            SetupError::Models(Arc::new(ModelStoreError::MissingArtifact {
+                path: path.clone(),
+                download_url: "https://example.test/model"
+            }))
+            .is_missing()
+        );
+        assert!(
+            SetupError::Models(Arc::new(ModelStoreError::SizeMismatch {
+                path: path.clone(),
+                expected: 4,
+                actual: 2
+            }))
+            .is_missing()
+        );
+        assert!(!SetupError::Integrity(path.clone()).is_missing());
+        assert!(!SetupError::RuntimeOpenWindows("VC++ dependency missing".into()).is_missing());
+        for kind in [
+            std::io::ErrorKind::NotFound,
+            std::io::ErrorKind::PermissionDenied,
+        ] {
+            let error = SetupError::Open {
+                path: path.clone(),
+                source: Arc::new(std::io::Error::from(kind)),
+            };
+            assert_eq!(error.is_missing(), kind == std::io::ErrorKind::NotFound);
+        }
     }
 
     #[test]

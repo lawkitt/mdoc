@@ -48,10 +48,68 @@ impl Files {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(from = "StoredEntry", into = "StoredEntry")]
 struct Entry {
     model: Model,
     files: Files,
     status: Status,
+}
+
+/// Persist only a bounded kind, never an engine's message or a path in it.
+/// Legacy `status` fields are ignored; their missing kind defaults to Unknown
+/// and is replaced by the next check.
+#[derive(Clone, Copy, Default, Serialize, Deserialize)]
+enum CheckKind {
+    #[default]
+    Unknown,
+    Missing,
+    Ready,
+    Damaged,
+    Unavailable,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StoredEntry {
+    model: Model,
+    files: Files,
+    #[serde(default)]
+    kind: CheckKind,
+}
+
+impl From<Entry> for StoredEntry {
+    fn from(entry: Entry) -> Self {
+        Self {
+            model: entry.model,
+            files: entry.files,
+            kind: match entry.status {
+                Status::Unknown => CheckKind::Unknown,
+                Status::Missing => CheckKind::Missing,
+                Status::Ready => CheckKind::Ready,
+                Status::Damaged(_) => CheckKind::Damaged,
+                Status::Unavailable(_) => CheckKind::Unavailable,
+            },
+        }
+    }
+}
+
+impl From<StoredEntry> for Entry {
+    fn from(entry: StoredEntry) -> Self {
+        Self {
+            model: entry.model,
+            files: entry.files,
+            status: match entry.kind {
+                CheckKind::Unknown => Status::Unknown,
+                CheckKind::Missing => Status::Missing,
+                CheckKind::Ready => Status::Ready,
+                CheckKind::Damaged => {
+                    Status::Damaged("Model files need repair. Retry setup.".into())
+                }
+                CheckKind::Unavailable => Status::Unavailable(
+                    "The last model check failed. Rechecking the runtime.".into(),
+                ),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
@@ -94,6 +152,23 @@ impl ModelState {
             })
             .unwrap_or_default();
         state.path = path;
+        if let Some(root) = state.path.as_deref().and_then(Path::parent) {
+            // Old absolute paths are accepted only within this profile. Paths
+            // outside it or with traversal cannot become remembered readiness.
+            state.entries.retain_mut(|entry| {
+                entry.files.0.iter_mut().all(|file| {
+                    let relative = file.path.strip_prefix(root).unwrap_or(&file.path);
+                    if relative
+                        .components()
+                        .any(|c| !matches!(c, std::path::Component::Normal(_)))
+                    {
+                        return false;
+                    }
+                    file.path = root.join(relative);
+                    true
+                })
+            });
+        }
         state
     }
 
@@ -135,7 +210,23 @@ impl ModelState {
             .parent()
             .ok_or_else(|| io::Error::other("model state has no parent"))?;
         std::fs::create_dir_all(parent)?;
-        let bytes = serde_json::to_vec(self).map_err(io::Error::other)?;
+        let mut stored = self.clone();
+        stored.entries.retain_mut(|entry| {
+            entry.files.0.iter_mut().all(|file| {
+                let Ok(relative) = file.path.strip_prefix(parent) else {
+                    return false;
+                };
+                if relative
+                    .components()
+                    .any(|c| !matches!(c, std::path::Component::Normal(_)))
+                {
+                    return false;
+                }
+                file.path = relative.to_path_buf();
+                true
+            })
+        });
+        let bytes = serde_json::to_vec(&stored).map_err(io::Error::other)?;
         if bytes.len() > 65_536 {
             return Err(io::Error::other("model state is too large"));
         }
@@ -152,6 +243,72 @@ mod tests {
     use super::*;
     use crate::settings::OcrModel;
     const MODEL: Model = Model::Ocr(OcrModel::V6Small);
+
+    #[test]
+    fn stored_checks_have_relative_paths_and_kinds_without_error_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = dir.path().join("settings.json");
+        let path = dir.path().join("ocr/v1/model.onnx");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"model").unwrap();
+        let files = Files::read(&[path]);
+        for status in [
+            Status::Damaged("private engine error".into()),
+            Status::Unavailable("private runtime error".into()),
+        ] {
+            let mut state = ModelState::open(Some(&settings));
+            state.record(MODEL, &files, files.clone(), status);
+            state.save().unwrap();
+            let json = std::fs::read_to_string(dir.path().join("model-state.json")).unwrap();
+            let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+            assert_eq!(
+                Path::new(value["entries"][0]["files"][0]["path"].as_str().unwrap()),
+                Path::new("ocr/v1/model.onnx")
+            );
+            assert!(!json.contains("private"));
+            assert!(!json.contains(&dir.path().to_string_lossy().replace('\\', "\\\\")));
+            let reopened = ModelState::open(Some(&settings));
+            assert!(matches!(
+                reopened.status(MODEL, &files),
+                Some(Status::Damaged(_) | Status::Unavailable(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn legacy_status_defaults_to_unknown_and_is_sanitized_on_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = dir.path().join("settings.json");
+        let files = Files::read(&[dir.path().join("model.onnx")]);
+        let legacy = serde_json::json!({"entries": [{"model": MODEL, "files": files, "status": {"Unavailable": "private old error"}}]});
+        let path = dir.path().join("model-state.json");
+        std::fs::write(&path, legacy.to_string()).unwrap();
+        let state = ModelState::open(Some(&settings));
+        assert_eq!(state.status(MODEL, &files), Some(Status::Unknown));
+        state.save().unwrap();
+        let json = std::fs::read_to_string(path).unwrap();
+        assert!(!json.contains("private old error"));
+        assert!(!json.contains("Unavailable"));
+        assert!(json.contains("Unknown"));
+    }
+
+    #[test]
+    fn files_changed_during_a_quiet_check_are_unknown_even_for_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("model.onnx");
+        std::fs::write(&path, b"before").unwrap();
+        let paths = [path.clone()];
+        let before = Files::read(&paths);
+        let mut state = ModelState::default();
+        state.record(MODEL, &before, before.clone(), Status::Ready);
+        std::fs::remove_file(path).unwrap();
+        let after = Files::read(&paths);
+        assert_eq!(
+            state.record(MODEL, &before, after.clone(), Status::Missing),
+            Status::Unknown
+        );
+        assert_eq!(state.status(MODEL, &after), Some(Status::Unknown));
+    }
 
     #[test]
     fn results_survive_reopening_without_reading_file_contents() {

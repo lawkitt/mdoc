@@ -302,6 +302,42 @@ fn re_choosing_the_current_category_makes_no_step_and_no_entry(cx: &mut gpui::Te
 }
 
 #[gpui::test]
+fn re_choosing_an_applied_identitys_category_keeps_redo(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, seed);
+    cx.run_until_parked();
+    let applied = after(&app, cx, |app, _, cx| app.apply_replacements(cx));
+    app.update(cx, |app, cx| {
+        let id = app.pii.review.applied()[0].id;
+        app.keep_mentions_now(vec![], vec![id], cx);
+    });
+    travel(&app, cx, 0);
+    assert_eq!(state(&app, cx), applied);
+    app.update(cx, |app, cx| {
+        assert!(app.editor.read(cx).can_redo());
+        // Applied mentions always get plans; unchanged ones are no step.
+        for (original, category) in [
+            ("Maya Bennett", Category::Person),
+            ("Acme Ltd", Category::Organization),
+        ] {
+            let id = identity(app, original);
+            app.change_mapping(MappingAction::Category(id, category), cx);
+        }
+        assert_eq!(history(app, cx), applied.1);
+        assert_eq!(app.editor.read(cx).text(), applied.0);
+        assert!(app.editor.read(cx).can_redo());
+        assert!(app.pii.error.is_none());
+        assert_eq!(
+            lines(app, cx),
+            [
+                ("Applied 4 replacements · 14:02".into(), EntryState::Done),
+                ("Kept “Maya Bennett” · 14:02".into(), EntryState::Undone),
+            ]
+        );
+    });
+}
+
+#[gpui::test]
 fn re_ticking_a_kept_mention_is_listed(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
     app.update(cx, seed);
@@ -488,4 +524,62 @@ fn undo_with_the_popover_open_redraws_it(cx: &mut gpui::TestAppContext) {
         assert!(app.history.open);
         assert_eq!(lines(app, cx)[0].1, EntryState::Undone);
     });
+}
+
+#[gpui::test]
+fn tab_across_the_history_lists_edge_keeps_the_focused_row_in_view(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    cx.simulate_resize(gpui::size(px(1100.), px(760.)));
+    app.update(cx, seed);
+    cx.run_until_parked();
+    // Enough rows to overflow the list's 360 pixels.
+    const ROWS: usize = 24;
+    app.update_in(cx, |app, window, cx| {
+        let maya = identity(app, "Maya Bennett");
+        for i in 0..ROWS {
+            app.change_mapping(MappingAction::Rename(maya, format!("CLIENT_{i}")), cx);
+        }
+        assert_eq!(lines(app, cx).len(), ROWS);
+        app.open_decision_history(window, cx);
+    });
+    let draw = |cx: &mut gpui::VisualTestContext| {
+        for _ in 0..2 {
+            cx.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            cx.run_until_parked();
+        }
+    };
+    draw(cx);
+    let in_view = |cx: &mut gpui::VisualTestContext, row: usize| {
+        let focused =
+            cx.update(|window, cx| app.read(cx).history.rows.borrow()[row].is_focused(window));
+        assert!(focused, "row {row} has focus");
+        let selector: &'static str = Box::leak(format!("decision-{row}").into_boxed_str());
+        let bounds = cx.debug_bounds(selector).expect("row drawn");
+        let viewport = cx.update(|_, cx| app.read(cx).history.scroll.bounds());
+        assert!(
+            bounds.top() >= viewport.top() - px(1.)
+                && bounds.bottom() <= viewport.bottom() + px(1.),
+            "row {row} {bounds:?} inside {viewport:?}"
+        );
+    };
+    let mut scrolled = false;
+    for row in 0..ROWS {
+        cx.simulate_keystrokes("tab");
+        draw(cx);
+        in_view(cx, row);
+        scrolled |= cx.update(|_, cx| app.read(cx).history.scroll.offset().y) < px(0.);
+    }
+    assert!(scrolled, "the list scrolled to follow focus");
+    for row in (0..ROWS - 1).rev() {
+        cx.simulate_keystrokes("shift-tab");
+        draw(cx);
+        in_view(cx, row);
+    }
+    assert_eq!(
+        cx.update(|_, cx| app.read(cx).history.scroll.offset().y),
+        px(0.)
+    );
 }
