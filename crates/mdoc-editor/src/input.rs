@@ -226,6 +226,15 @@ impl EditorState {
                 self.emit_changed(cx);
                 return;
             }
+            // A plain-text field removes one character, whatever it is.
+            if self.plain {
+                let prev = self.previous_boundary(off);
+                if off != prev {
+                    self.select_to(prev, cx);
+                    self.replace_text_in_range(None, "", window, cx);
+                }
+                return;
+            }
             // At a paragraph's start, one ⌫ undoes Enter's paragraph break
             // (ADR 0060) instead of leaving two soft-joined lines.
             let body =
@@ -270,6 +279,14 @@ impl EditorState {
                 self.emit_changed(cx);
                 return;
             }
+            if self.plain {
+                let next = self.next_boundary(off);
+                if off != next {
+                    self.select_to(next, cx);
+                    self.replace_text_in_range(None, "", window, cx);
+                }
+                return;
+            }
             // At a paragraph's end, ⌦ joins the next paragraph (see backspace).
             if off == self.line_end(row)
                 && let Some((range, caret)) = self.break_delete_range(row, true)
@@ -296,6 +313,10 @@ impl EditorState {
 
     pub(super) fn newline(&mut self, _: &Newline, window: &mut Window, cx: &mut Context<Self>) {
         if self.read_only {
+            return;
+        }
+        if self.plain {
+            self.replace_text_in_range(None, "\n", window, cx);
             return;
         }
         // Inside a table, a raw newline would split the row's `| … |` markup.
@@ -494,6 +515,10 @@ impl EditorState {
         cx: &mut Context<Self>,
     ) {
         if self.read_only {
+            return;
+        }
+        if self.plain {
+            self.replace_text_in_range(None, "\n", window, cx);
             return;
         }
         if self.caret_in_table() {
@@ -873,7 +898,9 @@ impl EditorState {
                 // break the `| … |` row markup (Enter is guarded the same
                 // way): flatten newlines and escape pipes so the paste stays
                 // one cell's content.
-                if self.caret_in_table() && text.contains(['\n', '|']) {
+                if self.plain {
+                    // A plain-text field keeps the paste exactly.
+                } else if self.caret_in_table() && text.contains(['\n', '|']) {
                     // Unescape-then-escape so text already carrying `\|`
                     // doesn't double up into `\\|` (an escaped backslash
                     // followed by a live separator).

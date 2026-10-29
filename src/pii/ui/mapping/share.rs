@@ -253,6 +253,7 @@ impl DocumentView {
                         .min_h(px(72.))
                         .max_h(px(180.))
                         .overflow_y_scroll()
+                        .track_scroll(&self.reply_scroll)
                         .px_2()
                         .py_1()
                         .rounded_md()

@@ -595,8 +595,9 @@ fn typing_in_the_reply_box_stays_out_of_the_replacements_list(cx: &mut TestAppCo
     draw(cx);
     cx.update(|_, cx| {
         let view = view.read(cx);
-        assert_eq!(view.reply_box().unwrap().read(cx).text(), "P \n\nQ");
-        assert_eq!(view.reply.text(), "P \n\nQ");
+        // Enter types one newline: the box is plain text.
+        assert_eq!(view.reply_box().unwrap().read(cx).text(), "P \nQ");
+        assert_eq!(view.reply.text(), "P \nQ");
     });
     assert_eq!(state(cx), before, "the list and document are untouched");
 }
@@ -643,4 +644,315 @@ fn an_untitled_case_tab_stores_its_reply_on_first_save_as(cx: &mut TestAppContex
         Some(second)
     );
     assert_eq!(saved.reply(&session_store::identity(&path)), Some(first));
+}
+
+/// Two saved members whose people hold opposite aliases: the case's `a.md`
+/// has Boris as PERSON_1 and Anna as PERSON_2; `b.md`, not in the case yet,
+/// has Anna as PERSON_1 and Boris as PERSON_2, and a reply naming both.
+struct Swapped<'a> {
+    tabs: Entity<Workspace>,
+    cx: &'a mut VisualTestContext,
+    first: u64,
+    second: u64,
+    view: Entity<DocumentView>,
+    path: PathBuf,
+    case: String,
+    store: mdoc_store::cases::Store,
+}
+
+const SWAPPED_REPLY: &str = "PERSON_1 owes PERSON_2, says person 1.";
+const SWAPPED_RESTORED: &str = "Anna Petrova owes Boris Ivanov, says Anna Petrova.";
+
+fn swapped<'a>(cx: &'a mut TestAppContext, dir: &std::path::Path) -> Swapped<'a> {
+    use mdoc_pii::Category::Person;
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.join("cases"),
+            &[3; 32],
+        ))
+    });
+    let first = open_applied(
+        &tabs,
+        cx,
+        dir,
+        "a.md",
+        "Boris Ivanov met Anna Petrova.",
+        &[("Boris Ivanov", Person), ("Anna Petrova", Person)],
+    );
+    let first_view = active(&tabs, cx);
+    first_view.update(cx, |view, cx| view.write(dir.join("a.md"), None, cx));
+    cx.run_until_parked();
+    let case = tabs
+        .update_in(cx, |tabs, window, cx| tabs.create_case(first, window, cx))
+        .unwrap();
+    cx.run_until_parked();
+    let second = open_applied(
+        &tabs,
+        cx,
+        dir,
+        "b.md",
+        "Anna Petrova wrote to Boris Ivanov.",
+        &[("Anna Petrova", Person), ("Boris Ivanov", Person)],
+    );
+    let view = active(&tabs, cx);
+    let path = dir.join("b.md");
+    view.update(cx, |view, cx| view.write(path.clone(), None, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        assert_eq!(
+            first_view.read(cx).editor.read(cx).text(),
+            "PERSON_1 met PERSON_2."
+        );
+        assert_eq!(
+            view.read(cx).editor.read(cx).text(),
+            "PERSON_1 wrote to PERSON_2."
+        );
+    });
+    open_share(&view, cx);
+    fill(&view, SWAPPED_REPLY, cx);
+    assert_eq!(restored_reply(&view, cx), SWAPPED_RESTORED);
+    Swapped {
+        tabs,
+        cx,
+        first,
+        second,
+        view,
+        path,
+        case,
+        store: mdoc_store::cases::Store::with_key(dir.join("cases"), &[3; 32]),
+    }
+}
+
+/// The reply restored against the tab's mapping now.
+fn restored_reply(view: &Entity<DocumentView>, cx: &mut VisualTestContext) -> String {
+    view.update(cx, |view, _| {
+        view.refresh_reply();
+        view.reply.restored().text.clone()
+    })
+}
+
+/// Joining a case that holds the same people under each other's aliases
+/// renumbers the document, and the reply's tokens follow: it still restores
+/// to the same people, in the box, Copy reply and the encrypted case, across
+/// Undo, Redo and reopening the member.
+#[gpui::test]
+fn a_join_that_swaps_aliases_keeps_the_reply_naming_the_same_people(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let Swapped {
+        tabs,
+        cx,
+        second,
+        view,
+        path,
+        case,
+        store,
+        ..
+    } = swapped(cx, dir.path());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(second, &case, window, cx)
+    });
+    cx.run_until_parked();
+    draw(cx);
+    let member = session_store::identity(&path);
+    let joined = "PERSON_2 owes PERSON_1, says person 2.";
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.editor.read(cx).text(), "PERSON_2 wrote to PERSON_1.");
+        assert_eq!(view.reply.text(), joined, "the tokens follow their people");
+        assert_eq!(view.reply_box().unwrap().read(cx).text(), joined);
+    });
+    assert_eq!(restored_reply(&view, cx), SWAPPED_RESTORED);
+    assert_eq!(store.load(&case).unwrap().reply(&member), Some(joined));
+    click_toolbar(cx, "share-copy-reply");
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().unwrap(),
+            SWAPPED_RESTORED
+        )
+    });
+
+    // Undo in the document reverts the renumbering, and the reply with it.
+    cx.update(|window, cx| window.focus(&view.read(cx).editor.read(cx).focus_handle(cx), cx));
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.editor.read(cx).text(), "PERSON_1 wrote to PERSON_2.");
+        assert_eq!(view.reply.text(), SWAPPED_REPLY);
+    });
+    assert_eq!(restored_reply(&view, cx), SWAPPED_RESTORED);
+    cx.dispatch_action(mdoc_editor::Redo);
+    cx.run_until_parked();
+    cx.update(|_, cx| assert_eq!(view.read(cx).reply.text(), joined));
+    assert_eq!(restored_reply(&view, cx), SWAPPED_RESTORED);
+
+    // Close the saved member and open it again from the encrypted case.
+    view.update(cx, |view, cx| view.write(path.clone(), None, cx));
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    cx.run_until_parked();
+    assert_eq!(store.load(&case).unwrap().reply(&member), Some(joined));
+    let bytes = std::fs::read(dir.path().join("cases").join(format!("{case}.case"))).unwrap();
+    assert!(!String::from_utf8_lossy(&bytes).contains("owes"));
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(second, window, cx));
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt(), "saved document, saved case");
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![path.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    let reopened = active(&tabs, cx);
+    cx.update(|_, cx| {
+        let view = reopened.read(cx);
+        assert_eq!(view.case.link().map(|l| l.id.as_str()), Some(case.as_str()));
+        assert_eq!(view.reply.text(), joined);
+    });
+    assert_eq!(restored_reply(&reopened, cx), SWAPPED_RESTORED);
+}
+
+/// A rename in one member reaches another as its own edit; that member's
+/// reply follows the renamed identity and the case keeps it so.
+#[gpui::test]
+fn a_member_synced_after_another_member_renames_keeps_its_reply(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let Swapped {
+        tabs,
+        cx,
+        first,
+        second,
+        view,
+        path,
+        case,
+        store,
+    } = swapped(cx, dir.path());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(second, &case, window, cx)
+    });
+    cx.run_until_parked();
+    let first_view = cx.update(|_, cx| {
+        tabs.read(cx)
+            .tabs
+            .get(first)
+            .and_then(|t| t.view().cloned())
+            .unwrap()
+    });
+    first_view.update(cx, |view, cx| {
+        let anna = view.pii.review().identity_by_alias("PERSON_2").unwrap();
+        view.retag_identities(&[(anna, "BUYER".into(), Person, true)], cx)
+            .unwrap();
+    });
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    cx.run_until_parked();
+    let renamed = "BUYER owes PERSON_1, says BUYER.";
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        assert_eq!(view.editor.read(cx).text(), "BUYER wrote to PERSON_1.");
+        assert_eq!(view.reply.text(), renamed);
+    });
+    assert_eq!(restored_reply(&view, cx), SWAPPED_RESTORED);
+    let member = session_store::identity(&path);
+    assert_eq!(store.load(&case).unwrap().reply(&member), Some(renamed));
+}
+
+/// A real paste into the box is kept exactly: no Markdown paste rules split
+/// `$$` math onto its own lines or flatten a paste inside a table row.
+#[gpui::test]
+fn a_paste_into_the_reply_box_is_kept_exactly(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    open_share(&view, cx);
+    let editor = cx.update(|_, cx| view.read(cx).reply_box().unwrap().clone());
+    cx.update(|window, cx| window.focus(&editor.read(cx).focus_handle(cx), cx));
+    let paste = |text: &str, cx: &mut VisualTestContext| {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.into()));
+        cx.dispatch_action(mdoc_editor::Paste);
+        cx.run_until_parked();
+        draw(cx);
+    };
+    let table =
+        "PERSON_1 calculated $$x$$ today.\n\n| who | owes |\n|---|---|\n| PERSON_1 | ORG_1 |\n";
+    paste(table, cx);
+    cx.update(|_, cx| {
+        assert_eq!(editor.read(cx).text(), table);
+        assert_eq!(view.read(cx).reply.text(), table);
+    });
+    // The caret inside the table's last row, then a paste with lines and pipes.
+    let row = table.rfind("ORG_1").unwrap();
+    editor.update(cx, |editor, cx| editor.set_cursor(row, cx));
+    draw(cx);
+    paste("a | b\r\nc ", cx);
+    let expected = table.replacen("ORG_1", "a | b\nc ORG_1", 1);
+    cx.update(|_, cx| assert_eq!(view.read(cx).reply.text(), expected));
+    click_toolbar(cx, "share-copy-reply");
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().unwrap(),
+            expected
+                .replace("PERSON_1", "Anna Petrova")
+                .replace("ORG_1", "Northwind Traders Ltd")
+        )
+    });
+}
+
+/// The click on Next unrecognised that opens the Reply view scrolls a token
+/// far below into view, though the view had not been laid out yet.
+#[gpui::test]
+fn next_unrecognised_reveals_its_first_token_when_it_opens_the_reply(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    open_share(&view, cx);
+    let filler: String = (0..120)
+        .map(|i| format!("Line {i}: PERSON_1 wrote.\n\n"))
+        .collect();
+    fill(&view, &format!("{filler}PERSON_9 is unknown."), cx);
+    view.update_in(cx, |view, window, cx| view.set_view_mode(None, window, cx));
+    draw(cx);
+    assert_eq!(mode(&view, cx), None);
+    click_toolbar(cx, "share-next-unrecognised");
+    assert_eq!(mode(&view, cx), Some(CompareMode::Reply));
+    draw(cx);
+    draw(cx);
+    cx.update(|_, cx| {
+        let view = view.read(cx);
+        let token = view.reply.current_unresolved().unwrap();
+        assert_eq!(&view.reply.restored().text[token.clone()], "PERSON_9");
+        assert!(
+            view.compare.as_ref().unwrap().reply_shows(token.start, cx),
+            "the first click's token is in view"
+        );
+    });
+}
+
+/// Typing below the box's visible lines keeps the caret in view.
+#[gpui::test]
+fn typing_a_long_reply_keeps_the_caret_in_the_box(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    open_share(&view, cx);
+    let editor = cx.update(|_, cx| view.read(cx).reply_box().unwrap().clone());
+    cx.update(|window, cx| window.focus(&editor.read(cx).focus_handle(cx), cx));
+    let scroll = cx.update(|_, cx| view.read(cx).reply_scroll.clone());
+    for _ in 0..20 {
+        cx.simulate_keystrokes("P enter");
+        draw(cx);
+    }
+    cx.simulate_keystrokes("Q");
+    draw(cx);
+    draw(cx);
+    cx.update(|_, cx| {
+        let caret = editor.read(cx).caret_bounds().unwrap();
+        let viewport = scroll.bounds();
+        assert!(scroll.offset().y < px(0.), "the box scrolled");
+        assert!(
+            caret.top() >= viewport.top() && caret.bottom() <= viewport.bottom(),
+            "caret {caret:?} outside {viewport:?}"
+        );
+    });
 }

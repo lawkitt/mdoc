@@ -6,7 +6,7 @@
 use super::{compare::CompareMode, restore::UNRESOLVED_ID};
 use crate::{document_view::DocumentView, workspace};
 use gpui::{Context, Entity, Focusable, Window, prelude::*};
-use mdoc_pii::restore::{RestoreMap, RestoredText};
+use mdoc_pii::restore::{ExportedIdentity, RestoreMap, RestoredText};
 use std::ops::Range;
 
 /// What the document view carries out for a reply-box transition.
@@ -33,6 +33,11 @@ pub(crate) struct ReplyBox {
     next: usize,
     /// Whether the mapping of the last restoration had identities to restore.
     restorable: bool,
+    /// The mapping the reply's alias tokens were last read against, by
+    /// identity id, and its review revision: when an identity's alias
+    /// changes, the reply's tokens for it follow (ADR 0078).
+    bound: Vec<(u64, ExportedIdentity)>,
+    bound_at: Option<u64>,
 }
 
 impl ReplyBox {
@@ -88,6 +93,57 @@ impl ReplyBox {
         self.text = text;
         self.revision += 1;
         self.next = 0;
+    }
+
+    /// Read the reply's alias tokens against the mapping at `review` (its
+    /// revision) from now on, as when it is pasted or loaded.
+    pub(crate) fn bind(&mut self, review: u64, mapping: Vec<(u64, ExportedIdentity)>) {
+        self.bound = mapping;
+        self.bound_at = Some(review);
+    }
+
+    /// The mapping moved on to `review`: rewrite the reply's alias tokens
+    /// whose identity now has another alias, so the reply keeps naming the
+    /// same people whatever renumbered them (a join, a case-wide rename, an
+    /// undo of either). The reply stays in alias form; nothing restored is
+    /// kept. Returns whether the reply changed.
+    pub(crate) fn follow(
+        &mut self,
+        review: u64,
+        mapping: impl FnOnce() -> Vec<(u64, ExportedIdentity)>,
+    ) -> bool {
+        if !self.exists() {
+            self.bound.clear();
+            self.bound_at = None;
+            return false;
+        }
+        if self.bound_at == Some(review) {
+            return false;
+        }
+        let before = std::mem::take(&mut self.bound);
+        self.bind(review, mapping());
+        let aliases: Vec<_> = before
+            .iter()
+            .map(|(id, old)| {
+                self.bound
+                    .iter()
+                    .find(|(now, _)| now == id)
+                    .map(|(_, now)| &now.alias)
+                    .filter(|alias| **alias != old.alias)
+                    .cloned()
+            })
+            .collect();
+        if aliases.iter().all(Option::is_none) {
+            return false;
+        }
+        let map = RestoreMap::new(before.into_iter().map(|(_, e)| e).collect());
+        match map.realias(&self.text, &aliases) {
+            Some(text) => {
+                self.set(text);
+                true
+            }
+            None => false,
+        }
     }
 
     /// Restore against the mapping at `review` (its revision), unless the
@@ -171,17 +227,20 @@ impl ReplyBox {
 
 impl DocumentView {
     /// The box is an editor so a reply keeps its lines; it is made when the
-    /// Share tab first draws.
+    /// Share tab first draws. It is plain text, so a paste is kept exactly
+    /// as the AI wrote it: no Markdown paste or Enter rules. The caret stays
+    /// in view in its scrolling box.
     pub(crate) fn ensure_reply_box(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.reply_box.is_some() {
             return;
         }
-        let theme = self.theme.get();
         let text = self.reply.text().to_owned();
+        let scroll = self.reply_scroll.clone();
         let editor = cx.new(|cx| {
             let mut editor = mdoc_editor::EditorState::new(window, cx)
                 .with_placeholder("Paste the AI's reply here");
-            editor.set_markdown_style(crate::style::markdown_style(theme), cx);
+            editor.set_plain_text(true);
+            editor.set_autoscroll(scroll);
             editor.set_text(text, cx);
             // Unlike the document editor, this field participates in the
             // Share panel's Tab order. Clones share the focus metadata.
@@ -227,12 +286,57 @@ impl DocumentView {
 
     /// The case gave this reopened member its reply (ADR 0078).
     pub(crate) fn load_reply(&mut self, text: String, cx: &mut Context<Self>) {
-        self.reply.loaded(text.clone());
+        self.reply.loaded(text);
+        self.bind_reply();
+        self.show_reply_text(cx);
+        cx.notify();
+    }
+
+    /// The box shows the reply as it is now.
+    fn show_reply_text(&mut self, cx: &mut Context<Self>) {
+        let text = self.reply.text().to_owned();
         if let Some(editor) = self.reply_box().cloned()
             && editor.read(cx).text() != text
         {
             editor.update(cx, |editor, cx| editor.set_text(text, cx));
         }
+    }
+
+    fn store_reply(&self, cx: &mut Context<Self>) {
+        if self.case.link().is_some() {
+            cx.emit(workspace::TabEvent::Case(workspace::CaseEvent::Reply));
+        }
+    }
+
+    fn bind_reply(&mut self) {
+        let review = &self.pii.review;
+        self.reply
+            .bind(review.revision(), review.export_identities_with_ids());
+    }
+
+    /// The mapping may have changed: once this update settles (a join or an
+    /// undo commits its identities last), the reply's alias tokens follow
+    /// any identity whose alias changed, and the case keeps the result.
+    pub(crate) fn follow_reply_aliases_soon(&mut self, cx: &mut Context<Self>) {
+        if !self.reply.exists() {
+            return;
+        }
+        let weak = cx.entity().downgrade();
+        cx.defer(move |cx| {
+            let _ = weak.update(cx, |this, cx| this.follow_reply_aliases(cx));
+        });
+    }
+
+    fn follow_reply_aliases(&mut self, cx: &mut Context<Self>) {
+        let review = &self.pii.review;
+        if !self
+            .reply
+            .follow(review.revision(), || review.export_identities_with_ids())
+        {
+            return;
+        }
+        self.show_reply_text(cx);
+        self.store_reply(cx);
         cx.notify();
     }
 
@@ -245,9 +349,9 @@ impl DocumentView {
         for effect in effects {
             match effect {
                 ReplyEffect::Store => {
-                    if self.case.link().is_some() {
-                        cx.emit(workspace::TabEvent::Case(workspace::CaseEvent::Reply));
-                    }
+                    // A new reply's tokens name today's identities.
+                    self.bind_reply();
+                    self.store_reply(cx);
                 }
                 ReplyEffect::ShowReply => {
                     // Typing goes on in the box while the view opens beside it.
@@ -316,14 +420,7 @@ impl DocumentView {
         if let Some(editor) = self.compare.as_ref().map(|c| c.reply_editor().clone()) {
             editor.update(cx, |editor, cx| editor.set_active_annotation(Some(id), cx));
         }
-        // The view lays out first when it has just opened.
-        let weak = cx.entity().downgrade();
-        window.on_next_frame(move |_, cx| {
-            let _ = weak.update(cx, |this, cx| {
-                this.reveal_in_reply(range.start, cx);
-                cx.notify();
-            });
-        });
+        self.reveal_in_reply(range.start, cx);
         cx.notify();
     }
 
@@ -406,6 +503,31 @@ mod tests {
         assert_eq!(reply.edited("", false), [ReplyEffect::Store]);
         reply.loaded("PERSON_1".into());
         assert!(reply.exists(), "a kept reply comes back without effects");
+    }
+
+    #[test]
+    fn the_reply_follows_its_identities_through_a_swap_and_back() {
+        let person = |alias: &str, name: &str| ExportedIdentity {
+            alias: alias.into(),
+            previous: vec![],
+            category: Category::Person,
+            custom: false,
+            originals: vec![name.into()],
+        };
+        let mapping =
+            |anna: &str, boris: &str| vec![(1, person(anna, "Anna")), (2, person(boris, "Boris"))];
+        let mut reply = ReplyBox::default();
+        reply.edited("PERSON_1 owes PERSON_2.", false);
+        reply.bind(1, mapping("PERSON_1", "PERSON_2"));
+        assert!(!reply.follow(1, || unreachable!("same revision")));
+        assert!(!reply.follow(2, || mapping("PERSON_1", "PERSON_2")));
+        assert!(reply.follow(3, || mapping("PERSON_2", "PERSON_1")));
+        assert_eq!(reply.text(), "PERSON_2 owes PERSON_1.");
+        assert!(reply.follow(4, || mapping("PERSON_1", "PERSON_2")));
+        assert_eq!(reply.text(), "PERSON_1 owes PERSON_2.");
+        // A forgotten identity's tokens stay as they are.
+        assert!(!reply.follow(5, || vec![(2, person("PERSON_2", "Boris"))]));
+        assert_eq!(reply.text(), "PERSON_1 owes PERSON_2.");
     }
 
     #[test]
