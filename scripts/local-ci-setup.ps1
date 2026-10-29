@@ -33,6 +33,21 @@ function ConvertTo-BashPath([string] $Path) {
     '/' + $Path.Substring(0, 1).ToLower() + $Path.Substring(2).Replace('\', '/')
 }
 $bashRoot = ConvertTo-BashPath $Root
+# The web server's --directory: forward slashes, as Python and Git Bash take it.
+$outArg = $out.Replace('\', '/')
+
+# A string as one Bash word: it's -> 'it'\''s'.
+function ConvertTo-BashWord([string] $Text) {
+    "'" + $Text.Replace("'", "'\''") + "'"
+}
+
+# Runs a native command whose failure is expected (a process already gone, a
+# path not served) and drops its output: under Windows PowerShell its stderr
+# would otherwise end this script ($ErrorActionPreference = 'Stop').
+function Invoke-Quietly([string] $Exe, [string[]] $Arguments) {
+    $ErrorActionPreference = 'Continue'
+    & $Exe @Arguments 2>&1 | Out-Null
+}
 
 function Stop-Runner {
     foreach ($name in $taskName, $webTaskName) {
@@ -42,13 +57,11 @@ function Stop-Runner {
     }
     # Stopping a task ends its bash but not the native processes under it (a
     # job's cargo, rustc and test binaries; the web server's python): end each
-    # runner bash's tree and the web server.
-    Get-CimInstance Win32_Process -Filter "Name = 'bash.exe'" |
-        Where-Object { $_.CommandLine -like '*local-ci.sh*run*' } |
-        ForEach-Object { & taskkill.exe /F /T /PID $_.ProcessId 2>$null | Out-Null }
-    Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
-        Where-Object { $_.CommandLine -like "*http.server*--bind 127.0.0.1 $Port*" } |
-        ForEach-Object { & taskkill.exe /F /T /PID $_.ProcessId 2>$null | Out-Null }
+    # runner bash's tree and this runner's web server.
+    $web = "*http.server --bind 127.0.0.1 $Port --directory $([WildcardPattern]::Escape($outArg))"
+    Get-CimInstance Win32_Process -Filter "Name = 'bash.exe' OR Name = 'python.exe'" |
+        Where-Object { $_.CommandLine -like '*local-ci.sh*run*' -or $_.CommandLine -like $web } |
+        ForEach-Object { Invoke-Quietly taskkill.exe '/F', '/T', '/PID', $_.ProcessId }
     $lock = Join-Path $state 'lock'
     if (Test-Path $lock) { Remove-Item -Recurse -Force $lock }
 }
@@ -60,7 +73,7 @@ if ($Uninstall) {
             Unregister-ScheduledTask -TaskName $name -Confirm:$false
         }
     }
-    & tailscale serve --https=443 --set-path=/ci off 2>$null | Out-Null
+    Invoke-Quietly tailscale 'serve', '--https=443', '--set-path=/ci', 'off'
     Write-Output "Removed the '$taskName' and '$webTaskName' tasks and the /ci tailnet path; $Root is kept."
     return
 }
@@ -116,12 +129,14 @@ function Register-CiTask([string] $Name, [string] $Command, [string] $Descriptio
 }
 
 # The pinned tools in ~/.cargo/bin come first, as on the Mac.
+$runner = ConvertTo-BashWord "$bashRoot/runner/scripts/local-ci.sh"
+$taskLog = ConvertTo-BashWord "$bashRoot/state/task.log"
 Register-CiTask $taskName `
-    "LOCAL_CI_HOME=$bashRoot PATH=`$HOME/.cargo/bin:`$PATH exec bash $bashRoot/runner/scripts/local-ci.sh run >>$bashRoot/state/task.log 2>&1" `
+    "LOCAL_CI_HOME=$(ConvertTo-BashWord $bashRoot) PATH=`$HOME/.cargo/bin:`$PATH exec bash $runner run >>$taskLog 2>&1" `
     'mdoc local CI runner (ADR 0082): scripts/local-ci.sh run'
 # Localhost only; tailscale serve is the way in from the tailnet.
 Register-CiTask $webTaskName `
-    "exec '$(ConvertTo-BashPath $python.Source)' -m http.server --bind 127.0.0.1 $Port --directory '$($out.Replace('\', '/'))' >/dev/null 2>&1" `
+    "exec $(ConvertTo-BashWord (ConvertTo-BashPath $python.Source)) -m http.server --bind 127.0.0.1 $Port --directory $(ConvertTo-BashWord $outArg) >/dev/null 2>&1" `
     "mdoc local CI results (ADR 0082): $out on 127.0.0.1:$Port"
 
 & tailscale serve --bg --set-path /ci "http://127.0.0.1:$Port" | Out-Null
