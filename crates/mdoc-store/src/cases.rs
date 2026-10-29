@@ -356,6 +356,36 @@ impl Case {
             })
             .or_else(|| position(&|s| incoming.originals.iter().any(|o| s.originals.contains(o))))
     }
+    /// The member entry that is case identity `index` when the member, which
+    /// did not merge, still exports several entries matching it: the one with
+    /// its alias, then one renamed from it, then the one holding its earliest
+    /// wording (restored Undo history may not remember the newer alias). The
+    /// others are absorbed or split entries, not its rename (ADR 0041).
+    fn member_counterpart<'a>(
+        &self,
+        index: usize,
+        exported: &'a [ExportedIdentity],
+    ) -> Option<&'a ExportedIdentity> {
+        let stored = &self.identities[index];
+        exported
+            .iter()
+            .find(|e| e.alias == stored.alias)
+            .or_else(|| exported.iter().find(|e| e.previous.contains(&stored.alias)))
+            .or_else(|| {
+                let matching: Vec<_> = exported
+                    .iter()
+                    .filter(|e| {
+                        self.identity_position(&StoredIdentity::from_exported(e)) == Some(index)
+                    })
+                    .collect();
+                stored.originals.iter().find_map(|o| {
+                    matching
+                        .iter()
+                        .find(|e| e.originals.iter().any(|m| m.as_ref() == o))
+                        .copied()
+                })
+            })
+    }
     /// Renames and category changes of surviving identities. Start from each
     /// current entry so a merge's absorbed entries cannot become renames in
     /// other members; merges and splits are not propagated (ADR 0041).
@@ -399,9 +429,9 @@ impl Case {
             let found = self.identity_position(&incoming);
             if let Some(index) = found
                 && self.identities[index].alias != incoming.alias
-                && exported
-                    .iter()
-                    .any(|e| e.alias == self.identities[index].alias)
+                && self
+                    .member_counterpart(index, exported)
+                    .is_some_and(|counterpart| !std::ptr::eq(counterpart, e))
             {
                 // This member still has the case's current identity alongside
                 // an absorbed or split one. Keep the current identity rather
@@ -1233,6 +1263,55 @@ mod tests {
             assert_eq!(case, expected);
             assert!(case.renames_since(&expected).is_empty());
             member.reverse();
+        }
+    }
+
+    #[test]
+    fn unmerged_member_renames_follow_the_merged_identity_in_either_order() {
+        let mut merged = identity(
+            "PERSON_1",
+            Category::Person,
+            &["Maya Bennett", "Ms Bennett"],
+        );
+        merged.previous.push("PERSON_2".into());
+        let mut case = Case::new("Bennett".into(), &[merged.clone()], None);
+        // The unmerged member renames PERSON_1 forward: whichever entry it
+        // exports first, the merged identity takes the new alias.
+        let mut client = identity("CLIENT", Category::Person, &["Maya Bennett"]);
+        client.previous.push("PERSON_1".into());
+        let short = identity("PERSON_2", Category::Person, &["Ms Bennett"]);
+        let base = case.clone();
+        for member in [
+            [client.clone(), short.clone()],
+            [short.clone(), client.clone()],
+        ] {
+            case = base.clone();
+            case.merge(&member);
+            assert_eq!(case.identities.len(), 1);
+            assert_eq!(case.identities[0].alias, "CLIENT");
+            assert_eq!(case.identities[0].originals[0], "Maya Bennett");
+            assert_eq!(case.renames_since(&base)[0].0, "PERSON_1");
+        }
+        // Undo in that member restores history that no longer remembers
+        // CLIENT. The case wording order decides which entry is the merged
+        // identity, so the Undo propagates as PERSON_1 in either order.
+        let renamed = case.clone();
+        let undone = identity("PERSON_1", Category::Person, &["Maya Bennett"]);
+        for member in [
+            [undone.clone(), short.clone()],
+            [short.clone(), undone.clone()],
+        ] {
+            case = renamed.clone();
+            case.merge(&member);
+            assert_eq!(case.identities.len(), 1);
+            assert_eq!(case.identities[0].alias, "PERSON_1");
+            assert_eq!(case.identities[0].originals[0], "Maya Bennett");
+            assert!(case.identities[0].names("PERSON_2"));
+            assert!(case.identities[0].names("CLIENT"));
+            let renames = case.renames_since(&renamed);
+            assert_eq!(renames.len(), 1);
+            assert_eq!(renames[0].0, "CLIENT");
+            assert_eq!(renames[0].1.alias, "PERSON_1");
         }
     }
 
