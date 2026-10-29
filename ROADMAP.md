@@ -124,11 +124,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   macOS `acceptance` user (fleet ADR 0011) shows the first Keychain prompt
   only once, since the case-key item outlives a profile rename and agents
   never delete it. *From the rc.4 acceptance run and the 0.2.1 grill.*
-- **Local CI, hosted hygiene** ([ADR 0082](docs/adr/0082-local-ci.md)):
-  `timeout-minutes` per job, cargo-nextest with per-test timeouts, deleting
-  older cache generations after `main` saves, renders retention 7 days, and
-  `pull_request` CI for any base branch (stacked PRs, fleet ADR 0016).
-  *Done when:* a green `main` run shows them and cache usage is under 10 GB.
 - **Local CI runner** ([ADR 0082](docs/adr/0082-local-ci.md)):
   `scripts/local-ci.sh` and `just local-ci`, the Mac launchd agent, the
   Windows Task Scheduler task and `D:\ci\mdoc` clone, `tailscale serve`
