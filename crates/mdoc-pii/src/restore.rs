@@ -475,6 +475,7 @@ impl Review {
                     kept: false,
                     keep_default: false,
                     priority: 0,
+                    detected: false,
                 });
                 self.identities
                     .remember_normalized(original, exported.category, id);

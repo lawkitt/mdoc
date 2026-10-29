@@ -37,6 +37,7 @@ use std::{
 mod case_coordinator;
 mod case_page;
 mod decision_history;
+mod default_categories;
 mod docx_queue;
 mod focus_regions;
 mod folder_sheet;

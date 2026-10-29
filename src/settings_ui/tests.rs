@@ -671,6 +671,7 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
     custom.spelling.enabled = false;
     custom.updates.check_automatically = false;
     custom.cases.ask_before_closing = false;
+    custom.categories.set(mdoc_pii::Category::Person, false);
     for category in Category::ALL {
         shared.borrow_mut().current = Some(custom.clone());
         let (panel, cx) = cx.add_window_view(|_, cx| {
@@ -685,7 +686,11 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
         let defaults = Preferences::default();
         match category {
             Category::General => expected.updates = defaults.updates,
-            Category::Detection => expected.pseudonymization = defaults.pseudonymization,
+            Category::Detection => {
+                expected.pseudonymization = defaults.pseudonymization;
+                // Reset ticks every category again (ADR 0076).
+                expected.categories = defaults.categories;
+            }
             Category::Recognition => expected.ocr = defaults.ocr,
             Category::Spelling => expected.spelling = defaults.spelling,
             Category::Cases => expected.cases = defaults.cases,
@@ -969,6 +974,17 @@ fn blur_autosave_keeps_the_mouse_click_on_resolution_model_and_reset(cx: &mut Te
                 w.draw(cx).clear(cx);
             });
         }
+        if target == "reset-settings" {
+            // Detection is taller than the overlay; bring Reset into view.
+            panel.update(cx, |p, _| {
+                let bottom = p.scroll.max_offset().y;
+                p.scroll.set_offset(gpui::point(px(0.), -bottom));
+            });
+            cx.update(|w, cx| {
+                w.refresh();
+                w.draw(cx).clear(cx);
+            });
+        }
         let position = cx.debug_bounds(target).unwrap().center();
         cx.simulate_event(gpui::MouseDownEvent {
             position,
@@ -1062,5 +1078,156 @@ fn a_queued_general_reset_changes_theme_only_if_its_own_save_succeeds(cx: &mut T
             .unwrap()
             .updates
             .check_automatically
+    );
+}
+
+#[gpui::test]
+fn detection_categories_save_on_change_by_mouse_and_keyboard(cx: &mut TestAppContext) {
+    cx.update(bind_keys);
+    cx.update(ui::bind_keys);
+    let shared = Store::in_memory();
+    let (panel, cx) = cx
+        .add_window_view(|_, cx| Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx));
+    cx.simulate_resize(size(px(800.), px(2400.)));
+    let unticked = Rc::new(std::cell::RefCell::new(Vec::new()));
+    cx.update(|_, cx| {
+        let unticked = unticked.clone();
+        cx.subscribe(&panel, move |_, event: &Event, _| {
+            if let Event::CategoriesUnticked(categories) = event {
+                unticked.borrow_mut().push(categories.clone());
+            }
+        })
+        .detach();
+    });
+    // Not shown: opening would check models through the global job slot.
+    panel.update(cx, |p, cx| {
+        p.open = true;
+        p.category = Category::Detection;
+        p.statuses.fill(Status::Ready);
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let click = |cx: &mut gpui::VisualTestContext, id: &'static str| {
+        let bounds = cx
+            .debug_bounds(id)
+            .unwrap_or_else(|| panic!("missing {id}"));
+        cx.simulate_click(bounds.center(), gpui::Modifiers::none());
+        cx.run_until_parked();
+    };
+    let skip =
+        |shared: &mdoc_store::settings::Shared| shared.borrow().snapshot().unwrap().categories.skip;
+    // Every category scans return is listed and on; Date and Other are manual only.
+    for category in mdoc_pii::Category::DETECTED {
+        let id: &'static str = format!("settings-detect-{}", category.token()).leak();
+        assert!(cx.debug_bounds(id).is_some(), "{id}");
+    }
+    assert!(cx.debug_bounds("settings-detect-REDACTED").is_none());
+    assert!(cx.debug_bounds("settings-detect-DATE").is_none());
+    assert!(skip(&shared).is_empty());
+
+    click(cx, "settings-detect-ADDRESS");
+    click(cx, "settings-detect-EMAIL");
+    assert_eq!(skip(&shared), ["ADDRESS", "EMAIL"]);
+    assert_eq!(
+        *unticked.borrow(),
+        [
+            [mdoc_pii::Category::Address].into(),
+            [mdoc_pii::Category::Email].into()
+        ]
+    );
+    // Ticking again saves too, and unticks nothing.
+    click(cx, "settings-detect-EMAIL");
+    assert_eq!(skip(&shared), ["ADDRESS"]);
+    assert_eq!(unticked.borrow().len(), 2);
+
+    // Keyboard: Tab reaches the Person chip and Space unticks it.
+    let person = gpui::ElementId::from(gpui::SharedString::from("settings-detect-PERSON"));
+    let focused = |cx: &mut gpui::VisualTestContext| {
+        cx.update(|w, cx| {
+            panel
+                .read(cx)
+                .controls
+                .borrow()
+                .get(&person)
+                .is_some_and(|f| f.is_focused(w))
+        })
+    };
+    panel.update_in(cx, |p, w, cx| w.focus(&p.category_focus, cx));
+    let mut reached = false;
+    for _ in 0..30 {
+        cx.simulate_keystrokes("tab");
+        cx.update(|w, cx| {
+            w.refresh();
+            w.draw(cx).clear(cx);
+        });
+        if focused(cx) {
+            reached = true;
+            break;
+        }
+    }
+    assert!(reached, "the Person chip is reachable by Tab");
+    cx.simulate_keystrokes("space");
+    cx.simulate_event(gpui::KeyUpEvent {
+        keystroke: gpui::Keystroke::parse("space").unwrap(),
+    });
+    cx.run_until_parked();
+    assert_eq!(skip(&shared), ["ADDRESS", "PERSON"]);
+
+    // Reset ticks all again.
+    panel.update(cx, |p, cx| p.reset(cx));
+    cx.run_until_parked();
+    assert!(skip(&shared).is_empty());
+    assert!(panel.read_with(cx, |p, _| p.draft.categories.skip.is_empty()));
+}
+
+#[gpui::test]
+fn a_failed_category_save_restores_the_previous_list_and_says_so(cx: &mut TestAppContext) {
+    let shared = Store::in_memory();
+    let mut stored = Preferences::default();
+    stored.categories.set(mdoc_pii::Category::Phone, false);
+    shared.borrow_mut().current = Some(stored);
+    let (panel, cx) = cx.add_window_view(|_, cx| {
+        Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
+    });
+    let unticked = Rc::new(Cell::new(false));
+    cx.update(|_, cx| {
+        let unticked = unticked.clone();
+        cx.subscribe(&panel, move |_, event: &Event, _| {
+            if matches!(event, Event::CategoriesUnticked(_)) {
+                unticked.set(true);
+            }
+        })
+        .detach();
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let invalid = dir.path().join("not-a-directory");
+    std::fs::write(&invalid, b"blocked").unwrap();
+    shared.borrow_mut().path = Some(invalid.join("settings.json"));
+    panel.update(cx, |panel, cx| {
+        panel
+            .draft
+            .categories
+            .set(mdoc_pii::Category::Person, false);
+        panel.draft.categories.set(mdoc_pii::Category::Phone, true);
+        panel.persist(cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        shared.borrow().snapshot().unwrap().categories.skip,
+        ["PHONE"]
+    );
+    panel.update(cx, |panel, _| {
+        assert_eq!(panel.draft.categories.skip, ["PHONE"]);
+        assert!(
+            panel
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("Could not save settings")
+        );
+    });
+    assert!(
+        !unticked.get(),
+        "nothing is withdrawn unless the save succeeds"
     );
 }

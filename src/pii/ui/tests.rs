@@ -1794,6 +1794,11 @@ fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
     });
     cx.run_until_parked();
     app.update(cx, |app, cx| {
+        app.case.attach(Some(mdoc_store::cases::CaseLink {
+            id: "a".into(),
+            color: None,
+            name: "Acme".into(),
+        }));
         let mut skip = app.case.skip().clone();
         skip.insert(Category::Address);
         app.case.set_skip(skip);
@@ -1822,6 +1827,63 @@ fn scans_skip_categories_the_case_switched_off(cx: &mut gpui::TestAppContext) {
             .map(|v| v.category)
             .collect();
         assert_eq!(categories, [Category::Person]);
+    });
+}
+
+#[gpui::test]
+fn caseless_scans_follow_the_default_and_a_joined_tab_its_case(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Alice at 1 Main St";
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text(source, cx));
+        // Settings › Detection: Address is off (ADR 0076).
+        let mut prefs = app.preferences.borrow().current.clone().unwrap();
+        prefs.categories.set(Category::Address, false);
+        app.preferences.borrow_mut().current = Some(prefs);
+    });
+    cx.run_until_parked();
+    let detection = |range, category| mdoc_pii::Detection {
+        range,
+        category,
+        score: 0.9,
+        recognizer: mdoc_pii::Recognizer::Model,
+    };
+    let scan = |app: &mut DocumentView, cx: &mut Context<DocumentView>| {
+        let (generation, identity, revision) = install_scan(app, cx);
+        app.complete_pii_scan(
+            generation,
+            identity,
+            revision,
+            Ok(vec![
+                detection(0..5, Category::Person),
+                detection(9..18, Category::Address),
+            ]),
+            cx,
+        );
+        app.pii
+            .review
+            .variants()
+            .iter()
+            .map(|v| v.category)
+            .collect::<Vec<_>>()
+    };
+    app.update(cx, |app, cx| {
+        assert_eq!(scan(app, cx), [Category::Person], "no case: the default");
+    });
+    // Once the tab joins a case, the case's list wins: this one detects all.
+    app.update(cx, |app, cx| {
+        app.pii.review = Default::default();
+        app.case.attach(Some(mdoc_store::cases::CaseLink {
+            id: "a".into(),
+            color: None,
+            name: "Acme".into(),
+        }));
+        app.case.set_skip(Default::default());
+        assert_eq!(scan(app, cx), [Category::Person, Category::Address]);
+        // A member ignores Settings changes; its case decides.
+        app.default_categories_unticked(&[Category::Person].into(), cx);
+        assert_eq!(app.pii.review.variants().len(), 2);
     });
 }
 
