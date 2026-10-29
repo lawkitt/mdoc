@@ -121,6 +121,13 @@ cp .github/workflows/ci.yml "$tmp/work/.github/workflows/ci.yml"
 echo base >"$tmp/work/src/lib.rs"
 echo readme >"$tmp/work/README.md"
 echo doc >"$tmp/work/docs/a.md"
+mkdir -p "$tmp/work/scripts"
+cat >"$tmp/work/scripts/setup.sh" <<'EOF'
+#!/usr/bin/env bash
+# Setup can prompt (WiX on Windows): the runner closes its stdin.
+! read -r -t 1 _ || exit 5
+echo "$(cat ci-behavior 2>/dev/null || echo none) setup" >>"$FAKE/just.log"
+EOF
 git_ add -A
 git_ commit --quiet -m base
 git_ push --quiet "$tmp/origin.git" main
@@ -255,7 +262,9 @@ short_base=${base:0:7}
 check "a passing PR gets success naming the base" has "$pass" "success	Passed on main@$short_base in *	https://ci.example/ci/pr-1/${pass:0:7}/"
 check "it was queued, then ran" grep -q "^$pass	pending	Running on main@$short_base	https://ci.example/ci/pr-1/" "$FAKE/statuses.tsv"
 check "queued statuses link the runner's status" grep -q "^$pass	pending	Queued	https://ci.example/ci/status.txt" "$FAKE/statuses.tsv"
-check "lint then test, with renders" grep -qx "pass lint renders=" "$FAKE/just.log"
+steps_run() { grep "^$1 " "$FAKE/just.log" | head -3 | cut -d' ' -f2 | tr '\n' ' '; }
+check "setup, lint, then test" [ "$(steps_run pass)" = "setup lint test " ]
+check "lint gets no renders" grep -qx "pass lint renders=" "$FAKE/just.log"
 check "the test step gets MDOC_HEADLESS_ARTIFACTS" grep -qx "pass test renders=set" "$FAKE/just.log"
 check "the job's log and summary are kept" [ -s "$LOCAL_CI_HOME/out/pr-1/${pass:0:7}/log.txt" ]
 check "the summary records the result" grep -q "^result: success" "$LOCAL_CI_HOME/out/pr-1/${pass:0:7}/summary.txt"

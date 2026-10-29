@@ -55,7 +55,8 @@ config() {
   port=${LOCAL_CI_PORT:-8787}
   poll_s=${LOCAL_CI_POLL:-60}
   tick_s=${LOCAL_CI_TICK:-5}
-  steps=${LOCAL_CI_STEPS:-lint test}
+  # setup installs the merge ref's pinned tools, as hosted CI's setup step does.
+  steps=${LOCAL_CI_STEPS:-setup lint test}
   # The hosted job limits (ADR 0082): clippy 20 min, test 30 min.
   lint_s=${LOCAL_CI_LINT_TIMEOUT:-1200}
   test_s=${LOCAL_CI_TEST_TIMEOUT:-1800}
@@ -243,8 +244,16 @@ capacity_ok() {
 
 timeout_for() {
   case "$1" in
-    lint) echo "$lint_s" ;;
+    setup | lint) echo "$lint_s" ;;
     *) echo "$test_s" ;;
+  esac
+}
+
+# How a step reads in logs and statuses.
+label() {
+  case "$1" in
+    setup) echo scripts/setup.sh ;;
+    *) echo "just $1" ;;
   esac
 }
 
@@ -261,17 +270,18 @@ job() { # merge-ref dir
   for step in $steps; do
     start=$(date +%s)
     printf '%s %s\n' "$step" "$start" >"$dir/.step"
-    echo "local-ci: just $step"
+    echo "local-ci: $(label "$step")"
     rc=0
-    if [ "$step" = test ]; then
-      MDOC_HEADLESS_ARTIFACTS=$dir/renders just "$step" || rc=$?
-    else
-      just "$step" || rc=$?
-    fi
+    case "$step" in
+      # Not through just: setup may replace the just binary.
+      setup) bash scripts/setup.sh </dev/null || rc=$? ;;
+      test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just "$step" || rc=$? ;;
+      *) just "$step" || rc=$? ;;
+    esac
     if [ "$rc" -eq 0 ]; then
-      echo "just $step: passed in $(duration $(($(date +%s) - start)))" >>"$dir/summary.txt"
+      echo "$(label "$step"): passed in $(duration $(($(date +%s) - start)))" >>"$dir/summary.txt"
     else
-      echo "just $step: failed (exit $rc) after $(duration $(($(date +%s) - start)))" >>"$dir/summary.txt"
+      echo "$(label "$step"): failed (exit $rc) after $(duration $(($(date +%s) - start)))" >>"$dir/summary.txt"
       exit 1
     fi
   done
@@ -339,10 +349,10 @@ check_job() {
     read -r step since 2>/dev/null <"$run_dir/.step" || return 0
     limit=$(timeout_for "$step")
     if [ $(($(date +%s) - since)) -gt "$limit" ]; then
-      log "#$run_pr: just $step passed its $((limit / 60)) min limit"
-      echo "local-ci: just $step timed out after $(duration "$limit")" >>"$run_dir/log.txt"
+      log "#$run_pr: $(label "$step") passed its $((limit / 60)) min limit"
+      echo "local-ci: $(label "$step") timed out after $(duration "$limit")" >>"$run_dir/log.txt"
       kill_job "$run_pid"
-      finish failure "Timed out in just $step after $(duration "$limit") on $on"
+      finish failure "Timed out in $(label "$step") after $(duration "$limit") on $on"
     fi
     return 0
   fi
@@ -351,7 +361,7 @@ check_job() {
     0) finish success "Passed on $on in $(duration $(($(date +%s) - run_start)))" ;;
     1)
       read -r step _ 2>/dev/null <"$run_dir/.step" || step='?'
-      finish failure "Failed in just $step on $on"
+      finish failure "Failed in $(label "$step") on $on"
       ;;
     *) finish error "Runner error (exit $rc) on $on; see the log" ;;
   esac
@@ -424,7 +434,7 @@ write_status() {
     if [ -n "${run_pr:-}" ]; then
       local step='?' since
       read -r step since 2>/dev/null <"$run_dir/.step" || since=$run_start
-      echo "running: #$run_pr $(short "$run_head") on $run_base@$(short "$run_base_sha"), just $step for $(duration $(($(date +%s) - since))) ${run_url:-$run_dir}"
+      echo "running: #$run_pr $(short "$run_head") on $run_base@$(short "$run_base_sha"), $(label "$step") for $(duration $(($(date +%s) - since))) ${run_url:-$run_dir}"
     else
       echo "running: nothing"
     fi
@@ -538,7 +548,7 @@ write_plists() {
   <key>EnvironmentVariables</key>
   <dict>
     <key>LOCAL_CI_HOME</key><string>$LOCAL_CI_HOME</string>
-    <key>PATH</key><string>$PATH</string>
+    <key>PATH</key><string>$HOME/.cargo/bin:$PATH</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

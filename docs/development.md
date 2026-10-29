@@ -380,8 +380,10 @@ checks it against a fake `gh` and `just`.
 this machine's status gets `pending` "Queued", linked to the runner's
 `status.txt`; one job runs at a time, oldest first. A job fetches
 `refs/pull/N/merge`, checks it out in the CI checkout (keeping its
-`target/`) and runs `just lint` and `just test` with the hosted job limits
-(20 and 30 minutes). The status, `success` or `failure`, names the base
+`target/`), installs the merge ref's pinned tools with `scripts/setup.sh`
+(as hosted CI's setup step does) and runs `just lint` and `just test` with
+the hosted job limits (20 and 30 minutes). The runner's `PATH` puts
+`~/.cargo/bin` first, so the pinned tools win over other installs. The status, `success` or `failure`, names the base
 commit tested ("Passed on main@1a2b3c4 in 4m10s") and links to the job's
 folder. Without a build, a conflicting PR gets `failure` ("Conflicts with
 main") and a PR that touches only files in `ci.yml`'s `paths-ignore` list
