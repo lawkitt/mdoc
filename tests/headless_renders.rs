@@ -31,6 +31,7 @@ const SCREENS: &[&str] = &[
     "keyboard-shortcuts",
     "find-replace",
     "before-after",
+    "decision-history",
     "open-case",
     "case-page",
     "case-page-locked",
@@ -215,6 +216,30 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     "stale find bar on {theme}/{name}"
                 );
                 assert_eq!(
+                    record["state"]["decision_history"],
+                    *name == "decision-history"
+                );
+                if *name == "decision-history" {
+                    let entries = record["state"]["decisions"].as_array().unwrap();
+                    assert_eq!(entries.len(), 3);
+                    assert!(entries[0]["line"].as_str().unwrap().starts_with("Applied "));
+                    assert!(
+                        entries[1]["line"]
+                            .as_str()
+                            .unwrap()
+                            .starts_with("Undid replacement of “")
+                    );
+                    assert!(entries[2]["line"].as_str().unwrap().starts_with("Kept “"));
+                    assert_eq!(entries[0]["undone"], false);
+                    assert_eq!(entries[1]["undone"], false);
+                    assert_eq!(entries[2]["undone"], true);
+                    assert!(
+                        entries
+                            .iter()
+                            .all(|entry| entry["line"].as_str().unwrap().ends_with(" · 14:02"))
+                    );
+                }
+                assert_eq!(
                     record["state"]["settings"],
                     name.starts_with("settings-") || *name == "dictionary",
                     "stale settings on {theme}/{name}"
@@ -327,7 +352,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
     // ADR 0074: actual app controls, not a focus-handle assertion. Focus adds
     // only an accent outline; selected/on-state fills and labels stay intact.
     let rings = summary["focus_rings"].as_array().unwrap();
-    assert_eq!(rings.len(), 10);
+    assert_eq!(rings.len(), 12);
     for theme in ["light", "dark"] {
         for control in [
             "toggle-on",
@@ -335,6 +360,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
             "settings-row",
             "beside-selected-tab",
             "comments-toggle",
+            "decision-row",
         ] {
             let pair = rings
                 .iter()

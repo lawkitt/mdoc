@@ -156,9 +156,9 @@ pub(super) enum DropTarget {
 }
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod decision_tests;
+#[cfg(test)]
+mod tests;
 /// Replacements panel and word-popup state. Every transition is a method here.
 pub(super) struct MappingUi {
     pub open: bool,

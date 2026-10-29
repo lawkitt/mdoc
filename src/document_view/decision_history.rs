@@ -50,9 +50,7 @@ impl DocumentView {
     /// The clock button shows once there is something to decide or decided.
     pub(super) fn shows_history_button(&self, reviewable: bool, cx: &App) -> bool {
         let path = self.editor.read(cx).history_path();
-        reviewable
-            || self.history.open
-            || self.pii.decisions().rows(&path).next().is_some()
+        reviewable || self.history.open || self.pii.decisions().rows(&path).next().is_some()
     }
 
     pub(super) fn history_button(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -68,17 +66,23 @@ impl DocumentView {
                     .inset_0(),
             )
             .child(
-                ui::header_icon("header-history", "What you did", ui::Icon::Clock, theme, open)
-                    .track_focus(&self.history.button)
-                    .when(cfg!(test), |v| v.debug_selector(|| "header-history".into()))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        if this.history.open {
-                            this.history.open = false;
-                            cx.notify();
-                        } else {
-                            this.open_decision_history(window, cx);
-                        }
-                    })),
+                ui::header_icon(
+                    "header-history",
+                    "What you did",
+                    ui::Icon::Clock,
+                    theme,
+                    open,
+                )
+                .track_focus(&self.history.button)
+                .when(cfg!(test), |v| v.debug_selector(|| "header-history".into()))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    if this.history.open {
+                        this.history.open = false;
+                        cx.notify();
+                    } else {
+                        this.open_decision_history(window, cx);
+                    }
+                })),
             )
             .children(popover)
             .into_any_element()
@@ -135,7 +139,7 @@ impl DocumentView {
                             .flex_shrink_0()
                             .text_size(px(12.))
                             .text_color(p.header_muted)
-                            .child(time),
+                            .child(format!("· {time}")),
                     )
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.travel_to_decision(i, window, cx);
@@ -149,7 +153,9 @@ impl DocumentView {
                 .snap_to_window_with_margin(px(8.))
                 .child(
                     ui::panel("decision-history", theme)
-                        .when(cfg!(test), |v| v.debug_selector(|| "decision-history".into()))
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(|| "decision-history".into())
+                        })
                         .track_focus(&self.history.menu)
                         .key_context("UiPanel UiMenu")
                         .role(gpui::Role::Menu)

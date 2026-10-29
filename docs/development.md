@@ -286,6 +286,7 @@ from the selected category tab.
 selected Share tab.
 `focus-comments-toggle` uses the public DOCX comments fixture to check the
 ring at the Original pane's clipped edge.
+`focus-decision-row` checks a row of What you did beside done and undone entries.
 `summary.json` lists these under `focus_rings`. The contract test compares
 pixels after focus scrolling settles: only the 2 px accent outline changes,
 preserving the control's fill and label and checking that both sides of the
@@ -295,7 +296,7 @@ Both themes cover Home, a document and its ⋯ menu, Review, the mention popup, 
 consent, all six Settings categories (General, Detection, Recognition,
 Spelling, Cases and About), the dictionary, command palette, the keyboard shortcuts
 sheet, Find and Replace,
-before/after, Open Case, the unlocked and locked case page, case rename/categories, the Keychain explainer preview,
+before/after, What you did with done and undone entries, Open Case, the unlocked and locked case page, case rename/categories, the Keychain explainer preview,
 the folder sheet (a small folder, one over the 20-file cap, and Add to a
 case), confirmations for case deletion, mapping retention, unsaved changes and model
 removal, model comparison, a damaged DOCX's failed conversion and preview,

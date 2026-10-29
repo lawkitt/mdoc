@@ -74,7 +74,7 @@ pub(crate) enum Popup {
     Selection,
     Choose { ids: Arc<[u64]>, selected: usize },
 }
-const APPLIED_ID: u64 = 1 << 63;
+pub(crate) const APPLIED_ID: u64 = 1 << 63;
 /// Window origin of the popup layer and the scroll offset it was laid out at.
 type PopupLayer = Rc<Cell<Option<(gpui::Point<Pixels>, gpui::Point<Pixels>)>>>;
 /// Annotation ids of kept-mention markers carry this bit over the start offset.

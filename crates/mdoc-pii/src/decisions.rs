@@ -32,13 +32,28 @@ pub enum Decision {
     Apply(Mentions),
     Keep(Mentions),
     UndoReplacement(Mentions),
-    Rename { original: Arc<str>, alias: String },
-    Category { original: Arc<str>, category: Category },
-    Merge { from: Arc<str>, into: Arc<str> },
-    Split { original: Arc<str> },
-    Add { original: Arc<str> },
+    Rename {
+        original: Arc<str>,
+        alias: String,
+    },
+    Category {
+        original: Arc<str>,
+        category: Category,
+    },
+    Merge {
+        from: Arc<str>,
+        into: Arc<str>,
+    },
+    Split {
+        original: Arc<str>,
+    },
+    Add {
+        original: Arc<str>,
+    },
     Restore(Mentions),
-    JoinCase { case: String },
+    JoinCase {
+        case: String,
+    },
 }
 
 fn count(n: usize, one: &str, many: &str) -> String {

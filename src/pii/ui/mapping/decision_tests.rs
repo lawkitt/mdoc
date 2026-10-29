@@ -2,6 +2,7 @@
 //! travel equals ⌘Z / ⇧⌘Z presses, and text edits are not listed.
 use super::*;
 use crate::document_view::DocumentView;
+use crate::pii::ui::PiiAddCandidate;
 use gpui::{Context, Focusable};
 use mdoc_pii::{Category, decisions::EntryState};
 
@@ -60,13 +61,14 @@ fn labels(app: &DocumentView, cx: &gpui::App) -> Vec<String> {
 
 /// A plain text edit, as typing makes: one undo step, never listed.
 fn type_text(app: &mut DocumentView, at: usize, text: &str, cx: &mut Context<DocumentView>) {
-    app.editor.update(cx, |e, cx| e.replace_range(at..at, text, cx));
+    app.editor
+        .update(cx, |e, cx| e.replace_range(at..at, text, cx));
 }
 
 #[gpui::test]
 fn every_decision_kind_is_listed_once_and_text_edits_are_not(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);
-    app.update(cx, |app, cx| seed(app, cx));
+    app.update(cx, seed);
     cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
         let maya = identity(app, "Maya Bennett");
@@ -78,7 +80,11 @@ fn every_decision_kind_is_listed_once_and_text_edits_are_not(cx: &mut gpui::Test
         type_text(app, SOURCE.len(), " Signed.", cx);
         let ms = identity(app, "Ms Bennett");
         app.change_mapping(MappingAction::Merge(ms, maya), cx);
-        let last = app.pii.review.variants()[0].mentions.last().cloned().unwrap();
+        let last = app.pii.review.variants()[0]
+            .mentions
+            .last()
+            .cloned()
+            .unwrap();
         app.change_mapping(
             MappingAction::Scoped {
                 identity: maya,
@@ -142,7 +148,9 @@ fn state(app: &Entity<DocumentView>, cx: &mut gpui::VisualTestContext) -> (Strin
 }
 
 fn travel(app: &Entity<DocumentView>, cx: &mut gpui::VisualTestContext, index: usize) {
-    app.update_in(cx, |app, window, cx| app.travel_to_decision(index, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        app.travel_to_decision(index, window, cx)
+    });
     cx.run_until_parked();
 }
 
@@ -165,7 +173,7 @@ fn travel_equals_undo_and_redo_presses_and_a_new_decision_drops_undone_entries(
     cx: &mut gpui::TestAppContext,
 ) {
     let (app, cx) = crate::document_view::tests::boot(cx);
-    app.update(cx, |app, cx| seed(app, cx));
+    app.update(cx, seed);
     cx.run_until_parked();
     let renamed = after(&app, cx, |app, _, cx| {
         let maya = identity(app, "Maya Bennett");
