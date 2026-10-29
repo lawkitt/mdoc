@@ -696,3 +696,94 @@ fn withdrawing_a_category_keeps_restored_wordings() {
         .collect();
     assert_eq!(originals, ["Dan"]);
 }
+
+#[test]
+fn same_as_into_a_shorter_seeded_identity_restores_the_longest_full_form() {
+    // A case knows PERSON_1 only as "Ms Bennett"; this member links the full
+    // name to it with Same as…. The pin breaks ties only (ADR 0080).
+    let source = "Maya Bennett signed. Ms Bennett agreed.";
+    let mut review = Review::default();
+    let seeded = review.seed(
+        &[identity("PERSON_1", Category::Person, &["Ms Bennett"])],
+        source,
+    )[0];
+    review
+        .ingest(
+            source,
+            vec![Detection {
+                range: 0..12,
+                category: Category::Person,
+                score: 0.9,
+                recognizer: Recognizer::Model,
+            }],
+        )
+        .unwrap();
+    let full = review
+        .variants()
+        .iter()
+        .find(|v| v.original.as_ref() == "Maya Bennett")
+        .unwrap()
+        .id;
+    let full = review.variant_identity(full).unwrap();
+    assert_ne!(full, seeded);
+    review.merge_identity(full, seeded).unwrap();
+    let exported = review.export_identities();
+    assert_eq!(exported.len(), 1);
+    assert_eq!(exported[0].alias, "PERSON_1");
+    assert_eq!(exported[0].wording(), "Maya Bennett");
+    let map = RestoreMap::new(exported.clone());
+    assert_eq!(apply(&map, "PERSON_1 agreed."), "Maya Bennett agreed.");
+    // Reopening the case keeps it.
+    let mut reopened = Review::default();
+    reopened.seed(&exported, source);
+    assert_eq!(reopened.export_identities()[0].wording(), "Maya Bennett");
+}
+
+#[test]
+fn a_failed_merge_leaves_the_identities_unchanged() {
+    let source = "Maya Bennett, +7 900 123-45-67, maya@example.com";
+    let mut review = Review::default();
+    let detection = |range, category| Detection {
+        range,
+        category,
+        score: 0.9,
+        recognizer: Recognizer::Model,
+    };
+    review
+        .ingest(
+            source,
+            vec![
+                detection(0..12, Category::Person),
+                detection(14..30, Category::Phone),
+                detection(32..48, Category::Email),
+            ],
+        )
+        .unwrap();
+    let id = |review: &Review, category| {
+        let group = review
+            .variants()
+            .iter()
+            .find(|v| v.category == category)
+            .unwrap()
+            .id;
+        review.variant_identity(group).unwrap()
+    };
+    let (maya, phone, email) = (
+        id(&review, Category::Person),
+        id(&review, Category::Phone),
+        id(&review, Category::Email),
+    );
+    review.set_owner(phone, Some(maya)).unwrap();
+    let before = review.export_identities();
+    // The phone's owner cannot move to an email address.
+    assert!(review.merge_identity(maya, email).is_err());
+    assert_eq!(review.export_identities(), before);
+    assert_eq!(review.identity(phone).unwrap().owner, Some(maya));
+    let person = review
+        .variants()
+        .iter()
+        .find(|v| v.category == Category::Person)
+        .unwrap()
+        .id;
+    assert_eq!(review.variant_identity(person), Some(maya));
+}

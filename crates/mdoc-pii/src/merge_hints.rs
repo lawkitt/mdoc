@@ -10,7 +10,7 @@ use std::{
 };
 
 static SPELLING_SEPARATORS: LazyLock<regex::Regex> =
-    LazyLock::new(|| regex::Regex::new(r"[\p{P}\s]").expect("punctuation and whitespace"));
+    LazyLock::new(|| regex::Regex::new(r"[\p{P}\s]+").expect("punctuation and whitespace"));
 
 /// One identity as hints see it. Slice order is identity order: of two
 /// equally full wordings, the later identity shows the hint.
@@ -70,50 +70,74 @@ pub fn merge_hints(identities: &[HintIdentity]) -> Vec<MergeHint> {
             found.entry(key).or_insert(Found { from, into, signal });
         }
     };
-    let wordings = || {
+    let all = || {
         identities.iter().enumerate().flat_map(|(i, identity)| {
             identity
                 .wordings
                 .iter()
-                .filter(move |w| identity.category != Category::Person || !has_initials(w))
                 .map(move |w| (i, identity.category, w))
         })
     };
+    let wordings =
+        || all().filter(|(_, category, w)| *category != Category::Person || !has_initials(w));
 
-    // Short and inflected forms: the full names each surname form stands for.
-    let mut forms: HashMap<String, Vec<(usize, &Arc<str>)>> = HashMap::new();
+    // Short and inflected forms: the people each surname form may stand for.
+    // A name with initials ("Петров И.И.") is a candidate, never a target.
+    struct Candidate<'a> {
+        owner: usize,
+        full: Option<&'a Arc<str>>,
+    }
+    let mut forms: HashMap<String, Vec<Candidate>> = HashMap::new();
     let mut given = HashSet::new();
-    for (i, category, wording) in wordings() {
-        if category == Category::Person
-            && let Some((surname, names)) = split_full_name(wording)
-        {
+    for (i, category, wording) in all() {
+        if category != Category::Person {
+            continue;
+        }
+        let (surnames, full) = if has_initials(wording) {
+            let words = name_words(wording);
+            (words.into_iter().filter(|w| !initial(w)).collect(), None)
+        } else if let Some((surname, names)) = split_full_name(wording) {
             given.extend(names);
+            (vec![surname], Some(wording))
+        } else {
+            continue;
+        };
+        for surname in surnames {
             for form in surname_forms(&surname) {
-                forms.entry(form).or_default().push((i, wording));
+                forms
+                    .entry(form)
+                    .or_default()
+                    .push(Candidate { owner: i, full });
             }
         }
     }
     forms.retain(|form, _| !given.contains(form));
+    // One-word forms that relatives share; not slips of each other either.
+    let mut shared = HashSet::new();
     for (i, category, wording) in wordings() {
         let words = name_words(wording);
         if category != Category::Person || words.len() != 1 {
             continue;
         }
-        let Some(fulls) = forms.get(&words[0]) else {
+        let Some(candidates) = forms.get(&words[0]) else {
             continue;
         };
         // Relatives sharing a surname give two candidates: no hint. A form
         // of the identity's own full name is linked already.
-        let owners: HashSet<usize> = fulls.iter().map(|(owner, _)| *owner).collect();
-        if owners.len() == 1 && !owners.contains(&i) {
-            record((i, wording), fulls[0], Signal::ShortForm);
+        let owners: HashSet<usize> = candidates.iter().map(|c| c.owner).collect();
+        if owners.len() > 1 {
+            shared.insert(wording);
+        } else if !owners.contains(&i)
+            && let Some(full) = candidates.iter().find_map(|c| c.full)
+        {
+            record((i, wording), (candidates[0].owner, full), Signal::ShortForm);
         }
     }
 
     // Case, whitespace and punctuation, in any category.
     let mut spellings = SpellingGroups::new();
     for (i, category, wording) in wordings() {
-        let key = SPELLING_SEPARATORS.replace_all(wording, "").to_lowercase();
+        let key = spelling_key(wording, category);
         if !key.is_empty() {
             spellings
                 .entry((category, key))
@@ -158,7 +182,7 @@ pub fn merge_hints(identities: &[HintIdentity]) -> Vec<MergeHint> {
     let mut deletions = SpellingGroups::new();
     for (i, category, wording) in wordings() {
         let chars: Vec<char> = wording.to_lowercase().chars().collect();
-        if wording.chars().count() < 6 {
+        if wording.chars().count() < 6 || shared.contains(wording) {
             continue;
         }
         for skip in 0..=chars.len() {
@@ -217,21 +241,55 @@ fn orient(identities: &[HintIdentity], a: usize, b: usize) -> (usize, usize) {
     }
 }
 
+/// Wordings equal up to case, whitespace and punctuation share this key.
+/// Between two digits a separator still counts ("1.11.2020" is not
+/// "11.1.2020"), except in phone, bank, tax and ID numbers, whose digits are
+/// grouped freely.
+fn spelling_key(wording: &str, category: Category) -> String {
+    let regroup = matches!(
+        category,
+        Category::Phone | Category::Bank | Category::Tax | Category::Identity
+    );
+    let mut key = String::with_capacity(wording.len());
+    let mut last = 0;
+    for separator in SPELLING_SEPARATORS.find_iter(wording) {
+        key.push_str(&wording[last..separator.start()]);
+        let digit = |c: Option<char>| c.is_some_and(|c| c.is_numeric());
+        if !regroup
+            && digit(wording[..separator.start()].chars().next_back())
+            && digit(wording[separator.end()..].chars().next())
+        {
+            key.push(' ');
+        }
+        last = separator.end();
+    }
+    key.push_str(&wording[last..]);
+    key.to_lowercase()
+}
+
+fn initial(word: &str) -> bool {
+    word.chars().filter(|c| c.is_alphabetic()).count() == 1
+        || (word.contains('.') && word.split('.').any(|part| part.chars().count() == 1))
+}
+
 fn has_initials(wording: &str) -> bool {
-    name_words(wording).iter().any(|word| {
-        word.chars().filter(|c| c.is_alphabetic()).count() == 1
-            || (word.contains('.') && word.split('.').any(|part| part.chars().count() == 1))
-    })
+    name_words(wording).iter().any(|word| initial(word))
 }
 
 /// One edit apart inside one word, both wordings 6+ characters. Initials,
-/// numbers and a feminine surname ending ("Петров" / "Петрова", relatives
-/// as often as not) are not slips.
+/// numbers, titles ("Mr" / "Ms Bennett") and a feminine surname ending
+/// ("Петров" / "Петрова", relatives as often as not) are not slips.
 fn near_duplicate(a: &str, b: &str, category: Category) -> bool {
     if a.chars().count() < 6 || b.chars().count() < 6 {
         return false;
     }
-    let words = |s: &str| -> Vec<String> { s.split_whitespace().map(str::to_lowercase).collect() };
+    let words = |s: &str| -> Vec<String> {
+        if category == Category::Person {
+            name_words(s)
+        } else {
+            s.split_whitespace().map(str::to_lowercase).collect()
+        }
+    };
     let (wa, wb) = (words(a), words(b));
     if wa.len() != wb.len() {
         return false;
@@ -356,6 +414,93 @@ mod tests {
         ]);
         assert!(hints(&list).is_empty());
         assert!(hints(&people(&["Paul Smith", "James Paul", "Paul"])).is_empty());
+    }
+
+    #[test]
+    fn relatives_are_not_slips_of_each_other() {
+        // Titles are dropped before comparing: Mr and Ms Bennett are two people.
+        assert!(hints(&people(&["Mr Bennett", "Ms Bennett"])).is_empty());
+        assert!(hints(&people(&["Mr. Bennett", "Mrs Bennett"])).is_empty());
+        // Forms two relatives share are not slips of each other either.
+        assert!(
+            hints(&people(&[
+                "Петров Иван",
+                "Петрова Марина",
+                "Петрову",
+                "Петрова"
+            ]))
+            .is_empty()
+        );
+        // With one candidate, each form still points at the full name.
+        assert_eq!(
+            hints(&people(&["Петров Иван", "Петрову"])),
+            [(2, 1, Signal::ShortForm)]
+        );
+    }
+
+    #[test]
+    fn a_relative_named_by_initials_is_a_candidate_never_a_target() {
+        assert_eq!(
+            hints(&people(&["Петрова Марина Сергеевна", "Петрову"])),
+            [(2, 1, Signal::ShortForm)]
+        );
+        assert!(
+            hints(&people(&[
+                "Петров И.И.",
+                "Петрова Марина Сергеевна",
+                "Петрову"
+            ]))
+            .is_empty()
+        );
+        assert!(hints(&people(&["D. Bennett", "Maya Bennett", "Ms Bennett"])).is_empty());
+        assert!(hints(&people(&["M. Bennett", "Ms Bennett"])).is_empty());
+        // Initials beside the full name in one identity leave one candidate.
+        let list = identities(&[
+            (Category::Person, &["Maya Bennett", "M. Bennett"]),
+            (Category::Person, &["Ms Bennett"]),
+        ]);
+        assert_eq!(hints(&list), [(2, 1, Signal::ShortForm)]);
+    }
+
+    #[test]
+    fn separators_between_digits_tell_numbers_apart() {
+        let list = identities(&[
+            (Category::Date, &["1.11.2020"]),
+            (Category::Date, &["11.1.2020"]),
+            (Category::Address, &["ул. Ленина 1-23"]),
+            (Category::Address, &["ул. Ленина 12-3"]),
+            (Category::Other, &["12 345"]),
+            (Category::Other, &["123 45"]),
+        ]);
+        assert!(hints(&list).is_empty());
+        // Another separator, or spacing around it, is the same number.
+        let list = identities(&[
+            (Category::Date, &["1.11.2020"]),
+            (Category::Date, &["1/11/2020"]),
+            (Category::Address, &["ул. Ленина, 1-23"]),
+            (Category::Address, &["ул. Ленина 1 - 23"]),
+        ]);
+        assert_eq!(
+            hints(&list),
+            [(2, 1, Signal::Spelling), (3, 4, Signal::Spelling)]
+        );
+        // Phone, bank, tax and ID numbers group their digits freely.
+        let list = identities(&[
+            (Category::Bank, &["4070 2810 9000 0000 0001"]),
+            (Category::Bank, &["40702810900000000001"]),
+            (Category::Tax, &["7707-083893"]),
+            (Category::Tax, &["7707083893"]),
+            (Category::Identity, &["45 06 123456"]),
+            (Category::Identity, &["4506 123456"]),
+        ]);
+        assert_eq!(
+            hints(&list),
+            [
+                (2, 1, Signal::Spelling),
+                (4, 3, Signal::Spelling),
+                (6, 5, Signal::Spelling),
+            ]
+        );
     }
 
     #[test]

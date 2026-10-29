@@ -363,6 +363,16 @@ impl MappingUi {
     pub(super) fn dismissed_hint_count(&self) -> usize {
         self.dismissed_hints.len()
     }
+    /// Every dismissed pair, sorted, for saving into a new case.
+    pub(super) fn dismissed_hint_pairs(&self) -> Vec<(String, String)> {
+        let mut pairs: Vec<_> = self
+            .dismissed_hints
+            .iter()
+            .map(|(a, b)| (a.to_string(), b.to_string()))
+            .collect();
+        pairs.sort_unstable();
+        pairs
+    }
     pub(super) fn record_applied(&mut self, count: usize, history: u64) {
         self.applied = Some((count, history));
     }
