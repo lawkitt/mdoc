@@ -35,6 +35,7 @@ mod case;
 mod case_link;
 use case_link::CaseLinkEffect;
 mod chrome;
+mod decision_history;
 mod document_lifecycle;
 use document_lifecycle::LifecycleEffect;
 mod import_flow;
@@ -134,6 +135,8 @@ pub(crate) struct DocumentView {
     pub(crate) copy_feedback: Option<gpui::Task<()>>,
     /// The header's ⋯ menu (ADR 0048).
     pub(crate) more_open: bool,
+    /// The header's What you did popover (ADR 0079).
+    pub(crate) history: decision_history::HistoryPopover,
     /// Text zoom of this document's Markdown, not saved (ADR 0048).
     pub(crate) zoom: f32,
     /// Inspector (ADR 0048 variant C): the Share tab is showing.
@@ -340,6 +343,7 @@ impl DocumentView {
             error: None,
             copy_feedback: None,
             more_open: false,
+            history: decision_history::HistoryPopover::new(cx),
             zoom: 1.,
             inspector_share: false,
             copied_for_ai: false,

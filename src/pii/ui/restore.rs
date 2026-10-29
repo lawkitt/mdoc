@@ -11,7 +11,10 @@ use crate::{
 use gpui::{
     AnyElement, App, Context, Focusable, Hsla, Window, anchored, deferred, div, prelude::*, px,
 };
-use mdoc_pii::restore::{ExportedIdentity, RestoreMap};
+use mdoc_pii::{
+    decisions::{Decision, Mentions},
+    restore::{ExportedIdentity, RestoreMap},
+};
 use std::{collections::HashSet, ops::Range, sync::Arc};
 
 /// Unresolved-token annotations: bit 62 plus the token's start offset.
@@ -196,6 +199,7 @@ impl DocumentView {
             scroll: gpui::UniformListScrollHandle::new(),
         });
         if !restoration.edits.is_empty() {
+            let before = self.editor.read(cx).history_id();
             let revision = self.editor.read(cx).revision();
             let committed = self.editor.update(cx, |editor, cx| {
                 let committed = editor.replace_ranges(revision, &restoration.edits, cx);
@@ -208,11 +212,15 @@ impl DocumentView {
                 // Pin each restored wording to the identity whose alias it
                 // replaced: homonyms share a wording but not an identity.
                 let history = self.editor.read(cx).history_id();
+                let mut restored = Vec::new();
                 for (range, source) in restoration.restored_ranges() {
+                    restored.push(Arc::from(&self.editor.read(cx).text()[range.clone()]));
                     self.pii
                         .review
                         .commit_assignment(history, range, ids[source]);
                 }
+                let restored = Decision::Restore(Mentions::of(restored));
+                self.record_decision(before, restored, cx);
             }
         }
         self.review_changed(cx);
@@ -309,9 +317,13 @@ impl DocumentView {
             return;
         }
         let revision = self.editor.read(cx).revision();
+        let before = self.editor.read(cx).history_id();
+        let original = Arc::from(wording.as_str());
         self.editor.update(cx, |editor, cx| {
             editor.replace_ranges(revision, &[(range, wording)], cx)
         });
+        let restored = Decision::Restore(Mentions::One(original));
+        self.record_decision(before, restored, cx);
         self.close_unresolved(window, cx);
     }
     pub(super) fn leave_unresolved(&mut self, window: &mut Window, cx: &mut Context<Self>) {

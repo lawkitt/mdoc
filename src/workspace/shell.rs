@@ -105,6 +105,8 @@ enum Command {
     SaveAs,
     CloseTab,
     BeforeAfter,
+    /// The active document's What you did (ADR 0079); no key of its own.
+    DecisionHistory,
     ExpandIdentities,
     CollapseIdentities,
     ToggleSidebar,
@@ -143,6 +145,7 @@ impl Command {
             Command::Settings => Box::new(Settings),
             Command::Shortcuts => Box::new(ShowShortcuts),
             Command::PasteText
+            | Command::DecisionHistory
             | Command::ExpandIdentities
             | Command::CollapseIdentities
             | Command::Theme
@@ -1397,6 +1400,12 @@ impl Workspace {
                     detail: None,
                     command: Command::BeforeAfter,
                 },
+                Row {
+                    section: "Actions",
+                    label: "What you did".into(),
+                    detail: None,
+                    command: Command::DecisionHistory,
+                },
             ]);
             let panel = self.active_view().is_some_and(|view| {
                 let view = view.read(cx);
@@ -1615,6 +1624,11 @@ impl Workspace {
             Command::BeforeAfter => dispatch(window, cx, Box::new(ToggleCompare)),
             // Straight to the document: focus may have gone back to the
             // sidebar, outside the view's action handlers.
+            Command::DecisionHistory => {
+                if let Some(view) = self.active_view() {
+                    view.update(cx, |view, cx| view.open_decision_history(window, cx));
+                }
+            }
             Command::ExpandIdentities | Command::CollapseIdentities => {
                 let expand = matches!(row.command, Command::ExpandIdentities);
                 if let Some(view) = self.active_view() {
@@ -1691,6 +1705,7 @@ impl Workspace {
                 Command::Save | Command::SaveAs => ui::Icon::Save,
                 Command::CloseTab => ui::Icon::Close,
                 Command::BeforeAfter => ui::Icon::PanelRight,
+                Command::DecisionHistory => ui::Icon::Clock,
                 Command::ExpandIdentities => ui::Icon::ExpandAll,
                 Command::CollapseIdentities => ui::Icon::CollapseAll,
                 Command::ToggleSidebar => ui::Icon::Sidebar,

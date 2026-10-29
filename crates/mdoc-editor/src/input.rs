@@ -1106,6 +1106,15 @@ impl EditorState {
     pub fn history_id(&self) -> u64 {
         self.history_id
     }
+    /// The states Undo and Redo reach from here, for hosts that travel the
+    /// history by counting presses.
+    pub fn history_path(&self) -> mdoc_history::HistoryPath {
+        mdoc_history::HistoryPath {
+            undo: self.undo_stack.iter().map(|s| s.history_id).collect(),
+            current: self.history_id,
+            redo: self.redo_stack.iter().rev().map(|s| s.history_id).collect(),
+        }
+    }
     pub fn can_undo(&self) -> bool {
         !self.undo_stack.is_empty()
     }

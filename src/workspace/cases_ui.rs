@@ -677,7 +677,7 @@ impl Workspace {
         let skip = case.skipped();
         let result = view.update(cx, |view, cx| {
             view.case.set_skip(skip);
-            let result = view.join_case_identities(&identities, &reserved, cx);
+            let result = view.join_case(&link.name, &identities, &reserved, cx);
             if result.is_ok() {
                 view.case.attach(Some(link.clone()));
             }

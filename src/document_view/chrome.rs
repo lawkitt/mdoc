@@ -356,6 +356,9 @@ impl DocumentView {
                 )
             })
             .children(ui::notice_bell(&self.title, theme))
+            .when(self.shows_history_button(reviewable, cx), |v| {
+                v.child(self.history_button(cx))
+            })
             .child(self.more_button(cx))
             .children(self.primary_button(cx).map(|b| div().ml_1().child(b)));
         let detached = self.title.detached.get();
@@ -411,6 +414,7 @@ impl DocumentView {
                     .when(cfg!(test), |v| v.debug_selector(|| "header-more".into()))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.more_open = !this.more_open;
+                        this.history.open = false;
                         // The menu takes focus, so Tab and Esc work in it.
                         if this.more_open {
                             window.focus(&this.more_menu_focus, cx);

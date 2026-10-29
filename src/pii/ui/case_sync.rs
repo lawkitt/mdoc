@@ -94,6 +94,20 @@ impl DocumentView {
         cx.notify();
         Ok(summary)
     }
+    /// Join case `name` (ADR 0041) as one decision in What you did (ADR 0079).
+    pub(crate) fn join_case(
+        &mut self,
+        name: &str,
+        case: &[ExportedIdentity],
+        reserved: &[String],
+        cx: &mut Context<Self>,
+    ) -> Result<JoinSummary, String> {
+        let before = self.editor.read(cx).history_id();
+        let summary = self.join_case_identities(case, reserved, cx)?;
+        let decision = mdoc_pii::decisions::Decision::JoinCase { case: name.into() };
+        self.record_decision(before, decision, cx);
+        Ok(summary)
+    }
     /// Follow changes another member made: `renames` maps an alias this tab
     /// may use to the identity it became; case names this tab lacks are added.
     pub(crate) fn sync_case_identities(

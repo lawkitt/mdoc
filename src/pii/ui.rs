@@ -2,6 +2,7 @@
 mod case_sync;
 mod chooser;
 mod compare;
+mod decisions;
 pub(crate) use compare::{CompareState, SwitcherRest};
 mod discovery;
 mod mapping;
@@ -118,6 +119,10 @@ pub(crate) struct ReviewUi {
     popup_controls: std::cell::RefCell<std::collections::HashMap<gpui::ElementId, FocusHandle>>,
     /// Set in a tab opened by Paste AI Response (ADR 0041).
     restore: Option<restore::RestoreState>,
+    /// What you did (ADR 0079): memory only, as long as the tab.
+    decisions: mdoc_pii::decisions::DecisionLog,
+    /// Writes an entry's time; renders and tests fix it.
+    clock: fn() -> String,
 }
 impl Drop for ReviewUi {
     fn drop(&mut self) {
@@ -151,6 +156,8 @@ impl ReviewUi {
             chooser_scroll: gpui::UniformListScrollHandle::new(),
             popup_controls: Default::default(),
             restore: None,
+            decisions: Default::default(),
+            clock: decisions::local_time,
         }
     }
     fn cancel(&mut self) {
@@ -298,6 +305,7 @@ impl DocumentView {
         self.pii.error = None;
         self.pii.mapping = mapping::MappingUi::new(self.theme.clone(), cx);
         self.pii.restore = None;
+        self.pii.decisions.clear();
         self.review_changed(cx);
     }
     pub(crate) fn pii_edited(&mut self, cx: &mut Context<Self>) {
@@ -703,6 +711,7 @@ impl DocumentView {
         };
         let source = self.editor.read(cx).text().to_owned();
         let category = mdoc_detect::guess_category(&source, range.clone());
+        let before = self.editor.read(cx).history_id();
         let Some(id) = self.checkpoint_review(cx, |review| {
             review
                 .add_manual(&source, range.clone(), category)
@@ -710,6 +719,8 @@ impl DocumentView {
         }) else {
             return;
         };
+        let original = source[range.clone()].into();
+        self.record_decision(before, mdoc_pii::decisions::Decision::Add { original }, cx);
         self.pii.reviewing = true;
         if !self.pii.mapping.open {
             self.pii.mapping.open_panel(window.focused(cx));
@@ -972,6 +983,8 @@ impl DocumentView {
         self.pii
             .review
             .on_transaction(transaction, self.editor.read(cx).text());
+        let path = self.editor.read(cx).history_path();
+        self.pii.decisions.follow(&path);
         if transaction
             .changes
             .iter()
