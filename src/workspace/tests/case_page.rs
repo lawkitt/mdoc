@@ -404,10 +404,17 @@ fn names_filter_add_binding_and_every_page_control_are_keyboard_reachable(cx: &m
     draw(cx);
     assert!(cx.debug_bounds("case-identity-ORG_1").is_some());
     assert!(cx.debug_bounds("case-identity-PERSON_1").is_none());
+    // The page's fields edit like every other text field.
+    cx.simulate_keystrokes("backspace left backspace");
+    assert_eq!(
+        cx.update(|_, cx| filter.read(cx).value().to_string()),
+        "Northwn"
+    );
     filter.update(cx, |input, cx| input.reset(cx));
     draw(cx);
     cx.update(|window, cx| window.focus(&add.read(cx).focus_handle(cx), cx));
-    cx.simulate_input("New name by keyboard");
+    cx.simulate_input("New name by keyboardx");
+    cx.simulate_keystrokes("backspace");
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     assert!(cx.update(|_, cx| {
@@ -457,6 +464,104 @@ fn names_filter_add_binding_and_every_page_control_are_keyboard_reachable(cx: &m
             "{name}: {bounds:?} outside {viewport:?}"
         );
     }
+}
+
+#[gpui::test]
+fn the_case_page_scrolls_with_the_wheel(cx: &mut TestAppContext) {
+    case_page_scrolls(cx, true);
+}
+
+#[gpui::test]
+fn the_case_page_scrolls_with_the_sidebar_collapsed(cx: &mut TestAppContext) {
+    case_page_scrolls(cx, false);
+}
+
+fn case_page_scrolls(cx: &mut TestAppContext, sidebar_visible: bool) {
+    cx.update(crate::bind_all_keys);
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    if !sidebar_visible {
+        draw(cx);
+        click_toolbar(cx, "sidebar-toggle");
+    }
+    assert_eq!(
+        cx.update(|_, cx| tabs.read(cx).sidebar.visible()),
+        sidebar_visible
+    );
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(tab, window, cx).unwrap()
+    });
+    cx.run_until_parked();
+    tabs.update(cx, |tabs, cx| {
+        for index in 0..20 {
+            tabs.add_case_name(&id, &format!("Project Example {index}"), cx);
+        }
+    });
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_case(&id, window, cx));
+    cx.simulate_resize(size(px(720.), px(480.)));
+    draw(cx);
+    let offset = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            tabs.read(cx)
+                .cases
+                .page
+                .as_ref()
+                .unwrap()
+                .test_scroll_offset()
+        })
+    };
+    assert_eq!(offset(cx), px(0.));
+    // A focused field near the top must not pull the page back each frame.
+    let (filter, _) = cx.update(|_, cx| tabs.read(cx).cases.page.as_ref().unwrap().test_inputs());
+    cx.update(|window, cx| window.focus(&filter.read(cx).focus_handle(cx), cx));
+    draw(cx);
+    draw(cx);
+    let viewport = cx.debug_bounds("case-page").unwrap();
+    cx.simulate_event(gpui::ScrollWheelEvent {
+        position: viewport.center(),
+        delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-400.))),
+        ..Default::default()
+    });
+    draw(cx);
+    draw(cx);
+    draw(cx);
+    assert!(
+        offset(cx) < px(-300.),
+        "the page did not stay scrolled: {:?}",
+        offset(cx)
+    );
+    assert!(
+        cx.update(|window, cx| filter.read(cx).focus_handle(cx).is_focused(window)),
+        "scrolling keeps focus in the field"
+    );
+    // The wheel reaches the last control on the page, inside the window.
+    for _ in 0..20 {
+        cx.simulate_event(gpui::ScrollWheelEvent {
+            position: viewport.center(),
+            delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-400.))),
+            ..Default::default()
+        });
+        draw(cx);
+    }
+    let window = cx.update(|window, _| window.viewport_size());
+    let scroll = cx.update(|_, cx| {
+        tabs.read(cx)
+            .cases
+            .page
+            .as_ref()
+            .unwrap()
+            .test_scroll_bounds()
+    });
+    let delete = cx.debug_bounds("case-page-delete").unwrap();
+    assert!(
+        scroll.bottom() <= window.height,
+        "the scroll area {scroll:?} runs past the window {window:?}"
+    );
+    assert!(
+        delete.bottom() <= scroll.bottom(),
+        "the last control {delete:?} stays below the scroll area {scroll:?}"
+    );
 }
 
 #[gpui::test]
@@ -1048,4 +1153,65 @@ fn forgetting_a_case_alias_preserves_a_joined_identity_renumbered_from_it(cx: &m
                 .any(|applied| applied.step.after.as_ref() == bob_alias)
         );
     });
+}
+
+#[gpui::test]
+fn leaving_the_rename_field_saves_and_escape_still_cancels(cx: &mut TestAppContext) {
+    cx.update(crate::bind_all_keys);
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(tab, window, cx).unwrap()
+    });
+    // Focus-out events reach listeners only in an active window.
+    cx.update(|window, _| window.activate_window());
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_case(&id, window, cx));
+    draw(cx);
+    let name = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            tabs.read(cx)
+                .case_coordinator
+                .case(&id)
+                .unwrap()
+                .name
+                .clone()
+        })
+    };
+    let original = name(cx);
+    let rename = |cx: &mut VisualTestContext, value: &str| {
+        tabs.update_in(cx, |tabs, window, cx| {
+            tabs.start_rename_case(id.clone(), window, cx)
+        });
+        let input = cx.update(|_, cx| tabs.read(cx).cases.renaming.as_ref().unwrap().1.clone());
+        input.update(cx, |input, cx| input.set_value(value.to_string(), cx));
+        draw(cx);
+    };
+    let renaming =
+        |cx: &mut VisualTestContext| cx.update(|_, cx| tabs.read(cx).cases.renaming.is_some());
+
+    // Escape cancels.
+    rename(cx, "Not kept");
+    cx.simulate_keystrokes("escape");
+    draw(cx);
+    assert!(!renaming(cx));
+    assert_eq!(name(cx), original);
+
+    // A click on a blank part of the page saves.
+    rename(cx, "Saved by a click");
+    let page = cx.debug_bounds("case-page").unwrap();
+    cx.simulate_click(
+        gpui::point(page.left() + px(4.), page.bottom() - px(4.)),
+        gpui::Modifiers::none(),
+    );
+    draw(cx);
+    assert!(!renaming(cx));
+    assert_eq!(name(cx), "Saved by a click");
+
+    // Moving focus away (Tab) saves.
+    rename(cx, "Saved by Tab");
+    cx.simulate_keystrokes("tab");
+    draw(cx);
+    assert!(!renaming(cx));
+    assert_eq!(name(cx), "Saved by Tab");
 }

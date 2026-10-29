@@ -31,6 +31,8 @@ pub(super) struct CaseState {
     pub(super) header_menu: Option<(String, gpui::Point<gpui::Pixels>)>,
     pub(super) closing_members: super::case_page::CaseClose,
     pub(super) renaming: Option<(String, Entity<markdown_search::SearchInput>)>,
+    /// Saves the rename when focus leaves its field.
+    rename_blur: Option<gpui::Subscription>,
     pub(super) list_open: bool,
     /// Cases whose member rows are folded under their header.
     pub(super) collapsed: HashSet<String>,
@@ -1033,7 +1035,12 @@ impl Workspace {
             input.set_value(name, cx);
             input
         });
-        window.focus(&input.read(cx).focus_handle(cx), cx);
+        let focus = input.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        // Leaving the field saves, like Enter (Escape still cancels).
+        self.cases.rename_blur = Some(cx.on_focus_out(&focus, window, |this, _, window, cx| {
+            this.finish_rename(true, window, cx)
+        }));
         self.cases.renaming = Some((case_id, input));
         cx.notify();
     }
@@ -1046,6 +1053,9 @@ impl Workspace {
         let Some((case_id, input)) = self.cases.renaming.take() else {
             return;
         };
+        self.cases.rename_blur = None;
+        // A click on another control has already moved focus there; keep it.
+        let had_focus = input.read(cx).focus_handle(cx).contains_focused(window, cx);
         let name = input.read(cx).value().trim().to_string();
         if save && !name.is_empty() {
             if let Some(((), effect)) = self.case_coordinator.edit(&case_id, |case| {
@@ -1061,7 +1071,9 @@ impl Workspace {
                 });
             }
         }
-        self.focus_active(window, cx);
+        if had_focus {
+            self.focus_active(window, cx);
+        }
         cx.notify();
     }
     /// Show the cached case page. This path never opens a key or a member file.

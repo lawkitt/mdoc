@@ -913,7 +913,15 @@ pub fn title_bar(
         .into_any_element()
 }
 
-/// Reveal a focused control inside a scrolling panel without moving document state.
+thread_local! {
+    /// The control `reveal_focus` last scrolled into view. Revealing only when
+    /// focus arrives leaves the wheel free to move a focused control away.
+    static REVEALED: std::cell::RefCell<Option<gpui::WeakFocusHandle>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Reveal a control inside a scrolling panel when it gains focus, without
+/// moving document state.
 pub fn reveal_focus<E: ParentElement + Styled>(
     mut control: E,
     focus: FocusHandle,
@@ -924,7 +932,15 @@ pub fn reveal_focus<E: ParentElement + Styled>(
     control.relative().child(
         gpui::canvas(
             move |bounds, window, cx| {
+                let revealed =
+                    REVEALED.with(|last| last.borrow().as_ref().is_some_and(|last| *last == focus));
                 if !focus.contains_focused(window, cx) {
+                    if revealed {
+                        REVEALED.with(|last| last.borrow_mut().take());
+                    }
+                    return;
+                }
+                if revealed {
                     return;
                 }
                 // Reveal the outside outline too, rather than scrolling its
@@ -939,6 +955,7 @@ pub fn reveal_focus<E: ParentElement + Styled>(
                 if viewport.size.height <= px(0.) {
                     return;
                 }
+                REVEALED.with(|last| *last.borrow_mut() = Some(focus.downgrade()));
                 let delta = if bounds.top() < viewport.top() {
                     viewport.top() - bounds.top()
                 } else if bounds.bottom() > viewport.bottom() {
