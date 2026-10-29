@@ -556,9 +556,7 @@ impl Panel {
     }
 
     fn row_checking(&self, model: Model) -> bool {
-        self.checking
-            && matches!(self.row_status(model), Status::Unknown)
-            && !self.model_state.contains(model)
+        self.checking && matches!(self.row_status(model), Status::Unknown)
     }
 
     fn row_status(&self, model: Model) -> &Status {
@@ -566,6 +564,7 @@ impl Panel {
     }
 
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.model_state.reload();
         let paths = self.model_files();
         if self.working.is_none() {
             self.row_statuses = Some(
@@ -634,19 +633,7 @@ impl Panel {
                         Model::Pii(_) if cfg!(test) => Ok(false),
                         Model::Pii(m) => mdoc_detect::check_reserved(m).map_err(|e| e.to_string()),
                     };
-                    let status = if !ocr::SUPPORTED {
-                        Status::Unavailable(
-                            "Automatic inference supports Apple Silicon macOS and Windows x64."
-                                .into(),
-                        )
-                    } else {
-                        match result {
-                            Ok(true) => Status::Ready,
-                            Ok(false) => Status::Missing,
-                            Err(_) if pending[index].total() > 0 => Status::Missing,
-                            Err(e) => Status::Unavailable(e),
-                        }
-                    };
+                    let status = models::check_status(result);
                     model_state.record(model, &before, Files::read(paths), status)
                 })
                 .collect::<Vec<_>>();
@@ -848,7 +835,7 @@ impl Panel {
             cx.notify();
             return;
         }
-        let permit = match model_work::Permit::acquire_for("changing installed models") {
+        let permit = match model_work::Permit::acquire_for(models::setup_label(model, remove)) {
             Ok(permit) => permit,
             Err(error) => {
                 self.error = Some(error.to_string());

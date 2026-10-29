@@ -64,9 +64,11 @@ category list, then one row per setting.
   shortcut or AI connection.
 
 - **Remembered model state.** The last check of each model is stored with
-  its files' sizes and modification times (no content) and shown at once
-  when Settings opens; a quiet re-check runs in the background and changes a
-  row only on a difference. "Checking…" shows only when nothing is stored.
+  its files' paths relative to the profile's model root, sizes and modification
+  times (no content), and a short status kind rather than error text. It is
+  shown at once when Settings opens; a quiet re-check runs in the background
+  and changes a row only on a difference. "Checking…" shows while a check runs
+  for a row with no current stored result (nothing stored, or its files changed).
 
 ## Invariants
 

@@ -47,6 +47,12 @@ impl From<io::Error> for DownloadError {
         Self::Io(Arc::new(error))
     }
 }
+impl DownloadError {
+    pub fn is_missing(&self) -> bool {
+        matches!(self, Self::SizeMismatch)
+            || matches!(self, Self::Io(error) if error.kind() == io::ErrorKind::NotFound)
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct State {

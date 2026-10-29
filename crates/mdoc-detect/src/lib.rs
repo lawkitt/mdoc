@@ -346,8 +346,15 @@ pub fn setup_reserved(
     Ok(before)
 }
 fn check_engine(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), DetectError> {
+    check_engine_in(root, &mdoc_import::ocr::root()?, model)
+}
+fn check_engine_in(
+    root: &Path,
+    ocr_root: &Path,
+    model: mdoc_store::settings::PiiModel,
+) -> Result<(), DetectError> {
     verify_model(root, model)?;
-    mdoc_import::ocr::load_onnx_runtime(&mdoc_import::ocr::onnx_runtime(false)?)?;
+    mdoc_import::ocr::load_onnx_runtime(&mdoc_import::ocr::onnx_runtime_in(ocr_root)?)?;
     let _engine = SpanEngine::new(
         SpanConfig::new(root)
             .with_precision(precision(model))
@@ -361,11 +368,26 @@ pub fn check_reserved(model: mdoc_store::settings::PiiModel) -> Result<bool, Det
     if !SUPPORTED || cfg!(test) {
         return Ok(false);
     }
-    let root = root_for(model)?;
-    if !root.exists() {
-        return Ok(false);
+    check_reserved_in(&root_for(model)?, &mdoc_import::ocr::root()?, model)
+}
+
+/// The real reserved check with explicit roots; never reads the user's profile in tests.
+pub fn check_reserved_in(
+    root: &Path,
+    ocr_root: &Path,
+    model: mdoc_store::settings::PiiModel,
+) -> Result<bool, DetectError> {
+    match fs::metadata(root) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error.into()),
+        Ok(_) => {}
     }
-    check_engine(&root, model)?;
+    let result = check_engine_in(root, ocr_root, model);
+    match result {
+        Err(DetectError::Download(error)) if error.is_missing() => return Ok(false),
+        Err(DetectError::Runtime(error)) if error.is_missing() => return Ok(false),
+        other => other?,
+    }
     Ok(true)
 }
 pub fn remove_model(model: mdoc_store::settings::PiiModel) -> Result<(), DetectError> {
@@ -672,6 +694,33 @@ mod tests {
         assert!(verify(&path, &artifact).is_err());
         fs::write(&path, b"abc").unwrap();
         verify(&path, &artifact).unwrap();
+    }
+
+    #[test]
+    fn tracked_files_match_verified_artifacts_and_shared_runtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = dir.path().join("ocr");
+        for model in mdoc_store::settings::PiiModel::ALL {
+            let paths = model_files(dir.path(), &runtime, model);
+            let manifest = manifest_for(model);
+            let expected = manifest
+                .files
+                .iter()
+                .map(|a| dir.path().join(&a.path))
+                .chain(std::iter::once(mdoc_import::ocr::onnx_runtime_path(
+                    &runtime,
+                )))
+                .collect::<Vec<_>>();
+            assert_eq!(paths, expected);
+            assert_eq!(paths.len(), manifest.files.len() + 1);
+            assert!(
+                matches!(verify_model(dir.path(), model), Err(DetectError::Download(mdoc_import::model_download::DownloadError::Io(error))) if error.kind() == std::io::ErrorKind::NotFound)
+            );
+            assert!(!check_reserved_in(dir.path(), &runtime, model).unwrap());
+            fs::create_dir_all(paths[0].parent().unwrap()).unwrap();
+            fs::write(&paths[0], b"wrong size").unwrap();
+            assert!(!check_reserved_in(dir.path(), &runtime, model).unwrap());
+        }
     }
     #[test]
     fn cancellation_and_deadline_reject_results() {

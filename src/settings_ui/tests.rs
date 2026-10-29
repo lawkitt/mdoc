@@ -5,6 +5,31 @@ use mdoc_store::settings::OcrModel;
 use mdoc_store::settings::Store;
 
 #[gpui::test]
+fn existing_panel_reloads_checks_saved_by_another_panel(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let settings = dir.path().join("settings.json");
+    let path = dir.path().join("model.onnx");
+    std::fs::write(&path, b"verified fixture").unwrap();
+    let files = Files::read(std::slice::from_ref(&path));
+    let shared = Store::open(Some(settings));
+    let first = cx.new(|cx| Panel::new(shared.clone(), Rc::new(Cell::new(Theme::Light)), cx));
+    let second = cx.new(|cx| Panel::new(shared, Rc::new(Cell::new(Theme::Dark)), cx));
+    first.update(cx, |p, _| {
+        p.model_state
+            .record(Model::ALL[0], &files, files.clone(), Status::Ready);
+        p.model_state.save().unwrap();
+    });
+    second.update(cx, |p, cx| {
+        p.model_files = Some([vec![path], vec![], vec![], vec![]]);
+        p.check_blocked = true;
+        p.refresh(cx);
+        assert_eq!(*p.row_status(Model::ALL[0]), Status::Ready);
+        assert_eq!(p.statuses[0], Status::Unknown);
+        assert!(p.ocr_installations.is_empty());
+    });
+}
+
+#[gpui::test]
 fn reopening_settings_and_a_new_panel_show_the_last_check_at_once(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("settings.json");
@@ -83,7 +108,7 @@ fn changed_model_files_are_unknown_then_missing_after_the_quiet_check(cx: &mut T
             p.refresh(cx);
             assert!(p.checking);
             assert_eq!(*p.row_status(model), Status::Unknown);
-            assert!(!p.row_checking(model));
+            assert!(p.row_checking(model));
         });
         cx.run_until_parked();
         cx.update(|_, cx| assert_eq!(panel.read(cx).statuses[0], Status::Missing));
