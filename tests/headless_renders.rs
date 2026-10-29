@@ -35,6 +35,7 @@ const SCREENS: &[&str] = &[
     "keyboard-shortcuts",
     "find-replace",
     "before-after",
+    "decision-history",
     "open-case",
     "case-page",
     "case-page-locked",
@@ -249,6 +250,18 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     "{theme}/{name}"
                 );
                 assert_eq!(
+                    record["state"]["decision_history"],
+                    *name == "decision-history"
+                );
+                if *name == "decision-history" {
+                    // Apply, Undo replacement, then Keep, travelled back
+                    // one: counts only, never labels.
+                    let decisions = &record["state"]["decisions"];
+                    assert_eq!(decisions["done"], 2);
+                    assert_eq!(decisions["undone"], 1);
+                    assert_eq!(decisions["past_limit"], 0);
+                }
+                assert_eq!(
                     record["state"]["settings"],
                     name.starts_with("settings-") || *name == "dictionary",
                     "stale settings on {theme}/{name}"
@@ -361,7 +374,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
     // ADR 0074: actual app controls, not a focus-handle assertion. Focus adds
     // only an accent outline; selected/on-state fills and labels stay intact.
     let rings = summary["focus_rings"].as_array().unwrap();
-    assert_eq!(rings.len(), 14);
+    assert_eq!(rings.len(), 16);
     for theme in ["light", "dark"] {
         for control in [
             "toggle-on",
@@ -369,6 +382,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
             "settings-row",
             "beside-selected-tab",
             "comments-toggle",
+            "decision-row",
             "navigation-back",
             "navigation-forward",
         ] {

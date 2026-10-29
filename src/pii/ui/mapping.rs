@@ -2,7 +2,11 @@
 use super::{APPLIED_ID, KEPT_ID, Popup};
 use crate::{document_view::DocumentView, markdown_search};
 use gpui::{App, AppContext, Context, Entity, FocusHandle, Focusable, Pixels, Window, px};
-use mdoc_pii::{Category, tracking::ReplacementPlan};
+use mdoc_pii::{
+    Category,
+    decisions::{Decision, Mentions},
+    tracking::ReplacementPlan,
+};
 use std::{cell::Cell, ops::Range, rc::Rc, sync::Arc};
 
 mod checklist;
@@ -152,6 +156,8 @@ pub(super) enum DropTarget {
     NewEntity,
 }
 
+#[cfg(test)]
+mod decision_tests;
 #[cfg(test)]
 mod tests;
 /// Replacements panel and word-popup state. Every transition is a method here.
@@ -714,7 +720,11 @@ impl DocumentView {
         }
         let active = self.active_replacement_range();
         let revision = self.editor.read(cx).revision();
+        let history = self.editor.read(cx).history_id();
         let source = self.editor.read(cx).text().to_owned();
+        // Named before the change: a merge or split renames what it names.
+        let decision = self.mapping_decision(&action);
+        let mut applying = Vec::new();
         let old = self.pii.review.identity_snapshot();
         let result = self.prepare_mapping_change(&action, &source);
         let MappingChange {
@@ -761,10 +771,19 @@ impl DocumentView {
                 .map(|(r, id)| ((r.start, r.end), *id))
                 .collect();
             match self.pii.review.pending_plans(&source, &assigned) {
-                Ok(pending) => plans.extend(pending.into_iter().filter(|p| match &apply {
-                    Applying::Ranges(ranges) => ranges.contains(&(p.range.start, p.range.end)),
-                    _ => true,
-                })),
+                Ok(pending) => {
+                    let pending: Vec<_> = pending
+                        .into_iter()
+                        .filter(|p| match &apply {
+                            Applying::Ranges(ranges) => {
+                                ranges.contains(&(p.range.start, p.range.end))
+                            }
+                            _ => true,
+                        })
+                        .collect();
+                    applying.extend(pending.iter().map(|p| p.before.clone()));
+                    plans.extend(pending);
+                }
                 Err(error) => {
                     self.pii.review.restore_identity_snapshot(old);
                     self.pii.error = Some(error);
@@ -772,6 +791,17 @@ impl DocumentView {
                 }
             }
             plans.sort_by_key(|p| p.range.start);
+        }
+        // Re-choosing what is already so (the current category) changes
+        // nothing: no undo step and no entry in What you did (ADR 0079).
+        if plans.is_empty()
+            && assignments.is_empty()
+            && Arc::ptr_eq(&old, &self.pii.review.identity_snapshot())
+        {
+            self.pii.mapping.close_pickers();
+            self.pii.error = None;
+            cx.notify();
+            return;
         }
         let edits: Vec<_> = plans
             .iter()
@@ -782,6 +812,14 @@ impl DocumentView {
             cx.notify();
             return;
         };
+        // One undo point, one entry: an alias confirmed with Apply lists
+        // both ("Renamed … · applied 4 replacements", ADR 0079).
+        if let Some(decision) = decision {
+            self.record_decision(history, decision, cx);
+        }
+        if !applying.is_empty() {
+            self.record_decision(history, Decision::Apply(Mentions::of(applying)), cx);
+        }
         let edited: std::collections::HashSet<_> =
             edits.iter().map(|(r, _)| (r.start, r.end)).collect();
         let mut assignments = assignments;

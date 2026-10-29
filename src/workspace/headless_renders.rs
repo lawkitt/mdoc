@@ -7,7 +7,7 @@ use super::{Workspace, app_actions::bind as bind_app_actions};
 use crate::{
     bind_all_keys, comparison, comparison_ui,
     document_view::DocumentView,
-    pii::ui::{PiiApplyAll, PiiClosePopup},
+    pii::ui::{APPLIED_ID, KeepThis, PiiApplyAll, PiiClosePopup},
     search_session::CloseMarkdownSearch,
     settings_ui::Category,
 };
@@ -167,6 +167,22 @@ impl Driver {
                     "folder_sheet": w.folder_sheets.sheet().map(|s| s.primary_label()),
                     "folder_sheet_ticked": w.folder_sheets.sheet().map(|s| s.ticked_count()),
                     "find_replace": w.active_view().is_some_and(|v| v.read(cx).search.open()),
+                    "decision_history": w.active_view().is_some_and(|v| v.read(cx).history.open),
+                    // Counts only: labels name originals, which What you
+                    // did never writes to disk (ADR 0079).
+                    "decisions": w.active_view().map(|v| {
+                        use mdoc_pii::decisions::EntryState;
+                        let v = v.read(cx);
+                        let path = v.editor.read(cx).history_path();
+                        let count = |wanted: EntryState| {
+                            v.pii.decisions().rows(&path).filter(|(_, state)| *state == wanted).count()
+                        };
+                        json!({
+                            "done": count(EntryState::Done),
+                            "undone": count(EntryState::Undone),
+                            "past_limit": count(EntryState::PastLimit),
+                        })
+                    }),
                     "merge_hints": w.active_view().map_or(0, |v| v.read(cx).pii.review().merge_hints().len()),
                     "ocr_consent": w.active_view().is_some_and(|v| {
                         let v = v.read(cx);
@@ -549,12 +565,56 @@ fn scenarios(
     })?;
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
+            v.pii.set_decision_clock(|| "14:02".into());
             v.apply_all_pii(&PiiApplyAll, window, cx);
             v.toggle_compare(window, cx);
         })
     })?;
     records.push(d.capture(out, "before-after")?);
     d.change(|_, window, cx| view.update(cx, |v, cx| v.close_compare(window, cx)))?;
+    // Undo one replacement, then keep the proposal, as two explicit decisions.
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            let id = v.pii.review().applied()[0].id;
+            v.activate_annotation(APPLIED_ID | id, window, cx);
+        })
+    })?;
+    d.settle()?;
+    d.change(|_, window, cx| window.dispatch_action(Box::new(KeepThis), cx))?;
+    d.settle()?;
+    d.change(|_, window, cx| window.dispatch_action(Box::new(KeepThis), cx))?;
+    d.settle()?;
+    let last = d.change(|_, _, cx| {
+        let v = view.read(cx);
+        v.pii
+            .decisions()
+            .rows(&v.editor.read(cx).history_path())
+            .count()
+            - 1
+    })?;
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            v.close_pii_popup(&PiiClosePopup, window, cx);
+            v.travel_to_decision(last - 1, window, cx);
+            v.open_decision_history(window, cx);
+        })
+    })?;
+    records.push(d.capture(out, "decision-history")?);
+    d.change(|_, window, cx| {
+        let menu = view.read(cx).history.menu.clone();
+        window.focus(&menu, cx);
+    })?;
+    d.settle()?;
+    d.key("tab")?;
+    let row = d.change(|_, window, cx| window.focused(cx).expect("first decision"))?;
+    d.focus_pair(out, "decision-row", row)?;
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            v.travel_to_decision(last, window, cx);
+            v.close_decision_history(window, cx);
+        })
+    })?;
+    d.settle()?;
     d.change(|w, window, cx| w.show_case_list(window, cx))?;
     records.push(d.capture(out, "open-case")?);
     d.change(|w, window, cx| w.close_case_list(window, cx))?;

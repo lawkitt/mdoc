@@ -51,7 +51,7 @@ pub use spell_exclusions::spell_exclusions;
 
 mod input;
 use input::{EditKind, Snapshot};
-pub use mdoc_history::EditorTransaction;
+pub use mdoc_history::{EditorTransaction, HistoryPath};
 use mdoc_history::{HistoryChange, SourceEdit};
 mod transactions;
 

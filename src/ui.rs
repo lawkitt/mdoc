@@ -659,6 +659,7 @@ pub enum Icon {
     ThemeSystem,
     Download,
     Bell,
+    Clock,
 }
 
 impl Icon {
@@ -691,6 +692,7 @@ impl Icon {
             Self::ThemeSystem => include_bytes!("../resources/ui/theme-system.svg"),
             Self::Download => include_bytes!("../resources/ui/download.svg"),
             Self::Bell => include_bytes!("../resources/ui/bell.svg"),
+            Self::Clock => include_bytes!("../resources/ui/clock.svg"),
         }
     }
 }
