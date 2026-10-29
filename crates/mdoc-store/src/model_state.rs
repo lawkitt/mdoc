@@ -179,21 +179,27 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("model");
         std::fs::write(&path, b"model").unwrap();
+        let set_modified = |seconds| {
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(seconds))
+                .unwrap();
+        };
+        set_modified(123);
         let paths = [path.clone()];
         let before = Files::read(&paths);
         let mut state = ModelState::default();
         state.record(MODEL, &before, before.clone(), Status::Ready);
-        std::fs::File::options()
-            .write(true)
-            .open(&path)
-            .unwrap()
-            .set_modified(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(123))
-            .unwrap();
+        set_modified(456);
         assert_eq!(
             state.status(MODEL, &Files::read(&paths)),
             Some(Status::Unknown)
         );
         std::fs::write(&path, b"resized model").unwrap();
+        // Isolate the size signal from modification time.
+        set_modified(123);
         assert_eq!(
             state.status(MODEL, &Files::read(&paths)),
             Some(Status::Unknown)
@@ -204,6 +210,9 @@ mod tests {
         state.record(MODEL, &gone, gone.clone(), Status::Missing);
         assert_eq!(state.status(MODEL, &gone), Some(Status::Missing));
         std::fs::write(&path, b"model").unwrap();
+        // Windows can retain a deleted file's timestamps when its name is
+        // reused quickly. The replacement must have a known metadata change.
+        set_modified(789);
         let after = Files::read(&paths);
         assert_eq!(
             state.record(MODEL, &before, after, Status::Ready),
