@@ -15,8 +15,12 @@ use std::{
 const SCREENS: &[&str] = &[
     "home",
     "document",
+    "navigation-disabled",
+    "navigation-enabled",
+    "navigation-middle",
     "more-menu",
     "review",
+    "merge-hint",
     "mention-popup",
     "setup-consent",
     "setup-consent-fp32",
@@ -48,6 +52,7 @@ const SCREENS: &[&str] = &[
     "confirm-remove-model",
     "model-comparison",
     "conversion-failed",
+    "ocr-consent",
     "restored-reply",
     "comments",
 ];
@@ -200,7 +205,31 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 .collect();
             assert_eq!(matches.len(), 1, "{theme}/{name}");
             let record = matches[0];
+            if *name == "merge-hint" {
+                assert_eq!(
+                    record["state"]["merge_hints"], 1,
+                    "{theme}: live merge hint"
+                );
+            }
             if *name != "model-comparison" {
+                if matches!(
+                    *name,
+                    "home" | "document" | "navigation-disabled" | "navigation-enabled"
+                ) {
+                    let enabled = matches!(*name, "document" | "navigation-enabled");
+                    assert_eq!(record["state"]["back_enabled"], enabled, "{theme}/{name}");
+                    assert_eq!(record["state"]["forward_enabled"], false, "{theme}/{name}");
+                    assert_eq!(
+                        record["state"]["back_label"],
+                        if enabled { "Back to Home" } else { "Back" }
+                    );
+                }
+                if *name == "navigation-middle" {
+                    assert_eq!(record["state"]["back_enabled"], true, "{theme}/{name}");
+                    assert_eq!(record["state"]["forward_enabled"], true, "{theme}/{name}");
+                    assert_eq!(record["state"]["back_label"], "Back to Home");
+                    assert_eq!(record["state"]["forward_label"], "Forward to Untitled.md");
+                }
                 assert_eq!(
                     record["state"]["palette"],
                     *name == "command-palette",
@@ -241,6 +270,11 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                         "reply box missing from Tab walk on {theme}/{name}"
                     );
                 }
+                assert_eq!(
+                    record["state"]["ocr_consent"],
+                    *name == "ocr-consent",
+                    "{theme}/{name}"
+                );
                 assert_eq!(
                     record["state"]["settings"],
                     name.starts_with("settings-") || *name == "dictionary",
@@ -354,7 +388,7 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
     // ADR 0074: actual app controls, not a focus-handle assertion. Focus adds
     // only an accent outline; selected/on-state fills and labels stay intact.
     let rings = summary["focus_rings"].as_array().unwrap();
-    assert_eq!(rings.len(), 10);
+    assert_eq!(rings.len(), 14);
     for theme in ["light", "dark"] {
         for control in [
             "toggle-on",
@@ -362,6 +396,8 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
             "settings-row",
             "beside-selected-tab",
             "comments-toggle",
+            "navigation-back",
+            "navigation-forward",
         ] {
             let pair = rings
                 .iter()

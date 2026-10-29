@@ -1,0 +1,1 @@
+- **Navigate back and forward.** Use the title bar buttons, keyboard shortcuts, or mouse buttons to return to recently visited tabs, Home, and case pages.

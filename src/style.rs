@@ -11,6 +11,8 @@ pub const TRAFFIC_LIGHT_X: f32 = 16.;
 pub const TRAFFIC_LIGHT_Y: f32 = CARD_MARGIN + HEADER_HEIGHT / 2. - 7.;
 /// Room left of the sidebar's top row for the macOS traffic lights.
 pub const TRAFFIC_LIGHT_INSET: f32 = if cfg!(target_os = "macos") { 76. } else { 8. };
+/// Sidebar toggle (32), two history buttons (28 each), and two 4 px gaps.
+pub const WORKSPACE_NAV_WIDTH: f32 = 96.;
 
 /// What a document header shares with the window (ADR 0048): the left room
 /// the traffic lights and a collapsed sidebar's toggle need, and the press

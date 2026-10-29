@@ -4,6 +4,7 @@ mod candidates;
 mod discovery;
 mod identities;
 mod manual;
+pub mod merge_hints;
 pub use identities::{Identity, IdentitySnapshot};
 pub mod restore;
 mod syntax;

@@ -40,6 +40,7 @@ mod docx_queue;
 mod focus_regions;
 mod folder_sheet;
 mod import_flow;
+mod navigation;
 mod notices;
 mod quit_flow;
 mod restore_in_place;

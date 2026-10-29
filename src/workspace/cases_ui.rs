@@ -394,9 +394,11 @@ impl Workspace {
                 let identities = case.exported();
                 let reserved = case.reserved_aliases();
                 let skip = case.skipped();
+                let dismissed = case.dismissed_hints.clone();
                 let case_id = link.id.clone();
                 view.update(cx, |view, cx| {
                     view.case.set_skip(skip);
+                    view.dismiss_case_hints(&dismissed, cx);
                     view.open_case_mapping(link, &identities, &reserved, cx)
                 });
                 // A saved document is a member from the moment it joins.
@@ -624,6 +626,38 @@ impl Workspace {
         self.add_case_name(&link.id, term, cx);
     }
 
+    /// A member dismissed a merge hint: the case keeps it and its other open
+    /// members hide it too (ADR 0080).
+    pub(super) fn dismiss_case_hint(
+        &mut self,
+        id: u64,
+        from: &str,
+        into: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(link) = self
+            .tab_view(id)
+            .and_then(|view| view.read(cx).case.link().cloned())
+        else {
+            return;
+        };
+        let pair = (from.to_string(), into.to_string());
+        let Some(((), effect)) = self.case_coordinator.edit(&link.id, |case| {
+            (!case.dismissed_hints.contains(&pair)).then(|| case.dismissed_hints.push(pair.clone()))
+        }) else {
+            return;
+        };
+        self.carry_out_cases(effect.into_iter().collect(), cx);
+        for tab in &self.tabs {
+            if let Some(view) = tab.view()
+                && view.read(cx).case.is(&link.id)
+            {
+                let pair = std::slice::from_ref(&pair);
+                view.update(cx, |view, cx| view.dismiss_case_hints(pair, cx));
+            }
+        }
+    }
+
     pub(super) fn add_case_name(&mut self, case_id: &str, term: &str, cx: &mut Context<Self>) {
         let term = term.trim();
         let Some((exported, effect)) = self.case_coordinator.edit(case_id, |case| {
@@ -686,8 +720,10 @@ impl Workspace {
         let identities = case.exported();
         let reserved = case.reserved_aliases();
         let skip = case.skipped();
+        let dismissed = case.dismissed_hints.clone();
         let result = view.update(cx, |view, cx| {
             view.case.set_skip(skip);
+            view.dismiss_case_hints(&dismissed, cx);
             let result = view.join_case_identities(&identities, &reserved, cx);
             if result.is_ok() {
                 view.case.attach(Some(link.clone()));

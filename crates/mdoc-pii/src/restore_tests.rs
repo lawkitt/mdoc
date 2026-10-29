@@ -636,3 +636,27 @@ fn restoring_in_place_matches_the_restore_tab_and_marks_what_is_left() {
     assert_eq!(map.restore(reply).unresolved, shown.unresolved.len());
     assert_eq!(map.restore_in_place(""), RestoredText::default());
 }
+
+#[test]
+fn reseeding_and_applying_preserves_the_saved_primary_and_retired_alias() {
+    let source = "Марина Павлова met Павлова Марина";
+    let mut saved = identity(
+        "PERSON_1",
+        Category::Person,
+        &["Павлова Марина", "Марина Павлова"],
+    );
+    saved.previous.push("PERSON_2".into());
+    let mut review = Review::default();
+    review.seed(&[saved], source);
+    let plans = review.pending_plans(source, &HashMap::new()).unwrap();
+    let applied = review.prepare_replacements(&plans);
+    review.commit_replacements(1, applied);
+    let exported = review.export_identities();
+    assert_eq!(exported.len(), 1);
+    assert_eq!(exported[0].wording(), "Павлова Марина");
+    let map = RestoreMap::new(exported);
+    assert_eq!(
+        apply(&map, "PERSON_1 met PERSON_2"),
+        "Павлова Марина met Павлова Марина"
+    );
+}

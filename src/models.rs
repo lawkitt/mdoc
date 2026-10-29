@@ -4,6 +4,22 @@
 use mdoc_import::{model_download::Pending, ocr};
 use mdoc_store::settings::Model;
 
+/// Metadata only; unit tests never inspect the real profile's installations.
+pub fn files(model: Model) -> Vec<std::path::PathBuf> {
+    if cfg!(test) {
+        return Vec::new();
+    }
+    let Ok(root) = ocr::root() else {
+        return Vec::new();
+    };
+    match model {
+        Model::Ocr(m) => ocr::model_files(&root, m),
+        Model::Pii(m) => mdoc_detect::root_for(m)
+            .map(|path| mdoc_detect::model_files(&path, &root, m))
+            .unwrap_or_default(),
+    }
+}
+
 /// Plain-language row title, e.g. "English & Russian" or "Standard".
 pub fn title(model: Model) -> String {
     match model {
