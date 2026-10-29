@@ -4,6 +4,29 @@
 use mdoc_import::{model_download::Pending, ocr};
 use mdoc_store::settings::Model;
 
+pub fn check_status(result: Result<bool, String>) -> mdoc_store::model_state::Status {
+    use mdoc_store::model_state::Status;
+    if !ocr::SUPPORTED {
+        return Status::Unavailable(
+            "Automatic inference supports Apple Silicon macOS and Windows x64.".into(),
+        );
+    }
+    match result {
+        Ok(true) => Status::Ready,
+        Ok(false) => Status::Missing,
+        Err(error) => Status::Unavailable(error),
+    }
+}
+
+pub fn setup_label(model: Model, remove: bool) -> &'static str {
+    match (model, remove) {
+        (Model::Ocr(_), false) => "installing text recognition",
+        (Model::Ocr(_), true) => "removing text recognition",
+        (Model::Pii(_), false) => "installing pseudonymization model",
+        (Model::Pii(_), true) => "removing pseudonymization model",
+    }
+}
+
 /// Metadata only; unit tests never inspect the real profile's installations.
 pub fn files(model: Model) -> Vec<std::path::PathBuf> {
     if cfg!(test) {
@@ -70,6 +93,91 @@ mod tests {
     use mdoc_import::ocr::manifest;
     use mdoc_import::recognition::{ENGLISH, Language, RUSSIAN};
     use mdoc_store::settings::OcrModel;
+
+    #[test]
+    fn setup_labels_name_the_model_job_in_other_windows() {
+        for model in Model::ALL {
+            match model {
+                Model::Ocr(_) => {
+                    assert_eq!(setup_label(model, false), "installing text recognition");
+                    assert_eq!(setup_label(model, true), "removing text recognition");
+                }
+                Model::Pii(_) => {
+                    assert_eq!(
+                        setup_label(model, false),
+                        "installing pseudonymization model"
+                    );
+                    assert_eq!(setup_label(model, true), "removing pseudonymization model");
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_runtime_open_failure_is_visible_beside_a_partial_download() {
+        use mdoc_store::model_state::Status;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("invalid-runtime.dll");
+        std::fs::write(&path, b"not a Windows library").unwrap();
+        let error = ocr::load_onnx_runtime(&path).unwrap_err();
+        assert!(matches!(error, ocr::SetupError::RuntimeOpenWindows(_)));
+        assert!(!error.is_missing());
+        assert!(ocr::pending(Some(dir.path()), OcrModel::V6Small).total() > 0);
+        assert_eq!(
+            check_status(Err(error.to_string())),
+            Status::Unavailable(error.to_string())
+        );
+    }
+
+    #[test]
+    fn removed_files_are_missing_through_real_reserved_checks() {
+        let dir = tempfile::tempdir().unwrap();
+        for model in OcrModel::ALL {
+            let root = ocr::model_root(dir.path(), model);
+            std::fs::create_dir_all(&root).unwrap();
+            // The first runtime is checked before the model artifacts. A
+            // corrupt file must report an error; removing that same file must
+            // report Missing through that exact validation arm.
+            let path = ocr::model_files(dir.path(), model)
+                [ocr::manifest::for_model(model).artifacts.len()]
+            .clone();
+            std::fs::write(&path, b"removed fixture").unwrap();
+            let config = mdoc_store::settings::OcrConfig {
+                model,
+                ..Default::default()
+            };
+            assert!(matches!(
+                ocr::check_reserved_in(dir.path(), &config),
+                Err(ocr::SetupError::Integrity(_))
+            ));
+            std::fs::remove_file(path).unwrap();
+            let result = ocr::check_reserved_in(dir.path(), &config);
+            assert!(result.as_ref().unwrap().is_none());
+            if ocr::SUPPORTED {
+                assert_eq!(
+                    check_status(result.map(|i| i.is_some()).map_err(|e| e.to_string())),
+                    mdoc_store::model_state::Status::Missing
+                );
+            }
+        }
+        for model in mdoc_store::settings::PiiModel::ALL {
+            let path = dir
+                .path()
+                .join(&mdoc_detect::manifest_for(model).files[0].path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"removed fixture").unwrap();
+            std::fs::remove_file(path).unwrap();
+            let result = mdoc_detect::check_reserved_in(dir.path(), dir.path(), model);
+            assert!(!result.as_ref().unwrap());
+            if ocr::SUPPORTED {
+                assert_eq!(
+                    check_status(result.map_err(|e| e.to_string())),
+                    mdoc_store::model_state::Status::Missing
+                );
+            }
+        }
+    }
 
     #[test]
     fn model_attribution_tracks_the_pinned_downloads() {

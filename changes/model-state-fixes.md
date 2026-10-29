@@ -1,0 +1,1 @@
+- **Model status stays accurate across windows.** Settings refreshes remembered model state, shows clearer setup progress, preserves runtime errors, and avoids storing absolute paths or detailed errors in the cache.
