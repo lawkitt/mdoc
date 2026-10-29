@@ -235,6 +235,11 @@ unrelated=$!
 echo "$unrelated" >"$LOCAL_CI_HOME/state/lock/pid"
 echo "$unrelated" >"$LOCAL_CI_HOME/state/job.pid"
 
+# The build cache survives a job's clean; other untracked files do not.
+mkdir -p "$LOCAL_CI_HOME/mdoc/target/debug"
+echo cache >"$LOCAL_CI_HOME/mdoc/target/debug/kept"
+echo stray >"$LOCAL_CI_HOME/mdoc/stray.txt"
+
 bash scripts/local-ci.sh once >"$tmp/runner.log" 2>&1 &
 runner=$!
 for _ in $(seq 1 180); do
@@ -286,6 +291,8 @@ check "renders are kept for a PR's newest head only" [ ! -e "$LOCAL_CI_HOME/out/
 check "an older head's log is kept" [ -e "$LOCAL_CI_HOME/out/pr-1/0000000/log.txt" ]
 check "the status file is written" grep -q "^running: nothing" "$LOCAL_CI_HOME/out/status.txt"
 check "the lock is released" [ ! -e "$LOCAL_CI_HOME/state/lock" ]
+check "a job keeps target/" [ -e "$LOCAL_CI_HOME/mdoc/target/debug/kept" ]
+check "a job removes other untracked files" [ ! -e "$LOCAL_CI_HOME/mdoc/stray.txt" ]
 
 if [ "$failures" -gt 0 ]; then
   echo "--- runner log" >&2

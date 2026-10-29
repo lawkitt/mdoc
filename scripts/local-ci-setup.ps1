@@ -115,13 +115,16 @@ $envFile = @(
 # conhost --headless keeps it from opening a console window, but writes to
 # that console fail (which ends a `set -e` script), so each command sends its
 # output to a file.
+# Priority 4 is normal: Task Scheduler's default, 7, runs the task and every
+# process it starts (cargo, rustc, the tests) at below-normal CPU and low I/O
+# priority, so the lanes' builds starve a job.
 function Register-CiTask([string] $Name, [string] $Command, [string] $Description) {
     $action = New-ScheduledTaskAction -Execute (Join-Path $env:WINDIR 'System32\conhost.exe') `
         -Argument "--headless `"$bash`" -c `"$Command`""
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew `
-        -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable
+        -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -Priority 4
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
     Register-ScheduledTask -TaskName $Name -Action $action -Trigger $trigger -Settings $settings `
         -Principal $principal -Description $Description -Force | Out-Null

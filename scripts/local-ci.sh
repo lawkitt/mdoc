@@ -266,7 +266,10 @@ job() { # merge-ref dir
   unset CARGO_TARGET_DIR RUSTFLAGS MDOC_HEADLESS_ARTIFACTS
   echo "local-ci: checkout $(git rev-parse "$1")"
   git checkout --quiet --force --detach "$1" || exit 3
-  git clean -ffdxq -e /target/ || exit 3
+  # Keep the build cache. Git Bash rewrites a native program's argument that
+  # starts with / as a Windows path (/target/ -> C:/Program Files/Git/target/),
+  # which matched nothing and made every Windows job a cold build.
+  MSYS_NO_PATHCONV=1 git clean -ffdxq -e /target/ || exit 3
   for step in $steps; do
     start=$(date +%s)
     printf '%s %s\n' "$step" "$start" >"$dir/.step"
