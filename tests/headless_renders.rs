@@ -15,6 +15,8 @@ use std::{
 const SCREENS: &[&str] = &[
     "home",
     "document",
+    "navigation-disabled",
+    "navigation-enabled",
     "more-menu",
     "review",
     "mention-popup",
@@ -199,6 +201,18 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
             assert_eq!(matches.len(), 1, "{theme}/{name}");
             let record = matches[0];
             if *name != "model-comparison" {
+                if matches!(
+                    *name,
+                    "home" | "document" | "navigation-disabled" | "navigation-enabled"
+                ) {
+                    let enabled = matches!(*name, "document" | "navigation-enabled");
+                    assert_eq!(record["state"]["back_enabled"], enabled, "{theme}/{name}");
+                    assert_eq!(record["state"]["forward_enabled"], false, "{theme}/{name}");
+                    assert_eq!(
+                        record["state"]["back_label"],
+                        if enabled { "Back to Home" } else { "Back" }
+                    );
+                }
                 assert_eq!(
                     record["state"]["palette"],
                     *name == "command-palette",

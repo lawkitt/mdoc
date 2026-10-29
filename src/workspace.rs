@@ -47,7 +47,10 @@ mod folder_sheet_ui;
 ))]
 pub(crate) mod headless_renders;
 mod keychain_ui;
+mod navigation;
+mod navigation_ui;
 mod notices;
+pub(crate) use navigation_ui::{Back, Forward};
 mod quit_flow;
 pub(crate) use quit_flow::CloseWatch;
 use quit_flow::{QuitEffect, QuitEnd};
@@ -220,6 +223,9 @@ pub(super) struct Workspace {
     pub(super) case_list_return: Option<gpui::FocusHandle>,
     pub(super) notices_focus: gpui::FocusHandle,
     tabs: tab_set::TabSet<Entity<DocumentView>>,
+    navigation: navigation::History,
+    back_focus: gpui::FocusHandle,
+    forward_focus: gpui::FocusHandle,
     /// Each shown tab's event and change subscriptions, dropped with it.
     tab_subscriptions: std::collections::HashMap<u64, Vec<Subscription>>,
     sidebar: sidebar::Sidebar<gpui::FocusHandle>,
@@ -385,6 +391,9 @@ impl Workspace {
             case_list_return: None,
             notices_focus: cx.focus_handle(),
             tabs: tab_set::TabSet::default(),
+            navigation: Default::default(),
+            back_focus: cx.focus_handle().tab_stop(true),
+            forward_focus: cx.focus_handle().tab_stop(true),
             tab_subscriptions: std::collections::HashMap::new(),
             sidebar: sidebar::Sidebar::default(),
             reveal_focus: cx.focus_handle(),
@@ -1087,6 +1096,7 @@ impl Workspace {
         if self.showing_overview(cx) {
             window.focus(&self.focus, cx);
         }
+        self.note_destination(cx);
         cx.notify();
     }
 
@@ -2556,9 +2566,17 @@ impl Workspace {
                         this.drop_files(paths, true, window, cx)
                     }),
                 )
-                .child(self.sidebar_top(
-                    sidebar_toggle(&self.panel_toggle_focus, expanded, theme).into_any_element(),
-                ))
+                .child(
+                    self.sidebar_top(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(sidebar_toggle(&self.panel_toggle_focus, expanded, theme))
+                            .when(expanded, |v| v.child(self.navigation_buttons(cx)))
+                            .into_any_element(),
+                    ),
+                )
                 .child(self.sidebar_nav(cx))
                 // Above the scrolling list, so it shows however long it is.
                 .when(self.sidebar.drop_refused(), |v| {
@@ -2983,7 +3001,8 @@ impl Render for Workspace {
         self.title.inset.set(if self.sidebar.visible() {
             0.
         } else {
-            (style::TRAFFIC_LIGHT_INSET + 32. + 12. - RAIL_WIDTH - 16.).max(0.)
+            (style::TRAFFIC_LIGHT_INSET + style::WORKSPACE_NAV_WIDTH + 12. - RAIL_WIDTH - 16.)
+                .max(0.)
         });
         div()
             .track_focus(&self.focus)
@@ -2993,6 +3012,13 @@ impl Render for Workspace {
             .flex()
             .flex_col()
             .bg(theme.sidebar_bg())
+            .child(self.navigation_mouse(cx))
+            .on_action(cx.listener(|this, _: &Back, window, cx| {
+                this.navigate(true, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &Forward, window, cx| {
+                this.navigate(false, window, cx);
+            }))
             .on_action(cx.listener(|this, _: &ui::NextRegion, window, cx| {
                 this.cycle_region(false, window, cx)
             }))
@@ -3195,6 +3221,9 @@ impl Render for Workspace {
                         .absolute()
                         .left(px(style::TRAFFIC_LIGHT_INSET))
                         .top(px(style::CARD_MARGIN + (style::HEADER_HEIGHT - 32.) / 2.))
+                        .flex()
+                        .items_center()
+                        .gap_1()
                         .child(sidebar_toggle(
                             &self
                                 .rail_toggle_focus
@@ -3202,7 +3231,8 @@ impl Render for Workspace {
                                 .tab_stop(self.sidebar.reveal() == Reveal::Hidden),
                             false,
                             theme,
-                        )),
+                        ))
+                        .child(self.navigation_buttons(cx)),
                 )
             })
             .children(self.notices_view(window, cx))

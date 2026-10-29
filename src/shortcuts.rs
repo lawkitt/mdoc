@@ -403,6 +403,22 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Everywhere,
+        "Back",
+        &[
+            on!(Shell, Some("Workspace"), &[], workspace::Back).mac(&["cmd-["]),
+            on!(Shell, Some(CHROME), &[], workspace::Back).other(&["alt-left"]),
+        ],
+    ),
+    row(
+        Everywhere,
+        "Forward",
+        &[
+            on!(Shell, Some("Workspace"), &[], workspace::Forward).mac(&["cmd-]"]),
+            on!(Shell, Some(CHROME), &[], workspace::Forward).other(&["alt-right"]),
+        ],
+    ),
+    row(
+        Everywhere,
         "Settings",
         &[on!(App, None, &["mod-,"], workspace::Settings)],
     ),
