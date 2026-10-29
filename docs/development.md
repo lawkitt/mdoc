@@ -206,6 +206,7 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just smoke-package` | OCR from the packaged artifact: the `.dmg`'s signed app, or the release `mdoc.exe` (release gate) |
 | `just smoke-update [dmg]` | An older Developer ID signed `.dmg` updates itself to the latest release through `--mdoc-self-update` (manual, before releases that change the updater) |
 | `just release <version>` | Release commit and tag (below) |
+| `just local-ci [command]` | The [local CI](#local-ci) runner: `install`, `status`, `stop`, `start`, `uninstall` (macOS), or `run` / `once` in the foreground |
 | `just icon`, `just actionlint` | Icon assets; workflow lint |
 | `just disk` | Size of each worktree's `target/` |
 | `just retire-worktree <path>` | Remove a finished worktree and its `target/` |
@@ -366,6 +367,80 @@ update or a changed flag builds a complete new copy beside the old one, so run
 `cargo clean --profile dev` after one (the next build is cold, about two
 minutes for `just test`). Edits alone grow the cache only slowly.
 
+## Local CI
+
+Local CI is the pre-merge test gate
+([ADR 0082](adr/0082-local-ci.md)): `scripts/local-ci.sh` runs on the Mac
+and on the Windows PC and posts the `local/macos` and `local/windows` commit
+statuses on each PR head. `scripts/test-local-ci.sh` (part of `just test`)
+checks it against a fake `gh` and `just`.
+
+**What a runner does.** Every 60 s it lists the open PRs with the machine's
+`gh` login, skipping drafts, forks and bot PRs (Dependabot). A head without
+this machine's status gets `pending` "Queued", linked to the runner's
+`status.txt`; one job runs at a time, oldest first. A job fetches
+`refs/pull/N/merge`, checks it out in the CI checkout (keeping its
+`target/`) and runs `just lint` and `just test` with the hosted job limits
+(20 and 30 minutes). The status, `success` or `failure`, names the base
+commit tested ("Passed on main@1a2b3c4 in 4m10s") and links to the job's
+folder. Without a build, a conflicting PR gets `failure` ("Conflicts with
+main") and a PR that touches only files in `ci.yml`'s `paths-ignore` list
+gets `success` ("Docs only, not tested"); the runner reads that list from
+the merge ref's own `ci.yml`. A newer head ends its PR's queued or running
+job (`error`, "Superseded by …"); a pending status left by a stopped runner
+runs again when it starts. On the Mac a job starts only while swap is under
+2 GB and 40 GB is free.
+
+| | Mac | Windows PC |
+|---|---|---|
+| Runner home | `~/ci` | `D:\ci` |
+| CI checkout | `~/ci/mdoc` | `D:\ci\mdoc` |
+| Runner (a copy, never the checkout it tests) | `~/ci/runner/scripts/` | `D:\ci\runner\scripts\` |
+| Results, kept 7 days | `~/ci/out/pr-N/<head>/` | `D:\ci\out\pr-N\<head>\` |
+| Runner log | `~/ci/state/runner.log` | `D:\ci\state\runner.log` |
+| Started by | launchd agents `com.lawkitt.mdoc.local-ci` and `com.lawkitt.mdoc.local-ci-web` | Task Scheduler task `mdoc local CI`, at logon |
+
+Each machine serves its `out` folder to the tailnet only, at
+`https://<machine>.<tailnet>.ts.net/ci/`; the status links open a job's
+folder there: `log.txt` (checkout and both steps), `summary.txt` (PR, head,
+base, step times, result) and `renders/` (the headless render set:
+`summary.json`, `light/`, `dark/`). `status.txt` at the top is the runner's
+heartbeat, current job and queue. The macOS Tailscale app cannot serve a
+folder, so on the Mac a localhost-only `python3 -m http.server` agent serves
+it and `tailscale serve` proxies `/ci` to it.
+
+**Install or update.** On the Mac, from a checkout of current `main`:
+`just local-ci install`. On the PC, in PowerShell from a checkout:
+`powershell -ExecutionPolicy Bypass -File scripts\local-ci-setup.ps1`. Both
+clone the CI checkout if it is missing (its first build is cold and its
+`target/` reaches about 30 GB), copy the runner, register the agents or the
+task and add `/ci` to `tailscale serve`; existing `tailscale serve` paths are
+kept. Re-run the same command after `scripts/local-ci.sh` changes on `main`.
+
+**Check the runners** (the fleet preflight). Open `/ci/status.txt` on each
+machine over the tailnet: an `updated` time within the last 3 minutes means
+that runner is up. On the machine, `just local-ci status` shows the agents
+or the task, the status file and the last log lines, and exits 1 when the
+runner is not running.
+
+**Stop and start.** Mac: `just local-ci stop` and `just local-ci start`.
+PC: `Stop-ScheduledTask 'mdoc local CI'` and `Start-ScheduledTask 'mdoc
+local CI'` (re-run the setup script to also end a job's build processes). A
+job in progress stops and runs again at the next start. `just local-ci
+uninstall` (Mac) or `local-ci-setup.ps1 -Uninstall` removes the agents or
+the task and the `/ci` path and keeps the runner home.
+
+**Run a head again.** Post a pending status on it; the runner queues any
+pending head it is not running:
+
+```sh
+gh api -X POST repos/lawkitt/mdoc/statuses/<sha> -f state=pending -f context=local/macos -f description=Queued
+```
+
+Runners execute PR code under the maintainer's account with their `gh`
+login; only branches pushed to `lawkitt/mdoc` by someone with write access
+are tested, and the results are reachable only inside the tailnet.
+
 ## Fleet
 
 Agents that dispatch work to the maintainer's other machines (the `fleet`
@@ -382,8 +457,9 @@ skill) read this section for mdoc's needs.
   `windows-lane-2` on `windows`, `wsl-lane-1` on `wsl`. Each task starts with
   `git switch -c <machine>/<topic> origin/main`.
   Retire other worktrees with `just retire-worktree <path>` once merged.
-  A third lane (`windows-lane-3`) is added only when `df` shows room for
-  another 30 GiB with margin. Claude Desktop SSH sessions use these lane
+  `C:` has about 31 GB free, so new Windows lanes live on `D:` beside the
+  CI checkout: `windows-lane-3` at `D:\t3\worktrees\mdoc\windows-lane-3`,
+  and lanes 1 and 2 move there when free (update the profile with each move). Claude Desktop SSH sessions use these lane
   folders too (`use_worktree: false`), one session or T3 thread per lane.
 - **Models and reviews** follow the fleet skill (fleet ADRs 0016, 0017):
   Opus 5.5 builds, Windows-specific items included; Codex Sol builds only
@@ -397,6 +473,10 @@ skill) read this section for mdoc's needs.
   another worktree's `mdoc-pii` and tested stale code (2026-10-29). Check `df`
   for about 30 GiB per worktree first, and retire it when merged. At most two
   worktrees build at once on the Mac.
+- **Local CI** runs on the Mac and the PC ([Local CI](#local-ci)); the Mac
+  runner is a build slot beside the two agent builders. Preflight: each
+  machine's `/ci/status.txt` updated within the last 3 minutes. UI items'
+  renders are in the `local/macos` and `local/windows` status links.
 - **Native checks.** The [acceptance](platform-acceptance.md) checklist runs
   by computer use (see [ADR 0057](adr/0057-native-platform-acceptance.md));
   rows that need a physical keyboard, speech, passwords or system settings
@@ -427,8 +507,8 @@ warm_gib = 15
 
 [renders]
 produce = "just headless-renders <new-directory>"
-fetch = "gh run download <run-id> --repo lawkitt/mdoc --pattern 'headless-renders-*'"
-done_when = "headless renders of {what}, light and dark (CI uploads them)"
+fetch = "open the `local/macos` and `local/windows` status links (tailnet): `renders/light/` and `renders/dark/`"
+done_when = "headless renders of {what}, light and dark (local CI serves them)"
 
 [bookkeeping]
 roadmap_item = "remove item {number} from `{roadmap}` {milestone} (delete only its own lines; do not renumber)"
@@ -439,8 +519,8 @@ fragment = "add `changes/{slug}.md` (format in `changes/README.md`)"
 setup = "Never set `CARGO_TARGET_DIR`: this worktree builds into its own `target/` (a shared one gives stale builds). First build is cold."
 
 [machines.windows]
-disk_check = "`Get-PSDrive C` (not `just disk`, which fails while another lane builds)"
-lanes = { windows-lane-1 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-2' }
+disk_check = "`Get-PSDrive C, D` for the lane's drive (not `just disk`, which fails while another lane builds)"
+lanes = { windows-lane-1 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-2', windows-lane-3 = 'D:\t3\worktrees\mdoc\windows-lane-3' }
 
 [machines.wsl]
 disk_check = "`df -h ~`"

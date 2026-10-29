@@ -42,10 +42,19 @@ lint-scripts:
 test:
     cargo test --workspace --features headless-renders
     just test-release
+    just test-local-ci
 
 # Isolated release-script regressions; no network, builds or real releases
 test-release:
     bash scripts/test-release.sh
+
+# Local CI runner regressions; fake gh and just, no network or builds
+test-local-ci:
+    bash scripts/test-local-ci.sh
+
+# Local CI runner (ADR 0082): run, once, install, start, stop, status, uninstall
+local-ci *args:
+    scripts/local-ci.sh {{args}}
 
 # Offscreen macOS/Windows screen/Tab evidence in a new output directory (dev only)
 [positional-arguments]
