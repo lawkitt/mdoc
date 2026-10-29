@@ -879,34 +879,31 @@ impl DocumentView {
         }
         let active = self.active_replacement_range();
         let review = &self.pii.review;
-        let mut edits: Vec<_> = review
-            .candidates()
-            .iter()
-            .filter_map(|c| {
-                let id = review.occurrence_identity(c.variant, &c.range)?;
-                Some((c.range.clone(), review.identity(id)?.alias.clone()))
-            })
-            .collect();
-        edits.extend(review.applied().iter().filter_map(|a| {
-            let alias = &review.identity(a.step.identity)?.alias;
-            (a.step.after.as_ref() != alias).then(|| (a.range.clone(), alias.clone()))
-        }));
+        // Each edit with the original it replaces: proposals, and applied
+        // mentions whose alias is corrected. Both count as applied.
+        let mut edits = Vec::new();
+        let mut applied = Vec::new();
+        for c in review.candidates() {
+            let Some(id) = review.occurrence_identity(c.variant, &c.range) else {
+                continue;
+            };
+            if let Some(identity) = review.identity(id) {
+                edits.push((c.range.clone(), identity.alias.clone()));
+            }
+            applied.extend(review.variant(c.variant).map(|v| v.original.clone()));
+        }
+        for a in review.applied() {
+            if let Some(identity) = review.identity(a.step.identity)
+                && a.step.after.as_ref() != identity.alias
+            {
+                edits.push((a.range.clone(), identity.alias.clone()));
+                applied.push(a.step.original_shared().clone());
+            }
+        }
         edits.sort_by_key(|(r, _)| r.start);
-        let applied: Vec<_> = review
-            .candidates()
-            .iter()
-            .filter(|c| review.occurrence_identity(c.variant, &c.range).is_some())
-            .filter_map(|c| review.variant(c.variant).map(|v| v.original.clone()))
-            .collect();
         let before = self.editor.read(cx).history_id();
         self.apply_aliases(cx);
-        // Corrected aliases alone are listed as the apply too.
-        let applied = if applied.is_empty() {
-            Mentions::Many(edits.len())
-        } else {
-            Mentions::of(applied)
-        };
-        self.record_decision(before, Decision::Apply(applied), cx);
+        self.record_decision(before, Decision::Apply(Mentions::of(applied)), cx);
         let after = self.editor.read(cx).history_id();
         if after != before {
             self.pii.mapping.record_applied(edits.len(), after);

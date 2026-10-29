@@ -1085,12 +1085,18 @@ impl EditorState {
             || (new_text.is_empty() && self.content[range.clone()].graphemes(true).count() == 1);
     }
 
+    /// Make the current state an undo point and start a new branch.
+    fn push_undo_point(&mut self) {
+        self.undo_stack.push(self.snapshot());
+        if self.undo_stack.len() > UNDO_LIMIT {
+            self.undo_stack.remove(0);
+        }
+        self.redo_stack.clear();
+    }
+
     fn begin_history(&mut self, coalesce: bool, edits: Vec<super::SourceEdit>) {
         if !coalesce {
-            self.undo_stack.push(self.snapshot());
-            if self.undo_stack.len() > UNDO_LIMIT {
-                self.undo_stack.remove(0);
-            }
+            self.push_undo_point();
         }
         self.redo_stack.clear();
         let before = self.history_id;
@@ -1306,6 +1312,11 @@ impl EntityInputHandler for EditorState {
             .unwrap_or(self.selected_range.clone());
         // Composition updates retain the existing editor undo contract: only
         // the commit records a snapshot. Hosts still receive every exact change.
+        // The state a composition starts from is an undo point too, so Undo
+        // still reaches a host's step just before it (a decision, ADR 0079).
+        if self.marked_range.is_none() && !new_text.is_empty() {
+            self.push_undo_point();
+        }
         self.content_gen += 1;
         let before = self.history_id;
         self.next_history_id += 1;
@@ -1968,6 +1979,30 @@ mod tests {
             editor.replace_range(0..editor.text().len(), "branch", cx);
             editor.redo(&Redo, window, cx);
             assert_eq!(editor.text(), "branch");
+        });
+    }
+
+    #[gpui::test]
+    fn undo_reaches_the_step_before_a_composition(cx: &mut gpui::TestAppContext) {
+        let (editor, cx) = cx.add_window_view(EditorState::new);
+        editor.update_in(cx, |editor, window, cx| {
+            editor.set_text("Anna", cx);
+            // A host's step (a decision), then a dead-key composition.
+            editor.replace_range(0..4, "PERSON_1", cx);
+            let decided = editor.history_id();
+            editor.set_cursor(editor.text().len(), cx);
+            editor.replace_and_mark_text_in_range(None, "´", None, window, cx);
+            editor.replace_text_in_range(None, "é", window, cx);
+            assert_eq!(editor.text(), "PERSON_1é");
+            let presses = editor.history_path().steps_to(decided).unwrap();
+            assert!(presses < 0);
+            for _ in 0..presses.unsigned_abs() {
+                editor.undo(&Undo, window, cx);
+            }
+            assert_eq!(editor.history_id(), decided);
+            assert_eq!(editor.text(), "PERSON_1");
+            editor.undo(&Undo, window, cx);
+            assert_eq!(editor.text(), "Anna");
         });
     }
 

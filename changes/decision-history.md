@@ -1,4 +1,6 @@
 - **What you did.** The document header's clock and the command palette open
   a list of pseudonymization decisions with times. Choose an entry to undo
   back to it or redo up to it; intervening text edits travel with them.
-  The list stays in memory for the tab and is never saved to disk or a case.
+  Decisions older than the undo limit stay listed but can no longer be
+  travelled to. The list stays in memory for the tab and is never saved to
+  disk or a case.

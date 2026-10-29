@@ -31,6 +31,8 @@ impl HistoryPopover {
 
 /// The footer note: travel takes text edits with it (ADR 0079).
 pub(crate) const FOOTER: &str = "Text edits made between decisions are undone with them.";
+/// A row whose undo point the editor's undo limit dropped (ADR 0079).
+pub(crate) const PAST_LIMIT: &str = "Older than the undo limit";
 
 impl DocumentView {
     /// The palette's What you did, and the clock button: open the popover
@@ -96,7 +98,7 @@ impl DocumentView {
             .pii
             .decisions()
             .rows(&path)
-            .map(|(entry, state)| (entry.decision().label(), entry.time().to_owned(), state))
+            .map(|(entry, state)| (entry.label(), entry.time().to_owned(), state))
             .collect();
         let empty = rows.is_empty();
         let list = rows
@@ -104,22 +106,29 @@ impl DocumentView {
             .enumerate()
             .map(|(i, (label, time, state))| {
                 let undone = state == EntryState::Undone;
+                // Past the undo limit: listed, disabled, no longer reached.
+                let reachable = state != EntryState::PastLimit;
+                let note = match state {
+                    EntryState::Done => None,
+                    EntryState::Undone => Some("Undone"),
+                    EntryState::PastLimit => Some(PAST_LIMIT),
+                };
                 let id = format!("decision-{i}");
                 ui::focus_ring(gpui::SharedString::from(id.clone()), theme)
                     .when(cfg!(test), move |v| v.debug_selector(move || id))
                     .role(gpui::Role::MenuItem)
-                    .aria_label(if undone {
-                        format!("{label} · {time}, undone")
-                    } else {
-                        format!("{label} · {time}")
+                    .aria_label(match note {
+                        Some(note) => format!("{label} · {time}, {}", note.to_lowercase()),
+                        None => format!("{label} · {time}"),
                     })
-                    .aria_description(if undone {
-                        "Redo up to here"
-                    } else {
-                        "Undo back to just after this"
+                    .aria_description(match state {
+                        EntryState::Done => "Undo back to just after this",
+                        EntryState::Undone => "Redo up to here",
+                        EntryState::PastLimit => PAST_LIMIT,
                     })
                     .key_context("UiControl")
                     .tab_index(0)
+                    .tab_stop(reachable)
                     .flex()
                     .items_center()
                     .gap_2()
@@ -127,12 +136,19 @@ impl DocumentView {
                     .px_2()
                     .min_h(px(28.))
                     .rounded_md()
-                    .cursor_pointer()
-                    .hover(move |s| s.bg(p.placeholder_bg))
+                    .when(reachable, |v| {
+                        v.cursor_pointer()
+                            .hover(move |s| s.bg(p.placeholder_bg))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.travel_to_decision(i, window, cx);
+                                cx.notify();
+                            }))
+                    })
+                    .when(!reachable, |v| v.opacity(0.45))
                     .text_color(if undone { p.header_muted } else { p.header_fg })
                     .child(div().flex_1().min_w_0().truncate().child(label))
-                    .when(undone, |v| {
-                        v.child(div().flex_shrink_0().text_size(px(11.)).child("Undone"))
+                    .when_some(note, |v, note| {
+                        v.child(div().flex_shrink_0().text_size(px(11.)).child(note))
                     })
                     .child(
                         div()
@@ -141,10 +157,6 @@ impl DocumentView {
                             .text_color(p.header_muted)
                             .child(format!("· {time}")),
                     )
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.travel_to_decision(i, window, cx);
-                        cx.notify();
-                    }))
             })
             .collect::<Vec<_>>();
         gpui::deferred(

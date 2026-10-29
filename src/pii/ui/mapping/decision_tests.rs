@@ -246,3 +246,246 @@ fn travel_equals_undo_and_redo_presses_and_a_new_decision_drops_undone_entries(
         assert_eq!(labels(app, cx), ["Renamed “Maya Bennett” to CLIENT"]);
     });
 }
+
+fn history(app: &DocumentView, cx: &gpui::App) -> u64 {
+    app.editor.read(cx).history_id()
+}
+
+fn mentions(app: &DocumentView, original: &str) -> Vec<Range<usize>> {
+    let review = &app.pii.review;
+    review
+        .candidates()
+        .iter()
+        .filter(|c| review.variant(c.variant).unwrap().original.as_ref() == original)
+        .map(|c| c.range.clone())
+        .collect()
+}
+
+#[gpui::test]
+fn a_rename_confirmed_with_apply_is_one_entry_naming_both(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, seed);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        let maya = identity(app, "Maya Bennett");
+        let before = history(app, cx);
+        app.change_mapping_with_apply(
+            MappingAction::Rename(maya, "CLIENT".into()),
+            Applying::All,
+            cx,
+        );
+        assert!(app.editor.read(cx).text().starts_with("CLIENT met PERSON_"));
+        assert_eq!(
+            labels(app, cx),
+            ["Renamed “Maya Bennett” to CLIENT · applied 4 replacements"]
+        );
+        // One undo point.
+        let path = app.editor.read(cx).history_path();
+        assert_eq!(path.steps_to(before), Some(-1));
+    });
+}
+
+#[gpui::test]
+fn re_choosing_the_current_category_makes_no_step_and_no_entry(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, seed);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        let acme = identity(app, "Acme Ltd");
+        let before = history(app, cx);
+        app.change_mapping(MappingAction::Category(acme, Category::Organization), cx);
+        assert_eq!(history(app, cx), before);
+        assert_eq!(app.editor.read(cx).text(), SOURCE);
+        assert!(labels(app, cx).is_empty());
+        assert!(app.pii.error.is_none());
+    });
+}
+
+#[gpui::test]
+fn re_ticking_a_kept_mention_is_listed(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, seed);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        let maya = identity(app, "Maya Bennett");
+        let candidate = app
+            .pii
+            .review
+            .candidates()
+            .iter()
+            .find(|c| c.range.start == 0)
+            .cloned()
+            .unwrap();
+        app.keep_mentions_now(
+            vec![(candidate.variant, candidate.range.clone())],
+            vec![],
+            cx,
+        );
+        let kept = history(app, cx);
+        app.retick_mention(maya, candidate.range, cx);
+        assert_ne!(history(app, cx), kept);
+        assert_eq!(
+            labels(app, cx),
+            ["Kept “Maya Bennett”", "Proposed “Maya Bennett” again"]
+        );
+    });
+}
+
+#[gpui::test]
+fn mention_scoped_category_is_a_split_and_alias_a_rename(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, seed);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        let maya = identity(app, "Maya Bennett");
+        let ms = identity(app, "Ms Bennett");
+        app.change_mapping(MappingAction::Merge(ms, maya), cx);
+        let identities = app.pii.review.active_identities().len();
+        let [first, second] = mentions(app, "Maya Bennett").try_into().unwrap();
+        app.change_mapping(
+            MappingAction::Scoped {
+                identity: maya,
+                ranges: vec![first],
+                target: None,
+                alias: None,
+                category: Some(Category::Organization),
+            },
+            cx,
+        );
+        assert_eq!(app.pii.review.active_identities().len(), identities + 1);
+        app.change_mapping(
+            MappingAction::Scoped {
+                identity: maya,
+                ranges: vec![second],
+                target: None,
+                alias: Some("CLIENT".into()),
+                category: None,
+            },
+            cx,
+        );
+        assert_eq!(
+            labels(app, cx),
+            [
+                "Merged “Ms Bennett” into “Maya Bennett”",
+                "Separated “Maya Bennett” as Organization",
+                "Renamed “Maya Bennett” to CLIENT",
+            ]
+        );
+    });
+}
+
+#[gpui::test]
+fn apply_counts_alias_corrections_beside_proposals(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, seed);
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        let maya = identity(app, "Maya Bennett");
+        let acme = identity(app, "Acme Ltd");
+        app.apply_replacements(cx);
+        let acme_applied = app
+            .pii
+            .review
+            .applied()
+            .iter()
+            .find(|a| a.step.identity == acme)
+            .unwrap()
+            .id;
+        app.undo_replacements([acme_applied].into(), cx);
+        // Maya's two applied mentions now need their alias corrected, and
+        // Acme is proposed again: Apply makes three replacements.
+        app.pii.review.rename_identity(maya, "CLIENT").unwrap();
+        app.apply_replacements(cx);
+        assert!(app.editor.read(cx).text().starts_with("CLIENT met "));
+        assert_eq!(labels(app, cx).last().unwrap(), "Applied 3 replacements");
+    });
+}
+
+#[gpui::test]
+fn a_decision_past_the_undo_limit_stays_listed_and_disabled(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, seed);
+    cx.run_until_parked();
+    let decided = app.update(cx, |app, cx| {
+        let maya = identity(app, "Maya Bennett");
+        app.change_mapping(MappingAction::Rename(maya, "CLIENT".into()), cx);
+        history(app, cx)
+    });
+    // Edits until the decision's point is the oldest Undo still reaches.
+    for _ in 0..300 {
+        let oldest = app.update(cx, |app, cx| app.editor.read(cx).history_path().undo[0]);
+        if oldest == decided {
+            break;
+        }
+        app.update(cx, |app, cx| type_text(app, 0, "x", cx));
+    }
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        let path = app.editor.read(cx).history_path();
+        assert_eq!(path.undo[0], decided);
+        assert_eq!(path.undo.len(), 256, "the editor's undo limit");
+        assert_eq!(
+            lines(app, cx),
+            [(
+                "Renamed “Maya Bennett” to CLIENT · 14:02".into(),
+                EntryState::Done
+            )]
+        );
+        assert_eq!(app.pii.decisions().steps_to(0, &path), Some(-256));
+    });
+    // One more edit evicts it: still listed, no longer reached.
+    app.update(cx, |app, cx| type_text(app, 0, "x", cx));
+    cx.run_until_parked();
+    let now = app.update(cx, |app, cx| {
+        let path = app.editor.read(cx).history_path();
+        assert_eq!(path.steps_to(decided), None);
+        assert_eq!(
+            lines(app, cx),
+            [(
+                "Renamed “Maya Bennett” to CLIENT · 14:02".into(),
+                EntryState::PastLimit
+            )]
+        );
+        assert_eq!(app.pii.decisions().steps_to(0, &path), None);
+        history(app, cx)
+    });
+    travel(&app, cx, 0);
+    app.update(cx, |app, cx| assert_eq!(history(app, cx), now));
+    // A later decision is listed after it as usual.
+    app.update(cx, |app, cx| {
+        let acme = identity(app, "Acme Ltd");
+        app.change_mapping(MappingAction::Category(acme, Category::Person), cx);
+        assert_eq!(
+            lines(app, cx)
+                .into_iter()
+                .map(|(_, s)| s)
+                .collect::<Vec<_>>(),
+            [EntryState::PastLimit, EntryState::Done]
+        );
+    });
+}
+
+#[gpui::test]
+fn undo_with_the_popover_open_redraws_it(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, seed);
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        let maya = identity(app, "Maya Bennett");
+        // A metadata-only step: the text does not change.
+        app.change_mapping(MappingAction::Rename(maya, "CLIENT".into()), cx);
+        app.open_decision_history(window, cx);
+    });
+    cx.run_until_parked();
+    let notified = std::rc::Rc::new(std::cell::Cell::new(0));
+    let _observe = cx.update(|_, cx| {
+        let notified = notified.clone();
+        cx.observe(&app, move |_, _| notified.set(notified.get() + 1))
+    });
+    press(cx, &app, true, 1);
+    assert!(notified.get() > 0, "an open popover recomputes its rows");
+    app.update(cx, |app, cx| {
+        assert!(app.history.open);
+        assert_eq!(lines(app, cx)[0].1, EntryState::Undone);
+    });
+}

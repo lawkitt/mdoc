@@ -31,6 +31,8 @@ impl Mentions {
 pub enum Decision {
     Apply(Mentions),
     Keep(Mentions),
+    /// Kept mentions proposed for replacement again.
+    Repropose(Mentions),
     UndoReplacement(Mentions),
     Rename {
         original: Arc<str>,
@@ -44,8 +46,11 @@ pub enum Decision {
         from: Arc<str>,
         into: Arc<str>,
     },
+    /// Mentions moved to an identity of their own, in `category` when the
+    /// split also changed it.
     Split {
         original: Arc<str>,
+        category: Option<Category>,
     },
     Add {
         original: Arc<str>,
@@ -61,7 +66,7 @@ fn count(n: usize, one: &str, many: &str) -> String {
 }
 
 impl Decision {
-    /// The entry's line, without its time.
+    /// The decision's line, without its time.
     pub fn label(&self) -> String {
         use Mentions::{Many, One};
         match self {
@@ -69,6 +74,10 @@ impl Decision {
             Self::Apply(Many(n)) => format!("Applied {}", count(*n, "replacement", "replacements")),
             Self::Keep(One(original)) => format!("Kept “{original}”"),
             Self::Keep(Many(n)) => format!("Kept {}", count(*n, "original", "originals")),
+            Self::Repropose(One(original)) => format!("Proposed “{original}” again"),
+            Self::Repropose(Many(n)) => {
+                format!("Proposed {} again", count(*n, "mention", "mentions"))
+            }
             Self::UndoReplacement(One(original)) => {
                 format!("Undid replacement of “{original}”")
             }
@@ -80,7 +89,14 @@ impl Decision {
                 format!("Changed “{original}” to {}", category.label())
             }
             Self::Merge { from, into } => format!("Merged “{from}” into “{into}”"),
-            Self::Split { original } => format!("Separated “{original}”"),
+            Self::Split {
+                original,
+                category: None,
+            } => format!("Separated “{original}”"),
+            Self::Split {
+                original,
+                category: Some(category),
+            } => format!("Separated “{original}” as {}", category.label()),
             Self::Add { original } => format!("Added “{original}”"),
             Self::Restore(One(original)) => format!("Restored “{original}”"),
             Self::Restore(Many(n)) => format!("Restored {}", count(*n, "name", "names")),
@@ -89,17 +105,38 @@ impl Decision {
     }
 }
 
-/// A decision and the history state it created.
+/// The decisions one undo point made, and the history state it created.
 #[derive(Clone, Debug)]
 pub struct Entry {
     history: u64,
-    decision: Decision,
+    /// Oldest first; more than one when an action bundles several decisions
+    /// on one step (a rename confirmed with Apply).
+    decisions: Vec<Decision>,
     time: String,
+    /// Its undo point fell past the editor's undo limit.
+    past_limit: bool,
 }
 
 impl Entry {
-    pub fn decision(&self) -> &Decision {
-        &self.decision
+    pub fn decisions(&self) -> &[Decision] {
+        &self.decisions
+    }
+    /// The entry's line, without its time: one decision's label, or several
+    /// joined ("Renamed “Maya Bennett” to CLIENT · applied 4 replacements").
+    pub fn label(&self) -> String {
+        let mut label = String::new();
+        for decision in &self.decisions {
+            let part = decision.label();
+            if label.is_empty() {
+                label = part;
+            } else {
+                label.push_str(" · ");
+                let mut chars = part.chars();
+                label.extend(chars.next().into_iter().flat_map(char::to_lowercase));
+                label.push_str(chars.as_str());
+            }
+        }
+        label
     }
     /// Local wall-clock time of the decision, as the host wrote it ("14:02").
     pub fn time(&self) -> &str {
@@ -107,15 +144,18 @@ impl Entry {
     }
     /// "Kept “Ms Bennett” · 14:02".
     pub fn line(&self) -> String {
-        format!("{} · {}", self.decision.label(), self.time)
+        format!("{} · {}", self.label(), self.time)
     }
 }
 
-/// An entry still reached by Undo (done) or only by Redo (undone).
+/// An entry still reached by Undo (done) or only by Redo (undone), or one
+/// whose undo point the editor's undo limit dropped: still listed, no longer
+/// reached.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryState {
     Done,
     Undone,
+    PastLimit,
 }
 
 /// The decisions of one document, oldest first, each on its undo point.
@@ -127,8 +167,8 @@ pub struct DecisionLog {
 
 impl DecisionLog {
     /// Record `decision` as the step from `before` to the editor's current
-    /// state. A decision that changed nothing is not listed; one recorded
-    /// again on the same step (an action wrapping another) replaces it.
+    /// state. A decision that changed nothing is not listed; one recorded on
+    /// the step an entry already has (an action bundling several) joins it.
     pub fn record(&mut self, before: u64, decision: Decision, time: String, path: &HistoryPath) {
         self.follow(path);
         let history = path.current;
@@ -136,33 +176,45 @@ impl DecisionLog {
             return;
         }
         match self.entries.last_mut() {
-            Some(last) if last.history == history => {
-                last.decision = decision;
-                last.time = time;
+            Some(last) if last.history == history && !last.past_limit => {
+                if !last.decisions.contains(&decision) {
+                    last.decisions.push(decision);
+                }
             }
             _ => self.entries.push(Entry {
                 history,
-                decision,
+                decisions: vec![decision],
                 time,
+                past_limit: false,
             }),
         }
     }
-    /// Drop entries neither Undo nor Redo reaches any more: undone ones once a
-    /// new decision or edit clears Redo, old ones past the undo limit, all of
-    /// them after a reload.
+    /// Follow the editor's history. Undone entries go once a new decision or
+    /// edit clears Redo. Ones the undo limit dropped stay, marked: the limit
+    /// evicts the oldest states, so an entry older than every state Undo
+    /// still reaches fell past it. A reload clears the log ([`Self::clear`]).
     pub fn follow(&mut self, path: &HistoryPath) {
-        self.entries
-            .retain(|entry| path.steps_to(entry.history).is_some());
+        let oldest = path.undo.first().copied();
+        self.entries.retain_mut(|entry| {
+            if !entry.past_limit && path.steps_to(entry.history).is_none() {
+                entry.past_limit = oldest.is_some_and(|oldest| entry.history < oldest);
+                return entry.past_limit;
+            }
+            true
+        });
     }
     pub fn clear(&mut self) {
         self.entries.clear();
     }
-    /// The entries still reachable, oldest first, done or undone.
+    /// Every listed entry, oldest first, with its state.
     pub fn rows<'a>(
         &'a self,
         path: &'a HistoryPath,
     ) -> impl Iterator<Item = (&'a Entry, EntryState)> + 'a {
         self.entries.iter().filter_map(|entry| {
+            if entry.past_limit {
+                return Some((entry, EntryState::PastLimit));
+            }
             let steps = path.steps_to(entry.history)?;
             Some((
                 entry,
@@ -175,10 +227,13 @@ impl DecisionLog {
         })
     }
     /// The presses that travel to row `index` of [`Self::rows`]: negative
-    /// for Undo, positive for Redo. Undoing goes back to just after the
-    /// entry, redoing up to it.
+    /// for Undo, positive for Redo, `None` past the undo limit. Undoing goes
+    /// back to just after the entry, redoing up to it.
     pub fn steps_to(&self, index: usize, path: &HistoryPath) -> Option<isize> {
-        let (entry, _) = self.rows(path).nth(index)?;
+        let (entry, state) = self.rows(path).nth(index)?;
+        if state == EntryState::PastLimit {
+            return None;
+        }
         path.steps_to(entry.history)
     }
 }
@@ -264,13 +319,13 @@ mod tests {
         log.record(3, kept("D"), "t".into(), &path(&[1, 2, 3], 6, &[]));
         let labels: Vec<_> = log
             .rows(&path(&[1, 2, 3], 6, &[]))
-            .map(|(e, _)| e.decision().label())
+            .map(|(e, _)| e.label())
             .collect();
         assert_eq!(labels, ["Kept “A”", "Kept “B”", "Kept “D”"]);
     }
 
     #[test]
-    fn a_no_op_is_not_listed_and_a_wrapping_action_replaces_its_step() {
+    fn a_no_op_is_not_listed_and_decisions_on_one_step_share_its_entry() {
         let mut log = DecisionLog::default();
         log.record(1, kept("A"), "t".into(), &path(&[], 1, &[]));
         assert_eq!(log.rows(&path(&[], 1, &[])).count(), 0);
@@ -291,11 +346,55 @@ mod tests {
         );
         let labels: Vec<_> = log
             .rows(&path(&[1], 2, &[]))
-            .map(|(e, _)| e.decision().label())
+            .map(|(e, _)| e.label())
             .collect();
-        assert_eq!(labels, ["Applied 3 replacements"]);
+        assert_eq!(labels, ["Renamed “A” to CLIENT · applied 3 replacements"]);
         // A reload clears the history, and the log with it.
-        log.follow(&path(&[], 9, &[]));
+        log.clear();
         assert_eq!(log.rows(&path(&[], 9, &[])).count(), 0);
+    }
+
+    #[test]
+    fn entries_past_the_undo_limit_stay_listed_but_unreachable() {
+        let mut log = DecisionLog::default();
+        log.record(1, kept("A"), "t".into(), &path(&[1], 2, &[]));
+        log.record(4, kept("B"), "t".into(), &path(&[1, 2, 3, 4], 5, &[]));
+        // The limit evicted 1 and 2: A is older than every state Undo reaches.
+        let capped = path(&[3, 4, 5, 6], 7, &[]);
+        log.follow(&capped);
+        let states: Vec<_> = log.rows(&capped).map(|(_, s)| s).collect();
+        assert_eq!(states, [EntryState::PastLimit, EntryState::Done]);
+        assert_eq!(log.steps_to(0, &capped), None);
+        assert_eq!(log.steps_to(1, &capped), Some(-2));
+        // Undo back past B, then type: B is dropped with Redo, A stays.
+        log.follow(&path(&[3], 4, &[5, 6, 7]));
+        let branched = path(&[3, 4], 8, &[]);
+        log.follow(&branched);
+        let labels: Vec<_> = log.rows(&branched).map(|(e, _)| e.label()).collect();
+        assert_eq!(labels, ["Kept “A”"]);
+        // A later decision never joins an entry past the limit.
+        log.record(8, kept("C"), "t".into(), &path(&[3, 4, 8], 9, &[]));
+        assert_eq!(log.rows(&path(&[3, 4, 8], 9, &[])).count(), 2);
+    }
+
+    #[test]
+    fn split_and_repropose_labels() {
+        let split = |category| Decision::Split {
+            original: "Maya".into(),
+            category,
+        };
+        assert_eq!(split(None).label(), "Separated “Maya”");
+        assert_eq!(
+            split(Some(Category::Organization)).label(),
+            "Separated “Maya” as Organization"
+        );
+        assert_eq!(
+            Decision::Repropose(Mentions::One("Maya".into())).label(),
+            "Proposed “Maya” again"
+        );
+        assert_eq!(
+            Decision::Repropose(Mentions::Many(2)).label(),
+            "Proposed 2 mentions again"
+        );
     }
 }

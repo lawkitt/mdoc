@@ -164,11 +164,20 @@ impl Driver {
                     "folder_sheet_ticked": w.folder_sheets.sheet().map(|s| s.ticked_count()),
                     "find_replace": w.active_view().is_some_and(|v| v.read(cx).search.open()),
                     "decision_history": w.active_view().is_some_and(|v| v.read(cx).history.open),
+                    // Counts only: labels name originals, which What you
+                    // did never writes to disk (ADR 0079).
                     "decisions": w.active_view().map(|v| {
+                        use mdoc_pii::decisions::EntryState;
                         let v = v.read(cx);
-                        v.pii.decisions().rows(&v.editor.read(cx).history_path())
-                            .map(|(entry, state)| json!({"line": entry.line(), "undone": state == mdoc_pii::decisions::EntryState::Undone}))
-                            .collect::<Vec<_>>()
+                        let path = v.editor.read(cx).history_path();
+                        let count = |wanted: EntryState| {
+                            v.pii.decisions().rows(&path).filter(|(_, state)| *state == wanted).count()
+                        };
+                        json!({
+                            "done": count(EntryState::Done),
+                            "undone": count(EntryState::Undone),
+                            "past_limit": count(EntryState::PastLimit),
+                        })
                     }),
                 })
             })?

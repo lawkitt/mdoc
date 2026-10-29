@@ -150,6 +150,7 @@ impl DocumentView {
             },
             MappingAction::AssignCandidate(group, _, None) => Decision::Split {
                 original: variant(*group)?,
+                category: None,
             },
             MappingAction::AssignApplied(id, Some(into), _) => Decision::Merge {
                 from: applied(*id)?,
@@ -157,6 +158,7 @@ impl DocumentView {
             },
             MappingAction::AssignApplied(id, None, _) => Decision::Split {
                 original: applied(*id)?,
+                category: None,
             },
             MappingAction::Scoped {
                 identity,
@@ -178,11 +180,24 @@ impl DocumentView {
                         original,
                         alias: alias.clone(),
                     },
+                    // Part of an identity in a new category is its own
+                    // identity: a split, not a category change.
+                    (None, None, Some(category))
+                        if ranges.len() < review.identity_count(*identity) =>
+                    {
+                        Decision::Split {
+                            original,
+                            category: Some(*category),
+                        }
+                    }
                     (None, None, Some(category)) => Decision::Category {
                         original,
                         category: *category,
                     },
-                    (None, None, None) => Decision::Split { original },
+                    (None, None, None) => Decision::Split {
+                        original,
+                        category: None,
+                    },
                 }
             }
         })

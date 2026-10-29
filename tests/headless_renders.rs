@@ -220,24 +220,12 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     *name == "decision-history"
                 );
                 if *name == "decision-history" {
-                    let entries = record["state"]["decisions"].as_array().unwrap();
-                    assert_eq!(entries.len(), 3);
-                    assert!(entries[0]["line"].as_str().unwrap().starts_with("Applied "));
-                    assert!(
-                        entries[1]["line"]
-                            .as_str()
-                            .unwrap()
-                            .starts_with("Undid replacement of “")
-                    );
-                    assert!(entries[2]["line"].as_str().unwrap().starts_with("Kept “"));
-                    assert_eq!(entries[0]["undone"], false);
-                    assert_eq!(entries[1]["undone"], false);
-                    assert_eq!(entries[2]["undone"], true);
-                    assert!(
-                        entries
-                            .iter()
-                            .all(|entry| entry["line"].as_str().unwrap().ends_with(" · 14:02"))
-                    );
+                    // Apply, Undo replacement, then Keep, travelled back
+                    // one: counts only, never labels.
+                    let decisions = &record["state"]["decisions"];
+                    assert_eq!(decisions["done"], 2);
+                    assert_eq!(decisions["undone"], 1);
+                    assert_eq!(decisions["past_limit"], 0);
                 }
                 assert_eq!(
                     record["state"]["settings"],

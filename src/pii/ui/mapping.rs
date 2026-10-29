@@ -752,6 +752,17 @@ impl DocumentView {
             }
             plans.sort_by_key(|p| p.range.start);
         }
+        // Re-choosing what is already so (the current category) changes
+        // nothing: no undo step and no entry in What you did (ADR 0079).
+        if plans.is_empty()
+            && assignments.is_empty()
+            && Arc::ptr_eq(&old, &self.pii.review.identity_snapshot())
+        {
+            self.pii.mapping.close_pickers();
+            self.pii.error = None;
+            cx.notify();
+            return;
+        }
         let edits: Vec<_> = plans
             .iter()
             .map(|p| (p.range.clone(), p.after.to_string()))
@@ -761,14 +772,13 @@ impl DocumentView {
             cx.notify();
             return;
         };
-        // An alias confirmed with Apply is listed as the apply (ADR 0079).
-        let decision = if applying.is_empty() {
-            decision
-        } else {
-            Some(Decision::Apply(Mentions::of(applying)))
-        };
+        // One undo point, one entry: an alias confirmed with Apply lists
+        // both ("Renamed … · applied 4 replacements", ADR 0079).
         if let Some(decision) = decision {
             self.record_decision(history, decision, cx);
+        }
+        if !applying.is_empty() {
+            self.record_decision(history, Decision::Apply(Mentions::of(applying)), cx);
         }
         let edited: std::collections::HashSet<_> =
             edits.iter().map(|(r, _)| (r.start, r.end)).collect();

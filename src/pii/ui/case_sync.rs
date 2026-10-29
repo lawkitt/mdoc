@@ -81,7 +81,15 @@ impl DocumentView {
         let before = self.pii.review.remaining();
         if !plan.unmatched.is_empty() {
             let text = self.editor.read(cx).text().to_owned();
-            self.pii.review.seed(&plan.unmatched, &text);
+            // A join that only proposes still makes its own undo point, so
+            // What you did lists it (ADR 0079).
+            let seeded = plan.changes.is_empty()
+                && self
+                    .checkpoint_review(cx, |review| review.seed(&plan.unmatched, &text))
+                    .is_some();
+            if !seeded {
+                self.pii.review.seed(&plan.unmatched, &text);
+            }
         }
         let summary = JoinSummary {
             renumbered: plan.changes.len(),

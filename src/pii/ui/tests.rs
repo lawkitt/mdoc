@@ -1719,6 +1719,18 @@ fn unrecognized_placeholders_are_assigned_or_left_never_guessed(cx: &mut gpui::T
             "Anna Petrova and Anna Petrova met PERSON_2 and ORG_5.",
             "only the chosen token changes; nothing is guessed for its repeat"
         );
+        // The paste's restore and the one assigned token: two decisions.
+        let path = app.editor.read(cx).history_path();
+        let labels: Vec<_> = app
+            .pii
+            .decisions()
+            .rows(&path)
+            .map(|(e, _)| e.label())
+            .collect();
+        assert_eq!(
+            labels,
+            ["Restored “Anna Petrova”", "Restored “Anna Petrova”"]
+        );
         assert_eq!(
             app.pii.review.remaining(),
             2,

@@ -108,6 +108,90 @@ fn decision_history_case_join_is_one_entry_on_its_undo_step(cx: &mut TestAppCont
 }
 
 #[gpui::test]
+fn decision_history_join_that_only_proposes_is_listed_and_nothing_reaches_disk(
+    cx: &mut TestAppContext,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let case = tabs
+        .update_in(cx, |tabs, window, cx| {
+            tabs.create_case(tabs.tabs.active(), window, cx)
+        })
+        .unwrap();
+    cx.run_until_parked();
+    // No identities of its own: the join renumbers nothing, only proposes.
+    let reply = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "reply.md",
+        "Anna Petrova wrote back.",
+        &[],
+    );
+    let view = active(&tabs, cx);
+    let before = view.update(cx, |view, cx| {
+        view.pii.set_decision_clock(|| "14:02".into());
+        view.editor.read(cx).history_id()
+    });
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(reply, &case, window, cx)
+    });
+    cx.run_until_parked();
+    view.read_with(cx, |view, cx| {
+        assert_eq!(view.pii.review().remaining(), 1);
+        let path = view.editor.read(cx).history_path();
+        assert_eq!(path.steps_to(before), Some(-1));
+        assert_eq!(
+            lines(view, cx),
+            [("Joined case “contract” · 14:02".into(), EntryState::Done)]
+        );
+    });
+    view.update_in(cx, |view, window, cx| {
+        view.apply_all_pii(&PiiApplyAll, window, cx)
+    });
+    cx.run_until_parked();
+    view.update_in(cx, |view, window, cx| {
+        assert_eq!(lines(view, cx).len(), 2);
+        window.focus(&view.editor.read(cx).focus_handle(cx), cx);
+    });
+    cx.dispatch_action(Save);
+    cx.run_until_parked();
+    // The saved document is the text alone; the case file keeps identities.
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("reply.md")).unwrap(),
+        "PERSON_1 wrote back."
+    );
+    let stored = mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32])
+        .load(&case)
+        .unwrap();
+    let json = serde_json::to_string(&stored).unwrap();
+    for secret in ["Joined", "Applied", "14:02", "decisions", "What you did"] {
+        assert!(!json.contains(secret), "case contains {secret}: {json}");
+    }
+    let mut on_disk = Vec::new();
+    for entry in walk(dir.path()) {
+        on_disk.extend(std::fs::read(entry).unwrap());
+    }
+    let on_disk = String::from_utf8_lossy(&on_disk);
+    for secret in ["Joined case", "14:02"] {
+        assert!(!on_disk.contains(secret), "a file contains {secret}");
+    }
+}
+
+fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            files.extend(walk(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
+}
+
+#[gpui::test]
 fn decision_history_restore_from_home_and_session_snapshot_stays_private(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
