@@ -5,6 +5,8 @@ Status: Accepted, 2026-10-09. Amended by
 mention) and [ADR 0055](0055-stable-compact-mention-popup.md) (pill placement,
 hidden when invalid). Superseded in part by [ADR 0025](0025-review-refinements.md) (category
 guess) and [ADR 0033](0033-replacements-panel-redesign.md) (Enter applies).
+Amended 2026-10-29 ([interview](../design/roadmap-grill-2026-10-29.md)):
+the split pill.
 
 ## Problem
 
@@ -19,6 +21,10 @@ beforehand, and reports invalid selections only after the click.
   (new host menu-item hook in `mdoc-editor`), and ⌘⌥P. Remove the ⋯-menu
   "Add selected text" and "Selection type" entries. Not offered before the first
   Pseudonymize; using it after Close review reopens review.
+- **Split pill.** The pill reads "Replace · Person ▾": the main part adds
+  with the guessed category (as ⌘⌥P does); ▾ opens the category list, with
+  Other, and adds in the picked one. One line high; the same keyboard reach
+  as the mention bar's category control.
 - **One action, correct after**: add with a guessed category (ADR 0025); the
   popup opens on the new mention with Apply as the Enter default, and its
   category control fixes a wrong guess.

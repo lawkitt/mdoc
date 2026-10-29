@@ -3,6 +3,7 @@
 Status: Accepted, 2026-10-23. Applies [ADR 0065](0065-multilingual-by-design.md)
 to OCR; amends [ADR 0006](0006-local-model-settings.md) and
 [ADR 0026](0026-first-use-model-setup.md) (what the Settings OCR choice means).
+Amended by [ADR 0076](0076-settings-categories.md) (per-document note).
 
 ## Problem
 
@@ -38,7 +39,8 @@ ADR 0065 requires the choice to be a list of languages, not an EN/RU switch.
 - **One short line on the card says why**, e.g. "English & Russian: the file
   name is in Russian", "English: the text layer has no Russian text",
   "English: picked for this document". English UI text stays inline
-  (ADR 0065).
+  (ADR 0065). A second line says the pick is for this document only, with
+  the default in Settings › Recognition; the pick never becomes a default.
 - **Only the Settings model's readiness is shared between tabs.** A document
   using another bundle shows that bundle's setup in its own card, and its
   setup or run failures stay with it. A setup that marked the shared state

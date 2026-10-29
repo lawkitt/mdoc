@@ -10,8 +10,10 @@ colours" of [ADR 0046](0046-workspace-polish-from-anoni-review.md).
 Amended by [ADR 0055](0055-stable-compact-mention-popup.md): popup width,
 placement, scope, arrow keys, Enter and Apply all.
 Amended by [ADR 0076](0076-settings-categories.md) (Settings categories)
-and [ADR 0077](0077-case-page.md) (case page from the case header, case
-colour).
+[ADR 0077](0077-case-page.md) (case page from the case header, case
+colour), [ADR 0078](0078-restore-in-place.md) (Reply view),
+[ADR 0079](0079-decision-history.md) (header clock button) and
+[ADR 0081](0081-workspace-back-forward.md) (Back/Forward buttons).
 
 ## Problem
 

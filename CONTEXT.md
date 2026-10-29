@@ -36,6 +36,14 @@ the AI to keep placeholders exactly; shown when aliases are applied.
 wordings, in a new tab where restored values are proposals keeping their aliases.
 UI label: **Paste AI Response**.
 
+**Reply box**: the Share panel's "AI reply" field that restores a pasted
+reply in place; its summary reads "N values restored · M unrecognised"
+([ADR 0078](docs/adr/0078-restore-in-place.md)).
+
+**Reply view**: the view switcher's read-only Reply segment showing the
+restored reply; live, like Before / after. Open as tab turns it into a
+Restore tab.
+
 **Unresolved token**: an alias-shaped token in AI output that matches no case
 identity (e.g. an invented `PERSON_9`); highlighted, never guessed.
 
@@ -177,9 +185,17 @@ macOS builds move it to the data protection keychain, which never asks
 linked automatically; a first name alone is not proposed
 ([ADR 0068](docs/adr/0068-short-and-inflected-name-variants.md)).
 
-**Merge hint**: a dismissible suggestion in the Replacements panel to link two
-identities that very likely name the same subject. Never applied automatically;
-Merge is one undo step. No score is shown.
+**Merge hint**: a dismissible line under an identity in the Replacements
+panel, "Looks like Maya Bennett · Merge", for two identities that very likely
+name the same subject. Never applied automatically; Merge is one undo step;
+no score is shown ([ADR 0080](docs/adr/0080-merge-hint.md)).
+
+**Decision history**: the document's list of pseudonymization decisions with
+times, from the header clock button; a click travels undo to that entry.
+Memory only. UI label: **What you did** ([ADR 0079](docs/adr/0079-decision-history.md)).
+
+**Default categories**: Settings › Detection › Categories to detect; filters
+scans of documents without a case and seeds a new case's list (ADR 0076).
 
 **Quiet probe**: the launch read of the case key with per-query "no UI"; it
 either opens cases or leaves them locked, and never shows a system dialog.
@@ -198,7 +214,7 @@ pseudonymized text. Live: it follows every applied-replacement change
 (ADR 0042). Avoid "diff", which suggests arbitrary edits.
 
 **View switcher**: the floating Edit · Original · Pseudonymized · Side by side
-control shown while replacements are applied ([ADR 0046](docs/adr/0046-workspace-polish-from-anoni-review.md)).
+(· Reply) control shown while replacements are applied ([ADR 0046](docs/adr/0046-workspace-polish-from-anoni-review.md)).
 
 **Crash report**: a local, masked panic record the user may preview and send
 on the next launch; never sent automatically ([ADR 0047](docs/adr/0047-crash-reports.md)).
@@ -324,6 +340,9 @@ including unopened restored records. Code: `workspace::Workspace`.
 
 **Tab**: sidebar entry owning a document view once initialized; restored tabs
 allocate their document view when activated.
+
+**Back/Forward**: per-window history of tab activations, Home and the case
+page; ⌘[ / ⌘] ([ADR 0081](docs/adr/0081-workspace-back-forward.md)).
 
 **Region**: a part of the window that F6 / ⇧F6 move focus between: sidebar,
 toolbar, editor, replacements panel, source preview, comments, or Home's
