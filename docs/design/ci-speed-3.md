@@ -132,7 +132,8 @@ PR run 40872766748 (#224's branch), warm cache, full key match:
     and sets up the Mac; a Codex thread on `windows-lane-1` installs and
     verifies the Windows side and fixes Windows-specific issues in the same
     PR. (2): Codex on `windows-lane-2`. Code PRs get the other provider's
-    review; fleet usage is checked before dispatch.
+    review; fleet usage is checked before dispatch. (Since fleet ADR 0016,
+    Opus builds all three and Codex Sol only while Claude is limited.)
 22. **Shadow period.** After (4) merges, local statuses run beside the full
     hosted CI; (5) lands once five PRs agree on both and a deliberately
     failing push on a test branch fails locally.
@@ -145,7 +146,9 @@ PR run 40872766748 (#224's branch), warm cache, full key match:
     PRs (2)–(5) become Engineering items. The sccache item stays. The fleet
     profile's `renders.fetch` and `done_when` (and the fleet skill's merge
     gate) change later, after the fleet skill update in progress; the
-    maintainer says when.
+    maintainer says when. (Done in fleet ADR 0017 on 2026-10-29: the skill
+    takes required checks and renders by link; mdoc sets them with the
+    runner and the cutover.)
 26. **Targets,** push to both local statuses green, empty queue, warm CI
     checkout: `local/windows` ≤ 4 min and `local/macos` ≤ 4 min; ≤ 8 min per
     OS when `Cargo.lock` or the toolchain changes. No target for hosted

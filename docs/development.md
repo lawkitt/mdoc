@@ -385,12 +385,12 @@ skill) read this section for mdoc's needs.
   A third lane (`windows-lane-3`) is added only when `df` shows room for
   another 30 GiB with margin. Claude Desktop SSH sessions use these lane
   folders too (`use_worktree: false`), one session or T3 thread per lane.
-- **Models and reviews** follow the fleet skill (fleet ADR 0015): Opus 5.5
-  builds in Claude Desktop sessions, Codex takes Windows-specific items, and
-  every code PR gets the other provider's review. While Codex is limited, a
-  Claude PR merges on the hub's gate and is reviewed after merge, except a PR
-  that changes stored data (`mdoc-store`, encryption, the case file), which
-  waits for the Codex review.
+- **Models and reviews** follow the fleet skill (fleet ADRs 0016, 0017):
+  Opus 5.5 builds, Windows-specific items included; Codex Sol builds only
+  while Claude is limited. Every code PR gets the other provider's review
+  right after it is marked ready, beside CI; when the reviewer is limited
+  the review is skipped and the PR merges on the hub's gate. Lanes leave
+  `ROADMAP.md` alone: the hub removes merged items in one docs-only commit.
 - **Hub worktrees on `macbook-air`** keep their own `target/`, like every
   worktree: never point `CARGO_TARGET_DIR` at the root checkout's. Shared, it
   gave the workspace crates one build hash across worktrees, so a build reused
@@ -419,11 +419,11 @@ gate = ["just lint", "just test"]
 rules = [
   "Never run the app against the real profile (`~/Library/Application Support/mdoc`, `%LOCALAPPDATA%\\mdoc`) or touch the real Keychain key; tests use injected stores.",
 ]
-stored_data = "`mdoc-store`, encryption or the case file"
 
 [disk]
 per_worktree_gib = 30
-free_gib = 40
+first_build_gib = 40
+warm_gib = 15
 
 [renders]
 produce = "just headless-renders <new-directory>"
@@ -431,7 +431,7 @@ fetch = "gh run download <run-id> --repo lawkitt/mdoc --pattern 'headless-render
 done_when = "headless renders of {what}, light and dark (CI uploads them)"
 
 [bookkeeping]
-roadmap_item = "remove item {number} from `{roadmap}` {milestone} in the commit that finishes it (delete only its own lines; do not renumber)"
+roadmap_item = "remove item {number} from `{roadmap}` {milestone} (delete only its own lines; do not renumber)"
 issue = "the commit that finishes it says `fixes #{number}`"
 fragment = "add `changes/{slug}.md` (format in `changes/README.md`)"
 
@@ -439,11 +439,11 @@ fragment = "add `changes/{slug}.md` (format in `changes/README.md`)"
 setup = "Never set `CARGO_TARGET_DIR`: this worktree builds into its own `target/` (a shared one gives stale builds). First build is cold."
 
 [machines.windows]
-disk_check = "check free space on C: (`Get-PSDrive C`; at least 40 GiB; not `just disk`, which fails while another lane builds)"
+disk_check = "`Get-PSDrive C` (not `just disk`, which fails while another lane builds)"
 lanes = { windows-lane-1 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-2' }
 
 [machines.wsl]
-disk_check = "check free space with `df -h ~` (at least 40 GiB)"
+disk_check = "`df -h ~`"
 lanes = { wsl-lane-1 = "~/.t3/worktrees/mdoc/wsl-lane-1" }
 gate = ["cargo test -p mdoc-pii -p mdoc-editor -p mdoc-history"]
 notes = "Only the platform-neutral crates build here; a Linux build of the app is not a shipped target."

@@ -98,7 +98,9 @@ hub wait on CI.
 - Local runs execute PR code under the maintainer's account with their `gh`
   login, as the lanes already do; only branches pushed to `lawkitt/mdoc` by
   someone with write access are tested.
-- The fleet profile's render fetch and the fleet skill's merge gate still
-  describe hosted artifacts and change after the current fleet skill update.
+- The fleet skill reads this through fleet ADR 0017: required checks
+  (profile `checks`, set at the cutover), renders by the status links (set
+  with the runner), ready-after-gate lanes, a watched `main`, and the hub's
+  roadmap commits.
 
 References: [interview](../design/ci-speed-3.md).

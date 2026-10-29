@@ -132,7 +132,8 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   never delete it. *From the rc.4 acceptance run and the 0.2.1 grill.*
 - **Local CI, hosted hygiene** ([ADR 0082](docs/adr/0082-local-ci.md)):
   `timeout-minutes` per job, cargo-nextest with per-test timeouts, deleting
-  older cache generations after `main` saves, renders retention 7 days.
+  older cache generations after `main` saves, renders retention 7 days, and
+  `pull_request` CI for any base branch (stacked PRs, fleet ADR 0016).
   *Done when:* a green `main` run shows them and cache usage is under 10 GB.
 - **Local CI, render speed and render files** ([ADR 0082](docs/adr/0082-local-ci.md)):
   `opt-level` 2 for `gpui-pre-apple`, `image` and `fdeflate` under ADR 0070's
@@ -143,10 +144,15 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **Local CI runner** ([ADR 0082](docs/adr/0082-local-ci.md)):
   `scripts/local-ci.sh` and `just local-ci`, the Mac launchd agent, the
   Windows Task Scheduler task and `D:\ci\mdoc` clone, `tailscale serve`
-  links. *Done when:* both machines post local statuses on real PRs.
+  links; the fleet profile's `renders` point at the status links, the
+  Windows lanes move to `D:` with a third lane, and development.md says how
+  to check the runners are up (fleet ADR 0017). *Done when:* both machines
+  post local statuses on real PRs.
 - **Local CI cutover** ([ADR 0082](docs/adr/0082-local-ci.md)): PR CI runs
   `lint (ubuntu)` only, Dependabot and fork PRs the full matrix, plus
-  `workflow_dispatch`. *Done when:* local and hosted results agreed on five
+  `workflow_dispatch`; the fleet profile's `checks` lists the three required
+  checks and its `gate` becomes `just lint` plus the changed crates' tests
+  (fleet ADR 0017). *Done when:* local and hosted results agreed on five
   PRs and a deliberately failing test branch failed locally first.
 - **Release-run rules:** a patch publishes once both agent runs are done with
   no must-fix Fail; rows only the maintainer can do may follow. Update
