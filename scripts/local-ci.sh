@@ -188,11 +188,16 @@ post() { # sha state description [target url]
   local args=(api -X POST "repos/$repo/statuses/$1" -f "state=$2" -f "context=$context"
     -f "description=${3:0:140}")
   [ -z "${4:-}" ] || args+=(-f "target_url=$4")
-  if gh "${args[@]}" >/dev/null; then
-    log "$2 on $(short "$1"): $3"
-  else
-    log "warning: could not post $2 on $(short "$1"): $3"
-  fi
+  # A lost final status would leave the head pending and run it again.
+  local try
+  for try in 1 2 3; do
+    if gh "${args[@]}" >/dev/null; then
+      log "$2 on $(short "$1"): $3"
+      return 0
+    fi
+    [ "$try" -eq 3 ] || sleep "$tick_s"
+  done
+  log "warning: could not post $2 on $(short "$1"): $3"
 }
 
 pr_line() { awk -F'\t' -v n="$1" '$1 == n' <<<"$prs"; }
@@ -277,6 +282,8 @@ start_job() { # pr head base base-sha
   local dir
   dir=$out/pr-$1/$(short "$2")
   rm -rf "$dir"
+  # A macOS render set is about 0.5 GB: keep it for a PR's newest head only.
+  rm -rf "$out/pr-$1"/*/renders
   mkdir -p "$dir"
   run_pr=$1 run_head=$2 run_base=$3 run_base_sha=$4 run_dir=$dir run_start=$(date +%s)
   run_url=
@@ -426,11 +433,21 @@ write_status() {
   } >"$next" && mv -f "$next" "$out/status.txt"
 }
 
+# True when $1 is a live runner or job, not a pid reused after a restart.
+is_runner() {
+  [ -n "$1" ] && kill -0 "$1" 2>/dev/null || return 1
+  if [ "$os" = windows ]; then
+    ps -p "$1" 2>/dev/null | grep -q '/bash'
+  else
+    ps -p "$1" -o args= 2>/dev/null | grep -q 'local-ci\.sh'
+  fi
+}
+
 lock() {
   local pid
   if ! mkdir "$state/lock" 2>/dev/null; then
     pid=$(cat "$state/lock/pid" 2>/dev/null || true)
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    if is_runner "$pid"; then
       die "a runner is already running (pid $pid)"
     fi
     rm -rf "$state/lock"
@@ -443,7 +460,7 @@ lock() {
 kill_stale_job() {
   local pid
   pid=$(cat "$state/job.pid" 2>/dev/null || true)
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+  if is_runner "$pid"; then
     log "stopping job $pid left by the previous runner"
     kill_job "$pid"
   fi

@@ -214,6 +214,18 @@ export PATH="$tmp/bin:$PATH"
 ) &
 mover=$!
 
+# An older head of PR 1 tested earlier, with its renders.
+mkdir -p "$LOCAL_CI_HOME/out/pr-1/0000000/renders"
+echo log >"$LOCAL_CI_HOME/out/pr-1/0000000/log.txt"
+
+# A previous runner's lock and job pid, now an unrelated process: the
+# runner takes the lock over and leaves that process alone.
+mkdir -p "$LOCAL_CI_HOME/state/lock"
+sleep 120 &
+unrelated=$!
+echo "$unrelated" >"$LOCAL_CI_HOME/state/lock/pid"
+echo "$unrelated" >"$LOCAL_CI_HOME/state/job.pid"
+
 bash scripts/local-ci.sh once >"$tmp/runner.log" 2>&1 &
 runner=$!
 for _ in $(seq 1 180); do
@@ -230,6 +242,9 @@ wait "$runner" || rc=$?
 kill "$mover" 2>/dev/null || true
 wait "$mover" 2>/dev/null || true
 check "the runner exits once nothing is queued" [ "$rc" -eq 0 ]
+check "a reused pid in the lock or job.pid is left alone" kill -0 "$unrelated"
+kill "$unrelated" 2>/dev/null || true
+wait "$unrelated" 2>/dev/null || true
 
 # The last status posted on a head: "state<TAB>description<TAB>url".
 last() { awk -F'\t' -v h="$1" -v OFS='\t' '$1 == h { s = $2; d = $3; u = $4 } END { print s, d, u }' "$FAKE/statuses.tsv"; }
@@ -256,6 +271,8 @@ check "a newer head supersedes a running job" has "$old" "error	Superseded by ${
 check "the newer head is tested" has "$new" "success	Passed on main@$short_base in *"
 check "a tested head is not re-run" has "$done_before" "success	Passed earlier	"
 check "a pending head left by a stopped runner re-runs" has "$stale" "success	Passed on main@$short_base in *"
+check "renders are kept for a PR's newest head only" [ ! -e "$LOCAL_CI_HOME/out/pr-1/0000000/renders" ]
+check "an older head's log is kept" [ -e "$LOCAL_CI_HOME/out/pr-1/0000000/log.txt" ]
 check "the status file is written" grep -q "^running: nothing" "$LOCAL_CI_HOME/out/status.txt"
 check "the lock is released" [ ! -e "$LOCAL_CI_HOME/state/lock" ]
 

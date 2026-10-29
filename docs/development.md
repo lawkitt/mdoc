@@ -404,7 +404,8 @@ Each machine serves its `out` folder to the tailnet only, at
 `https://<machine>.<tailnet>.ts.net/ci/`; the status links open a job's
 folder there: `log.txt` (checkout and both steps), `summary.txt` (PR, head,
 base, step times, result) and `renders/` (the headless render set:
-`summary.json`, `light/`, `dark/`). `status.txt` at the top is the runner's
+`summary.json`, `light/`, `dark/`; about 0.5 GB on macOS, so only a PR's
+newest tested head keeps them). `status.txt` at the top is the runner's
 heartbeat, current job and queue. The macOS Tailscale app cannot serve a
 folder, so on the Mac a localhost-only `python3 -m http.server` agent serves
 it and `tailscale serve` proxies `/ci` to it.
