@@ -14,9 +14,9 @@ and the [acceptance checklist](platform-acceptance.md).
   GUI runs, polls GitHub, assembles the evidence and reports. Every other
   session on the Mac, including a Claude desktop session the maintainer
   starts, works in its own worktree.
-- **Code lanes:** `windows-lane-1`, `windows-lane-2` and `wsl-lane-1` (the
-  `wsl` lane runs only the platform-neutral crates and the forks). One thread
-  per lane, branch `<machine>/<topic>` from `origin/main`.
+- **Code lanes:** `windows-lane-1`, `windows-lane-2`, `windows-lane-3` and
+  `wsl-lane-1` (the `wsl` lane runs only the platform-neutral crates and the
+  forks). One thread per lane, branch `<machine>/<topic>` from `origin/main`.
 - **GUI runs:** a Claude desktop session the maintainer starts in the
   machine's `acceptance` account (fleet ADR 0011) runs that platform's
   checklist: `windows-desktop` on Windows, `macbook-air-desktop` on macOS. The

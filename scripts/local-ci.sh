@@ -672,8 +672,11 @@ cmd_status() {
       fi
     done
   elif [ "$os" = windows ] && command -v schtasks >/dev/null; then
-    schtasks //query //tn "mdoc local CI" //fo list | grep -E '^(Status|Last Run Time):' ||
-      echo "scheduled task 'mdoc local CI': not registered"
+    local t
+    for t in "mdoc local CI" "mdoc local CI web"; do
+      echo "$t: $(schtasks //query //tn "$t" //fo list 2>/dev/null | sed -n 's/^Status: *//p' | grep . ||
+        echo "not registered")"
+    done
   fi
   if [ ! -f "$out/status.txt" ]; then
     echo "no status file at $out/status.txt: the runner has not run"
