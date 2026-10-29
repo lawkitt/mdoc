@@ -588,22 +588,35 @@ require_macos() {
   [ "$os" = macos ] || die "$1 is for macOS; on Windows use scripts/local-ci-setup.ps1"
 }
 
+loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
+
 cmd_start() {
   require_macos start
-  local a
+  local a try
   for a in "$web_agent" "$agent"; do
     [ -f "$(plist_path "$a")" ] || die "$a is not installed; run install"
-    launchctl bootstrap "gui/$(id -u)" "$(plist_path "$a")" 2>/dev/null ||
-      launchctl kickstart "gui/$(id -u)/$a"
+    loaded "$a" && continue
+    for try in 1 2 3 4 5; do
+      launchctl bootstrap "gui/$(id -u)" "$(plist_path "$a")" 2>/dev/null && break
+      sleep 2
+    done
+    loaded "$a" || die "could not load $a"
   done
   echo "started $agent and $web_agent"
 }
 
+# bootout returns before the agent has exited; wait for it, so a start right
+# after does not fail.
 cmd_stop() {
   require_macos stop
   local a
   for a in "$agent" "$web_agent"; do
     launchctl bootout "gui/$(id -u)/$a" 2>/dev/null || true
+    for _ in $(seq 1 30); do
+      loaded "$a" || break
+      sleep 1
+    done
+    ! loaded "$a" || die "$a did not stop"
   done
   echo "stopped $agent and $web_agent"
 }
