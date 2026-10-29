@@ -71,11 +71,6 @@ Added at the 2026-10-29 grill ([record](docs/design/roadmap-grill-2026-10-29.md)
    times; a click travels the undo history to that entry.
    *Done when:* tests show each listed decision kind, travel equal to ⌘Z/⇧⌘Z,
    undone entries dropped by a new decision, and nothing written to disk.
-7. **[UI] Workspace Back/Forward** ([ADR 0081](docs/adr/0081-workspace-back-forward.md)).
-   ⌘[ / ⌘] (Alt+←/→ on Windows outside text), mouse buttons 4/5 and ‹ ›
-   over tabs, Home and the case page.
-   *Done when:* tests cover the stops, skipped closed tabs and the editor
-   keeping Alt+← for Previous word, and the shortcuts panel lists both.
 
 ## Later
 

@@ -317,6 +317,7 @@ impl Workspace {
             _ => page.color_focus.clone(),
         };
         self.cases.page = Some(page);
+        self.note_destination(cx);
         if matches!(place, Place::Rename) && self.case_coordinator.case(id).is_some() {
             self.start_rename_case(id.into(), window, cx);
         } else {
@@ -431,6 +432,7 @@ impl Workspace {
         else {
             self.cases.page = None;
             self.tabs.show_home();
+            self.note_destination(cx);
             return self.home_view(window, cx);
         };
         let theme = self.theme.get();

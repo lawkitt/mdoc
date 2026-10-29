@@ -139,6 +139,10 @@ impl Driver {
                     }).collect::<Vec<_>>());
                 json!({
                     "home": w.showing_home(cx),
+                    "back_enabled": w.navigation_target(true, cx).is_some(),
+                    "forward_enabled": w.navigation_target(false, cx).is_some(),
+                    "back_label": w.navigation_label(true, cx),
+                    "forward_label": w.navigation_label(false, cx),
                     "palette": w.shell.palette.is_some(),
                     "shortcuts": w.shell.shortcuts.is_some(),
                     "settings": w.settings.read(cx).open,
@@ -348,8 +352,37 @@ fn scenarios(
     detections: &[mdoc_pii::Detection],
 ) -> Result<Vec<Value>> {
     let mut records = vec![d.capture(out, "home")?];
+    d.change(|w, _, cx| {
+        w.sidebar.restore(false, Some(false));
+        cx.notify();
+    })?;
+    records.push(d.capture(out, "navigation-disabled")?);
+    d.change(|w, _, cx| {
+        w.sidebar.restore(true, Some(true));
+        cx.notify();
+    })?;
     let view = document(d, path)?;
     records.push(d.capture(out, "document")?);
+    d.change(|w, window, cx| {
+        w.sidebar.restore(false, Some(false));
+        window.focus(&w.focus, cx);
+        cx.notify();
+    })?;
+    records.push(d.capture(out, "navigation-enabled")?);
+    // The document is in the middle: Home behind it and a second tab ahead.
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.navigate(true, window, cx);
+        window.focus(&w.focus, cx);
+    })?;
+    records.push(d.capture(out, "navigation-middle")?);
+    let (back, forward) = d.change(|w, _, _| (w.back_focus.clone(), w.forward_focus.clone()))?;
+    d.focus_pair(out, "navigation-back", back)?;
+    d.focus_pair(out, "navigation-forward", forward)?;
+    d.change(|w, _, cx| {
+        w.sidebar.restore(true, Some(true));
+        cx.notify();
+    })?;
     // Nothing is pseudonymized yet: Copy for AI says why it is off.
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
