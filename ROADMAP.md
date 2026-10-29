@@ -37,6 +37,46 @@ review's polish shipped in 0.2.0. Items are in priority order. Until
 five-item box this cycle); rc.1 is cut once every item is done. Each item
 merges to `main` on its own when green.
 
+Added at the 2026-10-29 grill ([record](docs/design/roadmap-grill-2026-10-29.md)):
+
+1. **[Cases] Restore in place** ([ADR 0078](docs/adr/0078-restore-in-place.md)).
+   *From Anoni 0.86.1.* An AI reply box in Share restores live into a
+   read-only Reply view, "N values restored · M unrecognised", Copy reply and
+   Open as tab; the reply is kept encrypted in the case.
+   *Done when:* the captured replies restore completely in the Reply view, and
+   a reply survives closing and reopening a case member.
+2. **[PII] Merge hint** ([ADR 0080](docs/adr/0080-merge-hint.md)). One-click
+   "Looks like … · Merge" where two identities very likely name one subject.
+   *Done when:* tests cover each signal and each non-signal (relatives
+   sharing a surname, initials), and Merge, Undo and dismissal work in the
+   live panel, with a dismissal surviving a case reopen.
+3. **[Models] Remembered model state** ([ADR 0076](docs/adr/0076-settings-categories.md),
+   [ADR 0066](docs/adr/0066-recognition-language-defaults.md)). *From the
+   2026-10-26 Windows run (S5).* Settings shows the last check at once and
+   re-checks quietly; the OCR card says its pick is for this document only.
+   *Done when:* reopening Settings shows no "Checking…" after a first check,
+   a removed model file shows Missing after the quiet check, and the card line
+   renders in both themes.
+4. **[PII] Default categories to detect** ([ADR 0076](docs/adr/0076-settings-categories.md)).
+   *From Anoni 0.86.1.* Settings › Detection chips filter scans without a
+   case and seed new cases.
+   *Done when:* tests cover a caseless scan, a new case's seed, an existing
+   case unchanged, and unticking removing only unapplied proposals.
+5. **[PII] Selection bar** ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
+   *From Anoni 0.86.1.* The Replace pill splits into "Replace · Person ▾".
+   *Done when:* a mouse and a keyboard-only run add a selection in a picked
+   category, and ⌘⌥P still adds with the guess.
+6. **[Workspace] What you did** ([ADR 0079](docs/adr/0079-decision-history.md)).
+   *From Anoni 0.86.1.* A header popover lists the document's decisions with
+   times; a click travels the undo history to that entry.
+   *Done when:* tests show each listed decision kind, travel equal to ⌘Z/⇧⌘Z,
+   undone entries dropped by a new decision, and nothing written to disk.
+7. **[UI] Workspace Back/Forward** ([ADR 0081](docs/adr/0081-workspace-back-forward.md)).
+   ⌘[ / ⌘] (Alt+←/→ on Windows outside text), mouse buttons 4/5 and ‹ ›
+   over tabs, Home and the case page.
+   *Done when:* tests cover the stops, skipped closed tabs and the editor
+   keeping Alt+← for Previous word, and the shortcuts panel lists both.
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
@@ -52,8 +92,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[UI]** Smooth scrolling to the selected mention, and maybe centering it;
   whether to center is still open, and either way it must not undo #102's
   keep-visible-in-place behavior.
-- **[PII]** Merge hint for identities that very likely name the same subject.
-- **[UI]** Workspace Back/Forward.
 - **[OCR]** Recover page structure on clean scans, in the AnyDoc/pdf-inspector forks.
 - **[DOCX]** Pseudonymized DOCX export with rdocx, then rdocx for the preview.
 - **[Cases]** System-wide Pseudonymize Clipboard hotkey, via the `global-hotkey`
@@ -61,17 +99,8 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
 - **[Import]** Images (screenshots, photos of pages) through OCR, like Anoni's
   Image → text.
-- **[PII]** Selection bar: selecting text shows a small "Pseudonymize as…"
-  bar, a pointer path to ⌘⌥P with the category picked in place. *From Anoni 0.86.1.*
-- **[Cases]** Restore in place: a reply box in Share that restores live, with
-  a Reply view and "N values restored · M unrecognised"; today a reply opens
-  its own tab (ADR 0041). ADR first. *From Anoni 0.86.1.*
-- **[Workspace]** Per-document history of decisions ("What you did": applied,
-  kept, renamed, with time), next to undo. ADR first. *From Anoni 0.86.1.*
 - **[Models]** Model choices show what each detects (Person, Email, Address…)
   and the memory of the active set ("2.3 GB in memory"). *From Anoni 0.86.1.*
-- **[PII]** Default categories to detect for new documents in Settings,
-  besides per-case categories. *From Anoni 0.86.1.*
 - **[A11y]** Report keyboard focus to UI Automation in the Replacements list,
   the palette and the sidebar context menu: arrowing there leaves the window
   as the focused element, so Narrator can't follow. *From the 2026-10-26
@@ -82,10 +111,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[Cases]** Save mapping as case on an unsaved conversion says why Save As
   opens ("save the document first so the case can find it"). *From the
   2026-10-26 Windows run (E4).*
-- **[Models]** Settings remembers model install state instead of showing
-  "Checking…" on every open, and says whether the OCR choice made on a
-  document's card also becomes the default. *From the 2026-10-26 Windows
-  run (S5).*
 - **[Windows]** Caption buttons and resize borders respond to synthetic input
   (UI Automation, Voice Access, test agents); today only a physical mouse
   works, and a narrow window leaves almost no title bar to drag, so a

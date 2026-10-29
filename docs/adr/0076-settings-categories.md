@@ -2,7 +2,9 @@
 
 Status: Accepted, 2026-10-28. Amends
 [ADR 0048](0048-workspace-shell-redesign.md) (Settings overlay) and the Settings
-layout of [ADR 0006](0006-local-model-settings.md).
+layout of [ADR 0006](0006-local-model-settings.md). Amended 2026-10-29
+([interview](../design/roadmap-grill-2026-10-29.md)): default categories,
+remembered model state, the per-document OCR note.
 
 ## Problem
 
@@ -24,9 +26,17 @@ category list, then one row per setting.
     and Check now / Restart now on the right, with ADR 0038/0040 behaviour
     unchanged); Recent files (Clear); and a Keyboard shortcuts row that opens
     the [ADR 0073](0073-keyboard-shortcuts-panel.md) sheet.
-  - **Detection:** model, threshold, Compare pseudonymization.
+  - **Detection:** model, threshold, **Categories to detect** (chips, all
+    on by default, Other not listed), Compare pseudonymization. The
+    categories filter scans of documents without a case and seed each new
+    case's list; existing cases keep theirs. Unticking one removes that
+    category's unapplied proposals in open documents without a case, as the
+    case switch does for members; applied replacements stay. Reset ticks
+    all.
   - **Recognition:** OCR model, resolution, minimum confidence, Compare text
-    recognition.
+    recognition. The OCR model row says it is the default for documents
+    that suggest no language; each document's card picks its own
+    (ADR 0066).
   - **Spelling:** the switches and Your dictionary. The dictionary opens as a
     drill-in inside the content pane with "← Spelling", and the list stays
     visible.
@@ -52,6 +62,11 @@ category list, then one row per setting.
   opens on General.
 - **Layout only.** No tone, accent colour, UI language, profiles, global
   shortcut or AI connection.
+
+- **Remembered model state.** The last check of each model is stored with
+  its files' sizes and modification times (no content) and shown at once
+  when Settings opens; a quiet re-check runs in the background and changes a
+  row only on a difference. "Checking…" shows only when nothing is stored.
 
 ## Invariants
 

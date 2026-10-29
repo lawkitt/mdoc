@@ -5,6 +5,7 @@ Status: Accepted, 2026-10-14. Amends [ADR 0030](0030-render-standard-markdown-on
 [ADR 0041](0041-cases-and-ai-response-restoration.md) and
 [ADR 0042](0042-live-before-after-view.md). Its "no per-category colours" and
 the switcher placement are superseded by [ADR 0048](0048-workspace-shell-redesign.md).
+Amended by [ADR 0078](0078-restore-in-place.md) (Reply segment).
 
 ## Problem
 

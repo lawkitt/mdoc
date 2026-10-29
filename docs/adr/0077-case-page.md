@@ -3,7 +3,8 @@
 Status: Accepted, 2026-10-28. Amends
 [ADR 0041](0041-cases-and-ai-response-restoration.md) (Open Case…, case
 actions) and [ADR 0048](0048-workspace-shell-redesign.md) (case header ⋯, case
-colour).
+colour). Amended by [ADR 0081](0081-workspace-back-forward.md)
+(Back/Forward stops).
 
 ## Problem
 
@@ -54,5 +55,5 @@ id and can't be changed, and Open Case… opens every member document at once.
 ## Consequences
 
 Opening a closed case takes a second click (Open all, or a document), which
-keeps a large case from flooding the sidebar. Workspace Back/Forward (Later)
-can return to the page.
+keeps a large case from flooding the sidebar. Back/Forward returns to the page
+(ADR 0081).

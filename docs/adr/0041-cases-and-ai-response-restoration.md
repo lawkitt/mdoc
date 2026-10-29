@@ -8,7 +8,9 @@ view), [ADR 0043](0043-deferred-keychain-access.md) and
 [ADR 0048](0048-workspace-shell-redesign.md) (sidebar and header placement), and
 [ADR 0056](0056-captured-ai-reply-fixtures.md) (captured replies),
 [ADR 0075](0075-folder-sheet.md) (folder drop) and
-[ADR 0077](0077-case-page.md) (case page, Open Case…, case colour).
+[ADR 0077](0077-case-page.md) (case page, Open Case…, case colour),
+[ADR 0078](0078-restore-in-place.md) (reply box in Share) and
+[ADR 0080](0080-merge-hint.md) (merge hint dismissals in the case).
 
 ## Problem
 
@@ -72,7 +74,8 @@ map, the better ones one map per case.
 - **Before / after** shows original and pseudonymized text in two read-only
   editors (ADR 0042).
 - **Categories to detect** are stored per case; member tabs filter scan results
-  before ingesting. Manual additions are unaffected.
+  before ingesting. Manual additions are unaffected. A new case starts from
+  the Settings default (ADR 0076); the case's list wins once a tab joins.
 - **Forgetting.** Deleting a case or forgetting an identity is confirmed and
   irreversible; Markdown files are untouched.
 
