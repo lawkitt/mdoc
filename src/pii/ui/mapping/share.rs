@@ -183,11 +183,14 @@ impl DocumentView {
                     )
                     .child(section("Case"))
                     .child(match case {
-                        Some(link) => div()
+                        Some(link) => ui::control("share-case-page", "", theme, true)
+                            .when(cfg!(test), |v| v.debug_selector(|| "share-case-page".into()))
+                            .aria_label(format!("Open case {}", link.name))
+                            .on_click(cx.listener(|_, _, _, cx| cx.emit(crate::workspace::TabEvent::Case(crate::workspace::CaseEvent::OpenPage))))
                             .flex()
                             .items_center()
                             .gap_2()
-                            .child(div().size(px(8.)).rounded_full().bg(style::case_color(link.hue())))
+                            .child(div().size(px(8.)).rounded_full().bg(style::case_color(link.hue(), theme)))
                             .child(div().flex_1().truncate().child(link.name.clone()))
                             .child(note("saved".into()))
                             .into_any_element(),

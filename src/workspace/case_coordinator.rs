@@ -5,7 +5,7 @@
 //! workspace view reads the key, runs the writes, shows prompts and
 //! carries out the returned effects.
 
-use mdoc_store::cases::{Case, Store};
+use mdoc_store::cases::{Case, CaseSummary, Store};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -61,6 +61,7 @@ pub(super) struct CaseCoordinator<W> {
     store: Option<Arc<Store>>,
     /// Every readable case, once loaded.
     cases: Vec<Case>,
+    summaries: Vec<CaseSummary>,
     loaded: bool,
     loading: bool,
     /// Latest unsaved state per case; one write runs at a time.
@@ -89,6 +90,7 @@ impl<W> Default for CaseCoordinator<W> {
         Self {
             store: None,
             cases: Vec::new(),
+            summaries: Vec::new(),
             loaded: false,
             loading: false,
             pending: HashMap::new(),
@@ -114,6 +116,9 @@ impl<W: Clone> CaseCoordinator<W> {
 
     /// The key opened.
     pub(super) fn open(&mut self, store: Arc<Store>) {
+        if self.store.is_none() {
+            self.loaded = false;
+        }
         self.store = Some(store);
     }
 
@@ -178,6 +183,19 @@ impl<W: Clone> CaseCoordinator<W> {
         &self.cases
     }
 
+    pub(super) fn restore_summaries(&mut self, summaries: Vec<CaseSummary>) {
+        self.summaries = summaries;
+    }
+
+    pub(super) fn summaries(&self) -> Vec<CaseSummary> {
+        let mut summaries = self.summaries.clone();
+        for case in &self.cases {
+            summaries.retain(|summary| summary.id != case.id);
+            summaries.push(CaseSummary::of(case));
+        }
+        summaries
+    }
+
     /// The list as is, for tests that set up cases without saving them.
     #[cfg(test)]
     pub(super) fn cases_mut(&mut self) -> &mut Vec<Case> {
@@ -216,6 +234,16 @@ impl<W: Clone> CaseCoordinator<W> {
                 self.cases.push(case);
             }
         }
+        self.summaries = self.cases.iter().map(CaseSummary::of).collect();
+    }
+
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(super) fn hide_for_locked_render(&mut self) {
+        self.cases.clear();
     }
 
     /// A new case, first in the list, saved now.
@@ -240,6 +268,7 @@ impl<W: Clone> CaseCoordinator<W> {
     /// Case `id` is deleted: its waiting revision goes, a write already
     /// running ends, and its failure is then dropped (`written`).
     pub(super) fn delete(&mut self, id: &str) {
+        self.summaries.retain(|summary| summary.id != id);
         self.pending.remove(id);
         self.cases.retain(|case| case.id != id);
     }

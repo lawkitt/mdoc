@@ -114,6 +114,7 @@ pub struct Review {
     tracking: Tracking,
     identities: identities::IdentityStore,
     occupied_tokens: HashSet<String>,
+    reserved_tokens: HashSet<String>,
     discovery_version: u64,
     counters: HashMap<Category, usize>,
     next_id: u64,
@@ -405,13 +406,18 @@ impl Review {
             matcher: self.candidates.matcher.clone(),
         }
     }
-    pub fn apply_discovery(&mut self, result: DiscoveryResult) -> bool {
+    pub fn apply_discovery(&mut self, mut result: DiscoveryResult) -> bool {
         if result.version != self.discovery_version {
             return false;
         }
         self.revision.advance();
+        for (variant, mentions) in self.variants().iter().zip(&mut result.mentions) {
+            mentions.retain(|range| self.occurrence_identity(variant.id, range).is_some());
+        }
         self.candidates.matcher = result.matcher;
         self.occupied_tokens = result.tokens;
+        self.occupied_tokens
+            .extend(self.reserved_tokens.iter().cloned());
         self.occupied_tokens.extend(
             self.candidates
                 .variants

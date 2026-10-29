@@ -111,22 +111,117 @@ impl StoredIdentity {
     }
 }
 
+/// The eight case swatches (ADR 0077), in hue order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CaseColor {
+    Red,
+    Orange,
+    Amber,
+    Green,
+    Teal,
+    Blue,
+    Violet,
+    Pink,
+}
+
+impl CaseColor {
+    pub const ALL: [Self; 8] = [
+        Self::Red,
+        Self::Orange,
+        Self::Amber,
+        Self::Green,
+        Self::Teal,
+        Self::Blue,
+        Self::Violet,
+        Self::Pink,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Red => "Red",
+            Self::Orange => "Orange",
+            Self::Amber => "Amber",
+            Self::Green => "Green",
+            Self::Teal => "Teal",
+            Self::Blue => "Blue",
+            Self::Violet => "Violet",
+            Self::Pink => "Pink",
+        }
+    }
+
+    pub fn hue(self) -> u32 {
+        match self {
+            Self::Red => 0,
+            Self::Orange => 30,
+            Self::Amber => 45,
+            Self::Green => 120,
+            Self::Teal => 175,
+            Self::Blue => 220,
+            Self::Violet => 270,
+            Self::Pink => 325,
+        }
+    }
+
+    pub fn for_id(id: &str) -> Self {
+        let hue = u32::from_str_radix(id.get(..6).unwrap_or(""), 16).unwrap_or(0) % 360;
+        Self::ALL
+            .into_iter()
+            .min_by_key(|color| {
+                let distance = hue.abs_diff(color.hue());
+                distance.min(360 - distance)
+            })
+            .unwrap()
+    }
+}
+
+/// Non-secret metadata available while cases are locked. No member paths or names.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CaseSummary {
+    pub id: String,
+    pub name: String,
+    pub documents: usize,
+    #[serde(default)]
+    pub color: Option<CaseColor>,
+}
+
+impl CaseSummary {
+    pub fn of(case: &Case) -> Self {
+        Self {
+            id: case.id.clone(),
+            name: case.name.clone(),
+            documents: case.members.len(),
+            color: case.color,
+        }
+    }
+    pub fn link(&self) -> CaseLink {
+        CaseLink {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            color: self.color,
+        }
+    }
+}
+
 /// A document's membership in a case, as the tab shows it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CaseLink {
     pub id: String,
     pub name: String,
+    pub color: Option<CaseColor>,
 }
 impl CaseLink {
     pub fn of(case: &Case) -> Self {
         Self {
             id: case.id.clone(),
             name: case.name.clone(),
+            color: case.color,
         }
     }
     /// A stable hue in degrees (0..360) for the case's sidebar dot.
     pub fn hue(&self) -> u32 {
-        u32::from_str_radix(&self.id[..6], 16).unwrap_or(0) % 360
+        self.color
+            .unwrap_or_else(|| CaseColor::for_id(&self.id))
+            .hue()
     }
 }
 
@@ -134,6 +229,8 @@ impl CaseLink {
 pub struct Case {
     pub id: String,
     pub name: String,
+    #[serde(default)]
+    pub color: Option<CaseColor>,
     /// Seconds since the Unix epoch.
     pub created: u64,
     pub identities: Vec<StoredIdentity>,
@@ -153,6 +250,7 @@ impl Case {
         let mut case = Self {
             id: id.iter().map(|b| format!("{b:02x}")).collect(),
             name,
+            color: None,
             created: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| d.as_secs()),
@@ -187,11 +285,31 @@ impl Case {
             .filter_map(StoredIdentity::exported)
             .collect()
     }
+    /// Alias-only tombstones. Members must reserve these even though their
+    /// originals no longer exist and cannot be seeded as live identities.
+    pub fn reserved_aliases(&self) -> Vec<String> {
+        self.identities
+            .iter()
+            .filter(|identity| identity.originals.is_empty())
+            .flat_map(|identity| {
+                std::iter::once(identity.alias.clone()).chain(identity.previous.iter().cloned())
+            })
+            .collect()
+    }
     /// Fold a member document's current identities into the case. Identities
     /// the document no longer uses stay; a renamed alias is kept as an earlier
     /// alias, so old files and replies still restore (ADR 0041 #23).
     pub fn merge(&mut self, exported: &[ExportedIdentity]) {
         for e in exported {
+            // A forgotten identity retains only its aliases, reserving them and
+            // preventing a stale member's autosave from restoring its originals.
+            if self.identities.iter().any(|identity| {
+                identity.originals.is_empty()
+                    && (identity.names(&e.alias)
+                        || e.previous.iter().any(|alias| identity.names(alias)))
+            }) {
+                continue;
+            }
             let incoming = StoredIdentity::from_exported(e);
             // Same alias first, so homonyms stay apart; then a shared original,
             // whatever the category (a category change renames the alias).
@@ -239,6 +357,22 @@ impl Case {
                 None => self.identities.push(incoming),
             }
         }
+    }
+
+    /// Irreversibly discard originals, retaining alias reservations only.
+    pub fn forget_identity(&mut self, alias: &str) -> bool {
+        let Some(identity) = self
+            .identities
+            .iter_mut()
+            .find(|identity| identity.names(alias))
+        else {
+            return false;
+        };
+        if identity.originals.is_empty() {
+            return false;
+        }
+        identity.originals.clear();
+        true
     }
 }
 
@@ -855,6 +989,67 @@ mod tests {
         assert_eq!(listed, std::slice::from_ref(&case));
         assert!(failed.is_empty());
         assert_eq!(case.exported()[0].wording(), "Anna Petrova");
+    }
+
+    #[test]
+    fn case_swatches_roundtrip_and_old_cases_snap_to_the_nearest_hue() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store(dir.path());
+        for color in CaseColor::ALL {
+            let mut case = fixture_case();
+            case.color = Some(color);
+            store.save(&case).unwrap();
+            assert_eq!(
+                CaseLink::of(&store.load(&case.id).unwrap()).hue(),
+                color.hue()
+            );
+        }
+        let mut json = serde_json::to_value(fixture_case()).unwrap();
+        json.as_object_mut().unwrap().remove("color");
+        let mut old: Case = serde_json::from_value(json).unwrap();
+        assert_eq!(old.color, None);
+        for (hue, expected) in [
+            (359, CaseColor::Red),
+            (32, CaseColor::Orange),
+            (46, CaseColor::Amber),
+            (110, CaseColor::Green),
+            (173, CaseColor::Teal),
+            (219, CaseColor::Blue),
+            (269, CaseColor::Violet),
+            (324, CaseColor::Pink),
+        ] {
+            old.id = format!("{hue:06x}00000000000000000000000000");
+            assert_eq!(CaseLink::of(&old).hue(), expected.hue());
+        }
+    }
+
+    #[test]
+    fn forgotten_originals_cannot_return_from_a_stale_member() {
+        let mut case = fixture_case();
+        let old = case.exported();
+        let alias = old[0].alias.clone();
+        assert!(case.forget_identity(&alias));
+        assert!(!case.forget_identity(&alias));
+        case.merge(&old);
+        assert!(
+            !case
+                .exported()
+                .iter()
+                .any(|identity| identity.alias == alias)
+        );
+        assert!(
+            case.identities
+                .iter()
+                .find(|identity| identity.alias == alias)
+                .unwrap()
+                .originals
+                .is_empty()
+        );
+        assert_ne!(case.next_alias(old[0].category), alias);
+        let dir = tempfile::tempdir().unwrap();
+        let store = store(dir.path());
+        store.save(&case).unwrap();
+        assert_eq!(store.load(&case.id).unwrap(), case);
     }
 
     #[test]

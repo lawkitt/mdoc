@@ -1268,6 +1268,26 @@ pub static SHORTCUTS: &[Shortcut] = &[
         )],
     ),
     row(
+        Panel,
+        "Add a name to the case",
+        &[on!(
+            Cases,
+            Some("CaseTerm"),
+            &["enter"],
+            workspace::AddCaseName
+        )],
+    ),
+    row(
+        Panel,
+        "Clear the new case name",
+        &[on!(
+            Cases,
+            Some("CaseTerm"),
+            &["escape"],
+            workspace::ClearCaseName
+        )],
+    ),
+    row(
         Popup,
         "Close the model comparison",
         &[on!(

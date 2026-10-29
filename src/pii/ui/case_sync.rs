@@ -14,6 +14,27 @@ pub(crate) struct JoinSummary {
 }
 
 impl DocumentView {
+    /// Forget this case identity without touching a different identity whose
+    /// alias collided before it joined. An older scan may not re-seed it.
+    pub(crate) fn forget_case_identity(
+        &mut self,
+        aliases: &[&str],
+        originals: &[String],
+        case: &[ExportedIdentity],
+        cx: &mut Context<Self>,
+    ) {
+        self.pii.cancel();
+        self.pii.review.forget_case_identity(aliases, originals);
+        self.pii.review.reserve_aliases(
+            &aliases
+                .iter()
+                .map(|alias| alias.to_string())
+                .collect::<Vec<_>>(),
+        );
+        self.case.set_names(case.to_vec());
+        self.review_changed(cx);
+        cx.notify();
+    }
     /// Retag identities and rewrite their applied aliases as one undo step.
     pub(crate) fn retag_identities(
         &mut self,
@@ -49,10 +70,12 @@ impl DocumentView {
     pub(crate) fn join_case_identities(
         &mut self,
         case: &[ExportedIdentity],
+        reserved: &[String],
         cx: &mut Context<Self>,
     ) -> Result<JoinSummary, String> {
         let document = self.pii.review.export_identities_with_ids();
-        let plan = plan_join(case, &document);
+        let plan = plan_join(case, &document, reserved);
+        self.pii.review.reserve_aliases(reserved);
         self.case.set_names(case.to_vec());
         self.retag_identities(&plan.changes, cx)?;
         let before = self.pii.review.remaining();

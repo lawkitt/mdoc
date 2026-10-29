@@ -53,8 +53,13 @@ pub fn resolve(choice: ThemeChoice, appearance: gpui::WindowAppearance) -> Theme
 }
 
 /// The sidebar dot of a case with this hue (degrees).
-pub fn case_color(hue: u32) -> Hsla {
-    hsla(hue as f32 / 360., 0.55, 0.55, 1.)
+pub fn case_color(hue: u32, theme: Theme) -> Hsla {
+    hsla(
+        hue as f32 / 360.,
+        0.65,
+        if theme == Theme::Light { 0.32 } else { 0.70 },
+        1.,
+    )
 }
 
 pub fn theme_label(choice: ThemeChoice) -> &'static str {
@@ -402,6 +407,28 @@ mod contrast_tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn all_case_swatches_meet_nontext_contrast_in_both_themes() {
+        let mut failed = Vec::new();
+        for theme in [Theme::Light, Theme::Dark] {
+            let p = theme.pdf_style();
+            let grounds = [
+                ("card", p.bg),
+                ("sidebar", theme.sidebar_bg()),
+                ("hover", p.placeholder_bg),
+                ("selected", theme.sidebar_selected()),
+            ];
+            for swatch in mdoc_store::cases::CaseColor::ALL {
+                failed.extend(failures(
+                    theme,
+                    3.,
+                    &[(swatch.name(), case_color(swatch.hue(), theme), &grounds)],
+                ));
+            }
+        }
+        assert!(failed.is_empty(), "{}", failed.join("\n"));
     }
 
     #[test]

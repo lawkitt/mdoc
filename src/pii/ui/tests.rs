@@ -26,6 +26,40 @@ fn install_scan(app: &mut DocumentView, cx: &mut Context<DocumentView>) -> (u64,
     });
     (generation, identity, revision)
 }
+
+#[gpui::test]
+fn forgetting_a_case_identity_rejects_an_older_scan_result(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text("Anna", cx))
+    });
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        app.pii
+            .review
+            .add_manual("Anna", 0..4, Category::Person)
+            .unwrap();
+        let (generation, identity, revision) = install_scan(app, cx);
+        let cancel = app.pii.job.as_ref().unwrap().cancel.clone();
+        app.forget_case_identity(&["PERSON_1"], &["Anna".into()], &[], cx);
+        assert!(cancel.load(std::sync::atomic::Ordering::Relaxed));
+        app.complete_pii_scan(
+            generation,
+            identity,
+            revision,
+            Ok(vec![mdoc_pii::Detection {
+                range: 0..4,
+                category: Category::Person,
+                score: 0.9,
+                recognizer: mdoc_pii::Recognizer::Model,
+            }]),
+            cx,
+        );
+        assert!(app.pii.review.export_identities().is_empty());
+        assert_eq!(app.editor.read(cx).text(), "Anna");
+    });
+}
 #[gpui::test]
 fn scan_proposes_without_applying_until_explicit_apply(cx: &mut gpui::TestAppContext) {
     let (app, cx) = crate::document_view::tests::boot(cx);

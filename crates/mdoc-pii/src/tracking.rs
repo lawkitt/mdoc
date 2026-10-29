@@ -141,6 +141,40 @@ fn compose_adjacent(first: &SourceEdit, next: &SourceEdit) -> Option<SourceEdit>
     })
 }
 impl Tracking {
+    pub(crate) fn forget_identity(&mut self, id: u64) {
+        let keep = |applied: &Applied| {
+            let mut step = Some(applied.step.as_ref());
+            while let Some(current) = step {
+                if current.identity == id {
+                    return false;
+                }
+                step = current.predecessor.as_deref();
+            }
+            true
+        };
+        self.applied.retain(keep);
+        self.assignments
+            .retain(|assignment| assignment.identity != id);
+        self.exclusions
+            .retain(|excluded| excluded.identity != Some(id));
+        for delta in self.journal.values_mut() {
+            delta.removed.retain(keep);
+            delta.added.retain(keep);
+            delta
+                .removed_keeps
+                .retain(|excluded| excluded.identity != Some(id));
+            delta
+                .added_keeps
+                .retain(|excluded| excluded.identity != Some(id));
+            delta
+                .removed_assignments
+                .retain(|assignment| assignment.identity != id);
+            delta
+                .added_assignments
+                .retain(|assignment| assignment.identity != id);
+        }
+        self.index();
+    }
     fn id(&mut self) -> u64 {
         self.next_id += 1;
         self.next_id

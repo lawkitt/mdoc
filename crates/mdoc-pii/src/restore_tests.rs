@@ -1,4 +1,21 @@
 use super::*;
+
+#[test]
+fn retired_case_aliases_survive_discovery_and_renumber_join_collisions() {
+    let mut review = Review::default();
+    review.reserve_aliases(&["PERSON_2".into(), "PERSON_7".into(), "RETIRED".into()]);
+    review.refresh("Carol");
+    let group = review.add_manual("Carol", 0..5, Category::Person).unwrap();
+    let id = review.variant_identity(group).unwrap();
+    assert_eq!(review.identity(id).unwrap().alias, "PERSON_8");
+    assert!(review.rename_identity(id, "RETIRED").is_err());
+    let document = vec![(10, identity("PERSON_2", Category::Person, &["Carol"]))];
+    let plan = plan_join(&[], &document, &["PERSON_2".into(), "PERSON_7".into()]);
+    assert_eq!(
+        plan.changes,
+        [(10, "PERSON_8".into(), Category::Person, false)]
+    );
+}
 use crate::{Detection, Recognizer};
 use mdoc_history::{EditorTransaction, HistoryChange, SourceEdit};
 
@@ -382,7 +399,7 @@ fn joining_takes_case_aliases_and_renumbers_collisions() {
         // EMAIL_1 is free in the case and keeps its alias.
         (12, identity("EMAIL_1", Category::Email, &["b@x.example"])),
     ];
-    let plan = plan_join(&case, &document);
+    let plan = plan_join(&case, &document, &[]);
     assert_eq!(
         plan.changes,
         [
@@ -452,7 +469,7 @@ fn joining_never_hands_out_an_alias_the_document_used_before() {
             identity("PERSON_1", Category::Person, &["Ivan Sidorov"]),
         ),
     ];
-    let plan = plan_join(&case, &document);
+    let plan = plan_join(&case, &document, &[]);
     assert_eq!(
         plan.changes,
         [(11, "PERSON_4".into(), Category::Person, false)]

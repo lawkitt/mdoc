@@ -33,6 +33,7 @@ use std::{
 };
 
 mod case_coordinator;
+mod case_page;
 mod cases_ui;
 mod docx_queue;
 use docx_queue::{DocxEffect, DocxJob};
@@ -56,7 +57,9 @@ pub(crate) mod shortcuts_ui;
 use session_writer::SessionEffect;
 mod sidebar;
 mod tab_set;
-pub(crate) use cases_ui::{CancelCaseName, ConfirmCaseName, bind_keys as bind_case_keys};
+pub(crate) use cases_ui::{
+    AddCaseName, CancelCaseName, ClearCaseName, ConfirmCaseName, bind_keys as bind_case_keys,
+};
 pub(crate) use shell::{
     CloseNotices, OpenPalette, PALETTE, PaletteClose, ShowHome, bind_keys as bind_shell_keys,
 };
@@ -146,6 +149,8 @@ pub(super) enum SaveEvent {
 
 /// The tab's case (`CaseCoordinator`).
 pub(super) enum CaseEvent {
+    /// Show this tab's case page (ADR 0077).
+    OpenPage,
     /// The tab's mapping changed; save it into the tab's case.
     Changed,
     /// Add a name to the tab's case before it appears (ADR 0041 #11).
@@ -213,8 +218,6 @@ pub(super) struct Workspace {
     /// close; the notices popover takes Esc (ADR 0062).
     pub(super) case_list_focus: gpui::FocusHandle,
     pub(super) case_list_return: Option<gpui::FocusHandle>,
-    pub(super) case_categories_focus: gpui::FocusHandle,
-    pub(super) case_categories_return: Option<gpui::FocusHandle>,
     pub(super) notices_focus: gpui::FocusHandle,
     tabs: tab_set::TabSet<Entity<DocumentView>>,
     /// Each shown tab's event and change subscriptions, dropped with it.
@@ -380,8 +383,6 @@ impl Workspace {
             focus_regions: focus_regions::FocusRegions::new(cx.focus_handle(), cx.focus_handle()),
             case_list_focus: cx.focus_handle(),
             case_list_return: None,
-            case_categories_focus: cx.focus_handle(),
-            case_categories_return: None,
             notices_focus: cx.focus_handle(),
             tabs: tab_set::TabSet::default(),
             tab_subscriptions: std::collections::HashMap::new(),
@@ -842,6 +843,8 @@ impl Workspace {
         self.theme_choice = session.theme_choice;
         self.apply_theme(window, cx);
         self.cases.collapsed = session.collapsed_cases.iter().cloned().collect();
+        self.case_coordinator
+            .restore_summaries(session.cases.clone());
         let selected = session.active;
         // Session paths were normalized when opened/saved. Do not stat every file
         // during startup; missing files are diagnosed when activated.
@@ -978,6 +981,10 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        #[cfg(test)]
+        {
+            self.cases.member_reads += 1;
+        }
         let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
             return;
         };
@@ -1052,6 +1059,8 @@ impl Workspace {
         if self.quit_flow.finishing() || !self.tabs.contains(id) {
             return;
         }
+        self.cases.page = None;
+        self.cases.renaming = None;
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| {
                 view.active = false;
@@ -1075,7 +1084,7 @@ impl Workspace {
         }
         // Home covers a placeholder's editor; keys go to the workspace, or
         // they would reach nothing (ADR 0048).
-        if self.showing_home(cx) {
+        if self.showing_overview(cx) {
             window.focus(&self.focus, cx);
         }
         cx.notify();
@@ -1368,6 +1377,16 @@ impl Workspace {
                 }
                 if let Some(view) = self.tabs.get(tab).and_then(|t| t.view().cloned()) {
                     view.update(cx, |view, cx| view.start_restored(&reply, window, cx));
+                    if let Some(case) = reply
+                        .case
+                        .as_ref()
+                        .and_then(|link| self.case_coordinator.case(&link.id))
+                    {
+                        let reserved = case.reserved_aliases();
+                        view.update(cx, |view, _| {
+                            view.pii.review_mut().reserve_aliases(&reserved)
+                        });
+                    }
                 }
             }
             TabEvent::Import(ImportEvent::State) => {
@@ -1389,6 +1408,11 @@ impl Workspace {
                 self.case_changed(id, cx);
             }
             TabEvent::Case(CaseEvent::Changed) => self.case_changed(id, cx),
+            TabEvent::Case(CaseEvent::OpenPage) => {
+                if let Some(case) = self.tabs.get(id).and_then(|tab| tab.record().case.clone()) {
+                    self.open_case(&case, window, cx);
+                }
+            }
             TabEvent::Case(CaseEvent::MappingMissing) => {
                 // A quiet look: launch onto Home may not have checked yet.
                 self.load_cases(window, cx);
@@ -1414,6 +1438,7 @@ impl Workspace {
                 }
             }
             TabEvent::Close(CloseEvent::Cancelled) => {
+                self.cases.closing_members.cancel();
                 crate::updater::cancel_restart(cx);
                 self.quit_flow.cancel();
                 self.mapping_close_cancelled(id);
@@ -1593,6 +1618,9 @@ impl Workspace {
         }
         self.checkpoint(window, cx);
         cx.notify();
+        if let Some(next) = self.cases.closing_members.removed(id) {
+            self.close_tab(next, window, cx);
+        }
     }
 
     pub(super) fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1759,6 +1787,7 @@ impl Workspace {
                 ids.sort();
                 ids
             },
+            cases: self.case_coordinator.summaries(),
             ..Session::default()
         };
         for tab in &self.tabs {
@@ -1892,7 +1921,7 @@ impl Workspace {
         let Some(view) = self.active_view() else {
             return;
         };
-        if self.showing_home(cx) {
+        if self.showing_overview(cx) {
             window.focus(&self.focus, cx);
             return;
         }
@@ -2102,7 +2131,7 @@ impl Workspace {
         let palette = theme.pdf_style();
         let expanded = self.sidebar.visible();
         let revealed = !expanded && self.sidebar.reveal() != Reveal::Hidden;
-        let home = self.showing_home(cx);
+        let home = self.showing_overview(cx);
         let mut compact_rows = Vec::with_capacity(self.tabs.len());
         // One Tab stop for the list: the active tab, else the first listed.
         let listed = self.listed_tabs(cx);
@@ -2435,14 +2464,25 @@ impl Workspace {
             .collect::<Vec<_>>();
         // A case's header sits above its first member in each run of tabs.
         let mut rows_with_cases = Vec::with_capacity(rows.len());
+        if let Some(page) = &self.cases.page
+            && !self.tabs.iter().any(|tab| {
+                self.sidebar_case_link(tab, cx)
+                    .is_some_and(|link| link.id == page.id())
+            })
+            && let Some(summary) = self
+                .case_coordinator
+                .summaries()
+                .iter()
+                .find(|summary| summary.id == page.id())
+        {
+            rows_with_cases.push(self.case_header(&summary.link(), 0, summary.documents, cx));
+        }
         let mut previous: Option<Option<String>> = None;
         for (index, row) in rows.into_iter().enumerate() {
             let Some(row) = row else {
                 continue;
             };
-            let link = self.tabs[index]
-                .view()
-                .and_then(|v| v.read(cx).case.link().cloned());
+            let link = self.sidebar_case_link(&self.tabs[index], cx);
             let id = link.as_ref().map(|l| l.id.clone());
             // Tabs without a case gather under "Open".
             if link.is_none() && previous.as_ref() != Some(&None) {
@@ -2453,11 +2493,7 @@ impl Workspace {
                     .tabs
                     .iter()
                     .skip(index)
-                    .take_while(|t| {
-                        t.view()
-                            .and_then(|v| v.read(cx).case.link().map(|l| l.id.clone()))
-                            == id
-                    })
+                    .take_while(|t| self.sidebar_case_link(t, cx).map(|link| link.id) == id)
                     .count();
                 rows_with_cases.push(self.case_header(&link, self.tabs[index].id(), count, cx));
             }
@@ -2608,11 +2644,17 @@ impl Workspace {
                             }),
                         )
                         .child(
-                            ui::header_icon("rail-home", "Home", ui::Icon::Home, theme, home)
-                                .when(cfg!(test), |v| v.debug_selector(|| "rail-home".into()))
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| this.show_home(window, cx)),
-                                ),
+                            ui::header_icon(
+                                "rail-home",
+                                "Home",
+                                ui::Icon::Home,
+                                theme,
+                                self.showing_home(cx),
+                            )
+                            .when(cfg!(test), |v| v.debug_selector(|| "rail-home".into()))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.show_home(window, cx)),
+                            ),
                         ),
                 )
                 // A hairline between the app's places and the open tabs.
@@ -2889,7 +2931,7 @@ impl Render for Workspace {
         }
         let theme = self.theme.get();
         let palette = theme.pdf_style();
-        let home = self.showing_home(cx);
+        let home = self.showing_overview(cx);
         let title = self
             .active_view()
             .filter(|_| !home)
@@ -3000,7 +3042,7 @@ impl Render for Workspace {
                 cx.notify();
             }))
             .on_action(cx.listener(|this, action: &PiiApplyAll, window, cx| {
-                if let Some(view) = this.active_view().filter(|_| !this.showing_home(cx)) {
+                if let Some(view) = this.active_view().filter(|_| !this.showing_overview(cx)) {
                     view.update(cx, |view, cx| view.apply_all_pii(action, window, cx));
                 }
             }))
@@ -3134,7 +3176,7 @@ impl Render for Workspace {
                 )
             })
             .children(self.case_list(cx))
-            .children(self.case_categories(cx))
+            .children(self.case_header_menu(cx))
             .children(self.folder_sheet_view(window, cx))
             .children(self.keychain_explainer(window, cx))
             .child(
@@ -3177,7 +3219,9 @@ impl Workspace {
     /// then Home or the active document.
     fn card(&mut self, home: bool, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.get();
-        let content = if home {
+        let content = if self.cases.page.is_some() {
+            self.case_page(window, cx)
+        } else if home {
             self.home_view(window, cx)
         } else {
             match self.active_view() {
@@ -3301,7 +3345,7 @@ impl Workspace {
     /// The window's F6 regions in order, each with whether it is a single
     /// focus target (the editor) rather than a group of controls.
     fn regions(&self, cx: &App) -> Vec<(gpui::FocusHandle, bool)> {
-        let home = self.showing_home(cx);
+        let home = self.showing_overview(cx);
         let document = self
             .active_view()
             .filter(|_| !home)
@@ -3313,12 +3357,11 @@ impl Workspace {
     /// The visible document owns chrome undo, unless a field or modal surface
     /// owns focus. Deeper editor/popup handlers run before this fallback.
     fn history_document(&self, window: &Window, cx: &App) -> Option<Entity<DocumentView>> {
-        if self.showing_home(cx)
+        if self.showing_overview(cx)
             || self.settings.read(cx).open
             || self.cases.list_open
             || self.cases.explainer
             || self.folder_sheets.open()
-            || self.cases.categories_open.is_some()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
             || window
@@ -3339,7 +3382,6 @@ impl Workspace {
             || self.cases.list_open
             || self.cases.explainer
             || self.folder_sheets.open()
-            || self.cases.categories_open.is_some()
             || self.shell.palette.is_some()
             || self.shell.shortcuts.is_some()
         {
@@ -3414,7 +3456,7 @@ impl Workspace {
             .iter()
             .rposition(|(region, _)| region.contains_focused(window, cx))
             .or_else(|| {
-                let view = self.active_view().filter(|_| !self.showing_home(cx))?;
+                let view = self.active_view().filter(|_| !self.showing_overview(cx))?;
                 let view = view.read(cx);
                 view.toolbar_members()
                     .iter()
@@ -3467,14 +3509,14 @@ impl Workspace {
             cx.notify();
             return;
         }
-        if let Some(view) = self.active_view().filter(|_| !self.showing_home(cx))
+        if let Some(view) = self.active_view().filter(|_| !self.showing_overview(cx))
             && view.read(cx).more_open
         {
             view.update(cx, |view, cx| view.close_more(window, cx));
             return;
         }
         self.note_region_focus(window, cx);
-        if !self.showing_home(cx) {
+        if !self.showing_overview(cx) {
             self.focus_active(window, cx);
         }
     }
@@ -3486,7 +3528,7 @@ impl Workspace {
     /// control, and Shift+Tab back from the region after it.
     fn tab_from_window(&mut self, backwards: bool, window: &mut Window, cx: &mut App) {
         let from = self.note_region_focus(window, cx);
-        if self.focus.is_focused(window) && self.showing_home(cx) {
+        if self.focus.is_focused(window) && self.showing_overview(cx) {
             let home = self.focus_regions.home().clone();
             window.focus(&home, cx);
             ui::cycle(window, cx, Some(&home), backwards);

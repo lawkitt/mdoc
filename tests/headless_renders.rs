@@ -32,6 +32,8 @@ const SCREENS: &[&str] = &[
     "find-replace",
     "before-after",
     "open-case",
+    "case-page",
+    "case-page-locked",
     "rename-case",
     "case-categories",
     "keychain-explainer",
@@ -217,6 +219,36 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     name.starts_with("settings-") || *name == "dictionary",
                     "stale settings on {theme}/{name}"
                 );
+                assert_eq!(
+                    record["state"]["case_page"],
+                    matches!(
+                        *name,
+                        "case-page" | "case-page-locked" | "rename-case" | "case-categories"
+                    ),
+                    "{theme}/{name}"
+                );
+                assert_eq!(
+                    record["state"]["case_page_locked"],
+                    *name == "case-page-locked",
+                    "{theme}/{name}"
+                );
+                if *name == "case-page" {
+                    assert!(record["state"]["case_page_documents"].as_u64().unwrap() >= 3);
+                    assert!(record["state"]["case_page_names"].as_u64().unwrap() > 0);
+                    let members = record["state"]["case_page_members"].as_array().unwrap();
+                    assert_eq!(members[0]["open"], true, "{theme}: joined fixture is open");
+                    let mentions = members[0]["mentions"].as_array().unwrap();
+                    assert_eq!(
+                        mentions.len(),
+                        record["state"]["case_page_names"].as_u64().unwrap() as usize
+                    );
+                    assert!(
+                        mentions.iter().all(|count| count.as_u64().unwrap() > 0),
+                        "{theme}: every fixture name has live mentions"
+                    );
+                    assert_eq!(members[1]["open"], false);
+                    assert!(members[1]["mentions"].is_null());
+                }
                 // ADR 0075: the primary button and the 20-file cap.
                 let (primary, ticked) = match *name {
                     "folder-sheet" => (Value::from("Open as case"), Value::from(4)),

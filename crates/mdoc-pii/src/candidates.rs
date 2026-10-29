@@ -16,6 +16,21 @@ pub(super) struct Candidates {
     pub(super) matcher: Option<Arc<AhoCorasick>>,
 }
 impl Candidates {
+    pub(super) fn forget(&mut self, ids: &std::collections::HashSet<u64>) {
+        self.variants.retain(|variant| !ids.contains(&variant.id));
+        self.occurrences
+            .retain(|occurrence| !ids.contains(&occurrence.variant));
+        self.group_lookup.clear();
+        self.original_lookup.clear();
+        for (index, variant) in self.variants.iter().enumerate() {
+            self.group_lookup.insert(variant.id, index);
+            self.original_lookup
+                .insert(variant.original.clone(), variant.id);
+        }
+        self.counters.retain(|id, _| !ids.contains(id));
+        self.matcher = None;
+        self.reindex();
+    }
     pub(super) fn variant(&self, id: u64) -> Option<&Variant> {
         self.group_lookup
             .get(&id)

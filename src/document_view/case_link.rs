@@ -113,6 +113,7 @@ mod tests {
     fn link(id: &str) -> cases::CaseLink {
         cases::CaseLink {
             id: id.into(),
+            color: None,
             name: "Acme".into(),
         }
     }

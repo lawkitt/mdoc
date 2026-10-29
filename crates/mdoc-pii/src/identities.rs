@@ -53,6 +53,8 @@ impl IdentityStore {
             .map(|i| i.alias.as_str())
     }
     fn get(&self, id: u64) -> Option<&Identity> {
+        // Removing a definition is irreversible, including for old snapshots.
+        self.definitions.get(&id)?;
         self.policy
             .edited
             .get(&id)
@@ -261,6 +263,100 @@ fn contained_name(whole: &str, part: &str) -> bool {
             .any(|(start, _)| exact_boundary(whole, &(start..start + part.len()), part))
 }
 impl Review {
+    /// Match the case identity by both its aliases and original wording.
+    /// A join may have reassigned a creation alias to a different person.
+    /// Dormant seeds and pending renames still retain their wording ownership.
+    pub fn forget_case_identity(&mut self, aliases: &[&str], originals: &[String]) {
+        let ids: Vec<_> =
+            self.identities
+                .ids()
+                .filter(|id| {
+                    let alias_matches =
+                        self.identity(*id)
+                            .is_some_and(|identity| aliases.contains(&identity.alias.as_str()))
+                            || self
+                                .identities
+                                .definitions
+                                .get(id)
+                                .is_some_and(|identity| aliases.contains(&identity.alias.as_str()))
+                            || self.identities.history.values().any(|policy| {
+                                policy.edited.get(id).is_some_and(|identity| {
+                                    aliases.contains(&identity.alias.as_str())
+                                })
+                            });
+                    alias_matches
+                        && (self.variants().iter().any(|variant| {
+                            originals
+                                .iter()
+                                .any(|original| original.as_str() == variant.original.as_ref())
+                                && (self.variant_identity(variant.id) == Some(*id)
+                                    || self.candidates().iter().any(|candidate| {
+                                        candidate.variant == variant.id
+                                            && self.occurrence_identity(
+                                                candidate.variant,
+                                                &candidate.range,
+                                            ) == Some(*id)
+                                    }))
+                        }) || self.applied().iter().any(|applied| {
+                            applied.step.identity == *id
+                                && originals
+                                    .iter()
+                                    .any(|original| original == applied.step.original())
+                        }))
+                })
+                .collect();
+        for id in ids {
+            self.forget_identity(id);
+        }
+    }
+    /// Forget the mapping in live state and metadata history. Text is untouched;
+    /// undo/redo cannot bring this mapping back (ADR 0041, ADR 0077).
+    pub fn forget_identity(&mut self, id: u64) {
+        self.revision.advance();
+        let groups: HashSet<_> = self
+            .variants()
+            .iter()
+            .filter(|variant| {
+                self.variant_identity(variant.id) == Some(id)
+                    && !self.candidates().iter().any(|candidate| {
+                        candidate.variant == variant.id
+                            && self
+                                .occurrence_identity(candidate.variant, &candidate.range)
+                                .is_some_and(|owner| owner != id)
+                    })
+            })
+            .map(|variant| variant.id)
+            .collect();
+        self.candidates.forget(&groups);
+        self.tracking.forget_identity(id);
+        self.identities.definitions.remove(&id);
+        for identity in self.identities.definitions.values_mut() {
+            if identity.owner == Some(id) {
+                Arc::make_mut(identity).owner = None;
+            }
+        }
+        self.identities.normalized.retain(|_, owner| *owner != id);
+        let scrub = |policy: &mut IdentitySnapshot| {
+            let policy = Arc::make_mut(policy);
+            policy.edited.remove(&id);
+            policy
+                .variants
+                .retain(|group, owner| !groups.contains(group) && *owner != id);
+            policy.kept.retain(|group, _| !groups.contains(group));
+            for identity in policy.edited.values_mut() {
+                if identity.owner == Some(id) {
+                    Arc::make_mut(identity).owner = None;
+                }
+            }
+        };
+        scrub(&mut self.identities.policy);
+        for policy in self.identities.history.values_mut() {
+            scrub(policy);
+        }
+        self.discovery_version += 1;
+        let source = self.source.clone();
+        self.refresh(&source);
+    }
     pub fn identity(&self, id: u64) -> Option<&Identity> {
         self.identities.get(id)
     }
@@ -271,6 +367,7 @@ impl Review {
             .get(&group)
             .copied()
             .or_else(|| self.variant(group).map(|g| g.identity))
+            .filter(|id| self.identities.get(*id).is_some())
     }
     pub fn occurrence_identity(&self, group: u64, range: &Range<usize>) -> Option<u64> {
         self.tracking
@@ -353,6 +450,9 @@ impl Review {
     }
     pub fn rename_identity(&mut self, id: u64, alias: &str) -> Result<(), String> {
         self.revision.advance();
+        if self.reserved_tokens.contains(alias) {
+            return Err("That alias was retired by the case. Choose another alias.".into());
+        }
         if !valid_replacement(alias) {
             return Err("Use an ASCII alias with letters, digits, underscores or hyphens (up to 128 characters).".into());
         }

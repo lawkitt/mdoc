@@ -230,17 +230,24 @@ impl Workspace {
     }
 
     pub(super) fn showing_home(&self, cx: &App) -> bool {
-        self.tabs.home()
-            || self
-                .tabs
-                .active_tab()
-                .is_some_and(|tab| self.is_placeholder(tab, cx))
+        self.cases.page.is_none()
+            && (self.tabs.home()
+                || self
+                    .tabs
+                    .active_tab()
+                    .is_some_and(|tab| self.is_placeholder(tab, cx)))
+    }
+
+    pub(super) fn showing_overview(&self, cx: &App) -> bool {
+        self.cases.page.is_some() || self.showing_home(cx)
     }
 
     pub(super) fn show_home(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(old) = self.active_view() {
             old.update(cx, |view, _| view.pii.dismiss_popup());
         }
+        self.cases.page = None;
+        self.cases.renaming = None;
         self.tabs.show_home();
         window.focus(&self.focus, cx);
         cx.notify();
@@ -560,7 +567,7 @@ impl Workspace {
     /// window on Home (ADR 0062).
     pub(super) fn close_notices(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.title.notices_open.set(false);
-        if self.showing_home(cx) {
+        if self.showing_overview(cx) {
             window.focus(&self.focus, cx);
         } else {
             self.focus_active(window, cx);
@@ -1048,7 +1055,7 @@ impl Workspace {
     fn home_cases(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let theme = self.theme.get();
         let p = theme.pdf_style();
-        let cases = &self.case_coordinator.cases();
+        let cases = self.case_coordinator.summaries();
         let mut list = div().flex().flex_col();
         if cases.is_empty() {
             return Some(
@@ -1067,9 +1074,9 @@ impl Workspace {
             );
         }
         for case in cases.iter().take(6) {
-            let link = mdoc_store::cases::CaseLink::of(case);
+            let link = case.link();
             let id = case.id.clone();
-            let documents = case.members.len();
+            let documents = case.documents;
             list = list.child(
                 home_row(
                     SharedString::from(format!("home-case-{}", case.id)),
@@ -1088,7 +1095,7 @@ impl Workspace {
                     div()
                         .size(px(8.))
                         .rounded_full()
-                        .bg(style::case_color(link.hue()))
+                        .bg(style::case_color(link.hue(), theme))
                         .flex_shrink_0(),
                 )
                 .child(div().flex_1().min_w_0().truncate().child(case.name.clone()))
@@ -1223,7 +1230,7 @@ impl Workspace {
         event: &gpui::DragMoveEvent<gpui::ExternalPaths>,
         cx: &mut Context<Self>,
     ) {
-        if !self.showing_home(cx) {
+        if !self.showing_overview(cx) {
             return;
         }
         let over = event.bounds.contains(&event.event.position);
@@ -1278,7 +1285,7 @@ impl Workspace {
             return None;
         }
         // Leave Home so document-level feedback and any error are visible.
-        if self.showing_home(cx) {
+        if self.showing_overview(cx) {
             self.activate(self.tabs.active(), window, cx);
         }
         self.active_view()
@@ -1331,7 +1338,7 @@ impl Workspace {
             .as_ref()
             .map(|p| p.input.read(cx).value().trim().to_lowercase())
             .unwrap_or_default();
-        let has_document = !self.showing_home(cx);
+        let has_document = !self.showing_overview(cx);
         let mut rows = vec![
             Row {
                 section: "Actions",
@@ -1510,11 +1517,11 @@ impl Workspace {
                 command: Command::Tab(tab.id()),
             });
         }
-        for case in self.case_coordinator.cases() {
+        for case in self.case_coordinator.summaries() {
             rows.push(Row {
                 section: "Cases",
                 label: case.name.clone(),
-                detail: Some(format!("{} documents", case.members.len())),
+                detail: Some(format!("{} documents", case.documents)),
                 command: Command::Case(case.id.clone()),
             });
         }

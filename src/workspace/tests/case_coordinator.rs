@@ -148,24 +148,26 @@ fn shortcuts_work_right_after_share_save_as_case(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
-fn a_long_case_name_keeps_the_categories_popup_close_button_inside(cx: &mut TestAppContext) {
+fn a_long_case_name_keeps_categories_page_controls_inside_the_card(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
     let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
     tabs.update_in(cx, |tabs, window, cx| tabs.create_case(tab, window, cx));
     cx.run_until_parked();
-    tabs.update(cx, |tabs, cx| {
+    tabs.update_in(cx, |tabs, window, cx| {
         let case = &mut tabs.case_coordinator.cases_mut()[0];
         case.name = "Заявка_на_приемку_первой_партии_10000_единиц_и_ещё_немного".into();
-        tabs.cases.categories_open = Some(case.id.clone());
-        cx.notify();
+        let id = case.id.clone();
+        tabs.show_case_page(&id, super::super::case_page::Place::Categories, window, cx);
     });
     draw(cx);
-    let panel = cx.debug_bounds("case-categories").unwrap();
-    let close = cx.debug_bounds("close-case-categories").unwrap();
+    draw(cx);
+    draw(cx);
+    let panel = cx.debug_bounds("case-page").unwrap();
+    let control = cx.debug_bounds("page-category-PERSON").unwrap();
     assert!(
-        close.right() <= panel.right() && close.left() >= panel.left(),
-        "× {close:?} must stay inside the popup {panel:?}"
+        control.right() <= panel.right() && control.left() >= panel.left(),
+        "{control:?} outside {panel:?}"
     );
 }
 
@@ -1101,15 +1103,15 @@ fn locked_members_load_when_the_key_opens_without_a_dialog_later(cx: &mut TestAp
         assert!(tabs.read(cx).case_coordinator.locked() && view.read(cx).case.link().is_none())
     });
     // The key became readable without a dialog (e.g. allowed elsewhere):
-    // Open Case… opens it quietly and the locked member gets its mapping.
+    // Explicit Unlock opens it quietly and the locked member gets its mapping.
     tabs.update_in(cx, |tabs, window, cx| {
         tabs.cases.test_may_ask = false;
-        tabs.show_case_list(window, cx);
+        tabs.unlock_cases(window, cx);
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
         let tabs = tabs.read(cx);
-        assert!(!tabs.case_coordinator.locked() && tabs.cases.list_open);
+        assert!(!tabs.case_coordinator.locked());
         assert_eq!(
             view.read(cx).case.link().map(|l| l.name.as_str()),
             Some("Petrova")
