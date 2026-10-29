@@ -1726,12 +1726,12 @@ fn merge_hint_does_not_rename_an_absorbed_identity_in_another_member(cx: &mut Te
     });
     assert_eq!(store().load(&case).unwrap().identities.len(), 2);
     // The unrelated trailing identity must still follow an ordinary rename.
-    first_view.update(cx, |view, cx| {
+    second_view.update(cx, |view, cx| {
         let org = view.pii.review().identity_by_alias("ORG_1").unwrap();
         view.retag_identities(&[(org, "COMPANY".into(), Organization, true)], cx)
             .unwrap();
     });
-    tabs.update(cx, |tabs, cx| tabs.case_changed(first, cx));
+    tabs.update(cx, |tabs, cx| tabs.case_changed(second, cx));
     cx.run_until_parked();
     cx.update(|_, cx| {
         let other = second_view.read(cx);
@@ -1740,6 +1740,36 @@ fn merge_hint_does_not_rename_an_absorbed_identity_in_another_member(cx: &mut Te
             other.editor.read(cx).text(),
             "PERSON_1 signed. PERSON_2 agreed. COMPANY witnessed."
         );
+        let merged = first_view.read(cx);
+        assert_eq!(merged.pii.error(), None);
+        assert_eq!(
+            merged.editor.read(cx).text(),
+            "PERSON_1 signed. PERSON_1 agreed. COMPANY witnessed."
+        );
+    });
+    let saved = store().load(&case).unwrap();
+    assert_eq!(saved.identities[0].alias, "PERSON_1");
+    assert_eq!(saved.identities[0].originals[0], "Maya Bennett");
+    // Undo the followed organization rename, then the merge. Neither split
+    // may become an alias change in the other member (ADR 0041).
+    for _ in 0..2 {
+        first_view.update_in(cx, |view, window, cx| {
+            view.editor
+                .update(cx, |editor, cx| editor.undo_step(window, cx));
+        });
+        cx.run_until_parked();
+        tabs.update(cx, |tabs, cx| tabs.case_changed(first, cx));
+        cx.run_until_parked();
+    }
+    cx.update(|_, cx| {
+        for view in [&first_view, &second_view] {
+            let view = view.read(cx);
+            assert_eq!(view.pii.error(), None);
+            assert_eq!(
+                view.editor.read(cx).text(),
+                "PERSON_1 signed. PERSON_2 agreed. ORG_1 witnessed."
+            );
+        }
     });
 }
 

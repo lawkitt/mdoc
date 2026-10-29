@@ -391,12 +391,34 @@ impl Case {
             }) {
                 continue;
             }
-            let incoming = StoredIdentity::from_exported(e);
+            let mut incoming = StoredIdentity::from_exported(e);
             // The current alias first, so homonyms stay apart and a merge
             // finds its target rather than the identity it absorbed; then an
             // earlier alias; then a shared original, whatever the category (a
             // category change renames the alias).
             let found = self.identity_position(&incoming);
+            if let Some(index) = found
+                && self.identities[index].alias != incoming.alias
+                && exported
+                    .iter()
+                    .any(|e| e.alias == self.identities[index].alias)
+            {
+                // This member still has the case's current identity alongside
+                // an absorbed or split one. Keep the current identity rather
+                // than interpreting the other entry as its rename (ADR 0041).
+                let mut retained = self.identities[index].clone();
+                for alias in std::iter::once(&incoming.alias).chain(&incoming.previous) {
+                    if !retained.names(alias) {
+                        retained.previous.push(alias.clone());
+                    }
+                }
+                for original in incoming.originals {
+                    if !retained.originals.contains(&original) {
+                        retained.originals.push(original);
+                    }
+                }
+                incoming = retained;
+            }
             // Identities the member merged into this one are now named only by
             // its earlier aliases: fold them in, so no two entries share an
             // alias (ADR 0080).
@@ -1192,15 +1214,41 @@ mod tests {
     }
 
     #[test]
-    fn rename_correspondence_prefers_aliases_then_previous_then_originals() {
-        let before = Case::new(
-            "Homonyms".into(),
-            &[
-                identity("PERSON_1", Category::Person, &["Alex Smith"]),
-                identity("PERSON_2", Category::Person, &["Alex Smith"]),
-            ],
-            None,
+    fn unmerged_members_cannot_reverse_a_case_merge() {
+        let mut member = vec![
+            identity("PERSON_1", Category::Person, &["Maya Bennett"]),
+            identity("PERSON_2", Category::Person, &["Ms Bennett"]),
+        ];
+        let mut case = Case::new("Bennett".into(), &member, None);
+        let mut merged = identity(
+            "PERSON_1",
+            Category::Person,
+            &["Maya Bennett", "Ms Bennett"],
         );
+        merged.previous.push("PERSON_2".into());
+        case.merge(&[merged]);
+        let expected = case.clone();
+        for _ in 0..2 {
+            case.merge(&member);
+            assert_eq!(case, expected);
+            assert!(case.renames_since(&expected).is_empty());
+            member.reverse();
+        }
+    }
+
+    #[test]
+    fn rename_correspondence_prefers_aliases_then_previous_then_originals() {
+        let mut before = Case::new("Homonyms".into(), &[], None);
+        // An existing case can distinguish homonyms by alias; construct both
+        // stored entries explicitly so initial shared-original folding cannot
+        // collapse the correspondence fixture before the test starts.
+        before.identities = [
+            identity("PERSON_1", Category::Person, &["Alex Smith"]),
+            identity("PERSON_2", Category::Person, &["Alex Smith"]),
+        ]
+        .iter()
+        .map(StoredIdentity::from_exported)
+        .collect();
         let mut after = before.clone();
         after.identities.reverse();
         assert!(
@@ -1208,13 +1256,9 @@ mod tests {
             "same alias wins over a shared original"
         );
         let mut split = before.clone();
-        split
-            .identities
-            .push(StoredIdentity::from_exported(&identity(
-                "PERSON_3",
-                Category::Person,
-                &["Alex Smith"],
-            )));
+        let mut member = before.exported();
+        member.push(identity("PERSON_3", Category::Person, &["Alex Smith"]));
+        split.merge(&member);
         assert!(
             split.renames_since(&before).is_empty(),
             "splits are not renames"
