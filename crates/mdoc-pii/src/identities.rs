@@ -98,14 +98,14 @@ fn name_parts(value: &str) -> Vec<String> {
 }
 /// Whitespace-separated name words, lowercased, without titles or edge
 /// punctuation: "Ms. O'Neil," → `["o'neil"]`.
-fn name_words(value: &str) -> Vec<String> {
+pub(crate) fn name_words(value: &str) -> Vec<String> {
     value
         .split_whitespace()
         .map(|w| w.trim_matches(|c: char| !c.is_alphabetic()).to_lowercase())
         .filter(|w| !w.is_empty() && !TITLES.contains(&w.as_str()))
         .collect()
 }
-fn cyrillic(word: &str) -> bool {
+pub(crate) fn cyrillic(word: &str) -> bool {
     word.chars().all(|c| matches!(c, 'а'..='я' | 'ё' | '-'))
 }
 fn patronymic(word: &str) -> bool {
@@ -129,7 +129,7 @@ fn russian_surname_score(word: &str) -> u8 {
 }
 /// The surname and given names of a full person name, or `None` when the
 /// wording is not one (a single word, initials) or the surname is ambiguous.
-fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
+pub(crate) fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
     let mut words = name_words(value);
     let full = |w: &String| {
         w.chars().filter(|c| c.is_alphabetic()).count() > 1
@@ -164,7 +164,7 @@ fn split_full_name(value: &str) -> Option<(String, Vec<String>)> {
 /// Russian surname, its conservative case forms ("раман" → "рамана",
 /// "раману"). Some forms are shared with relatives ("петрова"), which is why
 /// they are proposed, never linked.
-fn surname_forms(surname: &str) -> Vec<String> {
+pub(crate) fn surname_forms(surname: &str) -> Vec<String> {
     let mut forms = vec![surname.to_owned()];
     if cyrillic(surname) {
         let mut decline = |stem: &str, endings: &[&str]| {

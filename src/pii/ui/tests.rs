@@ -2152,3 +2152,90 @@ fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext)
         Some("Skipped: alias, change it in Replacements")
     );
 }
+
+#[gpui::test]
+fn merge_hint_live_panel_merge_undo_and_dismiss(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Maya Bennett signed. Ms Bennett agreed.";
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |e, cx| e.set_text(source, cx));
+    });
+    cx.run_until_parked();
+    let hint = app.update(cx, |app, cx| {
+        let (generation, identity, revision) = install_scan(app, cx);
+        app.complete_pii_scan(
+            generation,
+            identity,
+            revision,
+            Ok(vec![mdoc_pii::Detection {
+                range: 0..12,
+                category: Category::Person,
+                score: 0.9,
+                recognizer: mdoc_pii::Recognizer::Model,
+            }]),
+            cx,
+        );
+        app.pii.review.merge_hints().remove(0)
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let merge: &'static str = Box::leak(format!("merge-hint-merge-{}", hint.from).into_boxed_str());
+    let dismiss: &'static str =
+        Box::leak(format!("merge-hint-dismiss-{}", hint.from).into_boxed_str());
+    assert!(cx.debug_bounds(merge).is_some());
+    // Merge is a real Tab stop: Enter activates the focused control.
+    app.update_in(cx, |app, window, cx| {
+        let focus = app.pii.mapping.hint_focus.borrow()[&(hint.from, hint.into)][0].clone();
+        window.focus(&focus, cx);
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    cx.simulate_keystrokes("enter");
+    cx.simulate_event(gpui::KeyUpEvent {
+        keystroke: gpui::Keystroke::parse("enter").unwrap(),
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds(merge).is_none());
+    app.update(cx, |app, cx| {
+        let identities = app.pii.review.export_identities();
+        assert_eq!(identities.len(), 1);
+        assert_eq!(identities[0].alias, "PERSON_1");
+        assert_eq!(identities[0].wording(), "Maya Bennett");
+        assert_eq!(
+            app.editor.read(cx).text(),
+            source,
+            "merge keeps proposals unapplied"
+        );
+    });
+    let undo = cx.debug_bounds("replacement-notice-undo").unwrap().center();
+    cx.simulate_click(undo, Default::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(
+        cx.debug_bounds(merge).is_some(),
+        "one Undo restores the hint"
+    );
+    app.update(cx, |app, _| {
+        assert_eq!(app.pii.review.export_identities().len(), 2)
+    });
+    let button = cx.debug_bounds(dismiss).unwrap().center();
+    cx.simulate_click(button, Default::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds(merge).is_none());
+    app.update(cx, |app, _| {
+        assert_eq!(app.pii.review.export_identities().len(), 2)
+    });
+    // Dismissals are unordered pairs and live outside undo history.
+    app.update(cx, |app, _| {
+        assert!(app.pii.mapping.hint_dismissed(&(hint.pair.1, hint.pair.0)))
+    });
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.focus, cx)
+    });
+    cx.simulate_keystrokes("secondary-shift-z");
+    cx.simulate_keystrokes("secondary-z");
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds(merge).is_none());
+}

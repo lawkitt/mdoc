@@ -17,6 +17,7 @@ const SCREENS: &[&str] = &[
     "document",
     "more-menu",
     "review",
+    "merge-hint",
     "mention-popup",
     "setup-consent",
     "setup-consent-fp32",
@@ -198,6 +199,12 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 .collect();
             assert_eq!(matches.len(), 1, "{theme}/{name}");
             let record = matches[0];
+            if *name == "merge-hint" {
+                assert_eq!(
+                    record["state"]["merge_hints"], 1,
+                    "{theme}: live merge hint"
+                );
+            }
             if *name != "model-comparison" {
                 assert_eq!(
                     record["state"]["palette"],

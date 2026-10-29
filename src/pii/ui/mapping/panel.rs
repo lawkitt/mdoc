@@ -4,7 +4,7 @@ use crate::{document_view::DocumentView, pii::ui::APPLIED_ID, settings_ui, style
 use gpui::{
     AnyElement, App, Context, Hsla, SharedString, Window, div, prelude::*, px, uniform_list,
 };
-use mdoc_pii::Category;
+use mdoc_pii::{Category, merge_hints::MergeHint};
 use mdoc_store::settings;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -56,12 +56,15 @@ pub(super) struct PanelProjection {
     members: HashMap<u64, Vec<PanelItem>>,
     active_aliases: HashSet<String>,
     kept: usize,
+    /// Merge hints by the identity that shows them (ADR 0080).
+    hints: HashMap<u64, Vec<Arc<MergeHint>>>,
 }
 pub(super) struct EntriesCache {
     revision: (u64, u64),
     filter: PanelFilter,
     query: String,
     expanded: HashSet<u64>,
+    dismissed: usize,
     entries: Arc<[PanelEntry]>,
 }
 
@@ -81,6 +84,9 @@ pub(super) enum PanelItem {
     Mention(u64, Range<usize>),
     /// A mention whose original is kept: listed, unticked (ADR 0048).
     Kept(Range<usize>),
+    /// "Looks like … · Merge ×" under the header (ADR 0080). Not a keyboard
+    /// row: its Merge and × are Tab stops.
+    Hint(Arc<MergeHint>),
 }
 impl PanelItem {
     pub(super) fn mention(&self) -> Option<u64> {
@@ -199,12 +205,20 @@ impl DocumentView {
             .filter(|row| row.mentions > 0)
             .map(|row| row.alias.clone())
             .collect();
+        let listed: HashSet<u64> = rows.iter().map(|row| row.id).collect();
+        let mut hints = HashMap::<u64, Vec<Arc<MergeHint>>>::new();
+        for hint in review.merge_hints() {
+            if listed.contains(&hint.from) && listed.contains(&hint.into) {
+                hints.entry(hint.from).or_default().push(Arc::new(hint));
+            }
+        }
         let projection = Arc::new(PanelProjection {
             revision,
             rows,
             members,
             active_aliases,
             kept: kept_count,
+            hints,
         });
         *mapping.projection.borrow_mut() = Some(projection.clone());
         projection
@@ -256,6 +270,7 @@ impl DocumentView {
             && cached.filter == mapping.filter
             && cached.query == query
             && cached.expanded == mapping.expanded
+            && cached.dismissed == mapping.dismissed_hint_count()
         {
             return cached.entries.clone();
         }
@@ -274,6 +289,11 @@ impl DocumentView {
                 entries.push(((*row).clone(), PanelItem::Category { entities, mentions }));
             }
             entries.push(((*row).clone(), PanelItem::Header));
+            for hint in projection.hints.get(&row.id).into_iter().flatten() {
+                if !mapping.hint_dismissed(&hint.pair) {
+                    entries.push(((*row).clone(), PanelItem::Hint(hint.clone())));
+                }
+            }
             if mapping.expanded.contains(&row.id)
                 && let Some(items) = projection.members.get(&row.id)
             {
@@ -300,6 +320,7 @@ impl DocumentView {
             query,
             filter: mapping.filter,
             expanded: mapping.expanded.clone(),
+            dismissed: mapping.dismissed_hint_count(),
             entries: entries.clone(),
         });
         entries
@@ -690,6 +711,8 @@ impl DocumentView {
                     Some((format!("Added “{}”", added.original), "Cancel", true))
                 } else if let Some(kept) = mapping.kept_at(history) {
                     Some((format!("Kept {kept}"), "Undo", false))
+                } else if let Some(wording) = mapping.merged_at(history) {
+                    Some((format!("Merged into {wording}"), "Undo", false))
                 } else {
                     mapping
                         .applied_at(history)
