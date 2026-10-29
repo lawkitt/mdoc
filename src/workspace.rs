@@ -2573,7 +2573,9 @@ impl Workspace {
                             .items_center()
                             .gap_1()
                             .child(sidebar_toggle(&self.panel_toggle_focus, expanded, theme))
-                            .when(expanded, |v| v.child(self.navigation_buttons(cx)))
+                            .when(expanded || revealed, |v| {
+                                v.child(self.navigation_buttons(cx))
+                            })
                             .into_any_element(),
                     ),
                 )
@@ -2729,6 +2731,26 @@ impl Workspace {
             .flex_shrink_0()
             .h_full()
             .text_size(px(13.))
+            // Keep the collapsed title controls in the sidebar's focus region
+            // and before its list in Tab order. Deferred painting leaves them
+            // above the adjacent content card without clipping to the rail.
+            .when(!expanded && !revealed, |v| {
+                v.child(gpui::deferred(
+                    div()
+                        .id("collapsed-title-controls")
+                        .tab_index(-1)
+                        .tab_group()
+                        .tab_stop(false)
+                        .absolute()
+                        .left(px(style::TRAFFIC_LIGHT_INSET))
+                        .top(px(style::CARD_MARGIN + (style::HEADER_HEIGHT - 32.) / 2.))
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(sidebar_toggle(&self.rail_toggle_focus, false, theme))
+                        .child(self.navigation_buttons(cx)),
+                ))
+            })
             .child(div().size_full().overflow_hidden().child(content))
             .when(!expanded, |v| {
                 v.on_hover(cx.listener(|this, hovered: &bool, window, cx| {
@@ -3213,28 +3235,6 @@ impl Render for Workspace {
                     .child(self.sidebar(cx))
                     .child(self.card(home, window, cx)),
             )
-            // Collapsed: the expand toggle sits right of the traffic lights in
-            // the title row, before the document header (ADR 0048).
-            .when(!self.sidebar.visible(), |v| {
-                v.child(
-                    div()
-                        .absolute()
-                        .left(px(style::TRAFFIC_LIGHT_INSET))
-                        .top(px(style::CARD_MARGIN + (style::HEADER_HEIGHT - 32.) / 2.))
-                        .flex()
-                        .items_center()
-                        .gap_1()
-                        .child(sidebar_toggle(
-                            &self
-                                .rail_toggle_focus
-                                .clone()
-                                .tab_stop(self.sidebar.reveal() == Reveal::Hidden),
-                            false,
-                            theme,
-                        ))
-                        .child(self.navigation_buttons(cx)),
-                )
-            })
             .children(self.notices_view(window, cx))
             .children(self.palette_view(cx))
             .when(self.settings.read(cx).open, |v| {
@@ -3448,6 +3448,13 @@ impl Workspace {
     /// collapsed rail. Each layout has its own handles, and only the drawn
     /// one can take focus (ADR 0062). Any other focus is returned unchanged.
     fn tab_row_in_layout(&self, focus: &gpui::FocusHandle, cx: &App) -> gpui::FocusHandle {
+        // A navigation end may have disabled the button remembered on departure.
+        // Enter the sidebar at its first enabled control instead.
+        if (focus == &self.back_focus && self.navigation_target(true, cx).is_none())
+            || (focus == &self.forward_focus && self.navigation_target(false, cx).is_none())
+        {
+            return self.focus_regions.sidebar().clone();
+        }
         let tab = [&self.sidebar_row_focus, &self.compact_row_focus]
             .iter()
             .find_map(|rows| {

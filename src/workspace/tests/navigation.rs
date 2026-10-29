@@ -234,3 +234,66 @@ fn settings_is_not_a_stop_and_navigation_preserves_its_modal_restrictions(cx: &m
         assert!(w.showing_home(cx));
     });
 }
+
+#[gpui::test]
+fn navigation_buttons_are_keyboard_reachable_in_both_sidebar_layouts(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1100.), px(760.)));
+    for expanded in [false, true] {
+        tabs.update_in(cx, |w, window, cx| {
+            w.sidebar.restore(expanded, Some(expanded));
+            w.focus_active(window, cx);
+            cx.notify();
+        });
+        draw(cx);
+        for backwards in [true, false] {
+            // F6 leaves the editor or Home for the sidebar. The only other
+            // region in this fixture is the toolbar; optional panes are hidden.
+            key(cx, "f6");
+            wait(cx, 250); // settle the rail's keyboard reveal before tabbing
+            let target = tabs.read_with(cx, |w, _| {
+                if backwards {
+                    w.back_focus.clone()
+                } else {
+                    w.forward_focus.clone()
+                }
+            });
+            for _ in 0..32 {
+                if cx.update(|window, _| target.is_focused(window)) {
+                    break;
+                }
+                key(cx, if expanded { "tab" } else { "shift-tab" });
+                wait(cx, 250);
+            }
+            assert!(
+                cx.update(|window, _| target.is_focused(window)),
+                "{} must be reachable with sidebar expanded={expanded}",
+                if backwards { "Back" } else { "Forward" }
+            );
+            activate_control(cx);
+            assert_eq!(tabs.read_with(cx, |w, cx| w.showing_home(cx)), backwards);
+        }
+    }
+}
+
+#[gpui::test]
+fn f6_remembers_navigation_focus_across_sidebar_layouts(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot(cx, Session::default());
+    let focus = tabs.read_with(cx, |w, _| w.back_focus.clone());
+    cx.update(|window, cx| window.focus(&focus, cx));
+    draw(cx);
+    for expanded in [false, true] {
+        key(cx, "f6"); // toolbar
+        key(cx, "f6"); // editor
+        tabs.update(cx, |w, cx| {
+            w.sidebar.restore(expanded, Some(expanded));
+            cx.notify();
+        });
+        draw(cx);
+        key(cx, "f6");
+        assert!(
+            cx.update(|window, _| focus.is_focused(window)),
+            "Back remains the sidebar's remembered control, expanded={expanded}"
+        );
+    }
+}
