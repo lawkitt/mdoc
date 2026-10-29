@@ -15,9 +15,9 @@ on:
       - "docs/**"
       - ".github/workflows/actionlint.yml"
       - ".github/dependabot.yml"
+  # Any base branch, so a stacked PR gets CI too (fleet ADR 0016).
   pull_request:
     types: [opened, synchronize, reopened, closed]
-    branches: [main]
     paths-ignore: *ignored
   # release.yml runs this same job set before building release artifacts.
   workflow_call:
@@ -57,6 +57,8 @@ jobs:
       !(github.event_name == 'push' && github.ref_type == 'branch' &&
       startsWith(github.event.head_commit.message, 'release: v')) }}
     runs-on: ubuntu-latest
+    # Job limits (ADR 0082): a hang fails in minutes, not after six hours.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -92,6 +94,7 @@ jobs:
       matrix:
         runner: &shipped [macos-26, windows-latest]
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -109,6 +112,7 @@ jobs:
       matrix:
         runner: *shipped
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -124,6 +128,8 @@ jobs:
         run: sysctl machdep.cpu.brand_string hw.logicalcpu
 
       - uses: ./.github/actions/setup
+        with:
+          tools: just cargo-nextest
 
       - run: just test
         env:
@@ -135,8 +141,34 @@ jobs:
           name: headless-renders-${{ matrix.runner }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/mdoc-headless-renders-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
       # Release gate: real OCR runtime/model download and EN/RU recognition,
       # on the test build just compiled.
       - if: inputs.smoke-ocr
         run: just smoke-ocr
+
+  # Each main run saves new cache generations; delete the older generations of
+  # the same keys so the cache stays under the 10 GB repository limit
+  # (ADR 0082). Runs after every saving job, failed ones too
+  # (cache-on-failure), and never in a PR or a release call.
+  cache-cleanup:
+    name: cache cleanup
+    needs: [lint-linux, clippy, test]
+    if: >-
+      ${{ !cancelled() && !inputs.release-call &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # The only write permission in this workflow.
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: scripts/ci-cache-cleanup.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

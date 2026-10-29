@@ -23,6 +23,7 @@ crate() { # crate, version, probe command...
 
 crate just "$JUST_VERSION" just --version
 crate cargo-deny "$CARGO_DENY_VERSION" cargo deny --version
+crate cargo-nextest "$CARGO_NEXTEST_VERSION" cargo nextest --version
 crate cargo-packager "$CARGO_PACKAGER_VERSION" cargo packager --version
 
 scripts/install-actionlint.sh

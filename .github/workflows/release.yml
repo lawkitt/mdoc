@@ -69,8 +69,12 @@ jobs:
   ci:
     needs: [version]
     if: github.event_name == 'push' || inputs.checks
+    # A called workflow's jobs may not ask for more than this, so ci.yml's
+    # cache-cleanup job needs actions: write here, though it runs only on
+    # main pushes and never in a release call (ADR 0082).
     permissions:
       contents: read
+      actions: write
     uses: ./.github/workflows/ci.yml
     with:
       # Called CI inherits our event/ref: explicitly isolate its concurrency
