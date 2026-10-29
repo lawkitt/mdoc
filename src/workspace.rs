@@ -158,6 +158,9 @@ pub(super) enum CaseEvent {
     Changed,
     /// Add a name to the tab's case before it appears (ADR 0041 #11).
     AddTerm(String),
+    /// Keep a dismissed merge hint, as its (shorter, fuller) primary wordings, in the
+    /// tab's case (ADR 0080).
+    DismissHint(String, String),
     /// Save the tab's mapping as a case, from the Inspector (ADR 0048, C),
     /// or once the document is saved; `close` closes the tab after.
     Create { close: bool },
@@ -1393,8 +1396,10 @@ impl Workspace {
                         .and_then(|link| self.case_coordinator.case(&link.id))
                     {
                         let reserved = case.reserved_aliases();
-                        view.update(cx, |view, _| {
-                            view.pii.review_mut().reserve_aliases(&reserved)
+                        let dismissed = case.dismissed_hints.clone();
+                        view.update(cx, |view, cx| {
+                            view.pii.review_mut().reserve_aliases(&reserved);
+                            view.dismiss_case_hints(&dismissed, cx);
                         });
                     }
                 }
@@ -1432,6 +1437,9 @@ impl Workspace {
                 }
             }
             TabEvent::Case(CaseEvent::AddTerm(term)) => self.add_case_term(id, term, cx),
+            TabEvent::Case(CaseEvent::DismissHint(from, into)) => {
+                self.dismiss_case_hint(id, from, into, cx)
+            }
             TabEvent::Case(CaseEvent::Create { close: true }) => {
                 self.save_case_and_close(id, window, cx)
             }

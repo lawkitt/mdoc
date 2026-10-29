@@ -45,11 +45,6 @@ Added at the 2026-10-29 grill ([record](docs/design/roadmap-grill-2026-10-29.md)
    Open as tab; the reply is kept encrypted in the case.
    *Done when:* the captured replies restore completely in the Reply view, and
    a reply survives closing and reopening a case member.
-2. **[PII] Merge hint** ([ADR 0080](docs/adr/0080-merge-hint.md)). One-click
-   "Looks like … · Merge" where two identities very likely name one subject.
-   *Done when:* tests cover each signal and each non-signal (relatives
-   sharing a surname, initials), and Merge, Undo and dismissal work in the
-   live panel, with a dismissal surviving a case reopen.
 4. **[PII] Default categories to detect** ([ADR 0076](docs/adr/0076-settings-categories.md)).
    *From Anoni 0.86.1.* Settings › Detection chips filter scans without a
    case and seed new cases.

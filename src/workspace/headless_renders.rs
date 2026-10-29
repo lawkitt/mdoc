@@ -167,6 +167,7 @@ impl Driver {
                     "folder_sheet": w.folder_sheets.sheet().map(|s| s.primary_label()),
                     "folder_sheet_ticked": w.folder_sheets.sheet().map(|s| s.ticked_count()),
                     "find_replace": w.active_view().is_some_and(|v| v.read(cx).search.open()),
+                    "merge_hints": w.active_view().map_or(0, |v| v.read(cx).pii.review().merge_hints().len()),
                     "ocr_consent": w.active_view().is_some_and(|v| {
                         let v = v.read(cx);
                         v.lifecycle.source_only() && v.import.ocr_required().is_some()
@@ -768,6 +769,42 @@ fn scenarios(
     let toggle = d.change(|_, window, cx| window.focused(cx).expect("comments toggle"))?;
     d.focus_pair(out, "comments-toggle", toggle)?;
     records.push(d.capture(out, "comments")?);
+    // ADR 0080: a synthetic proposal pair, rendered on both shipped targets
+    // in each theme. No scan, model, case key or native window is involved.
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.editor.update(cx, |e, cx| {
+                e.set_text("Maya Bennett signed. Ms Bennett agreed.", cx)
+            });
+        });
+    })?;
+    d.settle()?;
+    d.change(|w, window, cx| {
+        w.active_view().unwrap().update(cx, |v, cx| {
+            let text = v.editor.read(cx).text().to_string();
+            v.pii
+                .review_mut()
+                .ingest(
+                    &text,
+                    vec![mdoc_pii::Detection {
+                        range: 0..12,
+                        category: mdoc_pii::Category::Person,
+                        score: 1.,
+                        recognizer: mdoc_pii::Recognizer::Model,
+                    }],
+                )
+                .expect("merge hint fixture");
+            assert_eq!(v.pii.review().merge_hints().len(), 1);
+            v.review_changed(cx);
+            if !v.replacements_open() {
+                v.toggle_replacements_panel(window, cx);
+            }
+            window.focus(&v.replacements_focus(), cx);
+        });
+    })?;
+    records.push(d.capture(out, "merge-hint")?);
+
     Ok(records)
 }
 

@@ -82,7 +82,7 @@ impl RowColors {
 /// The header text's left edge; the guide sits on it and mention content
 /// starts [`MENTION_INSET`] after (one indent level, ADR 0044).
 const ROW_INSET: f32 = 12.;
-const MENTION_INSET: f32 = ROW_INSET + 22.;
+pub(super) const MENTION_INSET: f32 = ROW_INSET + 22.;
 
 /// The vertical line left of a group's mention rows.
 fn guide(color: Hsla) -> gpui::Div {
@@ -147,6 +147,7 @@ impl DocumentView {
             }
             PanelItem::Header => self.header_row(base, &row, cx),
             PanelItem::Kept(range) => self.kept_row(base, &row, range, cx),
+            PanelItem::Hint(hint) => self.hint_row(index, hint, cx),
         }
     }
 

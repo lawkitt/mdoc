@@ -2152,3 +2152,223 @@ fn find_and_replace_never_touches_applied_aliases(cx: &mut gpui::TestAppContext)
         Some("Skipped: alias, change it in Replacements")
     );
 }
+
+#[gpui::test]
+fn merge_hint_live_panel_merge_undo_and_dismiss(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Maya Bennett signed. Ms Bennett agreed.";
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |e, cx| e.set_text(source, cx));
+    });
+    cx.run_until_parked();
+    let hint = app.update(cx, |app, cx| {
+        let (generation, identity, revision) = install_scan(app, cx);
+        app.complete_pii_scan(
+            generation,
+            identity,
+            revision,
+            Ok(vec![mdoc_pii::Detection {
+                range: 0..12,
+                category: Category::Person,
+                score: 0.9,
+                recognizer: mdoc_pii::Recognizer::Model,
+            }]),
+            cx,
+        );
+        app.pii.review.merge_hints().remove(0)
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let merge: &'static str = Box::leak(format!("merge-hint-merge-{}", hint.from).into_boxed_str());
+    let dismiss: &'static str =
+        Box::leak(format!("merge-hint-dismiss-{}", hint.from).into_boxed_str());
+    assert!(cx.debug_bounds(merge).is_some());
+    // Merge is a real Tab stop: Enter activates the focused control.
+    app.update_in(cx, |app, window, cx| {
+        let focus = app.pii.mapping.hint_focus.borrow()[&(hint.from, hint.into)][0].clone();
+        window.focus(&focus, cx);
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    cx.simulate_keystrokes("enter");
+    cx.simulate_event(gpui::KeyUpEvent {
+        keystroke: gpui::Keystroke::parse("enter").unwrap(),
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds(merge).is_none());
+    app.update(cx, |app, cx| {
+        let identities = app.pii.review.export_identities();
+        assert_eq!(identities.len(), 1);
+        assert_eq!(identities[0].alias, "PERSON_1");
+        assert_eq!(identities[0].wording(), "Maya Bennett");
+        assert_eq!(
+            app.editor.read(cx).text(),
+            source,
+            "merge keeps proposals unapplied"
+        );
+    });
+    let undo = cx.debug_bounds("replacement-notice-undo").unwrap().center();
+    cx.simulate_click(undo, Default::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(
+        cx.debug_bounds(merge).is_some(),
+        "one Undo restores the hint"
+    );
+    app.update(cx, |app, _| {
+        assert_eq!(app.pii.review.export_identities().len(), 2)
+    });
+    let button = cx.debug_bounds(dismiss).unwrap().center();
+    cx.simulate_click(button, Default::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds(merge).is_none());
+    app.update(cx, |app, _| {
+        assert_eq!(app.pii.review.export_identities().len(), 2)
+    });
+    // Dismissals are unordered pairs and live outside undo history.
+    app.update(cx, |app, _| {
+        assert!(app.pii.mapping.hint_dismissed(&(hint.pair.1, hint.pair.0)))
+    });
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.pii.mapping.focus, cx)
+    });
+    cx.simulate_keystrokes("secondary-shift-z");
+    cx.simulate_keystrokes("secondary-z");
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(cx.debug_bounds(merge).is_none());
+}
+
+#[gpui::test]
+fn merge_hint_applied_alias_keeps_restoring_and_merge_is_one_undo(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Maya Bennett signed. Ms Bennett agreed.";
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |e, cx| e.set_text(source, cx))
+    });
+    cx.run_until_parked();
+    let hint = app.update_in(cx, |app, window, cx| {
+        app.pii
+            .review
+            .ingest(
+                source,
+                vec![mdoc_pii::Detection {
+                    range: 0..12,
+                    category: Category::Person,
+                    score: 0.9,
+                    recognizer: mdoc_pii::Recognizer::Model,
+                }],
+            )
+            .unwrap();
+        app.pii.reviewing = true;
+        app.review_changed(cx);
+        app.apply_all_pii(&PiiApplyAll, window, cx);
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "PERSON_1 signed. PERSON_2 agreed."
+        );
+        if !app.replacements_open() {
+            app.toggle_replacements_panel(window, cx);
+        }
+        app.inspector_share = false;
+        cx.notify();
+        app.pii.review.merge_hints().remove(0)
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let selector = Box::leak(format!("merge-hint-merge-{}", hint.from).into_boxed_str());
+    let merge = cx.debug_bounds(selector).unwrap().center();
+    cx.simulate_click(merge, Default::default());
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    app.update(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "PERSON_1 signed. PERSON_1 agreed."
+        );
+        let identities = app.pii.review.export_identities();
+        assert_eq!(identities.len(), 1);
+        assert_eq!(identities[0].previous, ["PERSON_2"]);
+        let restored =
+            mdoc_pii::restore::RestoreMap::new(identities.clone()).restore("PERSON_1 met PERSON_2");
+        assert_eq!(restored.unresolved, 0);
+        assert_eq!(
+            restored
+                .edits
+                .iter()
+                .map(|(_, s)| s.as_str())
+                .collect::<Vec<_>>(),
+            ["Maya Bennett", "Maya Bennett"]
+        );
+        // Case reopen/reseeding must retain the retired alias for later replies.
+        let mut reopened = Review::default();
+        reopened.seed(&identities, "Maya Bennett");
+        let map = mdoc_pii::restore::RestoreMap::new(reopened.export_identities());
+        assert_eq!(map.restore("PERSON_2").restored, 1);
+        let next = reopened.new_identity(Category::Person);
+        assert_eq!(reopened.identity(next).unwrap().alias, "PERSON_3");
+    });
+    let undo = cx.debug_bounds("replacement-notice-undo").unwrap().center();
+    cx.simulate_click(undo, Default::default());
+    cx.run_until_parked();
+    app.update(cx, |app, cx| {
+        assert_eq!(
+            app.editor.read(cx).text(),
+            "PERSON_1 signed. PERSON_2 agreed."
+        );
+        assert_eq!(app.pii.review.export_identities().len(), 2);
+    });
+}
+
+#[gpui::test]
+fn merge_hint_retains_target_primary_for_equal_length_wordings(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Марина Павлова met Павлова Марина";
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |e, cx| e.set_text(source, cx))
+    });
+    cx.run_until_parked();
+    let hint = app.update_in(cx, |app, window, cx| {
+        let identities = ["Павлова Марина", "Марина Павлова"]
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| mdoc_pii::restore::ExportedIdentity {
+                alias: format!("PERSON_{}", i + 1),
+                previous: vec![],
+                category: Category::Person,
+                custom: false,
+                originals: vec![name.into()],
+            })
+            .collect::<Vec<_>>();
+        app.pii.review.seed(&identities, source);
+        app.pii.reviewing = true;
+        app.review_changed(cx);
+        app.apply_all_pii(&PiiApplyAll, window, cx);
+        let hint = app.pii.review.merge_hints().remove(0);
+        assert_eq!(hint.wording.as_ref(), "Павлова Марина");
+        if !app.replacements_open() {
+            app.toggle_replacements_panel(window, cx);
+        }
+        app.inspector_share = false;
+        cx.notify();
+        hint
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let selector = Box::leak(format!("merge-hint-merge-{}", hint.from).into_boxed_str());
+    let merge = cx.debug_bounds(selector).unwrap().center();
+    cx.simulate_click(merge, Default::default());
+    cx.run_until_parked();
+    app.update(cx, |app, _| {
+        let exported = app.pii.review.export_identities();
+        assert_eq!(exported.len(), 1);
+        assert_eq!(exported[0].wording(), "Павлова Марина");
+        assert_eq!(exported[0].alias, "PERSON_1");
+        let unrelated = app.pii.review.new_identity(Category::Person);
+        assert_eq!(
+            app.pii.review.identity(unrelated).unwrap().alias,
+            "PERSON_3"
+        );
+    });
+}

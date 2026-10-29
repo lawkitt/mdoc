@@ -6,6 +6,7 @@ use mdoc_pii::{Category, tracking::ReplacementPlan};
 use std::{cell::Cell, ops::Range, rc::Rc, sync::Arc};
 
 mod checklist;
+mod merge_hint;
 mod panel;
 mod panel_keys;
 mod panel_rows;
@@ -223,6 +224,14 @@ pub(super) struct MappingUi {
     /// The panel's filter button and its menu, likewise.
     pub(super) filter_focus: FocusHandle,
     pub(super) filter_menu_focus: FocusHandle,
+    /// Merge hints dismissed in this tab or its case, by the wordings that
+    /// matched (ADR 0080). Only grows, so its size keys the panel's rows.
+    dismissed_hints: std::collections::HashSet<(Arc<str>, Arc<str>)>,
+    /// The fuller wording of the last hint Merge and the state it created.
+    merged: Option<(Arc<str>, u64)>,
+    /// Each shown hint's Merge and × Tab stops, by (from, into) identity.
+    pub(super) hint_focus:
+        std::cell::RefCell<std::collections::HashMap<(u64, u64), [FocusHandle; 2]>>,
 }
 impl MappingUi {
     pub(super) fn invalidate_source_edit(&mut self, cx: &mut Context<DocumentView>) {
@@ -319,6 +328,34 @@ impl MappingUi {
     }
     pub(super) fn record_kept(&mut self, count: usize, history: u64) {
         self.kept = Some((count, history));
+    }
+    pub(super) fn record_merged(&mut self, wording: Arc<str>, history: u64) {
+        self.merged = Some((wording, history));
+    }
+    /// The wording the most recent history step merged into, while current.
+    pub(super) fn merged_at(&self, history: u64) -> Option<&Arc<str>> {
+        self.merged
+            .as_ref()
+            .filter(|(_, at)| *at == history)
+            .map(|(wording, _)| wording)
+    }
+    /// Hide the hint for `pair`; false when it was hidden already.
+    pub(super) fn dismiss_hint(&mut self, pair: (Arc<str>, Arc<str>)) -> bool {
+        let pair = if pair.0 <= pair.1 {
+            pair
+        } else {
+            (pair.1, pair.0)
+        };
+        self.dismissed_hints.insert(pair)
+    }
+    pub(super) fn hint_dismissed(&self, pair: &(Arc<str>, Arc<str>)) -> bool {
+        self.dismissed_hints.contains(pair)
+            || self
+                .dismissed_hints
+                .contains(&(pair.1.clone(), pair.0.clone()))
+    }
+    pub(super) fn dismissed_hint_count(&self) -> usize {
+        self.dismissed_hints.len()
     }
     pub(super) fn record_applied(&mut self, count: usize, history: u64) {
         self.applied = Some((count, history));
@@ -460,6 +497,9 @@ impl MappingUi {
             popup_menu_focus: cx.focus_handle(),
             filter_focus: cx.focus_handle().tab_stop(true),
             filter_menu_focus: cx.focus_handle(),
+            dismissed_hints: Default::default(),
+            merged: None,
+            hint_focus: Default::default(),
         }
     }
 }
