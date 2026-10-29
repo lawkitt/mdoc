@@ -494,3 +494,48 @@ fn navigating_closes_the_tab_and_case_header_menus(cx: &mut TestAppContext) {
         assert!(w.cases.header_menu.is_none());
     });
 }
+
+#[gpui::test]
+fn closing_the_first_stop_behind_a_prompts_tab_keeps_forward_ahead(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let records = ["a.md", "b.md", "c.md"].map(|name| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, name).unwrap();
+        TabRecord {
+            markdown: path,
+            ..TabRecord::default()
+        }
+    });
+    let (tabs, cx) = boot(
+        cx,
+        Session {
+            tabs: records.to_vec(),
+            ..Session::default()
+        },
+    );
+    let ids: Vec<u64> = tabs.read_with(cx, |w, _| w.tabs.iter().map(|tab| tab.id()).collect());
+    let (a, b, c) = (ids[0], ids[1], ids[2]);
+    tabs.update_in(cx, |w, window, cx| w.activate(b, window, cx));
+    cx.run_until_parked();
+    cx.simulate_input("unsaved");
+    tabs.update_in(cx, |w, window, cx| {
+        w.navigate(true, window, cx);
+        w.activate(c, window, cx);
+        w.navigate(true, window, cx);
+        assert_eq!(w.tabs.active(), a);
+        w.close_tab(b, window, cx);
+    });
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    // History [a, c] with b in front; a closes in the background.
+    tabs.update_in(cx, |w, window, cx| {
+        assert_eq!(w.tabs.active(), b);
+        w.close_tab(a, window, cx);
+        assert_eq!(w.tabs.active(), b);
+        assert_eq!(w.navigation_target(true, cx), None);
+        assert_eq!(w.navigation_target(false, cx), Some(&Stop::Tab(c)));
+        w.navigate(false, window, cx);
+        assert_eq!(w.tabs.active(), c);
+    });
+}

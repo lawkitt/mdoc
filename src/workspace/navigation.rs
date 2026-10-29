@@ -23,16 +23,27 @@ pub(super) enum Arrival {
 pub(super) struct History {
     stops: Vec<Stop>,
     cursor: usize,
+    /// The position is just before `stops[cursor]`, on no stop: the current
+    /// stop went and no stop preceded it.
+    before: bool,
 }
 
 impl History {
     pub(super) fn current(&self) -> Option<&Stop> {
+        if self.before {
+            return None;
+        }
         self.stops.get(self.cursor)
     }
 
     pub(super) fn arrive(&mut self, stop: Stop, arrival: Arrival) {
         match arrival {
             Arrival::Visit => self.visit(stop),
+            Arrival::Replace if self.before => {
+                self.stops.insert(self.cursor, stop);
+                self.before = false;
+                self.normalize(|_| true);
+            }
             Arrival::Replace if !self.stops.is_empty() => {
                 self.stops[self.cursor] = stop;
                 self.normalize(|_| true);
@@ -46,16 +57,18 @@ impl History {
         if self.current() == Some(&stop) {
             return;
         }
-        self.stops.truncate(self.cursor + 1);
+        self.stops.truncate(self.edge());
         self.stops.push(stop);
         if self.stops.len() > 50 {
             self.stops.remove(0);
         }
         self.cursor = self.stops.len() - 1;
+        self.before = false;
     }
 
-    /// A tab closed or a case was deleted: drop its stops. The cursor stays
-    /// on the stop it was on, or on the one before it when that one went.
+    /// A tab closed or a case was deleted: drop its stops. The position stays
+    /// on the stop it was on, or on the one before when that one went, or
+    /// before the rest when nothing preceded it.
     pub(super) fn forget(&mut self, gone: &Stop) {
         self.normalize(|stop| stop != gone);
     }
@@ -63,17 +76,29 @@ impl History {
     /// Keep the stops `keep` accepts, merging neighbours that became equal.
     fn normalize(&mut self, keep: impl Fn(&Stop) -> bool) {
         let mut kept: Vec<Stop> = Vec::with_capacity(self.stops.len());
-        let mut cursor = 0;
+        let mut position = None;
         for (index, stop) in std::mem::take(&mut self.stops).into_iter().enumerate() {
+            let on = index == self.cursor;
+            if on && self.before {
+                position = Some((kept.len(), true));
+            }
             if keep(&stop) && kept.last() != Some(&stop) {
                 kept.push(stop);
             }
-            if index == self.cursor {
-                cursor = kept.len().saturating_sub(1);
+            if on && !self.before {
+                // A dropped stop leaves the position on the kept one before
+                // it (an equal neighbour, or the predecessor).
+                position = Some(match kept.len() {
+                    0 => (0, true),
+                    len => (len - 1, false),
+                });
             }
         }
+        (self.cursor, self.before) = position.unwrap_or((kept.len(), self.before));
+        if kept.is_empty() {
+            (self.cursor, self.before) = (0, false);
+        }
         self.stops = kept;
-        self.cursor = cursor;
     }
 
     /// The nearest live stop that isn't `here`. When an unrecorded arrival
@@ -85,12 +110,22 @@ impl History {
         live: impl Fn(&Stop) -> bool,
     ) -> Option<usize> {
         let wanted = |&i: &usize| &self.stops[i] != here && live(&self.stops[i]);
+        // Back looks at the current stop and those before it; Forward at the rest.
+        let edge = self.edge().min(self.stops.len());
         if backwards {
-            (0..(self.cursor + 1).min(self.stops.len()))
-                .rev()
-                .find(wanted)
+            (0..edge).rev().find(wanted)
         } else {
-            (self.cursor + 1..self.stops.len()).find(wanted)
+            (edge..self.stops.len()).find(wanted)
+        }
+    }
+
+    /// The index after the current stop, or of the first stop after the
+    /// position when it is on none.
+    fn edge(&self) -> usize {
+        if self.before {
+            self.cursor
+        } else {
+            self.cursor + 1
         }
     }
 
@@ -107,6 +142,7 @@ impl History {
     /// Move to the stop `target_index` found.
     pub(super) fn go(&mut self, index: usize) -> Stop {
         self.cursor = index;
+        self.before = false;
         self.stops[index].clone()
     }
 }
@@ -244,6 +280,29 @@ mod tests {
             History::default().target(false, &Stop::Home, |_| true),
             None
         );
+    }
+
+    #[test]
+    fn forgetting_the_first_stop_while_on_it_keeps_forward_ahead() {
+        // [A, C] on A, with B in front after a cancelled close prompt.
+        let mut history = visited([Stop::Tab(1), Stop::Tab(3)]);
+        travel(&mut history, true, |_| true);
+        history.forget(&Stop::Tab(1));
+        let here = Stop::Tab(2);
+        assert_eq!(history.current(), None);
+        assert_eq!(history.target(true, &here, |_| true), None);
+        assert_eq!(history.target(false, &here, |_| true), Some(&Stop::Tab(3)));
+        // The tab taking the page there keeps Forward too.
+        let mut replaced = visited([Stop::Tab(1), Stop::Tab(3)]);
+        travel(&mut replaced, true, |_| true);
+        replaced.forget(&Stop::Tab(1));
+        replaced.arrive(Stop::Tab(2), Arrival::Replace);
+        assert_eq!(replaced.stops, [Stop::Tab(2), Stop::Tab(3)]);
+        assert_eq!(replaced.current(), Some(&Stop::Tab(2)));
+        // A new stop there discards Forward.
+        history.arrive(Stop::Tab(4), Arrival::Visit);
+        assert_eq!(history.stops, [Stop::Tab(4)]);
+        assert_eq!(history.target(false, &Stop::Tab(4), |_| true), None);
     }
 
     #[test]
