@@ -454,13 +454,14 @@ impl Workspace {
         if view.read(cx).case.link().is_some() {
             return None;
         }
-        let (name, identities, path) = {
+        let (name, identities, dismissed, path) = {
             let v = view.read(cx);
             let name = v.display_name();
             let name = name.strip_suffix(".md").unwrap_or(&name).to_string();
             (
                 name,
                 v.pii.review().export_identities(),
+                v.dismissed_merge_hints(),
                 v.session.document.path.clone(),
             )
         };
@@ -488,11 +489,13 @@ impl Workspace {
             return None;
         }
         self.resume_locked(window, cx);
-        let case = Case::new(
+        let mut case = Case::new(
             name,
             &identities,
             path.as_deref().map(session_store::identity),
         );
+        // Hints dismissed before the case existed stay dismissed (ADR 0080).
+        case.dismissed_hints = dismissed;
         let link = CaseLink::of(&case);
         let case_id = case.id.clone();
         let effect = self.case_coordinator.create(case);

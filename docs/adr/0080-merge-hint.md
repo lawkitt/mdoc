@@ -14,17 +14,23 @@ ADR 0068 proposes short forms but leaves them as separate identities.
 - **Signals** that two identities very likely name the same subject:
   - an ADR 0068 short or inflected form with exactly one candidate full name;
   - wordings that differ only in case, whitespace or punctuation (any
-    category, e.g. "Northwind Ltd" / "Northwind Ltd.");
+    category, e.g. "Northwind Ltd" / "Northwind Ltd."); between two digits a
+    separator still counts ("1.11.2020" / "11.1.2020"), except in phone, bank,
+    tax and ID numbers;
   - OCR or typo near-duplicates: edit distance 1, both names 6+ characters;
   - reversed Russian name order ("Павлова Марина" / "Марина Павлова").
 - **Not signals:** initials; a short form with two or more candidates
-  (relatives sharing a surname); Latin/Cyrillic transliteration.
+  (relatives sharing a surname, one of them perhaps named by initials), nor
+  a slip between two such forms; a different title ("Mr" / "Ms Bennett");
+  Latin/Cyrillic transliteration.
 - **Hint.** One line under the group header of the shorter (or later)
   identity: "Looks like Maya Bennett · Merge ×". No score. Every hint shows,
   each on its own identity.
 - **Merge** links into the fuller identity, which keeps its alias and primary
   wording; the other alias is retired and keeps restoring (ADR 0041). One undo
-  step, with an Undo toast. Nothing links without the click.
+  step, with an Undo toast. Nothing links without the click. The primary stays
+  the longest wording; a saved or kept primary only wins among equally long
+  ones, so a longer name linked by Same as… still restores.
 - **Dismissal** (×) holds for that pair: stored in the case when the document
   has one, otherwise for the tab's life.
 
