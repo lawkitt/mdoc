@@ -604,16 +604,7 @@ impl Workspace {
                     return None;
                 }
                 // Renamed or recategorized identities, by the alias they had.
-                let renames: Vec<_> = before
-                    .identities
-                    .iter()
-                    .zip(&case.identities)
-                    .filter(|(old, new)| old.alias != new.alias || old.category != new.category)
-                    .filter_map(|(old, _)| {
-                        let index = case.identities.iter().position(|n| n.names(&old.alias))?;
-                        Some((old.alias.clone(), case.exported_one(index)?))
-                    })
-                    .collect();
+                let renames = case.renames_since(&before);
                 let added = case.identities.len() > before.identities.len();
                 Some((renames, added, case.exported()))
             })
