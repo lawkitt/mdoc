@@ -1518,3 +1518,183 @@ fn merge_hint_dismissal_survives_case_reopen(cx: &mut TestAppContext) {
         .is_none()
     );
 }
+
+#[gpui::test]
+fn merge_hint_dismissed_before_save_as_case_stays_dismissed(cx: &mut TestAppContext) {
+    use mdoc_pii::Category;
+    let dir = tempfile::tempdir().unwrap();
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let path = dir.path().join("contract.md");
+    let source = "Maya Bennett signed. Ms Bennett agreed.";
+    std::fs::write(&path, source).unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.use_case_store(store());
+        tabs.open_paths(vec![path.clone()], window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.pii.set_reviewing(true);
+        for name in ["Maya Bennett", "Ms Bennett"] {
+            let start = source.find(name).unwrap();
+            view.pii
+                .review_mut()
+                .add_manual(source, start..start + name.len(), Category::Person)
+                .unwrap();
+        }
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+        cx.notify();
+    });
+    draw(cx);
+    let from = cx.update(|_, cx| view.read(cx).pii.review().merge_hints()[0].from);
+    let selector: &'static str = Box::leak(format!("merge-hint-dismiss-{from}").into_boxed_str());
+    let button = cx
+        .debug_bounds(selector)
+        .expect("hint before the case")
+        .center();
+    cx.simulate_click(button, Default::default());
+    cx.run_until_parked();
+    let tab = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let id = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(tab, window, cx).unwrap()
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        store().load(&id).unwrap().dismissed_hints,
+        [("Maya Bennett".to_string(), "Ms Bennett".to_string())]
+    );
+    // Reopen the case's member from the encrypted file.
+    let session = Session {
+        tabs: vec![TabRecord {
+            markdown: session_store::identity(&path),
+            case: Some(id.clone()),
+            ..TabRecord::default()
+        }],
+        ..Session::default()
+    };
+    let restored = cx.update(|window, cx| {
+        window.replace_root(cx, |window, cx| {
+            let mut tabs = Workspace::empty(window, cx);
+            tabs.use_case_store(store());
+            tabs.restore(session, window, cx);
+            tabs.activate(tabs.tabs.last().unwrap().id(), window, cx);
+            tabs
+        })
+    });
+    cx.run_until_parked();
+    let reopened = active(&restored, cx);
+    reopened.update_in(cx, |view, window, cx| {
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    let from = cx.update(|_, cx| {
+        assert_ne!(view.entity_id(), reopened.entity_id());
+        assert!(reopened.read(cx).case.is(&id));
+        let hints = reopened.read(cx).pii.review().merge_hints();
+        assert_eq!(hints.len(), 1, "the pair still matches");
+        hints[0].from
+    });
+    assert!(
+        cx.debug_bounds(Box::leak(
+            format!("merge-hint-dismiss-{from}").into_boxed_str()
+        ))
+        .is_none()
+    );
+}
+
+#[gpui::test]
+fn merge_hint_into_a_later_case_identity_keeps_one_case_entry(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let path = session_store::identity(&dir.path().join("contract.md"));
+    std::fs::write(&path, "Ms Bennett agreed. Maya Bennett signed.").unwrap();
+    let person = |alias: &str, name: &str| mdoc_pii::restore::ExportedIdentity {
+        alias: alias.into(),
+        previous: vec![],
+        category: mdoc_pii::Category::Person,
+        custom: false,
+        originals: vec![name.into()],
+    };
+    let case = mdoc_store::cases::Case::new(
+        "Bennett".into(),
+        &[
+            person("PERSON_1", "Ms Bennett"),
+            person("PERSON_2", "Maya Bennett"),
+        ],
+        Some(path.clone()),
+    );
+    store().save(&case).unwrap();
+    let session = Session {
+        tabs: vec![TabRecord {
+            markdown: path,
+            case: Some(case.id.clone()),
+            ..TabRecord::default()
+        }],
+        ..Session::default()
+    };
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.use_case_store(store());
+        tabs.restore(session.clone(), window, cx);
+        tabs.activate(tabs.tabs.last().unwrap().id(), window, cx);
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    let hint = cx.update(|_, cx| view.read(cx).pii.review().merge_hints().remove(0));
+    assert_eq!(hint.wording.as_ref(), "Maya Bennett");
+    let selector: &'static str =
+        Box::leak(format!("merge-hint-merge-{}", hint.from).into_boxed_str());
+    let button = cx.debug_bounds(selector).expect("case hint").center();
+    cx.simulate_click(button, Default::default());
+    cx.run_until_parked();
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    cx.run_until_parked();
+    let saved = store().load(&case.id).unwrap();
+    let people: Vec<_> = saved
+        .identities
+        .iter()
+        .filter(|i| i.category == "PERSON")
+        .collect();
+    assert_eq!(people.len(), 1, "{:?}", saved.identities);
+    assert_eq!(people[0].alias, "PERSON_2");
+    assert_eq!(people[0].previous, ["PERSON_1"]);
+    assert_eq!(people[0].originals[0], "Maya Bennett");
+    // Reopened, both aliases restore the full name and no alias is reused.
+    let restored = cx.update(|window, cx| {
+        window.replace_root(cx, |window, cx| {
+            let mut tabs = Workspace::empty(window, cx);
+            tabs.use_case_store(store());
+            tabs.restore(session, window, cx);
+            tabs.activate(tabs.tabs.last().unwrap().id(), window, cx);
+            tabs
+        })
+    });
+    cx.run_until_parked();
+    let reopened = active(&restored, cx);
+    reopened.update(cx, |view, _| {
+        let exported = view.pii.review().export_identities();
+        assert_eq!(exported.len(), 1);
+        assert_eq!(exported[0].alias, "PERSON_2");
+        assert_eq!(exported[0].wording(), "Maya Bennett");
+        let restore = mdoc_pii::restore::RestoreMap::new(exported).restore("PERSON_1 and PERSON_2");
+        assert_eq!(restore.restored, 2);
+        assert!(restore.edits.iter().all(|(_, s)| s == "Maya Bennett"));
+        let next = view
+            .pii
+            .review_mut()
+            .new_identity(mdoc_pii::Category::Person);
+        assert_eq!(view.pii.review().identity(next).unwrap().alias, "PERSON_3");
+    });
+}

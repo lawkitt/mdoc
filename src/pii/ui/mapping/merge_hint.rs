@@ -53,6 +53,11 @@ impl DocumentView {
         cx.notify();
     }
 
+    /// The hints dismissed in this tab, which a case made from it keeps.
+    pub(crate) fn dismissed_merge_hints(&self) -> Vec<(String, String)> {
+        self.pii.mapping.dismissed_hint_pairs()
+    }
+
     /// Hints the case's members dismissed stay hidden here.
     pub(crate) fn dismiss_case_hints(
         &mut self,
