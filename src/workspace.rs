@@ -3432,6 +3432,16 @@ impl Workspace {
                     last.filter(|focus| self.region_holds(&region, focus, window, cx))
                 {
                     window.focus(&last, cx);
+                } else if region == *self.focus_regions.sidebar() && !self.sidebar.visible() {
+                    // The deferred title/reveal group precedes the sidebar
+                    // container in window Tab order. Enter its first control
+                    // explicitly, so Shift+Tab leaves from the region's edge.
+                    let toggle = if self.sidebar.reveal() == Reveal::Hidden {
+                        &self.rail_toggle_focus
+                    } else {
+                        &self.panel_toggle_focus
+                    };
+                    window.focus(toggle, cx);
                 } else {
                     window.focus(&region, cx);
                     ui::cycle(window, cx, Some(&region), false);

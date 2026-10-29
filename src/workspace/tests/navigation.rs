@@ -262,7 +262,7 @@ fn navigation_buttons_are_keyboard_reachable_in_both_sidebar_layouts(cx: &mut Te
                 if cx.update(|window, _| target.is_focused(window)) {
                     break;
                 }
-                key(cx, if expanded { "tab" } else { "shift-tab" });
+                key(cx, "tab");
                 wait(cx, 250);
             }
             assert!(
