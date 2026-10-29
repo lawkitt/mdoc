@@ -17,7 +17,14 @@ impl ReviewUi {
         &self.decisions
     }
     /// Renders and tests write a fixed time.
-    #[cfg(any(test, feature = "headless-renders"))]
+    #[cfg(any(
+        test,
+        all(
+            debug_assertions,
+            feature = "headless-renders",
+            any(target_os = "macos", target_os = "windows")
+        )
+    ))]
     pub(crate) fn set_decision_clock(&mut self, clock: fn() -> String) {
         self.clock = clock;
     }
