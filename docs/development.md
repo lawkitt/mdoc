@@ -407,8 +407,8 @@ runs again when it starts. On the Mac a job starts only while swap is under
 | CI checkout | `~/ci/mdoc` | `D:\ci\mdoc` |
 | Runner (a copy, never the checkout it tests) | `~/ci/runner/scripts/` | `D:\ci\runner\scripts\` |
 | Results, kept 7 days | `~/ci/out/pr-N/<head>/` | `D:\ci\out\pr-N\<head>\` |
-| Runner log | `~/ci/state/runner.log` | `D:\ci\state\runner.log` |
-| Started by | launchd agents `com.lawkitt.mdoc.local-ci` and `com.lawkitt.mdoc.local-ci-web` | Task Scheduler task `mdoc local CI`, at logon |
+| Runner log | `~/ci/state/runner.log` | `D:\ci\state\runner.log` (start-up errors: `task.log`) |
+| Started by | launchd agents `com.lawkitt.mdoc.local-ci` and `com.lawkitt.mdoc.local-ci-web` | Task Scheduler tasks `mdoc local CI` and `mdoc local CI web`, at logon |
 
 Each machine serves its `out` folder to the tailnet only, at
 `https://<machine>.<tailnet>.ts.net/ci/`; the status links open a job's
@@ -417,11 +417,13 @@ base, step times, result) and `renders/` (the headless render set:
 `summary.json`, `light/`, `dark/`; about 0.5 GB on macOS, so only a PR's
 newest tested head keeps them). `status.txt` at the top is the runner's
 heartbeat, current job and queue. The macOS Tailscale app cannot serve a
-folder, so on the Mac a localhost-only `python3 -m http.server` agent serves
-it and `tailscale serve` proxies `/ci` to it.
+folder, and on Windows serving one needs an admin, so on each machine a
+localhost-only Python `http.server` (the `local-ci-web` agent, the `mdoc
+local CI web` task) serves it and `tailscale serve` proxies `/ci` to it.
 
 **Install or update.** On the Mac, from a checkout of current `main`:
-`just local-ci install`. On the PC, in PowerShell from a checkout:
+`just local-ci install`. On the PC, in PowerShell (not as admin) from a
+checkout, with Python on `PATH`:
 `powershell -ExecutionPolicy Bypass -File scripts\local-ci-setup.ps1`. Both
 clone the CI checkout if it is missing (its first build is cold and its
 `target/` reaches about 30 GB), copy the runner, register the agents or the
@@ -439,7 +441,7 @@ PC: `Stop-ScheduledTask 'mdoc local CI'` and `Start-ScheduledTask 'mdoc
 local CI'` (re-run the setup script to also end a job's build processes). A
 job in progress stops and runs again at the next start. `just local-ci
 uninstall` (Mac) or `local-ci-setup.ps1 -Uninstall` removes the agents or
-the task and the `/ci` path and keeps the runner home.
+the tasks and the `/ci` path and keeps the runner home.
 
 **Run a head again.** Post a pending status on it; the runner queues any
 pending head it is not running:
@@ -464,13 +466,15 @@ skill) read this section for mdoc's needs.
   runs detection on CPU.
 - **Lane worktrees.** A worktree's `target/` reaches about 30 GiB and a cold
   `just lint` + `just test` takes about 4.5 minutes on `windows`, so workers
-  reuse lanes instead of a new worktree per task: `windows-lane-1` and
-  `windows-lane-2` on `windows`, `wsl-lane-1` on `wsl`. Each task starts with
-  `git switch -c <machine>/<topic> origin/main`.
+  reuse lanes instead of a new worktree per task: `windows-lane-1`,
+  `windows-lane-2` and `windows-lane-3` on `windows`, `wsl-lane-1` on `wsl`.
+  Each task starts with `git switch -c <machine>/<topic> origin/main`.
   Retire other worktrees with `just retire-worktree <path>` once merged.
-  `C:` has about 31 GB free, so Windows lanes move to `D:` beside the CI
-  checkout (`D:\t3\worktrees\mdoc\windows-lane-N`), with a third lane
-  there; the profile names each lane once its folder exists. Claude Desktop SSH sessions use these lane
+  `C:` has about 20 GB free, so Windows lanes move to `D:` beside the CI
+  checkout (`D:\t3\worktrees\mdoc\windows-lane-N`): `windows-lane-3` is
+  there (a worktree of the root checkout, idle on branch `windows/lane-3`);
+  lanes 1 and 2 move when they are free, and the profile names each lane's
+  folder and the drive to check. Claude Desktop SSH sessions use these lane
   folders too (`use_worktree: false`), one session or T3 thread per lane.
 - **Models and reviews** follow the fleet skill (fleet ADRs 0016, 0017):
   Opus 5.5 builds, Windows-specific items included; Codex Sol builds only
@@ -530,8 +534,8 @@ fragment = "add `changes/{slug}.md` (format in `changes/README.md`)"
 setup = "Never set `CARGO_TARGET_DIR`: this worktree builds into its own `target/` (a shared one gives stale builds). First build is cold."
 
 [machines.windows]
-disk_check = "`Get-PSDrive C, D` for the lane's drive (not `just disk`, which fails while another lane builds)"
-lanes = { windows-lane-1 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-2' }
+disk_check = "`Get-PSDrive C` for `windows-lane-1` and `windows-lane-2`, `Get-PSDrive D` for `windows-lane-3` (not `just disk`, which fails while another lane builds)"
+lanes = { windows-lane-1 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-2', windows-lane-3 = 'D:\t3\worktrees\mdoc\windows-lane-3' }
 
 [machines.wsl]
 disk_check = "`df -h ~`"
