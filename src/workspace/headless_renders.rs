@@ -363,11 +363,22 @@ fn scenarios(
     })?;
     let view = document(d, path)?;
     records.push(d.capture(out, "document")?);
-    d.change(|w, _, cx| {
+    d.change(|w, window, cx| {
         w.sidebar.restore(false, Some(false));
+        window.focus(&w.focus, cx);
         cx.notify();
     })?;
     records.push(d.capture(out, "navigation-enabled")?);
+    // The document is in the middle: Home behind it and a second tab ahead.
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.navigate(true, window, cx);
+        window.focus(&w.focus, cx);
+    })?;
+    records.push(d.capture(out, "navigation-middle")?);
+    let (back, forward) = d.change(|w, _, _| (w.back_focus.clone(), w.forward_focus.clone()))?;
+    d.focus_pair(out, "navigation-back", back)?;
+    d.focus_pair(out, "navigation-forward", forward)?;
     d.change(|w, _, cx| {
         w.sidebar.restore(true, Some(true));
         cx.notify();
