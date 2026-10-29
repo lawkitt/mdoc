@@ -376,6 +376,9 @@ impl Case {
         if identity.originals.is_empty() {
             return false;
         }
+        self.dismissed_hints.retain(|(from, into)| {
+            !identity.originals.contains(from) && !identity.originals.contains(into)
+        });
         identity.originals.clear();
         true
     }
@@ -1035,7 +1038,17 @@ mod tests {
         let mut case = fixture_case();
         let old = case.exported();
         let alias = old[0].alias.clone();
+        let wording = old[0].wording().to_string();
+        case.dismissed_hints = vec![
+            ("Short form".into(), wording.clone()),
+            (wording, "Other variant".into()),
+            ("Unrelated short".into(), "Unrelated full".into()),
+        ];
         assert!(case.forget_identity(&alias));
+        assert_eq!(
+            case.dismissed_hints,
+            [("Unrelated short".into(), "Unrelated full".into())]
+        );
         assert!(!case.forget_identity(&alias));
         case.merge(&old);
         assert!(

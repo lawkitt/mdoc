@@ -42,11 +42,18 @@ impl IdentityStore {
     pub(super) fn retired_aliases(&self, id: u64) -> &[String] {
         self.policy.retired.get(&id).map_or(&[], Vec::as_slice)
     }
-    pub(super) fn seed_retired_aliases(&mut self, id: u64, aliases: &[String]) {
+    pub(super) fn seed_restoration(
+        &mut self,
+        id: u64,
+        aliases: &[String],
+        primary: Option<&Arc<str>>,
+    ) {
+        let policy = Arc::make_mut(&mut self.policy);
         if !aliases.is_empty() {
-            Arc::make_mut(&mut self.policy)
-                .retired
-                .insert(id, aliases.to_vec());
+            policy.retired.insert(id, aliases.to_vec());
+        }
+        if let Some(primary) = primary {
+            policy.primary.insert(id, primary.clone());
         }
     }
     pub(crate) fn normalized_identity(&self, value: &str, category: Category) -> Option<u64> {

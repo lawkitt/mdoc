@@ -451,7 +451,8 @@ impl Review {
                 owner: None,
                 custom_alias: exported.custom,
             });
-            self.identities.seed_retired_aliases(id, &exported.previous);
+            self.identities
+                .seed_restoration(id, &exported.previous, exported.originals.first());
             for alias in std::iter::once(&exported.alias).chain(&exported.previous) {
                 self.occupied_tokens.insert(alias.clone());
                 if let Some((category, number)) = parse_alias(alias) {

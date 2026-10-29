@@ -603,3 +603,27 @@ fn captured_replies_restore_completely() {
         assert_eq!(restored, read(&dir.join("expected.md")), "{name}");
     }
 }
+
+#[test]
+fn reseeding_and_applying_preserves_the_saved_primary_and_retired_alias() {
+    let source = "Марина Павлова met Павлова Марина";
+    let mut saved = identity(
+        "PERSON_1",
+        Category::Person,
+        &["Павлова Марина", "Марина Павлова"],
+    );
+    saved.previous.push("PERSON_2".into());
+    let mut review = Review::default();
+    review.seed(&[saved], source);
+    let plans = review.pending_plans(source, &HashMap::new()).unwrap();
+    let applied = review.prepare_replacements(&plans);
+    review.commit_replacements(1, applied);
+    let exported = review.export_identities();
+    assert_eq!(exported.len(), 1);
+    assert_eq!(exported[0].wording(), "Павлова Марина");
+    let map = RestoreMap::new(exported);
+    assert_eq!(
+        apply(&map, "PERSON_1 met PERSON_2"),
+        "Павлова Марина met Павлова Марина"
+    );
+}
