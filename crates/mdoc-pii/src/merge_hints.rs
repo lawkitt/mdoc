@@ -6,8 +6,11 @@ use super::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{Arc, LazyLock},
 };
+
+static SPELLING_SEPARATORS: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"[\p{P}\s]").expect("punctuation and whitespace"));
 
 /// One identity as hints see it. Slice order is identity order: of two
 /// equally full wordings, the later identity shows the hint.
@@ -110,11 +113,7 @@ pub fn merge_hints(identities: &[HintIdentity]) -> Vec<MergeHint> {
     // Case, whitespace and punctuation, in any category.
     let mut spellings = SpellingGroups::new();
     for (i, category, wording) in wordings() {
-        let key: String = wording
-            .chars()
-            .filter(|c| c.is_alphanumeric())
-            .flat_map(char::to_lowercase)
-            .collect();
+        let key = SPELLING_SEPARATORS.replace_all(wording, "").to_lowercase();
         if !key.is_empty() {
             spellings
                 .entry((category, key))
@@ -387,6 +386,11 @@ mod tests {
             (Category::Person, &["Maya Bennett"]),
         ]);
         assert!(hints(&list).is_empty());
+        let symbols = identities(&[
+            (Category::Organization, &["Acme™"]),
+            (Category::Organization, &["Acme"]),
+        ]);
+        assert!(hints(&symbols).is_empty(), "symbols are not punctuation");
     }
 
     #[test]

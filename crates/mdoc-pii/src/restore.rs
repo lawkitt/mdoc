@@ -397,8 +397,8 @@ impl Review {
                 if entry.originals.is_empty() {
                     return None;
                 }
-                // The primary wording is the fullest form: most characters,
-                // then first seen.
+                // A merge keeps its target's primary. Otherwise use the fullest
+                // form: most characters, then first seen.
                 let primary = self
                     .identities
                     .primary_wording(id)
