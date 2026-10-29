@@ -167,6 +167,10 @@ impl Driver {
                     "folder_sheet": w.folder_sheets.sheet().map(|s| s.primary_label()),
                     "folder_sheet_ticked": w.folder_sheets.sheet().map(|s| s.ticked_count()),
                     "find_replace": w.active_view().is_some_and(|v| v.read(cx).search.open()),
+                    "ocr_consent": w.active_view().is_some_and(|v| {
+                        let v = v.read(cx);
+                        v.lifecycle.source_only() && v.import.ocr_required().is_some()
+                    }),
                 })
             })?
         } else {
@@ -713,6 +717,18 @@ fn scenarios(
         });
     })?;
     records.push(d.capture(out, "conversion-failed")?);
+    // The consent card only: no converter, model download or native runtime.
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.lifecycle.show_source();
+            v.import.show_ocr_fixture(v.session.generation);
+            v.resume_import(window, cx);
+            v.ocr_state = crate::document_view::OcrState::Missing;
+            cx.notify();
+        });
+    })?;
+    records.push(d.capture(out, "ocr-consent")?);
     d.change(|w, window, cx| {
         w.new_tab(window, cx);
         w.active_view()

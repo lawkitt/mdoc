@@ -257,6 +257,23 @@ pub fn root() -> Result<PathBuf, SetupError> {
         .ok_or(SetupError::NoStorage)
 }
 
+/// Exactly the model and runtime files the reserved check verifies. Metadata
+/// callers use this list without reading file contents or loading an engine.
+pub fn model_files(root: &Path, model: mdoc_store::settings::OcrModel) -> Vec<PathBuf> {
+    let model_root = model_root(root, model);
+    manifest::for_model(model)
+        .artifacts
+        .iter()
+        .map(|a| model_root.join(a.filename))
+        .chain(RUNTIMES.iter().map(|r| root.join(r.library)))
+        .collect()
+}
+
+/// Shared runtime required by the detection model's check.
+pub fn onnx_runtime_path(root: &Path) -> PathBuf {
+    root.join(RUNTIMES[1].library)
+}
+
 /// No downloads, including when files are missing or invalid.
 pub fn check_config(
     config: &mdoc_store::settings::OcrConfig,
@@ -449,13 +466,33 @@ pub fn install_config(
         return Err(SetupError::OcrUnsupported);
     }
     let _permit = crate::model_work::Permit::acquire_for("installing text recognition")?;
-    install_config_in(&root()?, config, progress)
+    install_reserved(config, progress).map(|(installed, _)| installed)
+}
+
+/// The caller retains model admission through publishing its setup result.
+/// Metadata is captured after downloads, immediately before final validation.
+pub fn install_reserved(
+    config: &mdoc_store::settings::OcrConfig,
+    progress: &crate::model_download::Progress,
+) -> Result<(Installed, mdoc_store::model_state::Files), SetupError> {
+    if !SUPPORTED {
+        return Err(SetupError::OcrUnsupported);
+    }
+    install_checked_in(&root()?, config, progress)
 }
 pub fn install_config_in(
     root: &Path,
     config: &mdoc_store::settings::OcrConfig,
     progress: &crate::model_download::Progress,
 ) -> Result<Installed, SetupError> {
+    install_checked_in(root, config, progress).map(|(installed, _)| installed)
+}
+
+fn install_checked_in(
+    root: &Path,
+    config: &mdoc_store::settings::OcrConfig,
+    progress: &crate::model_download::Progress,
+) -> Result<(Installed, mdoc_store::model_state::Files), SetupError> {
     fs::create_dir_all(root)?;
     for runtime in RUNTIMES {
         progress.check()?;
@@ -490,13 +527,18 @@ pub fn install_config_in(
     )?;
     progress.check()?;
     progress.phase("Checking runtime");
+    let before = mdoc_store::model_state::Files::read(&model_files(root, config.model));
     let installed = validate_config(root, config)?;
     progress.check()?;
-    Ok(installed)
+    Ok((installed, before))
 }
 
 pub fn remove_model(model: mdoc_store::settings::OcrModel) -> Result<(), SetupError> {
     let _permit = crate::model_work::Permit::acquire_for("removing text recognition")?;
+    remove_reserved(model)
+}
+/// The caller retains model admission through remembering the removal.
+pub fn remove_reserved(model: mdoc_store::settings::OcrModel) -> Result<(), SetupError> {
     remove_model_files(&root()?, model)
 }
 fn remove_model_files(

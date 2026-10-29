@@ -326,7 +326,7 @@ impl Panel {
                 .child(self.number_row(0, theme, cx))
                 .child(self.setting_row("Compare pseudonymization", "Compare models on a snapshot without changing your document or defaults.", self.scrolled_quiet("compare-pii", "Compare", theme, true, cx).aria_label("Compare pseudonymization").on_click(cx.listener(|_, _, _, cx| cx.emit(Event::Compare(Model::Pii(PiiModel::Fp16))))), theme)),
             Category::Recognition => {
-                let note = self.section_note("Reads scanned pages in English and Russian.", Model::Ocr(self.draft.ocr.model));
+                let note = self.section_note("Default when a document suggests no language. Each document’s card picks its own.", Model::Ocr(self.draft.ocr.model));
                 div().child(div().text_size(px(11.)).text_color(theme.pdf_style().header_muted).child(note.clone()).when(cfg!(test), |v| v.debug_selector(move || note.clone())))
                     .child(div().id("ocr-models").role(gpui::Role::RadioGroup).aria_label("Text recognition").children(OcrModel::ALL.into_iter().map(|m| self.row(Model::Ocr(m), cx))))
                     .child(self.setting_row("Resolution", "Pixels per inch for recognized pages.", div().flex().gap_1().children([150, 200, 300].map(|dpi| self.scrolled_control(("dpi", dpi as usize), format!("{dpi}"), theme, true, cx)

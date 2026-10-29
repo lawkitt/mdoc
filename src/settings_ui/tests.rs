@@ -3,18 +3,276 @@ use gpui::size;
 use gpui::{Focusable, TestAppContext};
 use mdoc_store::settings::OcrModel;
 use mdoc_store::settings::Store;
+
+#[gpui::test]
+fn reopening_settings_and_a_new_panel_show_the_last_check_at_once(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.json");
+    let (panel, cx) = cx.add_window_view(|_, cx| {
+        Panel::new(
+            Store::open(Some(path.clone())),
+            Rc::new(Cell::new(Theme::Light)),
+            cx,
+        )
+    });
+    panel.update_in(cx, |p, window, cx| {
+        p.show(window, cx);
+        assert!(p.row_checking(Model::ALL[0]));
+    });
+    cx.run_until_parked();
+    panel.update_in(cx, |p, window, cx| {
+        assert!(p.statuses.iter().all(|status| *status == Status::Missing));
+        p.close(window, cx);
+        p.show_category(Category::Recognition, window, cx);
+        assert!(p.statuses.iter().all(|status| *status == Status::Missing));
+    });
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    cx.update(|_, cx| assert!(!panel.read(cx).row_checking(Model::ALL[0])));
+    panel.update_in(cx, |p, window, cx| p.close(window, cx));
+    cx.run_until_parked();
+    let shared = Store::open(Some(path));
+    let other = cx.new(|cx| Panel::new(shared, Rc::new(Cell::new(Theme::Dark)), cx));
+    other.update(cx, |p, cx| {
+        p.refresh(cx);
+        assert!(p.checking);
+        assert!(
+            Model::ALL
+                .into_iter()
+                .all(|model| *p.row_status(model) == Status::Missing)
+        );
+        assert!(p.statuses.iter().all(|status| *status == Status::Unknown));
+    });
+    cx.run_until_parked();
+}
+
+#[gpui::test]
+fn changed_model_files_are_unknown_then_missing_after_the_quiet_check(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let model = Model::ALL[0];
+    let path = dir.path().join("model.onnx");
+    let (panel, cx) = cx.add_window_view(|_, cx| {
+        Panel::new(Store::in_memory(), Rc::new(Cell::new(Theme::Light)), cx)
+    });
+    for removed in [false, true] {
+        std::fs::write(&path, b"model").unwrap();
+        let files = Files::read(std::slice::from_ref(&path));
+        panel.update(cx, |p, _| {
+            p.model_files = Some([vec![path.clone()], vec![], vec![], vec![]]);
+            p.model_state
+                .record(model, &files, files.clone(), Status::Ready);
+        });
+        if removed {
+            std::fs::remove_file(&path).unwrap();
+        } else {
+            std::fs::write(&path, b"resized model").unwrap();
+        }
+        // A running document job must postpone verification while invalidating
+        // the old Installed label immediately.
+        panel.update(cx, |p, cx| {
+            p.check_blocked = true;
+            p.refresh(cx);
+            assert_eq!(*p.row_status(model), Status::Unknown);
+            assert!(p.check_pending);
+            assert!(!p.row_checking(model));
+        });
+        panel.update(cx, |p, cx| {
+            p.check_blocked = false;
+            p.refresh(cx);
+            assert!(p.checking);
+            assert_eq!(*p.row_status(model), Status::Unknown);
+            assert!(!p.row_checking(model));
+        });
+        cx.run_until_parked();
+        cx.update(|_, cx| assert_eq!(panel.read(cx).statuses[0], Status::Missing));
+    }
+}
+
+#[gpui::test]
+fn remembered_labels_never_supply_runtime_readiness_or_selection_failures(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("model.onnx");
+    std::fs::write(&file, b"fixture").unwrap();
+    let files = Files::read(std::slice::from_ref(&file));
+    let model = Model::Ocr(OcrModel::Cyrillic);
+    for status in [
+        Status::Ready,
+        Status::Missing,
+        Status::Damaged("old failure".into()),
+        Status::Unavailable("old runtime failure".into()),
+    ] {
+        let (panel, cx) = cx.add_window_view(|_, cx| {
+            Panel::new(Store::in_memory(), Rc::new(Cell::new(Theme::Light)), cx)
+        });
+        panel.update(cx, |p, cx| {
+            p.model_files = Some([vec![], vec![file.clone()], vec![], vec![]]);
+            p.model_state
+                .record(model, &files, files.clone(), status.clone());
+            p.check_blocked = true;
+            p.pending.fill(Default::default());
+            p.refresh(cx);
+            assert_eq!(*p.row_status(model), status);
+            assert_eq!(p.statuses[Panel::index(model)], Status::Unknown);
+            assert!(p.ocr_installations.is_empty());
+            assert!(!p.needs_setup(model));
+            p.select(model, cx);
+            assert_eq!(p.draft.ocr.model, OcrModel::Cyrillic);
+            assert!(p.error.is_none());
+        });
+        cx.run_until_parked();
+    }
+}
+
+#[gpui::test]
+fn first_use_setup_and_removal_are_remembered_before_settings_opens(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let settings = dir.path().join("settings.json");
+    let paths =
+        Model::ALL.map(|model| vec![dir.path().join(format!("{}.model", Panel::index(model)))]);
+    let (panel, cx) = cx.add_window_view(|_, cx| {
+        Panel::new(
+            Store::open(Some(settings.clone())),
+            Rc::new(Cell::new(Theme::Light)),
+            cx,
+        )
+    });
+    for model in Model::ALL {
+        let index = Panel::index(model);
+        std::fs::write(&paths[index][0], b"verified model fixture").unwrap();
+        panel.update(cx, |p, cx| {
+            p.model_files = Some(paths.clone());
+            let completion = SetupCompletion::remember(
+                model,
+                false,
+                &Progress::default(),
+                Ok(None),
+                p.model_state.clone(),
+                Some(Files::read(&paths[index])),
+                &paths[index],
+            );
+            p.finish_setup(model, completion, cx);
+            assert_eq!(p.statuses[index], Status::Ready);
+        });
+        let reopened = cx.new(|cx| {
+            Panel::new(
+                Store::open(Some(settings.clone())),
+                Rc::new(Cell::new(Theme::Dark)),
+                cx,
+            )
+        });
+        reopened.update(cx, |p, cx| {
+            p.model_files = Some(paths.clone());
+            p.check_blocked = true;
+            p.refresh(cx);
+            assert_eq!(*p.row_status(model), Status::Ready);
+            assert!(!p.row_checking(model));
+            assert_eq!(p.statuses[index], Status::Unknown);
+        });
+        std::fs::remove_file(&paths[index][0]).unwrap();
+        panel.update(cx, |p, cx| {
+            let completion = SetupCompletion::remember(
+                model,
+                true,
+                &Progress::default(),
+                Ok(None),
+                p.model_state.clone(),
+                None,
+                &paths[index],
+            );
+            p.finish_setup(model, completion, cx);
+            p.check_blocked = true;
+            p.refresh(cx);
+            assert_eq!(*p.row_status(model), Status::Missing);
+        });
+        let stored = ModelState::open(Some(&settings));
+        assert_eq!(
+            stored.status(model, &Files::read(&paths[index])),
+            Some(Status::Missing)
+        );
+    }
+}
+
+#[gpui::test]
+fn setup_rejects_files_changed_after_verification_before_publication(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("model.onnx");
+    let settings = dir.path().join("settings.json");
+    let (panel, cx) = cx.add_window_view(|_, cx| {
+        Panel::new(
+            Store::open(Some(settings.clone())),
+            Rc::new(Cell::new(Theme::Light)),
+            cx,
+        )
+    });
+    for (model, before_remember) in Model::ALL
+        .into_iter()
+        .flat_map(|model| [true, false].map(|before_remember| (model, before_remember)))
+    {
+        std::fs::write(&path, b"verified").unwrap();
+        let before = Files::read(std::slice::from_ref(&path));
+        // The engine has returned its pre-verification snapshot. An external
+        // writer changes a tracked file before the worker publishes success.
+        if before_remember {
+            std::fs::write(&path, b"changed after verification").unwrap();
+        }
+        panel.update(cx, |p, cx| {
+            p.model_files = Some(Model::ALL.map(|id| {
+                if id == model {
+                    vec![path.clone()]
+                } else {
+                    vec![]
+                }
+            }));
+            let completion = SetupCompletion::remember(
+                model,
+                false,
+                &Progress::default(),
+                Ok(None),
+                p.model_state.clone(),
+                Some(before),
+                std::slice::from_ref(&path),
+            );
+            if before_remember {
+                assert_eq!(completion.status, Status::Unknown);
+                assert!(completion.result.is_err());
+            } else {
+                assert_eq!(completion.status, Status::Ready);
+                // A second gap is the UI handoff after the worker saves.
+                std::fs::write(&path, b"changed before UI publication").unwrap();
+            }
+            p.finish_setup(model, completion, cx);
+            assert_eq!(p.statuses[Panel::index(model)], Status::Unknown);
+            assert!(p.ocr_installations.is_empty());
+            assert!(p.error.is_some());
+        });
+        assert_eq!(
+            ModelState::open(Some(&settings))
+                .status(model, &Files::read(std::slice::from_ref(&path))),
+            Some(Status::Unknown)
+        );
+    }
+}
+
 #[gpui::test]
 fn text_recognition_note_matches_the_offered_languages(cx: &mut TestAppContext) {
     let (panel, cx) = cx.add_window_view(|_, cx| {
         Panel::new(Store::in_memory(), Rc::new(Cell::new(Theme::default())), cx)
     });
     cx.simulate_resize(size(px(800.), px(2400.)));
-    for model in OcrModel::ALL {
+    for (model, theme, runtime) in OcrModel::ALL.into_iter().flat_map(|model| {
+        [Theme::Light, Theme::Dark]
+            .into_iter()
+            .flat_map(move |theme| [0, 1_000_000].map(|runtime| (model, theme, runtime)))
+    }) {
         panel.update(cx, |panel, cx| {
+            panel.theme.set(theme);
             panel.open = true;
             panel.category = Category::Recognition;
             panel.draft.ocr.model = model;
             panel.pending.fill(Default::default());
+            panel.pending[Panel::index(Model::Ocr(model))].runtime = runtime;
             panel.statuses.fill(Status::Missing);
             cx.notify();
         });
@@ -22,10 +280,12 @@ fn text_recognition_note_matches_the_offered_languages(cx: &mut TestAppContext) 
             window.refresh();
             window.draw(cx).clear(cx);
         });
-        assert!(
-            cx.debug_bounds("Reads scanned pages in English and Russian.")
-                .is_some()
-        );
+        let note = if runtime == 0 {
+            "Default when a document suggests no language. Each document’s card picks its own."
+        } else {
+            "Default when a document suggests no language. Each document’s card picks its own. The first download adds a 1 MB shared runtime."
+        };
+        assert!(cx.debug_bounds(note).is_some());
     }
     assert_eq!(ocr::title(OcrModel::V6Small), "English");
     assert_eq!(ocr::title(OcrModel::Cyrillic), "English & Russian");

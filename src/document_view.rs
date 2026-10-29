@@ -1184,6 +1184,15 @@ impl DocumentView {
             .child(ui::card_hint(hint, theme).when(cfg!(test), |v| {
                 v.debug_selector(|| "ocr-language-hint".into())
             }))
+            .child(
+                ui::card_hint(
+                    "For this document only. Default: Settings › Recognition.",
+                    theme,
+                )
+                .when(cfg!(test), |v| {
+                    v.debug_selector(|| "ocr-document-only".into())
+                }),
+            )
             .when_some(failed, |v, error| v.child(ui::card_error(error, theme)))
             .child(
                 ui::card_actions()
