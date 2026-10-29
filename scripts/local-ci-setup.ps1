@@ -77,8 +77,9 @@ $envFile = @(
 # LF line endings: bash sources this file.
 [IO.File]::WriteAllText((Join-Path $Root 'runner.env'), ($envFile -join "`n") + "`n")
 
-# conhost --headless keeps the task from opening a console window.
-$command = "LOCAL_CI_HOME=$bashRoot exec bash $bashRoot/runner/scripts/local-ci.sh run"
+# conhost --headless keeps the task from opening a console window; the
+# pinned tools in ~/.cargo/bin come first, as on the Mac.
+$command = "LOCAL_CI_HOME=$bashRoot PATH=`$HOME/.cargo/bin:`$PATH exec bash $bashRoot/runner/scripts/local-ci.sh run"
 $action = New-ScheduledTaskAction -Execute (Join-Path $env:WINDIR 'System32\conhost.exe') `
     -Argument "--headless `"$bash`" -c `"$command`""
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
