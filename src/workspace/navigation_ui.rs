@@ -107,7 +107,7 @@ impl Workspace {
                     .tooltip(style::tooltip(label, theme))
                     .p_0()
                     .size(px(28.))
-                    .text_size(px(24.))
+                    .text_size(px(18.))
                     .flex()
                     .items_center()
                     .justify_center()
