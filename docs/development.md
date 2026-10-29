@@ -382,15 +382,20 @@ skill) read this section for mdoc's needs.
   `git switch -c <machine>/<topic> origin/main`.
   Retire other worktrees with `just retire-worktree <path>` once merged.
   A third lane (`windows-lane-3`) is added only when `df` shows room for
-  another 30 GiB with margin.
-- **Models and reviews** follow the fleet skill (`codex.md`, fleet ADR 0012):
-  cheap-tier sub-agents for simple subtasks, a cross-provider review before
-  every code PR.
+  another 30 GiB with margin. Claude Desktop SSH sessions use these lane
+  folders too (`use_worktree: false`), one session or T3 thread per lane.
+- **Models and reviews** follow the fleet skill (fleet ADR 0015): Opus 5.5
+  builds in Claude Desktop sessions, Codex takes Windows-specific items, and
+  every code PR gets the other provider's review. While Codex is limited, a
+  Claude PR merges on the hub's gate and is reviewed after merge, except a PR
+  that changes stored data (`mdoc-store`, encryption, the case file), which
+  waits for the Codex review.
 - **Hub worktrees on `macbook-air`** keep their own `target/`, like every
   worktree: never point `CARGO_TARGET_DIR` at the root checkout's. Shared, it
   gave the workspace crates one build hash across worktrees, so a build reused
   another worktree's `mdoc-pii` and tested stale code (2026-10-29). Check `df`
-  for about 30 GiB per worktree first, and retire it when merged.
+  for about 30 GiB per worktree first, and retire it when merged. At most two
+  worktrees build at once on the Mac.
 - **Native checks.** The [acceptance](platform-acceptance.md) checklist runs
   by computer use (see [ADR 0057](adr/0057-native-platform-acceptance.md));
   rows that need a physical keyboard, speech, passwords or system settings
