@@ -24,8 +24,8 @@ fail() {
   exit 1
 }
 
-# Newest first, as gh lists them: older lock-hash generations of the same
-# job, OS and env hash go; another env hash or job stays.
+# Newest first, as gh lists them: every older entry of the same job and OS
+# goes, whether its lock hash or its env hash differs; other jobs stay.
 cat >"$GH_ENTRIES" <<'LIST'
 6 v0-rust-test-Darwin-arm64-de33f1f6-57c00e6c
 5 v0-rust-test-Windows_NT-x64-c34c4943-d4d77f7a
@@ -37,8 +37,8 @@ cat >"$GH_ENTRIES" <<'LIST'
 LIST
 : >"$GH_LOG"
 scripts/ci-cache-cleanup.sh >"$tmp/out" || fail "cleanup exited non-zero"
-[ "$(cat "$GH_LOG")" = $'3\n2\n1' ] || fail "deleted: $(tr '\n' ' ' <"$GH_LOG")"
-grep -qx 'deleted 3 older cache generation(s)' "$tmp/out" || fail "summary: $(cat "$tmp/out")"
+[ "$(cat "$GH_LOG")" = $'4\n3\n2\n1' ] || fail "deleted: $(tr '\n' ' ' <"$GH_LOG")"
+grep -qx 'deleted 4 older cache generation(s)' "$tmp/out" || fail "summary: $(cat "$tmp/out")"
 
 # No caches, or one generation per key: nothing to delete.
 : >"$GH_ENTRIES"

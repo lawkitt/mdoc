@@ -15,10 +15,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Load pinned tool versions
-      shell: bash
-      run: grep -E '^[A-Z_]+=' scripts/tools.env >> "$GITHUB_ENV"
-
     # rustup reads rust-toolchain.toml; the runner images ship rustup.
     - name: Install the pinned Rust toolchain
       shell: bash
@@ -33,6 +29,13 @@ runs:
         save-if: ${{ github.ref == 'refs/heads/main' }}
         # Keep the cache when a later step fails so a rerun isn't a cold build.
         cache-on-failure: true
+
+    # After the cache step: rust-cache hashes every CARGO* variable into its
+    # key, so loading the pins earlier would make each tool bump (such as
+    # CARGO_NEXTEST_VERSION) a cold build for every job.
+    - name: Load pinned tool versions
+      shell: bash
+      run: grep -E '^[A-Z_]+=' scripts/tools.env >> "$GITHUB_ENV"
 
     - name: Resolve tool versions
       id: tools
