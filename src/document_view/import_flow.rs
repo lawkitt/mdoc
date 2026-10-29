@@ -243,6 +243,25 @@ impl ImportFlow {
 
     // ---- Test setup -----------------------------------------------------------
 
+    #[cfg(all(
+        debug_assertions,
+        feature = "headless-renders",
+        any(target_os = "macos", target_os = "windows")
+    ))]
+    pub(crate) fn show_ocr_fixture(&mut self, generation: u64) {
+        // Render evidence uses a fixed signal, never the host's keyboards.
+        self.input_languages = Vec::new;
+        self.job.complete(
+            generation,
+            Err(ImportError::NeedsOcr(
+                "Scanned agreement.pdf".into(),
+                vec![1],
+                Vec::new(),
+                1,
+            )),
+        );
+    }
+
     #[cfg(test)]
     pub(crate) fn job(&self) -> &ImportSession {
         &self.job

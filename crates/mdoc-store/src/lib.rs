@@ -7,6 +7,7 @@ pub mod cases;
 pub mod crash;
 pub mod document;
 pub mod document_session;
+pub mod model_state;
 pub mod recents;
 pub mod session_store;
 pub mod settings;

@@ -225,6 +225,22 @@ pub fn root_for(model: mdoc_store::settings::PiiModel) -> Result<PathBuf, Detect
         })
         .ok_or(DetectError::NoStorage)
 }
+
+/// Model files and the shared runtime, matching `check_reserved`.
+pub fn model_files(
+    root: &Path,
+    ocr_root: &Path,
+    model: mdoc_store::settings::PiiModel,
+) -> Vec<PathBuf> {
+    manifest_for(model)
+        .files
+        .iter()
+        .map(|file| root.join(&file.path))
+        .chain(std::iter::once(mdoc_import::ocr::onnx_runtime_path(
+            ocr_root,
+        )))
+        .collect()
+}
 /// Bytes setup still needs for `model` under `root` (see [`root_for`]),
 /// including the shared ONNX Runtime under `ocr_root` (`ocr::root`). Without
 /// a root, everything is still to download.
@@ -269,6 +285,17 @@ pub fn setup_config(
     }
     let _permit =
         mdoc_import::model_work::Permit::acquire_for("installing pseudonymization model")?;
+    setup_reserved(config, progress).map(|_| ())
+}
+/// The caller retains model admission through publishing its setup result.
+/// Metadata is captured after downloads, immediately before final validation.
+pub fn setup_reserved(
+    config: &mdoc_store::settings::PiiConfig,
+    progress: &mdoc_import::model_download::Progress,
+) -> Result<mdoc_store::model_state::Files, DetectError> {
+    if !SUPPORTED {
+        return Err(DetectError::SetupUnsupported);
+    }
     let root = root_for(config.model)?;
     fs::create_dir_all(&root)?;
     for artifact in manifest_for(config.model).files {
@@ -309,8 +336,14 @@ pub fn setup_config(
     )?;
     progress.phase("Checking runtime");
     progress.check()?;
+    let before = mdoc_store::model_state::Files::read(&model_files(
+        &root,
+        &mdoc_import::ocr::root()?,
+        config.model,
+    ));
     check_engine(&root, config.model)?;
-    progress.check().map_err(DetectError::from)
+    progress.check()?;
+    Ok(before)
 }
 fn check_engine(root: &Path, model: mdoc_store::settings::PiiModel) -> Result<(), DetectError> {
     verify_model(root, model)?;
@@ -337,6 +370,10 @@ pub fn check_reserved(model: mdoc_store::settings::PiiModel) -> Result<bool, Det
 }
 pub fn remove_model(model: mdoc_store::settings::PiiModel) -> Result<(), DetectError> {
     let _permit = mdoc_import::model_work::Permit::acquire_for("removing pseudonymization model")?;
+    remove_reserved(model)
+}
+/// The caller retains model admission through remembering the removal.
+pub fn remove_reserved(model: mdoc_store::settings::PiiModel) -> Result<(), DetectError> {
     let root = root_for(model)?;
     if root.exists() {
         fs::remove_dir_all(root)?;

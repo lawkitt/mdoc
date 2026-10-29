@@ -45,13 +45,6 @@ Added at the 2026-10-29 grill ([record](docs/design/roadmap-grill-2026-10-29.md)
    Open as tab; the reply is kept encrypted in the case.
    *Done when:* the captured replies restore completely in the Reply view, and
    a reply survives closing and reopening a case member.
-3. **[Models] Remembered model state** ([ADR 0076](docs/adr/0076-settings-categories.md),
-   [ADR 0066](docs/adr/0066-recognition-language-defaults.md)). *From the
-   2026-10-26 Windows run (S5).* Settings shows the last check at once and
-   re-checks quietly; the OCR card says its pick is for this document only.
-   *Done when:* reopening Settings shows no "Checking…" after a first check,
-   a removed model file shows Missing after the quiet check, and the card line
-   renders in both themes.
 4. **[PII] Default categories to detect** ([ADR 0076](docs/adr/0076-settings-categories.md)).
    *From Anoni 0.86.1.* Settings › Detection chips filter scans without a
    case and seed new cases.
@@ -66,11 +59,6 @@ Added at the 2026-10-29 grill ([record](docs/design/roadmap-grill-2026-10-29.md)
    times; a click travels the undo history to that entry.
    *Done when:* tests show each listed decision kind, travel equal to ⌘Z/⇧⌘Z,
    undone entries dropped by a new decision, and nothing written to disk.
-7. **[UI] Workspace Back/Forward** ([ADR 0081](docs/adr/0081-workspace-back-forward.md)).
-   ⌘[ / ⌘] (Alt+←/→ on Windows outside text), mouse buttons 4/5 and ‹ ›
-   over tabs, Home and the case page.
-   *Done when:* tests cover the stops, skipped closed tabs and the editor
-   keeping Alt+← for Previous word, and the shortcuts panel lists both.
 
 ## Later
 

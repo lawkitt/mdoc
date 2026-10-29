@@ -249,6 +249,7 @@ impl Workspace {
         self.cases.page = None;
         self.end_rename(true, cx);
         self.tabs.show_home();
+        self.note_destination(cx);
         window.focus(&self.focus, cx);
         cx.notify();
     }

@@ -3,6 +3,39 @@
 use super::*;
 use gpui::{Keystroke, TestAppContext};
 
+#[test]
+fn workspace_navigation_is_everywhere_with_platform_keys_and_text_context_guards() {
+    for (label, mac, other, action) in [
+        (
+            "Back",
+            "cmd-[",
+            "alt-left",
+            Box::new(workspace::Back) as Box<dyn Action>,
+        ),
+        (
+            "Forward",
+            "cmd-]",
+            "alt-right",
+            Box::new(workspace::Forward) as Box<dyn Action>,
+        ),
+    ] {
+        let row = SHORTCUTS.iter().find(|row| row.label == label).unwrap();
+        assert_eq!(row.group, Group::Everywhere);
+        assert_eq!(row.keys(true), [mac]);
+        assert_eq!(row.keys(false), [other]);
+        for (platform, key, context) in [(true, mac, "Workspace"), (false, other, CHROME)] {
+            let bindings = specs(platform);
+            let navigation: Vec<_> = bindings
+                .iter()
+                .filter(|spec| spec.action.partial_eq(&*action))
+                .collect();
+            assert_eq!(navigation.len(), 1);
+            assert_eq!(navigation[0].keys, key);
+            assert_eq!(navigation[0].context, Some(context));
+        }
+    }
+}
+
 /// Plumbing, by action: Tab inside a control group, moving inside menus,
 /// choosers and the palette's list, caret and deletion basics in the editor
 /// and text fields, Esc dismissing the editor's own transient state, and the

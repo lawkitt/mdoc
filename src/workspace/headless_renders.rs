@@ -139,6 +139,10 @@ impl Driver {
                     }).collect::<Vec<_>>());
                 json!({
                     "home": w.showing_home(cx),
+                    "back_enabled": w.navigation_target(true, cx).is_some(),
+                    "forward_enabled": w.navigation_target(false, cx).is_some(),
+                    "back_label": w.navigation_label(true, cx),
+                    "forward_label": w.navigation_label(false, cx),
                     "palette": w.shell.palette.is_some(),
                     "shortcuts": w.shell.shortcuts.is_some(),
                     "settings": w.settings.read(cx).open,
@@ -164,6 +168,10 @@ impl Driver {
                     "folder_sheet_ticked": w.folder_sheets.sheet().map(|s| s.ticked_count()),
                     "find_replace": w.active_view().is_some_and(|v| v.read(cx).search.open()),
                     "merge_hints": w.active_view().map_or(0, |v| v.read(cx).pii.review().merge_hints().len()),
+                    "ocr_consent": w.active_view().is_some_and(|v| {
+                        let v = v.read(cx);
+                        v.lifecycle.source_only() && v.import.ocr_required().is_some()
+                    }),
                 })
             })?
         } else {
@@ -349,8 +357,37 @@ fn scenarios(
     detections: &[mdoc_pii::Detection],
 ) -> Result<Vec<Value>> {
     let mut records = vec![d.capture(out, "home")?];
+    d.change(|w, _, cx| {
+        w.sidebar.restore(false, Some(false));
+        cx.notify();
+    })?;
+    records.push(d.capture(out, "navigation-disabled")?);
+    d.change(|w, _, cx| {
+        w.sidebar.restore(true, Some(true));
+        cx.notify();
+    })?;
     let view = document(d, path)?;
     records.push(d.capture(out, "document")?);
+    d.change(|w, window, cx| {
+        w.sidebar.restore(false, Some(false));
+        window.focus(&w.focus, cx);
+        cx.notify();
+    })?;
+    records.push(d.capture(out, "navigation-enabled")?);
+    // The document is in the middle: Home behind it and a second tab ahead.
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.navigate(true, window, cx);
+        window.focus(&w.focus, cx);
+    })?;
+    records.push(d.capture(out, "navigation-middle")?);
+    let (back, forward) = d.change(|w, _, _| (w.back_focus.clone(), w.forward_focus.clone()))?;
+    d.focus_pair(out, "navigation-back", back)?;
+    d.focus_pair(out, "navigation-forward", forward)?;
+    d.change(|w, _, cx| {
+        w.sidebar.restore(true, Some(true));
+        cx.notify();
+    })?;
     // Nothing is pseudonymized yet: Copy for AI says why it is off.
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
@@ -681,6 +718,18 @@ fn scenarios(
         });
     })?;
     records.push(d.capture(out, "conversion-failed")?);
+    // The consent card only: no converter, model download or native runtime.
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.lifecycle.show_source();
+            v.import.show_ocr_fixture(v.session.generation);
+            v.resume_import(window, cx);
+            v.ocr_state = crate::document_view::OcrState::Missing;
+            cx.notify();
+        });
+    })?;
+    records.push(d.capture(out, "ocr-consent")?);
     d.change(|w, window, cx| {
         w.new_tab(window, cx);
         w.active_view()

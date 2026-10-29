@@ -14,6 +14,8 @@ use mdoc_import::{
     model_download::{self, Pending, Progress},
     model_work, ocr,
 };
+pub use mdoc_store::model_state::Status;
+use mdoc_store::model_state::{Files, ModelState};
 use mdoc_store::session_store::ThemeChoice;
 use mdoc_store::settings::{Model, OcrConfig, PiiConfig, PiiModel, Preferences, Shared, save};
 use std::{cell::Cell, rc::Rc, sync::atomic::Ordering, time::Duration};
@@ -21,6 +23,17 @@ use std::{cell::Cell, rc::Rc, sync::atomic::Ordering, time::Duration};
 mod categories;
 pub(crate) mod dictionary;
 pub(crate) use categories::Category;
+
+fn status_label(status: &Status) -> String {
+    match status {
+        Status::Unknown => "Not checked",
+        Status::Missing => "Not downloaded",
+        Status::Ready => "Installed",
+        Status::Damaged(_) => "Repair needed",
+        Status::Unavailable(_) => "Unavailable",
+    }
+    .into()
+}
 
 actions!(
     model_settings,
@@ -46,29 +59,67 @@ pub enum Event {
     ClearRecents,
     Shortcuts,
 }
-#[derive(Clone, Debug)]
-pub enum Status {
-    Unknown,
-    Missing,
-    Ready,
-    Damaged(String),
-    Unavailable(String),
+
+struct SetupCompletion {
+    result: Result<Option<ocr::Installed>, String>,
+    status: Status,
+    model_state: ModelState,
 }
-impl Status {
-    fn label(&self) -> String {
-        match self {
-            Self::Unknown => "Not checked".into(),
-            Self::Missing => "Not downloaded".into(),
-            Self::Ready => "Installed".into(),
-            Self::Damaged(_) => "Repair needed".into(),
-            Self::Unavailable(_) => "Unavailable".into(),
+
+impl SetupCompletion {
+    /// Runs on the setup worker, while it still owns the model permit.
+    fn remember(
+        model: Model,
+        remove: bool,
+        progress: &Progress,
+        mut result: Result<Option<ocr::Installed>, String>,
+        mut model_state: ModelState,
+        checked_files: Option<Files>,
+        paths: &[std::path::PathBuf],
+    ) -> Self {
+        model_state.reload();
+        let status = match &result {
+            Ok(_) if remove => Status::Missing,
+            Ok(_) => Status::Ready,
+            Err(_) if progress.cancel.load(Ordering::Relaxed) => Status::Unknown,
+            Err(e) if progress.state.lock().unwrap().phase == "Checking runtime" => {
+                Status::Unavailable(e.clone())
+            }
+            Err(e) => Status::Damaged(e.clone()),
+        };
+        let after = Files::read(paths);
+        let status = if result.is_ok() && !remove && checked_files.is_none() {
+            Status::Unknown
+        } else {
+            status
+        };
+        let before = checked_files.unwrap_or_else(|| after.clone());
+        let status = model_state.record(model, &before, after, status);
+        if result.is_ok() && !remove && status != Status::Ready {
+            result = Err("Model files changed. Retry setup.".into());
+        }
+        if let Err(error) = model_state.save() {
+            eprintln!("Could not remember model setup: {error}");
+        }
+        Self {
+            result,
+            status,
+            model_state,
         }
     }
 }
+
 pub struct Panel {
     pub open: bool,
     pub shared: Shared,
     pub statuses: Vec<Status>,
+    /// Persisted labels are never inputs to runtime readiness or admission.
+    row_statuses: Option<Vec<Status>>,
+    model_state: ModelState,
+    #[cfg(test)]
+    model_files: Option<[Vec<std::path::PathBuf>; 4]>,
+    #[cfg(test)]
+    check_blocked: bool,
     pub ocr_installations: Vec<ocr::Installed>,
     /// Bytes each model in `Model::ALL` still needs, measured cheaply by size.
     pub pending: Vec<Pending>,
@@ -239,10 +290,17 @@ impl Panel {
 
     pub fn new(shared: Shared, theme: Rc<Cell<Theme>>, cx: &mut Context<Self>) -> Self {
         let draft = shared.borrow().current.clone().unwrap_or_default();
+        let model_state = ModelState::open(shared.borrow().path.as_deref());
         Self {
             open: false,
             shared,
             statuses: vec![Status::Unknown; Model::ALL.len()],
+            row_statuses: None,
+            model_state,
+            #[cfg(test)]
+            model_files: None,
+            #[cfg(test)]
+            check_blocked: false,
             ocr_installations: Vec::new(),
             pending: Model::ALL.map(models::pending).to_vec(),
             threshold: field(
@@ -456,25 +514,75 @@ impl Panel {
             i.set_value(self.draft.ocr.minimum_confidence.to_string(), cx)
         });
     }
+    fn model_files(&self) -> [Vec<std::path::PathBuf>; 4] {
+        #[cfg(test)]
+        if let Some(files) = &self.model_files {
+            return files.clone();
+        }
+        Model::ALL.map(models::files)
+    }
+
+    fn row_checking(&self, model: Model) -> bool {
+        self.checking
+            && matches!(self.row_status(model), Status::Unknown)
+            && !self.model_state.contains(model)
+    }
+
+    fn row_status(&self, model: Model) -> &Status {
+        &self.row_statuses.as_ref().unwrap_or(&self.statuses)[Self::index(model)]
+    }
+
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
-        if self.working.is_some() || model_work::busy() {
+        let paths = self.model_files();
+        if self.working.is_none() {
+            self.row_statuses = Some(
+                Model::ALL
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, model)| {
+                        let files = Files::read(&paths[index]);
+                        self.model_state
+                            .status(model, &files)
+                            .unwrap_or_else(|| self.statuses[index].clone())
+                    })
+                    .collect(),
+            );
+        }
+        // Unit checks substitute the engines below and isolate admission too:
+        // concurrent test windows must not take each other's process-wide slot.
+        #[cfg(test)]
+        let busy = self.check_blocked;
+        #[cfg(not(test))]
+        let busy = model_work::busy();
+        if self.working.is_some() || busy {
             self.check_pending = true;
             return;
         }
-        let Ok(permit) = model_work::Permit::acquire_for("checking installed models") else {
-            return;
+        #[cfg(test)]
+        let permit: Option<model_work::Permit> = None;
+        #[cfg(not(test))]
+        let permit = match model_work::Permit::acquire_for("checking installed models") {
+            Ok(permit) => Some(permit),
+            Err(_) => {
+                self.check_pending = true;
+                return;
+            }
         };
         self.checks += 1;
         self.check_pending = false;
         self.checking = true;
         let generation = self.checks;
+        let mut model_state = self.model_state.clone();
         let task = cx.background_executor().spawn(async move {
             let _permit = permit;
             let mut installed = Vec::new();
             let pending = Model::ALL.map(models::pending).to_vec();
             let statuses = Model::ALL
                 .into_iter()
-                .map(|model| {
+                .enumerate()
+                .map(|(index, model)| {
+                    let paths = &paths[index];
+                    let before = Files::read(paths);
                     let result = match model {
                         // Tests never read the real profile's installed models.
                         Model::Ocr(_) if cfg!(test) => Ok(false),
@@ -493,7 +601,7 @@ impl Panel {
                         Model::Pii(_) if cfg!(test) => Ok(false),
                         Model::Pii(m) => mdoc_detect::check_reserved(m).map_err(|e| e.to_string()),
                     };
-                    if !ocr::SUPPORTED {
+                    let status = if !ocr::SUPPORTED {
                         Status::Unavailable(
                             "Automatic inference supports Apple Silicon macOS and Windows x64."
                                 .into(),
@@ -502,21 +610,42 @@ impl Panel {
                         match result {
                             Ok(true) => Status::Ready,
                             Ok(false) => Status::Missing,
+                            Err(_) if pending[index].total() > 0 => Status::Missing,
                             Err(e) => Status::Unavailable(e),
                         }
-                    }
+                    };
+                    model_state.record(model, &before, Files::read(paths), status)
                 })
                 .collect::<Vec<_>>();
-            (statuses, installed, pending)
+            if let Err(error) = model_state.save() {
+                eprintln!("Could not remember model checks: {error}");
+            }
+            (statuses, installed, pending, model_state)
         });
         cx.spawn(async move |this, cx| {
-            let result = task.await;
+            let (mut statuses, mut installed, pending, model_state) = task.await;
             let _ = this.update(cx, |this, cx| {
                 if this.checks == generation && this.working.is_none() {
+                    // A different model's runtime check may take time. Recheck
+                    // metadata at publication too, so an earlier result cannot
+                    // label a file removed while the rest of the catalog ran.
+                    let paths = this.model_files();
+                    for (index, model) in Model::ALL.into_iter().enumerate() {
+                        statuses[index] = model_state
+                            .status(model, &Files::read(&paths[index]))
+                            .unwrap_or(Status::Unknown);
+                    }
+                    installed.retain(|i| {
+                        statuses[Self::index(Model::Ocr(i.config.model))] == Status::Ready
+                    });
                     this.checking = false;
-                    this.statuses = result.0;
-                    this.ocr_installations = result.1;
-                    this.pending = result.2;
+                    if this.statuses != statuses {
+                        this.statuses = statuses;
+                    }
+                    this.row_statuses = None;
+                    this.ocr_installations = installed;
+                    this.pending = pending;
+                    this.model_state = model_state;
                     cx.emit(Event::Checked);
                     cx.notify();
                 }
@@ -670,7 +799,16 @@ impl Panel {
             cx.notify();
             return;
         }
+        let permit = match model_work::Permit::acquire_for("changing installed models") {
+            Ok(permit) => permit,
+            Err(error) => {
+                self.error = Some(error.to_string());
+                cx.notify();
+                return;
+            }
+        };
         self.checks += 1;
+        self.checking = false;
         self.working = Some(model);
         self.error = None;
         let progress = Progress::default();
@@ -680,65 +818,59 @@ impl Panel {
             self.pending[Self::index(model)].total()
         };
         self.progress = Some(progress.clone());
+        let model_state = self.model_state.clone();
+        let paths = self.model_files()[Self::index(model)].clone();
         let task = cx.background_executor().spawn({
             let progress = progress.clone();
             async move {
-                if remove {
+                let _permit = permit;
+                let result = if remove {
                     match model {
-                        Model::Ocr(m) => ocr::remove_model(m).map_err(|e| e.to_string()),
-                        Model::Pii(m) => mdoc_detect::remove_model(m).map_err(|e| e.to_string()),
+                        Model::Ocr(m) => ocr::remove_reserved(m).map_err(|e| e.to_string()),
+                        Model::Pii(m) => mdoc_detect::remove_reserved(m).map_err(|e| e.to_string()),
                     }
-                    .map(|_| None)
+                    .map(|_| (None, None))
                 } else {
                     match model {
-                        Model::Ocr(m) => ocr::install_config(
+                        Model::Ocr(m) => ocr::install_reserved(
                             &OcrConfig {
                                 model: m,
                                 ..Default::default()
                             },
                             &progress,
                         )
-                        .map(Some)
+                        .map(|(installed, files)| (Some(installed), Some(files)))
                         .map_err(|e| e.to_string()),
-                        Model::Pii(m) => mdoc_detect::setup_config(
+                        Model::Pii(m) => mdoc_detect::setup_reserved(
                             &PiiConfig {
                                 model: m,
                                 ..Default::default()
                             },
                             &progress,
                         )
-                        .map(|_| None)
+                        .map(|files| (None, Some(files)))
                         .map_err(|e| e.to_string()),
                     }
-                }
+                };
+                let (result, checked_files) = match result {
+                    Ok((installed, files)) => (Ok(installed), files),
+                    Err(error) => (Err(error), None),
+                };
+                SetupCompletion::remember(
+                    model,
+                    remove,
+                    &progress,
+                    result,
+                    model_state,
+                    checked_files,
+                    &paths,
+                )
             }
         });
         cx.spawn(async move |this, cx| {
-            let result = task.await;
+            let completion = task.await;
             let _ = this.update(cx, |this, cx| {
-                let index = Self::index(model);
-                // Runtimes are shared, so any setup can change every model's size.
-                this.pending = Model::ALL.map(models::pending).to_vec();
-                this.statuses[index] = match &result {
-                    Ok(_) if remove => Status::Missing,
-                    Ok(_) => Status::Ready,
-                    Err(_) if progress.cancel.load(Ordering::Relaxed) => Status::Unknown,
-                    Err(e) if progress.state.lock().unwrap().phase == "Checking runtime" => {
-                        Status::Unavailable(e.clone())
-                    }
-                    Err(e) => Status::Damaged(e.clone()),
-                };
-                if let Model::Ocr(m) = model {
-                    this.ocr_installations.retain(|i| i.config.model != m);
-                    if let Ok(Some(i)) = &result {
-                        this.ocr_installations.push(i.clone());
-                    }
-                }
-                cx.emit(Event::Finished(model, result.clone()));
-                this.error = result.err();
-                this.working = None;
-                this.progress = None;
-                cx.notify();
+                this.finish_setup(model, completion, cx);
             });
         })
         .detach();
@@ -764,6 +896,39 @@ impl Panel {
             }
         })
         .detach();
+        cx.notify();
+    }
+    fn finish_setup(&mut self, model: Model, completion: SetupCompletion, cx: &mut Context<Self>) {
+        let SetupCompletion {
+            mut result,
+            mut status,
+            model_state,
+        } = completion;
+        let index = Self::index(model);
+        if status == Status::Ready
+            && model_state.status(model, &Files::read(&self.model_files()[index]))
+                != Some(Status::Ready)
+        {
+            status = Status::Unknown;
+            result = Err("Model files changed. Retry setup.".into());
+        }
+        // Runtimes are shared, so any setup can change every model's size.
+        self.pending = Model::ALL.map(models::pending).to_vec();
+        self.statuses[index] = status.clone();
+        if let Some(rows) = &mut self.row_statuses {
+            rows[index] = status;
+        }
+        self.model_state = model_state;
+        if let Model::Ocr(m) = model {
+            self.ocr_installations.retain(|i| i.config.model != m);
+            if let Ok(Some(i)) = &result {
+                self.ocr_installations.push(i.clone());
+            }
+        }
+        cx.emit(Event::Finished(model, result.clone()));
+        self.error = result.err();
+        self.working = None;
+        self.progress = None;
         cx.notify();
     }
     /// Settings → Updates: detection (ADR 0038) and, on macOS, installation
@@ -995,19 +1160,19 @@ impl Panel {
         let palette = theme.pdf_style();
         let accent = theme.search_accent();
         let index = Self::index(model);
-        let status = &self.statuses[index];
+        let status = self.row_status(model);
         let pending = self.pending[index];
         let selected = match model {
             Model::Ocr(m) => self.draft.ocr.model == m,
             Model::Pii(m) => self.draft.pseudonymization.model == m,
         };
-        let selectable = !matches!(status, Status::Unavailable(_));
+        let selectable = !matches!(self.statuses[index], Status::Unavailable(_));
         let idle = self.working.is_none() && !model_work::busy();
         let working = self.working == Some(model);
-        let checking = self.checking && matches!(status, Status::Unknown);
+        let checking = self.row_checking(model);
         let missing = matches!(status, Status::Missing)
             || (matches!(status, Status::Unknown) && !checking && pending.total() > 0);
-        let removable = idle && !matches!(status, Status::Missing | Status::Unknown);
+        let removable = idle && !matches!(self.statuses[index], Status::Missing | Status::Unknown);
         let bytes = match model {
             Model::Ocr(m) => ocr::manifest::for_model(m)
                 .artifacts
@@ -1024,7 +1189,7 @@ impl Panel {
         let status_label = if checking {
             "Checking…".to_owned()
         } else {
-            status.label()
+            status_label(status)
         };
         let download_label = format!(
             "Download · {} MB",
