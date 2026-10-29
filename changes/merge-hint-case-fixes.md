@@ -1,0 +1,1 @@
+- **Case identity fixes.** Saving a new case no longer retains forgotten names in dismissed merge hints, and merging identities no longer blocks alias updates in other open case members.

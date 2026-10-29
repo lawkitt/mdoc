@@ -343,6 +343,40 @@ impl Case {
             })
             .collect()
     }
+    /// Match an identity by its current alias, then earlier aliases, then a
+    /// shared original. Alias matches keep homonyms distinct (ADR 0041).
+    fn identity_position(&self, incoming: &StoredIdentity) -> Option<usize> {
+        let position =
+            |matches: &dyn Fn(&StoredIdentity) -> bool| self.identities.iter().position(matches);
+        position(&|s| s.alias == incoming.alias)
+            .or_else(|| {
+                position(&|s| {
+                    s.names(&incoming.alias) || incoming.previous.iter().any(|p| s.names(p))
+                })
+            })
+            .or_else(|| position(&|s| incoming.originals.iter().any(|o| s.originals.contains(o))))
+    }
+    /// Renames and category changes of surviving identities. Start from each
+    /// current entry so a merge's absorbed entries cannot become renames in
+    /// other members; merges and splits are not propagated (ADR 0041).
+    pub fn renames_since(&self, before: &Self) -> Vec<(String, ExportedIdentity)> {
+        self.identities
+            .iter()
+            .filter_map(|new| {
+                let old = &before.identities[before.identity_position(new)?];
+                // A split can share originals with an entry that still exists;
+                // that new entry is not a rename of the surviving one.
+                if old.alias != new.alias && self.identities.iter().any(|s| s.alias == old.alias) {
+                    return None;
+                }
+                if old.alias != new.alias || old.category != new.category {
+                    Some((old.alias.clone(), new.exported()?))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
     /// Fold a member document's current identities into the case. Identities
     /// the document no longer uses stay; a renamed alias is kept as an earlier
     /// alias, so old files and replies still restore (ADR 0041 #23).
@@ -362,18 +396,7 @@ impl Case {
             // finds its target rather than the identity it absorbed; then an
             // earlier alias; then a shared original, whatever the category (a
             // category change renames the alias).
-            let position = |matches: &dyn Fn(&StoredIdentity) -> bool| {
-                self.identities.iter().position(matches)
-            };
-            let found = position(&|s| s.alias == incoming.alias)
-                .or_else(|| {
-                    position(&|s| {
-                        s.names(&incoming.alias) || incoming.previous.iter().any(|p| s.names(p))
-                    })
-                })
-                .or_else(|| {
-                    position(&|s| incoming.originals.iter().any(|o| s.originals.contains(o)))
-                });
+            let found = self.identity_position(&incoming);
             // Identities the member merged into this one are now named only by
             // its earlier aliases: fold them in, so no two entries share an
             // alias (ADR 0080).
@@ -1138,6 +1161,87 @@ mod tests {
             old.id = format!("{hue:06x}00000000000000000000000000");
             assert_eq!(CaseLink::of(&old).hue(), expected.hue());
         }
+    }
+
+    #[test]
+    fn renames_exclude_absorbed_entries_and_follow_the_trailing_identity() {
+        let before = Case::new(
+            "Bennett".into(),
+            &[
+                identity("PERSON_1", Category::Person, &["Maya Bennett"]),
+                identity("PERSON_2", Category::Person, &["Ms Bennett"]),
+                identity("ORG_1", Category::Organization, &["Northwind Ltd"]),
+            ],
+            None,
+        );
+        let mut merged = identity(
+            "PERSON_1",
+            Category::Person,
+            &["Maya Bennett", "Ms Bennett"],
+        );
+        merged.previous.push("PERSON_2".into());
+        let mut after = before.clone();
+        after.merge(&[merged]);
+        assert_eq!(after.identities.len(), 2);
+        assert!(after.renames_since(&before).is_empty());
+        let mut org = identity("COMPANY", Category::Organization, &["Northwind Ltd"]);
+        org.previous.push("ORG_1".into());
+        after.merge(&[org.clone()]);
+        after.identities.reverse();
+        assert_eq!(after.renames_since(&before), [("ORG_1".into(), org)]);
+    }
+
+    #[test]
+    fn rename_correspondence_prefers_aliases_then_previous_then_originals() {
+        let before = Case::new(
+            "Homonyms".into(),
+            &[
+                identity("PERSON_1", Category::Person, &["Alex Smith"]),
+                identity("PERSON_2", Category::Person, &["Alex Smith"]),
+            ],
+            None,
+        );
+        let mut after = before.clone();
+        after.identities.reverse();
+        assert!(
+            after.renames_since(&before).is_empty(),
+            "same alias wins over a shared original"
+        );
+        let mut split = before.clone();
+        split
+            .identities
+            .push(StoredIdentity::from_exported(&identity(
+                "PERSON_3",
+                Category::Person,
+                &["Alex Smith"],
+            )));
+        assert!(
+            split.renames_since(&before).is_empty(),
+            "splits are not renames"
+        );
+        let new = &mut after.identities[0];
+        new.previous
+            .push(std::mem::replace(&mut new.alias, "CLIENT".into()));
+        new.originals = vec!["Alexander Smith".into()];
+        assert_eq!(
+            after.renames_since(&before)[0].0,
+            "PERSON_2",
+            "earlier alias wins even without a shared original"
+        );
+        let before = Case::new(
+            "Category change".into(),
+            &[identity("PERSON_1", Category::Person, &["Northwind"])],
+            None,
+        );
+        let after = Case::new(
+            "Category change".into(),
+            &[identity("ORG_1", Category::Organization, &["Northwind"])],
+            None,
+        );
+        assert_eq!(
+            after.renames_since(&before),
+            [("PERSON_1".into(), after.exported()[0].clone())]
+        );
     }
 
     #[test]

@@ -190,6 +190,11 @@ impl ReviewUi {
         &mut self.review
     }
 
+    #[cfg(test)]
+    pub(crate) fn error(&self) -> Option<&str> {
+        self.error.as_deref()
+    }
+
     /// Candidate highlights are shown; Close review hides them.
     pub(crate) fn reviewing(&self) -> bool {
         self.reviewing

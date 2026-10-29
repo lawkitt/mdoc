@@ -231,7 +231,7 @@ pub(super) struct MappingUi {
     pub(super) filter_focus: FocusHandle,
     pub(super) filter_menu_focus: FocusHandle,
     /// Merge hints dismissed in this tab or its case, by the wordings that
-    /// matched (ADR 0080). Only grows, so its size keys the panel's rows.
+    /// matched (ADR 0080). Forgetting removes affected pairs and clears caches.
     dismissed_hints: std::collections::HashSet<(Arc<str>, Arc<str>)>,
     /// The fuller wording of the last hint Merge and the state it created.
     merged: Option<(Arc<str>, u64)>,
@@ -362,6 +362,22 @@ impl MappingUi {
     }
     pub(super) fn dismissed_hint_count(&self) -> usize {
         self.dismissed_hints.len()
+    }
+    /// Irreversible forgetting also discards hint wordings and cached rows;
+    /// detaching this tab must not carry a forgotten name into a new case.
+    pub(super) fn forget_case_originals(&mut self, originals: &[String]) {
+        let forgotten = |wording: &Arc<str>| originals.iter().any(|o| o == wording.as_ref());
+        self.dismissed_hints
+            .retain(|(from, into)| !forgotten(from) && !forgotten(into));
+        if self
+            .merged
+            .as_ref()
+            .is_some_and(|(wording, _)| forgotten(wording))
+        {
+            self.merged = None;
+        }
+        self.projection.get_mut().take();
+        self.entries_cache.get_mut().take();
     }
     /// Every dismissed pair, sorted, for saving into a new case.
     pub(super) fn dismissed_hint_pairs(&self) -> Vec<(String, String)> {

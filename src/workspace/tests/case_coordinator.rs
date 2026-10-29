@@ -1608,6 +1608,142 @@ fn merge_hint_dismissed_before_save_as_case_stays_dismissed(cx: &mut TestAppCont
 }
 
 #[gpui::test]
+fn forgotten_merge_hint_names_cannot_be_saved_as_a_new_case(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::Person;
+    let dir = tempfile::tempdir().unwrap();
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update(cx, |tabs, _| tabs.use_case_store(store()));
+    let source = "Maya Bennett signed. Ms Bennett agreed.";
+    let names = &[("Maya Bennett", Person), ("Ms Bennett", Person)];
+    let first = open_applied(&tabs, cx, dir.path(), "first.md", source, names);
+    let case = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(first, window, cx).unwrap()
+    });
+    let second = open_applied(&tabs, cx, dir.path(), "second.md", source, names);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(second, &case, window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    view.update_in(cx, |view, window, cx| {
+        view.inspector_share = false;
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    let from = cx.update(|_, cx| view.read(cx).pii.review().merge_hints()[0].from);
+    let selector: &'static str = Box::leak(format!("merge-hint-dismiss-{from}").into_boxed_str());
+    let button = cx.debug_bounds(selector).unwrap().center();
+    cx.simulate_click(button, Default::default());
+    cx.run_until_parked();
+    assert_eq!(store().load(&case).unwrap().dismissed_hints.len(), 1);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_case(&case, window, cx);
+        tabs.confirm_forget_case_identity(&case, "PERSON_1", window, cx);
+    });
+    cx.simulate_prompt_answer("Forget Identity");
+    cx.run_until_parked();
+    // Both the dismissing tab and the member that received the dismissal
+    // must be safe to detach and save, using the real encrypted store.
+    for tab in [second, first] {
+        let new_case = tabs.update_in(cx, |tabs, window, cx| {
+            tabs.activate(tab, window, cx);
+            tabs.remove_from_case(tab, window, cx);
+            tabs.create_case(tab, window, cx).unwrap()
+        });
+        cx.run_until_parked();
+        assert_ne!(case, new_case);
+        let decrypted = serde_json::to_string(&store().load(&new_case).unwrap()).unwrap();
+        assert!(!decrypted.contains("Maya Bennett"), "{decrypted}");
+        assert!(decrypted.contains("Ms Bennett"), "the other identity stays");
+    }
+}
+
+#[gpui::test]
+fn merge_hint_does_not_rename_an_absorbed_identity_in_another_member(cx: &mut TestAppContext) {
+    use mdoc_pii::Category::{Organization, Person};
+    let dir = tempfile::tempdir().unwrap();
+    let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(1400.), px(850.)));
+    tabs.update(cx, |tabs, _| tabs.use_case_store(store()));
+    let source = "Maya Bennett signed. Ms Bennett agreed. Northwind Ltd witnessed.";
+    let names = &[
+        ("Maya Bennett", Person),
+        ("Ms Bennett", Person),
+        ("Northwind Ltd", Organization),
+    ];
+    let first = open_applied(&tabs, cx, dir.path(), "first.md", source, names);
+    let case = tabs.update_in(cx, |tabs, window, cx| {
+        tabs.create_case(first, window, cx).unwrap()
+    });
+    let first_view = active(&tabs, cx);
+    let second = open_applied(&tabs, cx, dir.path(), "second.md", source, names);
+    let second_view = active(&tabs, cx);
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(second, &case, window, cx);
+        tabs.activate(first, window, cx);
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        store()
+            .load(&case)
+            .unwrap()
+            .identities
+            .iter()
+            .map(|i| i.alias.as_str())
+            .collect::<Vec<_>>(),
+        ["PERSON_1", "PERSON_2", "ORG_1"]
+    );
+    first_view.update_in(cx, |view, window, cx| {
+        view.inspector_share = false;
+        if !view.replacements_open() {
+            view.toggle_replacements_panel(window, cx);
+        }
+    });
+    draw(cx);
+    let from = cx.update(|_, cx| first_view.read(cx).pii.review().merge_hints()[0].from);
+    let selector: &'static str = Box::leak(format!("merge-hint-merge-{from}").into_boxed_str());
+    let button = cx.debug_bounds(selector).unwrap().center();
+    cx.simulate_click(button, Default::default());
+    cx.run_until_parked();
+    tabs.update(cx, |tabs, cx| tabs.case_changed(first, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let other = second_view.read(cx);
+        assert_eq!(other.pii.error(), None);
+        assert_eq!(
+            other.editor.read(cx).text(),
+            "PERSON_1 signed. PERSON_2 agreed. ORG_1 witnessed."
+        );
+        assert!(
+            other.pii.review().identity_by_alias("PERSON_2").is_some(),
+            "merges are not propagated"
+        );
+    });
+    assert_eq!(store().load(&case).unwrap().identities.len(), 2);
+    // The unrelated trailing identity must still follow an ordinary rename.
+    first_view.update(cx, |view, cx| {
+        let org = view.pii.review().identity_by_alias("ORG_1").unwrap();
+        view.retag_identities(&[(org, "COMPANY".into(), Organization, true)], cx)
+            .unwrap();
+    });
+    tabs.update(cx, |tabs, cx| tabs.case_changed(first, cx));
+    cx.run_until_parked();
+    cx.update(|_, cx| {
+        let other = second_view.read(cx);
+        assert_eq!(other.pii.error(), None);
+        assert_eq!(
+            other.editor.read(cx).text(),
+            "PERSON_1 signed. PERSON_2 agreed. COMPANY witnessed."
+        );
+    });
+}
+
+#[gpui::test]
 fn merge_hint_into_a_later_case_identity_keeps_one_case_entry(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);

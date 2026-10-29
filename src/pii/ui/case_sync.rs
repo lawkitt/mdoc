@@ -25,6 +25,7 @@ impl DocumentView {
     ) {
         self.pii.cancel();
         self.pii.review.forget_case_identity(aliases, originals);
+        self.pii.mapping.forget_case_originals(originals);
         self.pii.review.reserve_aliases(
             &aliases
                 .iter()
