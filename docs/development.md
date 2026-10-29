@@ -120,7 +120,7 @@ dependency forks.
 | `crates/mdoc-detect` | GUI-free offline detection: the GLiNER2 detector, its verified setup and the structured rules |
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
 | `src/document_view/tests.rs`, `src/workspace/tests.rs` and their `tests/` folders, `src/perf_tests.rs` | Headless flows, one file per owner beside shared helpers, ownership/lifetime checks, and opt-in performance measurements |
-| `src/workspace/headless_renders.rs`, `tests/headless_renders.rs` | Dev-only offscreen screen/Tab evidence and the output contract test |
+| `src/workspace/headless_renders.rs`, `src/workspace/headless_renders/`, `tests/headless_renders.rs`, `tests/headless_screens.txt` | Dev-only offscreen screen/Tab evidence: the driver, one scene module per feature, the output contract test and its screen list (one name per line, `merge=union`) |
 | `crates/mdoc-editor` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |
 | `crates/mdoc-pii`, `crates/mdoc-history` | GUI-free pseudonymization review model and the plain edit transactions it follows |
 | `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |

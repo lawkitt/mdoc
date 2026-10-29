@@ -54,14 +54,15 @@ layout. Runs for merged PRs and superseded `main` pushes kept holding runners.
   (`cargo test --workspace --features headless-renders --no-run`, empty
   target directory) grows no more than ~30% on macOS and Windows. Level 2,
   not 1: level 1 barely helped, since optimized crates otherwise call
-  unoptimized generic helpers. Current overrides: the PDF rasterization crates
-  and `gpui-pre-windows`, `png` and `simd-adler32` (readback conversion, PNG
-  filters, Adler-32). Blanket levels stay rejected: on 2026-10-26 opt-level 1
-  for all dependencies grew the cold Mac test build from 77 s to 179 s
-  (+134%; opt-level 2: 251 s).
-- **Render pipelining.** On Windows the render process encodes PNGs on one
-  background thread with a one-image queue; the summary is written only after
-  the thread joins without error. No encoder processes.
+  unoptimized generic helpers. Current overrides: the PDF rasterization crates,
+  `gpui-pre-windows`, `png` and `simd-adler32` (readback conversion, PNG
+  filters, Adler-32), and `gpui-pre-apple`, `image` and `fdeflate` (Metal
+  readback, buffer copies, PNG compression; ADR 0082). Blanket levels stay
+  rejected: on 2026-10-26 opt-level 1 for all dependencies grew the cold Mac
+  test build from 77 s to 179 s (+134%; opt-level 2: 251 s).
+- **Render pipelining.** On macOS and Windows the render process encodes PNGs
+  on one background thread with a one-image queue; the summary is written
+  only after the thread joins without error. No encoder processes.
 - **Test runner.** `cargo test`, not cargo-nextest, for now.
 - **Scripts.** No rewrite and no Rust `xtask`. `just lint-scripts` runs
   `shellcheck` and `shfmt -d` over `scripts/`, from `just check` and the

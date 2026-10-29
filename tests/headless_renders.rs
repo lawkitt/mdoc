@@ -12,52 +12,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-const SCREENS: &[&str] = &[
-    "home",
-    "document",
-    "navigation-disabled",
-    "navigation-enabled",
-    "navigation-middle",
-    "more-menu",
-    "review",
-    "merge-hint",
-    "mention-popup",
-    "setup-consent",
-    "setup-consent-fp32",
-    "settings-general",
-    "settings-detection",
-    "settings-recognition",
-    "settings-spelling",
-    "settings-cases",
-    "settings-about",
-    "settings-detection-categories",
-    "dictionary",
-    "command-palette",
-    "keyboard-shortcuts",
-    "find-replace",
-    "before-after",
-    "reply-view",
-    "share-reply",
-    "decision-history",
-    "open-case",
-    "case-page",
-    "case-page-locked",
-    "rename-case",
-    "case-categories",
-    "keychain-explainer",
-    "folder-sheet",
-    "folder-sheet-over-cap",
-    "folder-sheet-add-to-case",
-    "confirm-delete-case",
-    "confirm-keep-mapping",
-    "confirm-unsaved",
-    "confirm-remove-model",
-    "model-comparison",
-    "conversion-failed",
-    "ocr-consent",
-    "restored-reply",
-    "comments",
-];
+/// One screen name per line. `merge=union` in `.gitattributes` keeps both
+/// sides when parallel branches add screens, so the list never conflicts.
+fn screens() -> Vec<&'static str> {
+    // A union merge can repeat a line both sides added; one copy counts.
+    let mut screens: Vec<_> = include_str!("headless_screens.txt")
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    screens.sort_unstable();
+    screens.dedup();
+    screens
+}
 
 fn png(path: &Path) {
     let mut header = [0; 24];
@@ -198,9 +165,17 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
         "temporary profile must be removed"
     );
     let records = summary["screens"].as_array().unwrap();
-    assert_eq!(records.len(), SCREENS.len() * 2);
+    let screens = screens();
+    for record in records {
+        let name = record["screen"].as_str().unwrap();
+        assert!(
+            screens.contains(&name),
+            "{name} is not in tests/headless_screens.txt"
+        );
+    }
+    assert_eq!(records.len(), screens.len() * 2);
     for theme in ["light", "dark"] {
-        for name in SCREENS {
+        for name in &screens {
             let matches: Vec<_> = records
                 .iter()
                 .filter(|r| r["theme"] == theme && r["screen"] == *name)
