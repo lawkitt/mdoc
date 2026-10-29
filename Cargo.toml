@@ -106,6 +106,14 @@ opt-level = 2
 opt-level = 2
 [profile.dev.package.simd-adler32]
 opt-level = 2
+# The macOS path: Metal texture readback, the image crate's buffer copies and
+# channel swaps, and fdeflate's PNG compression (ADR 0082).
+[profile.dev.package.gpui-pre-apple]
+opt-level = 2
+[profile.dev.package.image]
+opt-level = 2
+[profile.dev.package.fdeflate]
+opt-level = 2
 
 # Full debug information for lldb/CodeLLDB, in its own target/debugging/.
 [profile.debugging]
