@@ -731,3 +731,11 @@ impl Review {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod local_ci_fail_check {
+    #[test]
+    fn deliberately_fails_for_the_local_ci_cutover_check() {
+        panic!("deliberate failure: lawkitt/mdoc local CI cutover check (ADR 0082), never merge");
+    }
+}
