@@ -5,7 +5,10 @@ use super::DocumentView;
 use crate::ui;
 use gpui::{App, Context, FocusHandle, Window, div, prelude::*, px};
 use mdoc_pii::decisions::EntryState;
-use std::{cell::Cell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 /// The popover's view state: whether it is open, its button and its focus.
 pub(crate) struct HistoryPopover {
@@ -16,6 +19,10 @@ pub(crate) struct HistoryPopover {
     pub(crate) menu: FocusHandle,
     /// The button's bounds, so a press on it is left to its toggle.
     bounds: Rc<Cell<gpui::Bounds<gpui::Pixels>>>,
+    /// The list's scroll, so a row Tab reaches scrolls into view (ADR 0062).
+    pub(crate) scroll: gpui::ScrollHandle,
+    /// One focus handle per row, by position in the list.
+    pub(crate) rows: RefCell<Vec<FocusHandle>>,
 }
 
 impl HistoryPopover {
@@ -25,6 +32,8 @@ impl HistoryPopover {
             button: cx.focus_handle().tab_stop(true),
             menu: cx.focus_handle(),
             bounds: Default::default(),
+            scroll: gpui::ScrollHandle::new(),
+            rows: Default::default(),
         }
     }
 }
@@ -40,6 +49,7 @@ impl DocumentView {
     pub(crate) fn open_decision_history(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.more_open = false;
         self.history.open = true;
+        self.history.scroll.set_offset(gpui::Point::default());
         window.focus(&self.history.menu, cx);
         cx.notify();
     }
@@ -101,6 +111,10 @@ impl DocumentView {
             .map(|(entry, state)| (entry.label(), entry.time().to_owned(), state))
             .collect();
         let empty = rows.is_empty();
+        let mut handles = self.history.rows.borrow_mut();
+        while handles.len() < rows.len() {
+            handles.push(cx.focus_handle());
+        }
         let list = rows
             .into_iter()
             .enumerate()
@@ -114,7 +128,8 @@ impl DocumentView {
                     EntryState::PastLimit => Some(PAST_LIMIT),
                 };
                 let id = format!("decision-{i}");
-                ui::focus_ring(gpui::SharedString::from(id.clone()), theme)
+                let focus = handles[i].clone().tab_stop(reachable);
+                let row = ui::focus_ring(gpui::SharedString::from(id.clone()), theme)
                     .when(cfg!(test), move |v| v.debug_selector(move || id))
                     .role(gpui::Role::MenuItem)
                     .aria_label(match note {
@@ -157,8 +172,12 @@ impl DocumentView {
                             .text_color(p.header_muted)
                             .child(format!("· {time}")),
                     )
+                    .track_focus(&focus);
+                // Tab past the list's edge scrolls the row into view.
+                ui::reveal_focus(row, focus, self.history.scroll.clone())
             })
             .collect::<Vec<_>>();
+        drop(handles);
         gpui::deferred(
             gpui::anchored()
                 .anchor(gpui::Anchor::TopRight)
@@ -234,6 +253,7 @@ impl DocumentView {
                                 .gap(px(2.))
                                 .max_h(px(360.))
                                 .overflow_y_scroll()
+                                .track_scroll(&self.history.scroll)
                                 .children(list),
                         )
                         .child(ui::menu_divider(theme))

@@ -803,8 +803,18 @@ impl DocumentView {
             plans.sort_by_key(|p| p.range.start);
         }
         // Re-choosing what is already so (the current category) changes
-        // nothing: no undo step and no entry in What you did (ADR 0079).
-        if plans.is_empty()
+        // nothing: no undo step and no entry in What you did (ADR 0079). An
+        // applied mention always gets a plan, so a plan that rewrites it to
+        // its own alias, category and identity counts as nothing too.
+        let unchanged = |p: &ReplacementPlan| {
+            self.pii.review.applied().iter().any(|a| {
+                a.range == p.range
+                    && a.step.after == p.after
+                    && a.step.category == p.category
+                    && a.step.identity == p.identity
+            })
+        };
+        if plans.iter().all(unchanged)
             && assignments.is_empty()
             && Arc::ptr_eq(&old, &self.pii.review.identity_snapshot())
         {
