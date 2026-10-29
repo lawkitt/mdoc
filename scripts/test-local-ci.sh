@@ -33,7 +33,7 @@ check() { # description command...
   while IFS= read -r g; do globs+=("$g"); done < <(paths_ignore <.github/workflows/ci.yml)
   check "ci.yml's paths-ignore list is read" [ "${#globs[@]}" -gt 0 ]
   check "it includes **/*.md" [ "${globs[0]}" = '**/*.md' ]
-  # shellcheck disable=SC2329 # called through eval
+  # shellcheck disable=SC2317,SC2329 # called through eval
   ignored() { printf '%s\n' "$@" | only_ignored "${globs[@]}"; }
   check "root and nested Markdown are docs" ignored README.md docs/adr/0082-local-ci.md src/notes.md
   check "LICENSE and docs/ are docs" ignored LICENSE docs/evidence/run.json
