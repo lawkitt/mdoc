@@ -204,7 +204,7 @@ pub fn prepare_cancellable(
     })
 }
 
-fn check_cancel(cancel: &AtomicBool) -> Result<(), ImportError> {
+pub(crate) fn check_cancel(cancel: &AtomicBool) -> Result<(), ImportError> {
     if cancel.load(Ordering::Relaxed) {
         Err(ImportError::Cancelled)
     } else {
@@ -219,17 +219,7 @@ fn convert_pdf(
     cancel: &AtomicBool,
 ) -> Result<Imported, ImportError> {
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
-    const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
-    let file = std::fs::File::open(&source).map_err(ImportError::Read)?;
-    let mut bytes = Vec::new();
-    std::io::Read::read_to_end(
-        &mut std::io::Read::take(file, MAX_PDF_BYTES + 1),
-        &mut bytes,
-    )
-    .map_err(ImportError::Io)?;
-    if bytes.len() as u64 > MAX_PDF_BYTES {
-        return Err(ImportError::PdfTooLarge);
-    }
+    let bytes = read_pdf(&source)?;
     let native = process_pdf_with_ocr_mem(&bytes, OcrPdfOptions::new()).map_err(pdf_error)?;
     check_cancel(cancel)?;
     let needs_ocr = !native.pages_recommended_for_ocr.is_empty();
@@ -272,37 +262,7 @@ fn convert_pdf(
                 .map(|page| page.page_number),
         );
     }
-    warning_pages.sort_unstable();
-    warning_pages.dedup();
-    // Avoid importing punctuation-only failure output as a useful document.
-    if !result.markdown.chars().any(char::is_alphanumeric) {
-        return Err(if used_ocr {
-            ImportError::OcrNoText
-        } else {
-            ImportError::NoNativeText
-        });
-    }
-    let warning = if warning_pages.is_empty() {
-        None
-    } else {
-        let pages = warning_pages
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
-        let message = if used_ocr {
-            format!(
-                "OCR review needed: pages {pages} of {} may be incomplete or inaccurate. Compare with the source PDF.",
-                result.page_count
-            )
-        } else {
-            format!(
-                "Partial import: pages {pages} of {} require OCR and were skipped.",
-                result.page_count
-            )
-        };
-        Some(message)
-    };
+    let warning = pdf_warning(&result.markdown, warning_pages, result.page_count, used_ocr)?;
     Ok(Imported {
         ocr_configuration: if used_ocr {
             installed.map(|i| i.config.clone())
@@ -317,8 +277,59 @@ fn convert_pdf(
     })
 }
 
+/// A PDF's bytes, within the import limit.
+pub(crate) fn read_pdf(source: &Path) -> Result<Vec<u8>, ImportError> {
+    const MAX_PDF_BYTES: u64 = 256 * 1024 * 1024;
+    let file = std::fs::File::open(source).map_err(ImportError::Read)?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(file, MAX_PDF_BYTES + 1),
+        &mut bytes,
+    )
+    .map_err(ImportError::Io)?;
+    if bytes.len() as u64 > MAX_PDF_BYTES {
+        return Err(ImportError::PdfTooLarge);
+    }
+    Ok(bytes)
+}
+
+/// The warning for a converted PDF's `markdown`: the pages OCR may have
+/// read badly, or, without OCR, the pages it skipped. Punctuation-only
+/// output is refused rather than imported as a useful document.
+pub(crate) fn pdf_warning(
+    markdown: &str,
+    mut warning_pages: Vec<u32>,
+    page_count: u32,
+    used_ocr: bool,
+) -> Result<Option<String>, ImportError> {
+    warning_pages.sort_unstable();
+    warning_pages.dedup();
+    if !markdown.chars().any(char::is_alphanumeric) {
+        return Err(if used_ocr {
+            ImportError::OcrNoText
+        } else {
+            ImportError::NoNativeText
+        });
+    }
+    if warning_pages.is_empty() {
+        return Ok(None);
+    }
+    let pages = warning_pages
+        .iter()
+        .map(u32::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(Some(if used_ocr {
+        format!(
+            "OCR review needed: pages {pages} of {page_count} may be incomplete or inaccurate. Compare with the source PDF."
+        )
+    } else {
+        format!("Partial import: pages {pages} of {page_count} require OCR and were skipped.")
+    }))
+}
+
 /// Why the native text pass could not read a PDF.
-fn pdf_error(error: pdf_inspector::vision::OcrPipelineError) -> ImportError {
+pub(crate) fn pdf_error(error: pdf_inspector::vision::OcrPipelineError) -> ImportError {
     use pdf_inspector::{PdfError, vision::OcrPipelineError};
     match error {
         OcrPipelineError::Pdf(PdfError::Encrypted) => ImportError::PdfEncrypted,

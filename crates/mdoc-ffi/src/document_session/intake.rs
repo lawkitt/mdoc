@@ -14,13 +14,18 @@ pub(super) struct Imported {
     pub title: String,
     pub markdown: String,
     pub warning: Option<String>,
+    /// OCR's kept pages, removed once the session takes the document.
+    pub kept: Option<mdoc_import::resume::Completed>,
 }
 
+/// Import `path`; with `kept`, a PDF's OCR keeps its finished pages there
+/// and resumes with the rest.
 pub(super) fn import_file(
     path: &Path,
     options: &ImportOptions,
     cancel: &AtomicBool,
     progress: Option<&dyn JobProgress>,
+    kept: Option<&mdoc_import::resume::KeptPages>,
 ) -> Result<Imported, CoreError> {
     let stage = |stage| {
         if let Some(progress) = progress {
@@ -44,6 +49,7 @@ pub(super) fn import_file(
             title,
             markdown,
             warning: None,
+            kept: None,
         });
     }
     let installed = options
@@ -52,7 +58,7 @@ pub(super) fn import_file(
         .map(|ocr| ocr.installed())
         .transpose()?;
     let ocr = !options.native_text_only && installed.is_some();
-    let imported = if matches!(extension.as_str(), "jpg" | "jpeg") {
+    let (imported, completed) = if matches!(extension.as_str(), "jpg" | "jpeg") {
         let image = std::fs::read(path).map_err(|error| CoreError::Import {
             message: format!("Could not read image: {error}"),
         })?;
@@ -64,7 +70,13 @@ pub(super) fn import_file(
         } else {
             JobStage::Converting
         });
-        mdoc_import::import::prepare_cancellable(wrapped.path(), installed.as_ref(), false, cancel)?
+        let imported = mdoc_import::import::prepare_cancellable(
+            wrapped.path(),
+            installed.as_ref(),
+            false,
+            cancel,
+        )?;
+        (imported, None)
     } else if matches!(
         extension.as_str(),
         "png" | "heic" | "heif" | "tif" | "tiff" | "gif"
@@ -78,12 +90,26 @@ pub(super) fn import_file(
         } else {
             JobStage::Converting
         });
-        mdoc_import::import::prepare_cancellable(
-            path,
-            installed.as_ref().filter(|_| ocr),
-            options.native_text_only,
-            cancel,
-        )?
+        let installed = installed.as_ref().filter(|_| ocr);
+        match kept {
+            Some(kept) => mdoc_import::resume::prepare_resumable(
+                path,
+                installed,
+                options.native_text_only,
+                cancel,
+                kept,
+                &|_, _| {},
+            )?,
+            None => (
+                mdoc_import::import::prepare_cancellable(
+                    path,
+                    installed,
+                    options.native_text_only,
+                    cancel,
+                )?,
+                None,
+            ),
+        }
     };
     if cancel.load(Ordering::Relaxed) {
         return Err(CoreError::Cancelled);
@@ -92,6 +118,7 @@ pub(super) fn import_file(
         title,
         markdown: imported.markdown,
         warning: imported.warning,
+        kept: completed,
     })
 }
 
@@ -296,6 +323,7 @@ mod tests {
             &ImportOptions::default(),
             &AtomicBool::new(false),
             None,
+            None,
         );
         match result {
             Err(CoreError::NeedsOcr { page_count, .. }) => assert_eq!(page_count, 1),
@@ -313,6 +341,7 @@ mod tests {
             &path,
             &ImportOptions::default(),
             &AtomicBool::new(false),
+            None,
             None,
         );
         assert!(matches!(result, Err(CoreError::Import { .. })));

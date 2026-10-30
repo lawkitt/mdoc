@@ -13,6 +13,8 @@ use std::{
 
 const CASES: &str = "cases";
 const DOCUMENTS: &str = "documents";
+/// OCR's finished pages of imports not yet complete (ADR 0085 Long jobs).
+const IMPORTS: &str = "imports";
 /// The case of the most recently shared document: an id, no names.
 const CURRENT_CASE: &str = "current-case.json";
 /// Locked while a case is written, in the cases folder.
@@ -269,6 +271,63 @@ impl Library {
         }
     }
 
+    /// Delete `path`, a document in the documents folder: it leaves its
+    /// case, with the reply kept for it (ADR 0078), then its file is
+    /// removed, under the library's write lock. The case is saved first, so
+    /// a case that cannot be saved leaves the document as it was, and a
+    /// file that cannot be removed (or mdoc stopping in between) leaves an
+    /// ordinary document in no case, which deleting again removes. A case
+    /// that cannot be read for now refuses the delete; one that never will
+    /// (another key, damaged) is passed over. The case stays, even with no
+    /// members left, as on desktop; cases are deleted on their own. Returns
+    /// the case it left.
+    pub fn delete_document(&self, path: String) -> Result<Option<CaseInfo>, CoreError> {
+        let path = std::path::absolute(&path).unwrap_or_else(|_| PathBuf::from(&path));
+        let documents =
+            std::path::absolute(self.documents_dir()).unwrap_or_else(|_| self.documents_dir());
+        if path.parent() != Some(documents.as_path()) || !mdoc_store::document::is_markdown(&path) {
+            return Err(CoreError::invalid(
+                "Only the library's documents can be deleted.",
+            ));
+        }
+        let member = self.member(&path);
+        let lock = self.lock()?;
+        let (cases, unreadable) = self.store.list();
+        for id in unreadable {
+            if let Err(mdoc_store::cases::CaseError::Read(error)) = self.store.load(&id)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                return Err(CoreError::case(format!(
+                    "A case could not be read, so the document was not deleted: {error}"
+                )));
+            }
+        }
+        let mut left = None;
+        for case in cases {
+            if !case.members.contains(&member) && case.reply(&member).is_none() {
+                continue;
+            }
+            left = Some(self.edit_locked(&lock, &case.id, |case| {
+                let replied = case.set_reply(&member, None);
+                let was_member = case.members.contains(&member);
+                case.members.retain(|m| *m != member);
+                Ok(replied || was_member)
+            })?);
+        }
+        match std::fs::remove_file(&path) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+            _ => Ok(left),
+        }
+    }
+
+    /// Remove the OCR pages kept for an import of `source` that has not
+    /// completed (`DocumentSession::import_file_in`), when the user drops
+    /// it. Call it before removing `source`: kept pages are found by the
+    /// file's digest.
+    pub fn discard_import(&self, source: String) -> Result<(), CoreError> {
+        Ok(self.kept_pages().discard(Path::new(&source))?)
+    }
+
     /// The reply kept for `document` in case `case_id`.
     pub fn reply(&self, case_id: String, document: String) -> Result<Option<String>, CoreError> {
         let member = self.member(Path::new(&document));
@@ -362,6 +421,11 @@ impl Library {
 
     pub(crate) fn documents_dir(&self) -> PathBuf {
         self.root.join(DOCUMENTS)
+    }
+
+    /// Where imports keep their finished OCR pages.
+    pub(crate) fn kept_pages(&self) -> mdoc_import::resume::KeptPages {
+        mdoc_import::resume::KeptPages::new(self.root.join(IMPORTS))
     }
 
     /// How a case names a member: relative to the root when inside it, so a
@@ -627,6 +691,245 @@ mod tests {
                 .documents
                 .len(),
             30
+        );
+    }
+
+    /// A document in `case` with a kept reply, as `save` leaves one.
+    fn member_with_reply(library: &Library, case: &CaseInfo, title: &str) -> String {
+        let path = library.reserve_document_path(title).unwrap();
+        std::fs::write(&path, format!("{title}: PERSON_1 wrote.")).unwrap();
+        let document = path.display().to_string();
+        library
+            .add_document(case.id.clone(), document.clone())
+            .unwrap();
+        library
+            .save_reply(
+                case.id.clone(),
+                document.clone(),
+                "Thanks, PERSON_1.".into(),
+            )
+            .unwrap();
+        document
+    }
+
+    /// The document leaves its case with its reply and its file goes; the
+    /// case and its other member stay, and a case left empty stays too.
+    #[test]
+    fn a_deleted_document_leaves_its_case_with_its_reply() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let case = library
+            .create(Case::new(
+                "Ivanov".into(),
+                &[person("PERSON_1", &["Ivan Ivanov"])],
+                None,
+            ))
+            .unwrap();
+        let letter = member_with_reply(&library, &case, "Letter");
+        let memo = member_with_reply(&library, &case, "Memo");
+        let left = library.delete_document(letter.clone()).unwrap().unwrap();
+        assert_eq!(left.id, case.id);
+        assert_eq!(left.documents, std::slice::from_ref(&memo));
+        assert!(!Path::new(&letter).exists());
+        let stored = library.load(&case.id).unwrap();
+        assert_eq!(stored.reply(&library.member(Path::new(&letter))), None);
+        assert_eq!(
+            library.reply(case.id.clone(), memo.clone()).unwrap(),
+            Some("Thanks, PERSON_1.".into())
+        );
+        assert_eq!(library.documents().unwrap().len(), 1);
+        // The case still restores, and stays when its last member goes.
+        library.delete_document(memo.clone()).unwrap();
+        let empty = library.case_info(case.id.clone()).unwrap();
+        assert!(empty.documents.is_empty());
+        assert_eq!(empty.names, 1);
+        assert_eq!(
+            library.restore(case.id, "PERSON_1".into()).unwrap().text,
+            "Ivan Ivanov"
+        );
+        assert!(library.documents().unwrap().is_empty());
+        assert!(
+            std::fs::read_dir(library.documents_dir())
+                .unwrap()
+                .next()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_document_in_no_case_or_already_gone_is_deleted_quietly() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let path = library.reserve_document_path("Loose").unwrap();
+        assert_eq!(
+            library.delete_document(path.display().to_string()).unwrap(),
+            None
+        );
+        assert!(!path.exists());
+        // Removed elsewhere (Files): it still leaves its case.
+        let case = library.create_case("Case".into()).unwrap();
+        let gone = member_with_reply(&library, &case, "Gone");
+        std::fs::remove_file(&gone).unwrap();
+        let left = library.delete_document(gone).unwrap().unwrap();
+        assert!(left.documents.is_empty());
+    }
+
+    #[test]
+    fn only_the_documents_folder_is_deleted_from() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let outside = scratch.path().join("outside.md");
+        std::fs::write(&outside, "Keep me.").unwrap();
+        let elsewhere = library.documents_dir().join("notes.pdf");
+        std::fs::create_dir_all(library.documents_dir()).unwrap();
+        std::fs::write(&elsewhere, "%PDF-").unwrap();
+        for path in [&outside, &elsewhere, &library.documents_dir()] {
+            assert!(matches!(
+                library.delete_document(path.display().to_string()),
+                Err(CoreError::Invalid { .. })
+            ));
+        }
+        assert!(outside.exists() && elsewhere.exists());
+    }
+
+    /// Open `path` so that it still reads (unless `readable` is false) but
+    /// cannot be replaced or removed, until the guard drops.
+    struct Held {
+        #[cfg(windows)]
+        _file: std::fs::File,
+        #[cfg(unix)]
+        restore: (PathBuf, u32),
+    }
+
+    impl Held {
+        fn file(path: &Path, readable: bool) -> Self {
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::OpenOptionsExt;
+                const FILE_SHARE_READ: u32 = 1;
+                Self {
+                    _file: std::fs::OpenOptions::new()
+                        .read(true)
+                        .share_mode(if readable { FILE_SHARE_READ } else { 0 })
+                        .open(path)
+                        .unwrap(),
+                }
+            }
+            #[cfg(unix)]
+            {
+                // Unreadable: the file itself; unremovable: its folder.
+                let target = if readable {
+                    path.parent().unwrap().to_path_buf()
+                } else {
+                    path.to_path_buf()
+                };
+                Self::mode(&target, if readable { 0o555 } else { 0o000 }, 0o755)
+            }
+        }
+
+        #[cfg(unix)]
+        fn mode(path: &Path, mode: u32, back: u32) -> Self {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+            Self {
+                restore: (path.to_path_buf(), back),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for Held {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+            let (path, mode) = &self.restore;
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(*mode));
+        }
+    }
+
+    fn case_file(library: &Library, id: &str) -> PathBuf {
+        std::fs::read_dir(library.cases_folder())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.file_stem().is_some_and(|n| n.to_string_lossy() == id))
+            .unwrap()
+    }
+
+    /// A case that cannot be read for now refuses the delete, and nothing
+    /// changes; a case sealed with another key never blocks it.
+    #[test]
+    fn a_case_unreadable_for_now_refuses_the_delete() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let case = library.create_case("Case".into()).unwrap();
+        let letter = member_with_reply(&library, &case, "Letter");
+        let held = Held::file(&case_file(&library, &case.id), false);
+        assert!(matches!(
+            library.delete_document(letter.clone()),
+            Err(CoreError::Case { .. })
+        ));
+        drop(held);
+        assert!(Path::new(&letter).exists());
+        assert_eq!(
+            library.case_info(case.id.clone()).unwrap().documents,
+            std::slice::from_ref(&letter)
+        );
+        let stranger =
+            Library::new(scratch.path().display().to_string(), [8; 32].to_vec()).unwrap();
+        stranger.create_case("Elsewhere".into()).unwrap();
+        assert_eq!(library.cases().unreadable, 1);
+        assert_eq!(
+            library.delete_document(letter.clone()).unwrap().unwrap().id,
+            case.id
+        );
+        assert!(!Path::new(&letter).exists());
+    }
+
+    /// A file that cannot be removed after its case was saved stays an
+    /// ordinary document in no case, and deleting it again removes it.
+    #[test]
+    fn a_file_that_cannot_be_removed_stays_a_document_in_no_case() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let case = library.create_case("Case".into()).unwrap();
+        let letter = member_with_reply(&library, &case, "Letter");
+        let held = Held::file(Path::new(&letter), true);
+        assert!(matches!(
+            library.delete_document(letter.clone()),
+            Err(CoreError::Io { .. })
+        ));
+        drop(held);
+        let documents = library.documents().unwrap();
+        assert_eq!(documents.len(), 1);
+        assert_eq!(documents[0].case_id, None);
+        assert!(library.case_info(case.id).unwrap().documents.is_empty());
+        assert_eq!(library.delete_document(letter.clone()).unwrap(), None);
+        assert!(library.documents().unwrap().is_empty());
+    }
+
+    /// When its case cannot be saved, the document stays a member and its
+    /// file stays where it was.
+    #[test]
+    fn a_case_that_cannot_be_saved_keeps_the_document() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let case = library.create_case("Case".into()).unwrap();
+        let letter = member_with_reply(&library, &case, "Letter");
+        // The case still reads, but cannot be replaced.
+        let held = Held::file(&case_file(&library, &case.id), true);
+        let result = library.delete_document(letter.clone());
+        drop(held);
+        assert!(result.is_err(), "{result:?}");
+        assert_eq!(
+            std::fs::read_to_string(&letter).unwrap(),
+            "Letter: PERSON_1 wrote."
+        );
+        assert_eq!(
+            library.case_info(case.id.clone()).unwrap().documents,
+            std::slice::from_ref(&letter)
+        );
+        assert_eq!(
+            library.reply(case.id, letter).unwrap(),
+            Some("Thanks, PERSON_1.".into())
         );
     }
 

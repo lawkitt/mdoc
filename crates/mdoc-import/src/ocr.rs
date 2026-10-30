@@ -580,7 +580,7 @@ pub fn onnx_runtime_with_progress(
         all(target_os = "windows", target_arch = "x86_64")
     )
 ))]
-fn install_in(root: &Path) -> Result<Installed, SetupError> {
+pub(crate) fn install_in(root: &Path) -> Result<Installed, SetupError> {
     install_config_in(
         root,
         &qualification_config(),
