@@ -3515,6 +3515,17 @@ fn shape_document(
     // List bullets/numbers and alert labels repeat on most lines of a legal
     // document; measure each distinct marker once per pass.
     let mut glyph_widths = GlyphWidths::default();
+    // Each ordered list's widest marker: its items' bodies share that edge,
+    // so "9." and "10." (or "i." and "iii.") siblings line up.
+    let mut list_marker_w: std::collections::HashMap<u32, Pixels> = Default::default();
+    for (idx, list) in scan.ordered_lists.iter().enumerate() {
+        let Some(list) = list else { continue };
+        let (num, level) = ordered_nums[idx];
+        let marker = crate::syntax::ordered_marker(level, num);
+        let w = glyph_widths.width(window, &marker, base_font, base_font_size);
+        let widest = list_marker_w.entry(*list).or_insert(w);
+        *widest = (*widest).max(w);
+    }
     let mut y_acc = px(0.);
     for (idx, &line) in lines.iter().enumerate() {
         let line_end = line_start + line.len();
@@ -3839,8 +3850,16 @@ fn shape_document(
                 let bullet_x = step * depth;
                 // Sibling bodies share one left edge: "1." is narrower than
                 // "2." in a proportional font, so its own width would start
-                // item 1's text a few pixels left of the rest.
-                let text_inset = bullet_x + glyph_w.max(marker_w) + px(LIST_TEXT_GAP);
+                // item 1's text a few pixels left of the rest. The list's
+                // widest marker sets it, never less than "9.".
+                let shared = scan
+                    .ordered_lists
+                    .get(idx)
+                    .copied()
+                    .flatten()
+                    .and_then(|list| list_marker_w.get(&list).copied())
+                    .unwrap_or(glyph_w);
+                let text_inset = bullet_x + shared.max(glyph_w).max(marker_w) + px(LIST_TEXT_GAP);
                 Some((
                     plen,
                     LineMark::List {
@@ -4501,6 +4520,43 @@ mod tests {
         let out = tint_runs("xyz", &[run(3, base)], None, &[(1..2, tint)]);
         let got: Vec<_> = out.iter().map(|r| (r.len, r.color)).collect();
         assert_eq!(got, vec![(1, base), (1, tint), (1, base)]);
+    }
+
+    /// Codex review of #259: every item of a list shares the widest
+    /// marker's body edge ("10." included); a nested list has its own.
+    #[gpui::test]
+    fn ordered_siblings_share_one_body_edge(cx: &mut TestAppContext) {
+        let mut source = (1..=10)
+            .map(|n| format!("{n}. item"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        source.push_str("\n    1. nested\n    2. nested");
+        let (_, cx) = cx.add_window_view(|_, _| gpui::Empty);
+        cx.simulate_resize(size(px(400.), px(400.)));
+        let editor = cx.update(|window, cx| cx.new(|cx| EditorState::new(window, cx)));
+        editor.update(cx, |editor, cx| {
+            editor.set_text(&source, cx);
+            editor.set_markdown_style(markdown_syntax::search_style(), cx);
+        });
+        cx.draw(
+            point(px(0.), px(0.)),
+            size(
+                AvailableSpace::Definite(px(320.)),
+                AvailableSpace::MinContent,
+            ),
+            |_, _| EditorElement {
+                editor: editor.clone(),
+            },
+        );
+        editor.read_with(cx, |editor, _| {
+            let insets = &editor.line_insets;
+            assert!(insets[0] > px(0.), "{insets:?}");
+            for row in 1..10 {
+                assert_eq!(insets[row], insets[0], "row {row}: {insets:?}");
+            }
+            assert_eq!(insets[10], insets[11], "{insets:?}");
+            assert!(insets[10] > insets[0], "{insets:?}");
+        });
     }
 
     fn image_editor<'a>(

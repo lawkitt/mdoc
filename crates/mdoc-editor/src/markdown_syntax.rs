@@ -1482,9 +1482,18 @@ pub(crate) fn list_prefix(line: &str) -> Option<(usize, usize, bool, u32)> {
 /// above), not an indent-width guess, so it survives any spaces-per-level
 /// setting. Non-items are (0, 0).
 pub(crate) fn ordered_numbers(lines: &[&str]) -> Vec<(u32, usize)> {
+    ordered_scan(lines).0
+}
+
+/// [`ordered_numbers`] plus, for each ordered item, the list it belongs to:
+/// siblings share an id (a nested list, or a new list after a break, gets its
+/// own), so their bodies can share one marker width. Non-items are `None`.
+pub(crate) fn ordered_scan(lines: &[&str]) -> (Vec<(u32, usize)>, Vec<Option<u32>>) {
     let mut out = vec![(0u32, 0usize); lines.len()];
-    // One entry per open list level: (indent, is_ordered, next number).
-    let mut stack: Vec<(usize, bool, u32)> = Vec::new();
+    let mut lists = vec![None; lines.len()];
+    let mut next_list = 0u32;
+    // One entry per open list level: (indent, is_ordered, next number, list id).
+    let mut stack: Vec<(usize, bool, u32, u32)> = Vec::new();
     for (i, line) in lines.iter().enumerate() {
         let Some((_, indent, ordered, _)) = list_prefix(line) else {
             // Indented text hangs under the innermost item; anything else —
@@ -1505,25 +1514,32 @@ pub(crate) fn ordered_numbers(lines: &[&str]) -> Vec<(u32, usize)> {
         }
         let depth = stack.len();
         match stack.last_mut() {
-            Some((ind, ord, next)) if *ind == indent => {
+            Some((ind, ord, next, list)) if *ind == indent => {
                 if *ord != ordered {
                     // A different marker type at the same indent starts a
                     // new list.
                     *ord = ordered;
                     *next = 1;
+                    *list = next_list;
+                    next_list += 1;
                 }
                 if ordered {
                     out[i] = (*next, depth - 1);
+                    lists[i] = Some(*list);
                     *next += 1;
                 }
             }
             _ => {
-                stack.push((indent, ordered, 2));
+                stack.push((indent, ordered, 2, next_list));
                 out[i] = (1, depth);
+                if ordered {
+                    lists[i] = Some(next_list);
+                }
+                next_list += 1;
             }
         }
     }
-    out
+    (out, lists)
 }
 
 /// A copied slice with its ordered markers rewritten to their DISPLAYED
@@ -3249,6 +3265,27 @@ mod tests {
         // show while the caret is inside it.
         let (d, _, _) = hidden_runs("[[Page]] x", &font, c, &[], Some(4), 0, 0, false, &st);
         assert_eq!(d, "[[Page]] x");
+    }
+
+    #[test]
+    fn ordered_items_know_their_list() {
+        let (_, lists) = ordered_scan(&[
+            "1. a", "2. b", "   1. c", "   2. d", "3. e", "", "1. f", "- g", "1. h",
+        ]);
+        assert_eq!(
+            lists,
+            vec![
+                Some(0),
+                Some(0),
+                Some(1),
+                Some(1),
+                Some(0),
+                None,
+                Some(2),
+                None,
+                Some(4)
+            ]
+        );
     }
 
     #[test]

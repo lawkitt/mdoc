@@ -1472,9 +1472,11 @@ impl EditorState {
                 odd = !odd;
             }
         }
+        let (ordered, ordered_lists) = markdown_syntax::ordered_scan(&lines);
         let data = std::rc::Rc::new(ScanData {
             generation: self.content_gen,
-            ordered: markdown_syntax::ordered_numbers(&lines),
+            ordered,
+            ordered_lists,
             tables: markdown_syntax::table_regions(&self.content),
             mermaid: markdown_syntax::mermaid_blocks(&self.content),
             math: markdown_syntax::math_regions(&self.content),
@@ -5572,6 +5574,8 @@ pub(crate) struct ScanData {
     /// instead of rehashing content.
     generation: u64,
     ordered: Vec<(u32, usize)>,
+    /// The list each ordered item belongs to (`markdown_syntax::ordered_scan`).
+    ordered_lists: Vec<Option<u32>>,
     tables: Vec<markdown_syntax::TableRegion>,
     mermaid: Vec<(Range<usize>, String)>,
     math: Vec<markdown_syntax::MathRegion>,
