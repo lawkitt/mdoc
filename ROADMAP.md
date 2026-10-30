@@ -43,15 +43,6 @@ default ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)): a must-fix
 fix after rc.1 to the installer, signing, updates or the keychain forces
 another, so such work lands first.
 
-1. **[PII] Selection bar** ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
-   *From Anoni 0.86.1.* The Replace pill splits into "Replace · Person ▾".
-   *Done when:* a mouse and a keyboard-only run add a selection in a picked
-   category, and ⌘⌥P still adds with the guess.
-2. **[A11y] ⌃↩ opens a tab's menu** ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
-   *From the rc.4 acceptance run:* ⇧F10 needs fn on MacBook keyboards.
-   *Done when:* a keyboard-only run opens a sidebar tab's menu with ⌃↩ on
-   both platforms (on a MacBook without fn), and the shortcuts panel lists it.
-
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
