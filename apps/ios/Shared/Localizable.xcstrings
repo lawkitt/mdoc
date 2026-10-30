@@ -223,7 +223,7 @@
     "The original stays in the text you share.": {},
     "The scanned pages could not be read.": {},
     "This device has too little memory for the name detector. Emails, phone numbers, IBANs and other structured details are still found, and you can mark names by hand.": {},
-    "This device has too little memory for the name detector. mdoc finds emails, phone numbers, IBANs and other structured details, and you mark names by selecting them. Text recognition is a %@ download.": {},
+    "This device has too little memory for the name detector. mdoc finds emails, phone numbers, IBANs and other structured details, and you mark names by selecting them. Text recognition downloads once (%@).": {},
     "This document is no longer in mdoc.": {},
     "Title": {},
     "Underlined words are names mdoc found. Use the Candidates rotor to move between them.": {},
