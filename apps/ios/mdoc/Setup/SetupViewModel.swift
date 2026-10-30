@@ -59,33 +59,71 @@ final class SetupViewModel {
     }
 
     /// Download pressed: on a costly connection ask first, else go on Wi-Fi.
-    func download() async {
+    /// `then` runs once every offered model is installed: the document card
+    /// passes the scan that asked for setup (Download & continue, ADR 0026);
+    /// Settings passes nothing.
+    func download(then continuation: (@MainActor () async -> Void)? = nil) {
         guard !isWorking else { return }
+        self.continuation = continuation
         if network.isExpensive {
             asksCellular = true
             return
         }
-        await start(allowCellular: false)
+        begin(allowCellular: false)
     }
 
     /// The answer to the cellular question. Waiting keeps the download for
     /// Wi-Fi.
-    func answerCellular(useCellular: Bool) async {
+    func answerCellular(useCellular: Bool) {
         asksCellular = false
-        await start(allowCellular: useCellular)
+        begin(allowCellular: useCellular)
+    }
+
+    /// Stops the download or the install; the models return to not
+    /// downloaded, ready to try again.
+    func cancel() {
+        guard isWorking else { return }
+        continuation = nil
+        work?.cancel()
+        if jobs.current?.kind == .install {
+            jobs.cancel()
+        }
+    }
+
+    /// Waits for the download started last (tests).
+    func waitForDownload() async {
+        await work?.value
     }
 
     func refresh() {
         snapshot = setup.snapshot(physicalMemory: physicalMemory)
     }
 
-    private func start(allowCellular: Bool) async {
+    private var work: Task<Void, Never>?
+    private var continuation: (@MainActor () async -> Void)?
+
+    private func begin(allowCellular: Bool) {
         isWorking = true
         errorMessage = nil
-        defer {
-            isWorking = false
-            refresh()
+        work = Task { [weak self] in
+            await self?.run(allowCellular: allowCellular)
         }
+    }
+
+    private func run(allowCellular: Bool) async {
+        let finished = await install(allowCellular: allowCellular)
+        isWorking = false
+        downloadProgress = [:]
+        refresh()
+        let next = continuation
+        continuation = nil
+        if finished && !snapshot.needsSetup {
+            await next?()
+        }
+    }
+
+    /// True when every missing model was installed.
+    private func install(allowCellular: Bool) async -> Bool {
         for offer in snapshot.missing {
             do {
                 let request = try setup.downloadRequest(for: offer.id)
@@ -98,25 +136,30 @@ final class SetupViewModel {
                     }
                 }
                 downloadProgress[offer.id] = nil
+                try Task.checkCancellation()
                 let setup = self.setup
                 let outcome = await jobs.run(.install, documentID: nil, title: String(localized: "Installing \(offer.name)")) { observer in
                     try setup.install(model: offer.id, from: file, observer: observer)
                 }
                 switch outcome {
-                case .finished, .cancelled:
+                case .finished:
                     break
+                case .cancelled:
+                    return false
                 case .busy:
                     errorMessage = String(localized: "Another job is running. Try again when it finishes.")
-                    return
+                    return false
                 case .failed(let error):
                     errorMessage = error.localizedDescription
-                    return
+                    return false
                 }
+            } catch is CancellationError {
+                return false
             } catch {
-                downloadProgress[offer.id] = nil
                 errorMessage = error.localizedDescription
-                return
+                return false
             }
         }
+        return true
     }
 }

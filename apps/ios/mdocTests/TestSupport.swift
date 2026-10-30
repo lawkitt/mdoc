@@ -8,8 +8,11 @@ enum Fixture {
     static let ellison = CaseID(rawValue: "case-ellison")
     static let harbour = CaseID(rawValue: "case-harbour")
 
-    static func core(modelsInstalled: Bool = true, timing: FakeCore.Timing = .instant) -> Core {
-        FakeCore.make(FakeCore.Options(timing: timing, modelsInstalled: modelsInstalled, originalsFolder: nil))
+    static let gigabyte: UInt64 = 1_073_741_824
+
+    static func core(modelsInstalled: Bool = true, timing: FakeCore.Timing = .instant, memory: UInt64 = 8 * gigabyte) -> Core {
+        FakeCore.make(FakeCore.Options(
+            timing: timing, modelsInstalled: modelsInstalled, originalsFolder: nil, physicalMemory: memory))
     }
 
     static func temporaryStorage() throws -> MdocStorage {

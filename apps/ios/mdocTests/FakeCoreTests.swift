@@ -63,6 +63,37 @@ final class FakeCoreTests: XCTestCase {
         XCTAssertEqual(result.unresolvedCount, 1)
     }
 
+    func testCustomAliasRoundTrips() throws {
+        let library = Fixture.core().library
+        let session = try library.session(for: Fixture.letter)
+        let maya = try XCTUnwrap(session.snapshot().candidates.first { $0.original == "Maya Ellison" })
+        _ = try session.decide(maya.id, .replace(alias: "CLIENT_A"), scope: .allOccurrences)
+        _ = try session.replaceAllPending()
+        XCTAssertTrue(try session.copyForAI().text.contains("CLIENT_A"))
+        let result = try library.restore(reply: "client_a agrees; CLIENT_AB does not.", in: Fixture.ellison)
+        XCTAssertEqual(result.text, "Maya Ellison agrees; CLIENT_AB does not.")
+        XCTAssertEqual(result.restoredCount, 1)
+    }
+
+    func testJustThisOneAliasRestores() throws {
+        let library = Fixture.core().library
+        let session = try library.session(for: Fixture.letter)
+        let okafor = try XCTUnwrap(session.snapshot().candidates.first { $0.original == "Mr Okafor" })
+        _ = try session.decide(okafor.id, .replace(alias: "SUPPLIER"), scope: .justThisOne)
+        let result = try library.restore(reply: "SUPPLIER replied.", in: Fixture.ellison)
+        XCTAssertEqual(result.text, "Daniel Okafor replied.")
+    }
+
+    func testBelowTheFloorTheRulesRunWithoutAModel() throws {
+        let core = Fixture.core(modelsInstalled: false, memory: 4 * Fixture.gigabyte)
+        let session = try core.library.session(for: Fixture.quotation)
+        let letter = try core.library.session(for: Fixture.letter)
+        let scanned = try letter.scan(observer: TestObserver())
+        XCTAssertFalse(scanned.candidates.isEmpty)
+        XCTAssertTrue(scanned.candidates.allSatisfy { [.email, .phone, .bank].contains($0.category) })
+        XCTAssertNoThrow(try session.scan(observer: TestObserver()))
+    }
+
     func testRestoreNeverUsesAnotherCase() throws {
         let library = Fixture.core().library
         let result = try library.restore(reply: "PERSON_1 signed.", in: Fixture.harbour)

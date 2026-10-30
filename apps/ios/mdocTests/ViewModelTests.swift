@@ -111,6 +111,15 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertTrue(model.needsSetup)
     }
 
+    func testSetupThenScanBelowTheFloor() async throws {
+        let core = Fixture.core(modelsInstalled: false, memory: 4 * Fixture.gigabyte)
+        let model = try model(Fixture.tenancy, core: core)
+        await model.recognize()
+        await model.findNames()
+        XCTAssertFalse(model.needsSetup)
+        XCTAssertNotEqual(model.snapshot.phase, .unscanned)
+    }
+
     func testCancelledRecognitionCanResume() async throws {
         let jobs = LongJobRunner(background: NoBackgroundContinuation())
         let core = Fixture.core(timing: FakeCore.Timing(page: 5, scan: 0, install: 0))

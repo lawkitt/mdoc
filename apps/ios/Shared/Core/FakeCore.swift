@@ -21,6 +21,9 @@ enum FakeCore {
         var modelsInstalled = false
         /// Where fixture originals are written; nil leaves them out.
         var originalsFolder: URL?
+        /// Decides the device tier: below the floor a scan runs the
+        /// structured rules only.
+        var physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory
     }
 
     static func make(_ options: Options = Options()) -> Core {
@@ -94,6 +97,7 @@ private struct Rendering {
 private final class FakeState: @unchecked Sendable {
     private let lock = NSLock()
     let timing: FakeCore.Timing
+    let tier: DeviceTier
     var cases: [FakeCase] = []
     var documents: [FakeDocument] = []
     var lastShared: DocumentID?
@@ -102,6 +106,7 @@ private final class FakeState: @unchecked Sendable {
 
     init(options: FakeCore.Options) {
         timing = options.timing
+        tier = options.physicalMemory >= FakeSetup.detectorFloor ? .detector : .rulesOnly
         let installed: ModelState = options.modelsInstalled ? .installed : .notInstalled
         models = [FakeSetup.detectorID: installed, FakeSetup.ocrID: installed]
         seed(originals: options.originalsFolder)
@@ -185,15 +190,22 @@ private final class FakeState: @unchecked Sendable {
 
     // MARK: Detection
 
-    /// Finds fixture entities and emails in the recognized source, longest
-    /// wording first, and adds them to the document's case.
+    /// What the structured rules find without the detector.
+    static let structured: Set<Category> = [.email, .phone, .identity, .tax, .bank]
+
+    /// Finds fixture entities in the recognized source, longest wording
+    /// first, and adds them to the document's case. Below the device floor
+    /// only the structured categories are found.
     func detect(in id: DocumentID) {
         guard let index = index(of: id) else { return }
         let source = documents[index].source
         let caseID = documents[index].caseID
         var taken: [SourceRange] = []
         var mentions: [FakeMention] = []
-        let wordings = FakeFixtures.entities.flatMap { entity in entity.variants.map { (entity, $0) } }
+        let entities = tier == .detector
+            ? FakeFixtures.entities
+            : FakeFixtures.entities.filter { Self.structured.contains($0.category) }
+        let wordings = entities.flatMap { entity in entity.variants.map { (entity, $0) } }
             .sorted { $0.1.utf8.count > $1.1.utf8.count }
         for (entity, wording) in wordings {
             for range in Self.occurrences(of: wording, in: source) where !taken.contains(where: { $0.overlaps(range) }) {
@@ -317,34 +329,55 @@ private final class FakeState: @unchecked Sendable {
 
     // MARK: Restore
 
-    private static let aliasPattern = try! NSRegularExpression(
-        pattern: #"\b(PERSON|ORG|EMAIL|PHONE|ADDRESS|IDENTITY|TAX|BANK|DATE|REDACTED)([_\- ])(\d+)\b"#,
-        options: [.caseInsensitive])
+    private static let generatedPattern =
+        #"\b(?<prefix>PERSON|ORG|EMAIL|PHONE|ADDRESS|IDENTITY|TAX|BANK|DATE|REDACTED)(?<separator>[_\- ])(?<number>\d+)\b"#
 
     /// Lenient on case and `_`/`-`/space separators; a loose form counts
-    /// only when it names a known alias, and nothing is guessed.
+    /// only when it names a known alias, and nothing is guessed. Aliases the
+    /// user typed (`CLIENT_A`) restore by their exact wording.
     func restore(_ reply: String, caseID: CaseID?) throws -> RestoreResult {
         guard let caseIndex = caseIndex(of: caseID) else { throw CoreError.noCase }
         var known: [String: String] = [:]
         for identity in cases[caseIndex].identities {
             known[identity.alias.uppercased()] = identity.primary
         }
+        for document in documents where document.caseID == caseID {
+            for mention in document.mentions {
+                if let custom = mention.customAlias,
+                   let identity = cases[caseIndex].identities.first(where: { $0.id == mention.identityID }) {
+                    known[custom.uppercased()] = identity.primary
+                }
+            }
+        }
+        let generated = try NSRegularExpression(pattern: "^" + Self.generatedPattern + "$", options: [.caseInsensitive])
+        let custom = known.keys
+            .filter { generated.firstMatch(in: $0, range: NSRange(location: 0, length: ($0 as NSString).length)) == nil }
+            .sorted { $0.count > $1.count }
+            .map(NSRegularExpression.escapedPattern(for:))
+        let pattern = custom.isEmpty
+            ? Self.generatedPattern
+            : #"(?<custom>(?<![\w])(?:"# + custom.joined(separator: "|") + #")(?![\w]))|"# + Self.generatedPattern
+        let expression = try NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
         let text = reply as NSString
         var segments: [RestoredSegment] = []
         var cursor = 0
-        for match in Self.aliasPattern.matches(in: reply, range: NSRange(location: 0, length: text.length)) {
+        for match in expression.matches(in: reply, range: NSRange(location: 0, length: text.length)) {
             let token = text.substring(with: match.range)
-            let prefix = text.substring(with: match.range(at: 1))
-            let separator = text.substring(with: match.range(at: 2))
-            let number = text.substring(with: match.range(at: 3))
-            let key = "\(prefix.uppercased())_\(number)"
             let segment: RestoredSegment
-            if let value = known[key] {
+            if !custom.isEmpty, match.range(withName: "custom").location != NSNotFound {
+                guard let value = known[token.uppercased()] else { continue }
                 segment = .restored(value: value, alias: token)
-            } else if separator == "_" && prefix == prefix.uppercased() {
-                segment = .unresolved(token)
             } else {
-                continue
+                let prefix = text.substring(with: match.range(withName: "prefix"))
+                let separator = text.substring(with: match.range(withName: "separator"))
+                let number = text.substring(with: match.range(withName: "number"))
+                if let value = known["\(prefix.uppercased())_\(number)"] {
+                    segment = .restored(value: value, alias: token)
+                } else if separator == "_" && prefix == prefix.uppercased() {
+                    segment = .unresolved(token)
+                } else {
+                    continue
+                }
             }
             if match.range.location > cursor {
                 segments.append(.text(text.substring(with: NSRange(location: cursor, length: match.range.location - cursor))))
@@ -513,8 +546,9 @@ private final class FakeSession: DocumentSession {
     }
 
     func scan(observer: any JobObserver) throws -> DocumentSnapshot {
-        let installed = state.locked { state.models[FakeSetup.detectorID] == .installed }
-        guard installed else { throw CoreError.modelMissing }
+        // Below the floor the structured rules run without any model.
+        let ready = state.locked { state.tier == .rulesOnly || state.models[FakeSetup.detectorID] == .installed }
+        guard ready else { throw CoreError.modelMissing }
         let steps = 10
         for step in 0..<steps {
             observer.progress(fraction: Double(step) / Double(steps), page: nil, pageCount: nil)

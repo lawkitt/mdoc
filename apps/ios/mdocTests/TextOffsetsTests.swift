@@ -56,6 +56,17 @@ final class MarkdownStylerTests: XCTestCase {
         XCTAssertEqual(colour, UIColor.tertiaryLabel)
     }
 
+    @MainActor
+    func testSelectionCannotBeCopiedOrShared() {
+        let view = CandidateTextView(usingTextLayoutManager: true)
+        view.text = "Maya Ellison"
+        view.selectedRange = NSRange(location: 0, length: 4)
+        XCTAssertFalse(view.canPerformAction(#selector(UIResponderStandardEditActions.copy(_:)), withSender: nil))
+        XCTAssertFalse(view.canPerformAction(#selector(UIResponderStandardEditActions.cut(_:)), withSender: nil))
+        XCTAssertFalse(view.canPerformAction(NSSelectorFromString("_share:"), withSender: nil))
+        XCTAssertTrue(view.canPerformAction(#selector(UIResponderStandardEditActions.selectAll(_:)), withSender: nil))
+    }
+
     func testCandidateLinkRoundTrips() {
         let id = CandidateID(rawValue: "m12")
         XCTAssertEqual(MarkdownStyler.candidateID(from: MarkdownStyler.link(for: id)), id)

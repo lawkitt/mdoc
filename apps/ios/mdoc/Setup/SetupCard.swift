@@ -6,6 +6,8 @@ struct SetupCard: View {
     @Bindable var model: SetupViewModel
     /// Shown on Home; inside a document "Not now" is left out.
     var dismissible = true
+    /// The work that asked for setup, run once the models are installed.
+    var then: (@MainActor () async -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -19,12 +21,21 @@ struct SetupCard: View {
                 ForEach(model.snapshot.offers) { offer in
                     ModelRow(offer: offer, state: model.state(of: offer))
                 }
+                Button("Cancel", role: .cancel) {
+                    model.cancel()
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("setup-cancel")
             } else {
                 HStack {
                     Button {
-                        Task { await model.download() }
+                        model.download(then: then)
                     } label: {
-                        Text("Download \(size)")
+                        if then == nil {
+                            Text("Download \(size)")
+                        } else {
+                            Text("Download \(size) & continue")
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("setup-download")
@@ -130,10 +141,10 @@ private struct CellularQuestion: ViewModifier {
             titleVisibility: .visible
         ) {
             Button("Use Cellular") {
-                Task { await model.answerCellular(useCellular: true) }
+                model.answerCellular(useCellular: true)
             }
             Button("Wait for Wi-Fi") {
-                Task { await model.answerCellular(useCellular: false) }
+                model.answerCellular(useCellular: false)
             }
         } message: {
             Text("Your carrier may charge for the data.")

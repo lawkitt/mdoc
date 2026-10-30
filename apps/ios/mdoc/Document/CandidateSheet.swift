@@ -30,7 +30,6 @@ struct CandidateSheet: View {
                 Section {
                     LabeledContent("Found") {
                         Text(candidate.original)
-                            .textSelection(.enabled)
                     }
                     LabeledContent("Category") {
                         Label(candidate.category.label, systemImage: candidate.category.symbol)

@@ -12,9 +12,13 @@ struct SettingsView: View {
                     ForEach(setup.snapshot.offers) { offer in
                         ModelRow(offer: offer, state: setup.state(of: offer))
                     }
-                    if setup.snapshot.needsSetup && !setup.isWorking {
+                    if setup.isWorking {
+                        Button("Cancel download", role: .cancel) {
+                            setup.cancel()
+                        }
+                    } else if setup.snapshot.needsSetup {
                         Button {
-                            Task { await setup.download() }
+                            setup.download()
                         } label: {
                             Text("Download \(setup.snapshot.missingBytes.formatted(.byteCount(style: .file)))")
                         }

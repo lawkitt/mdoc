@@ -98,11 +98,15 @@ private final class ExpiringContinuation: BackgroundContinuation, @unchecked Sen
 
 @MainActor
 final class SetupViewModelTests: XCTestCase {
-    private func model(expensive: Bool, memory: UInt64 = 8 * 1_073_741_824) -> (SetupViewModel, UserDefaults) {
+    private func model(
+        expensive: Bool,
+        memory: UInt64 = 8 * Fixture.gigabyte,
+        downloadSeconds: Double = 0
+    ) -> (SetupViewModel, UserDefaults) {
         let defaults = UserDefaults(suiteName: "mdoc-tests-\(UUID().uuidString)")!
         let model = SetupViewModel(
-            setup: Fixture.core(modelsInstalled: false).setup,
-            downloader: FakeModelDownloader(seconds: 0),
+            setup: Fixture.core(modelsInstalled: false, memory: memory).setup,
+            downloader: FakeModelDownloader(seconds: downloadSeconds),
             network: FakeNetwork(isExpensive: expensive),
             jobs: LongJobRunner(background: NoBackgroundContinuation()),
             physicalMemory: memory,
@@ -113,7 +117,8 @@ final class SetupViewModelTests: XCTestCase {
     func testWiFiDownloadsAndInstalls() async {
         let (model, _) = model(expensive: false)
         XCTAssertTrue(model.showsCard)
-        await model.download()
+        model.download()
+        await model.waitForDownload()
         XCTAssertFalse(model.asksCellular)
         XCTAssertFalse(model.snapshot.needsSetup)
         XCTAssertFalse(model.showsCard)
@@ -121,18 +126,41 @@ final class SetupViewModelTests: XCTestCase {
 
     func testCellularAsksFirst() async {
         let (model, _) = model(expensive: true)
-        await model.download()
+        model.download()
         XCTAssertTrue(model.asksCellular)
         XCTAssertTrue(model.snapshot.needsSetup)
-        await model.answerCellular(useCellular: true)
+        model.answerCellular(useCellular: true)
+        await model.waitForDownload()
         XCTAssertFalse(model.asksCellular)
         XCTAssertFalse(model.snapshot.needsSetup)
+    }
+
+    func testDownloadAndContinueRunsTheWaitingScan() async {
+        let (model, _) = model(expensive: false)
+        var continued = false
+        model.download { continued = true }
+        await model.waitForDownload()
+        XCTAssertTrue(continued)
+    }
+
+    func testCancelReturnsToARetryableState() async {
+        let (model, _) = model(expensive: false, downloadSeconds: 5)
+        var continued = false
+        model.download { continued = true }
+        XCTAssertTrue(model.isWorking)
+        model.cancel()
+        await model.waitForDownload()
+        XCTAssertFalse(model.isWorking)
+        XCTAssertFalse(continued)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertTrue(model.snapshot.needsSetup)
+        XCTAssertTrue(model.snapshot.offers.allSatisfy { model.state(of: $0) == .notInstalled })
     }
 
     func testCardNamesTheSizeOfWhatFits() {
         let (large, _) = model(expensive: false)
         XCTAssertEqual(large.snapshot.missingBytes, 1_190_000_000 + 31_000_000)
-        let (small, _) = model(expensive: false, memory: 4 * 1_073_741_824)
+        let (small, _) = model(expensive: false, memory: 4 * Fixture.gigabyte)
         XCTAssertEqual(small.snapshot.tier, .rulesOnly)
         XCTAssertEqual(small.snapshot.missingBytes, 31_000_000)
     }

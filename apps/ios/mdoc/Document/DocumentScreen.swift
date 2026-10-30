@@ -179,7 +179,9 @@ struct DocumentScreen: View {
                     }
             }
             if model.needsSetup && setup.snapshot.needsSetup {
-                SetupCard(model: setup, dismissible: false)
+                SetupCard(model: setup, dismissible: false) {
+                    await model.findNames()
+                }
             }
             if let interruption = model.interruption {
                 InterruptionBanner(kind: interruption.kind) {

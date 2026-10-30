@@ -21,6 +21,10 @@ struct MarkdownTextView: UIViewRepresentable {
         view.isEditable = false
         view.isSelectable = true
         view.dataDetectorTypes = []
+        view.textDragInteraction?.isEnabled = false
+        if #available(iOS 18, *) {
+            view.writingToolsBehavior = .none
+        }
         view.linkTextAttributes = [:]
         view.backgroundColor = .systemBackground
         view.textContainerInset = UIEdgeInsets(top: 16, left: 12, bottom: 32, right: 12)
@@ -89,22 +93,39 @@ struct MarkdownTextView: UIViewRepresentable {
             return UITextItem.MenuConfiguration(menu: defaultMenu)
         }
 
+        /// Only Replace…: text leaves mdoc through Copy for AI and Share,
+        /// never a plain Copy, Share, Look Up or Translate of the selection
+        /// (ADR 0085's export invariant).
         func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
-            guard range.length > 0 else { return UIMenu(children: suggestedActions) }
+            guard range.length > 0 else { return UIMenu(children: []) }
             let source = offsets.sourceRange(range)
             let replace = UIAction(title: String(localized: "Replace…"), image: UIImage(systemName: "eye.slash")) { [weak self, weak textView] _ in
                 textView?.selectedRange = NSRange(location: range.location, length: 0)
                 self?.parent.onReplace(source)
             }
-            return UIMenu(children: [replace] + suggestedActions)
+            return UIMenu(children: [replace])
         }
     }
 }
 
-/// The text view with the Candidates rotor and a Review next action.
+/// The text view with the Candidates rotor and a Review next action. The
+/// selection exists only for Replace…: copying, sharing and dragging it out
+/// are off, keyboard shortcuts included.
 final class CandidateTextView: UITextView {
     var candidateRanges: [(CandidateID, NSRange)] = []
     var onReviewNext: (() -> Void)?
+
+    /// Selecting is the only standard action left.
+    static let allowedActions: Set<Selector> = [
+        #selector(UIResponderStandardEditActions.select(_:)),
+        #selector(UIResponderStandardEditActions.selectAll(_:)),
+    ]
+
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        Self.allowedActions.contains(action)
+    }
+
+    override func copy(_ sender: Any?) {}
 
     func installAccessibility() {
         let rotor = UIAccessibilityCustomRotor(name: String(localized: "Candidates")) { [weak self] predicate in
