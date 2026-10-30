@@ -4721,7 +4721,9 @@ name = "mdoc-ffi"
 version = "0.1.0"
 dependencies = [
  "mdoc-detect",
+ "mdoc-history",
  "mdoc-import",
+ "mdoc-pii",
  "mdoc-store",
  "serde",
  "serde_json",
