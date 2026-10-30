@@ -97,6 +97,12 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = 0
 
+# GPUI's element tree, layout and paint (taffy): half of the Windows render
+# test's time and most of the other GUI tests' (ADR 0082, #240).
+[profile.dev.package.gpui-pre]
+opt-level = 2
+[profile.dev.package.taffy]
+opt-level = 2
 # Headless evidence spends most of its time in BGRA readback conversion and
 # PNG encoding. Level 2 keeps these loops from reusing unoptimized generic
 # helpers. Keep app/editor code at 0.

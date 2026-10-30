@@ -57,7 +57,8 @@ layout. Runs for merged PRs and superseded `main` pushes kept holding runners.
   unoptimized generic helpers. Current overrides: the PDF rasterization crates,
   `gpui-pre-windows`, `png` and `simd-adler32` (readback conversion, PNG
   filters, Adler-32), and `gpui-pre-apple`, `image` and `fdeflate` (Metal
-  readback, buffer copies, PNG compression; ADR 0082). Blanket levels stay
+  readback, buffer copies, PNG compression; ADR 0082), `gpui-pre` and `taffy`
+  (layout and paint; ADR 0082). Blanket levels stay
   rejected: on 2026-10-26 opt-level 1 for all dependencies grew the cold Mac
   test build from 77 s to 179 s (+134%; opt-level 2: 251 s).
 - **Render pipelining.** On macOS and Windows the render process encodes PNGs

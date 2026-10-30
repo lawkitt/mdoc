@@ -218,7 +218,10 @@ the Apple Silicon Mac and the Windows x64 PC.
 `.config/nextest.toml`: a slow-test warning at 60 s, a kill at 2 minutes, and
 the render test one minute past its own watchdog (10 minutes on macOS, 20 on
 Windows); no retries. Doctests, which nextest does not run, follow through
-`cargo test --doc` ([ADR 0082](adr/0082-local-ci.md)). Hosted CI jobs stop at
+`cargo test --doc` ([ADR 0082](adr/0082-local-ci.md)). The script suites
+(release, CI cache cleanup, local CI runner) need no build, so
+`scripts/test.sh` runs them beside the Rust tests and prints their output
+after them. Hosted CI jobs stop at
 15 (lint), 20 (clippy) and 30 (test) minutes, and after each `main` run a
 cache cleanup job deletes older generations of the cargo caches it saved.
 
@@ -408,7 +411,7 @@ runs again when it starts. On the Mac a job starts only while swap is under
 | Runner (a copy, never the checkout it tests) | `~/ci/runner/scripts/` | `D:\ci\runner\scripts\` |
 | Results, kept 7 days | `~/ci/out/pr-N/<head>/` | `D:\ci\out\pr-N\<head>\` |
 | Runner log | `~/ci/state/runner.log` | `D:\ci\state\runner.log` (start-up errors: `task.log`) |
-| Started by | launchd agents `com.lawkitt.mdoc.local-ci` and `com.lawkitt.mdoc.local-ci-web` | Task Scheduler tasks `mdoc local CI` and `mdoc local CI web`, at logon |
+| Started by | launchd agents `com.lawkitt.mdoc.local-ci` and `com.lawkitt.mdoc.local-ci-web` | Task Scheduler tasks `mdoc local CI` and `mdoc local CI web`, at logon, normal priority |
 
 Each machine serves its `out` folder to the tailnet only, at
 `https://<machine>.<tailnet>.ts.net/ci/`; the status links open a job's

@@ -38,14 +38,10 @@ lint-scripts:
     shellcheck -x -P SCRIPTDIR scripts/*.sh
     shfmt -d scripts
 
-# Workspace tests through cargo-nextest (.config/nextest.toml), then doctests,
-# which nextest does not run (ADR 0082)
+# Workspace tests through cargo-nextest (.config/nextest.toml) and doctests,
+# with the script suites running beside them (ADR 0082)
 test:
-    cargo nextest run --workspace --features headless-renders
-    cargo test --doc --workspace --features headless-renders
-    just test-release
-    bash scripts/test-ci-cache-cleanup.sh
-    just test-local-ci
+    bash scripts/test.sh
 
 # Isolated release-script regressions; no network, builds or real releases
 test-release:
