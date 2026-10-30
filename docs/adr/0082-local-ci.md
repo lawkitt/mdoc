@@ -75,7 +75,8 @@ hub wait on CI.
   now keeps `target/`. The Task Scheduler task runs at normal priority, not
   the default below normal. `gpui-pre` and `taffy` get ADR 0070's
   `opt-level` 2 (render run 215 s to 105 s alone; cold Windows test build
-  150 s to 164 s, +9%). `just test` runs the script suites beside the Rust
+  150 s to 164 s, +9%; cold macOS test build 84 s to 92 s, +10%, measured
+  on the M4 on 2026-10-30). `just test` runs the script suites beside the Rust
   tests. The render test stays one process with all of its evidence.
 - **Targets** (push to both local statuses green, empty queue, warm CI
   checkout): `local/windows` and `local/macos` 4 minutes each; 8 minutes
