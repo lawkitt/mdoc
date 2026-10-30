@@ -50,18 +50,6 @@ confirm() {
   [[ $answer =~ ^[Yy]$ ]]
 }
 
-# WiX 3's candle.exe: on PATH, or under %WIX%. The WiX 3 installer sets only
-# WIX (which cargo-wix reads), not PATH.
-candle() {
-  if type -P candle >/dev/null; then
-    command candle "$@"
-  elif [ -n "${WIX:-}" ] && [ -x "$(cygpath -u "$WIX")/bin/candle.exe" ]; then
-    "$(cygpath -u "$WIX")/bin/candle.exe" "$@"
-  else
-    return 127
-  fi
-}
-
 # Loads scripts/tools.env into the environment.
 load_tools() {
   set -a

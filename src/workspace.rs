@@ -241,6 +241,10 @@ pub(super) struct Workspace {
     rail_new_focus: gpui::FocusHandle,
     panel_toggle_focus: gpui::FocusHandle,
     panel_new_focus: gpui::FocusHandle,
+    /// Home's row in the collapsed rail and the expanded list: where F6
+    /// enters the sidebar on Home (ADR 0062).
+    rail_home_focus: gpui::FocusHandle,
+    panel_home_focus: gpui::FocusHandle,
     menu_focus: gpui::FocusHandle,
     /// The Keychain explainer's Continue, focused when it opens (ADR 0043).
     explainer_focus: gpui::FocusHandle,
@@ -408,6 +412,8 @@ impl Workspace {
             rail_new_focus: cx.focus_handle().tab_stop(true),
             panel_toggle_focus: cx.focus_handle().tab_stop(true),
             panel_new_focus: cx.focus_handle().tab_stop(true),
+            rail_home_focus: cx.focus_handle().tab_stop(true),
+            panel_home_focus: cx.focus_handle().tab_stop(true),
             menu_focus: cx.focus_handle(),
             // Continue's own handle, so it must say it is a Tab stop.
             explainer_focus: cx.focus_handle().tab_stop(true),
@@ -2091,6 +2097,7 @@ impl Workspace {
         let mut focused = [
             (&self.rail_toggle_focus, &self.panel_toggle_focus),
             (&self.rail_new_focus, &self.panel_new_focus),
+            (&self.rail_home_focus, &self.panel_home_focus),
         ]
         .into_iter()
         .find(|(rail, _)| rail.is_focused(window))
@@ -2716,6 +2723,7 @@ impl Workspace {
                                 theme,
                                 self.showing_home(cx),
                             )
+                            .track_focus(&self.rail_home_focus.clone().tab_stop(!revealed))
                             .when(cfg!(test), |v| v.debug_selector(|| "rail-home".into()))
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.show_home(window, cx)),
@@ -3467,9 +3475,7 @@ impl Workspace {
         let current = self.note_region_focus(window, cx);
         let effect = self
             .focus_regions
-            .cycle(&regions, current, backwards, |focus| {
-                self.tab_row_in_layout(focus, cx)
-            });
+            .cycle(&regions, current, backwards, || self.sidebar_landing(cx));
         match effect {
             None => {}
             Some(focus_regions::FocusEffect::Focus(target)) => window.focus(&target, cx),
@@ -3477,6 +3483,11 @@ impl Workspace {
                 if let Some(last) =
                     last.filter(|focus| self.region_holds(&region, focus, window, cx))
                 {
+                    // The list's one Tab stop follows the active tab it
+                    // landed on, so Tab leaves the list from there.
+                    if region == *self.focus_regions.sidebar() && !self.showing_overview(cx) {
+                        self.sidebar.set_cursor(Some(self.tabs.active()));
+                    }
                     window.focus(&last, cx);
                 } else if region == *self.focus_regions.sidebar() && !self.sidebar.visible() {
                     // The deferred title/reveal group precedes the sidebar
@@ -3499,41 +3510,36 @@ impl Workspace {
         }
     }
 
-    /// A remembered sidebar tab row, as the row of the same tab in the layout
-    /// drawn now: the expanded list (or the rail's open reveal) or the
-    /// collapsed rail. Each layout has its own handles, and only the drawn
-    /// one can take focus (ADR 0062). Any other focus is returned unchanged.
-    fn tab_row_in_layout(&self, focus: &gpui::FocusHandle, cx: &App) -> gpui::FocusHandle {
-        // A navigation end may have disabled the button remembered on departure.
-        // Enter the sidebar at its first enabled control instead.
-        if (focus == &self.back_focus && self.navigation_target(true, cx).is_none())
-            || (focus == &self.forward_focus && self.navigation_target(false, cx).is_none())
-        {
-            return self.focus_regions.sidebar().clone();
+    /// Where F6 enters the sidebar (ADR 0062): the active tab's row, or
+    /// Home's row on Home, in the layout drawn now. That is the expanded
+    /// list (or the rail's open reveal), or the collapsed rail, whose row
+    /// opens the reveal. None when no such row is shown (a case page): the
+    /// region's first control.
+    fn sidebar_landing(&self, cx: &App) -> Option<gpui::FocusHandle> {
+        let list = self.sidebar.visible() || self.sidebar.reveal() == Reveal::Shown;
+        if self.showing_home(cx) {
+            let home = if list {
+                &self.panel_home_focus
+            } else {
+                &self.rail_home_focus
+            };
+            return Some(home.clone());
         }
-        let tab = [&self.sidebar_row_focus, &self.compact_row_focus]
-            .iter()
-            .find_map(|rows| {
-                rows.borrow()
-                    .iter()
-                    .find(|(_, row)| *row == focus)
-                    .map(|(id, _)| *id)
-            });
-        let Some(tab) = tab else {
-            return focus.clone();
-        };
+        if self.cases.page.is_some() {
+            return None;
+        }
         // The rail's row opens the reveal and hands focus to the list's row,
         // so the tab must be in the list too (a folded case member is not).
-        let listed = self.listed_tabs(cx).contains(&tab);
-        let rows = if self.sidebar.visible() || self.sidebar.reveal() == Reveal::Shown {
+        let tab = self.tabs.active();
+        if !self.listed_tabs(cx).contains(&tab) {
+            return None;
+        }
+        let rows = if list {
             &self.sidebar_row_focus
         } else {
             &self.compact_row_focus
         };
-        listed
-            .then(|| rows.borrow().get(&tab).cloned())
-            .flatten()
-            .unwrap_or_else(|| focus.clone())
+        rows.borrow().get(&tab).cloned()
     }
 
     /// The region holding focus. Comments sit inside the preview: the

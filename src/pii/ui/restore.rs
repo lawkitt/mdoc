@@ -40,6 +40,29 @@ pub(crate) struct RestoreState {
     scroll: gpui::UniformListScrollHandle,
 }
 
+/// How long the Pseudonymize Clipboard result stays on the document.
+pub(crate) const CLIPBOARD_NOTICE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// The result of Pseudonymize Clipboard. It is transient (issue #181): it
+/// times out, and goes sooner when dismissed, when the document is edited
+/// or when a copy replaces the clipboard it describes.
+#[derive(Default)]
+pub(crate) struct ClipboardNotice {
+    text: Option<String>,
+    /// Dropping the task cancels the timeout.
+    timeout: Option<gpui::Task<()>>,
+}
+
+impl ClipboardNotice {
+    pub(crate) fn text(&self) -> Option<&str> {
+        self.text.as_deref()
+    }
+    pub(crate) fn clear(&mut self) {
+        self.text = None;
+        self.timeout = None;
+    }
+}
+
 /// Prepended by Copy for AI. It names aliases only, never original values.
 pub(crate) fn ai_notice(examples: &[&str]) -> String {
     let examples = match examples {
@@ -100,19 +123,18 @@ impl DocumentView {
             self.pii.review.export_identities()
         };
         if identities.is_empty() {
-            self.clipboard_notice = Some(
+            self.show_clipboard_notice(
                 "This tab has no names to replace yet. Pseudonymize a document or open a case first."
                     .into(),
+                cx,
             );
             cx.emit(crate::workspace::TabEvent::Case(
                 crate::workspace::CaseEvent::MappingMissing,
             ));
-            cx.notify();
             return;
         }
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
-            self.clipboard_notice = Some("The clipboard has no text.".into());
-            cx.notify();
+            self.show_clipboard_notice("The clipboard has no text.".into(), cx);
             return;
         };
         let (replaced, count) = RestoreMap::new(identities).pseudonymize(&text);
@@ -123,14 +145,28 @@ impl DocumentView {
             .case
             .link()
             .map_or_else(|| "this document".to_string(), |l| format!("“{}”", l.name));
-        self.clipboard_notice = Some(match count {
+        let notice = match count {
             0 => format!("No names from {source} were found in the clipboard. It is unchanged."),
             n => format!(
                 "Replaced {n} {} from {source} in the clipboard. Names mdoc doesn't know yet \
                  were not replaced; check before pasting.",
                 if n == 1 { "name" } else { "names" }
             ),
-        });
+        };
+        self.show_clipboard_notice(notice, cx);
+    }
+    /// Show `text` as the clipboard notice; showing another restarts the timeout.
+    fn show_clipboard_notice(&mut self, text: String, cx: &mut Context<Self>) {
+        self.clipboard_notice.text = Some(text);
+        self.clipboard_notice.timeout = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(CLIPBOARD_NOTICE_TIMEOUT)
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                this.clipboard_notice.clear();
+                cx.notify();
+            });
+        }));
         cx.notify();
     }
     pub(crate) fn paste_ai_response(
