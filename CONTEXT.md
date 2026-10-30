@@ -213,6 +213,23 @@ after a denial), with an animated preview of the macOS password dialog.
 **Pseudonymize Clipboard**: replace the clipboard text's known case names with
 their aliases, without detection. Unknown names stay; it is not a scan.
 
+**Restore Clipboard**: replace aliases in the clipboard text with a case's
+primary wordings, from the shelf; the clipboard counterpart of Restore
+([ADR 0084](docs/adr/0084-menu-bar-shelf.md)).
+
+**Shelf**: the menu bar item's panel: pseudonymized documents as small
+previews to open, drag out or Copy for AI, and the clipboard actions. Optional;
+turning it on keeps mdoc running without a window (ADR 0084). Avoid "tray"
+for the macOS item.
+
+**Ready document**: one with at least one applied alias and no pending
+proposals; only a ready document can be copied or dragged from the shelf
+(ADR 0084).
+
+**Shelf export**: the temporary `.md` file a shelf drag carries, written from
+the current text into a private folder cleared at quit; its name is the title
+with known originals pseudonymized (ADR 0084).
+
 **Before / after view**: read-only, line-paired view of original wording beside
 pseudonymized text. Live: it follows every applied-replacement change
 (ADR 0042). Avoid "diff", which suggests arbitrary edits.

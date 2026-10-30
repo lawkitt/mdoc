@@ -32,10 +32,18 @@ in 0.2.1 can still get a patch.
 
 Restoring cases without surprises, then shortcut discovery
 ([milestone](https://github.com/lawkitt/mdoc/milestone/4)). The 2026-10-22 UX
-review's polish shipped in 0.2.0. Items are in priority order. Until
-0.3.0-rc.1 is cut, an item added here with a Done-when line is in scope (no
-five-item box this cycle); rc.1 is cut once every item is done. Each item
+review's polish shipped in 0.2.0. rc.1 is out and gets an install and smoke
+check only; rc.2 follows the shelf and gets the full acceptance
+([ADR 0083](docs/adr/0083-fewer-release-candidates.md), amended). Each item
 merges to `main` on its own when green.
+
+- **[Shelf] Menu bar shelf** ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)),
+  macOS: an optional menu bar item listing pseudonymized documents to open,
+  drag out or Copy for AI, with Pseudonymize Clipboard and Restore
+  Clipboard. *Done when:* platform acceptance section 12 passes on rc.2,
+  Windows is unchanged (no tray), and a test drags and copies ready,
+  not-ready and changed-since-review documents and finds no original in any
+  export.
 
 Records: [2026-10-29 grill](docs/design/roadmap-grill-2026-10-29.md),
 [2026-10-30 grill](docs/design/roadmap-grill-2026-10-30.md). One RC is the
@@ -60,7 +68,10 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   keep-visible-in-place behavior.
 - **[OCR]** Recover page structure on clean scans, in the AnyDoc/pdf-inspector forks.
 - **[Cases]** System-wide Pseudonymize Clipboard hotkey, via the `global-hotkey`
-  crate as in Panoply.
+  crate as in Panoply, with global shortcuts for the shelf and Restore
+  Clipboard ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)).
+- **[Shelf]** Windows notification-area flyout under ADR 0084's rules, and
+  Open at login (`SMAppService` on macOS) under the menu bar setting.
 - **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
 - **[Import]** Images (screenshots, photos of pages) through OCR, like Anoni's
   Image → text.

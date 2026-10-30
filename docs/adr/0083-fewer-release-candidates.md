@@ -1,6 +1,7 @@
 # Fewer release candidates
 
-Status: Accepted, 2026-10-30. Amends
+Status: Accepted, 2026-10-30. Amended by [ADR 0084](0084-menu-bar-shelf.md)
+(a feature after rc.1). Amends
 [ADR 0059](0059-roadmap-after-0-1-0.md) (acceptance per release) and
 [ADR 0037](0037-ci-and-release-pipeline.md) (Windows artifacts, release CI).
 
@@ -23,7 +24,9 @@ apart from the `.exe`, for no users yet.
 - **Another RC only** when a must-fix fix touches what only a signed,
   installed build exercises: the installer, signing or notarization, the
   update check or in-app update, or the case key in the keychain. Such work
-  should land before rc.1.
+  should land before rc.1. A feature added after rc.1 also makes a new RC;
+  full acceptance then runs only on the last RC, and earlier ones get an
+  install and smoke check ([ADR 0084](0084-menu-bar-shelf.md)).
 - **Publishing.** A patch or stable publishes once both agent runs are done
   with no must-fix Fail; rows only the maintainer can do may follow and are
   listed in the report.

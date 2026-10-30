@@ -253,3 +253,22 @@ not mark it Fail.
 | A3 | Settings and the Keychain/unsaved-changes dialogs announce their title and buttons; focus stays inside | | |
 | A4 | Every control in A1–A3 can be reached and activated by keyboard alone (F6, Tab, arrows, Enter, Space), from Home and from the editor, without a screen reader or Full Keyboard Access (ADR 0062) | | |
 | A5 | Scan status and toasts are announced | | |
+
+## 12. Menu bar shelf
+
+*macOS only* (ADR 0084); on Windows, check only M10. Use a case with one
+ready document, one with a pending proposal, and one closed member edited in
+another editor since its last save.
+
+| ID | Check | Result | Note |
+| --- | --- | --- | --- |
+| M1 | Settings › General › "Show mdoc in the menu bar" is off on a fresh profile; turning it on shows a monochrome icon with no badge | | |
+| M2 | Closing the last window keeps mdoc running and removes it from the Dock; a shelf row click reopens the same tabs, unsaved text and undo included | | |
+| M3 | The shelf lists at most 8 documents, most recent first, with case colours and "Show all in mdoc"; previews show aliases only, never originals | | |
+| M4 | Dragging a ready document into the ChatGPT web composer inserts its text; dropping it in Finder saves a `.md` whose name has no original (e.g. "PERSON_1 settlement.md") | | |
+| M5 | The shelf's Copy for AI (button and ⌘C) puts the same bytes on the clipboard as the editor's Copy for AI | | |
+| M6 | The pending-proposal document reads "N left to review", the edited closed member "Changed since review"; neither copies or drags, and a click opens the review | | |
+| M7 | Restore Clipboard with a copied AI reply restores the names of the case shown on the row and reports "N names restored · M unrecognised"; the ▾ picker switches the case | | |
+| M8 | With cases locked, the clipboard rows read "Unlock cases in mdoc…" and no system dialog appears until it is clicked | | |
+| M9 | VoiceOver reads a row's title, case and state and the "Copy for AI" button; ↑↓, Enter and Esc work | | |
+| M10 | ⌘Q and the shelf's Quit run the unsaved-work prompts; with "Restart to update" shown, it prompts first; turning the setting off restores quit on last window close | | |
