@@ -4,6 +4,217 @@ All notable changes to **mdoc** are documented here.
 
 ## Unreleased
 
+- **Quiet macOS builds.** The vendored `gpui-pre-macos` crate no longer prints
+  716 upstream `deprecated` warnings on every build; see
+  [its patch notes](vendor/gpui-pre-macos/MDOC-PATCH.md).
+
+- **Quitting from the Dock asks first on macOS.** Quit from the Dock, a quit
+  Apple Event or logout now shows the same unsaved-changes and mapping
+  prompts as ⌘Q, and a logout or shutdown goes on once they are answered.
+  It used to close mdoc at once, losing unsaved edits, unsaved mappings,
+  untitled tabs and OCR results
+  ([ADR 0071](docs/adr/0071-one-close-and-quit-prompt.md)).
+
+- **UI polish from a dev-build walk-through.** A click in the blank page
+  under a document's last line puts the caret at the end instead of taking
+  focus from the editor. Numbered list items share one text edge, mention
+  snippets in Replacements read without gaps, and the tooltips of More
+  actions, What you did, notices and the Replacements filter no longer sit on
+  their open menus. Sidebar tab names line up whatever the badge, and a
+  restored conversion keeps its name when first opened. The source preview's
+  Find and Fit page buttons use line icons, a failed conversion offers Try
+  again, the OCR result line names the model as Settings does, and smaller
+  alignment and wording fixes land in Home, Share, Settings and Compare.
+
+- **Windows checkouts on a Dev Drive.** On the Windows PC the root checkout,
+  lanes `windows-lane-1` to `windows-lane-4` and local CI's home (`E:\ci`) are
+  on `E:`, a ReFS Dev Drive, instead of `C:` and `D:`. Re-running
+  `scripts/local-ci-setup.ps1` with a new `-Root` now also ends the results
+  server left over from the old home, which otherwise kept answering on the
+  same port (fleet ADR 0019).
+
+- **⌃↩ opens a sidebar tab's menu.** Ctrl+Enter on a focused sidebar tab
+  opens its menu in the expanded sidebar and the collapsed rail, with no fn
+  on MacBook keyboards, where F10 is the mute key; ⇧F10 still works, and the
+  Menu key on Windows. The shortcuts panel lists it
+  ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
+
+- **Replace picks a category.** The pill beside a selection reads
+  "Replace · Person ▾": Replace adds with the guessed category, as ⌘⌥P
+  does, and ▾ (or ⇧⌘⌥P, Ctrl+Alt+Shift+P on Windows) lists the categories
+  with the alias each would give, adding in the one picked
+  ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
+
+- **Local CI is the PR test gate.** Hosted CI runs only `lint (ubuntu)` on
+  PRs from branches in the repository; `local/windows` and `local/macos`
+  test them on the maintainer's machines. Fork and Dependabot PRs keep the
+  full hosted matrix, and `ci.yml` can be run by hand on any branch
+  ([ADR 0082](docs/adr/0082-local-ci.md); fixes #252).
+
+- **Save As starts in a folder you use.** Save As for an Untitled tab, pasted
+  text or an AI reply starts in the folder of your most recent file, or in
+  Documents, instead of mdoc's install folder; a conversion still starts in
+  its source's folder (fixes #180).
+
+- **The category menu says what each choice gives.** In the mention bar's
+  category menu each row shows the alias choosing that category would
+  give, and none where the alias stays (the current category, or a custom
+  alias of the whole entity), instead of the current alias on every row
+  (fixes #179).
+
+- **Save As says why it opens.** Save mapping as case on an unsaved conversion
+  opens Save As with "Save the document first so the case can find it": the
+  dialog's message line on macOS, its title on Windows.
+
+- **Windows ships the `.exe` installer only.** Releases no longer include an
+  `.msi`, and `just setup` no longer installs WiX. If you installed mdoc from
+  an `.msi`, remove it in Settings › Apps before running the `.exe`; your
+  cases are kept, because the `.msi` never touches `%LOCALAPPDATA%`
+  ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
+
+- **F6 lands on the active tab.** F6 into the sidebar now lands on the
+  active tab's row (Home's row on Home), in the expanded sidebar and the
+  collapsed rail, instead of the control last focused there, often Settings
+  ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
+
+- **The clipboard notice goes away by itself.** The result of Pseudonymize
+  Clipboard leaves the document after 8 seconds, or sooner when you edit the
+  document, copy from it or dismiss it (fixes #181).
+
+- **Faster local CI on Windows.** `local/windows` keeps the CI checkout's
+  build cache between jobs (each job had built cold), runs at normal
+  priority, builds GPUI's layout and paint crates at `opt-level` 2, and
+  `just test` runs the script suites beside the Rust tests (fixes #240,
+  [ADR 0082](docs/adr/0082-local-ci.md)).
+
+- **Local CI on the Windows PC.** The `local/windows` runner is installed and
+  posts statuses. `scripts/local-ci-setup.ps1` now sends the task's output to
+  `D:\ci\state\task.log`, because writes to the task's console failed and
+  stopped the runner at start-up. It serves results through a localhost
+  Python server (the `mdoc local CI web` task) that `tailscale serve`
+  proxies, because serving a folder needs a Windows admin. A third lane,
+  `windows-lane-3`, is on `D:` (fixes #233,
+  [ADR 0082](docs/adr/0082-local-ci.md)).
+
+- **Local CI runner.** `just local-ci` tests each PR's merge with `main` on
+  the maintainer's Mac and Windows PC and posts `local/macos` and
+  `local/windows` statuses that link to the log and renders over the tailnet
+  ([ADR 0082](docs/adr/0082-local-ci.md), #233).
+
+- **Hosted CI hygiene.** CI jobs time out after 15 (lint), 20 (clippy) and
+  30 (test) minutes, `just test` runs the workspace tests with cargo-nextest
+  (per-test timeouts, doctests through `cargo test --doc`), `main` deletes
+  older generations of its cargo caches, renders artifacts are kept 7 days,
+  and PRs on any base branch get CI
+  ([ADR 0082](docs/adr/0082-local-ci.md); fixes #231).
+
+- **Faster macOS screen renders, fewer render-file conflicts.** The headless
+  render test takes 72 s instead of 234 s on the M4: `gpui-pre-apple`,
+  `image` and `fdeflate` build at `opt-level` 2 in the dev profile (cold test
+  build +3%), and PNGs are encoded on a background thread as on Windows.
+  Scenes live in one module per feature and the test's screen list in
+  `tests/headless_screens.txt`, merged by union (fixes #232).
+
+- **Case identity fixes.** Saving a new case no longer retains forgotten names in dismissed merge hints, and merging identities no longer blocks alias updates in other open case members.
+
+- **Restore in place fixes.** Joining a case, a case-wide rename and their
+  Undo keep an AI reply restoring to the same people: its aliases follow the
+  renumbering, in the case file too. The reply box keeps a paste exactly
+  (no Markdown paste rules) and keeps the caret in view in a long reply;
+  Next unrecognised scrolls to its token on the click that opens the Reply
+  view ([ADR 0078](docs/adr/0078-restore-in-place.md)).
+
+- **What you did fixes.** Re-choosing the current category of an identity
+  whose mentions are already replaced no longer adds an entry or drops the
+  undone ones; undoing a case join that only proposed names withdraws those
+  proposals, so Apply no longer replaces them; Tab and ⇧Tab through a long
+  list scroll the focused entry into view.
+
+- **Back and Forward fixes.** Closing the tab you're on or deleting a case from
+  its page no longer leaves Back pointing at the page shown, and keeps Forward;
+  a close or quit prompt you cancel no longer clears Forward; the buttons and
+  shortcuts agree on where they go; navigating closes an open tab or case menu
+  ([ADR 0081](docs/adr/0081-workspace-back-forward.md)).
+
+- **Model status stays accurate across windows.** Settings refreshes remembered model state, shows clearer setup progress, preserves runtime errors, and avoids storing absolute paths or detailed errors in the cache.
+
+- **Restore AI replies in place.** Paste an AI reply into Share to read it
+  with real names in the live Reply view, see unrecognised placeholders,
+  copy the restored reply or open it as a tab. Each case member's reply is
+  kept encrypted with its mapping. The box replaces Share's "Paste AI reply"
+  button; Paste AI Response in the File menu and ⌥⇧⌘V still open a restore
+  tab.
+
+- **Default categories to detect.** Settings › Detection › Categories to
+  detect chooses what scans of documents without a case look for, and each
+  new case starts from that list; existing cases keep theirs. Turning a
+  category off removes its unapplied proposals in open documents without a
+  case; applied replacements and names you marked stay
+  ([ADR 0076](docs/adr/0076-settings-categories.md)).
+
+- **Merge hint fixes.** Restored replies use an identity’s longest wording
+  after Same as… links a fuller name to a saved short one; merging into a later
+  case identity no longer leaves two case entries with one alias; relatives
+  (“Mr” / “Ms Bennett”, “Петрову” / “Петрова”, a relative named by initials)
+  and different numbers (“1.11.2020” / “11.1.2020”) get no hint; hints
+  dismissed before Save mapping as case stay dismissed; a failed merge changes
+  nothing.
+
+- **What you did.** The document header's clock and the command palette open
+  a list of pseudonymization decisions with times. Choose an entry to undo
+  back to it or redo up to it; intervening text edits travel with them.
+  Decisions older than the undo limit stay listed but can no longer be
+  travelled to. The list stays in memory for the tab and is never saved to
+  disk or a case.
+
+- **Merge likely duplicate identities.** The Replacements panel offers “Looks like … · Merge” for unambiguous short or inflected names, punctuation and case variants, long-name typos and reversed Russian names. Merge keeps the fuller identity’s alias and takes one Undo; dismissed pairs stay hidden for the tab or its saved case.
+
+- **Settings remembers model checks.** Model rows show the last result at once and re-check quietly; changed or missing files lose their Installed status. Recognition explains its default, and the OCR card says language picks apply only to that document.
+
+- **Navigate back and forward.** Use the title bar buttons, keyboard shortcuts, or mouse buttons to return to recently visited tabs, Home, and case pages.
+
+- **A page for each case.** Open a case to see its documents and names without
+  opening files or reading the case key. Rename it, choose one of eight colours,
+  manage membership and detection categories, add or forget names, and delete
+  the case from one place. Locked cases show their name and document count until
+  you choose Unlock ([ADR 0077](docs/adr/0077-case-page.md)).
+
+- **Settings by category.** General, Detection, Recognition, Spelling, Cases and About now have their own rows, switches and category-only Reset. Choices save immediately; numbers commit on Enter or blur with inline validation. The keyboard tab list, command palette and model/update links open each category directly, and the dictionary stays inside Spelling.
+
+- **Folder sheet.** A dropped folder lists its files with checkboxes before
+  anything opens: Open as case (or Add to “X” when a loaded case already holds
+  its files or it lands on a case header), Open files, or Cancel. Open files
+  never touches the case key, one folder opens at most 20 new tabs, and
+  several folders get their sheets in turn
+  ([ADR 0075](docs/adr/0075-folder-sheet.md)).
+
+- **Choose the theme in Settings.** Appearance offers System, Light and Dark,
+  stays in sync with the sidebar theme button, and saves the choice in the
+  session. System follows the window's appearance live.
+
+- **Consistent keyboard focus.** A single outside accent ring marks keyboard
+  focus in light and dark themes, including panel toggles while their panels
+  are open (fixes #194).
+
+- **Keyboard Shortcuts sheet.** `?` outside text fields, ⌘/ (Ctrl+/), the
+  command palette or Help › Keyboard Shortcuts lists every shortcut by
+  context, with this platform's keys and a filter; the palette's shortcut
+  labels come from the same table
+  ([ADR 0073](docs/adr/0073-keyboard-shortcuts-panel.md)).
+
+- **Untitled tabs are numbered.** The first is `Untitled.md`; later tabs take
+  the lowest free number, which closing a tab makes available again. Empty
+  untitled tabs keep their names across restarts, and Save As suggests the
+  tab's name.
+
+- **Save as Case retries a failed case save.** Closing a tab whose case
+  couldn't be saved and choosing Save as Case now saves the case again and
+  closes the tab once it is written (fixes #189).
+
+- **The restore bar says what restored names are.** After Paste AI Response,
+  the bar reads "The N restored names are proposals. Apply turns them back
+  into aliases before you send the text to the AI again."
+
 - **One close prompt, and quit asks about mappings.** Closing an edited,
   pseudonymized tab asks once, "Save “…” and keep its mapping?" (Save as
   Case, Save, Don't Save, Cancel), instead of two questions in a row. Quit

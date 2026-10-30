@@ -1,1 +1,0 @@
-- **Settings remembers model checks.** Model rows show the last result at once and re-check quietly; changed or missing files lose their Installed status. Recognition explains its default, and the OCR card says language picks apply only to that document.

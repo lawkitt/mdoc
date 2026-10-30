@@ -1,1 +1,0 @@
-- **Settings by category.** General, Detection, Recognition, Spelling, Cases and About now have their own rows, switches and category-only Reset. Choices save immediately; numbers commit on Enter or blur with inline validation. The keyboard tab list, command palette and model/update links open each category directly, and the dictionary stays inside Spelling.
