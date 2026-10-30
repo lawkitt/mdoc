@@ -261,6 +261,13 @@ label() {
   esac
 }
 
+# GitHub can build a PR's merge ref on a main from before the mobile check
+# (ADR 0085). The merge's first parent is that main: when it had the check,
+# the step runs, so a PR that removes the script fails rather than skips.
+mobile_check_expected() {
+  git cat-file -e HEAD^1:scripts/mobile-check.sh 2>/dev/null
+}
+
 # Runs in the background in its own process group; output goes to log.txt.
 # Exit 0 passed, 1 a step failed (named in .step), 3 the checkout failed.
 job() { # merge-ref dir
@@ -283,13 +290,11 @@ job() { # merge-ref dir
       # Not through just: setup may replace the just binary.
       setup) bash scripts/setup.sh </dev/null || rc=$? ;;
       test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just "$step" || rc=$? ;;
-      # GitHub can build a PR's merge ref on a main from before the mobile
-      # check (ADR 0085); with no recipe there is nothing to check.
       mobile)
-        if [ -f scripts/mobile-check.sh ]; then
+        if mobile_check_expected; then
           just "$step" || rc=$?
         else
-          echo "local-ci: no mobile check in this merge ref; skipped"
+          echo "local-ci: this merge ref's main predates the mobile check; skipped"
         fi
         ;;
       *) just "$step" || rc=$? ;;

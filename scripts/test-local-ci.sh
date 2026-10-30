@@ -23,7 +23,7 @@ check() { # description command...
   fi
 }
 
-# --- paths-ignore and globs -------------------------------------------------
+# --- paths-ignore, globs and the mobile step -------------------------------------------------
 
 (
   export LOCAL_CI_SOURCED=1
@@ -43,6 +43,26 @@ check() { # description command...
   check "* does not cross directories" eval '! only_ignored "*.md" <<<"docs/a.md"'
   check "a dot is literal" eval '! only_ignored "build/appicon.svg" <<<"build/appiconxsvg"'
   check "no files is not docs only" eval '! only_ignored "**/*.md" </dev/null'
+  # The mobile step follows the merge's main.
+  repo=$(mktemp -d)
+  g() { git -C "$repo" -c user.name=t -c user.email=t@example.com "$@"; }
+  g init --quiet -b main
+  echo a >"$repo/a" && g add a && g commit --quiet -m old-main
+  old_main=$(g rev-parse HEAD)
+  mkdir "$repo/scripts" && : >"$repo/scripts/mobile-check.sh"
+  g add scripts && g commit --quiet -m new-main
+  new_main=$(g rev-parse HEAD)
+  # A PR merged onto the old main: no check to run.
+  g checkout --quiet -b pr-old "$old_main" && echo b >"$repo/b" && g add b && g commit --quiet -m pr
+  g checkout --quiet --detach "$old_main" && g merge --quiet --no-ff -m merge pr-old
+  # shellcheck disable=SC2317,SC2329 # called through check
+  in_repo() { (cd "$repo" && mobile_check_expected); }
+  check "a merge ref on a main without the check skips it" eval '! in_repo'
+  # A PR that deletes the script, merged onto the new main: the check still runs (and fails).
+  g checkout --quiet -b pr-new "$new_main" && g rm --quiet scripts/mobile-check.sh && g commit --quiet -m drop
+  g checkout --quiet --detach "$new_main" && g merge --quiet --no-ff -m merge pr-new
+  check "a PR that removes the check still runs it" in_repo
+  rm -rf "${repo:?}"
   exit "$failures"
 ) || failures=$((failures + $?))
 
