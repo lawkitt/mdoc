@@ -1,6 +1,7 @@
 # Mobile apps
 
-Status: Accepted, 2026-10-31.
+Status: Accepted, 2026-10-31. Amended 2026-10-31: core-crate changes merge
+when green, and UI work runs beside the spike.
 
 ## Problem
 
@@ -64,8 +65,10 @@ already lives in GUI-free Rust crates (ADR 0069).
   on the existing fixtures. The spike keeps the real `crates/mdoc-ffi` and
   the core's platform features; its Swift harness app, which runs the core
   on fixtures and writes timings as JSON, is thrown away. The result is a
-  dated report under `docs/evidence/` with a pass or fail per device class;
-  UI work starts after the maintainer reads it. Android repeats the spike
+  dated report under `docs/evidence/` with a pass or fail per device class.
+  UI work runs beside the spike; Simulator and Mac numbers stand in until
+  the device rows are measured, and the detector budgets still decide what
+  ships. Android repeats the spike
   when its work starts.
 - **Detector budgets.** GLiNER2 FP16 ships on a device class when it meets
   all of: peak memory ≤ 2 GB, cold load ≤ 10 s, a 20-page document scanned
@@ -162,9 +165,10 @@ already lives in GUI-free Rust crates (ADR 0069).
 
 ## Consequences
 
-- The work is the roadmap's iOS 0.1 section. The spike's changes to the
-  core crates' build start after 0.3.0-rc.2 is cut; `mdoc-ffi`-only work
-  may start earlier.
+- The work is the roadmap's iOS 0.1 section. Changes to the core crates
+  merge through the normal gate and leave desktop unchanged: new Cargo
+  features are off by default and mobile-only code sits behind
+  `cfg(target_os = "ios")` or `cfg(target_os = "android")`.
 - Each screen is written twice (SwiftUI and Compose); the review-first
   scope keeps the screen count small.
 - A case made on the phone stays on the phone; restoring a reply on the

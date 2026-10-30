@@ -54,8 +54,8 @@ another, so such work lands first.
 ## iOS 0.1
 
 The review-first iPhone and iPad app on the shared Rust core
-([ADR 0085](docs/adr/0085-mobile-apps.md)). Starts after 0.3.0-rc.2 is cut;
-`mdoc-ffi`-only work may start earlier. Record:
+([ADR 0085](docs/adr/0085-mobile-apps.md)). Core-crate changes merge when
+green and leave desktop unchanged. Record:
 [mobile grill](docs/design/mobile-grill-2026-10-31.md).
 
 1. **[Mobile] Feasibility spike.** *From the mobile grill.* Build
