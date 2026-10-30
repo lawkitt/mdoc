@@ -4,6 +4,12 @@ name: CI
 # (ADR 0037). Heavy and machine-dependent tests (performance, installed
 # models, the OCR download) stay out of everyday CI; release.yml adds the OCR
 # smoke test to the test jobs through the `smoke-ocr` input.
+#
+# Local CI is the pre-merge test gate (ADR 0082): a PR from a branch in this
+# repository, opened by a user, runs only `lint (ubuntu)` here, and the
+# maintainer's machines post `local/windows` and `local/macos`. Fork and bot
+# (Dependabot) PRs, which local CI never runs, get the full matrix, as do
+# `main`, manual runs and release.yml's call.
 on:
   push:
     branches: [main]
@@ -19,6 +25,9 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
     paths-ignore: *ignored
+  # The full matrix on any branch; with the PC off, a green
+  # `test (windows-latest)` stands in for `local/windows` (ADR 0082).
+  workflow_dispatch:
   # release.yml runs this same job set before building release artifacts.
   workflow_call:
     inputs:
@@ -52,7 +61,7 @@ jobs:
     # The release commit that `just release` pushes with its tag is tested by
     # the tag's Release run; don't test the same commit twice. (In a call
     # from release.yml the event is the tag push, so ref_type is "tag".)
-    if: &not-release-commit >-
+    if: >-
       ${{ github.event.action != 'closed' &&
       !(github.event_name == 'push' && github.ref_type == 'branch' &&
       startsWith(github.event.head_commit.message, 'release: v')) }}
@@ -85,10 +94,20 @@ jobs:
       - run: just lint
 
   # The shipped targets: clippy and the full test suite, as parallel jobs so
-  # the slow Windows test build doesn't wait for clippy (ADR 0070).
+  # the slow Windows test build doesn't wait for clippy (ADR 0070). On
+  # pull_request only for the PRs local CI skips: from a fork (a deleted
+  # fork's head repo is null, so it counts) or opened by anything but a user.
+  # The complement of scripts/local-ci.sh's poll() filter, drafts aside. The
+  # first two clauses repeat lint (ubuntu)'s release-commit and closed skip.
   clippy:
     name: clippy (${{ matrix.runner }})
-    if: *not-release-commit
+    if: &full-matrix >-
+      ${{ github.event.action != 'closed' &&
+      !(github.event_name == 'push' && github.ref_type == 'branch' &&
+      startsWith(github.event.head_commit.message, 'release: v')) &&
+      (github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name != github.repository ||
+      github.event.pull_request.user.type != 'User') }}
     strategy:
       fail-fast: false
       matrix:
@@ -106,7 +125,7 @@ jobs:
 
   test:
     name: test (${{ matrix.runner }})
-    if: *not-release-commit
+    if: *full-matrix
     strategy:
       fail-fast: false
       matrix:
