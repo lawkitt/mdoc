@@ -376,6 +376,41 @@ fn validate_config(
     for runtime in RUNTIMES {
         verify(&root.join(runtime.library), runtime.library_sha)?;
     }
+    let (installed, models) = resolve_models(
+        root,
+        config,
+        root.join(RUNTIMES[0].library),
+        root.join(RUNTIMES[1].library),
+    )?;
+    // Check actual loading before claiming ready. All of this runs off the UI thread.
+    PdfiumRenderer::load_from_path(&installed.pdfium)
+        .map_err(|e| SetupError::Engine(e.to_string()))?;
+    load_onnx_runtime(&installed.onnx)?;
+    OarOcrEngine::from_models_with_runtime(&models, Some(&installed.onnx))
+        .map_err(|e| SetupError::Engine(e.to_string()))?;
+    Ok(installed)
+}
+
+/// OCR whose models sit under `root/models` in the desktop layout, with the
+/// given PDFium and ONNX Runtime libraries: the mobile core passes the
+/// runtimes linked into the app ([`linked_runtimes`]). Checks the models
+/// against the pinned manifest; nothing is downloaded, and the runtimes load
+/// on first recognition.
+pub fn installed_at(
+    root: &Path,
+    config: &mdoc_store::settings::OcrConfig,
+    pdfium: PathBuf,
+    onnx: PathBuf,
+) -> Result<Installed, SetupError> {
+    resolve_models(root, config, pdfium, onnx).map(|(installed, _)| installed)
+}
+
+fn resolve_models(
+    root: &Path,
+    config: &mdoc_store::settings::OcrConfig,
+    pdfium: PathBuf,
+    onnx: PathBuf,
+) -> Result<(Installed, pdf_inspector::vision::ModelPaths), SetupError> {
     let models = ModelStore::new(root.join("models"))
         .resolve(manifest::for_model(config.model))
         .map_err(|e| SetupError::Models(Arc::new(e)))?;
@@ -386,16 +421,66 @@ fn validate_config(
             .and_then(Path::parent)
             .ok_or(SetupError::NoDetector)?
             .to_path_buf(),
-        pdfium: root.join(RUNTIMES[0].library),
-        onnx: root.join(RUNTIMES[1].library),
+        pdfium,
+        onnx,
     };
-    // Check actual loading before claiming ready. All of this runs off the UI thread.
-    PdfiumRenderer::load_from_path(&installed.pdfium)
-        .map_err(|e| SetupError::Engine(e.to_string()))?;
-    load_onnx_runtime(&installed.onnx)?;
-    OarOcrEngine::from_models_with_runtime(&models, Some(&installed.onnx))
-        .map_err(|e| SetupError::Engine(e.to_string()))?;
-    Ok(installed)
+    Ok((installed, models))
+}
+
+/// The PDFium and ONNX Runtime that ship inside the iOS app (ADR 0085): no
+/// runtime is downloaded there.
+#[cfg(target_os = "ios")]
+#[derive(Clone, Debug)]
+pub struct LinkedRuntimes {
+    /// The embedded `pdfium.framework` beside the app executable.
+    pub pdfium: PathBuf,
+    /// The image that holds this code: ONNX Runtime is statically linked
+    /// into it, so ort's loader finds `OrtGetApiBase` there. The app must
+    /// export that symbol and keep it through stripping.
+    pub onnx: PathBuf,
+}
+
+#[cfg(target_os = "ios")]
+pub fn linked_runtimes() -> Result<LinkedRuntimes, SetupError> {
+    use std::ffi::{CStr, c_char, c_int, c_void};
+    #[repr(C)]
+    struct DlInfo {
+        fname: *const c_char,
+        fbase: *mut c_void,
+        sname: *const c_char,
+        saddr: *mut c_void,
+    }
+    unsafe extern "C" {
+        fn OrtGetApiBase() -> *const c_void;
+        fn dladdr(address: *const c_void, info: *mut DlInfo) -> c_int;
+    }
+    // Taking the address makes the app's link pull ONNX Runtime in.
+    let symbol = std::hint::black_box(OrtGetApiBase as *const c_void);
+    let mut info = DlInfo {
+        fname: std::ptr::null(),
+        fbase: std::ptr::null_mut(),
+        sname: std::ptr::null(),
+        saddr: std::ptr::null_mut(),
+    };
+    // SAFETY: `symbol` is a function in a loaded image and `info` is a valid
+    // Dl_info; dladdr only writes into it.
+    if unsafe { dladdr(symbol, &mut info) } == 0 || info.fname.is_null() {
+        return Err(SetupError::RuntimeOpen(
+            "ONNX Runtime is not linked into the app".into(),
+        ));
+    }
+    // SAFETY: dladdr returned a NUL-terminated path owned by dyld.
+    let onnx = PathBuf::from(
+        unsafe { CStr::from_ptr(info.fname) }
+            .to_string_lossy()
+            .into_owned(),
+    );
+    let app = std::env::current_exe()?;
+    let pdfium = app
+        .parent()
+        .ok_or_else(|| SetupError::RuntimeOpen("the app has no bundle folder".into()))?
+        .join("Frameworks/pdfium.framework/pdfium");
+    Ok(LinkedRuntimes { pdfium, onnx })
 }
 
 /// The outcome of the one `ort::init_from` this process makes.

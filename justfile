@@ -75,6 +75,10 @@ smoke-models *args:
 # Everything, including the model downloads — before a release
 check-all: check smoke-ocr smoke-models
 
+# iOS core into target/ios: MdocCore.xcframework, Swift bindings, PDFium (ADR 0085)
+ios-core:
+    scripts/build-ios-core.sh
+
 # Build this machine's installers into dist/
 package:
     scripts/package.sh

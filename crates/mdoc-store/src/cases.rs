@@ -718,7 +718,9 @@ pub fn build_identity() -> &'static str {
 
 /// The 256-bit case key, created once and held by the operating system.
 mod key {
-    use super::{CaseError, Generate, Path};
+    #[cfg(any(target_os = "macos", windows, target_os = "linux"))]
+    use super::Generate;
+    use super::{CaseError, Path};
     #[cfg(windows)]
     use std::io::{self, Write};
 
