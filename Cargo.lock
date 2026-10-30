@@ -3031,8 +3031,6 @@ dependencies = [
 [[package]]
 name = "gpui-pre-macos"
 version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66a1e7a41b11c83b121b7bf729537c5b46dad91ef0cf221851cfb287cbe0fe33"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -4479,6 +4477,7 @@ dependencies = [
  "embed-resource",
  "gpui-pdf",
  "gpui-pre",
+ "gpui-pre-macos",
  "gpui-pre-platform",
  "gpui-pre-windows",
  "image",

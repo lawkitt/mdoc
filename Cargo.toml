@@ -21,13 +21,15 @@ wildcard_imports = "deny"
 
 [features]
 # The entry point and runner are additionally gated by debug_assertions.
-headless-renders = ["mdoc-store/headless-renders", "gpui/test-support", "gpui_platform/test-support", "dep:gpui_windows", "gpui_windows/test-support"]
+headless-renders = ["mdoc-store/headless-renders", "gpui/test-support", "gpui_platform/test-support", "gpui_windows/test-support"]
 
 # Remove when an adopted GPUI release includes the combining-mark correction.
 # Preserve the current GPUI family; see vendor/gpui-pre-wgpu/ZORITE-PATCH.md.
 [patch.crates-io]
 gpui-pre-wgpu = { path = "vendor/gpui-pre-wgpu" }
-# Test-only WARP adapter; see vendor/gpui-pre-windows/MDOC-PATCH.md.
+# Save dialog reasons, and on Windows the test-only WARP adapter; see each
+# MDOC-PATCH.md.
+gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
 gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
 
 [workspace.dependencies]
@@ -65,8 +67,13 @@ url = "2"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 unicode-segmentation = "1"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# The save dialog's reason (src/save_prompt.rs).
+gpui_macos = { package = "gpui-pre-macos", version = "=0.3.2" }
+
 [target.'cfg(windows)'.dependencies]
-gpui_windows = { package = "gpui-pre-windows", version = "=0.3.2", optional = true }
+# The save dialog's reason (src/save_prompt.rs) and the headless renderer.
+gpui_windows = { package = "gpui-pre-windows", version = "=0.3.2" }
 # Single-instance launch (src/single_instance.rs) uses the pipe, session and
 # foreground features.
 windows-sys = { version = "0.61", features = [

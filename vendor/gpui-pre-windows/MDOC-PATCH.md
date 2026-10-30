@@ -20,14 +20,22 @@ Local changes:
 - `gpui_windows.rs`: exports these two test-only entry points. mdoc supplies
   the renderer factory to HeadlessAppContext directly, without patching the
   platform convenience crate.
+- `platform.rs` (`mdoc patch`): `set_next_save_prompt_message` stores a
+  message for the next save dialog on this thread; `prompt_for_new_path`
+  takes it and sets it as the `IFileSaveDialog`'s title. Without one the
+  dialog is unchanged. `gpui_windows.rs` exports it; mdoc calls it from
+  `src/document_view/save_prompt.rs`, so a Save As on the way to a new case
+  says why it opens.
 
-No new code runs for the normal product application. The app entry point and
-runner also require debug assertions and the headless-renders feature.
+Only the save dialog title runs in the normal product application. The
+headless app entry point and runner also require debug assertions and the
+headless-renders feature.
 Validation: the app's Windows `just lint`, `just test` and
 `just headless-renders <new-directory>` exercise this adapter, including
 DirectWrite text, paths, PNG readback, both themes, and actual Tab events.
 
 Drop this directory and the patch/dependency once the adopted GPUI family
-provides a standalone Windows headless renderer and text-system factory.
+provides a standalone Windows headless renderer and text-system factory, and
+its `prompt_for_new_path` takes a message.
 When updating GPUI, re-vendor the adopted version and reapply only these
 changes; compare against the published source before updating expectations.

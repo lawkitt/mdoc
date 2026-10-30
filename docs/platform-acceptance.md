@@ -234,9 +234,9 @@ Every application shortcut, from the one shortcuts table
 | ID | Check | Result | Note |
 | --- | --- | --- | --- |
 | E1 | Nothing asks for the key at launch | | |
-| E2 | *macOS*: Save mapping as case shows the "mdoc will ask for Keychain access" explainer, then the system dialog; Always Allow saves the case | | |
+| E2 | *macOS*: Save mapping as case shows the "mdoc will ask for Keychain access" explainer, then the system dialog; Always Allow saves the case. On an unsaved conversion, Save As opens first with the message "Save the document first so the case can find it" | | |
 | E3 | *macOS*: Not now (Esc) cancels the action, and the locked-cases bar offers Unlock… | | |
-| E4 | *Windows*: saving a case asks nothing (DPAPI) | | |
+| E4 | *Windows*: saving a case asks nothing (DPAPI). On an unsaved conversion, Save as case opens Save As titled "Save the document first so the case can find it" | | |
 | E5 | After quit and relaunch, opening a case member restores its replacements without a prompt | | |
 | E6 | Mod+W on an edited, pseudonymized tab without a case asks once, "Save “…” and keep its mapping?"; Save as Case saves the file and the case and closes the tab. Mod+Q with a saved, pseudonymized tab without a case asks "Keep the replacement mapping?" (ADR 0071) | | |
 

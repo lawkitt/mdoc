@@ -1,5 +1,6 @@
 //! Saved cases across tabs: saving, joining, the Keychain and quitting (`CaseCoordinator`).
 use super::*;
+use crate::document_view::save_prompt;
 
 #[gpui::test]
 fn unsaved_mapping_is_absent_after_session_restore(cx: &mut TestAppContext) {
@@ -96,11 +97,21 @@ fn saving_an_unsaved_document_as_a_case_saves_the_markdown_first(cx: &mut TestAp
     // As a fresh conversion: Markdown never saved (#75).
     active(&tabs, cx).update(cx, |view, _| view.session.document.path = None);
     let store = || mdoc_store::cases::Store::with_key(dir.path().join("cases"), &[3; 32]);
-    // Cancelling the save creates no case.
+    // A plain Save As gives no reason.
+    cx.dispatch_action(SaveAs);
+    cx.run_until_parked();
+    assert_eq!(save_prompt::take_last_reason(), Some(None));
+    cx.simulate_new_path_selection(|_| None);
+    cx.run_until_parked();
+    // Cancelling the save creates no case; its Save As says why it opened.
     tabs.update_in(cx, |tabs, window, cx| {
         assert!(tabs.create_case(tab, window, cx).is_none())
     });
     cx.run_until_parked();
+    assert_eq!(
+        save_prompt::take_last_reason(),
+        Some(Some(save_prompt::CASE_REASON))
+    );
     cx.simulate_new_path_selection(|_| None);
     cx.run_until_parked();
     assert!(store().list().0.is_empty());
@@ -556,6 +567,10 @@ fn closing_an_unsaved_conversion_as_a_case_saves_it_then_closes(cx: &mut TestApp
     cx.run_until_parked();
     cx.simulate_prompt_answer("Save as Case");
     cx.run_until_parked();
+    assert_eq!(
+        save_prompt::take_last_reason(),
+        Some(Some(save_prompt::CASE_REASON))
+    );
     let saved = dir.path().join("converted.md");
     cx.simulate_new_path_selection(|_| Some(saved.clone()));
     cx.run_until_parked();

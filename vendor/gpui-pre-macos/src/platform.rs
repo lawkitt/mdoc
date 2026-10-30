@@ -65,6 +65,18 @@ use std::{
 #[allow(non_upper_case_globals)]
 const NSUTF8StringEncoding: NSUInteger = 4;
 
+// mdoc patch (MDOC-PATCH.md): the message line of the next save panel.
+thread_local! {
+    static NEXT_SAVE_PROMPT_MESSAGE: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// mdoc patch: show `message` as the message line of the next save panel
+/// opened on this thread; `prompt_for_new_path` takes it. `None` clears it.
+pub fn set_next_save_prompt_message(message: Option<String>) {
+    NEXT_SAVE_PROMPT_MESSAGE.with_borrow_mut(|next| *next = message);
+}
+
 const MAC_PLATFORM_IVAR: &str = "platform";
 static mut APP_CLASS: *const Class = ptr::null();
 static mut APP_DELEGATE_CLASS: *const Class = ptr::null();
@@ -835,11 +847,15 @@ impl Platform for MacPlatform {
     ) -> oneshot::Receiver<Result<Option<PathBuf>>> {
         let directory = directory.to_owned();
         let suggested_name = suggested_name.map(|s| s.to_owned());
+        let message = NEXT_SAVE_PROMPT_MESSAGE.with_borrow_mut(Option::take);
         let (done_tx, done_rx) = oneshot::channel();
         self.foreground_executor()
             .spawn(async move {
                 unsafe {
                     let panel = NSSavePanel::savePanel(nil);
+                    if let Some(message) = message {
+                        let _: () = msg_send![panel, setMessage: ns_string(&message)];
+                    }
                     let path = ns_string(directory.to_string_lossy().as_ref());
                     let url = NSURL::fileURLWithPath_isDirectory_(nil, path, true.to_objc());
                     panel.setDirectoryURL(url);
