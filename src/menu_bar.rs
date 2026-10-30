@@ -209,6 +209,14 @@ pub(crate) fn reveal_window(window: &mut Window, cx: &mut App) {
     }
 }
 
+/// Show the hidden workspace `window` before it asks something; a window
+/// that shows already stays where it is.
+pub(crate) fn reveal_if_hidden(window: &mut Window, cx: &mut App) {
+    if window_hidden(cx) {
+        reveal_window(window, cx);
+    }
+}
+
 /// Bring the workspace window forward from outside it (the shelf, a
 /// reopen), then run `then` in it.
 pub(crate) fn reveal(

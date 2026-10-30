@@ -270,7 +270,7 @@ fn open_paths_from_os(
         .clone()
         .spawn(async move {
             let _ = handle.update(&mut cx, |workspace, window, cx| {
-                workspace.open_paths(paths, window, cx)
+                workspace.open_paths_from_os(paths, window, cx)
             });
         })
         .detach();
