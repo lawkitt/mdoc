@@ -310,6 +310,7 @@ impl DocumentView {
                 EditorEvent::SelectionAction => {
                     this.add_pii_candidate(&PiiAddCandidate, window, cx)
                 }
+                EditorEvent::SelectionActionChoice => this.toggle_selection_menu(window, cx),
                 // A hovered replacement shows its tooltip (ADR 0048).
                 EditorEvent::HoverAnnotation(_) => cx.notify(),
                 EditorEvent::OpenLink(src) => {
@@ -2237,6 +2238,7 @@ impl Render for DocumentView {
             .on_action(cx.listener(Self::pseudonymize_clipboard))
             .on_action(cx.listener(Self::pseudonymize))
             .on_action(cx.listener(Self::add_pii_candidate))
+            .on_action(cx.listener(Self::add_pii_candidate_as))
             .on_action(cx.listener(Self::apply_all_pii))
             .on_action(cx.listener(|this, _: &PiiReviewCandidate, window, cx| {
                 this.step_pii_highlight(false, true, window, cx)

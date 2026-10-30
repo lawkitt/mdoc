@@ -313,7 +313,8 @@ pixels after focus scrolling settles: only the 2 px accent outline changes,
 preserving the control's fill and label and checking that both sides of the
 ring remain visible.
 
-Both themes cover Home, a document and its ⋯ menu, Review, the mention popup, model setup
+Both themes cover Home, a document and its ⋯ menu, Review, the mention popup, the
+selection pill and its category menu, model setup
 consent, the OCR language card, all six Settings categories (General, Detection, Recognition,
 Spelling, Cases and About), the dictionary, command palette, the keyboard shortcuts
 sheet, Find and Replace,

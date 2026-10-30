@@ -2446,3 +2446,222 @@ fn merge_hint_retains_target_primary_for_equal_length_wordings(cx: &mut gpui::Te
         );
     });
 }
+
+/// A review of `source` with one Person proposal on its first `proposed`
+/// wording; the selection, `select`, is held in the focused editor.
+fn split_pill_fixture<'a>(
+    cx: &'a mut gpui::TestAppContext,
+    source: &'static str,
+    proposed: &str,
+    select: &str,
+) -> (Entity<DocumentView>, &'a mut gpui::VisualTestContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    app.update(cx, |app, cx| {
+        app.editor
+            .update(cx, |editor, cx| editor.set_text(source, cx));
+    });
+    cx.run_until_parked();
+    let at = source.find(proposed).unwrap();
+    app.update(cx, |app, cx| {
+        let (generation, identity, revision) = install_scan(app, cx);
+        app.complete_pii_scan(
+            generation,
+            identity,
+            revision,
+            Ok(vec![mdoc_pii::Detection {
+                range: at..at + proposed.len(),
+                category: Category::Person,
+                score: 0.9,
+                recognizer: mdoc_pii::Recognizer::Model,
+            }]),
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    let start = source.find(select).unwrap();
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.editor.read(cx).focus_handle(cx), cx);
+        app.editor
+            .update(cx, |e, cx| e.set_selection(start..start + select.len(), cx));
+    });
+    cx.run_until_parked();
+    (app, cx)
+}
+
+/// Enter on the focused control, down and up, as a keyboard press clicks.
+fn press_enter(cx: &mut gpui::VisualTestContext) {
+    cx.update(|window, cx| {
+        use gpui::InputEvent;
+        let keystroke = gpui::Keystroke::parse("enter").unwrap();
+        window.dispatch_event(
+            gpui::KeyDownEvent {
+                keystroke: keystroke.clone(),
+                is_held: false,
+                prefer_character_input: false,
+            }
+            .to_platform_input(),
+            cx,
+        );
+        window.dispatch_event(gpui::KeyUpEvent { keystroke }.to_platform_input(), cx);
+    });
+    cx.run_until_parked();
+}
+
+fn redraw(cx: &mut gpui::VisualTestContext) {
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+}
+
+fn added(app: &Entity<DocumentView>, original: &str, cx: &mut gpui::VisualTestContext) -> Category {
+    app.read_with(cx, |app, _| {
+        app.pii
+            .review
+            .variants()
+            .iter()
+            .find(|v| v.original.as_ref() == original)
+            .map(|v| v.category)
+            .expect("added")
+    })
+}
+
+#[gpui::test]
+fn the_split_pill_adds_in_a_category_picked_with_the_mouse(cx: &mut gpui::TestAppContext) {
+    let source = "Alice met Bob Stone today.";
+    let (app, cx) = split_pill_fixture(cx, source, "Alice", "Bob Stone");
+    // "Replace · Person ▾": the guess, which ⌘⌥P would use.
+    let choice = app.read_with(cx, |app, cx| {
+        app.editor
+            .read(cx)
+            .selection_action()
+            .cloned()
+            .unwrap()
+            .choice
+    });
+    let choice = choice.expect("split pill");
+    assert_eq!(choice.label.as_ref(), "Person");
+    assert!(!choice.open);
+    redraw(cx);
+    let part = app.read_with(cx, |app, cx| app.editor.read(cx).selection_choice_bounds());
+    let part = part.expect("the pill is painted").center();
+    cx.simulate_click(part, Default::default());
+    cx.run_until_parked();
+    redraw(cx);
+    redraw(cx);
+    app.read_with(cx, |app, cx| {
+        assert!(app.pii.selection_menu.is_some());
+        let action = app.editor.read(cx).selection_action().cloned().unwrap();
+        assert!(action.choice.unwrap().open, "the pill stays, pressed");
+    });
+    let menu = cx.debug_bounds("selection-category-menu");
+    assert!(menu.is_some(), "the menu opens beside the pill");
+    // A second press closes it; a third opens it again.
+    cx.simulate_click(part, Default::default());
+    cx.run_until_parked();
+    assert!(app.read_with(cx, |app, _| app.pii.selection_menu.is_none()));
+    cx.simulate_click(part, Default::default());
+    cx.run_until_parked();
+    redraw(cx);
+    redraw(cx);
+    let row = cx
+        .debug_bounds("selection-category-ORG")
+        .expect("Organization row");
+    cx.simulate_click(row.center(), Default::default());
+    cx.run_until_parked();
+    assert_eq!(added(&app, "Bob Stone", cx), Category::Organization);
+    app.update_in(cx, |app, window, cx| {
+        assert!(app.pii.selection_menu.is_none());
+        assert!(app.pii.popup.is_some() && app.pii.enter_applies);
+        assert!(app.pii.focus.is_focused(window));
+        // A pick is no guess: no category cue.
+        assert!(matches!(app.pii.mapping.cue, Some((_, false))));
+        let id = app.pii.review.identity_by_alias("ORG_1");
+        assert!(id.is_some(), "the alias the menu showed");
+        let _ = cx;
+    });
+}
+
+#[gpui::test]
+fn the_split_pill_adds_in_a_category_picked_with_the_keyboard(cx: &mut gpui::TestAppContext) {
+    let source = "Alice met Bob Stone today.";
+    let (app, cx) = split_pill_fixture(cx, source, "Alice", "Bob Stone");
+    // ⇧⌘⌥P opens the menu on the guess; Esc closes it back to the editor.
+    cx.simulate_keystrokes("secondary-alt-shift-p");
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert!(app.pii.selection_menu.is_some());
+        let guess = app.pii.popup_control_focus("selection-category-PERSON", cx);
+        assert!(guess.is_focused(window), "focus is on the guess");
+    });
+    assert!(cx.debug_bounds("selection-category-menu").is_some());
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert!(app.pii.selection_menu.is_none());
+        assert!(app.editor.read(cx).focus_handle(cx).is_focused(window));
+        assert!(app.editor.read(cx).selection_action().is_some());
+    });
+    // ↓ moves to Organization and Enter adds there.
+    cx.simulate_keystrokes("secondary-alt-shift-p");
+    cx.run_until_parked();
+    cx.simulate_keystrokes("down");
+    app.update_in(cx, |app, window, cx| {
+        let row = app.pii.popup_control_focus("selection-category-ORG", cx);
+        assert!(row.is_focused(window));
+    });
+    press_enter(cx);
+    assert_eq!(added(&app, "Bob Stone", cx), Category::Organization);
+    app.update_in(cx, |app, window, _| {
+        assert!(app.pii.popup.is_some() && app.pii.focus.is_focused(window));
+    });
+    // Esc closes the popup back to the text, not to the closed menu.
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert!(app.pii.popup.is_none());
+        assert!(app.editor.read(cx).focus_handle(cx).is_focused(window));
+    });
+    // One undo step removes the addition.
+    app.update_in(cx, |app, window, cx| {
+        window.focus(&app.editor.read(cx).focus_handle(cx), cx)
+    });
+    cx.dispatch_action(mdoc_editor::Undo);
+    cx.run_until_parked();
+    app.read_with(cx, |app, _| {
+        assert!(
+            !app.pii
+                .review
+                .variants()
+                .iter()
+                .any(|v| v.original.as_ref() == "Bob Stone" && !v.mentions.is_empty())
+        );
+    });
+}
+
+#[gpui::test]
+fn mod_alt_p_still_adds_with_the_guess(cx: &mut gpui::TestAppContext) {
+    let source = "Alice met Bob Stone today.";
+    let (app, cx) = split_pill_fixture(cx, source, "Alice", "Bob Stone");
+    cx.simulate_keystrokes("secondary-alt-p");
+    cx.run_until_parked();
+    assert_eq!(added(&app, "Bob Stone", cx), Category::Person);
+    app.read_with(cx, |app, _| assert!(app.pii.selection_menu.is_none()));
+}
+
+#[gpui::test]
+fn a_proposed_wording_offers_no_category_menu(cx: &mut gpui::TestAppContext) {
+    // The whole proposal is selected: Replace keeps its category, and the
+    // popup's category control corrects it after (ADR 0024).
+    let source = "Acme signed. Acme paid.";
+    let (app, cx) = split_pill_fixture(cx, source, "Acme", "Acme");
+    let action = app.read_with(cx, |app, cx| {
+        app.editor.read(cx).selection_action().cloned()
+    });
+    assert!(action.unwrap().choice.is_none(), "no ▾");
+    cx.simulate_keystrokes("secondary-alt-shift-p");
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert!(app.pii.selection_menu.is_none());
+        app.add_manual_candidate(Some(Category::Organization), window, cx);
+        let (_, category) = app.selected_name().unwrap();
+        assert_eq!(category, Category::Person, "a pick never recategorizes");
+    });
+}

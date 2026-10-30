@@ -880,3 +880,27 @@ fn a_scan_proposes_russian_case_forms_of_a_surname() {
         );
     }
 }
+
+#[test]
+fn manual_alias_says_what_an_addition_would_get() {
+    let source = "Ann met Bob. Acme Ltd paid.";
+    let mut review = Review::default();
+    review.add_manual(source, 0..3, Category::Person).unwrap();
+    // A new wording: the next free alias of each category.
+    assert_eq!(review.manual_alias("Bob", Category::Person), "PERSON_2");
+    assert_eq!(review.manual_alias("Bob", Category::Organization), "ORG_1");
+    // Only new wording takes a pick; a proposed one keeps its category.
+    assert_eq!(review.proposed_wording_category("Bob"), None);
+    assert_eq!(
+        review.proposed_wording_category("Ann"),
+        Some(Category::Person)
+    );
+    // A wording that normalizes to a proposed identity shares its alias in
+    // that identity's category, even a custom one.
+    assert_eq!(review.manual_alias("ANN", Category::Person), "PERSON_1");
+    assert_eq!(review.manual_alias("ANN", Category::Email), "EMAIL_1");
+    let ann = review.identity_by_alias("PERSON_1").unwrap();
+    review.rename_identity(ann, "Client").unwrap();
+    assert_eq!(review.manual_alias("ANN", Category::Person), "Client");
+    assert_eq!(review.manual_alias("ANN", Category::Organization), "ORG_1");
+}

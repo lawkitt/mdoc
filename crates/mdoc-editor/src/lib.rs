@@ -542,6 +542,21 @@ pub struct SelectionAction {
     pub disabled: Option<SharedString>,
     /// Hover tint for the pill.
     pub accent: Hsla,
+    /// The pill's second part, e.g. "Person ▾": what the action will use,
+    /// which opens the host's chooser ([`EditorEvent::SelectionActionChoice`]).
+    pub choice: Option<SelectionChoice>,
+}
+
+/// The split part of a [`SelectionAction`] pill.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SelectionChoice {
+    /// The current choice, e.g. "Person"; the pill adds "▾".
+    pub label: SharedString,
+    /// Its colour, as a dot before the label.
+    pub accent: Hsla,
+    /// The host's chooser is open: the pill stays, pressed, while the
+    /// chooser holds focus (or after Escape hid it).
+    pub open: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -561,6 +576,9 @@ pub enum EditorEvent {
     SelectionChanged,
     /// The host's [`SelectionAction`] was chosen from its pill or menu item.
     SelectionAction,
+    /// The pill's [`SelectionChoice`] part was pressed: the host opens (or
+    /// closes) its chooser at [`EditorState::selection_choice_bounds`].
+    SelectionActionChoice,
     /// Explicit activation of a host annotation; no text or selection change.
     ActivateAnnotation(u64),
     /// The pointer moved onto (or off) a host annotation, e.g. for a tooltip.
@@ -720,6 +738,8 @@ pub struct EditorState {
     selection_action_dismissed: Option<Range<usize>>,
     /// Window-space selection quads from the last paint (pill anchor).
     selection_bounds: Vec<Bounds<Pixels>>,
+    /// Window-space bounds of the pill's choice part from the last paint.
+    selection_choice_bounds: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
     undo_stack: Vec<Snapshot>,
     redo_stack: Vec<Snapshot>,
     history_id: u64,
@@ -940,6 +960,7 @@ impl EditorState {
             selection_action: None,
             selection_action_dismissed: None,
             selection_bounds: Vec::new(),
+            selection_choice_bounds: Default::default(),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             history_id: 0,
@@ -1420,6 +1441,12 @@ impl EditorState {
     /// The host action currently offered for the selection.
     pub fn selection_action(&self) -> Option<&SelectionAction> {
         self.live_selection_action()
+    }
+
+    /// Where the pill's [`SelectionChoice`] part was last painted, in window
+    /// coordinates; `None` while the pill is hidden. A host chooser anchors here.
+    pub fn selection_choice_bounds(&self) -> Option<Bounds<Pixels>> {
+        self.selection_choice_bounds.get()
     }
 
     /// The cached [`ScanData`] for the current content, rebuilding on a
@@ -2679,15 +2706,20 @@ impl EditorState {
     /// the window top) offering the host's selection action. It lives only
     /// while the selection is held, so it may cover the line above (ADR 0055).
     /// An action the selection cannot take shows no pill; the right-click
-    /// menu keeps the item and its reason.
+    /// menu keeps the item and its reason. A [`SelectionChoice`] splits it:
+    /// "Replace · Person ▾" (ADR 0024).
     fn selection_pill(&self, window: &Window, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         use gpui::prelude::FluentBuilder as _;
+        self.selection_choice_bounds.set(None);
         let action = self.live_selection_action()?.clone();
+        // The host's open chooser holds focus; the pill stays beside it.
+        let open = action.choice.as_ref().is_some_and(|c| c.open);
         if self.is_selecting
             || self.menu.is_some()
             || action.disabled.is_some()
-            || self.selection_action_dismissed.as_ref() == Some(&self.selected_range)
-            || !self.focus_handle.is_focused(window)
+            || !open
+                && (self.selection_action_dismissed.as_ref() == Some(&self.selected_range)
+                    || !self.focus_handle.is_focused(window))
         {
             return None;
         }
@@ -2723,26 +2755,17 @@ impl EditorState {
             a: fg.a * 0.55,
             ..fg
         };
+        let tint = Hsla { a: 0.14, ..accent };
         // A compact action chip: a tiny proposal-coloured token (what the
         // selection becomes), the label, and its shortcut.
-        let pill = div()
-            .id("selection-action-pill")
-            .occlude()
-            .cursor(CursorStyle::PointingHand)
-            .h(px(22.))
+        let main = div()
+            .id("selection-action-main")
+            .h_full()
             .pl(px(6.))
             .pr(px(7.))
             .flex()
             .items_center()
             .gap(px(5.))
-            .rounded(px(6.))
-            .bg(bg)
-            .border_1()
-            .border_color(border)
-            .shadow_md()
-            .text_size(px(12.))
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(fg)
             .child(
                 div()
                     .size(px(9.))
@@ -2769,6 +2792,59 @@ impl EditorState {
                     cx.emit(EditorEvent::SelectionAction);
                 }),
             )
+            .when(action.choice.is_some(), |v| v.hover(move |s| s.bg(tint)));
+        // "Person ▾": the host's chooser opens below or above this part.
+        let choice = action.choice.clone().map(|choice| {
+            let bounds = self.selection_choice_bounds.clone();
+            div()
+                .id("selection-action-choice")
+                .relative()
+                .h_full()
+                .pl(px(6.))
+                .pr(px(7.))
+                .flex()
+                .items_center()
+                .gap(px(5.))
+                .border_l_1()
+                .border_color(border)
+                .when(choice.open, |v| v.bg(tint))
+                .hover(move |s| s.bg(tint))
+                .child(div().size(px(7.)).rounded_full().bg(choice.accent))
+                .child(format!("{} ▾", choice.label))
+                .child(
+                    gpui::canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})
+                        .absolute()
+                        .inset_0(),
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |editor, _: &MouseDownEvent, window, cx| {
+                        cx.stop_propagation();
+                        // The press is the editor's, so an open chooser
+                        // treats it as its own toggle, not an outside click.
+                        window.focus(&editor.focus_handle, cx);
+                        cx.emit(EditorEvent::SelectionActionChoice);
+                    }),
+                )
+        });
+        let pill = div()
+            .id("selection-action-pill")
+            .occlude()
+            .cursor(CursorStyle::PointingHand)
+            .h(px(22.))
+            .flex()
+            .items_center()
+            .rounded(px(6.))
+            .overflow_hidden()
+            .bg(bg)
+            .border_1()
+            .border_color(border)
+            .shadow_md()
+            .text_size(px(12.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(fg)
+            .child(main)
+            .children(choice)
             .hover(move |s| s.border_color(Hsla { a: 0.7, ..accent }));
         Some(
             gpui::deferred(

@@ -15,6 +15,7 @@ mod panel;
 mod panel_keys;
 mod panel_rows;
 mod popup;
+mod selection_menu;
 mod share;
 pub(super) use popup::Scope;
 mod popup_render;

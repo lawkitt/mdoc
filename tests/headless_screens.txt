@@ -7,6 +7,8 @@ more-menu
 review
 merge-hint
 mention-popup
+selection-pill
+selection-category-menu
 setup-consent
 setup-consent-fp32
 settings-general

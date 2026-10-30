@@ -963,6 +963,16 @@ pub static SHORTCUTS: &[Shortcut] = &[
         "Propose the selection",
         &[on!(Pii, EDITOR, &["mod-alt-p"], pii::PiiAddCandidate)],
     ),
+    row(
+        Editor,
+        "Propose the selection as…",
+        &[on!(
+            Pii,
+            EDITOR,
+            &["mod-alt-shift-p"],
+            pii::PiiAddCandidateAs
+        )],
+    ),
     // Esc leaves before/after, also from inside its read-only columns.
     row(
         Editor,

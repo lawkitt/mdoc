@@ -5,7 +5,7 @@ use crate::{
     document_view::DocumentView,
     pii::ui::{PiiApplyAll, PiiClosePopup},
 };
-use gpui::Entity;
+use gpui::{Entity, Focusable};
 use mdoc_store::settings;
 use std::path::Path;
 
@@ -90,6 +90,7 @@ pub(super) fn scenes(
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| v.close_pii_popup(&PiiClosePopup, window, cx))
     })?;
+    selection_pill(d, view)?;
     d.change(|_, window, cx| {
         view.update(cx, |v, cx| {
             v.pii.show_setup(true);
@@ -122,6 +123,54 @@ pub(super) fn scenes(
                 .model = settings::PiiModel::Fp16;
             v.pii.show_setup(false);
             cx.notify();
+        })
+    })?;
+    Ok(())
+}
+
+/// "Replace · Person ▾" beside a selection, then its category menu open
+/// (ADR 0024). The pill's Tab walk indents in the editor; undo restores it.
+fn selection_pill(d: &mut Driver, view: &Entity<DocumentView>) -> Result<()> {
+    let select = |d: &mut Driver| {
+        d.change(|_, window, cx| {
+            view.update(cx, |v, cx| {
+                let text = v.editor.read(cx).text().to_owned();
+                let start = text.find("Services Agreement").expect("fixture title");
+                window.focus(&v.editor.read(cx).focus_handle(cx), cx);
+                v.editor.update(cx, |e, cx| {
+                    e.set_selection(start..start + "Services Agreement".len(), cx)
+                });
+                v.sync_selection_action(cx);
+                let history = v.editor.read(cx).history_id();
+                let choice = v.editor.read(cx).selection_action().cloned();
+                let choice = choice.and_then(|a| a.choice).expect("split pill");
+                assert_eq!(choice.label.as_ref(), "Person");
+                history
+            })
+        })
+    };
+    let before = select(d)?;
+    d.capture("selection-pill")?;
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            for _ in 0..8 {
+                if v.editor.read(cx).history_id() == before {
+                    break;
+                }
+                v.editor.update(cx, |e, cx| e.undo_step(window, cx));
+            }
+            assert_eq!(v.editor.read(cx).history_id(), before, "Tab edits undone");
+        })
+    })?;
+    select(d)?;
+    d.change(|_, window, cx| view.update(cx, |v, cx| v.toggle_selection_menu(window, cx)))?;
+    d.capture("selection-category-menu")?;
+    d.key("escape")?;
+    d.change(|_, window, cx| {
+        view.update(cx, |v, cx| {
+            let editor = v.editor.read(cx).focus_handle(cx);
+            assert!(editor.is_focused(window), "Esc hands focus back");
+            v.editor.update(cx, |e, cx| e.set_cursor(0, cx));
         })
     })?;
     Ok(())
