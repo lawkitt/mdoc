@@ -460,3 +460,22 @@ reason). Distinct from a release gate, which is automated ([ADR 0057](docs/adr/0
 **Ordinary legal document**: the interactive performance target, about 30 pages
 or 135 KB of Markdown. The 2 MiB / 20,000-mention workload is the separate
 *stress tier* ([ADR 0049](docs/adr/0049-measured-stabilization-and-architecture-review.md)).
+
+## Mobile apps
+
+**Mobile core**: the GUI-free Rust crates the iOS and Android apps call
+through `crates/mdoc-ffi`'s UniFFI bindings ([ADR 0085](docs/adr/0085-mobile-apps.md)).
+
+**Review-first flow**: the mobile apps' one journey: scan or import,
+recognize, review replacements, share to an AI app, restore the reply. No
+text editing.
+
+**Restore with mdoc**: the mobile share-sheet action that takes an AI reply
+from another app and opens it restored.
+
+**Device floor**: the least physical RAM on which a phone gets the GLiNER2
+detector; below it the app offers OCR, the structured rules and manual
+marking only.
+
+**Feasibility spike**: the device measurements of the mobile core (load,
+memory, scan time, heat, OCR output) that come before mobile UI work.

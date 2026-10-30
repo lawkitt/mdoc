@@ -51,6 +51,26 @@ default ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)): a must-fix
 fix after rc.1 to the installer, signing, updates or the keychain forces
 another, so such work lands first.
 
+## iOS 0.1
+
+The review-first iPhone and iPad app on the shared Rust core
+([ADR 0085](docs/adr/0085-mobile-apps.md)). Starts after 0.3.0-rc.2 is cut;
+`mdoc-ffi`-only work may start earlier. Record:
+[mobile grill](docs/design/mobile-grill-2026-10-31.md).
+
+1. **[Mobile] Feasibility spike.** *From the mobile grill.* Build
+   `mdoc-detect` and `mdoc-import` for iOS with ONNX Runtime and PDFium
+   linked in, behind the new `crates/mdoc-ffi`, and measure GLiNER2 and
+   PP-OCR on an iPhone 17 Pro and an iPhone 12 Pro against ADR 0085's
+   budgets. *Done when:* a dated report in `docs/evidence/` gives pass or
+   fail per device class and the maintainer has read it.
+2. **[Mobile] Review-first app.** *From the mobile grill.* SwiftUI app for
+   the review-first flow, Restore with mdoc share extension, parity tests,
+   local CI iOS job and the GPLv3 app-store permission
+   ([ADR 0086](docs/adr/0086-app-store-licence-permission.md)). *Done
+   when:* the iOS section of platform acceptance passes on a TestFlight
+   build.
+
 ## Later
 
 One line each, in rough order; promoted and written out at grooming. Earlier
