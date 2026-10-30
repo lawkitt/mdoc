@@ -495,7 +495,14 @@ skill) read this section for mdoc's needs.
 - **Native checks.** The [acceptance](platform-acceptance.md) checklist runs
   by computer use (see [ADR 0057](adr/0057-native-platform-acceptance.md));
   rows that need a physical keyboard, speech, passwords or system settings
-  stay with the maintainer.
+  stay with the maintainer. During a milestone the hub runs GUI checks on a
+  dev build (fleet ADR 0018): a dev build uses the real profile, so copy
+  `~/Library/Application Support/mdoc` aside first and restore
+  `session.json` and `recents.json` after each check, never opening
+  fixtures in a case. Computer use grants a bundle, so the hub wraps the
+  build as `~/Applications/mdoc-dev.app` (bundle id
+  `io.github.lawkitt.mdoc.dev`), grants it at preflight, and copies each
+  branch's binary into that same bundle.
 - **Release runs** follow [release-run.md](release-run.md).
 
 **Profile.** The fleet tools (`fleet-brief`, `fleet-review` in the
