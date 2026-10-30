@@ -272,55 +272,49 @@ impl Library {
     }
 
     /// Delete `path`, a document in the documents folder: it leaves its
-    /// case, with the reply kept for it (ADR 0078), and its file is
-    /// removed, both under the library's write lock, so neither happens
-    /// without the other. The case stays, even with no members left, as on
-    /// desktop; cases are deleted on their own. Returns the case it left.
+    /// case, with the reply kept for it (ADR 0078), then its file is
+    /// removed, under the library's write lock. The case is saved first, so
+    /// a case that cannot be saved leaves the document as it was, and a
+    /// file that cannot be removed (or mdoc stopping in between) leaves an
+    /// ordinary document in no case, which deleting again removes. A case
+    /// that cannot be read for now refuses the delete; one that never will
+    /// (another key, damaged) is passed over. The case stays, even with no
+    /// members left, as on desktop; cases are deleted on their own. Returns
+    /// the case it left.
     pub fn delete_document(&self, path: String) -> Result<Option<CaseInfo>, CoreError> {
         let path = std::path::absolute(&path).unwrap_or_else(|_| PathBuf::from(&path));
         let documents =
             std::path::absolute(self.documents_dir()).unwrap_or_else(|_| self.documents_dir());
-        let name = path
-            .file_name()
-            .filter(|_| {
-                path.parent() == Some(documents.as_path())
-                    && mdoc_store::document::is_markdown(&path)
-            })
-            .ok_or_else(|| CoreError::invalid("Only the library's documents can be deleted."))?;
+        if path.parent() != Some(documents.as_path()) || !mdoc_store::document::is_markdown(&path) {
+            return Err(CoreError::invalid(
+                "Only the library's documents can be deleted.",
+            ));
+        }
         let member = self.member(&path);
         let lock = self.lock()?;
-        // Set aside first, so a case that cannot be saved leaves the file
-        // where it was; documents() lists Markdown files only.
-        let mut aside = name.to_owned();
-        aside.push(".deleting");
-        let aside = path.with_file_name(aside);
-        let set_aside = match std::fs::rename(&path, &aside) {
-            Ok(()) => true,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-            Err(error) => return Err(error.into()),
-        };
+        let (cases, unreadable) = self.store.list();
+        for id in unreadable {
+            if let Err(mdoc_store::cases::CaseError::Read(error)) = self.store.load(&id)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                return Err(CoreError::case(format!(
+                    "A case could not be read, so the document was not deleted: {error}"
+                )));
+            }
+        }
         let mut left = None;
-        for case in self.cases_raw() {
+        for case in cases {
             if !case.members.contains(&member) && case.reply(&member).is_none() {
                 continue;
             }
-            let edited = self.edit_locked(&lock, &case.id, |case| {
+            left = Some(self.edit_locked(&lock, &case.id, |case| {
                 let replied = case.set_reply(&member, None);
                 let was_member = case.members.contains(&member);
                 case.members.retain(|m| *m != member);
                 Ok(replied || was_member)
-            });
-            match edited {
-                Ok(info) => left = Some(info),
-                Err(error) => {
-                    if set_aside {
-                        let _ = std::fs::rename(&aside, &path);
-                    }
-                    return Err(error);
-                }
-            }
+            })?);
         }
-        match std::fs::remove_file(&aside) {
+        match std::fs::remove_file(&path) {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
             _ => Ok(left),
         }
@@ -798,6 +792,120 @@ mod tests {
         assert!(outside.exists() && elsewhere.exists());
     }
 
+    /// Open `path` so that it still reads (unless `readable` is false) but
+    /// cannot be replaced or removed, until the guard drops.
+    struct Held {
+        #[cfg(windows)]
+        _file: std::fs::File,
+        #[cfg(unix)]
+        restore: (PathBuf, u32),
+    }
+
+    impl Held {
+        fn file(path: &Path, readable: bool) -> Self {
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::OpenOptionsExt;
+                const FILE_SHARE_READ: u32 = 1;
+                Self {
+                    _file: std::fs::OpenOptions::new()
+                        .read(true)
+                        .share_mode(if readable { FILE_SHARE_READ } else { 0 })
+                        .open(path)
+                        .unwrap(),
+                }
+            }
+            #[cfg(unix)]
+            {
+                // Unreadable: the file itself; unremovable: its folder.
+                let target = if readable {
+                    path.parent().unwrap().to_path_buf()
+                } else {
+                    path.to_path_buf()
+                };
+                Self::mode(&target, if readable { 0o555 } else { 0o000 }, 0o755)
+            }
+        }
+
+        #[cfg(unix)]
+        fn mode(path: &Path, mode: u32, back: u32) -> Self {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+            Self {
+                restore: (path.to_path_buf(), back),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for Held {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+            let (path, mode) = &self.restore;
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(*mode));
+        }
+    }
+
+    fn case_file(library: &Library, id: &str) -> PathBuf {
+        std::fs::read_dir(library.cases_folder())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| path.file_stem().is_some_and(|n| n.to_string_lossy() == id))
+            .unwrap()
+    }
+
+    /// A case that cannot be read for now refuses the delete, and nothing
+    /// changes; a case sealed with another key never blocks it.
+    #[test]
+    fn a_case_unreadable_for_now_refuses_the_delete() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let case = library.create_case("Case".into()).unwrap();
+        let letter = member_with_reply(&library, &case, "Letter");
+        let held = Held::file(&case_file(&library, &case.id), false);
+        assert!(matches!(
+            library.delete_document(letter.clone()),
+            Err(CoreError::Case { .. })
+        ));
+        drop(held);
+        assert!(Path::new(&letter).exists());
+        assert_eq!(
+            library.case_info(case.id.clone()).unwrap().documents,
+            std::slice::from_ref(&letter)
+        );
+        let stranger =
+            Library::new(scratch.path().display().to_string(), [8; 32].to_vec()).unwrap();
+        stranger.create_case("Elsewhere".into()).unwrap();
+        assert_eq!(library.cases().unreadable, 1);
+        assert_eq!(
+            library.delete_document(letter.clone()).unwrap().unwrap().id,
+            case.id
+        );
+        assert!(!Path::new(&letter).exists());
+    }
+
+    /// A file that cannot be removed after its case was saved stays an
+    /// ordinary document in no case, and deleting it again removes it.
+    #[test]
+    fn a_file_that_cannot_be_removed_stays_a_document_in_no_case() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let case = library.create_case("Case".into()).unwrap();
+        let letter = member_with_reply(&library, &case, "Letter");
+        let held = Held::file(Path::new(&letter), true);
+        assert!(matches!(
+            library.delete_document(letter.clone()),
+            Err(CoreError::Io { .. })
+        ));
+        drop(held);
+        let documents = library.documents().unwrap();
+        assert_eq!(documents.len(), 1);
+        assert_eq!(documents[0].case_id, None);
+        assert!(library.case_info(case.id).unwrap().documents.is_empty());
+        assert_eq!(library.delete_document(letter.clone()).unwrap(), None);
+        assert!(library.documents().unwrap().is_empty());
+    }
+
     /// When its case cannot be saved, the document stays a member and its
     /// file stays where it was.
     #[test]
@@ -806,35 +914,10 @@ mod tests {
         let library = library(&scratch);
         let case = library.create_case("Case".into()).unwrap();
         let letter = member_with_reply(&library, &case, "Letter");
-        let case_file = std::fs::read_dir(library.cases_folder())
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .find(|path| path.file_name().is_some_and(|n| n != LOCK))
-            .unwrap();
         // The case still reads, but cannot be replaced.
-        #[cfg(windows)]
-        let _held = {
-            use std::os::windows::fs::OpenOptionsExt;
-            const FILE_SHARE_READ: u32 = 1;
-            std::fs::OpenOptions::new()
-                .read(true)
-                .share_mode(FILE_SHARE_READ)
-                .open(&case_file)
-                .unwrap()
-        };
-        #[cfg(unix)]
-        let folder = {
-            use std::os::unix::fs::PermissionsExt;
-            let folder = case_file.parent().unwrap().to_path_buf();
-            std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o555)).unwrap();
-            folder
-        };
+        let held = Held::file(&case_file(&library, &case.id), true);
         let result = library.delete_document(letter.clone());
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
+        drop(held);
         assert!(result.is_err(), "{result:?}");
         assert_eq!(
             std::fs::read_to_string(&letter).unwrap(),

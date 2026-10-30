@@ -4,8 +4,9 @@
 //! configuration, so a cancelled or stopped import resumes with the pages
 //! still to do. Each page goes through pdf-inspector's own page selection
 //! with the desktop's OCR options, so a page reads as it does in a
-//! whole-document run. The folder is removed once the import completes.
-//! Desktop imports stay on [`crate::import::prepare_cancellable`].
+//! whole-document run. The caller removes the file's kept pages once it has
+//! taken the result ([`Completed`]). Desktop imports stay on
+//! [`crate::import::prepare_cancellable`].
 use crate::import::{
     ImportError, Imported, OcrFailure, check_cancel, pdf_error, pdf_warning, read_pdf,
 };
@@ -46,11 +47,16 @@ impl KeptPages {
     /// configuration. Call it while the file still exists: pages are found
     /// by its digest.
     pub fn discard(&self, source: &Path) -> std::io::Result<()> {
-        let digest = match std::fs::read(source) {
-            Ok(bytes) => digest(&bytes),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-            Err(error) => return Err(error),
-        };
+        match std::fs::read(source) {
+            Ok(bytes) => self.remove_file_pages(&digest(&bytes)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Remove the pages kept for the file with `digest`, under every OCR
+    /// configuration.
+    fn remove_file_pages(&self, digest: &str) -> std::io::Result<()> {
         let entries = match std::fs::read_dir(&self.root) {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -81,6 +87,23 @@ impl KeptPages {
     }
 }
 
+/// A completed import's kept pages: remove them once the result is taken,
+/// so an import rejected after its pages finished (cancelled meanwhile, or
+/// superseded) resumes with nothing left to recognize.
+#[derive(Debug)]
+pub struct Completed {
+    kept: KeptPages,
+    digest: String,
+}
+
+impl Completed {
+    /// Remove the file's kept pages, under every OCR configuration: pages an
+    /// earlier run with another model left are abandoned too.
+    pub fn remove(self) {
+        let _ = self.kept.remove_file_pages(&self.digest);
+    }
+}
+
 /// One file's kept pages under one OCR configuration.
 struct Folder(PathBuf);
 
@@ -97,21 +120,38 @@ impl Folder {
             .filter(|kept| kept.page == page)
     }
 
-    /// Keep `page`, whole or not at all. Keeping is best effort: a page
-    /// that could not be written is recognized again on resume.
-    fn store(&self, page: &Page) {
-        let write = || -> std::io::Result<()> {
-            std::fs::create_dir_all(&self.0)?;
-            let path = self.path(page.page);
-            let partial = path.with_extension("json.part");
-            std::fs::write(&partial, serde_json::to_vec(page)?)?;
-            std::fs::rename(partial, path)
-        };
-        let _ = write();
+    /// Start keeping pages: the folder is made once, when a run starts, so
+    /// a page finishing after `KeptPages::discard` is not kept.
+    fn open(&self) {
+        let _ = std::fs::create_dir_all(&self.0);
     }
 
-    fn remove(&self) {
-        let _ = remove_folder(&self.0);
+    /// Keep `page`, whole or not at all, through a temporary file of this
+    /// writer's own, so writers in two processes never share one. Keeping
+    /// is best effort: a page that could not be written is recognized again
+    /// on resume.
+    fn store(&self, page: &Page) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let path = self.path(page.page);
+        let partial = path.with_extension(format!(
+            "{}-{}.part",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        let write = || -> std::io::Result<()> {
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&partial)?;
+            std::io::Write::write_all(&mut file, &serde_json::to_vec(page)?)?;
+            file.sync_all()?;
+            drop(file);
+            std::fs::rename(&partial, &path)
+        };
+        if write().is_err() {
+            let _ = std::fs::remove_file(&partial);
+        }
     }
 }
 
@@ -133,8 +173,10 @@ fn digest(bytes: &[u8]) -> String {
 /// `kept`: a PDF imported with OCR resumes with the pages a cancelled or
 /// stopped run left, and gives the Markdown and warning of an
 /// uninterrupted run. `recognized` hears of each page as it is recognized
-/// (page, page count); kept pages are not recognized again. Without OCR, or
-/// for other formats, this is `prepare_cancellable`.
+/// (page, page count); kept pages are not recognized again. The pages stay
+/// kept until the caller removes them through the [`Completed`] returned
+/// with the result. Without OCR, or for other formats, this is
+/// `prepare_cancellable`, and nothing is kept.
 pub fn prepare_resumable(
     path: &Path,
     installed: Option<&crate::ocr::Installed>,
@@ -142,9 +184,13 @@ pub fn prepare_resumable(
     cancel: &AtomicBool,
     kept: &KeptPages,
     recognized: &dyn Fn(u32, u32),
-) -> Result<Imported, ImportError> {
+) -> Result<(Imported, Option<Completed>), ImportError> {
+    let desktop = |installed| {
+        crate::import::prepare_cancellable(path, installed, skip_ocr, cancel)
+            .map(|imported| (imported, None))
+    };
     let Some(installed) = installed.filter(|_| !skip_ocr) else {
-        return crate::import::prepare_cancellable(path, installed, skip_ocr, cancel);
+        return desktop(installed);
     };
     check_cancel(cancel)?;
     let source = std::path::absolute(path).map_err(ImportError::Read)?;
@@ -152,7 +198,7 @@ pub fn prepare_resumable(
     let mut header = [0; 1024];
     let n = std::io::Read::read(&mut file, &mut header).map_err(ImportError::Io)?;
     if !header[..n].windows(5).any(|bytes| bytes == b"%PDF-") {
-        return crate::import::prepare_cancellable(path, Some(installed), skip_ocr, cancel);
+        return desktop(Some(installed));
     }
     use pdf_inspector::vision::{OcrPdfOptions, process_pdf_with_ocr_mem};
     let bytes = read_pdf(&source)?;
@@ -162,7 +208,9 @@ pub fn prepare_resumable(
         .map_err(pdf_error)?
         .page_count;
     check_cancel(cancel)?;
-    let folder = kept.folder(&digest(&bytes), &installed.config);
+    let digest = digest(&bytes);
+    let folder = kept.folder(&digest, &installed.config);
+    folder.open();
     let mut permit = None;
     let pages = recognize_pages(page_count, &folder, cancel, |page| {
         if permit.is_none() {
@@ -188,15 +236,20 @@ pub fn prepare_resumable(
     drop(permit);
     let (markdown, review) = assemble(&pages);
     let warning = pdf_warning(&markdown, review, page_count, true)?;
-    folder.remove();
-    Ok(Imported {
-        ocr_configuration: Some(installed.config.clone()),
-        source,
-        markdown,
-        warning,
-        is_pdf: true,
-        is_docx: false,
-    })
+    Ok((
+        Imported {
+            ocr_configuration: Some(installed.config.clone()),
+            source,
+            markdown,
+            warning,
+            is_pdf: true,
+            is_docx: false,
+        },
+        Some(Completed {
+            kept: kept.clone(),
+            digest,
+        }),
+    ))
 }
 
 /// Pages 1 to `page_count`: the ones `folder` kept, and the rest from
@@ -269,6 +322,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let kept = KeptPages::new(dir.path().into());
         let folder = kept.folder("abc", &config());
+        folder.open();
         let cancel = AtomicBool::new(false);
         let mut first = Vec::new();
         let result = recognize_pages(5, &folder, &cancel, |n| {
@@ -309,6 +363,7 @@ mod tests {
     fn a_damaged_page_is_recognized_again() {
         let dir = tempfile::tempdir().unwrap();
         let folder = KeptPages::new(dir.path().into()).folder("abc", &config());
+        folder.open();
         folder.store(&page(1));
         folder.store(&page(2));
         std::fs::write(folder.path(1), b"{\"page\":1,\"mark").unwrap();
@@ -345,6 +400,7 @@ mod tests {
         let a_finer = kept.folder(&digest(b"%PDF-a"), &finer);
         let b_small = kept.folder(&digest(b"%PDF-b"), &config());
         for folder in [&a_small, &a_cyrillic, &a_finer, &b_small] {
+            folder.open();
             folder.store(&page(1));
         }
         assert_ne!(a_small.0, a_cyrillic.0);
@@ -359,6 +415,60 @@ mod tests {
         kept.discard(&a).unwrap();
         kept.discard(&dir.path().join("gone.pdf")).unwrap();
         KeptPages::new(dir.path().join("none")).discard(&b).unwrap();
+        // A completed import removes its file's pages under every
+        // configuration, and only once the caller takes the result.
+        let b_cyrillic = kept.folder(&digest(b"%PDF-b"), &cyrillic);
+        b_cyrillic.open();
+        b_cyrillic.store(&page(1));
+        let completed = Completed {
+            kept: kept.clone(),
+            digest: digest(b"%PDF-b"),
+        };
+        assert_eq!(b_small.load(1), Some(page(1)));
+        completed.remove();
+        assert!(!b_small.0.exists() && !b_cyrillic.0.exists());
+    }
+
+    /// A page that finishes after its import was discarded (cancelled, then
+    /// dropped while the page was still being recognized) is not kept.
+    #[test]
+    fn a_page_finishing_after_a_discard_is_not_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let kept = KeptPages::new(dir.path().join("imports"));
+        let source = dir.path().join("a.pdf");
+        std::fs::write(&source, b"%PDF-a").unwrap();
+        let folder = kept.folder(&digest(b"%PDF-a"), &config());
+        folder.open();
+        let cancel = AtomicBool::new(false);
+        let result = recognize_pages(3, &folder, &cancel, |n| {
+            if n == 2 {
+                cancel.store(true, Ordering::Relaxed);
+                kept.discard(&source).unwrap();
+            }
+            Ok(page(n))
+        });
+        assert!(matches!(result, Err(ImportError::Cancelled)));
+        assert!(!folder.0.exists());
+    }
+
+    /// Writers keep a page through temporary files of their own and leave
+    /// none behind.
+    #[test]
+    fn writers_never_share_a_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = KeptPages::new(dir.path().into()).folder("abc", &config());
+        folder.open();
+        std::thread::scope(|scope| {
+            for _ in 0..8 {
+                scope.spawn(|| folder.store(&page(1)));
+            }
+        });
+        assert_eq!(folder.load(1), Some(page(1)));
+        let names: Vec<_> = std::fs::read_dir(&folder.0)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["00001.json"]);
     }
 
     /// Empty pages leave no gap, and an empty document stays empty, as
@@ -388,7 +498,9 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let result = prepare_resumable(&pdf, None, false, &cancel, &kept, &|_, _| {});
         assert!(matches!(result, Err(ImportError::NeedsOcr(..))));
-        let native = prepare_resumable(&pdf, None, true, &cancel, &kept, &|_, _| {}).unwrap();
+        let (native, completed) =
+            prepare_resumable(&pdf, None, true, &cancel, &kept, &|_, _| {}).unwrap();
+        assert!(completed.is_none());
         let desktop = crate::import::prepare_cancellable(&pdf, None, true, &cancel).unwrap();
         assert_eq!(native.markdown, desktop.markdown);
         assert_eq!(native.warning, desktop.warning);
@@ -419,8 +531,12 @@ mod tests {
             let desktop = crate::import::prepare(&pdf, Some(&installed), false).unwrap();
             let dir = tempfile::tempdir().unwrap();
             let kept = KeptPages::new(dir.path().join("imports"));
-            let whole = prepare_resumable(&pdf, Some(&installed), false, &never, &kept, &|_, _| {})
-                .unwrap();
+            let (whole, completed) =
+                prepare_resumable(&pdf, Some(&installed), false, &never, &kept, &|_, _| {})
+                    .unwrap();
+            // Kept until the caller takes the result.
+            assert!(dir.path().join("imports").read_dir().unwrap().any(|_| true));
+            completed.unwrap().remove();
             assert_eq!(whole.markdown, desktop.markdown, "{name}");
             assert_eq!(whole.warning, desktop.warning, "{name}");
             assert_eq!(whole.ocr_configuration, desktop.ocr_configuration, "{name}");
@@ -440,7 +556,7 @@ mod tests {
             assert_eq!(first, (1..=stop_after).collect::<Vec<_>>(), "{name}");
 
             let second = std::sync::Mutex::new(Vec::new());
-            let resumed = prepare_resumable(
+            let (resumed, completed) = prepare_resumable(
                 &pdf,
                 Some(&installed),
                 false,
@@ -456,6 +572,7 @@ mod tests {
             }
             assert_eq!(resumed.markdown, desktop.markdown, "{name}");
             assert_eq!(resumed.warning, desktop.warning, "{name}");
+            completed.unwrap().remove();
             assert!(!dir.path().join("imports").read_dir().unwrap().any(|_| true));
             assert_eq!(std::fs::read(&pdf).unwrap(), original, "{name}");
         }

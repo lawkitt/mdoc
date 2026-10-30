@@ -132,8 +132,8 @@ impl DocumentSession {
     /// `library`'s root (ADR 0085 Long jobs): after a cancel, or mdoc
     /// stopping, importing the same file with the same OCR model again
     /// recognizes only the pages left, and gives the Markdown an
-    /// uninterrupted run gives. The kept pages are removed when the import
-    /// completes, or by `Library::discard_import`.
+    /// uninterrupted run gives. The kept pages are removed once this
+    /// session takes the document, or by `Library::discard_import`.
     pub fn import_file_in(
         &self,
         library: Arc<Library>,
@@ -159,6 +159,7 @@ impl DocumentSession {
             title,
             markdown: text,
             warning: None,
+            kept: None,
         };
         self.open(imported, &cancel, None)
     }
@@ -182,6 +183,7 @@ impl DocumentSession {
             title: intake::title(Path::new(&path)),
             markdown: stored.saved.clone(),
             warning: None,
+            kept: None,
         };
         let opened = Opened {
             path: stored.path.clone(),
@@ -449,6 +451,7 @@ impl DocumentSession {
             *generation += 1;
             *generation
         };
+        let imported_kept = imported.kept;
         let mut document = Document {
             title: imported.title,
             warning: imported.warning,
@@ -472,6 +475,10 @@ impl DocumentSession {
         }
         let snapshot = document.snapshot();
         *self.lock_document() = Some(document);
+        // Taken: an import rejected before this point keeps its OCR pages.
+        if let Some(kept) = imported_kept {
+            kept.remove();
+        }
         drop(job);
         Ok(snapshot)
     }
