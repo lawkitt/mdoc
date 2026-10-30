@@ -21,6 +21,10 @@ Local changes, marked `mdoc patch`:
   Without a handler it terminates now, as upstream. mdoc sets it in
   `src/system_quit.rs`, so a quit from the Dock, an Apple Event or logout
   asks about unsaved work like ⌘Q (ADR 0071).
+- `Cargo.toml`: `[lints.rust.deprecated]` is set to `allow`. Upstream
+  still calls the deprecated `cocoa` crate (716 warnings). Cargo hides
+  warnings from registry crates, but prints them for this one because it is
+  patched in from a local path.
 
 Drop this directory, the patch entry and the `gpui_macos` dependency once the
 adopted GPUI family's `prompt_for_new_path` takes a message and the app can
