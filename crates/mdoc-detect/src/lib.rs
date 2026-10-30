@@ -450,45 +450,109 @@ fn scan_in(
     runtime: PathBuf,
     config: &mdoc_store::settings::PiiConfig,
 ) -> Result<Vec<Detection>, DetectError> {
+    scan_timed(source, cancel, root, &runtime, config).map(|(detections, _)| detections)
+}
+
+/// Where one scan's time went. Only measurements read it (the mobile
+/// feasibility spike, ADR 0085); scanning behaves the same without it.
+#[derive(Clone, Debug, Default)]
+pub struct ScanTimings {
+    /// Checking the model files against their pinned digests.
+    pub verify: Duration,
+    /// Loading ONNX Runtime into ort (instant after the first time).
+    pub runtime: Duration,
+    pub tokenizer: Duration,
+    /// Splitting the source into token-bounded windows.
+    pub windowing: Duration,
+    /// Building the GLiNER2 sessions, which every scan does (ADR 0002).
+    pub engine_load: Duration,
+    /// One entry per model window, in source order.
+    pub windows: Vec<WindowTiming>,
+    /// The structured rules over the whole source.
+    pub structured: Duration,
+    pub total: Duration,
+}
+
+#[derive(Clone, Debug)]
+pub struct WindowTiming {
+    pub bytes: usize,
+    /// Schema and text tokens, at most 512.
+    pub tokens: usize,
+    pub inference: Duration,
+}
+
+/// [`scan_reserved`] on explicit model and runtime paths, with its timings.
+/// The mobile core passes the runtime linked into the app
+/// (`mdoc_import::ocr::linked_runtimes`). Takes the model work permit.
+pub fn scan_at(
+    source: &str,
+    cancel: &AtomicBool,
+    root: &Path,
+    runtime: &Path,
+    config: &mdoc_store::settings::PiiConfig,
+) -> Result<(Vec<Detection>, ScanTimings), DetectError> {
+    if !mdoc_store::settings::unit_interval(config.threshold) {
+        return Err(DetectError::InvalidThreshold);
+    }
+    let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
+    scan_timed(source, cancel, root, runtime, config)
+}
+
+fn scan_timed(
+    source: &str,
+    cancel: &AtomicBool,
+    root: &Path,
+    runtime: &Path,
+    config: &mdoc_store::settings::PiiConfig,
+) -> Result<(Vec<Detection>, ScanTimings), DetectError> {
     if source.len() > MAX_SOURCE_BYTES {
         return Err(DetectError::TooLarge);
     }
     let started = Instant::now();
+    let mut timings = ScanTimings::default();
+    let mut lap = Instant::now();
+    let mut split = || {
+        let now = Instant::now();
+        let elapsed = now - lap;
+        lap = now;
+        elapsed
+    };
     checkpoint(cancel, started)?;
     let _inference = INFERENCE.try_lock().map_err(|_| DetectError::Busy)?;
+    split();
     verify_model(root, config.model).map_err(|_| DetectError::NotSetUp)?;
+    timings.verify = split();
     checkpoint(cancel, started)?;
-    mdoc_import::ocr::load_onnx_runtime(&runtime)?;
-    let tasks: Vec<_> = FAMILIES
-        .iter()
-        .map(|family| {
-            SchemaTask::Entities(family.iter().map(|(label, _)| (*label).into()).collect())
-        })
-        .collect();
+    mdoc_import::ocr::load_onnx_runtime(runtime)?;
+    timings.runtime = split();
+    let tasks = schema_tasks();
     let transformer = SchemaTransformer::from_tokenizer_file(
         &root.join(config.model.folder()).join("tokenizer.json"),
     )
     .map_err(|e| DetectError::Engine(e.to_string()))?;
+    timings.tokenizer = split();
     let windows = bounded_windows(source, &transformer, &tasks, cancel, started)?;
-    let mut engine = SpanEngine::new(
-        SpanConfig::new(root)
-            .with_precision(precision(config.model))
-            .with_execution(ExecutionMode::Standard)
-            .with_intra_threads(4),
-    )
-    .map_err(|e| DetectError::Engine(e.to_string()))?;
+    timings.windowing = split();
+    let mut engine = load_engine(root, config.model)?;
+    timings.engine_load = split();
     let params = InferenceParams {
         threshold: config.threshold,
         flat_ner: true,
         ..Default::default()
     };
     let mut detections = Vec::new();
-    for range in windows {
+    for (range, tokens) in windows {
         checkpoint(cancel, started)?;
         let text = &source[range.clone()];
+        split();
         let output = engine
             .extract_with(text, &tasks, &params)
             .map_err(|e| DetectError::Engine(e.to_string()))?;
+        timings.windows.push(WindowTiming {
+            bytes: text.len(),
+            tokens,
+            inference: split(),
+        });
         checkpoint(cancel, started)?;
         for entity in output.entities {
             let Some(category) = FAMILIES
@@ -512,9 +576,121 @@ fn scan_in(
         }
     }
     checkpoint(cancel, started)?;
+    split();
     detections.extend(structured::scan(source));
+    timings.structured = split();
     checkpoint(cancel, started)?;
-    Ok(detections)
+    timings.total = started.elapsed();
+    Ok((detections, timings))
+}
+
+fn schema_tasks() -> Vec<SchemaTask> {
+    FAMILIES
+        .iter()
+        .map(|family| {
+            SchemaTask::Entities(family.iter().map(|(label, _)| (*label).into()).collect())
+        })
+        .collect()
+}
+
+fn load_engine(
+    root: &Path,
+    model: mdoc_store::settings::PiiModel,
+) -> Result<SpanEngine, DetectError> {
+    SpanEngine::new(
+        SpanConfig::new(root)
+            .with_precision(precision(model))
+            .with_execution(ExecutionMode::Standard)
+            .with_intra_threads(4),
+    )
+    .map_err(|e| DetectError::Engine(e.to_string()))
+}
+
+/// One full model window timed on its own: the longest whole-word prefix of
+/// `text` that fits 512 schema+text tokens.
+#[derive(Clone, Debug)]
+pub struct WindowProbe {
+    pub tokens: usize,
+    pub bytes: usize,
+    /// Loading ONNX Runtime into ort; the first call in a process pays it.
+    pub runtime: Duration,
+    /// Building the sessions: cold on the first engine in a process.
+    pub engine_load: Duration,
+    /// Each timed inference over the window.
+    pub runs: Vec<Duration>,
+}
+
+/// Measures [`WindowProbe`] `runs` times on explicit paths, as [`scan_at`]
+/// loads them. Takes the model work permit.
+pub fn probe_window(
+    text: &str,
+    root: &Path,
+    runtime: &Path,
+    config: &mdoc_store::settings::PiiConfig,
+    runs: usize,
+) -> Result<WindowProbe, DetectError> {
+    let _permit = mdoc_import::model_work::Permit::acquire_for("pseudonymization scanning")?;
+    let _inference = INFERENCE.try_lock().map_err(|_| DetectError::Busy)?;
+    verify_model(root, config.model).map_err(|_| DetectError::NotSetUp)?;
+    let started = Instant::now();
+    mdoc_import::ocr::load_onnx_runtime(runtime)?;
+    let runtime_load = started.elapsed();
+    let tasks = schema_tasks();
+    let transformer = SchemaTransformer::from_tokenizer_file(
+        &root.join(config.model.folder()).join("tokenizer.json"),
+    )
+    .map_err(|e| DetectError::Engine(e.to_string()))?;
+    let tokens = |end: usize| -> Result<usize, DetectError> {
+        transformer
+            .transform(&text[..end], &tasks)
+            .map(|record| record.input_ids.len())
+            .map_err(|e| DetectError::Engine(e.to_string()))
+    };
+    // Word ends, then the last one whose prefix still fits.
+    let ends: Vec<usize> = text
+        .char_indices()
+        .filter(|(_, c)| c.is_whitespace())
+        .map(|(i, _)| i)
+        .chain(std::iter::once(text.len()))
+        .filter(|&end| end > 0)
+        .collect();
+    let (mut low, mut high) = (0, ends.len());
+    while low < high {
+        let mid = (low + high).div_ceil(2);
+        if tokens(ends[mid - 1])? <= MAX_INPUT_TOKENS {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    let end = *ends
+        .get(low.checked_sub(1).ok_or(DetectError::WordTooLong)?)
+        .ok_or(DetectError::WordTooLong)?;
+    let window = &text[..end];
+    let count = tokens(end)?;
+    let started = Instant::now();
+    let mut engine = load_engine(root, config.model)?;
+    let engine_load = started.elapsed();
+    let params = InferenceParams {
+        threshold: config.threshold,
+        flat_ner: true,
+        ..Default::default()
+    };
+    let mut timed = Vec::with_capacity(runs);
+    for _ in 0..runs {
+        let started = Instant::now();
+        engine
+            .extract_with(window, &tasks, &params)
+            .map_err(|e| DetectError::Engine(e.to_string()))?;
+        timed.push(started.elapsed());
+    }
+    Ok(WindowProbe {
+        tokens: count,
+        bytes: window.len(),
+        runtime: runtime_load,
+        engine_load,
+        runs: timed,
+    })
 }
 
 #[cfg(test)]
