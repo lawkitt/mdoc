@@ -175,7 +175,10 @@ impl DocumentView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !self.can_copy_markdown() || !self.has_identities_to_restore("Paste AI Response", cx) {
+        // The reply comes from the menu bar, ⌥⇧⌘V, the More menu or Home's
+        // Restore AI reply, each with its own name, so the error names none.
+        if !self.can_copy_markdown() || !self.has_identities_to_restore("Restoring an AI reply", cx)
+        {
             return;
         }
         let text = cx
