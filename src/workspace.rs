@@ -3398,8 +3398,9 @@ mod tests;
 /// Keyboard reach (ADR 0062): F6 regions, Tab from the window, and the
 /// sidebar's tab list.
 impl Workspace {
-    /// Shift+F10 opens the focused tab's menu at its rendered row, including
-    /// the collapsed rail. It exposes case actions without a pointer.
+    /// Ctrl+Enter or Shift+F10 (and the Menu key on Windows) opens the
+    /// focused tab's menu at its rendered row, including the collapsed rail.
+    /// It exposes case actions without a pointer.
     fn sidebar_tab_menu(&self, row: ui::Control, id: u64, cx: &mut Context<Self>) -> ui::Control {
         let bounds = std::rc::Rc::new(std::cell::Cell::new(gpui::Bounds::default()));
         let drawn = bounds.clone();

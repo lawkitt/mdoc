@@ -86,6 +86,30 @@ fn navigation_keys_resolve_by_focus_on_both_platforms_keymaps() {
     }
 }
 
+/// A focused sidebar tab opens its menu with ⌃↩ (no fn on MacBook keyboards)
+/// or ⇧F10 on both platforms, and the Menu key on Windows, ahead of the
+/// window-wide Ctrl+Enter (Apply all) there (ADR 0062).
+#[test]
+fn ctrl_enter_opens_a_sidebar_tabs_menu_on_both_platforms() {
+    let tab: Vec<gpui::KeyContext> = ["Workspace", "SidebarRegion", "UiControl SidebarTab"]
+        .iter()
+        .map(|name| gpui::KeyContext::parse(name).unwrap())
+        .collect();
+    let menu = crate::ui::SidebarMenu.name();
+    for mac in [true, false] {
+        let mut bindings = mdoc_editor::key_bindings(mac);
+        bindings.extend(specs(mac).into_iter().map(Spec::binding));
+        let keymap = gpui::Keymap::new(bindings);
+        let first = |key: &str| {
+            let (found, _) = keymap.bindings_for_input(&[Keystroke::parse(key).unwrap()], &tab);
+            found.first().map(|binding| binding.action().name())
+        };
+        assert_eq!(first("ctrl-enter"), Some(menu), "mac={mac}");
+        assert_eq!(first("shift-f10"), Some(menu), "mac={mac}");
+        assert_eq!(first("menu") == Some(menu), !mac, "mac={mac}");
+    }
+}
+
 /// Plumbing, by action: Tab inside a control group, moving inside menus,
 /// choosers and the palette's list, caret and deletion basics in the editor
 /// and text fields, Esc dismissing the editor's own transient state, and the
@@ -240,6 +264,8 @@ fn keys_read_as_each_platform_writes_them() {
         ("mod-/", "⌘/", "Ctrl+/"),
         ("?", "?", "?"),
         ("shift-enter", "⇧↩", "Shift+Enter"),
+        ("ctrl-enter", "⌃↩", "Ctrl+Enter"),
+        ("menu", "Menu", "Menu"),
         ("mod-shift-backspace", "⇧⌘⌫", "Ctrl+Shift+Backspace"),
         ("shift-f6", "⇧F6", "Shift+F6"),
         ("ctrl-tab", "⌃Tab", "Ctrl+Tab"),

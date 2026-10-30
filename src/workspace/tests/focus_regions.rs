@@ -583,6 +583,37 @@ fn f6_skips_the_hidden_pane_in_a_narrow_window(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+fn ctrl_enter_opens_a_tabs_menu_in_both_sidebar_layouts(cx: &mut TestAppContext) {
+    // ADR 0062: ⌃↩ needs no fn on MacBook keyboards, unlike ⇧F10.
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_resize(size(px(900.), px(700.)));
+    let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    let row = cx.update(|_, cx| tabs.read(cx).sidebar_row_focus.borrow()[&id].clone());
+    cx.update(|window, cx| window.focus(&row, cx));
+    draw(cx);
+    key(cx, "ctrl-enter");
+    assert_eq!(
+        cx.update(|_, cx| tabs.read(cx).tab_menu.map(|(id, _)| id)),
+        Some(id),
+        "expanded"
+    );
+    key(cx, "escape");
+    assert!(cx.update(|_, cx| tabs.read(cx).tab_menu.is_none()));
+    assert!(cx.update(|window, _| row.is_focused(window)));
+    collapse(&tabs, cx);
+    let compact = compact_focus(&tabs, cx, id);
+    cx.update(|window, cx| window.focus(&compact, cx));
+    key(cx, "ctrl-enter");
+    assert_eq!(
+        cx.update(|_, cx| tabs.read(cx).tab_menu.map(|(id, _)| id)),
+        Some(id),
+        "rail"
+    );
+    key(cx, "escape");
+    assert!(in_sidebar(&tabs, cx));
+}
+
+#[gpui::test]
 fn sidebar_case_actions_and_categories_work_without_a_pointer(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
     let (tabs, cx, path) = applied_document(cx, dir.path(), Session::default());

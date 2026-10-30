@@ -292,6 +292,7 @@ pub fn display(key: &str, mac: bool) -> String {
         ("delete", true) => "⌦".to_string(),
         ("delete", false) => "Delete".to_string(),
         ("escape", _) => "Esc".to_string(),
+        ("menu", _) => "Menu".to_string(),
         ("tab", _) => "Tab".to_string(),
         ("space", _) => "Space".to_string(),
         ("up", _) => "↑".to_string(),
@@ -1012,13 +1013,16 @@ pub static SHORTCUTS: &[Shortcut] = &[
     ),
     row(
         Panel,
-        "Sidebar: the tab's case actions",
+        "Sidebar: the tab's menu",
+        // ⌃↩ needs no fn on MacBook keyboards, where F10 is the mute key;
+        // Windows adds the Menu key (ADR 0062).
         &[on!(
             Ui,
             Some("SidebarTab"),
-            &["shift-f10"],
+            &["ctrl-enter", "shift-f10"],
             crate::ui::SidebarMenu
-        )],
+        )
+        .other(&["ctrl-enter", "shift-f10", "menu"])],
     ),
     // The Replacements checklist (ADR 0033, 0048).
     row(
