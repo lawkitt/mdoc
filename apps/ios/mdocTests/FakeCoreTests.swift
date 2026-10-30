@@ -73,6 +73,12 @@ final class FakeCoreTests: XCTestCase {
         XCTAssertNoThrow(try session.scan(observer: TestObserver()))
     }
 
+    func testRestoreCountsDistinctValues() throws {
+        let result = try Fixture.core().library.restore(reply: "PERSON_1, PERSON_1, ORG_9, ORG_9.", in: Fixture.ellison)
+        XCTAssertEqual(result.restoredCount, 1)
+        XCTAssertEqual(result.unresolvedCount, 1)
+    }
+
     func testRestoreNeverUsesAnotherCase() throws {
         let library = Fixture.core().library
         let result = try library.restore(reply: "PERSON_1 signed.", in: Fixture.harbour)

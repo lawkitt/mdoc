@@ -191,6 +191,31 @@ enum RestoredSegment: Hashable, Sendable {
 
 struct RestoreResult: Hashable, Sendable {
     var segments: [RestoredSegment]
+    /// Distinct identities restored and distinct unrecognised tokens, as
+    /// "N values restored · M unrecognised" counts them (ADR 0078).
+    var restoredCount: Int
+    var unresolvedCount: Int
+
+    /// Counts given by the core.
+    init(segments: [RestoredSegment], restoredCount: Int, unresolvedCount: Int) {
+        self.segments = segments
+        self.restoredCount = restoredCount
+        self.unresolvedCount = unresolvedCount
+    }
+
+    /// Counts distinct restored values and distinct tokens in `segments`.
+    init(segments: [RestoredSegment]) {
+        var values = Set<String>()
+        var tokens = Set<String>()
+        for segment in segments {
+            switch segment {
+            case .restored(let value, _): values.insert(value)
+            case .unresolved(let token): tokens.insert(token)
+            case .text: break
+            }
+        }
+        self.init(segments: segments, restoredCount: values.count, unresolvedCount: tokens.count)
+    }
 
     var text: String {
         segments.map { segment in
@@ -200,14 +225,6 @@ struct RestoreResult: Hashable, Sendable {
             case .unresolved(let token): token
             }
         }.joined()
-    }
-
-    var restoredCount: Int {
-        segments.filter { if case .restored = $0 { true } else { false } }.count
-    }
-
-    var unresolvedCount: Int {
-        segments.filter { if case .unresolved = $0 { true } else { false } }.count
     }
 }
 
@@ -240,6 +257,9 @@ struct DocumentSnapshot: Equatable, Sendable {
     var pagesDone: Int
     var pageCount: Int
     var reply: ReplySnapshot?
+    /// The import's partial-result warning (pages OCR could not read, …),
+    /// shown with the text.
+    var warning: String? = nil
 
     var pendingCount: Int {
         candidates.filter { $0.state == .proposed }.count

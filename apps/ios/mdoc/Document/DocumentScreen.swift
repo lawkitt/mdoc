@@ -108,14 +108,29 @@ struct DocumentScreen: View {
                 systemImage: "text.viewfinder",
                 description: Text("mdoc reads the text when recognition runs."))
         } else {
-            MarkdownTextView(
-                snapshot: model.snapshot,
-                selected: model.reviewing,
-                onCandidate: { model.open($0) },
-                onReplace: { model.beginReplace($0) },
-                onReviewNext: { model.reviewNext() })
-            .ignoresSafeArea(.container, edges: .bottom)
+            VStack(spacing: 0) {
+                if let warning = model.snapshot.warning {
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                        .background(Color.orange.opacity(0.15))
+                        .accessibilityIdentifier("import-warning")
+                }
+                markdownText
+            }
         }
+    }
+
+    private var markdownText: some View {
+        MarkdownTextView(
+            snapshot: model.snapshot,
+            selected: model.reviewing,
+            onCandidate: { model.open($0) },
+            onReplace: { model.beginReplace($0) },
+            onReviewNext: { model.reviewNext() })
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     /// The panes a picker offers: on iPhone all of them, on iPad the right side.
@@ -180,7 +195,7 @@ struct DocumentScreen: View {
             }
             if model.needsSetup && setup.snapshot.needsSetup {
                 SetupCard(model: setup, dismissible: false) {
-                    await model.findNames()
+                    await model.continueAfterSetup()
                 }
             }
             if let interruption = model.interruption {
@@ -224,12 +239,13 @@ private struct InterruptionBanner: View {
 
     var body: some View {
         HStack {
+            // The core cannot resume OCR part-way yet, so both start again.
             Text(kind == .recognize
-                ? "Recognition stopped when mdoc left the screen. Finished pages are kept."
+                ? "Recognition stopped when mdoc left the screen."
                 : "Finding names stopped when mdoc left the screen.")
                 .font(.footnote)
             Spacer()
-            Button(kind == .recognize ? "Resume" : "Start again", action: resume)
+            Button("Start again", action: resume)
                 .buttonStyle(.bordered)
         }
     }

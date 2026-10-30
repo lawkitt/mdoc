@@ -70,6 +70,7 @@ private struct FakeDocument {
     var mentions: [FakeMention]
     var reply: String?
     var updated: Date
+    var warning: String? = nil
 
     var source: String { pages.prefix(pagesDone).joined(separator: "\n\n") }
     var recognized: Bool { pagesDone == pages.count }
@@ -310,7 +311,8 @@ private final class FakeState: @unchecked Sendable {
             kind: document.kind, phase: phase, markdown: rendering.markdown,
             spans: MarkdownSpanRecognizer.spans(in: rendering.markdown), candidates: rendering.candidates,
             identities: identities, original: document.original,
-            pagesDone: document.pagesDone, pageCount: document.pages.count, reply: reply)
+            pagesDone: document.pagesDone, pageCount: document.pages.count, reply: reply,
+            warning: document.recognized ? document.warning : nil)
     }
 
     func summary(_ document: FakeDocument) -> DocumentSummary {
@@ -444,7 +446,8 @@ private final class FakeLibrary: Library {
             let pagesDone = kind == .text ? pages.count : 0
             state.documents.append(FakeDocument(
                 id: id, title: title, caseID: caseID, kind: kind, pages: pages, pagesDone: pagesDone,
-                original: original, scanned: false, mentions: [], reply: nil, updated: Date()))
+                original: original, scanned: false, mentions: [], reply: nil, updated: Date(),
+                warning: kind == .pdf ? FakeFixtures.importWarning : nil))
             return id
         }
         return FakeSession(state: state, id: id)
@@ -503,6 +506,14 @@ private final class FakeSession: DocumentSession {
     }
 
     func recognize(observer: any JobObserver) throws -> DocumentSnapshot {
+        // Page images need OCR, as with the real core.
+        let needsOCR = try state.locked { () throws -> Bool in
+            guard let index = state.index(of: id) else { throw CoreError.notFound }
+            let document = state.documents[index]
+            return !document.recognized && (document.kind == .scan || document.kind == .image)
+                && state.models[FakeSetup.ocrID] != .installed
+        }
+        if needsOCR { throw CoreError.modelMissing }
         while true {
             let (done, total) = try state.locked { () throws -> (Int, Int) in
                 guard let index = state.index(of: id) else { throw CoreError.notFound }

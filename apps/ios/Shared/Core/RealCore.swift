@@ -105,7 +105,7 @@ extension RestoreResult {
         if cursor < bytes.count {
             segments.append(.text(String(decoding: bytes[cursor...], as: UTF8.self)))
         }
-        self.init(segments: segments)
+        self.init(segments: segments, restoredCount: Int(reply.values), unresolvedCount: Int(reply.unrecognised))
     }
 }
 
@@ -161,12 +161,20 @@ final class RealLibrary: Library, @unchecked Sendable {
     /// Saved document path → the id this run gave it.
     private var ids: [String: DocumentID] = [:]
     private let originals: OriginalsIndex
+    private let pending: PendingImports
 
     init(storage: MdocStorage, keys: any CaseKeyStore, setup: RealSetup?) throws {
         self.storage = storage
         self.setup = setup
         originals = OriginalsIndex(storage: storage)
+        pending = PendingImports(storage: storage)
         ffi = try core { try MdocFFI.Library(root: storage.root.path, caseKey: try keys.key()) }
+        // Imports not yet read when mdoc last stopped come back, ready to
+        // recognize again.
+        for entry in pending.all() {
+            let session = RealSession(id: entry.id, library: self, source: entry.source, title: entry.title, caseID: entry.caseID)
+            sessions[entry.id] = session
+        }
     }
 
     func snapshot() -> LibrarySnapshot {
@@ -217,8 +225,10 @@ final class RealLibrary: Library, @unchecked Sendable {
         case .newCase(let name): try core { try ffi.createCase(name: name) }.id
         }
         let prepared = try originals.prepare(source, title: title)
-        let session = RealSession(
-            id: DocumentID(rawValue: "new:\(UUID().uuidString)"), library: self, source: prepared, title: title, caseID: caseID)
+        let id = DocumentID(rawValue: "new:\(UUID().uuidString)")
+        // Kept on disk until its first save, so it survives mdoc stopping.
+        pending.add(PendingImports.Entry(id: id, title: title, caseID: caseID, source: prepared))
+        let session = RealSession(id: id, library: self, source: prepared, title: title, caseID: caseID)
         lock.withLock { sessions[session.id] = session }
         return session
     }
@@ -230,6 +240,7 @@ final class RealLibrary: Library, @unchecked Sendable {
             try? FileManager.default.removeItem(atPath: path)
             originals.remove(for: path)
         }
+        pending.remove(document)
     }
 
     func restore(reply: String, in caseID: CaseID) throws -> RestoreResult {
@@ -244,9 +255,10 @@ final class RealLibrary: Library, @unchecked Sendable {
     }
 
     /// A saved document keeps its id for the rest of the run.
-    fileprivate func saved(_ session: RealSession, path: String, original: OriginalSource) {
+    fileprivate func saved(_ session: RealSession, path: String, original: OriginalSource, owned: [URL]) {
         lock.withLock { ids[path] = session.id }
-        originals.record(original, for: path)
+        originals.record(original, owned: owned, for: path)
+        pending.remove(session.id, keepingFiles: true)
     }
 
     fileprivate func caseName(_ id: String?) -> String? {
@@ -272,6 +284,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
     private(set) var path: String?
     private var kind: SourceKind = .text
     private var original: OriginalSource = .none
+    private var owned: [URL] = []
 
     fileprivate init(id: DocumentID, library: RealLibrary, source: PreparedSource?, title: String, caseID: String?) {
         self.id = id
@@ -282,6 +295,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         if let source {
             kind = source.kind
             original = source.original
+            owned = source.owned
         }
     }
 
@@ -351,7 +365,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
             caseName: library.caseName(review.caseId ?? caseID), kind: kind, phase: phase,
             markdown: review.text, spans: MarkdownSpanRecognizer.spans(in: review.text),
             candidates: candidates, identities: identities, original: original,
-            pagesDone: 0, pageCount: 0, reply: reply)
+            pagesDone: 0, pageCount: 0, reply: reply, warning: review.warning)
     }
 
     func recognize(observer: any JobObserver) throws -> DocumentSnapshot {
@@ -468,13 +482,13 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 
     private func save() throws {
         let saved = try core { try ffi.save(library: library.ffi) }
-        let original = lock.withLock {
+        let (original, owned) = lock.withLock {
             path = saved.path
             caseID = saved.case.id
             review = saved.review
-            return self.original
+            return (self.original, self.owned)
         }
-        library.saved(self, path: saved.path, original: original)
+        library.saved(self, path: saved.path, original: original, owned: owned)
     }
 }
 
@@ -483,11 +497,16 @@ final class RealSession: DocumentSession, @unchecked Sendable {
 final class RealSetup: Setup, @unchecked Sendable {
     let ffi: MdocFFI.Setup
     private let physicalMemory: UInt64
+    /// Files the core installed, by model, so a retry after a failed file
+    /// fetches only the rest.
+    private let installedRecord: URL
+    private let lock = NSLock()
     /// The OCR bundle setup offers: English and Russian, the desktop's languages.
     static let ocrModel: ModelId = .ocrEnglishRussian
 
     init(storage: MdocStorage, physicalMemory: UInt64) {
         self.physicalMemory = physicalMemory
+        installedRecord = storage.url(.downloads).appendingPathComponent("installed.json")
         ffi = MdocFFI.Setup(modelsRoot: storage.url(.models).path, physicalMemoryBytes: physicalMemory)
     }
 
@@ -510,7 +529,10 @@ final class RealSetup: Setup, @unchecked Sendable {
         guard let id = Self.model(model), let info = ffi.catalog().first(where: { $0.id == id }) else {
             throw CoreError.notFound
         }
-        return info.files.compactMap { file in
+        // Skip files installed by an earlier, interrupted run, as long as
+        // what is left matches the bytes the core still misses.
+        let done = lock.withLock { loadInstalled()[model] ?? [] }
+        return Self.remaining(info.files, installed: done, missingBytes: info.missingBytes).compactMap { file in
             URL(string: file.url).map {
                 ModelDownloadRequest(modelID: model, file: file.path, url: $0, byteSize: Int64(file.bytes))
             }
@@ -519,8 +541,30 @@ final class RealSetup: Setup, @unchecked Sendable {
 
     func install(_ request: ModelDownloadRequest, from file: URL) throws -> SetupSnapshot {
         guard let id = Self.model(request.modelID) else { throw CoreError.notFound }
-        _ = try core { try ffi.install(model: id, file: request.file, downloaded: file.path) }
+        let info = try core { try ffi.install(model: id, file: request.file, downloaded: file.path) }
+        lock.withLock {
+            var installed = loadInstalled()
+            installed[request.modelID] = info.installed ? nil : (installed[request.modelID] ?? []).union([request.file])
+            saveInstalled(installed)
+        }
         return snapshot()
+    }
+
+    /// The files still to fetch: all but those recorded as installed, unless
+    /// the record disagrees with the bytes the core still misses.
+    static func remaining(_ files: [ModelFile], installed: Set<String>, missingBytes: UInt64) -> [ModelFile] {
+        let left = files.filter { !installed.contains($0.path) }
+        return left.reduce(0) { $0 + $1.bytes } == missingBytes ? left : files
+    }
+
+    private func loadInstalled() -> [String: Set<String>] {
+        guard let data = try? Data(contentsOf: installedRecord) else { return [:] }
+        return (try? JSONDecoder().decode([String: Set<String>].self, from: data)) ?? [:]
+    }
+
+    private func saveInstalled(_ installed: [String: Set<String>]) {
+        try? FileManager.default.createDirectory(at: installedRecord.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? JSONEncoder().encode(installed).write(to: installedRecord, options: .atomic)
     }
 
     func detectorPaths() -> DetectorPaths? {
@@ -561,6 +605,8 @@ struct PreparedSource: Sendable {
     var input: Input
     var kind: SourceKind
     var original: OriginalSource
+    /// The intake folders this import owns, removed with the document.
+    var owned: [URL] = []
 }
 
 /// The app's record of which source file each saved document came from,
@@ -570,6 +616,8 @@ final class OriginalsIndex: @unchecked Sendable {
     private struct Entry: Codable {
         var kind: String
         var files: [String]
+        /// Intake folders the document owns; older entries have none.
+        var folders: [String]?
     }
 
     private let storage: MdocStorage
@@ -589,17 +637,28 @@ final class OriginalsIndex: @unchecked Sendable {
         case .file(let url, let kind):
             let named = try rename(url, to: title)
             let original: OriginalSource = kind == .pdf ? .pdf(named) : (kind == .image ? .images([named]) : .none)
-            return PreparedSource(input: .file(named, needsOcr: kind == .image), kind: kind, original: original)
+            return PreparedSource(
+                input: .file(named, needsOcr: kind == .image), kind: kind, original: original,
+                owned: owned(named))
         case .scan(let pages), .photos(let pages):
             let kind: SourceKind = if case .scan = source { .scan } else { .image }
             guard let first = pages.first else { throw CoreError.emptySelection }
             if pages.count == 1 {
                 let named = try rename(first, to: title)
-                return PreparedSource(input: .file(named, needsOcr: true), kind: kind, original: .images([named]))
+                return PreparedSource(
+                    input: .file(named, needsOcr: true), kind: kind, original: .images([named]), owned: owned(named))
             }
             let pdf = try pagesPDF(pages, title: title, folder: first.deletingLastPathComponent())
-            return PreparedSource(input: .file(pdf, needsOcr: true), kind: kind, original: .images(pages))
+            return PreparedSource(
+                input: .file(pdf, needsOcr: true), kind: kind, original: .images(pages), owned: owned(pdf))
         }
+    }
+
+    /// The import's own folder under `originals/`, when it has one.
+    private func owned(_ file: URL) -> [URL] {
+        let folder = file.deletingLastPathComponent().standardizedFileURL
+        let originals = storage.url(.originals).standardizedFileURL
+        return folder.deletingLastPathComponent().path == originals.path ? [folder] : []
     }
 
     private func rename(_ url: URL, to title: String) throws -> URL {
@@ -630,17 +689,19 @@ final class OriginalsIndex: @unchecked Sendable {
         #endif
     }
 
-    func record(_ original: OriginalSource, for path: String) {
+    func record(_ original: OriginalSource, owned: [URL], for path: String) {
         let files: [URL]
         let kind: String
         switch original {
-        case .none: return
+        case .none: files = []; kind = "none"
         case .pdf(let url): files = [url]; kind = "pdf"
         case .images(let urls): files = urls; kind = "images"
         }
+        guard !files.isEmpty || !owned.isEmpty else { return }
         lock.withLock {
             var entries = load()
-            entries[relative(path)] = Entry(kind: kind, files: files.map { relative($0.path) })
+            entries[relative(path)] = Entry(
+                kind: kind, files: files.map { relative($0.path) }, folders: owned.map { relative($0.path) })
             save(entries)
         }
     }
@@ -659,8 +720,8 @@ final class OriginalsIndex: @unchecked Sendable {
         lock.withLock {
             var entries = load()
             if let entry = entries.removeValue(forKey: relative(path)) {
-                for file in entry.files {
-                    try? FileManager.default.removeItem(at: storage.root.appendingPathComponent(file))
+                for item in entry.files + (entry.folders ?? []) {
+                    try? FileManager.default.removeItem(at: storage.root.appendingPathComponent(item))
                 }
             }
             save(entries)
@@ -681,5 +742,128 @@ final class OriginalsIndex: @unchecked Sendable {
     private func save(_ entries: [String: Entry]) {
         guard let data = try? JSONEncoder().encode(entries) else { return }
         try? data.write(to: url, options: [.atomic, .completeFileProtection])
+    }
+}
+
+/// Imports chosen but not yet read and saved: `pending.json` beside the
+/// core's folders, so an import survives mdoc being stopped (by the user or
+/// by iOS) before recognition finishes. Paths are relative to the root.
+final class PendingImports: @unchecked Sendable {
+    struct Entry {
+        var id: DocumentID
+        var title: String
+        var caseID: String
+        var source: PreparedSource
+    }
+
+    private struct Stored: Codable {
+        var title: String
+        var caseID: String
+        var kind: String
+        var text: String?
+        var file: String?
+        var needsOcr: Bool
+        var originalKind: String
+        var originalFiles: [String]
+        var owned: [String]
+    }
+
+    private let storage: MdocStorage
+    private let lock = NSLock()
+    private var url: URL { storage.root.appendingPathComponent("pending.json") }
+
+    init(storage: MdocStorage) {
+        self.storage = storage
+    }
+
+    func add(_ entry: Entry) {
+        let source = entry.source
+        var stored = Stored(
+            title: entry.title, caseID: entry.caseID, kind: source.kind.rawValue, text: nil, file: nil,
+            needsOcr: false, originalKind: "none", originalFiles: [], owned: source.owned.map { relative($0) })
+        switch source.input {
+        case .text(let text): stored.text = text
+        case .file(let file, let needsOcr):
+            stored.file = relative(file)
+            stored.needsOcr = needsOcr
+        }
+        switch source.original {
+        case .none: break
+        case .pdf(let file):
+            stored.originalKind = "pdf"
+            stored.originalFiles = [relative(file)]
+        case .images(let files):
+            stored.originalKind = "images"
+            stored.originalFiles = files.map { relative($0) }
+        }
+        lock.withLock {
+            var entries = load()
+            entries[entry.id.rawValue] = stored
+            save(entries)
+        }
+    }
+
+    func all() -> [Entry] {
+        lock.withLock { load() }.compactMap { id, stored in
+            let input: PreparedSource.Input
+            if let text = stored.text {
+                input = .text(text)
+            } else if let file = stored.file {
+                let url = absolute(file)
+                // A source file that is gone cannot be read again.
+                guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+                input = .file(url, needsOcr: stored.needsOcr)
+            } else {
+                return nil
+            }
+            let files = stored.originalFiles.map { absolute($0) }
+            let original: OriginalSource = switch stored.originalKind {
+            case "pdf": files.first.map(OriginalSource.pdf) ?? .none
+            case "images": .images(files)
+            default: .none
+            }
+            let source = PreparedSource(
+                input: input, kind: SourceKind(rawValue: stored.kind) ?? .text, original: original,
+                owned: stored.owned.map { absolute($0) })
+            return Entry(id: DocumentID(rawValue: id), title: stored.title, caseID: stored.caseID, source: source)
+        }
+    }
+
+    /// Forgets an import; unless it was saved, its intake files go too.
+    func remove(_ id: DocumentID, keepingFiles: Bool = false) {
+        lock.withLock {
+            var entries = load()
+            guard let stored = entries.removeValue(forKey: id.rawValue) else { return }
+            if !keepingFiles {
+                for folder in stored.owned {
+                    try? FileManager.default.removeItem(at: absolute(folder))
+                }
+            }
+            save(entries)
+        }
+    }
+
+    private func relative(_ url: URL) -> String {
+        let root = storage.root.standardizedFileURL.path + "/"
+        let path = url.standardizedFileURL.path
+        return path.hasPrefix(root) ? String(path.dropFirst(root.count)) : path
+    }
+
+    private func absolute(_ path: String) -> URL {
+        path.hasPrefix("/") ? URL(fileURLWithPath: path) : storage.root.appendingPathComponent(path)
+    }
+
+    private func load() -> [String: Stored] {
+        guard let data = try? Data(contentsOf: url) else { return [:] }
+        return (try? JSONDecoder().decode([String: Stored].self, from: data)) ?? [:]
+    }
+
+    private func save(_ entries: [String: Stored]) {
+        guard let data = try? JSONEncoder().encode(entries) else { return }
+        try? data.write(to: url, options: [.atomic, .completeFileProtection])
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var excluded = url
+        try? excluded.setResourceValues(values)
     }
 }

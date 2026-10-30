@@ -50,7 +50,6 @@ final class AppModel {
             storage.clear(.handOff)
             let core = try CoreFactory.appCore(storage: storage)
             let models = downloader ?? BackgroundModelDownloader(staging: storage.url(.downloads))
-            models.resumeSessions()
             let app = AppModel(
                 core: core, storage: storage, background: BackgroundContinuations.system(),
                 downloader: testing ? FakeModelDownloader(seconds: 0) : models,

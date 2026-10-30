@@ -120,6 +120,34 @@ final class DocumentViewModelTests: XCTestCase {
         XCTAssertNotEqual(model.snapshot.phase, .unscanned)
     }
 
+    func testMissingOCRSetsUpThenRecognizes() async throws {
+        let core = Fixture.core(modelsInstalled: false)
+        let model = try model(Fixture.tenancy, core: core)
+        await model.recognize()
+        XCTAssertTrue(model.needsSetup)
+        XCTAssertEqual(model.waitingForSetup, .recognize)
+        XCTAssertNil(model.errorMessage)
+        for offer in core.setup.snapshot().offers {
+            for request in try core.setup.downloadRequests(for: offer.id) {
+                _ = try core.setup.install(request, from: URL(fileURLWithPath: "/dev/null"))
+            }
+        }
+        await model.continueAfterSetup()
+        XCTAssertFalse(model.needsSetup)
+        XCTAssertEqual(model.snapshot.phase, .unscanned)
+    }
+
+    func testAnImportWarningShowsWithTheText() async throws {
+        let core = Fixture.core()
+        let session = try core.library.importDocument(
+            .file(URL(fileURLWithPath: "/tmp/statement.pdf"), .pdf), title: "Statement", into: .newCase(name: "Statement"))
+        let model = DocumentViewModel(
+            session: session, jobs: LongJobRunner(background: NoBackgroundContinuation()), storage: try Fixture.temporaryStorage())
+        XCTAssertNil(model.snapshot.warning)
+        await model.recognize()
+        XCTAssertEqual(model.snapshot.warning, FakeFixtures.importWarning)
+    }
+
     func testCancelledRecognitionCanResume() async throws {
         let jobs = LongJobRunner(background: NoBackgroundContinuation())
         let core = Fixture.core(timing: FakeCore.Timing(page: 5, scan: 0, install: 0))

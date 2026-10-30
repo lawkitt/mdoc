@@ -1,4 +1,5 @@
 import Foundation
+import struct MdocFFI.ModelFile
 import UIKit
 import XCTest
 @testable import mdoc
@@ -153,6 +154,70 @@ final class RealCoreTests: XCTestCase {
         try Data("not a model".utf8).write(to: file)
         XCTAssertThrowsError(try setup.install(request, from: file))
         XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    }
+}
+
+extension RealCoreTests {
+    func testAPendingImportSurvivesARestart() throws {
+        let first = try core().library.importDocument(.text(Self.letter), title: "Letter", into: .newCase(name: "Ellison"))
+        // mdoc stops before recognition runs; the next launch finds it.
+        let core = try core()
+        let pending = try XCTUnwrap(core.library.snapshot().documents.first { $0.id == first.id })
+        XCTAssertEqual(pending.phase, .recognizing)
+        let session = try core.library.session(for: first.id)
+        XCTAssertEqual(try session.recognize(observer: TestObserver()).phase, .unscanned)
+        // Saved, it is no longer pending: one document, not two.
+        XCTAssertEqual(try self.core().library.snapshot().documents.count, 1)
+    }
+
+    func testDeletingAnImportRemovesItsSourceFiles() throws {
+        let core = try core()
+        let folder = storage.url(.originals).appendingPathComponent("import", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let pdf = folder.appendingPathComponent("upload.pdf")
+        try UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 300, height: 200)).writePDF(to: pdf) { context in
+            context.beginPage()
+            NSString(string: "Reply to maya.ellison@example.com").draw(at: CGPoint(x: 20, y: 20), withAttributes: nil)
+        }
+        let session = try core.library.importDocument(.file(pdf, .pdf), title: "Statement", into: .newCase(name: "Statement"))
+        let imported = try session.recognize(observer: TestObserver())
+        XCTAssertEqual(imported.original, .pdf(folder.appendingPathComponent("Statement.pdf")))
+        try core.library.deleteDocument(session.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        XCTAssertTrue(core.library.snapshot().documents.isEmpty)
+    }
+
+    func testDeletingAPendingImportRemovesItsSourceFiles() throws {
+        let core = try core()
+        let folder = storage.url(.originals).appendingPathComponent("scan", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let page = folder.appendingPathComponent("page-1.jpg")
+        try UIGraphicsImageRenderer(size: CGSize(width: 10, height: 10)).jpegData(withCompressionQuality: 0.9) { _ in }.write(to: page)
+        let session = try core.library.importDocument(.scan([page]), title: "Scan", into: .newCase(name: "Scan"))
+        try core.library.deleteDocument(session.id)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        XCTAssertTrue(try self.core().library.snapshot().documents.isEmpty)
+    }
+
+    func testRestoreCountsDistinctValues() throws {
+        let session = try reviewed(core())
+        let ready = try session.replaceAllPending()
+        let alias = try XCTUnwrap(ready.candidates.first { $0.category == .email }?.alias)
+        let bogus = "EMAIL_99"
+        let restored = try session.restoreReply("\(alias), \(alias), \(bogus), \(bogus).")
+        XCTAssertEqual(restored.reply?.restored.restoredCount, 1)
+        XCTAssertEqual(restored.reply?.restored.unresolvedCount, 1)
+    }
+
+    func testARetryFetchesOnlyTheFilesStillMissing() {
+        let files = [
+            ModelFile(path: "a.onnx", url: "https://example.com/a", sha256: "", bytes: 100),
+            ModelFile(path: "b.onnx", url: "https://example.com/b", sha256: "", bytes: 50),
+        ]
+        XCTAssertEqual(RealSetup.remaining(files, installed: ["a.onnx"], missingBytes: 50).map(\.path), ["b.onnx"])
+        // A record that disagrees with the core fetches everything.
+        XCTAssertEqual(RealSetup.remaining(files, installed: ["a.onnx"], missingBytes: 150).map(\.path), ["a.onnx", "b.onnx"])
+        XCTAssertEqual(RealSetup.remaining(files, installed: [], missingBytes: 150).count, 2)
     }
 }
 
