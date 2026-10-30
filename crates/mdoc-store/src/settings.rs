@@ -283,6 +283,21 @@ impl Default for CasesConfig {
         }
     }
 }
+/// Settings › General choices with no section of their own.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GeneralConfig {
+    /// "Show mdoc in the menu bar" (ADR 0084, macOS): the shelf, and mdoc
+    /// keeps running after its last window closes. Off by default; turning
+    /// it on is the consent to keep running.
+    #[serde(default)]
+    pub menu_bar: bool,
+}
+impl GeneralConfig {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
 /// Settings › Detection › Categories to detect (ADR 0076): scans of
 /// documents without a case skip these, and a new case's list starts here.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -334,6 +349,10 @@ pub struct Preferences {
     /// default file stay as they were.
     #[serde(default, skip_serializing_if = "CategoriesConfig::is_default")]
     pub categories: CategoriesConfig,
+    /// Absent while off, so older files and the default file stay as they
+    /// were.
+    #[serde(default, skip_serializing_if = "GeneralConfig::is_default")]
+    pub general: GeneralConfig,
 }
 impl Default for Preferences {
     fn default() -> Self {
@@ -345,6 +364,7 @@ impl Default for Preferences {
             updates: UpdatesConfig::default(),
             cases: CasesConfig::default(),
             categories: CategoriesConfig::default(),
+            general: GeneralConfig::default(),
         }
     }
 }
@@ -662,6 +682,18 @@ mod tests {
         );
         prefs.categories.set(Category::Address, true);
         assert_eq!(prefs.categories.skip, ["EMAIL"]);
+    }
+    #[test]
+    fn the_menu_bar_is_off_by_default_and_absent_from_the_file_while_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        assert!(!Preferences::default().general.menu_bar);
+        save(&path, &Preferences::default()).unwrap();
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("general"));
+        let mut prefs = Preferences::default();
+        prefs.general.menu_bar = true;
+        save(&path, &prefs).unwrap();
+        assert_eq!(load(&path).unwrap(), prefs);
     }
     #[test]
     fn removed_models_require_explicit_reset_without_rewriting_preferences() {

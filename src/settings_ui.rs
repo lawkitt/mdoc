@@ -720,7 +720,10 @@ impl Panel {
     pub fn reset(&mut self, cx: &mut Context<Self>) {
         let defaults = Preferences::default();
         match self.category {
-            Category::General => self.draft.updates = defaults.updates,
+            Category::General => {
+                self.draft.updates = defaults.updates;
+                self.draft.general = defaults.general;
+            }
             Category::Detection => {
                 self.draft.pseudonymization = defaults.pseudonymization;
                 self.draft.categories = defaults.categories;
