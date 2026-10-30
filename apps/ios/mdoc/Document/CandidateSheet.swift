@@ -10,7 +10,6 @@ struct CandidateSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var replace: Bool
-    @State private var alias: String
     @State private var scope: Scope = .allOccurrences
 
     init(candidate: Candidate, identity: Identity?, onDone: @escaping (Decision, Scope) -> Void, onNext: @escaping () -> Void) {
@@ -19,7 +18,6 @@ struct CandidateSheet: View {
         self.onDone = onDone
         self.onNext = onNext
         _replace = State(initialValue: candidate.state != .kept)
-        _alias = State(initialValue: candidate.alias)
     }
 
     private var mentionCount: Int { identity?.mentionCount ?? 1 }
@@ -43,13 +41,13 @@ struct CandidateSheet: View {
                     }
                     .pickerStyle(.segmented)
                     .accessibilityIdentifier("candidate-decision")
-                    if replace {
-                        TextField("Alias", text: $alias)
-                            .font(.body.monospaced())
-                            .textInputAutocapitalization(.characters)
-                            .autocorrectionDisabled()
-                            .accessibilityLabel(Text("Alias"))
-                            .accessibilityIdentifier("candidate-alias")
+                    if replace && !candidate.alias.isEmpty {
+                        LabeledContent("Alias") {
+                            Text(candidate.alias)
+                                .font(.body.monospaced())
+                                .foregroundStyle(candidate.category.color)
+                        }
+                        .accessibilityIdentifier("candidate-alias")
                     }
                 } footer: {
                     Text(replace
@@ -71,7 +69,7 @@ struct CandidateSheet: View {
                 }
                 Section {
                     Button("Next proposal") {
-                        onDone(replace ? .replace(alias: alias) : .keep, scope)
+                        onDone(replace ? .replace : .keep, scope)
                         onNext()
                     }
                     .accessibilityHint(Text("Applies this decision and opens the next proposal."))
@@ -85,7 +83,7 @@ struct CandidateSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
-                        onDone(replace ? .replace(alias: alias) : .keep, scope)
+                        onDone(replace ? .replace : .keep, scope)
                         dismiss()
                     }
                     .accessibilityIdentifier("candidate-done")

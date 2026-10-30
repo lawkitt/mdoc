@@ -15,13 +15,7 @@ final class ShareViewController: UIViewController {
     }
 
     private func show(text: String?) {
-        let library: (any Library)?
-        if let storage = try? MdocStorage.shared() {
-            try? storage.prepare()
-            library = CoreFactory.restoreExtension(storage: storage)
-        } else {
-            library = nil
-        }
+        let library = try? CoreFactory.restoreExtension()
         let root = RestoreExtensionView(
             model: library.flatMap { library in
                 text.map { RestoreViewModel(library: library, reply: $0) }

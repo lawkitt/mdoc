@@ -5,13 +5,16 @@ import Foundation
 // Long calls block their thread and report through a `JobObserver`, the one
 // thing the core calls back into the platform for.
 
-/// Progress and cooperative cancellation for a long core call. A UniFFI
-/// callback interface on the real core.
+/// Progress and cooperative cancellation for a long core call: the real
+/// core reports stages through its `JobProgress` callback and stops when its
+/// session's `cancel()` is called.
 protocol JobObserver: AnyObject, Sendable {
-    /// `fraction` runs from 0 to 1; `page` counts OCR pages when known.
-    func progress(fraction: Double, page: Int?, pageCount: Int?)
+    func progress(_ update: JobUpdate)
     /// Polled between units of work; true ends the call with `CoreError.cancelled`.
     func isCancelled() -> Bool
+    /// Runs `handler` once, when the job is cancelled (at once if it is
+    /// already), so a core that stops on its own call can be told.
+    func onCancel(_ handler: @escaping @Sendable () -> Void)
 }
 
 /// Cases and stored documents.
@@ -52,11 +55,14 @@ protocol DocumentSession: AnyObject, Sendable {
 }
 
 /// Models that fit the device, and verifying and installing downloads.
+/// The device's physical RAM is given when the object is made.
 protocol Setup: AnyObject, Sendable {
-    func snapshot(physicalMemory: UInt64) -> SetupSnapshot
-    func downloadRequest(for model: String) throws -> ModelDownloadRequest
-    /// Verifies the downloaded file's SHA-256 and installs it.
-    func install(model: String, from file: URL, observer: any JobObserver) throws -> SetupSnapshot
+    func snapshot() -> SetupSnapshot
+    /// The files of `model` still to download, with their pinned URLs.
+    func downloadRequests(for model: String) throws -> [ModelDownloadRequest]
+    /// Verifies one downloaded file's size and SHA-256 and moves it into the
+    /// model's folder.
+    func install(_ request: ModelDownloadRequest, from file: URL) throws -> SetupSnapshot
 }
 
 /// The core objects one process uses.

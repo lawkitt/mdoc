@@ -56,8 +56,6 @@ private struct FakeMention {
     /// In the source text, which never changes.
     var range: SourceRange
     var state: MentionState
-    /// Set by "Just this one" with a different alias.
-    var customAlias: String?
 }
 
 private struct FakeDocument {
@@ -98,6 +96,7 @@ private final class FakeState: @unchecked Sendable {
     private let lock = NSLock()
     let timing: FakeCore.Timing
     let tier: DeviceTier
+    let physicalMemory: UInt64
     var cases: [FakeCase] = []
     var documents: [FakeDocument] = []
     var lastShared: DocumentID?
@@ -106,6 +105,7 @@ private final class FakeState: @unchecked Sendable {
 
     init(options: FakeCore.Options) {
         timing = options.timing
+        physicalMemory = options.physicalMemory
         tier = options.physicalMemory >= FakeSetup.detectorFloor ? .detector : .rulesOnly
         let installed: ModelState = options.modelsInstalled ? .installed : .notInstalled
         models = [FakeSetup.detectorID: installed, FakeSetup.ocrID: installed]
@@ -182,12 +182,6 @@ private final class FakeState: @unchecked Sendable {
         return cases[index].identities.first { $0.id == id }
     }
 
-    func setIdentity(_ identity: FakeIdentity, caseID: CaseID?) {
-        guard let index = caseIndex(of: caseID),
-              let slot = cases[index].identities.firstIndex(where: { $0.id == identity.id }) else { return }
-        cases[index].identities[slot] = identity
-    }
-
     // MARK: Detection
 
     /// What the structured rules find without the detector.
@@ -213,7 +207,7 @@ private final class FakeState: @unchecked Sendable {
                 taken.append(range)
                 mentions.append(FakeMention(
                     id: CandidateID(rawValue: nextID("m")), identityID: identity.id, range: range,
-                    state: .proposed, customAlias: nil))
+                    state: .proposed))
             }
         }
         documents[index].mentions = mentions.sorted { $0.range.start < $1.range.start }
@@ -266,7 +260,7 @@ private final class FakeState: @unchecked Sendable {
             rendering.plain.append((bytes.count, cursor, mention.range.start - cursor))
             bytes += source[cursor..<mention.range.start]
             let original = String(decoding: source[mention.range.start..<mention.range.end], as: UTF8.self)
-            let alias = mention.customAlias ?? identity.alias
+            let alias = identity.alias
             let shown = mention.state == .replaced ? alias : original
             let start = bytes.count
             bytes += Array(shown.utf8)
@@ -314,7 +308,7 @@ private final class FakeState: @unchecked Sendable {
             id: document.id, title: document.title, caseID: document.caseID,
             caseName: caseIndex(of: document.caseID).map { cases[$0].name },
             kind: document.kind, phase: phase, markdown: rendering.markdown,
-            spans: FakeMarkdown.spans(in: rendering.markdown), candidates: rendering.candidates,
+            spans: MarkdownSpanRecognizer.spans(in: rendering.markdown), candidates: rendering.candidates,
             identities: identities, original: document.original,
             pagesDone: document.pagesDone, pageCount: document.pages.count, reply: reply)
     }
@@ -329,55 +323,33 @@ private final class FakeState: @unchecked Sendable {
 
     // MARK: Restore
 
-    private static let generatedPattern =
-        #"\b(?<prefix>PERSON|ORG|EMAIL|PHONE|ADDRESS|IDENTITY|TAX|BANK|DATE|REDACTED)(?<separator>[_\- ])(?<number>\d+)\b"#
+    private static let aliasPattern = try! NSRegularExpression(
+        pattern: #"\b(?<prefix>PERSON|ORG|EMAIL|PHONE|ADDRESS|IDENTITY|TAX|BANK|DATE|REDACTED)(?<separator>[_\- ])(?<number>\d+)\b"#,
+        options: [.caseInsensitive])
 
     /// Lenient on case and `_`/`-`/space separators; a loose form counts
-    /// only when it names a known alias, and nothing is guessed. Aliases the
-    /// user typed (`CLIENT_A`) restore by their exact wording.
+    /// only when it names a known alias, and nothing is guessed.
     func restore(_ reply: String, caseID: CaseID?) throws -> RestoreResult {
         guard let caseIndex = caseIndex(of: caseID) else { throw CoreError.noCase }
         var known: [String: String] = [:]
         for identity in cases[caseIndex].identities {
             known[identity.alias.uppercased()] = identity.primary
         }
-        for document in documents where document.caseID == caseID {
-            for mention in document.mentions {
-                if let custom = mention.customAlias,
-                   let identity = cases[caseIndex].identities.first(where: { $0.id == mention.identityID }) {
-                    known[custom.uppercased()] = identity.primary
-                }
-            }
-        }
-        let generated = try NSRegularExpression(pattern: "^" + Self.generatedPattern + "$", options: [.caseInsensitive])
-        let custom = known.keys
-            .filter { generated.firstMatch(in: $0, range: NSRange(location: 0, length: ($0 as NSString).length)) == nil }
-            .sorted { $0.count > $1.count }
-            .map(NSRegularExpression.escapedPattern(for:))
-        let pattern = custom.isEmpty
-            ? Self.generatedPattern
-            : #"(?<custom>(?<![\w])(?:"# + custom.joined(separator: "|") + #")(?![\w]))|"# + Self.generatedPattern
-        let expression = try NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
         let text = reply as NSString
         var segments: [RestoredSegment] = []
         var cursor = 0
-        for match in expression.matches(in: reply, range: NSRange(location: 0, length: text.length)) {
+        for match in Self.aliasPattern.matches(in: reply, range: NSRange(location: 0, length: text.length)) {
             let token = text.substring(with: match.range)
+            let prefix = text.substring(with: match.range(withName: "prefix"))
+            let separator = text.substring(with: match.range(withName: "separator"))
+            let number = text.substring(with: match.range(withName: "number"))
             let segment: RestoredSegment
-            if !custom.isEmpty, match.range(withName: "custom").location != NSNotFound {
-                guard let value = known[token.uppercased()] else { continue }
+            if let value = known["\(prefix.uppercased())_\(number)"] {
                 segment = .restored(value: value, alias: token)
+            } else if separator == "_" && prefix == prefix.uppercased() {
+                segment = .unresolved(token)
             } else {
-                let prefix = text.substring(with: match.range(withName: "prefix"))
-                let separator = text.substring(with: match.range(withName: "separator"))
-                let number = text.substring(with: match.range(withName: "number"))
-                if let value = known["\(prefix.uppercased())_\(number)"] {
-                    segment = .restored(value: value, alias: token)
-                } else if separator == "_" && prefix == prefix.uppercased() {
-                    segment = .unresolved(token)
-                } else {
-                    continue
-                }
+                continue
             }
             if match.range.location > cursor {
                 segments.append(.text(text.substring(with: NSRange(location: cursor, length: match.range.location - cursor))))
@@ -425,7 +397,7 @@ private final class FakeLibrary: Library {
             LibrarySnapshot(
                 cases: state.cases.map { CaseSummary(id: $0.id, name: $0.name, colour: $0.colour) },
                 documents: state.documents.map(state.summary).sorted { $0.updated > $1.updated },
-                lastSharedDocument: state.lastShared)
+                currentCase: state.lastShared.flatMap { id in state.documents.first { $0.id == id }?.caseID })
         }
     }
 
@@ -536,7 +508,8 @@ private final class FakeSession: DocumentSession {
                 guard let index = state.index(of: id) else { throw CoreError.notFound }
                 return (state.documents[index].pagesDone, state.documents[index].pages.count)
             }
-            observer.progress(fraction: total == 0 ? 1 : Double(done) / Double(total), page: done, pageCount: total)
+            observer.progress(JobUpdate(
+                stage: .recognizing, fraction: total == 0 ? 1 : Double(done) / Double(total), page: done, pageCount: total))
             if done >= total { break }
             try work(seconds: state.timing.page, observer: observer)
             // A finished page is kept even if the next one is cancelled.
@@ -551,10 +524,10 @@ private final class FakeSession: DocumentSession {
         guard ready else { throw CoreError.modelMissing }
         let steps = 10
         for step in 0..<steps {
-            observer.progress(fraction: Double(step) / Double(steps), page: nil, pageCount: nil)
+            observer.progress(JobUpdate(stage: .scanning, fraction: Double(step) / Double(steps)))
             try work(seconds: state.timing.scan / Double(steps), observer: observer)
         }
-        observer.progress(fraction: 1, page: nil, pageCount: nil)
+        observer.progress(JobUpdate(stage: .scanning, fraction: 1))
         return try state.locked {
             state.detect(in: id)
             return try state.snapshot(id)
@@ -577,19 +550,9 @@ private final class FakeSession: DocumentSession {
                 for target in targets {
                     state.documents[index].mentions[target].state = .kept
                 }
-            case .replace(let alias):
-                let trimmed = alias.trimmingCharacters(in: .whitespacesAndNewlines)
-                if scope == .allOccurrences, !trimmed.isEmpty,
-                   var identity = state.identity(identityID, caseID: document.caseID) {
-                    identity.alias = trimmed
-                    state.setIdentity(identity, caseID: document.caseID)
-                }
+            case .replace:
                 for target in targets {
                     state.documents[index].mentions[target].state = .replaced
-                    if scope == .justThisOne {
-                        let current = state.identity(identityID, caseID: document.caseID)?.alias
-                        state.documents[index].mentions[target].customAlias = trimmed.isEmpty || trimmed == current ? nil : trimmed
-                    }
                 }
             }
             state.documents[index].updated = Date()
@@ -632,7 +595,7 @@ private final class FakeSession: DocumentSession {
             where !document.mentions.contains(where: { $0.range.overlaps(repeatRange) }) {
                 state.documents[index].mentions.append(FakeMention(
                     id: CandidateID(rawValue: state.nextID("m")), identityID: identity.id,
-                    range: repeatRange, state: .replaced, customAlias: nil))
+                    range: repeatRange, state: .replaced))
             }
             state.documents[index].mentions.sort { $0.range.start < $1.range.start }
             state.documents[index].scanned = true
@@ -691,8 +654,8 @@ private final class FakeSession: DocumentSession {
 private final class FakeSetup: Setup {
     static let detectorID = "gliner2-multi-fp16"
     static let ocrID = "pp-ocr-v5"
-    /// Fixture floor; the real one comes from the spike's device rows.
-    static let detectorFloor: UInt64 = 6 * 1_073_741_824
+    /// The real core's floor (`DETECTOR_FLOOR_BYTES`, 7 GiB).
+    static let detectorFloor: UInt64 = 7 * 1_073_741_824
 
     let state: FakeState
 
@@ -700,41 +663,36 @@ private final class FakeSetup: Setup {
         self.state = state
     }
 
-    func snapshot(physicalMemory: UInt64) -> SetupSnapshot {
+    func snapshot() -> SetupSnapshot {
         state.locked {
-            let tier: DeviceTier = physicalMemory >= Self.detectorFloor ? .detector : .rulesOnly
             var offers = [
                 ModelOffer(
                     id: Self.ocrID, name: String(localized: "Text recognition (PP-OCR)"), purpose: .ocr,
                     byteSize: 31_000_000, state: state.models[Self.ocrID] ?? .notInstalled),
             ]
-            if tier == .detector {
+            if state.tier == .detector {
                 offers.insert(ModelOffer(
                     id: Self.detectorID, name: String(localized: "Name detector (GLiNER2)"), purpose: .detector,
                     byteSize: 1_190_000_000, state: state.models[Self.detectorID] ?? .notInstalled), at: 0)
             }
-            return SetupSnapshot(physicalMemory: physicalMemory, tier: tier, offers: offers)
+            return SetupSnapshot(physicalMemory: state.physicalMemory, tier: state.tier, offers: offers)
         }
     }
 
-    func downloadRequest(for model: String) throws -> ModelDownloadRequest {
+    func downloadRequests(for model: String) throws -> [ModelDownloadRequest] {
         guard model == Self.detectorID || model == Self.ocrID else { throw CoreError.notFound }
         let size: Int64 = model == Self.detectorID ? 1_190_000_000 : 31_000_000
         // A reserved example host: the fake downloader never fetches it.
-        return ModelDownloadRequest(
-            modelID: model, url: URL(string: "https://models.example.invalid/\(model)")!,
-            sha256: String(repeating: "0", count: 64), byteSize: size)
+        return [ModelDownloadRequest(
+            modelID: model, file: "model.onnx", url: URL(string: "https://models.example.invalid/\(model)")!,
+            byteSize: size)]
     }
 
-    func install(model: String, from file: URL, observer: any JobObserver) throws -> SetupSnapshot {
-        state.locked { state.models[model] = .verifying }
-        do {
-            try work(seconds: state.timing.install, observer: observer)
-        } catch {
-            state.locked { state.models[model] = .notInstalled }
-            throw error
+    func install(_ request: ModelDownloadRequest, from file: URL) throws -> SetupSnapshot {
+        if state.timing.install > 0 {
+            Thread.sleep(forTimeInterval: state.timing.install)
         }
-        state.locked { state.models[model] = .installed }
-        return snapshot(physicalMemory: ProcessInfo.processInfo.physicalMemory)
+        state.locked { state.models[request.modelID] = .installed }
+        return snapshot()
     }
 }

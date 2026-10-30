@@ -15,7 +15,7 @@ final class DocumentViewModel {
     enum PrimaryAction: Equatable {
         case recognize(resume: Bool)
         case findNames
-        case running(JobKind, JobProgress)
+        case running(JobKind, JobUpdate?)
         /// Another document's job holds the one slot.
         case waiting
         case replaceAll(Int)

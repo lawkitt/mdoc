@@ -33,8 +33,8 @@ final class DocumentViewModelTests: XCTestCase {
         let maya = try XCTUnwrap(model.snapshot.candidates.first { $0.original == "Maya Ellison" })
         model.open(maya.id)
         XCTAssertEqual(model.reviewing, maya.id)
-        model.decide(maya.id, .replace(alias: "CLIENT_A"), scope: .allOccurrences)
-        XCTAssertTrue(model.snapshot.markdown.contains("CLIENT_A"))
+        model.decide(maya.id, .replace, scope: .allOccurrences)
+        XCTAssertTrue(model.snapshot.markdown.contains(maya.alias))
         XCTAssertEqual(model.snapshot.identities.first { $0.id == maya.identityID }?.state, .replaced)
     }
 

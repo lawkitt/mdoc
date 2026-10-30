@@ -253,9 +253,22 @@ private struct ActionBar: View {
             }
         case .running(let kind, let progress):
             HStack(spacing: 12) {
-                ProgressView(value: progress.fraction) {
-                    Text(Self.progressLabel(kind, progress))
-                        .font(.footnote)
+                Group {
+                    // The core reports stages; a fraction only when it knows one.
+                    if let fraction = progress?.fraction {
+                        ProgressView(value: fraction) {
+                            Text(Self.progressLabel(kind, progress))
+                                .font(.footnote)
+                        }
+                    } else {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text(Self.progressLabel(kind, progress))
+                                .font(.footnote)
+                            Spacer(minLength: 0)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
                 }
                 .accessibilityIdentifier("job-progress")
                 Button("Cancel", role: .cancel) {
@@ -337,17 +350,22 @@ private struct ActionBar: View {
         .accessibilityIdentifier("primary-action")
     }
 
-    static func progressLabel(_ kind: JobKind, _ progress: JobProgress) -> String {
-        switch kind {
-        case .recognize:
-            if let page = progress.page, let count = progress.pageCount {
-                return String(localized: "Recognizing page \(min(page + 1, count)) of \(count)")
+    static func progressLabel(_ kind: JobKind, _ progress: JobUpdate?) -> String {
+        if let page = progress?.page, let count = progress?.pageCount, count > 0 {
+            return String(localized: "Recognizing page \(min(page + 1, count)) of \(count)")
+        }
+        switch progress?.stage {
+        case .reading: return String(localized: "Reading the file")
+        case .converting: return String(localized: "Converting")
+        case .recognizing: return String(localized: "Recognizing text")
+        case .scanning: return String(localized: "Finding names")
+        case .installing: return String(localized: "Installing")
+        case nil:
+            switch kind {
+            case .recognize: return String(localized: "Reading the file")
+            case .scan: return String(localized: "Finding names")
+            case .install: return String(localized: "Installing")
             }
-            return String(localized: "Recognizing text")
-        case .scan:
-            return String(localized: "Finding names")
-        case .install:
-            return String(localized: "Installing")
         }
     }
 }

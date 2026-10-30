@@ -55,7 +55,7 @@ struct IdentitiesView: View {
         .accessibilityLabel(Text(Self.spoken(identity)))
         .accessibilityHint(Text("Opens the first mention."))
         .accessibilityAction(named: Text("Replace all")) {
-            onDecide(identity.id, .replace(alias: identity.alias))
+            onDecide(identity.id, .replace)
         }
         .accessibilityAction(named: Text("Keep all")) {
             onDecide(identity.id, .keep)
@@ -66,7 +66,7 @@ struct IdentitiesView: View {
             }
             .tint(.gray)
             Button("Replace") {
-                onDecide(identity.id, .replace(alias: identity.alias))
+                onDecide(identity.id, .replace)
             }
             .tint(identity.category.color)
         }

@@ -17,6 +17,8 @@ final class AppModel {
         didSet { if selection != oldValue { showsSettings = false } }
     }
     var showsSettings = false
+    /// Why the core could not open (the Keychain or storage failed).
+    let startupError: String?
     private var documents: [DocumentID: DocumentViewModel] = [:]
 
     init(
@@ -25,8 +27,10 @@ final class AppModel {
         background: any BackgroundContinuation,
         downloader: any ModelDownloader,
         network: any NetworkConditions,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        startupError: String? = nil
     ) {
+        self.startupError = startupError
         self.core = core
         self.storage = storage
         jobs = LongJobRunner(background: background)
@@ -34,23 +38,51 @@ final class AppModel {
         setup = SetupViewModel(setup: core.setup, downloader: downloader, network: network, jobs: jobs, defaults: defaults)
     }
 
-    static func live() -> AppModel {
-        let storage = (try? MdocStorage.shared()) ?? MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent("mdoc"))
-        try? storage.prepare()
-        storage.clear(.handOff)
-        let arguments = ProcessInfo.processInfo.arguments
-        let testing = arguments.contains(CoreFactory.uiTestingArgument)
+    static func live(downloader: BackgroundModelDownloader? = nil) -> AppModel {
+        let testing = CoreFactory.isUITesting
         let defaults = testing ? UserDefaults(suiteName: "mdoc-ui-testing") ?? .standard : .standard
         if testing {
             defaults.removePersistentDomain(forName: "mdoc-ui-testing")
         }
-        return AppModel(
-            core: CoreFactory.app(storage: storage, arguments: arguments),
-            storage: storage,
-            background: BackgroundContinuations.system(),
-            downloader: FakeModelDownloader(seconds: testing ? 0 : 2),
-            network: NetworkMonitor(),
-            defaults: defaults)
+        do {
+            let storage = try CoreFactory.appStorage()
+            try storage.prepare()
+            storage.clear(.handOff)
+            let core = try CoreFactory.appCore(storage: storage)
+            let models = downloader ?? BackgroundModelDownloader(staging: storage.url(.downloads))
+            models.resumeSessions()
+            let app = AppModel(
+                core: core, storage: storage, background: BackgroundContinuations.system(),
+                downloader: testing ? FakeModelDownloader(seconds: 0) : models,
+                network: NetworkMonitor(), defaults: defaults)
+            if testing, let seed = ProcessInfo.processInfo.environment["MDOC_SEED_FILE"] {
+                app.seedForUITesting(URL(fileURLWithPath: seed))
+            }
+            return app
+        } catch {
+            let storage = MdocStorage(root: FileManager.default.temporaryDirectory.appendingPathComponent("mdoc-unavailable"))
+            return AppModel(
+                core: Core(library: UnavailableLibrary(), setup: UnavailableSetup()), storage: storage,
+                background: NoBackgroundContinuation(), downloader: FakeModelDownloader(seconds: 0),
+                network: NetworkMonitor(), defaults: defaults, startupError: error.localizedDescription)
+        }
+    }
+
+    /// UI tests: import a fixture file through the core and scan it with
+    /// the structured rules, as a user's import would.
+    private func seedForUITesting(_ file: URL) {
+        Task {
+            guard let copy = try? storage.importCopy(of: file, in: .originals),
+                  let kind = Self.kind(of: copy),
+                  let session = home.importDocument(
+                    PendingImport(source: .file(copy, kind), suggestedTitle: file.deletingPathExtension().lastPathComponent),
+                    title: file.deletingPathExtension().lastPathComponent,
+                    into: .newCase(name: file.deletingPathExtension().lastPathComponent)),
+                  let model = documentModel(for: session.id) else { return }
+            await model.recognize()
+            await model.findNames()
+            home.refresh()
+        }
     }
 
     func documentModel(for id: DocumentID) -> DocumentViewModel? {
@@ -97,30 +129,47 @@ final class AppModel {
             home.errorMessage = String(localized: "mdoc opens PDF, DOCX and image files.")
             return
         }
+        if kind == .image {
+            // Photos from Files become JPEG pages like the camera's.
+            guard let data = try? Data(contentsOf: url) else {
+                home.errorMessage = String(localized: "mdoc opens PDF, DOCX and image files.")
+                return
+            }
+            if url.path.contains("/Inbox/") {
+                try? FileManager.default.removeItem(at: url)
+            }
+            receiveImages([data], scanned: false, title: url.deletingPathExtension().lastPathComponent)
+            return
+        }
         do {
-            let copy = try storage.importCopy(of: url, in: .documents)
+            let copy = try storage.importCopy(of: url, in: .originals)
             if url.path.contains("/Inbox/") {
                 try? FileManager.default.removeItem(at: url)
             }
             home.pendingImport = PendingImport(
-                source: kind == .image ? .photos([copy]) : .file(copy, kind),
-                suggestedTitle: url.deletingPathExtension().lastPathComponent)
+                source: .file(copy, kind), suggestedTitle: url.deletingPathExtension().lastPathComponent)
         } catch {
             home.errorMessage = error.localizedDescription
         }
     }
 
-    /// Page images from the document camera or Photos.
-    func receiveImages(_ images: [Data], scanned: Bool) {
+    /// Page images from the document camera or Photos, as upright JPEGs:
+    /// the core reads JPEG only (PNG and HEIC are converted here).
+    func receiveImages(_ images: [Data], scanned: Bool, title: String? = nil) {
         do {
-            let urls = try images.enumerated().map { index, data in
-                try storage.write(data, named: "\(UUID().uuidString)-\(index + 1).jpg", in: .documents)
+            let folder = storage.url(.originals).appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            let urls = try images.enumerated().compactMap { index, data -> URL? in
+                guard let jpeg = Self.uprightJPEG(data) else { return nil }
+                let url = folder.appendingPathComponent("page-\(index + 1).jpg")
+                try jpeg.write(to: url, options: [.atomic, .completeFileProtection])
+                return url
             }
             guard !urls.isEmpty else { return }
-            let title = scanned ? String(localized: "Scan") : String(localized: "Photo")
+            let kind = scanned ? String(localized: "Scan") : String(localized: "Photo")
             home.pendingImport = PendingImport(
                 source: scanned ? .scan(urls) : .photos(urls),
-                suggestedTitle: "\(title) \(Date.now.formatted(date: .abbreviated, time: .shortened))")
+                suggestedTitle: title ?? "\(kind) \(Date.now.formatted(date: .abbreviated, time: .shortened))")
         } catch {
             home.errorMessage = error.localizedDescription
         }
@@ -137,6 +186,18 @@ final class AppModel {
     }
 
     /// The system declares DOCX; the extension lookup never needs an import.
+    /// Redraws an image with its orientation applied, as JPEG.
+    static func uprightJPEG(_ data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        guard image.imageOrientation != .up else { return image.jpegData(compressionQuality: 0.9) }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        let upright = UIGraphicsImageRenderer(size: image.size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+        return upright.jpegData(compressionQuality: 0.9)
+    }
+
     static let docx = UTType("org.openxmlformats.wordprocessingml.document") ?? UTType(filenameExtension: "docx") ?? .data
     static let importTypes: [UTType] = [.pdf, docx, .image]
 

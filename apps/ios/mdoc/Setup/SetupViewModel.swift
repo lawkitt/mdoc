@@ -12,7 +12,6 @@ final class SetupViewModel {
     private let network: any NetworkConditions
     private let jobs: LongJobRunner
     private let defaults: UserDefaults
-    let physicalMemory: UInt64
 
     private(set) var snapshot: SetupSnapshot
     /// Download progress the platform owns until the core installs the file.
@@ -29,22 +28,22 @@ final class SetupViewModel {
         downloader: any ModelDownloader,
         network: any NetworkConditions,
         jobs: LongJobRunner,
-        physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory,
         defaults: UserDefaults = .standard
     ) {
         self.setup = setup
         self.downloader = downloader
         self.network = network
         self.jobs = jobs
-        self.physicalMemory = physicalMemory
         self.defaults = defaults
-        snapshot = setup.snapshot(physicalMemory: physicalMemory)
+        snapshot = setup.snapshot()
         cardDismissed = defaults.bool(forKey: Self.dismissedKey)
     }
 
     private(set) var cardDismissed: Bool
 
     var showsCard: Bool { snapshot.needsSetup && !cardDismissed }
+
+    var physicalMemory: UInt64 { snapshot.physicalMemory }
 
     func dismissCard() {
         cardDismissed = true
@@ -96,7 +95,7 @@ final class SetupViewModel {
     }
 
     func refresh() {
-        snapshot = setup.snapshot(physicalMemory: physicalMemory)
+        snapshot = setup.snapshot()
     }
 
     private var work: Task<Void, Never>?
@@ -122,37 +121,46 @@ final class SetupViewModel {
         }
     }
 
-    /// True when every missing model was installed.
+    /// True when every missing model was installed: each pinned file is
+    /// downloaded by the platform, then verified and installed by the core.
     private func install(allowCellular: Bool) async -> Bool {
         for offer in snapshot.missing {
             do {
-                let request = try setup.downloadRequest(for: offer.id)
+                let requests = try setup.downloadRequests(for: offer.id)
+                let total = max(requests.reduce(0) { $0 + $1.byteSize }, 1)
+                var done: Int64 = 0
                 downloadProgress[offer.id] = 0
-                let file = try await downloader.download(request, allowCellular: allowCellular) { fraction in
-                    Task { @MainActor [weak self] in
-                        if self?.downloadProgress[offer.id] != nil {
-                            self?.downloadProgress[offer.id] = fraction
+                for request in requests {
+                    let before = done
+                    let file = try await downloader.download(request, allowCellular: allowCellular) { fraction in
+                        Task { @MainActor [weak self] in
+                            if self?.downloadProgress[offer.id] != nil {
+                                self?.downloadProgress[offer.id] = (Double(before) + fraction * Double(request.byteSize)) / Double(total)
+                            }
                         }
+                    }
+                    done += request.byteSize
+                    try Task.checkCancellation()
+                    let setup = self.setup
+                    let outcome = await jobs.run(.install, documentID: nil, title: String(localized: "Installing \(offer.name)")) { _ in
+                        try setup.install(request, from: file)
+                    }
+                    switch outcome {
+                    case .finished:
+                        break
+                    case .cancelled:
+                        return false
+                    case .busy:
+                        errorMessage = String(localized: "Another job is running. Try again when it finishes.")
+                        return false
+                    case .failed(let error):
+                        // A refused file is downloaded again next time.
+                        try? FileManager.default.removeItem(at: file)
+                        errorMessage = error.localizedDescription
+                        return false
                     }
                 }
                 downloadProgress[offer.id] = nil
-                try Task.checkCancellation()
-                let setup = self.setup
-                let outcome = await jobs.run(.install, documentID: nil, title: String(localized: "Installing \(offer.name)")) { observer in
-                    try setup.install(model: offer.id, from: file, observer: observer)
-                }
-                switch outcome {
-                case .finished:
-                    break
-                case .cancelled:
-                    return false
-                case .busy:
-                    errorMessage = String(localized: "Another job is running. Try again when it finishes.")
-                    return false
-                case .failed(let error):
-                    errorMessage = error.localizedDescription
-                    return false
-                }
             } catch is CancellationError {
                 return false
             } catch {

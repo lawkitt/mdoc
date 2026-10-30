@@ -1,8 +1,10 @@
 import Foundation
 
-/// The fake core's Markdown spans: just enough of headings, emphasis, lists
-/// and tables for the fixtures. The real spans come from `mdoc-markdown`.
-enum FakeMarkdown {
+/// Markdown spans recognized in Swift: headings, emphasis, code, lists,
+/// quotes and tables, enough to dim markers. A stand-in until `mdoc-markdown`
+/// (the desktop's GUI-free span recognition) is exposed through `mdoc-ffi`;
+/// then the core returns the spans and this goes.
+enum MarkdownSpanRecognizer {
     private static let rules: [(NSRegularExpression, [Int: MarkdownSpanKind], MarkdownSpanKind?)] = [
         // (pattern, kinds of capture groups, kind of the whole match)
         (regex(#"^(#{1,6} )(.*)$"#), [1: .marker], nil),

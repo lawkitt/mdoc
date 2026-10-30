@@ -33,18 +33,33 @@ struct FakeNetwork: NetworkConditions {
 final class TestObserver: JobObserver, @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
-    private(set) var fractions: [Double] = []
+    private var handlers: [@Sendable () -> Void] = []
+    private(set) var updates: [JobUpdate] = []
 
     func cancel() {
         lock.lock()
         cancelled = true
+        let handlers = self.handlers
+        self.handlers = []
+        lock.unlock()
+        handlers.forEach { $0() }
+    }
+
+    func progress(_ update: JobUpdate) {
+        lock.lock()
+        updates.append(update)
         lock.unlock()
     }
 
-    func progress(fraction: Double, page: Int?, pageCount: Int?) {
+    func onCancel(_ handler: @escaping @Sendable () -> Void) {
         lock.lock()
-        fractions.append(fraction)
-        lock.unlock()
+        if cancelled {
+            lock.unlock()
+            handler()
+        } else {
+            handlers.append(handler)
+            lock.unlock()
+        }
     }
 
     func isCancelled() -> Bool {

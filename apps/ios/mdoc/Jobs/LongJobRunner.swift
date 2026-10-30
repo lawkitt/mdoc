@@ -1,12 +1,6 @@
 import Foundation
 import Observation
 
-struct JobProgress: Equatable, Sendable {
-    var fraction: Double
-    var page: Int?
-    var pageCount: Int?
-}
-
 enum JobKind: Equatable, Sendable {
     case recognize
     case scan
@@ -24,7 +18,8 @@ struct RunningJob: Equatable {
     let id: UUID
     let kind: JobKind
     let documentID: DocumentID?
-    var progress: JobProgress
+    /// Nil until the core reports its first stage.
+    var progress: JobUpdate?
 }
 
 /// A job that stopped because mdoc left the screen; the app offers to resume
@@ -42,21 +37,39 @@ enum JobOutcome<Value: Sendable>: Sendable {
     case busy
 }
 
-/// Progress and cancellation for one job; the core polls it.
+/// Progress and cancellation for one job: the core polls it, or is told
+/// through `onCancel`.
 final class JobToken: JobObserver, @unchecked Sendable {
     private let lock = NSLock()
     private var reason: CancelReason?
-    private let onProgress: @Sendable (JobProgress) -> Void
+    private var handlers: [@Sendable () -> Void] = []
+    private let onProgress: @Sendable (JobUpdate) -> Void
 
-    init(onProgress: @escaping @Sendable (JobProgress) -> Void) {
+    init(onProgress: @escaping @Sendable (JobUpdate) -> Void) {
         self.onProgress = onProgress
     }
 
     func cancel(_ reason: CancelReason) {
         lock.lock()
-        defer { lock.unlock() }
-        if self.reason == nil {
-            self.reason = reason
+        guard self.reason == nil else {
+            lock.unlock()
+            return
+        }
+        self.reason = reason
+        let handlers = self.handlers
+        self.handlers = []
+        lock.unlock()
+        handlers.forEach { $0() }
+    }
+
+    func onCancel(_ handler: @escaping @Sendable () -> Void) {
+        lock.lock()
+        if reason == nil {
+            handlers.append(handler)
+            lock.unlock()
+        } else {
+            lock.unlock()
+            handler()
         }
     }
 
@@ -66,8 +79,8 @@ final class JobToken: JobObserver, @unchecked Sendable {
         return reason
     }
 
-    func progress(fraction: Double, page: Int?, pageCount: Int?) {
-        onProgress(JobProgress(fraction: fraction, page: page, pageCount: pageCount))
+    func progress(_ update: JobUpdate) {
+        onProgress(update)
     }
 
     func isCancelled() -> Bool {
@@ -100,12 +113,14 @@ final class LongJobRunner {
         let id = UUID()
         let lease = LeaseBox()
         let token = JobToken { [weak self] progress in
-            lease.lease?.progress(progress.fraction)
+            if let fraction = progress.fraction {
+                lease.lease?.progress(fraction)
+            }
             Task { @MainActor in
                 self?.update(id, progress)
             }
         }
-        current = RunningJob(id: id, kind: kind, documentID: documentID, progress: JobProgress(fraction: 0))
+        current = RunningJob(id: id, kind: kind, documentID: documentID, progress: nil)
         self.token = token
         if interrupted?.documentID == documentID {
             interrupted = nil
@@ -141,7 +156,7 @@ final class LongJobRunner {
         interrupted = nil
     }
 
-    private func update(_ id: UUID, _ progress: JobProgress) {
+    private func update(_ id: UUID, _ progress: JobUpdate) {
         guard current?.id == id else { return }
         current?.progress = progress
     }

@@ -106,19 +106,15 @@ struct DocumentSummary: Identifiable, Hashable, Sendable {
 struct LibrarySnapshot: Sendable, Equatable {
     var cases: [CaseSummary]
     var documents: [DocumentSummary]
-    /// The document whose text was shared or copied for AI last. Restore
-    /// uses its case unless the user picks another (ADR 0084's rule).
-    var lastSharedDocument: DocumentID?
+    /// The case of the document shared or copied for AI last. Restore uses
+    /// it unless the user picks another (ADR 0084's current case).
+    var currentCase: CaseID?
 
-    static let empty = LibrarySnapshot(cases: [], documents: [], lastSharedDocument: nil)
+    static let empty = LibrarySnapshot(cases: [], documents: [], currentCase: nil)
 
+    /// The case's documents, most recently changed first.
     func documents(in caseID: CaseID) -> [DocumentSummary] {
-        documents.filter { $0.caseID == caseID }
-    }
-
-    var lastSharedCase: CaseID? {
-        guard let id = lastSharedDocument else { return nil }
-        return documents.first { $0.id == id }?.caseID
+        documents.filter { $0.caseID == caseID }.sorted { $0.updated > $1.updated }
     }
 }
 
@@ -173,9 +169,10 @@ struct Identity: Identifiable, Hashable, Sendable {
     var state: MentionState
 }
 
+/// The candidate sheet's choice. Aliases come from the core and are not
+/// edited (ADR 0085's review sheet shows the alias).
 enum Decision: Hashable, Sendable {
-    /// Replace with this alias (the proposed one, or one the user typed).
-    case replace(alias: String)
+    case replace
     case keep
 }
 
@@ -308,13 +305,27 @@ struct SetupSnapshot: Hashable, Sendable {
     }
 }
 
-/// A verified download the platform runs in the background; the core checks
-/// the file's SHA-256 and installs it.
+/// One pinned file of a model: the platform downloads it in the background,
+/// the core checks its size and SHA-256 and installs it.
 struct ModelDownloadRequest: Hashable, Sendable {
     var modelID: String
+    /// The file's path inside the model's folder.
+    var file: String
     var url: URL
-    var sha256: String
     var byteSize: Int64
+}
+
+/// Where a long core job is.
+enum CoreStage: Hashable, Sendable {
+    case reading, converting, recognizing, scanning, installing
+}
+
+/// One progress report: the stage, and how far when the core knows.
+struct JobUpdate: Hashable, Sendable {
+    var stage: CoreStage
+    var fraction: Double?
+    var page: Int?
+    var pageCount: Int?
 }
 
 // MARK: - Errors
@@ -325,6 +336,8 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
     case pendingReview(Int)
     case emptySelection
     case noCase
+    /// Scanning needs the detector, or recognition needs OCR, and it is not
+    /// installed.
     case modelMissing
     case importFailed(String)
 
@@ -341,7 +354,7 @@ enum CoreError: Error, Equatable, Sendable, LocalizedError {
         case .noCase:
             String(localized: "Share a document from mdoc first; replies restore with its case.")
         case .modelMissing:
-            String(localized: "Download the name detector first.")
+            String(localized: "Download the models first.")
         case .importFailed(let reason):
             String(localized: "mdoc could not open this file: \(reason)")
         }
