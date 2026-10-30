@@ -1,0 +1,19 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "CFBundleDisplayName": {
+      "shouldTranslate": false
+    },
+    "NSCameraUsageDescription": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mdoc uses the camera to scan paper documents. Scans stay on this device."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

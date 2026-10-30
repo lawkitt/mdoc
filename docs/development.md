@@ -133,6 +133,7 @@ dependency forks.
 | `crates/mdoc-editor` | Host-agnostic WYSIWYG and rendered-text search; maps `mdoc-markdown`'s spans to GPUI styles |
 | `crates/mdoc-markdown` | GUI-free Markdown recognition shared with the mobile apps: inline spans over source byte ranges and which bytes are markers, line prefixes (headings, quotes and alerts, lists and tasks) and GFM tables ([ADR 0085](adr/0085-mobile-apps.md)) |
 | `crates/mdoc-pii`, `crates/mdoc-history` | GUI-free pseudonymization review model and the plain edit transactions it follows |
+| `apps/ios` | The iOS app ([ADR 0085](adr/0085-mobile-apps.md)): SwiftUI screens over the Rust core through `mdoc-ffi`'s Swift bindings (the `MdocFFI` framework), and the Restore with mdoc share extension ([README](../apps/ios/README.md)) |
 | `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |
 | `src/system_quit.rs` | macOS: a quit from the Dock, an Apple Event or logout runs Quit's questions first and answers the vendored `applicationShouldTerminate:` hook when they end ([ADR 0071](adr/0071-one-close-and-quit-prompt.md)) |
 | `src/updater.rs` | Detection-only GitHub Releases update check ([ADR 0038](adr/0038-update-check.md)) |
@@ -217,7 +218,10 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just smoke-package` | OCR from the packaged artifact: the `.dmg`'s signed app, or the release `mdoc.exe` (release gate) |
 | `just smoke-update [dmg]` | An older Developer ID signed `.dmg` updates itself to the latest release through `--mdoc-self-update` (manual, before releases that change the updater) |
 | `just release <version>` | Release commit and tag (below) |
+| `just ios-core` | macOS: the iOS core into `target/ios` (`MdocCore.xcframework`, Swift bindings, PDFium) |
+| `just mobile` | macOS: `cargo check` of `mdoc-ffi` for iOS and Android, then, when the commit changes `crates/`, `Cargo.lock` or `apps/`, the iOS job (`just ios-app ios-test`, shutting down the Simulator it booted); the Mac's local CI runs it after `test`, with a 40-minute limit |
 | `just local-ci [command]` | The [local CI](#local-ci) runner: `install`, `status`, `stop`, `start`, `uninstall` (macOS), or `run` / `once` in the foreground |
+| `just ios-app` / `just ios-test [device]` | macOS: build the iOS core, then the app, extension and tests for the Simulator / run its unit, parity and UI tests on an iOS 26.1 Simulator |
 | `just icon`, `just actionlint` | Icon assets; workflow lint |
 | `just disk` | Size of each worktree's `target/` |
 | `just retire-worktree <path>` | Remove a finished worktree and its `target/` |
@@ -413,7 +417,9 @@ this machine's status gets `pending` "Queued", linked to the runner's
 `refs/pull/N/merge`, checks it out in the CI checkout (keeping its
 `target/`), installs the merge ref's pinned tools with `scripts/setup.sh`
 (as hosted CI's setup step does) and runs `just lint` and `just test` with
-the hosted job limits (20 and 30 minutes). The runner's `PATH` puts
+the hosted job limits (20 and 30 minutes); the Mac then runs `just mobile`
+(40 minutes), whose iOS job runs only when the merge changes `crates/`,
+`Cargo.lock` or `apps/`. The runner's `PATH` puts
 `~/.cargo/bin` first, so the pinned tools win over other installs. The status, `success` or `failure`, names the base
 commit tested ("Passed on main@1a2b3c4 in 4m10s") and links to the job's
 folder. Without a build, a conflicting PR gets `failure` ("Conflicts with

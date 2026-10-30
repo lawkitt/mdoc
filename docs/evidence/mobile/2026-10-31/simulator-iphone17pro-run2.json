@@ -1,0 +1,139 @@
+{
+  "budgets": [
+    {
+      "limit": 2,
+      "measured": 1.6626158878207207,
+      "name": "detector peak memory (GiB)",
+      "pass": true
+    },
+    {
+      "limit": 10,
+      "measured": 1.2867835,
+      "name": "cold load (s)",
+      "pass": true
+    },
+    {
+      "limit": 60,
+      "measured": 39.916256875,
+      "name": "20-page scan (s)",
+      "pass": true
+    },
+    {
+      "limit": "fair",
+      "measured": "nominal",
+      "name": "thermal state below serious",
+      "pass": false
+    }
+  ],
+  "core_version": "0.1.0",
+  "document": {
+    "conversion_seconds": 0.081307083,
+    "page_bytes": 63354,
+    "page_words": 9589,
+    "pages": 20,
+    "source": "<app>/data/fixtures/legal-opinion.docx",
+    "words": 17698
+  },
+  "memory_after_probe": {
+    "footprint_bytes": 184453304,
+    "peak_footprint_bytes": 1785220216
+  },
+  "memory_after_scan": {
+    "footprint_bytes": 197445840,
+    "peak_footprint_bytes": 1785220216
+  },
+  "memory_end": {
+    "footprint_bytes": 391792920,
+    "peak_footprint_bytes": 1785220216
+  },
+  "memory_start": {
+    "footprint_bytes": 111035616,
+    "peak_footprint_bytes": 117425376
+  },
+  "ocr": [
+    {
+      "bundle": "PP-OCRv6 Small",
+      "error": null,
+      "fixture": "english.pdf",
+      "markdown": "## LOCAL OCR ACCEPTANCE TEST\n\n## This document contains printed English text.\n\nThe agreement was signed on 19 September 2026.\n\nPayment must arrive within thirty working days.\n\n## Reference number: 1234567890.\n",
+      "matches_expected": true,
+      "seconds": 0.61871625,
+      "warning": null
+    },
+    {
+      "bundle": "PP-OCRv5 Cyrillic + v6 detector",
+      "error": null,
+      "fixture": "russian.pdf",
+      "markdown": "\u041f\u0420\u041e\u0412\u0415\u0420\u041a\u0410 \u0420\u0410\u0421\u041f\u041e\u0417\u041d\u0410\u0412\u0410\u041d\u0418\u042f \u0422\u0415\u041a\u0421\u0422\u0410\n\n\u042d\u0442\u043e\u0442 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u043f\u0435\u0447\u0430\u0442\u043d\u044b\u0439 \u0440\u0443\u0441\u0441\u043a\u0438\u0439 \u0442\u0435\u043a\u0441\u0442.\n\n\u0414\u043e\u0433\u043e\u0432\u043e\u0440 \u043f\u043e\u0434\u043f\u0438\u0441\u0430\u043d 19 \u0441\u0435\u043d\u0442\u044f\u0431\u0440\u044f 2026 \u0433\u043e\u0434\u0430.\n\n\u041e\u043f\u043b\u0430\u0442\u0430 \u0434\u043e\u043b\u0436\u043d\u0430 \u043f\u043e\u0441\u0442\u0443\u043f\u0438\u0442\u044c \u0432 \u0442\u0435\u0447\u0435\u043d\u0438\u0435 \u0442\u0440\u0438\u0434\u0446\u0430\u0442\u0438 \u0434\u043d\u0435\u0439.\n\n\u041d\u043e\u043c\u0435\u0440 \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u0430: 1234567890.\n\n\u0421\u044a\u0451\u043c\u043a\u0430, \u043e\u0431\u044a\u0451\u043c, \u0451\u0436\u0438\u043a, \u0449\u0443\u043a\u0430, \u044e\u0440\u0438\u0441\u0442, \u0437\u0430\u044f\u0432\u043b\u0435\u043d\u0438\u0435.\n",
+      "matches_expected": true,
+      "seconds": 0.434317666,
+      "warning": null
+    }
+  ],
+  "platform": {
+    "available_memory_at_start_bytes": 0,
+    "device": "iPhone18,1 (Simulator)",
+    "physical_memory_bytes": 25769803776,
+    "simulator": true,
+    "system": "iOS 26.1",
+    "thermal_samples": [
+      {
+        "state": "nominal",
+        "t": 9.5367431640625e-07
+      },
+      {
+        "state": "nominal",
+        "t": 10.003334045410156
+      },
+      {
+        "state": "nominal",
+        "t": 20.000853061676025
+      },
+      {
+        "state": "nominal",
+        "t": 30.002801060676575
+      },
+      {
+        "state": "nominal",
+        "t": 40.0011670589447
+      }
+    ],
+    "thermal_worst": "nominal",
+    "wall_seconds": 46.57262206077576
+  },
+  "probe": {
+    "bytes": 1058,
+    "cold_load_seconds": 1.2867835,
+    "engine_load_seconds": 1.284708667,
+    "median_seconds": 0.538715792,
+    "run_seconds": [
+      0.590211958,
+      0.682117541,
+      0.510018708,
+      0.506572208,
+      0.538715792
+    ],
+    "runtime_seconds": 0.002074833,
+    "tokens": 502
+  },
+  "probe_error": null,
+  "runtimes": {
+    "onnx": "<app>/MdocSpike",
+    "pdfium": "<app>/Frameworks/pdfium.framework/pdfium"
+  },
+  "scan": {
+    "detections": 380,
+    "engine_load_seconds": 1.456023291,
+    "inference_seconds": 37.724101462,
+    "max_window_seconds": 0.626289334,
+    "mean_window_seconds": 0.28797024016793893,
+    "mean_window_tokens": 268.6641221374046,
+    "structured_seconds": 0.010259125,
+    "tokenizer_seconds": 0.323258833,
+    "total_seconds": 39.916256875,
+    "verify_seconds": 0.343675583,
+    "windowing_seconds": 0.058581417,
+    "windows": 131
+  },
+  "scan_error": null
+}

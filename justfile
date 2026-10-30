@@ -75,6 +75,14 @@ smoke-models *args:
 # Everything, including the model downloads — before a release
 check-all: check smoke-ocr smoke-models
 
+# iOS core into target/ios: MdocCore.xcframework, Swift bindings, PDFium (ADR 0085)
+ios-core:
+    scripts/build-ios-core.sh
+
+# cargo check of mdoc-ffi for iOS and Android; the Mac's local CI runs it (ADR 0085)
+mobile:
+    scripts/mobile-check.sh
+
 # Build this machine's installers into dist/
 package:
     scripts/package.sh
@@ -90,6 +98,16 @@ smoke-update *args:
 # Release commit + tag; see `scripts/release.sh --help` for automation flags
 release version *flags:
     scripts/release.sh {{version}} {{flags}}
+
+# Build the iOS app, its extension and test targets on the core for the Simulator, unsigned (ADR 0085)
+[macos]
+ios-app: ios-core
+    xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination 'generic/platform=iOS Simulator' -derivedDataPath target/ios/DerivedData -quiet build-for-testing
+
+# Run the iOS unit, parity and UI tests on an iOS 26.1 Simulator device
+[macos]
+ios-test device="iPhone 17": ios-core
+    xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination 'platform=iOS Simulator,OS=26.1,name={{device}}' -derivedDataPath target/ios/DerivedData -quiet test
 
 # Regenerate the icon set from build/appicon.svg (macOS)
 icon:

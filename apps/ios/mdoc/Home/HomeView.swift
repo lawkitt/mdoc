@@ -1,0 +1,317 @@
+import PhotosUI
+import SwiftUI
+import VisionKit
+
+/// Documents grouped by case, the setup card and the add menu.
+struct HomeView: View {
+    @Bindable var app: AppModel
+
+    @State private var showsScanner = false
+    @State private var showsPhotos = false
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var showsFiles = false
+    @State private var showsPaste = false
+
+    private var home: HomeViewModel { app.home }
+
+    var body: some View {
+        List(selection: $app.selection) {
+            if app.setup.showsCard {
+                SetupCard(model: app.setup)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+            }
+            ForEach(home.sections) { section in
+                Section {
+                    ForEach(section.documents) { document in
+                        DocumentRow(document: document)
+                            .tag(document.id)
+                            .swipeActions {
+                                Button("Delete", role: .destructive) {
+                                    app.deleteDocument(document.id)
+                                }
+                            }
+                    }
+                } header: {
+                    HStack(spacing: 6) {
+                        CaseDot(colour: section.caseSummary.colour)
+                        Text(section.caseSummary.name)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(Text("Case \(section.caseSummary.name)"))
+                    .accessibilityAddTraits(.isHeader)
+                }
+            }
+        }
+        .overlay {
+            if home.isEmpty {
+                ContentUnavailableView {
+                    Label("No documents yet", systemImage: "doc.text.magnifyingglass")
+                } description: {
+                    Text("Scan a letter, or add a PDF, Word file, photo or text. mdoc finds the names in it so you can share it with an AI without them.")
+                } actions: {
+                    addMenu
+                }
+            }
+        }
+        .navigationTitle("mdoc")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    app.showsSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .accessibilityIdentifier("settings-button")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                addMenu
+            }
+        }
+        .refreshable { home.refresh() }
+        .fullScreenCover(isPresented: $showsScanner) {
+            DocumentScanner { images in
+                showsScanner = false
+                app.receiveImages(images, scanned: true)
+            } onCancel: {
+                showsScanner = false
+            }
+            .ignoresSafeArea()
+        }
+        .photosPicker(isPresented: $showsPhotos, selection: $photoItems, maxSelectionCount: 20, matching: .images)
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            photoItems = []
+            Task {
+                var images: [Data] = []
+                for item in items {
+                    if let data = try? await item.loadTransferable(type: Data.self) {
+                        images.append(data)
+                    }
+                }
+                app.receiveImages(images, scanned: false)
+            }
+        }
+        .fileImporter(isPresented: $showsFiles, allowedContentTypes: AppModel.importTypes) { result in
+            switch result {
+            case .success(let url): app.receiveFile(url)
+            case .failure(let error): home.errorMessage = error.localizedDescription
+            }
+        }
+        .sheet(isPresented: $showsPaste) {
+            PasteTextSheet { text in
+                showsPaste = false
+                app.receiveText(text)
+            }
+        }
+        .sheet(item: Bindable(home).pendingImport) { pending in
+            ImportSheet(pending: pending, cases: home.cases) { title, caseChoice in
+                app.finishImport(pending, title: title, into: caseChoice)
+            }
+        }
+        .alert(
+            "Something went wrong",
+            isPresented: Binding(get: { home.errorMessage != nil }, set: { if !$0 { home.errorMessage = nil } }),
+            presenting: home.errorMessage
+        ) { _ in
+            Button("OK") { home.errorMessage = nil }
+        } message: { message in
+            Text(message)
+        }
+    }
+
+    private var addMenu: some View {
+        Menu {
+            if VNDocumentCameraViewController.isSupported {
+                Button {
+                    showsScanner = true
+                } label: {
+                    Label("Scan", systemImage: "doc.viewfinder")
+                }
+            }
+            Button {
+                showsPhotos = true
+            } label: {
+                Label("Photos", systemImage: "photo.on.rectangle")
+            }
+            Button {
+                showsFiles = true
+            } label: {
+                Label("Files", systemImage: "folder")
+            }
+            Button {
+                showsPaste = true
+            } label: {
+                Label("Paste", systemImage: "doc.on.clipboard")
+            }
+        } label: {
+            Label("Add", systemImage: "plus")
+        }
+        .accessibilityIdentifier("add-menu")
+    }
+}
+
+private struct DocumentRow: View {
+    let document: DocumentSummary
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .foregroundStyle(.secondary)
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(document.title)
+                    .lineLimit(2)
+                Text(HomeViewModel.status(of: document))
+                    .font(.footnote)
+                    .foregroundStyle(document.phase == .reviewing ? .orange : .secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("document-row")
+    }
+
+    private var symbol: String {
+        switch document.kind {
+        case .pdf: "doc.richtext"
+        case .docx: "doc.text"
+        case .image: "photo"
+        case .scan: "doc.viewfinder"
+        case .text: "text.alignleft"
+        }
+    }
+}
+
+/// The title and the case for something just brought in. A new case is the
+/// default, named after the document.
+struct ImportSheet: View {
+    let pending: PendingImport
+    let cases: [CaseSummary]
+    let onImport: (String, CaseChoice) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var existingCase: CaseID?
+
+    init(pending: PendingImport, cases: [CaseSummary], onImport: @escaping (String, CaseChoice) -> Void) {
+        self.pending = pending
+        self.cases = cases
+        self.onImport = onImport
+        _title = State(initialValue: pending.suggestedTitle)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Title", text: $title)
+                        .accessibilityIdentifier("import-title")
+                }
+                Section {
+                    Picker("Case", selection: $existingCase) {
+                        Text("New case").tag(CaseID?.none)
+                        ForEach(cases) { item in
+                            Text(item.name).tag(Optional(item.id))
+                        }
+                    }
+                } footer: {
+                    Text("A case keeps the names and their aliases together, so an AI reply about any of its documents can be restored.")
+                }
+            }
+            .navigationTitle("Add document")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onImport(title, existingCase.map(CaseChoice.existing)
+                            ?? .newCase(name: name.isEmpty ? pending.suggestedTitle : name))
+                    }
+                    .accessibilityIdentifier("import-add")
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// Paste: text from the clipboard becomes a document.
+struct PasteTextSheet: View {
+    let onAdd: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                PasteButton(payloadType: String.self) { strings in
+                    if let first = strings.first {
+                        text = first
+                    }
+                }
+                .labelStyle(.titleAndIcon)
+                TextEditor(text: $text)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
+                    .accessibilityLabel(Text("Text"))
+            }
+            .padding()
+            .navigationTitle("Paste text")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Next") { onAdd(text) }
+                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+    }
+}
+
+/// VisionKit's document camera: capture only; recognition stays PP-OCR.
+struct DocumentScanner: UIViewControllerRepresentable {
+    let onScan: ([Data]) -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIViewController(context: Context) -> VNDocumentCameraViewController {
+        let controller = VNDocumentCameraViewController()
+        controller.delegate = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: VNDocumentCameraViewController, context: Context) {}
+
+    /// VisionKit calls its delegate on the main thread.
+    @MainActor
+    final class Coordinator: NSObject, @preconcurrency VNDocumentCameraViewControllerDelegate {
+        let parent: DocumentScanner
+
+        init(parent: DocumentScanner) {
+            self.parent = parent
+        }
+
+        func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFinishWith scan: VNDocumentCameraScan) {
+            let pages = (0..<scan.pageCount).compactMap { scan.imageOfPage(at: $0).jpegData(compressionQuality: 0.9) }
+            parent.onScan(pages)
+        }
+
+        func documentCameraViewControllerDidCancel(_ controller: VNDocumentCameraViewController) {
+            parent.onCancel()
+        }
+
+        func documentCameraViewController(_ controller: VNDocumentCameraViewController, didFailWithError error: Error) {
+            parent.onCancel()
+        }
+    }
+}

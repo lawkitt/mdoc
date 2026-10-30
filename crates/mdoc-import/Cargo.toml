@@ -9,25 +9,30 @@ repository = "https://github.com/lawkitt/mdoc"
 
 [dependencies]
 mdoc-store = { path = "../mdoc-store" }
-anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "cd905101e2d8322e0f249dafd78cc782402bcce5" }
+anydoc = { git = "https://github.com/lawkitt/anydoc.git", rev = "d01cce0dda4a8918fc4b603c4afe9c329102371c" }
 pdf-inspector = { git = "https://github.com/lawkitt/pdf-inspector.git", rev = "d28ce2914a15e0100d049cd5c72493a6d6695a72", features = ["ocr"] }
 sha2 = "0.11"
 ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
 tar = "0.4"
 flate2 = "1"
-# Exact: DOCX preview rendering changes between releases; bump by hand (ADR 0053).
-docxide-pdf = { version = "=0.18.0", default-features = false }
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 thiserror = "2"
-roxmltree = "0.21"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tempfile = "3"
 url = "2"
-# Exact: pre-release API, matched to the downloaded ONNX Runtime 1.27.0 (src/ocr.rs).
+# Exact: pre-release API, matched to ONNX Runtime 1.27.0: downloaded on desktop
+# (src/ocr.rs), linked into the app on iOS (ADR 0085), where ort finds it in the
+# app's own executable.
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["load-dynamic"] }
 # Probe the ONNX Runtime before ort sees it (ocr::load_onnx_runtime); ort's own version.
 libloading = "0.9"
+
+# The supervised DOCX preview worker is a child process: desktop only (ADR 0085).
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+# Exact: DOCX preview rendering changes between releases; bump by hand (ADR 0053).
+docxide-pdf = { version = "=0.18.0", default-features = false }
+roxmltree = "0.21"
 
 [target.'cfg(windows)'.dependencies]
 # Recognition defaults read the keyboard layouts.

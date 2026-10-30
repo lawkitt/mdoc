@@ -1,6 +1,8 @@
 //! GUI-free document import (ADR 0069): conversion and its sessions, OCR and
 //! its verified setup, recognition languages, model downloads and the
-//! one-at-a-time model work permit, and the supervised DOCX preview worker.
+//! one-at-a-time model work permit, and the supervised DOCX preview worker
+//! (desktop only: iOS converts DOCX in-process and has no preview, ADR 0085).
+#[cfg(not(target_os = "ios"))]
 pub mod docx_preview;
 pub mod import;
 pub mod import_session;

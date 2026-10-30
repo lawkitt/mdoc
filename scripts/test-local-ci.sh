@@ -23,7 +23,7 @@ check() { # description command...
   fi
 }
 
-# --- paths-ignore and globs -------------------------------------------------
+# --- paths-ignore, globs and the mobile step -------------------------------------------------
 
 (
   export LOCAL_CI_SOURCED=1
@@ -43,6 +43,33 @@ check() { # description command...
   check "* does not cross directories" eval '! only_ignored "*.md" <<<"docs/a.md"'
   check "a dot is literal" eval '! only_ignored "build/appicon.svg" <<<"build/appiconxsvg"'
   check "no files is not docs only" eval '! only_ignored "**/*.md" </dev/null'
+  # Step limits: the mobile step has its own, longer one.
+  # shellcheck disable=SC2034 # read by timeout_for
+  lint_s=1200 test_s=1800 mobile_s=2400
+  check "lint keeps its limit" [ "$(timeout_for lint)" = 1200 ]
+  check "setup shares lint's limit" [ "$(timeout_for setup)" = 1200 ]
+  check "the mobile step has its own limit" [ "$(timeout_for mobile)" = 2400 ]
+  check "test keeps its limit" [ "$(timeout_for test)" = 1800 ]
+  # The mobile step follows the merge's main.
+  repo=$(mktemp -d)
+  g() { git -C "$repo" -c user.name=t -c user.email=t@example.com "$@"; }
+  g init --quiet -b main
+  echo a >"$repo/a" && g add a && g commit --quiet -m old-main
+  old_main=$(g rev-parse HEAD)
+  mkdir "$repo/scripts" && : >"$repo/scripts/mobile-check.sh"
+  g add scripts && g commit --quiet -m new-main
+  new_main=$(g rev-parse HEAD)
+  # A PR merged onto the old main: no check to run.
+  g checkout --quiet -b pr-old "$old_main" && echo b >"$repo/b" && g add b && g commit --quiet -m pr
+  g checkout --quiet --detach "$old_main" && g merge --quiet --no-ff -m merge pr-old
+  # shellcheck disable=SC2317,SC2329 # called through check
+  in_repo() { (cd "$repo" && mobile_check_expected); }
+  check "a merge ref on a main without the check skips it" eval '! in_repo'
+  # A PR that deletes the script, merged onto the new main: the check still runs (and fails).
+  g checkout --quiet -b pr-new "$new_main" && g rm --quiet scripts/mobile-check.sh && g commit --quiet -m drop
+  g checkout --quiet --detach "$new_main" && g merge --quiet --no-ff -m merge pr-new
+  check "a PR that removes the check still runs it" in_repo
+  rm -rf "${repo:?}"
   exit "$failures"
 ) || failures=$((failures + $?))
 
@@ -122,6 +149,7 @@ echo base >"$tmp/work/src/lib.rs"
 echo readme >"$tmp/work/README.md"
 echo doc >"$tmp/work/docs/a.md"
 mkdir -p "$tmp/work/scripts"
+: >"$tmp/work/scripts/mobile-check.sh"
 cat >"$tmp/work/scripts/setup.sh" <<'EOF'
 #!/usr/bin/env bash
 # Setup must never wait on a prompt: the runner closes its stdin.
@@ -274,6 +302,12 @@ check "it was queued, then ran" grep -q "^$pass	pending	Running on main@$short_b
 check "queued statuses link the runner's status" grep -q "^$pass	pending	Queued	https://ci.example/ci/status.txt" "$FAKE/statuses.tsv"
 steps_run() { grep "^$1 " "$FAKE/just.log" | head -3 | cut -d' ' -f2 | tr '\n' ' '; }
 check "setup, lint, then test" [ "$(steps_run pass)" = "setup lint test " ]
+case "$FAKE_CONTEXT" in
+  local/macos) last_step="mobile" ;;
+  *) last_step="test" ;;
+esac
+check "the Mac ends with the mobile check, other runners with test" \
+  [ "$(grep "^pass " "$FAKE/just.log" | tail -1 | cut -d' ' -f2)" = "$last_step" ]
 check "lint gets no renders" grep -qx "pass lint renders=" "$FAKE/just.log"
 check "the test step gets MDOC_HEADLESS_ARTIFACTS" grep -qx "pass test renders=set" "$FAKE/just.log"
 check "the job's log and summary are kept" [ -s "$LOCAL_CI_HOME/out/pr-1/${pass:0:7}/log.txt" ]

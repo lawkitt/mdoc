@@ -1,0 +1,32 @@
+// The harness target's settings. Signing comes from the command line
+// (scripts/ios-spike-device.sh passes DEVELOPMENT_TEAM); the Simulator needs none.
+PRODUCT_NAME = MdocSpike
+PRODUCT_BUNDLE_IDENTIFIER = io.github.lawkitt.mdoc.spike
+PRODUCT_MODULE_NAME = MdocSpike
+MARKETING_VERSION = 0.1
+CURRENT_PROJECT_VERSION = 1
+SWIFT_VERSION = 5.0
+TARGETED_DEVICE_FAMILY = 1,2
+SUPPORTED_PLATFORMS = iphoneos iphonesimulator
+SUPPORTS_MACCATALYST = NO
+SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO
+CODE_SIGN_STYLE = Automatic
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks
+
+GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_KEY_CFBundleDisplayName = mdoc spike
+INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES
+INFOPLIST_KEY_UILaunchScreen_Generation = YES
+INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait
+// The report in Documents shows in the Files app.
+INFOPLIST_KEY_UIFileSharingEnabled = YES
+INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES
+
+// The core reaches ONNX Runtime, linked in from MdocCore.xcframework, by
+// looking up OrtGetApiBase in the image that holds the core (ort's loader;
+// mdoc_import::ocr::linked_runtimes). So the symbol must be exported, kept by
+// dead stripping, and survive stripping: export it, strip only local symbols,
+// and keep the code in the executable rather than Xcode's debug dylib.
+OTHER_LDFLAGS = $(inherited) -Wl,-exported_symbol,_OrtGetApiBase -lc++ -framework CoreML -framework Security -framework SystemConfiguration
+STRIP_STYLE = non-global
+ENABLE_DEBUG_DYLIB = NO

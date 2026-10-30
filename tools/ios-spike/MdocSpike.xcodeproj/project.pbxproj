@@ -1,0 +1,231 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		5D0000000000000000000101 /* MdocSpikeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0000000000000000000201 /* MdocSpikeApp.swift */; };
+		5D0000000000000000000102 /* mdoc_ffi.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D0000000000000000000202 /* mdoc_ffi.swift */; };
+		5D0000000000000000000103 /* MdocCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5D0000000000000000000203 /* MdocCore.xcframework */; };
+		5D0000000000000000000104 /* pdfium.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5D0000000000000000000204 /* pdfium.xcframework */; };
+		5D0000000000000000000105 /* pdfium.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 5D0000000000000000000204 /* pdfium.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		5D0000000000000000000106 /* data in Resources */ = {isa = PBXBuildFile; fileRef = 5D0000000000000000000205 /* data */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		5D0000000000000000000301 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				5D0000000000000000000105 /* pdfium.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		5D0000000000000000000201 /* MdocSpikeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MdocSpikeApp.swift; sourceTree = "<group>"; };
+		5D0000000000000000000202 /* mdoc_ffi.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = mdoc_ffi.swift; path = ../../target/ios/swift/mdoc_ffi.swift; sourceTree = SOURCE_ROOT; };
+		5D0000000000000000000203 /* MdocCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = MdocCore.xcframework; path = ../../target/ios/MdocCore.xcframework; sourceTree = SOURCE_ROOT; };
+		5D0000000000000000000204 /* pdfium.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = pdfium.xcframework; path = ../../target/ios/pdfium.xcframework; sourceTree = SOURCE_ROOT; };
+		5D0000000000000000000205 /* data */ = {isa = PBXFileReference; lastKnownFileType = folder; name = data; path = ../../target/ios-spike/data; sourceTree = SOURCE_ROOT; };
+		5D0000000000000000000901 /* Spike.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Spike.xcconfig; sourceTree = "<group>"; };
+		5D0000000000000000000206 /* MdocSpike.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MdocSpike.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		5D0000000000000000000302 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5D0000000000000000000103 /* MdocCore.xcframework in Frameworks */,
+				5D0000000000000000000104 /* pdfium.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		5D0000000000000000000401 = {
+			isa = PBXGroup;
+			children = (
+				5D0000000000000000000402 /* MdocSpike */,
+				5D0000000000000000000403 /* Core */,
+				5D0000000000000000000404 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		5D0000000000000000000402 /* MdocSpike */ = {
+			isa = PBXGroup;
+			children = (
+				5D0000000000000000000201 /* MdocSpikeApp.swift */,
+				5D0000000000000000000901 /* Spike.xcconfig */,
+			);
+			path = MdocSpike;
+			sourceTree = "<group>";
+		};
+		5D0000000000000000000403 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				5D0000000000000000000202 /* mdoc_ffi.swift */,
+				5D0000000000000000000203 /* MdocCore.xcframework */,
+				5D0000000000000000000204 /* pdfium.xcframework */,
+				5D0000000000000000000205 /* data */,
+			);
+			name = Core;
+			sourceTree = "<group>";
+		};
+		5D0000000000000000000404 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5D0000000000000000000206 /* MdocSpike.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		5D0000000000000000000501 /* MdocSpike */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5D0000000000000000000702 /* Build configuration list for PBXNativeTarget "MdocSpike" */;
+			buildPhases = (
+				5D0000000000000000000303 /* Sources */,
+				5D0000000000000000000302 /* Frameworks */,
+				5D0000000000000000000304 /* Resources */,
+				5D0000000000000000000301 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MdocSpike;
+			productName = MdocSpike;
+			productReference = 5D0000000000000000000206 /* MdocSpike.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		5D0000000000000000000601 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2610;
+				LastUpgradeCheck = 2610;
+			};
+			buildConfigurationList = 5D0000000000000000000701 /* Build configuration list for PBXProject "MdocSpike" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 5D0000000000000000000401;
+			productRefGroup = 5D0000000000000000000404 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				5D0000000000000000000501 /* MdocSpike */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		5D0000000000000000000304 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5D0000000000000000000106 /* data in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		5D0000000000000000000303 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5D0000000000000000000101 /* MdocSpikeApp.swift in Sources */,
+				5D0000000000000000000102 /* mdoc_ffi.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		5D0000000000000000000801 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		5D0000000000000000000802 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		5D0000000000000000000803 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5D0000000000000000000901 /* Spike.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		5D0000000000000000000804 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5D0000000000000000000901 /* Spike.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5D0000000000000000000701 /* Build configuration list for PBXProject "MdocSpike" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5D0000000000000000000801 /* Debug */,
+				5D0000000000000000000802 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5D0000000000000000000702 /* Build configuration list for PBXNativeTarget "MdocSpike" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5D0000000000000000000803 /* Debug */,
+				5D0000000000000000000804 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 5D0000000000000000000601 /* Project object */;
+}

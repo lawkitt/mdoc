@@ -58,12 +58,13 @@ The review-first iPhone and iPad app on the shared Rust core
 green and leave desktop unchanged. Record:
 [mobile grill](docs/design/mobile-grill-2026-10-31.md).
 
-1. **[Mobile] Feasibility spike.** *From the mobile grill.* Build
-   `mdoc-detect` and `mdoc-import` for iOS with ONNX Runtime and PDFium
-   linked in, behind the new `crates/mdoc-ffi`, and measure GLiNER2 and
-   PP-OCR on an iPhone 17 Pro and an iPhone 12 Pro against ADR 0085's
-   budgets. *Done when:* a dated report in `docs/evidence/` gives pass or
-   fail per device class and the maintainer has read it.
+1. **[Mobile] Device measurements.** *From the feasibility spike
+   ([report](docs/evidence/mobile/2026-10-31/README.md)).* The core, harness
+   and Mac stand-in numbers are merged; run `scripts/ios-spike-device.sh` on
+   the iPhone 17 Pro and iPhone 12 Pro, then decide the minimum iOS: the only
+   approved iOS PDFium build needs iOS 26 (raise the minimum, or build PDFium
+   for iOS 17). *Done when:* both device rows have pass or fail and the
+   minimum iOS is settled in ADR 0085.
 2. **[Mobile] Review-first app.** *From the mobile grill.* SwiftUI app for
    the review-first flow, Restore with mdoc share extension, parity tests,
    local CI iOS job and the GPLv3 app-store permission

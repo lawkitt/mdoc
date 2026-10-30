@@ -56,10 +56,17 @@ config() {
   poll_s=${LOCAL_CI_POLL:-60}
   tick_s=${LOCAL_CI_TICK:-5}
   # setup installs the merge ref's pinned tools, as hosted CI's setup step does.
-  steps=${LOCAL_CI_STEPS:-setup lint test}
-  # The hosted job limits (ADR 0082): clippy 20 min, test 30 min.
+  # The Mac also checks the mobile core (ADR 0085).
+  case "$os" in
+    macos) steps=${LOCAL_CI_STEPS:-setup lint test mobile} ;;
+    *) steps=${LOCAL_CI_STEPS:-setup lint test} ;;
+  esac
+  # The hosted job limits (ADR 0082): clippy 20 min, test 30 min. The
+  # mobile step also builds the iOS core and app and runs the Simulator
+  # tests when a PR changes them (ADR 0085): 40 min.
   lint_s=${LOCAL_CI_LINT_TIMEOUT:-1200}
   test_s=${LOCAL_CI_TEST_TIMEOUT:-1800}
+  mobile_s=${LOCAL_CI_MOBILE_TIMEOUT:-2400}
   keep_days=${LOCAL_CI_KEEP_DAYS:-7}
   # The Mac is a build slot beside two agent builders (ADR 0082).
   min_free_gb=${LOCAL_CI_MIN_FREE_GB:-40}
@@ -245,6 +252,7 @@ capacity_ok() {
 timeout_for() {
   case "$1" in
     setup | lint) echo "$lint_s" ;;
+    mobile) echo "$mobile_s" ;;
     *) echo "$test_s" ;;
   esac
 }
@@ -255,6 +263,13 @@ label() {
     setup) echo scripts/setup.sh ;;
     *) echo "just $1" ;;
   esac
+}
+
+# GitHub can build a PR's merge ref on a main from before the mobile check
+# (ADR 0085). The merge's first parent is that main: when it had the check,
+# the step runs, so a PR that removes the script fails rather than skips.
+mobile_check_expected() {
+  git cat-file -e HEAD^1:scripts/mobile-check.sh 2>/dev/null
 }
 
 # Runs in the background in its own process group; output goes to log.txt.
@@ -279,6 +294,13 @@ job() { # merge-ref dir
       # Not through just: setup may replace the just binary.
       setup) bash scripts/setup.sh </dev/null || rc=$? ;;
       test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just "$step" || rc=$? ;;
+      mobile)
+        if mobile_check_expected; then
+          just "$step" || rc=$?
+        else
+          echo "local-ci: this merge ref's main predates the mobile check; skipped"
+        fi
+        ;;
       *) just "$step" || rc=$? ;;
     esac
     if [ "$rc" -eq 0 ]; then
