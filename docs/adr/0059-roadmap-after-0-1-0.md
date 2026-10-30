@@ -1,7 +1,8 @@
 # Roadmap upkeep and scope after 0.1.0
 
 Status: Accepted, 2026-10-20. Amended by [ADR 0072](0072-changelog-fragments.md)
-(changelog fragments). Amends [ADR 0051](0051-roadmap-structure-and-stable-scope.md)
+(changelog fragments) and [ADR 0083](0083-fewer-release-candidates.md) (one RC
+per minor). Amends [ADR 0051](0051-roadmap-structure-and-stable-scope.md)
 (structure); [ROADMAP.md](../../ROADMAP.md) applies it.
 
 ## Problem
@@ -50,8 +51,9 @@ mechanics.
   are fixed.
 - **Acceptance per release:** a patch gets a *smoke run* on both platforms
   (install, launch, open a document, Copy for AI) plus the rows its fixes
-  touch, with no RC. A minor gets an RC and the full ADR 0057 checklist,
-  including rows the previous run deferred (S1, A5, D3 and D4 for 0.2.0).
+  touch, with no RC. A minor gets one RC and the full ADR 0057 checklist,
+  including rows the previous run deferred (S1, A5, D3 and D4 for 0.2.0); its
+  stable gets a smoke run. A further RC only under ADR 0083's rule.
 - **0.2.0 order:** what users copy first, then editing, then performance. The
   stress tier and editor text for screen readers stay in Later (grooming of
   2026-10-23: screen-reader access to editor text is not required for 0.2.0).
