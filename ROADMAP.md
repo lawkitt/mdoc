@@ -125,6 +125,22 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   Land before 0.3.0-rc.1. *Done when:* a tag run skips CI on a green parent,
   runs it otherwise, and both platforms self-test both fixtures.
 
+- **GUI checks without a takeover** (fleet ADR 0019): a debug-only switch
+  (`MDOC_KEEP_RENDERING=1`) in the vendored `gpui-pre-macos` keeps the display
+  link running while the window is covered, so the hub's background captures
+  stay live. *Done when:* an experiment shows covered captures update and
+  whether background keys reach GPUI, and `docs/development.md` (Fleet) says
+  which GUI rows still need focus. *From the 0.3.0 away hub.*
+- **Dev-build profile override:** debug builds read `MDOC_PROFILE_DIR`, so GUI
+  checks run on a scratch profile instead of moving the user's
+  `session.json` and `recents.json` aside. *From the 0.3.0 away hub.*
+- **Local CI keeps the app binary per tested head** (`/ci/pr-N/<sha>/`), so
+  the hub copies it for GUI checks instead of building a 30 GB worktree.
+  *From the 0.3.0 away hub.*
+- **Windows checkouts on a Dev Drive** (fleet ADR 0019): root checkout, lanes
+  1–4 (lane 4 new) and local CI's home on `E:`; the move session follows
+  `fleet/operations/2026-10-30-windows-dev-drive-move.md`.
+
 ## Deferred
 
 - An optional case passphrase on top of the OS keyring

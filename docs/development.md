@@ -513,6 +513,9 @@ skill) read this section for mdoc's needs.
   lanes 1 and 2 move when they are free, and the profile names each lane's
   folder and the drive to check. Claude Desktop SSH sessions use these lane
   folders too (`use_worktree: false`), one session or T3 thread per lane.
+- **Design tripwire.** A lane stops and reports to the hub before adding a
+  dependency, vendoring code, patching `vendor/` or a GPUI platform crate, or
+  editing outside its item's area (fleet ADR 0019).
 - **Models and reviews** follow the fleet skill (fleet ADRs 0016, 0017):
   Opus 5.5 builds, Windows-specific items included; Codex Sol builds only
   while Claude is limited. Every code PR gets the other provider's review
@@ -568,6 +571,7 @@ gate = ["just lint", "cargo nextest run -p <each changed crate>"]
 checks = ["local/windows", "local/macos", "lint (ubuntu)"]
 rules = [
   "Never run the app against the real profile (`~/Library/Application Support/mdoc`, `%LOCALAPPDATA%\\mdoc`) or touch the real Keychain key; tests use injected stores.",
+  "Stop and report to the hub before adding a dependency, vendoring code, patching `vendor/` or a GPUI platform crate, or editing outside the item's area.",
 ]
 
 [disk]
