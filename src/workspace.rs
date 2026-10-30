@@ -2417,7 +2417,10 @@ impl Workspace {
                         .tooltip(style::tooltip(tooltip, theme))
                         .cursor_pointer()
                         .child(
+                            // One badge column, so names line up whether the
+                            // tab is MD, PDF or DOCX.
                             div()
+                                .min_w(px(32.))
                                 .text_size(px(10.))
                                 .text_color(palette.header_muted)
                                 .flex_shrink_0()
@@ -2956,13 +2959,16 @@ struct TabLabel {
 fn tab_label(tab: &Tab, cx: &App) -> TabLabel {
     let view = tab.view().map(|v| v.read(cx));
     let name = view.map(|v| v.display_name()).unwrap_or_else(|| {
+        // A conversion not loaded yet is named as it will be once loaded
+        // (`DocumentSession::display_name`: the source's name as `.md`), so
+        // a restored tab's name doesn't change when it is first opened.
         let path = if tab.record().source_only {
             tab.record()
                 .attachment
                 .as_ref()
-                .unwrap_or(&tab.record().markdown)
+                .map_or_else(|| tab.record().markdown.clone(), |p| p.with_extension("md"))
         } else {
-            &tab.record().markdown
+            tab.record().markdown.clone()
         };
         path.file_name()
             .map(|n| n.to_string_lossy().into_owned())

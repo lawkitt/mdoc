@@ -1835,11 +1835,17 @@ impl PdfView {
                 .tooltip(self.tip(self.tone_label()))
                 .into_any_element(),
             // No shortcut: the host's ⌘F finds in the Markdown.
-            Tool::Find => on(self.control("pdf-find", "🔍"))
-                .aria_label("Find")
-                .on_click(cx.listener(action))
-                .tooltip(self.tip("Find in source"))
-                .into_any_element(),
+            // A line icon like the app's own: the 🔍 emoji drew in color.
+            Tool::Find => on(self.control("pdf-find", "").child(
+                gpui::svg()
+                    .data(include_bytes!("../resources/search.svg"))
+                    .size(px(14.0))
+                    .text_color(style.header_fg),
+            ))
+            .aria_label("Find")
+            .on_click(cx.listener(action))
+            .tooltip(self.tip("Find in source"))
+            .into_any_element(),
             Tool::More => div().into_any_element(),
         }
     }
