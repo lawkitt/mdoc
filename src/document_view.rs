@@ -73,6 +73,19 @@ pub(crate) enum Next {
     },
 }
 
+/// The window's Recents folders, most recent first, for Save As to start in
+/// when a document has no folder of its own (#180). The window shares them
+/// whenever its Recents change.
+pub(crate) struct RecentFolders(Vec<PathBuf>);
+
+impl gpui::Global for RecentFolders {}
+
+impl RecentFolders {
+    pub(crate) fn share(folders: Vec<PathBuf>, cx: &mut App) {
+        cx.set_global(Self(folders));
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum OcrState {
     Checking,
@@ -1418,6 +1431,15 @@ impl DocumentView {
         self.session.directory()
     }
 
+    /// Where Save As starts: the document's folder, else a Recents folder,
+    /// else Documents (#180).
+    fn save_as_directory(&self, cx: &App) -> PathBuf {
+        let folders = cx
+            .try_global::<RecentFolders>()
+            .map_or(&[][..], |folders| &folders.0);
+        self.session.save_as_directory(folders)
+    }
+
     pub(crate) fn open_path(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         if path
             .extension()
@@ -1513,11 +1535,11 @@ impl DocumentView {
             _ => {}
         }
         let name = self.session.suggested_name();
+        let directory = self.save_as_directory(cx);
         let reason =
             matches!(next, Some(Next::CreateCase { .. })).then_some(save_prompt::CASE_REASON);
-        let path = save_prompt::with_reason(reason, || {
-            cx.prompt_for_new_path(&self.save_directory(), Some(&name))
-        });
+        let path =
+            save_prompt::with_reason(reason, || cx.prompt_for_new_path(&directory, Some(&name)));
         cx.spawn_in(window, async move |this, cx| {
             let result = path.await;
             let _ = this.update_in(cx, |this, window, cx| {

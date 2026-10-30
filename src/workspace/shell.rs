@@ -2,7 +2,7 @@
 //! Home with its drop zone, and the ⌘K command palette.
 use super::{Tab, Workspace};
 use crate::{
-    document_view::{CopyMarkdown, DocumentView, Save, SaveAs, ToggleCompare},
+    document_view::{CopyMarkdown, DocumentView, RecentFolders, Save, SaveAs, ToggleCompare},
     markdown_search::{SearchInput, SearchInputEvent},
     pii::ui::{CopyForAi, Pseudonymize},
     shortcuts,
@@ -66,13 +66,15 @@ pub(super) struct ShellState {
 }
 
 impl ShellState {
-    pub fn new(_cx: &mut App) -> Self {
+    pub fn new(cx: &mut App) -> Self {
+        let recents = Recents::load(if cfg!(test) {
+            None
+        } else {
+            Recents::default_path()
+        });
+        RecentFolders::share(recents.folders(), cx);
         Self {
-            recents: Recents::load(if cfg!(test) {
-                None
-            } else {
-                Recents::default_path()
-            }),
+            recents,
             palette: None,
             shortcuts: None,
             drop: None,
@@ -268,7 +270,7 @@ impl Workspace {
     }
 
     /// Remember files as they open or save (paths only).
-    pub(super) fn remember_recent(&mut self, id: u64, cx: &App) {
+    pub(super) fn remember_recent(&mut self, id: u64, cx: &mut App) {
         let Some(view) = self
             .tabs
             .get(id)
@@ -300,8 +302,8 @@ impl Workspace {
                     .iter()
                     .any(|recent| &recent.path == path && !recent.pseudonymized);
             // Cleared or evicted entries return only on a new file event.
-            if opened || new_badge {
-                self.shell.recents.touch(path, pseudonymized);
+            if (opened || new_badge) && self.shell.recents.touch(path, pseudonymized) {
+                RecentFolders::share(self.shell.recents.folders(), cx);
             }
         }
     }
