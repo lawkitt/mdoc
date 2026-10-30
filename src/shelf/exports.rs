@@ -113,10 +113,14 @@ fn sweep(parent: &Path) {
 
 /// A directory only this user can read.
 fn private_dir(path: &Path) -> io::Result<()> {
-    let mut builder = fs::DirBuilder::new();
     #[cfg(unix)]
-    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-    builder.create(path)
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new().mode(0o700).create(path)
+    }
+    // The temporary directory is the user's own.
+    #[cfg(not(unix))]
+    fs::create_dir(path)
 }
 
 /// A new file only this user can read.
