@@ -1,0 +1,102 @@
+{
+  "core_version": "0.1.0",
+  "runtimes": {
+    "pdfium": "target/spike-models/ocr/v1/libpdfium.dylib",
+    "onnx": "target/spike-models/ocr/v1/libonnxruntime.1.27.0.dylib"
+  },
+  "memory_start": {
+    "footprint_bytes": 2048240,
+    "peak_footprint_bytes": 2048240
+  },
+  "document": {
+    "source": "fixtures/legal-opinion.docx",
+    "conversion_seconds": 0.018460041,
+    "words": 17698,
+    "pages": 20,
+    "page_words": 9589,
+    "page_bytes": 63354
+  },
+  "probe": {
+    "tokens": 502,
+    "bytes": 1058,
+    "cold_load_seconds": 0.80797275,
+    "runtime_seconds": 0.002030666,
+    "engine_load_seconds": 0.805942084,
+    "run_seconds": [
+      0.359666042,
+      0.33192225,
+      0.335458167,
+      0.3156215,
+      0.3316685
+    ],
+    "median_seconds": 0.33192225
+  },
+  "probe_error": null,
+  "memory_after_probe": {
+    "footprint_bytes": 123880912,
+    "peak_footprint_bytes": 1586727000
+  },
+  "scan": {
+    "total_seconds": 27.182665042,
+    "verify_seconds": 0.269121792,
+    "tokenizer_seconds": 0.23851675,
+    "windowing_seconds": 0.085753666,
+    "engine_load_seconds": 0.797753,
+    "inference_seconds": 25.785873585,
+    "structured_seconds": 0.005356334,
+    "windows": 131,
+    "mean_window_tokens": 268.6641221374046,
+    "mean_window_seconds": 0.19683872965648855,
+    "max_window_seconds": 0.245426583,
+    "detections": 380
+  },
+  "scan_error": null,
+  "memory_after_scan": {
+    "footprint_bytes": 113215120,
+    "peak_footprint_bytes": 1586727000
+  },
+  "ocr": [
+    {
+      "fixture": "english.pdf",
+      "bundle": "PP-OCRv6 Small",
+      "seconds": 0.322026708,
+      "markdown": "## LOCAL OCR ACCEPTANCE TEST\n\n## This document contains printed English text.\n\nThe agreement was signed on 19 September 2026.\n\nPayment must arrive within thirty working days.\n\n## Reference number: 1234567890.\n",
+      "warning": null,
+      "matches_expected": true,
+      "error": null
+    },
+    {
+      "fixture": "russian.pdf",
+      "bundle": "PP-OCRv5 Cyrillic + v6 detector",
+      "seconds": 0.312939292,
+      "markdown": "ПРОВЕРКА РАСПОЗНАВАНИЯ ТЕКСТА\n\nЭтот документ содержит печатный русский текст.\n\nДоговор подписан 19 сентября 2026 года.\n\nОплата должна поступить в течение тридцати дней.\n\nНомер документа: 1234567890.\n\nСъёмка, объём, ёжик, щука, юрист, заявление.\n",
+      "warning": null,
+      "matches_expected": true,
+      "error": null
+    }
+  ],
+  "memory_end": {
+    "footprint_bytes": 134498032,
+    "peak_footprint_bytes": 1586727000
+  },
+  "budgets": [
+    {
+      "name": "detector peak memory (GiB)",
+      "limit": 2.0,
+      "measured": 1.4777546748518944,
+      "pass": true
+    },
+    {
+      "name": "cold load (s)",
+      "limit": 10.0,
+      "measured": 0.80797275,
+      "pass": true
+    },
+    {
+      "name": "20-page scan (s)",
+      "limit": 60.0,
+      "measured": 27.182665042,
+      "pass": true
+    }
+  ]
+}

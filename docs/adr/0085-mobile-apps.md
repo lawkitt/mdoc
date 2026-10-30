@@ -1,7 +1,8 @@
 # Mobile apps
 
 Status: Accepted, 2026-10-31. Amended 2026-10-31: core-crate changes merge
-when green, and UI work runs beside the spike.
+when green, UI work runs beside the spike, and native runtimes ship inside
+the app bundle, statically linked or as an embedded framework.
 
 ## Problem
 
@@ -59,7 +60,7 @@ already lives in GUI-free Rust crates (ADR 0069).
   reruns). Nothing starts in the background on its own.
 - **Feasibility spike first.** Before any UI work, `mdoc-detect` and
   `mdoc-import` are built for iOS and Android with ONNX Runtime and PDFium
-  linked into the app, and measured on an iPhone 17 Pro (12 GB, top) and an
+  inside the app bundle, and measured on an iPhone 17 Pro (12 GB, top) and an
   iPhone 12 Pro (6 GB, floor): cold model load, peak memory, seconds per
   512-token window, thermal state over a 20-page document, and OCR output
   on the existing fixtures. The spike keeps the real `crates/mdoc-ffi` and
@@ -161,7 +162,8 @@ already lives in GUI-free Rust crates (ADR 0069).
   for AI: no share or copy action sends originals unless the user chose
   Keep for them.
 - No code is downloaded after install on either platform: ONNX Runtime and
-  PDFium are linked into the app; only model files are downloaded.
+  PDFium ship inside the app bundle (statically linked, or as an embedded,
+  signed framework); only model files are downloaded.
 
 ## Consequences
 
