@@ -349,3 +349,148 @@ fn row_of(
             .unwrap()
     })
 }
+
+fn open_shelf(cx: &mut VisualTestContext) -> gpui::WindowHandle<crate::shelf_ui::ShelfView> {
+    use crate::shelf_ui::{ShelfContent, ShelfView};
+    let workspace = cx.window_handle().downcast::<Workspace>().unwrap();
+    let shelf = cx.cx.update(|cx| {
+        let content = workspace
+            .read(cx)
+            .map(|workspace| ShelfContent::of(workspace, cx))
+            .unwrap();
+        cx.open_window(gpui::WindowOptions::default(), |window, cx| {
+            cx.new(|cx| ShelfView::new(workspace, content, window, cx))
+        })
+        .unwrap()
+    });
+    cx.run_until_parked();
+    shelf
+}
+
+/// The shelf's own controls (ADR 0084): Copy for AI and a drag carry the
+/// editor's bytes for a ready row and nothing for one that is not; Restore
+/// Clipboard uses the current case; a click brings the tab forward.
+#[gpui::test]
+fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    let ready = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "Anna Petrova contract.md",
+        "Anna Petrova met Northwind Ltd.",
+        &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
+    );
+    save(&tabs, ready, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(ready, window, cx));
+    cx.run_until_parked();
+    let pending = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "memo.md",
+        "Boris Ivanov wrote to Anna Petrova.",
+        &[("Boris Ivanov", Person)],
+    );
+    let case = cx.update(|_, cx| tabs.read(cx).case_coordinator.cases()[0].id.clone());
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.join_case(pending, &case, window, cx)
+    });
+    cx.run_until_parked();
+    let editor_copy = cx.update(|_, cx| {
+        let view = tabs
+            .read(cx)
+            .tabs
+            .get(ready)
+            .unwrap()
+            .view()
+            .cloned()
+            .unwrap();
+        view.read(cx).text_for_ai(cx)
+    });
+
+    let shelf = open_shelf(cx);
+    let index = |key: ShelfKey, cx: &mut VisualTestContext| {
+        shelf
+            .read_with(cx, |view, _| {
+                view.content()
+                    .documents
+                    .iter()
+                    .position(|d| d.key == key)
+                    .unwrap()
+            })
+            .unwrap()
+    };
+    let ready_row = index(ShelfKey::Tab(ready), cx);
+    let pending_row = index(ShelfKey::Tab(pending), cx);
+    let label = shelf
+        .read_with(cx, |view, _| {
+            crate::shelf_ui::row_label(&view.content().documents[pending_row])
+        })
+        .unwrap();
+    assert_eq!(label, "memo.md, Anna Petrova contract, 1 left to review");
+
+    // Not ready: no copy, no drag.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string("before".into()));
+    shelf
+        .update(cx, |view, window, cx| {
+            view.copy(pending_row, cx);
+            view.drag(pending_row, window, cx);
+            assert!(view.dragged.is_none());
+        })
+        .unwrap();
+    assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "before");
+
+    // Ready: the editor's Copy for AI bytes, on the clipboard and in a drag.
+    shelf
+        .update(cx, |view, window, cx| {
+            view.copy(ready_row, cx);
+            view.drag(ready_row, window, cx);
+        })
+        .unwrap();
+    assert_eq!(
+        cx.read_from_clipboard().unwrap().text().unwrap(),
+        editor_copy
+    );
+    let (dragged, file) = shelf
+        .read_with(cx, |view, _| view.dragged.clone().unwrap())
+        .unwrap();
+    assert_eq!(dragged, editor_copy);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), editor_copy);
+    assert_eq!(file.file_name().unwrap(), "PERSON_1 contract.md");
+
+    // Restore Clipboard with the case of the document used last.
+    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+        "PERSON_1 owes ORG_1; PERSON_9 is new.".into(),
+    ));
+    shelf
+        .update(cx, |view, window, cx| {
+            view.clipboard(crate::shelf_ui::ClipboardRow::Restore, window, cx)
+        })
+        .unwrap();
+    assert_eq!(
+        cx.read_from_clipboard().unwrap().text().unwrap(),
+        "Anna Petrova owes Northwind Ltd; PERSON_9 is new."
+    );
+
+    // A click on the not-ready row brings its tab forward at its proposal.
+    shelf
+        .update(cx, |view, window, cx| view.open(pending_row, window, cx))
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), pending);
+    assert!(
+        cx.update(|_, cx| !cx
+            .windows()
+            .iter()
+            .any(|w| w.window_id() == shelf.window_id())),
+        "the shelf closes"
+    );
+}

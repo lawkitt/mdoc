@@ -21,8 +21,6 @@ mod preview;
 mod search_session;
 mod self_test;
 mod settings_ui;
-// The shelf's view uses it from the next layer of ADR 0084's stack.
-#[allow(dead_code, unused_imports)]
 mod shelf;
 mod shelf_ui;
 mod shortcuts;
@@ -151,6 +149,8 @@ fn main() {
     application.run(move |cx: &mut App| {
         cx.on_app_quit(|cx| {
             mdoc_import::model_work::shutdown();
+            // Shelf drags' temporary exports live until quit (ADR 0084).
+            shelf_ui::clear_exports(cx);
             // Blocking on purpose: GPUI waits only briefly for async quit
             // work, and a staged update must be swapped in before exit.
             updater::apply_at_quit(cx);

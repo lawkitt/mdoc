@@ -49,6 +49,7 @@ impl ShelfExports {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn root(&self) -> &Path {
         &self.root
     }
