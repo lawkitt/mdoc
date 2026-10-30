@@ -957,7 +957,7 @@ impl Workspace {
                 .markdown
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
-                .or_else(|| record.name.clone());
+                .or_else(|| record.blank.then(|| record.name.clone()).flatten());
             view.lifecycle.restore(
                 !record.markdown.as_os_str().is_empty(),
                 record.source_only,
@@ -1864,8 +1864,12 @@ impl Workspace {
                     && view.preview.source().is_none()
                     && view.editor.read(cx).text().is_empty();
                 record.blank_disposable = record.blank && view.lifecycle.blank_disposable();
+                // A source tab keeps the name it shows, so after a restart it
+                // reads the same before and after it is first opened.
                 record.name = if record.blank {
                     view.session.name.clone()
+                } else if record.source_only {
+                    Some(view.display_name())
                 } else {
                     None
                 };
@@ -2417,7 +2421,10 @@ impl Workspace {
                         .tooltip(style::tooltip(tooltip, theme))
                         .cursor_pointer()
                         .child(
+                            // One badge column, so names line up whether the
+                            // tab is MD, PDF or DOCX.
                             div()
+                                .min_w(px(32.))
                                 .text_size(px(10.))
                                 .text_color(palette.header_muted)
                                 .flex_shrink_0()
@@ -2956,13 +2963,21 @@ struct TabLabel {
 fn tab_label(tab: &Tab, cx: &App) -> TabLabel {
     let view = tab.view().map(|v| v.read(cx));
     let name = view.map(|v| v.display_name()).unwrap_or_else(|| {
+        // A source tab not loaded yet shows the name it showed when the
+        // session was saved; a record from before that is named as a
+        // finished conversion is (`DocumentSession::display_name`).
+        if tab.record().source_only
+            && let Some(name) = &tab.record().name
+        {
+            return name.clone();
+        }
         let path = if tab.record().source_only {
             tab.record()
                 .attachment
                 .as_ref()
-                .unwrap_or(&tab.record().markdown)
+                .map_or_else(|| tab.record().markdown.clone(), |p| p.with_extension("md"))
         } else {
-            &tab.record().markdown
+            tab.record().markdown.clone()
         };
         path.file_name()
             .map(|n| n.to_string_lossy().into_owned())

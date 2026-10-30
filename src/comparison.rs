@@ -95,11 +95,18 @@ pub struct ResultRecord {
     pub error: Option<String>,
 }
 impl ResultRecord {
+    /// The run's own warnings as plain text, not JSON.
+    pub fn warnings(&self) -> String {
+        self.output
+            .get("warnings")
+            .map(warning_text)
+            .unwrap_or_default()
+    }
     pub fn measurements(&self) -> String {
         if let Some(count) = self.output.get("count") {
             return format!("{count} candidates · confidence and count are not accuracy scores");
         }
-        self.output.get("pages").and_then(|v|v.as_array()).map(|pages|pages.iter().map(|p|format!("Page {} · render {} ms · recognition {} ms · preparation {} ms · warnings {}",p["page"],p["render_ms"],p["ocr_ms"],p["assembly_ms"],p["warnings"])).collect::<Vec<_>>().join("\n")).unwrap_or_default()
+        self.output.get("pages").and_then(|v|v.as_array()).map(|pages|pages.iter().map(|p|format!("Page {} · render {} ms · recognition {} ms · preparation {} ms · warnings {}",p["page"],p["render_ms"],p["ocr_ms"],p["assembly_ms"],warning_text(&p["warnings"]))).collect::<Vec<_>>().join("\n")).unwrap_or_default()
     }
     pub fn text(&self, raw: bool) -> String {
         if let Some(error) = &self.error {
@@ -408,5 +415,39 @@ mod tests {
         let text = std::fs::read_to_string(path).unwrap();
         assert!(!text.contains("mapping"));
         assert!(!text.contains("Alice"));
+    }
+}
+
+/// Warnings as people read them: "none", the text, or several joined by "; ".
+fn warning_text(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Array(items) if items.is_empty() => "none".into(),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .map_or_else(|| item.to_string(), str::to_owned)
+            })
+            .collect::<Vec<_>>()
+            .join("; "),
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Null => "none".into(),
+        other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod warning_text_tests {
+    use super::warning_text;
+    use serde_json::json;
+
+    #[test]
+    fn warnings_read_as_text() {
+        assert_eq!(warning_text(&json!([])), "none");
+        assert_eq!(warning_text(&json!(["a", "b"])), "a; b");
+        assert_eq!(
+            warning_text(&json!("real scans require review.")),
+            "real scans require review."
+        );
     }
 }

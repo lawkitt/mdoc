@@ -1076,11 +1076,14 @@ impl Workspace {
         let mut list = div().flex().flex_col();
         if cases.is_empty() {
             return Some(
+                // The label's top padding moves to the row, so the label and
+                // the link share a center line.
                 div()
                     .flex()
                     .items_center()
                     .gap_2()
-                    .child(home_label("Cases", theme))
+                    .pt_2()
+                    .child(home_label("Cases", theme).pt_0())
                     .child(div().flex_1())
                     .child(
                         ui::link_button("home-open-case", "Open a case…", theme, true).on_click(

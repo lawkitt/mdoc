@@ -808,7 +808,13 @@ fn table_occurrence_popup_uses_exact_painted_word_in_both_themes(cx: &mut gpui::
             assert!(word.size.width > px(20.) && word.size.width < px(400.));
             assert!(popup.top() >= word.bottom() || popup.bottom() <= word.top());
             let context = app.readable_mention(&range, cx);
-            assert!(!format!("{}{}{}", context.0, context.1, context.2).contains("<br>"));
+            let joined = format!("{}{}{}", context.0, context.1, context.2);
+            assert!(!joined.contains("<br>"));
+            // Line breaks and stripped markup collapse to single spaces.
+            assert!(
+                !joined.contains("  ") && !joined.starts_with(' '),
+                "{joined:?}"
+            );
             assert!(app.pii.mapping.open && app.pii.popup.is_some());
         });
     }

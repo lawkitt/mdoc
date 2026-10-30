@@ -561,6 +561,31 @@ impl DocumentView {
         }
     }
 
+    /// A plain click below the text's last line: caret at the end, editor
+    /// focused. Clicks on the text itself are the editor's own.
+    fn click_below_text(
+        &mut self,
+        event: &gpui::MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let below = self
+            .editor
+            .read(cx)
+            .painted_bounds()
+            .is_some_and(|bounds| event.position.y > bounds.bottom());
+        if !below || event.modifiers.modified() || event.click_count > 1 {
+            return;
+        }
+        self.editor.update(cx, |editor, cx| {
+            let end = editor.text().len();
+            editor.set_cursor(end, cx);
+            editor.focus(window, cx);
+        });
+        // Ancestors that track focus would take it back on this same press.
+        window.prevent_default();
+    }
+
     pub(crate) fn display_name(&self) -> String {
         if self.lifecycle.source_only() {
             self.preview
@@ -2132,7 +2157,7 @@ impl Render for DocumentView {
             .when(!self.lifecycle.source_only() && self.import.busy(), |v| v.child(
                 ui::activity("document-work-activity", if matches!(self.ocr_state, OcrState::Installing) || self.import.setting_up() { "Setting up text recognition…" } else if self.import.recognizing() { "Recognizing text…" } else { "Converting to Markdown…" }, theme)
                     .px_3().py_2().border_b_1().border_color(palette.border)))
-            .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("OCR result: {} · {} DPI · minimum confidence {} · Force",config.model.name(),config.dpi,config.minimum_confidence))))
+            .when_some(self.session.ocr_configuration.clone(),|v,config|v.child(div().px_3().py_1().text_size(px(11.)).text_color(palette.header_muted).child(format!("Text recognized by {} · {} DPI · minimum confidence {}",crate::models::short_name(settings::Model::Ocr(config.model)),config.dpi,config.minimum_confidence))))
             .children(import_notice).children(clipboard_notice).children(self.restore_summary(cx)).children(ocr_notice.filter(|_| !show_markdown))
             .when(narrow_preview, |v| v.child(self.pane_switch(cx))))
             .child(div().flex().flex_1().min_h_0()
@@ -2151,6 +2176,10 @@ impl Render for DocumentView {
                         // 0 px) shaped it again, and a changing one missed every cache.
                         .child(div().id("document-scroll").absolute().inset_0().overflow_y_scroll().track_scroll(&self.scroll).p_6().pb(px(72.))
                             .on_scroll_wheel(cx.listener(|this, _, _, cx| { this.wake_switcher(cx); cx.notify(); }))
+                            // A click in the blank page under the last line puts the caret
+                            // at the end, as in other editors; it used to take focus away
+                            // from the editor, so typing went nowhere.
+                            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, event: &gpui::MouseDownEvent, window, cx| this.click_below_text(event, window, cx)))
                             // A centred reading column (ADR 0048, from variant B).
                             .child(div().relative().w_full().max_w(px(READING_WIDTH * self.zoom)).mx_auto().child(self.editor.clone())
                                 // The mention bar scrolls with its mention (ADR 0055).

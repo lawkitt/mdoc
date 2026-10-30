@@ -637,11 +637,7 @@ impl Render for View {
                         "{} · {} · {}",
                         record.configuration.summary(),
                         record.identity["revision"].as_str().unwrap_or_default(),
-                        record
-                            .output
-                            .get("warnings")
-                            .map(|w| w.to_string())
-                            .unwrap_or_default()
+                        record.warnings()
                     )))
                 .child(
                     div()
@@ -667,7 +663,7 @@ impl Render for View {
             })
             .when(self.records.is_empty(), |v| {
                 v.child(div().flex_1().child(
-                    "Results are read-only. QA does not edit the document or change defaults.",
+                    "Results are read-only. Comparing never edits the document or changes defaults.",
                 ))
             })
     }

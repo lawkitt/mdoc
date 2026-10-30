@@ -1374,6 +1374,12 @@ impl EditorState {
         self.last_bounds.map(|bounds| bounds.size.width)
     }
 
+    /// Window-space bounds of the last painted layout, for hosts that handle
+    /// clicks around the text (e.g. below its last line).
+    pub fn painted_bounds(&self) -> Option<Bounds<Pixels>> {
+        self.last_bounds
+    }
+
     /// Window-space bounds from the painted highlight quads. Includes wrapped
     /// prose and table cells; unavailable until the next paint.
     pub fn search_match_bounds(&self, index: usize) -> Option<Bounds<Pixels>> {
@@ -1466,9 +1472,11 @@ impl EditorState {
                 odd = !odd;
             }
         }
+        let (ordered, ordered_lists) = markdown_syntax::ordered_scan(&lines);
         let data = std::rc::Rc::new(ScanData {
             generation: self.content_gen,
-            ordered: markdown_syntax::ordered_numbers(&lines),
+            ordered,
+            ordered_lists,
             tables: markdown_syntax::table_regions(&self.content),
             mermaid: markdown_syntax::mermaid_blocks(&self.content),
             math: markdown_syntax::math_regions(&self.content),
@@ -5566,6 +5574,8 @@ pub(crate) struct ScanData {
     /// instead of rehashing content.
     generation: u64,
     ordered: Vec<(u32, usize)>,
+    /// The list each ordered item belongs to (`markdown_syntax::ordered_scan`).
+    ordered_lists: Vec<Option<u32>>,
     tables: Vec<markdown_syntax::TableRegion>,
     mermaid: Vec<(Range<usize>, String)>,
     math: Vec<markdown_syntax::MathRegion>,

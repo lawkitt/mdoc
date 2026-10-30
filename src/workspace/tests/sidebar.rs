@@ -656,3 +656,63 @@ fn file_drag_over_collapsed_rail_reveals_the_list(cx: &mut TestAppContext) {
         assert_eq!(tabs.read(cx).sidebar.choice(), Some(false));
     });
 }
+
+/// A restored source tab reads the same before and after it is first opened:
+/// a DOCX that converts on open, and a scan that waits for text recognition.
+#[gpui::test]
+fn restored_source_tabs_keep_their_names_when_opened(cx: &mut TestAppContext) {
+    let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let docx = fixtures.join("import/text.docx");
+    let scan = fixtures.join("ocr-qualification/english.pdf");
+    let source = |attachment: &PathBuf, name: Option<&str>| TabRecord {
+        source_only: true,
+        attachment: Some(attachment.clone()),
+        name: name.map(str::to_owned),
+        ..TabRecord::default()
+    };
+    let session = Session {
+        tabs: vec![
+            TabRecord {
+                blank: true,
+                name: Some("Untitled.md".into()),
+                ..TabRecord::default()
+            },
+            // Saved before records kept the name: named as a conversion.
+            source(&docx, None),
+            source(&scan, Some("english.pdf")),
+        ],
+        active: 0,
+        ..Session::default()
+    };
+    let (tabs, cx) = boot(cx, session);
+    let names = |cx: &mut VisualTestContext| {
+        cx.update(|_, cx| {
+            let tabs = tabs.read(cx);
+            tabs.tabs
+                .iter()
+                .map(|tab| tab_label(tab, cx).name)
+                .collect::<Vec<_>>()
+        })
+    };
+    let before = names(cx);
+    assert_eq!(
+        before[1..],
+        ["text.md".to_string(), "english.pdf".to_string()]
+    );
+    let ids = cx.update(|_, cx| {
+        tabs.read(cx)
+            .tabs
+            .iter()
+            .map(|t| t.id())
+            .collect::<Vec<_>>()
+    });
+    for id in &ids[1..] {
+        tabs.update_in(cx, |tabs, window, cx| tabs.activate(*id, window, cx));
+        cx.run_until_parked();
+    }
+    assert_eq!(names(cx), before);
+    // The scan still waits for recognition, and its record keeps its name.
+    let snapshot = cx.update(|_, cx| tabs.read(cx).snapshot(cx));
+    assert!(snapshot.tabs[2].source_only);
+    assert_eq!(snapshot.tabs[2].name.as_deref(), Some("english.pdf"));
+}

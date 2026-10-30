@@ -1774,3 +1774,39 @@ fn find_counter_speaks_its_position() {
         ("0 / 0".into(), "No search".into())
     );
 }
+
+#[gpui::test]
+fn a_click_below_the_last_line_puts_the_caret_at_the_end(cx: &mut TestAppContext) {
+    let (app, cx) = boot(cx);
+    cx.simulate_resize(gpui::size(px(1100.), px(760.)));
+    app.update(cx, |app, cx| {
+        app.editor.update(cx, |editor, cx| {
+            editor.set_text("First line\nSecond line", cx)
+        });
+    });
+    cx.run_until_parked();
+    cx.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    // Focus elsewhere first, as after a click on the sidebar.
+    cx.update(|window, cx| window.blur(cx));
+    let text = app
+        .read_with(cx, |app, cx| app.editor.read(cx).painted_bounds())
+        .expect("the editor painted");
+    cx.simulate_click(
+        gpui::point(text.center().x, text.bottom() + px(40.)),
+        Default::default(),
+    );
+    cx.run_until_parked();
+    let (focused, caret, len) = cx.update(|window, cx| {
+        let editor = app.read(cx).editor.read(cx);
+        (
+            editor.focus_handle(cx).is_focused(window),
+            editor.cursor(),
+            editor.text().len(),
+        )
+    });
+    assert!(focused, "the editor takes the click below its text");
+    assert_eq!(caret, len);
+}
