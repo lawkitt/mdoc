@@ -285,7 +285,7 @@ dependencies = [
 [[package]]
 name = "anydoc"
 version = "0.2.4"
-source = "git+https://github.com/lawkitt/anydoc.git?rev=93e56b6d78a1bb94d9051f7b0ed435e2d91f0fbb#93e56b6d78a1bb94d9051f7b0ed435e2d91f0fbb"
+source = "git+https://github.com/lawkitt/anydoc.git?rev=d01cce0dda4a8918fc4b603c4afe9c329102371c#d01cce0dda4a8918fc4b603c4afe9c329102371c"
 dependencies = [
  "cfb",
  "csv",
