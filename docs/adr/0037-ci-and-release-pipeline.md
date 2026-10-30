@@ -4,8 +4,8 @@ Status: Accepted, 2026-10-10. Signing amended by [ADR 0039](0039-macos-signing-a
 CI jobs and cache amended by [ADR 0070](0070-ci-speed-and-script-hygiene.md);
 the pre-merge test gate moved to local CI by [ADR 0082](0082-local-ci.md);
 Windows artifacts (`.exe` only) and tag runs reusing `main`'s CI amended by
-[ADR 0083](0083-fewer-release-candidates.md), effective when its roadmap items
-land.
+[ADR 0083](0083-fewer-release-candidates.md); the `.exe`-only change is in
+effect, the tag-run change when its roadmap item lands.
 
 ## Problem
 
@@ -19,7 +19,8 @@ than the repository. Nothing lets local development run the same checks as CI.
 ## Decision
 
 - **Shipped targets**: Apple Silicon macOS (`.dmg`) and Windows x64 (NSIS
-  `.exe` always, `.msi` on stable tags only). No `.zip`s. Intel macOS, Windows
+  `.exe` only; the `.msi` was removed by
+  [ADR 0083](0083-fewer-release-candidates.md)). No `.zip`s. Intel macOS, Windows
   arm64 and Linux lose their release jobs, packaging and CI test runners; one
   Ubuntu job keeps `fmt`, `cargo-deny` and clippy so Linux code still compiles.
   The README calls those platforms "builds from source, unsupported".
@@ -48,9 +49,8 @@ than the repository. Nothing lets local development run the same checks as CI.
   are required for `1.0`.
 - **VC++ Redistributable**: the NSIS `.exe` bundles `vc_redist.x64.exe` and
   runs it (elevated) only when the runtime is missing; CI checks its Microsoft
-  Authenticode signature instead of a hash. The `.msi` refuses to install with
-  a clear message when the runtime is missing.
-- **Open with**: both Windows installers list mdoc under Open with for `.md`,
+  Authenticode signature instead of a hash.
+- **Open with**: the Windows installer lists mdoc under Open with for `.md`,
   `.markdown`, `.mdown`, `.txt`, `.pdf` and `.docx` (an `OpenWithProgids`
   entry and `Applications\mdoc.exe`), never as the default app, and the
   uninstaller removes exactly those entries. A second launch hands its files

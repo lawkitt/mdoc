@@ -110,57 +110,102 @@ fn f6_returns_to_the_control_last_focused_in_a_region(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
     draw(cx);
-    // Into the sidebar, then Tab to its second control.
-    key(cx, "f6");
-    assert!(in_sidebar(&tabs, cx));
+    // Into the toolbar, then Tab to its next control.
+    key(cx, "shift-f6");
+    assert!(in_toolbar(&tabs, cx));
     let first = cx.update(|window, cx| window.focused(cx));
     key(cx, "tab");
     let second = cx.update(|window, cx| window.focused(cx));
     assert_ne!(first, second);
-    assert!(in_sidebar(&tabs, cx));
-    // On through the toolbar to the editor and back: the same control.
-    key(cx, "f6");
-    assert!(in_toolbar(&tabs, cx));
+    assert!(!editor_focused(&tabs, cx));
+    // On through the editor and the sidebar and back: the same control.
     key(cx, "f6");
     assert!(editor_focused(&tabs, cx));
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
     key(cx, "f6");
     assert_eq!(cx.update(|window, cx| window.focused(cx)), second);
 }
 
+/// Leave the sidebar from `focus` for the editor, as a keyboard user does.
+fn leave_sidebar_from(
+    tabs: &Entity<Workspace>,
+    focus: gpui::FocusHandle,
+    cx: &mut VisualTestContext,
+) {
+    cx.update(|window, cx| window.focus(&focus, cx));
+    draw(cx);
+    assert!(in_sidebar(tabs, cx));
+    key(cx, "escape");
+    assert!(editor_focused(tabs, cx));
+}
+
 #[gpui::test]
-fn f6_into_the_collapsed_rail_returns_to_the_last_focused_tab(cx: &mut TestAppContext) {
-    // ADR 0062: the rail lands on the tab that last had focus, not Search.
+fn f6_into_the_sidebar_lands_on_the_active_tab(cx: &mut TestAppContext) {
+    // ADR 0062: not Settings or another control last focused there.
     let (tabs, cx) = boot(cx, Session::default());
     cx.simulate_resize(size(px(900.), px(700.)));
     let first = cx.update(|_, cx| tabs.read(cx).tabs.active());
-    tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
+    let active = tabs.update_in(cx, |tabs, window, cx| tabs.new_tab(window, cx));
     cx.run_until_parked();
     draw(cx);
-    // Expanded sidebar: focus the first tab's row, then leave by F6.
+    assert_eq!(cx.update(|_, cx| tabs.read(cx).tabs.active()), active);
+    let settings = cx.update(|_, cx| tabs.read(cx).settings_focus.clone());
+    let row = |tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext| {
+        cx.update(|_, cx| tabs.read(cx).sidebar_row_focus.borrow()[&id].clone())
+    };
+    let on_list_row = |tabs: &Entity<Workspace>, id: u64, cx: &mut VisualTestContext| {
+        cx.update(|window, cx| tabs.read(cx).sidebar_row_focus.borrow()[&id].is_focused(window))
+    };
+    // Expanded: after Settings, and after another tab's row.
+    leave_sidebar_from(&tabs, settings.clone(), cx);
+    key(cx, "f6");
+    assert!(on_list_row(&tabs, active, cx), "F6 lands on the active tab");
+    let other = row(&tabs, first, cx);
+    leave_sidebar_from(&tabs, other, cx);
+    key(cx, "f6");
+    assert!(on_list_row(&tabs, active, cx), "not the row last focused");
+    // Backwards from the toolbar too.
+    leave_sidebar_from(&tabs, settings.clone(), cx);
+    key(cx, "shift-f6");
+    assert!(in_toolbar(&tabs, cx));
+    key(cx, "shift-f6");
+    assert!(on_list_row(&tabs, active, cx));
+    // The list's Tab stop follows: Tab leaves the list from there.
+    cx.update(|_, cx| assert_eq!(tabs.read(cx).sidebar.cursor(), Some(active)));
+    // After opening and closing Settings itself.
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_settings(window, cx));
+    cx.run_until_parked();
+    draw(cx);
     tabs.update_in(cx, |tabs, window, cx| {
-        let row = tabs.sidebar_row_focus.borrow()[&first].clone();
-        window.focus(&row, cx);
+        tabs.settings
+            .update(cx, |panel, cx| panel.close(window, cx));
     });
     draw(cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
+    draw(cx);
     key(cx, "f6");
-    assert!(in_toolbar(&tabs, cx));
-    key(cx, "f6");
+    assert!(on_list_row(&tabs, active, cx), "after visiting Settings");
+    // Collapsed rail: F6 lands on the active tab there.
+    key(cx, "escape");
     assert!(editor_focused(&tabs, cx));
-    // Collapse: F6 comes back to that tab in the rail.
     collapse(&tabs, cx);
     key(cx, "f6");
     assert!(in_sidebar(&tabs, cx));
     assert!(
-        tab_row_focused(&tabs, first, cx),
+        tab_row_focused(&tabs, active, cx),
         "the rail lands on the tab"
     );
-    // Out and back again, still in the rail.
+    // Out and back again, still the active tab.
     key(cx, "f6");
     key(cx, "f6");
     assert!(editor_focused(&tabs, cx));
     key(cx, "f6");
-    assert!(tab_row_focused(&tabs, first, cx), "and again after leaving");
-    // Expand: F6 lands on the same tab in the full list.
+    assert!(
+        tab_row_focused(&tabs, active, cx),
+        "and again after leaving"
+    );
+    // Expand: F6 lands on the active tab in the full list.
     key(cx, "f6");
     key(cx, "f6");
     assert!(editor_focused(&tabs, cx));
@@ -169,10 +214,50 @@ fn f6_into_the_collapsed_rail_returns_to_the_last_focused_tab(cx: &mut TestAppCo
         cx.notify();
     });
     draw(cx);
+    leave_sidebar_from(&tabs, settings, cx);
     key(cx, "f6");
-    cx.update(|window, cx| {
-        assert!(tabs.read(cx).sidebar_row_focus.borrow()[&first].is_focused(window));
+    assert!(
+        on_list_row(&tabs, active, cx),
+        "across a collapse and expand"
+    );
+}
+
+#[gpui::test]
+fn f6_into_the_sidebar_on_home_lands_on_home(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    cx.simulate_resize(size(px(900.), px(700.)));
+    draw(cx);
+    let (settings, home_row) = cx.update(|_, cx| {
+        let tabs = tabs.read(cx);
+        (tabs.settings_focus.clone(), tabs.panel_home_focus.clone())
     });
+    let in_home = |tabs: &Entity<Workspace>, cx: &mut VisualTestContext| {
+        cx.update(|window, cx| {
+            tabs.read(cx)
+                .focus_regions
+                .home()
+                .contains_focused(window, cx)
+        })
+    };
+    cx.update(|window, cx| window.focus(&settings, cx));
+    draw(cx);
+    key(cx, "f6");
+    assert!(in_home(&tabs, cx));
+    key(cx, "f6");
+    assert!(
+        cx.update(|window, _| home_row.is_focused(window)),
+        "Home's row"
+    );
+    // Collapsed: Home's rail row opens the reveal onto Home's row.
+    key(cx, "f6");
+    assert!(in_home(&tabs, cx));
+    collapse(&tabs, cx);
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
+    assert!(cx.update(|window, cx| {
+        let tabs = tabs.read(cx);
+        home_row.is_focused(window) || tabs.rail_home_focus.is_focused(window)
+    }));
 }
 
 #[gpui::test]
@@ -380,14 +465,16 @@ fn escape_and_tab_departures_are_remembered_for_f6(cx: &mut TestAppContext) {
     let (tabs, cx) = boot(cx, Session::default());
     tabs.update_in(cx, |tabs, window, cx| tabs.focus_active(window, cx));
     draw(cx);
-    key(cx, "f6");
-    assert!(in_sidebar(&tabs, cx));
+    key(cx, "shift-f6");
+    assert!(in_toolbar(&tabs, cx));
     key(cx, "tab");
     let second = cx.update(|window, cx| window.focused(cx));
-    assert!(in_sidebar(&tabs, cx));
-    // Leave with Esc, not F6; F6 back from the toolbar still lands there.
+    assert!(!editor_focused(&tabs, cx));
+    // Leave with Esc, not F6; F6 back through the sidebar still lands there.
     key(cx, "escape");
     assert!(editor_focused(&tabs, cx));
+    key(cx, "f6");
+    assert!(in_sidebar(&tabs, cx));
     key(cx, "f6");
     assert_eq!(cx.update(|window, cx| window.focused(cx)), second);
 }
@@ -726,7 +813,8 @@ fn tab_moves_between_regions_at_their_edges(cx: &mut TestAppContext) {
         key(cx, "f6");
         tab_out(cx, &in_panel);
         assert!(in_sidebar(&tabs, cx), "{layout}: Tab past the panel");
-        // And back: Shift+Tab from the sidebar's first control.
+        // And back: Shift+Tab from the sidebar's first control. F6 lands on
+        // the active tab, so Shift+Tab up from there.
         tabs.update_in(cx, |tabs, window, cx| {
             tabs.focus_regions.forget();
             tabs.focus_active(window, cx);
@@ -734,7 +822,12 @@ fn tab_moves_between_regions_at_their_edges(cx: &mut TestAppContext) {
         key(cx, "shift-f6");
         key(cx, "shift-f6");
         assert!(in_sidebar(&tabs, cx), "{layout}");
-        key(cx, "shift-tab");
+        for _ in 0..60 {
+            key(cx, "shift-tab");
+            if !in_sidebar(&tabs, cx) {
+                break;
+            }
+        }
         assert!(in_panel(cx), "{layout}: Shift+Tab from the sidebar");
     }
 }

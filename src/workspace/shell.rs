@@ -372,6 +372,7 @@ impl Workspace {
             )
             .child(
                 nav_row("sidebar-home", ui::Icon::Home, "Home", theme, home)
+                    .track_focus(&self.panel_home_focus)
                     .child(
                         div()
                             .text_size(px(11.))

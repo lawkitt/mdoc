@@ -631,11 +631,12 @@ impl Platform for WindowsPlatform {
     ) -> Receiver<Result<Option<PathBuf>>> {
         let directory = directory.to_owned();
         let suggested_name = suggested_name.map(|s| s.to_owned());
+        let title = NEXT_SAVE_PROMPT_TITLE.with_borrow_mut(Option::take);
         let (tx, rx) = oneshot::channel();
         let window = self.find_current_active_window();
         self.foreground_executor()
             .spawn(async move {
-                let _ = tx.send(file_save_dialog(directory, suggested_name, window));
+                let _ = tx.send(file_save_dialog(directory, suggested_name, title, window));
             })
             .detach();
 
@@ -1349,12 +1350,33 @@ fn file_open_dialog(
     Ok(Some(paths))
 }
 
+// mdoc patch (MDOC-PATCH.md): the title of the next save dialog.
+thread_local! {
+    static NEXT_SAVE_PROMPT_TITLE: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// mdoc patch: show `message` as the title of the next save dialog opened on
+/// this thread; `prompt_for_new_path` takes it. `None` clears it.
+pub fn set_next_save_prompt_message(message: Option<String>) {
+    NEXT_SAVE_PROMPT_TITLE.with_borrow_mut(|next| *next = message);
+}
+
 fn file_save_dialog(
     directory: PathBuf,
     suggested_name: Option<String>,
+    title: Option<String>,
     window: Option<HWND>,
 ) -> Result<Option<PathBuf>> {
     let dialog: IFileSaveDialog = unsafe { CoCreateInstance(&FileSaveDialog, None, CLSCTX_ALL)? };
+    if let Some(title) = title {
+        unsafe {
+            dialog
+                .SetTitle(&HSTRING::from(title))
+                .context("failed to set dialog title")
+                .log_err()
+        };
+    }
     if !directory.to_string_lossy().is_empty()
         && let Some(full_path) = directory
             .canonicalize()

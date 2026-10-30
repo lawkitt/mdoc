@@ -37,7 +37,7 @@ pub(crate) use vsync::*;
 pub(crate) use window::*;
 pub(crate) use wrapper::*;
 
-pub use platform::WindowsPlatform;
+pub use platform::{WindowsPlatform, set_next_save_prompt_message};
 
 pub(crate) use windows::Win32::Foundation::HWND;
 

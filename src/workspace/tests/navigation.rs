@@ -247,7 +247,8 @@ fn navigation_buttons_are_keyboard_reachable_in_both_sidebar_layouts(cx: &mut Te
         });
         draw(cx);
         for backwards in [true, false] {
-            // F6 leaves the editor or Home for the sidebar. The only other
+            // F6 leaves the editor or Home for the sidebar, landing on the
+            // active tab; Back and Forward sit above the list. The only other
             // region in this fixture is the toolbar; optional panes are hidden.
             key(cx, "f6");
             wait(cx, 250); // settle the rail's keyboard reveal before tabbing
@@ -262,7 +263,7 @@ fn navigation_buttons_are_keyboard_reachable_in_both_sidebar_layouts(cx: &mut Te
                 if cx.update(|window, _| target.is_focused(window)) {
                     break;
                 }
-                key(cx, "tab");
+                key(cx, "shift-tab");
                 wait(cx, 250);
             }
             assert!(
@@ -277,9 +278,10 @@ fn navigation_buttons_are_keyboard_reachable_in_both_sidebar_layouts(cx: &mut Te
 }
 
 #[gpui::test]
-fn f6_remembers_navigation_focus_across_sidebar_layouts(cx: &mut TestAppContext) {
+fn f6_lands_on_the_active_tab_after_back_across_sidebar_layouts(cx: &mut TestAppContext) {
+    // ADR 0062: F6 into the sidebar lands on the active tab, not on Back.
     let (tabs, cx) = boot(cx, Session::default());
-    let focus = tabs.read_with(cx, |w, _| w.back_focus.clone());
+    let (focus, active) = tabs.read_with(cx, |w, _| (w.back_focus.clone(), w.tabs.active()));
     cx.update(|window, cx| window.focus(&focus, cx));
     draw(cx);
     for expanded in [false, true] {
@@ -292,8 +294,8 @@ fn f6_remembers_navigation_focus_across_sidebar_layouts(cx: &mut TestAppContext)
         draw(cx);
         key(cx, "f6");
         assert!(
-            cx.update(|window, _| focus.is_focused(window)),
-            "Back remains the sidebar's remembered control, expanded={expanded}"
+            tab_row_focused(&tabs, active, cx),
+            "the active tab, not Back, expanded={expanded}"
         );
     }
 }

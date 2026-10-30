@@ -6,7 +6,7 @@ description: >-
 
 inputs:
   tools:
-    description: Space-separated tools from scripts/tools.env (just, cargo-deny, cargo-nextest, shfmt, cargo-packager, cargo-wix).
+    description: Space-separated tools from scripts/tools.env (just, cargo-deny, cargo-nextest, shfmt, cargo-packager).
     default: just
   cache-key:
     description: Swatinem/rust-cache shared key; release builds share one.

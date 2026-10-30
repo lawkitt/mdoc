@@ -2,8 +2,7 @@
 # Usage: scripts/setup.sh
 # Installs the tools pinned in scripts/tools.env for this machine: the Rust
 # toolchain, Rust tools through cargo-binstall (or cargo install), actionlint
-# and shfmt (scripts/install-actionlint.sh, scripts/install-shfmt.sh), and on
-# Windows the WiX Toolset after confirmation.
+# and shfmt (scripts/install-actionlint.sh, scripts/install-shfmt.sh).
 source "$(dirname "$0")/lib.sh"
 load_tools
 
@@ -28,15 +27,5 @@ crate cargo-packager "$CARGO_PACKAGER_VERSION" cargo packager --version
 
 scripts/install-actionlint.sh
 scripts/install-shfmt.sh
-
-if [ "$(platform)" = windows-x64 ]; then
-  crate cargo-wix "$CARGO_WIX_VERSION" cargo wix --version
-  if ! candle -? >/dev/null 2>&1; then
-    if confirm "Install the WiX Toolset $WIX_VERSION with winget (needed for .msi)?"; then
-      winget.exe install --exact --id WiXToolset.WiXToolset --version "$WIX_VERSION"
-      echo "open a new terminal, then run \`just doctor\`: WiX sets WIX (not PATH) for new sessions"
-    fi
-  fi
-fi
 
 scripts/doctor.sh || true

@@ -40,6 +40,7 @@ mod document_lifecycle;
 use document_lifecycle::LifecycleEffect;
 mod import_flow;
 use import_flow::ImportEffect;
+pub(crate) mod save_prompt;
 #[cfg(test)]
 pub(crate) mod tests;
 actions!(
@@ -1534,7 +1535,11 @@ impl DocumentView {
             _ => {}
         }
         let name = self.session.suggested_name();
-        let path = cx.prompt_for_new_path(&self.save_as_directory(cx), Some(&name));
+        let directory = self.save_as_directory(cx);
+        let reason =
+            matches!(next, Some(Next::CreateCase { .. })).then_some(save_prompt::CASE_REASON);
+        let path =
+            save_prompt::with_reason(reason, || cx.prompt_for_new_path(&directory, Some(&name)));
         cx.spawn_in(window, async move |this, cx| {
             let result = path.await;
             let _ = this.update_in(cx, |this, window, cx| {

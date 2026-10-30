@@ -386,8 +386,9 @@ conversion and dirty state (`DocumentLifecycle`). Distinct from file-level
 the CHANGELOG section); its tag must match that version ([ADR 0037](docs/adr/0037-ci-and-release-pipeline.md)).
 
 **Pre-release**: a version with a SemVer suffix such as `-beta.1` or `-rc.2`;
-marked pre-release on GitHub, built without an `.msi`, and offered by the
-update check to pre-release builds or when "Include pre-releases" is on.
+marked pre-release on GitHub, built with the same artifacts as a stable
+version (on Windows the NSIS `.exe` only), and offered by the update check to
+pre-release builds or when "Include pre-releases" is on.
 
 **Shipped target**: a platform with release artifacts — Apple Silicon macOS
 and Windows x64. Other platforms build from source, unsupported.
