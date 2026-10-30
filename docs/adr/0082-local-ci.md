@@ -1,6 +1,6 @@
 # Local CI
 
-Status: Accepted, 2026-10-29. Amends
+Status: Accepted, 2026-10-29; amended 2026-10-30. Amends
 [ADR 0070](0070-ci-speed-and-script-hygiene.md) (runners, test runner,
 cache) and [ADR 0037](0037-ci-and-release-pipeline.md) (where CI runs).
 
@@ -70,6 +70,13 @@ hub wait on CI.
   background PNG encoder thread, and the render test is sharded into
   separate nextest processes only if the M4 run misses its target. The
   render test stays on every PR with all of its evidence.
+- **Windows run time** (#240). Each Windows job had built cold, its
+  `git clean -e /target/` turned into a Windows path by Git Bash; the job
+  now keeps `target/`. The Task Scheduler task runs at normal priority, not
+  the default below normal. `gpui-pre` and `taffy` get ADR 0070's
+  `opt-level` 2 (render run 215 s to 105 s alone; cold Windows test build
+  150 s to 164 s, +9%). `just test` runs the script suites beside the Rust
+  tests. The render test stays one process with all of its evidence.
 - **Targets** (push to both local statuses green, empty queue, warm CI
   checkout): `local/windows` and `local/macos` 4 minutes each; 8 minutes
   when `Cargo.lock` or the toolchain changes. Hosted `main` and release runs
