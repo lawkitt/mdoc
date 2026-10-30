@@ -469,6 +469,30 @@ fn manual_selections_trim_edges_but_keep_balanced_pairs_and_initials() {
     assert_eq!(trim(" .,; "), None);
 }
 #[test]
+fn category_choice_alias_names_only_a_changing_alias() {
+    // #179: the popup's category rows show the alias a choice gives.
+    let source = "Ann and Ann.";
+    let mut review = Review::default();
+    let variant = review.add_manual(source, 0..3, Category::Person).unwrap();
+    let ann = review.variant_identity(variant).unwrap();
+    // The whole entity: its own category keeps the alias, others renumber.
+    assert_eq!(
+        review.category_choice_alias(ann, Category::Person, true),
+        None
+    );
+    let org = review.category_choice_alias(ann, Category::Organization, true);
+    assert_eq!(org.as_deref(), Some("ORG_1"));
+    // Some of its mentions split off under a new alias, even in its category.
+    let split = review.category_choice_alias(ann, Category::Person, false);
+    assert_eq!(split.as_deref(), Some("PERSON_2"));
+    // A custom alias stays whatever the category of the whole entity.
+    review.rename_identity(ann, "Client").unwrap();
+    for category in Category::ALL {
+        assert_eq!(review.category_choice_alias(ann, category, true), None);
+    }
+}
+
+#[test]
 fn manual_targets_explain_invalid_selections() {
     let source = "Иван Петров met **Anna** and PERSON_1 in Ивановка.";
     let mut review = Review::default();
@@ -854,29 +878,5 @@ fn a_scan_proposes_russian_case_forms_of_a_surname() {
                 .iter()
                 .all(|g| g.original.as_ref() != first)
         );
-    }
-}
-
-#[test]
-fn category_choice_alias_names_only_a_changing_alias() {
-    // #179: the popup's category rows show the alias a choice gives.
-    let source = "Ann and Ann.";
-    let mut review = Review::default();
-    let variant = review.add_manual(source, 0..3, Category::Person).unwrap();
-    let ann = review.variant_identity(variant).unwrap();
-    // The whole entity: its own category keeps the alias, others renumber.
-    assert_eq!(
-        review.category_choice_alias(ann, Category::Person, true),
-        None
-    );
-    let org = review.category_choice_alias(ann, Category::Organization, true);
-    assert_eq!(org.as_deref(), Some("ORG_1"));
-    // Some of its mentions split off under a new alias, even in its category.
-    let split = review.category_choice_alias(ann, Category::Person, false);
-    assert_eq!(split.as_deref(), Some("PERSON_2"));
-    // A custom alias stays whatever the category of the whole entity.
-    review.rename_identity(ann, "Client").unwrap();
-    for category in Category::ALL {
-        assert_eq!(review.category_choice_alias(ann, category, true), None);
     }
 }
