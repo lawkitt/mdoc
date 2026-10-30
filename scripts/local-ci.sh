@@ -283,6 +283,15 @@ job() { # merge-ref dir
       # Not through just: setup may replace the just binary.
       setup) bash scripts/setup.sh </dev/null || rc=$? ;;
       test) MDOC_HEADLESS_ARTIFACTS=$dir/renders just "$step" || rc=$? ;;
+      # GitHub can build a PR's merge ref on a main from before the mobile
+      # check (ADR 0085); with no recipe there is nothing to check.
+      mobile)
+        if [ -f scripts/mobile-check.sh ]; then
+          just "$step" || rc=$?
+        else
+          echo "local-ci: no mobile check in this merge ref; skipped"
+        fi
+        ;;
       *) just "$step" || rc=$? ;;
     esac
     if [ "$rc" -eq 0 ]; then

@@ -122,6 +122,7 @@ echo base >"$tmp/work/src/lib.rs"
 echo readme >"$tmp/work/README.md"
 echo doc >"$tmp/work/docs/a.md"
 mkdir -p "$tmp/work/scripts"
+: >"$tmp/work/scripts/mobile-check.sh"
 cat >"$tmp/work/scripts/setup.sh" <<'EOF'
 #!/usr/bin/env bash
 # Setup must never wait on a prompt: the runner closes its stdin.
