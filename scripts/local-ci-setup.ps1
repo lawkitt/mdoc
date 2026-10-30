@@ -59,12 +59,21 @@ function Stop-Runner {
     }
     # Stopping a task ends its bash but not the native processes under it (a
     # job's cargo, rustc and test binaries; the web server's python): end each
-    # runner bash's tree and every web server on this port, whatever folder it
-    # serves. http.server sets SO_REUSEADDR, so on Windows a server left over
-    # from an older -Root keeps answering on the same port beside the new one.
-    $web = "*http.server --bind 127.0.0.1 $Port --directory *"
+    # runner bash's tree and this runner's web server. The registered web task
+    # may serve an older -Root's out folder; end that server too, since
+    # http.server sets SO_REUSEADDR and on Windows a leftover one keeps
+    # answering on the same port beside the new one.
+    $dirs = @($outArg)
+    $webTask = Get-ScheduledTask -TaskName $webTaskName -ErrorAction SilentlyContinue
+    if ($webTask -and $webTask.Actions[0].Arguments -match "--directory '([^']+)'") { $dirs += $Matches[1] }
+    $web = @($dirs | Select-Object -Unique | ForEach-Object {
+        "*http.server --bind 127.0.0.1 $Port --directory $([WildcardPattern]::Escape($_))"
+    })
     Get-CimInstance Win32_Process -Filter "Name = 'bash.exe' OR Name = 'python.exe'" |
-        Where-Object { $_.CommandLine -like '*local-ci.sh*run*' -or $_.CommandLine -like $web } |
+        Where-Object {
+            $line = $_.CommandLine
+            $line -like '*local-ci.sh*run*' -or @($web | Where-Object { $line -like $_ }).Count -gt 0
+        } |
         ForEach-Object { Invoke-Quietly taskkill.exe '/F', '/T', '/PID', $_.ProcessId }
     $lock = Join-Path $state 'lock'
     if (Test-Path $lock) { Remove-Item -Recurse -Force $lock }
