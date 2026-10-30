@@ -27,7 +27,6 @@ pub fn spell_exclusions(source: &str) -> Vec<Range<usize>> {
         }
     }
 
-    let style = markdown_syntax::search_style();
     let mut out = Vec::new();
     let mut row = 0;
     while row < lines.len() {
@@ -52,7 +51,7 @@ pub fn spell_exclusions(source: &str) -> Vec<Range<usize>> {
             row += 1;
             continue;
         }
-        for span in markdown_syntax::semantic_spans_with(source, line.start, line.end, &style) {
+        for span in markdown_syntax::semantic_spans_with(source, line.start, line.end) {
             if span.code || span.hidden || span.replacement {
                 out.push(span.range);
             }

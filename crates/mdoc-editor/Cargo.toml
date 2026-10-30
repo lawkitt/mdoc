@@ -17,8 +17,6 @@ unicode-segmentation = "1"
 
 # Unicode full default case folding for semantic search (without normalization).
 caseless = "0.2"
-# HTML named-entity data used by the Markdown search projection.
-entities = "1"
 
 # Bidi index↔x mapping (#66). gpui's own `x_for_index` / `index_for_x` assume
 # byte index and x rise together, which is false for a right-to-left line — so
@@ -28,6 +26,10 @@ gpui-bidi = { path = "../gpui-bidi" }
 # Source-edit transactions emitted to history-following host models. A
 # dependency-free leaf, so those models need not depend on this crate or gpui.
 mdoc-history = { path = "../mdoc-history" }
+
+# GUI-free Markdown recognition (spans, line prefixes, tables) shared with
+# the mobile apps (ADR 0085); this crate maps its spans to GPUI styles.
+mdoc-markdown = { path = "../mdoc-markdown" }
 
 # The standalone demo needs a platform backend to open a real window (the `gpui`
 # crate alone has no app entry point in this setup — it's split into

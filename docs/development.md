@@ -130,7 +130,8 @@ dependency forks.
 | `src/images.rs`, `src/style.rs` | Document-relative local images and app styling |
 | `src/document_view/tests.rs`, `src/workspace/tests.rs` and their `tests/` folders, `src/perf_tests.rs` | Headless flows, one file per owner beside shared helpers, ownership/lifetime checks, and opt-in performance measurements |
 | `src/workspace/headless_renders.rs`, `src/workspace/headless_renders/`, `tests/headless_renders.rs`, `tests/headless_screens.txt` | Dev-only offscreen screen/Tab evidence: the driver, one scene module per feature, the output contract test and its screen list (one name per line, `merge=union`) |
-| `crates/mdoc-editor` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |
+| `crates/mdoc-editor` | Host-agnostic WYSIWYG and rendered-text search; maps `mdoc-markdown`'s spans to GPUI styles |
+| `crates/mdoc-markdown` | GUI-free Markdown recognition shared with the mobile apps: inline spans over source byte ranges and which bytes are markers, line prefixes (headings, quotes and alerts, lists and tasks) and GFM tables ([ADR 0085](adr/0085-mobile-apps.md)) |
 | `crates/mdoc-pii`, `crates/mdoc-history` | GUI-free pseudonymization review model and the plain edit transactions it follows |
 | `apps/ios` | The iOS app ([ADR 0085](adr/0085-mobile-apps.md)): SwiftUI screens over the Rust core through `mdoc-ffi`'s Swift bindings (the `MdocFFI` framework), and the Restore with mdoc share extension ([README](../apps/ios/README.md)) |
 | `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |
