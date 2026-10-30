@@ -1,9 +1,9 @@
 import XCTest
 
-/// Light and dark screenshots of Home, the document with the candidate sheet
-/// and the Restore extension, on the Rust core, kept as test attachments. Skipped unless the
-/// run sets `MDOC_SCREENSHOTS=1` (`TEST_RUNNER_MDOC_SCREENSHOTS=1` through
-/// xcodebuild).
+/// Light and dark screenshots of Home, the document with the candidate sheet,
+/// the Restore extension and the review of the Markdown-rich fixture, on the
+/// Rust core, kept as test attachments. Skipped unless the run sets
+/// `MDOC_SCREENSHOTS=1` (`TEST_RUNNER_MDOC_SCREENSHOTS=1` through xcodebuild).
 final class ScreenshotUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -18,6 +18,32 @@ final class ScreenshotUITests: XCTestCase {
     @MainActor
     func testDarkScreenshots() throws {
         try capture(.dark, name: "dark")
+    }
+
+    @MainActor
+    func testMarkdownReviewLight() throws {
+        try captureMarkdownReview(.light, name: "light")
+    }
+
+    @MainActor
+    func testMarkdownReviewDark() throws {
+        try captureMarkdownReview(.dark, name: "dark")
+    }
+
+    /// The review screen on the Markdown-rich fixture: the core's spans
+    /// style the text, with the rules' candidates underlined over them.
+    @MainActor
+    private func captureMarkdownReview(_ appearance: XCUIDevice.Appearance, name: String) throws {
+        XCUIDevice.shared.appearance = appearance
+        defer { XCUIDevice.shared.appearance = .light }
+        let app = MdocUITest.launch(seed: MdocUITest.markdownFixture)
+        let document = MdocUITest.documentRow(app, title: MdocUITest.markdownTitle)
+        XCTAssertTrue(document.waitForExistence(timeout: 60))
+        document.tap()
+        let text = app.textViews["document-text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 10))
+        XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
+        keep("markdown-review-\(name)")
     }
 
     @MainActor

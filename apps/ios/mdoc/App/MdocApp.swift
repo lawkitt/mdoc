@@ -16,11 +16,8 @@ struct MdocApp: App {
                 }
         }
         .onChange(of: scenePhase) { _, phase in
-            // A launch in the background (a model download finishing) can
-            // find the device locked and the case key unreadable; try again
-            // once mdoc is in front.
-            if phase == .active, app.startupError != nil {
-                app = AppModel.live(downloader: AppDelegate.downloader)
+            app = app.reopened(isActive: phase == .active) {
+                AppModel.live(downloader: AppDelegate.downloader)
             }
         }
     }

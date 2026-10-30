@@ -24,6 +24,7 @@ required-features = ["bindgen"]
 mdoc-detect = { path = "../mdoc-detect" }
 mdoc-history = { path = "../mdoc-history" }
 mdoc-import = { path = "../mdoc-import" }
+mdoc-markdown = { path = "../mdoc-markdown" }
 mdoc-pii = { path = "../mdoc-pii" }
 mdoc-store = { path = "../mdoc-store" }
 serde = { version = "1", features = ["derive"] }

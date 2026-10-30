@@ -309,7 +309,7 @@ private final class FakeState: @unchecked Sendable {
             id: document.id, title: document.title, caseID: document.caseID,
             caseName: caseIndex(of: document.caseID).map { cases[$0].name },
             kind: document.kind, phase: phase, markdown: rendering.markdown,
-            spans: MarkdownSpanRecognizer.spans(in: rendering.markdown), candidates: rendering.candidates,
+            styling: MarkdownStyling(markdown: rendering.markdown), candidates: rendering.candidates,
             identities: identities, original: document.original,
             pagesDone: document.pagesDone, pageCount: document.pages.count, reply: reply,
             warning: document.recognized ? document.warning : nil)
@@ -491,7 +491,7 @@ private final class FakeSession: DocumentSession {
         state.locked {
             (try? state.snapshot(id)) ?? DocumentSnapshot(
                 id: id, title: "", caseID: nil, caseName: nil, kind: .text, phase: .recognizing,
-                markdown: "", spans: [], candidates: [], identities: [], original: .none,
+                markdown: "", styling: .empty, candidates: [], identities: [], original: .none,
                 pagesDone: 0, pageCount: 0, reply: nil)
         }
     }

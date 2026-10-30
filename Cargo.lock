@@ -4723,6 +4723,7 @@ dependencies = [
  "mdoc-detect",
  "mdoc-history",
  "mdoc-import",
+ "mdoc-markdown",
  "mdoc-pii",
  "mdoc-store",
  "serde",

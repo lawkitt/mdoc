@@ -45,10 +45,13 @@ links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
   its case after each one. `CoreFactory` picks the core: `RealCore` in the
   app and the extension, `FakeCore` (fictional fixtures, in memory) only in
   the view-model tests.
-- **Offsets are source bytes.** Mention ranges are UTF-8 offsets into the
-  Markdown source; `TextOffsets` converts them for UIKit. Markdown spans are
-  still recognized in Swift (`MarkdownSpanRecognizer`) until `mdoc-markdown`
-  is exposed through `mdoc-ffi`.
+- **Offsets are source bytes.** Mention ranges and Markdown spans are UTF-8
+  offsets into the Markdown source; `TextOffsets` converts them for UIKit.
+- **The core recognizes Markdown.** `MarkdownStyling` asks the core for a
+  text's spans (`mdoc-markdown`, through `mdoc-ffi`'s `markdown_styling`):
+  inline kinds, markers, line roles and the document's own colours.
+  `MarkdownStyler` maps them to the app's fonts and colours, light and dark,
+  with markers dimmed and candidates on top.
 - **One long job at a time**, with progress and cancel. iOS 26 keeps it
   running in the background through `BGContinuedProcessingTask`; earlier
   versions get the short grace, then cancel and offer to resume.
@@ -72,4 +75,6 @@ links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
 UI tests launch the app with `-mdoc-ui-testing`: a fresh library of its own
 in the App Group (the extension follows it), its own case key, and the
 structured rules instead of the detector, so no model is needed. The app
-imports the file in `MDOC_SEED_FILE` (the demo DOCX) and scans it at launch.
+imports the file in `MDOC_SEED_FILE` (the demo DOCX, or the Markdown-rich
+`tests/fixtures/mobile-markdown/review.md` as pasted text) and scans it at
+launch.

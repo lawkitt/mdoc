@@ -38,17 +38,20 @@ final class AppModel {
         setup = SetupViewModel(setup: core.setup, downloader: downloader, network: network, jobs: jobs, defaults: defaults)
     }
 
-    static func live(downloader: BackgroundModelDownloader? = nil) -> AppModel {
+    /// The app's model over the real core. `open` opens the storage and the
+    /// core; when it fails (the Keychain or storage could not be read), the
+    /// model shows why, over a core that has nothing.
+    static func live(
+        downloader: (any ModelDownloader)? = nil,
+        open: () throws -> (MdocStorage, Core) = openCore
+    ) -> AppModel {
         let testing = CoreFactory.isUITesting
         let defaults = testing ? UserDefaults(suiteName: "mdoc-ui-testing") ?? .standard : .standard
         if testing {
             defaults.removePersistentDomain(forName: "mdoc-ui-testing")
         }
         do {
-            let storage = try CoreFactory.appStorage()
-            try storage.prepare()
-            storage.clear(.handOff)
-            let core = try CoreFactory.appCore(storage: storage)
+            let (storage, core) = try open()
             let models = downloader ?? BackgroundModelDownloader(staging: storage.url(.downloads))
             let app = AppModel(
                 core: core, storage: storage, background: BackgroundContinuations.system(),
@@ -67,16 +70,38 @@ final class AppModel {
         }
     }
 
+    /// The App Group storage and the real core.
+    nonisolated static func openCore() throws -> (MdocStorage, Core) {
+        let storage = try CoreFactory.appStorage()
+        try storage.prepare()
+        storage.clear(.handOff)
+        return (storage, try CoreFactory.appCore(storage: storage))
+    }
+
+    /// The model to show once the scene's phase changes. A launch in the
+    /// background (a model download finishing) can find the device locked and
+    /// the case key unreadable; once mdoc is in front, it opens again.
+    func reopened(isActive: Bool, open: () -> AppModel) -> AppModel {
+        isActive && startupError != nil ? open() : self
+    }
+
     /// UI tests: import a fixture file through the core and scan it with
-    /// the structured rules, as a user's import would.
+    /// the structured rules, as a user's import would. A Markdown file comes
+    /// in as pasted text.
     private func seedForUITesting(_ file: URL) {
         Task {
-            guard let copy = try? storage.importCopy(of: file, in: .originals),
-                  let kind = Self.kind(of: copy),
-                  let session = home.importDocument(
-                    PendingImport(source: .file(copy, kind), suggestedTitle: file.deletingPathExtension().lastPathComponent),
-                    title: file.deletingPathExtension().lastPathComponent,
-                    into: .newCase(name: file.deletingPathExtension().lastPathComponent)),
+            let title = file.deletingPathExtension().lastPathComponent
+            let source: ImportSource
+            if file.pathExtension.lowercased() == "md" {
+                guard let text = try? String(contentsOf: file, encoding: .utf8) else { return }
+                source = .text(text)
+            } else {
+                guard let copy = try? storage.importCopy(of: file, in: .originals),
+                      let kind = Self.kind(of: copy) else { return }
+                source = .file(copy, kind)
+            }
+            guard let session = home.importDocument(
+                    PendingImport(source: source, suggestedTitle: title), title: title, into: .newCase(name: title)),
                   let model = documentModel(for: session.id) else { return }
             await model.recognize()
             await model.findNames()
