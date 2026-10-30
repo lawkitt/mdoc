@@ -96,8 +96,15 @@ run.
 Every gate in a run's plan names its fallback. When it names none: go ahead
 without the missing step, move it to the next RC, and say so in the report.
 Default gate: when both acceptance runs are done (or one never started, by
-the rule above), fix the must-fix Fails, merge the held product PRs, bump the
-forks, cut the next RC as a draft, and list the rows to re-run per platform.
+the rule above), fix the must-fix Fails, merge the held product PRs and bump
+the forks. Re-check each fix on a local unsigned `just package` build on the
+acceptance machines, only the rows it touches, then tag the stable and give it
+a smoke run. Cut another RC instead only when a fix touches the installer,
+signing or notarization, the update check or in-app update, or the case key
+in the keychain ([ADR 0083](adr/0083-fewer-release-candidates.md)).
+Publishing: a patch or stable publishes once both agent runs are done with no
+must-fix Fail; rows only the maintainer can do may follow, listed in the
+report.
 
 ## Waiting and reporting
 

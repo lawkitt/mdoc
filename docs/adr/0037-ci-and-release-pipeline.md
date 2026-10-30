@@ -2,7 +2,10 @@
 
 Status: Accepted, 2026-10-10. Signing amended by [ADR 0039](0039-macos-signing-and-notarization.md);
 CI jobs and cache amended by [ADR 0070](0070-ci-speed-and-script-hygiene.md);
-the pre-merge test gate moved to local CI by [ADR 0082](0082-local-ci.md).
+the pre-merge test gate moved to local CI by [ADR 0082](0082-local-ci.md);
+Windows artifacts (`.exe` only) and tag runs reusing `main`'s CI amended by
+[ADR 0083](0083-fewer-release-candidates.md), effective when its roadmap items
+land.
 
 ## Problem
 

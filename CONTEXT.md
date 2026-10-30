@@ -425,6 +425,12 @@ only when promoted at grooming ([ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md)
 **Smoke run**: a patch release's acceptance check on each shipped target:
 install, launch, open a document, Copy for AI, plus the platform-acceptance
 rows its fixes touch; no release candidate ([ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md)).
+A minor's stable gets one too, after its single RC ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
+
+**Release candidate (RC)**: a `-rc.N` pre-release a minor's full platform
+acceptance runs on. One per minor by default; another only when a must-fix fix
+touches the installer, signing, updates or the keychain. Other fixes are
+re-checked on a local unsigned build ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
 
 **Platform acceptance**: a manual checklist run on an installed release
 candidate on each shipped target, recorded under `docs/evidence/platform/`;

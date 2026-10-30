@@ -3,6 +3,8 @@
 Status: Accepted, 2026-10-22. Supersedes in part [ADR 0057](0057-native-platform-acceptance.md):
 plain keyboard reach is now required.
 Amended by [ADR 0074](0074-one-focus-ring.md): the one outside focus ring.
+Amended 2026-10-30 ([interview](../design/roadmap-grill-2026-10-30.md)):
+F6 into the sidebar lands on the active tab, and ⌃↩ opens a tab's menu.
 
 ## Problem
 
@@ -21,12 +23,13 @@ H18).
 - **Landing:** a region takes focus on the control last focused in it
   (however focus left it), otherwise its first control; the editor gets its
   caret back. Regions follow what is drawn: in a narrow window only the
-  shown pane of Markdown and Original takes part. A sidebar tab is
-  remembered as the tab, not its row: F6 into the sidebar lands on that tab
-  in the layout drawn now, the expanded list or the collapsed rail (which
-  opens its reveal), even if the sidebar was collapsed or expanded since. A
-  closed tab, or one folded into its case, falls back to the region's first
-  control.
+  shown pane of Markdown and Original takes part. The sidebar is the
+  exception: F6 into it always lands on the active tab's row (Home's row on
+  Home), not on Settings or another control last focused there, so ↑ / ↓, ⌫
+  and the tab's menu are one key away. It lands in the layout drawn now, the
+  expanded list or the collapsed rail (which opens its reveal). When that
+  row isn't shown (folded into its case), it falls back to the region's
+  first control.
 - **Tab / ⇧Tab** move to the next / previous control in window order, with a
   visible focus ring, across region edges. The document's notices strip
   (with the narrow-window pane switch), the find bar and the view switcher
@@ -49,8 +52,10 @@ H18).
 - **Sidebar tab list:** one Tab stop, on the row the arrows last reached
   (else the active tab). ↑ / ↓ move between the rows shown (not folded case
   members), Enter opens, ⌫ closes the tab, and Tab leaves the list.
-- **Sidebar context menu:** ⇧F10 on a tab opens its menu in the expanded
-  sidebar or collapsed rail. Tab reaches case actions, including Categories
+- **Sidebar context menu:** ⌃↩ or ⇧F10 on a tab (and the Menu key on
+  Windows) opens its menu in the expanded sidebar or collapsed rail; ⌃↩ needs
+  no fn on MacBook keyboards, where F10 is the mute key, and the shortcuts
+  panel lists it. Tab reaches case actions, including Categories
   to detect. That list takes focus, keeps Tab inside, and Esc or Close returns
   to the sidebar row that opened the menu.
 - **Home:** Tab from Home reaches its controls (Open files, Recents and so on).
@@ -65,7 +70,8 @@ H18).
 - Every control is reachable and can be activated by keyboard alone on both
   platforms, without a screen reader or Full Keyboard Access.
 - Tests cover the F6 order with and without the optional regions, return to
-  the last focused control (a tab across a sidebar collapse and expand), Tab
+  the last focused control, landing on the active tab in the sidebar (also
+  across a collapse and expand and after visiting Settings), Tab
   across region edges in both sidebar layouts, and the sidebar list keys.
 
 ## Consequences

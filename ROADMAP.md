@@ -1,7 +1,7 @@
 # Roadmap
 
 mdoc prepares local documents as editable Markdown for external AI tools.
-This roadmap lists open work as of 2026-10-27 (latest: 0.2.1); accepted
+This roadmap lists open work as of 2026-10-30 (latest: 0.2.1); accepted
 behavior lives in [ADRs](docs/adr/), with terminology in [CONTEXT.md](CONTEXT.md).
 How it is kept: [ADR 0059](docs/adr/0059-roadmap-after-0-1-0.md) and
 [Roadmap upkeep](docs/development.md#roadmap-upkeep). Bugs go to
@@ -37,12 +37,36 @@ review's polish shipped in 0.2.0. Items are in priority order. Until
 five-item box this cycle); rc.1 is cut once every item is done. Each item
 merges to `main` on its own when green.
 
-Added at the 2026-10-29 grill ([record](docs/design/roadmap-grill-2026-10-29.md)):
+Records: [2026-10-29 grill](docs/design/roadmap-grill-2026-10-29.md),
+[2026-10-30 grill](docs/design/roadmap-grill-2026-10-30.md). One RC is the
+default ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)): a must-fix
+fix after rc.1 to the installer, signing, updates or the keychain forces
+another, so such work lands first.
 
-5. **[PII] Selection bar** ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
+1. **[PII] Selection bar** ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
    *From Anoni 0.86.1.* The Replace pill splits into "Replace · Person ▾".
    *Done when:* a mouse and a keyboard-only run add a selection in a picked
    category, and ⌘⌥P still adds with the guess.
+2. **[Windows] `.exe` only** ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
+   *From the 0.2.1 smoke run*, where the `.msi` and the `.exe` sat side by
+   side. Remove the `.msi` and its WiX build; ADR 0037, development.md's
+   Releasing and CONTEXT.md's Pre-release say `.exe` only; the fragment tells
+   `.msi` users to remove it first. *Done when:* a Windows release build
+   carries no `.msi`, and `just setup` no longer installs WiX.
+3. **[Cases] Save As says why it opens.** *From the 2026-10-26 Windows run
+   (E4).* Save mapping as case on an unsaved conversion opens Save As with
+   "Save the document first so the case can find it" (macOS message line,
+   Windows title). *Done when:* both platforms show it, and nothing else
+   changes in the flow.
+4. **[A11y] F6 lands on the active tab** ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
+   *From the rc.4 acceptance run.* F6 into the sidebar lands on the active
+   tab, not the last control (often Settings). *Done when:* F6 from the
+   editor after visiting Settings lands on the active tab on both platforms,
+   in the expanded sidebar and the collapsed rail.
+5. **[A11y] ⌃↩ opens a tab's menu** ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
+   *From the rc.4 acceptance run:* ⇧F10 needs fn on MacBook keyboards.
+   *Done when:* a keyboard-only run opens a sidebar tab's menu with ⌃↩ on
+   both platforms (on a MacBook without fn), and the shortcuts panel lists it.
 
 ## Later
 
@@ -75,9 +99,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[A11y]** Expose status text (download progress, "Download cancelled",
   "Checking runtime…", notices, a model's "Installed") to assistive tech as
   text and announcements. *From the 2026-10-26 Windows run (A5, S5).*
-- **[Cases]** Save mapping as case on an unsaved conversion says why Save As
-  opens ("save the document first so the case can find it"). *From the
-  2026-10-26 Windows run (E4).*
 - **[Windows]** Caption buttons and resize borders respond to synthetic input
   (UI Automation, Voice Access, test agents); today only a physical mouse
   works, and a narrow window leaves almost no title bar to drag, so a
@@ -89,15 +110,13 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - **[A11y]** Report keyboard focus on macOS too: only text fields and dialog
   buttons set `AXFocused`, so accessibility clients and agent-run acceptance
   can't follow focus elsewhere. *From the rc.4 acceptance run.*
-- **[A11y]** F6 into the sidebar lands on the active tab, not the last control
-  (often Settings, where ↑/↓ do nothing), so ↑/↓, ⌫ and the tab's actions are
-  one key away. *From the rc.4 acceptance run.*
-- **[A11y]** A Mac shortcut for a sidebar tab's actions besides ⇧F10, which on
-  MacBook keyboards needs fn (F10 is the mute key). *From the rc.4 acceptance run.*
-- **[Windows]** One install per machine: the `.msi` (all users) and the NSIS
-  `.exe` (per user) each detect the other and stop with a message, and the
-  updater says which one it updates. Today both can sit side by side, with two
-  shortcuts and two `mdoc.exe`. *From the 0.2.1 smoke run.*
+- **[Release]** Measure a cheaper release profile (thin LTO or more codegen
+  units than `lto = true`, `codegen-units = 1`) against binary size and the
+  perf budgets; the package step is 17–24 minutes. RCs and stables keep one
+  profile. *From the 2026-10-30 grill.*
+- **[Windows]** An all-users `.msi` again when an admin or buyer asks; it and
+  the `.exe` detect each other and stop with a message; reuse UpgradeCode
+  `3D50EAE8-D339-41B6-82BC-126389601487` ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
 
 ## Ongoing tracks
 
@@ -130,11 +149,12 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   checks and its `gate` becomes `just lint` plus the changed crates' tests
   (fleet ADR 0017). *Done when:* local and hosted results agreed on five
   PRs and a deliberately failing test branch failed locally first.
-- **Release-run rules:** a patch publishes once both agent runs are done with
-  no must-fix Fail; rows only the maintainer can do may follow. Update
-  `docs/release-run.md` and ADR 0059's acceptance line. (The GUI runner,
-  a Claude desktop session in the `acceptance` account, is already in
-  `docs/release-run.md`.) *From the 0.2.1 run.*
+- **Release runs reuse `main`'s CI** ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)):
+  the `version` job skips the called CI when the release commit only bumps
+  versions and the CHANGELOG and `main` passed its parent (waiting up to ~20
+  minutes for a running one); `smoke-package` adds the Russian fixture.
+  Land before 0.3.0-rc.1. *Done when:* a tag run skips CI on a green parent,
+  runs it otherwise, and both platforms self-test both fixtures.
 
 ## Deferred
 
