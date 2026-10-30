@@ -43,6 +43,13 @@ check() { # description command...
   check "* does not cross directories" eval '! only_ignored "*.md" <<<"docs/a.md"'
   check "a dot is literal" eval '! only_ignored "build/appicon.svg" <<<"build/appiconxsvg"'
   check "no files is not docs only" eval '! only_ignored "**/*.md" </dev/null'
+  # Step limits: the mobile step has its own, longer one.
+  # shellcheck disable=SC2034 # read by timeout_for
+  lint_s=1200 test_s=1800 mobile_s=2400
+  check "lint keeps its limit" [ "$(timeout_for lint)" = 1200 ]
+  check "setup shares lint's limit" [ "$(timeout_for setup)" = 1200 ]
+  check "the mobile step has its own limit" [ "$(timeout_for mobile)" = 2400 ]
+  check "test keeps its limit" [ "$(timeout_for test)" = 1800 ]
   # The mobile step follows the merge's main.
   repo=$(mktemp -d)
   g() { git -C "$repo" -c user.name=t -c user.email=t@example.com "$@"; }

@@ -1,7 +1,7 @@
 import XCTest
 
 /// Light and dark screenshots of Home, the document with the candidate sheet
-/// and the Restore extension, kept as test attachments. Skipped unless the
+/// and the Restore extension, on the Rust core, kept as test attachments. Skipped unless the
 /// run sets `MDOC_SCREENSHOTS=1` (`TEST_RUNNER_MDOC_SCREENSHOTS=1` through
 /// xcodebuild).
 final class ScreenshotUITests: XCTestCase {
@@ -24,28 +24,31 @@ final class ScreenshotUITests: XCTestCase {
     private func capture(_ appearance: XCUIDevice.Appearance, name: String) throws {
         XCUIDevice.shared.appearance = appearance
         defer { XCUIDevice.shared.appearance = .light }
-        let app = XCUIApplication()
-        app.launchArguments = ["-mdoc-ui-testing"]
-        app.launch()
+        let app = MdocUITest.launch()
 
-        let letter = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH 'Letter before claim'"))
-            .firstMatch
-        XCTAssertTrue(letter.waitForExistence(timeout: 10))
+        // Home, then the imported document's review with the rules' candidates.
+        let document = MdocUITest.documentRow(app)
+        XCTAssertTrue(document.waitForExistence(timeout: 60))
         keep("home-\(name)")
 
-        letter.tap()
+        document.tap()
         let text = app.textViews["document-text"]
-        XCTAssertTrue(text.waitForExistence(timeout: 5))
-        text.links["Maya Ellison"].firstMatch.tap()
+        XCTAssertTrue(text.waitForExistence(timeout: 10))
+        let email = text.links[MdocUITest.email].firstMatch
+        XCTAssertTrue(email.waitForExistence(timeout: 30))
+        email.tap()
         XCTAssertTrue(app.buttons["candidate-done"].waitForExistence(timeout: 5))
         keep("candidate-sheet-\(name)")
 
         // Finish the review so the text can be shared, then share it to the
         // Restore with mdoc extension from the share sheet's app row.
         app.buttons["candidate-done"].tap()
-        app.buttons["primary-action"].tap()
-        app.buttons["primary-action"].tap()
+        let primary = app.buttons["primary-action"]
+        XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
+        if primary.label.hasPrefix("Replace") {
+            primary.tap()
+        }
+        primary.tap()
         app.buttons["Share text"].tap()
         let sheet = app.otherElements["ActivityListView"].firstMatch
         XCTAssertTrue(sheet.waitForExistence(timeout: 10))
