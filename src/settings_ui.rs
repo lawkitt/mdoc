@@ -1274,8 +1274,8 @@ impl Panel {
                     .child(self.scrolled_quiet(("model-details", index), if self.details == Some(model) { "Less ↑" } else { "Details ↓" }, theme, true, cx)
                         .when(cfg!(test) && model == Model::Pii(PiiModel::Fp16), |v| v.debug_selector(|| "settings-details-fp16".into()))
                         .on_click(cx.listener(move |this, _, _, cx| { this.details = if this.details == Some(model) { None } else { Some(model) }; cx.notify(); })))))
-            .child(div().px_3().pb_2().child(ui::model_attribution(("model-attribution", index), model, theme)))
-            .when_some(self.progress_of(model), |v, state| v.child(div().px_3().pb_3().child(ui::setup_progress(("model-progress", index), &state, self.cancelling(), theme))))
+            .child(div().px_2().pb_2().child(ui::model_attribution(("model-attribution", index), model, theme)))
+            .when_some(self.progress_of(model), |v, state| v.child(div().px_2().pb_3().child(ui::setup_progress(("model-progress", index), &state, self.cancelling(), theme))))
             .when(self.details == Some(model), |v| {
                 let (revision, path) = match model {
                     Model::Ocr(m) => (ocr::manifest::for_model(m).revision.to_string(), ocr::root().map(|root| ocr::model_root(&root, m)).map_err(|e| e.to_string())),
@@ -1283,7 +1283,7 @@ impl Panel {
                 };
                 let evidence = match model { Model::Ocr(m) => m.evidence(), Model::Pii(m) => m.evidence() };
                 let (_, license) = models::source_and_license(model);
-                let mut details = div().flex().flex_col().gap_2().px_3().pb_3().min_w_0().text_size(px(11.)).text_color(palette.header_muted)
+                let mut details = div().flex().flex_col().gap_2().px_2().pb_3().min_w_0().text_size(px(11.)).text_color(palette.header_muted)
                     .child(div().text_color(palette.header_fg).child(format!("{} · {} MB", model.name(), model_download::megabytes(bytes))))
                     .child(evidence)
                     .when_some(match status { Status::Damaged(e) | Status::Unavailable(e) => Some(e.clone()), _ => None }, |v, reason| v.child(reason));

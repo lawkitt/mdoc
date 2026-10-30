@@ -89,14 +89,25 @@ impl DocumentView {
             let value = TAGS
                 .get_or_init(|| regex::Regex::new(r"<[^>]*>").unwrap())
                 .replace_all(value, " ");
-            value
-                .replace(['*', '`', '|', '\\', '#'], "")
-                .replace(['\n', '\r'], " ")
+            let value = value.replace(['*', '`', '|', '\\', '#'], "");
+            // Line breaks, blank lines and the gaps left by stripped markup
+            // read as one space, so a snippet across blocks has no holes.
+            let mut out = String::with_capacity(value.len());
+            for c in value.chars() {
+                if c.is_whitespace() {
+                    if !out.ends_with(' ') {
+                        out.push(' ');
+                    }
+                } else {
+                    out.push(c);
+                }
+            }
+            out
         }
         (
-            clean(&source[start..range.start]),
+            clean(&source[start..range.start]).trim_start().to_string(),
             clean(&source[range.clone()]),
-            clean(&source[range.end..end]),
+            clean(&source[range.end..end]).trim_end().to_string(),
         )
     }
     fn popup_control(

@@ -78,7 +78,7 @@ impl DocumentView {
                     .inset_0(),
             )
             .child(
-                ui::header_icon(
+                ui::header_menu_icon(
                     "header-history",
                     "What you did",
                     ui::Icon::Clock,

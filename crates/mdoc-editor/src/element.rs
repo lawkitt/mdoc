@@ -3837,7 +3837,10 @@ fn shape_document(
                     + px(LIST_TEXT_GAP)
                     + px(LIST_LEVEL_PER_SPACE) * TAB_INDENT as f32;
                 let bullet_x = step * depth;
-                let text_inset = bullet_x + glyph_w + px(LIST_TEXT_GAP);
+                // Sibling bodies share one left edge: "1." is narrower than
+                // "2." in a proportional font, so its own width would start
+                // item 1's text a few pixels left of the rest.
+                let text_inset = bullet_x + glyph_w.max(marker_w) + px(LIST_TEXT_GAP);
                 Some((
                     plen,
                     LineMark::List {

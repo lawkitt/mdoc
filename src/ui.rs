@@ -240,6 +240,24 @@ pub fn header_icon(
         .tooltip(crate::style::tooltip(label.to_string(), theme))
 }
 
+/// A header icon that opens a menu or popover: its tooltip shows only while
+/// that is closed, so it never sits on top of the menu it opened.
+pub fn header_menu_icon(
+    id: impl Into<gpui::ElementId>,
+    label: impl Into<gpui::SharedString>,
+    icon: Icon,
+    theme: Theme,
+    open: bool,
+) -> Control {
+    let label = label.into();
+    let button = header_icon_untipped(id, label.clone(), icon, theme, open);
+    if open {
+        button
+    } else {
+        button.tooltip(crate::style::tooltip(label.to_string(), theme))
+    }
+}
+
 /// A header icon whose caller sets its own tooltip.
 pub fn header_icon_untipped(
     id: impl Into<gpui::ElementId>,
@@ -745,7 +763,7 @@ pub fn notice_bell(title: &crate::style::TitleBar, theme: Theme) -> Option<AnyEl
                     .inset_0(),
             )
             .child(
-                header_icon(
+                header_menu_icon(
                     "header-notices",
                     if count == 1 {
                         "1 notice".to_string()

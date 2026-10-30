@@ -189,18 +189,22 @@ impl DocumentView {
                             .flex_col()
                             .gap_2()
                             .child(note("Save which original each alias stands for, encrypted on this computer, to restore replies later.".into()))
+                            // A row, so the button keeps its label width like
+                            // Copy Markdown instead of stretching into a field.
                             .child(
-                                ui::primary_button("share-save-case", "Save as case", theme, applied > 0)
-                                    .when(cfg!(test), |v| v.debug_selector(|| "share-save-case".into()))
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        if applied > 0 {
-                                            // The button leaves with the click; the panel
-                                            // stays in every view, so shortcuts keep a
-                                            // focused target (#79).
-                                            window.focus(&this.pii.mapping.focus, cx);
-                                            cx.emit(crate::workspace::TabEvent::Case(crate::workspace::CaseEvent::Create { close: false }));
-                                        }
-                                    })),
+                                div().flex().child(
+                                    ui::primary_button("share-save-case", "Save as case", theme, applied > 0)
+                                        .when(cfg!(test), |v| v.debug_selector(|| "share-save-case".into()))
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            if applied > 0 {
+                                                // The button leaves with the click; the panel
+                                                // stays in every view, so shortcuts keep a
+                                                // focused target (#79).
+                                                window.focus(&this.pii.mapping.focus, cx);
+                                                cx.emit(crate::workspace::TabEvent::Case(crate::workspace::CaseEvent::Create { close: false }));
+                                            }
+                                        })),
+                                ),
                             )
                             .into_any_element(),
                     }),

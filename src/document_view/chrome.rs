@@ -409,7 +409,7 @@ impl DocumentView {
                     .inset_0(),
             )
             .child(
-                ui::header_icon("header-more", "More actions", ui::Icon::More, theme, open)
+                ui::header_menu_icon("header-more", "More actions", ui::Icon::More, theme, open)
                     .track_focus(&self.more_focus)
                     .when(cfg!(test), |v| v.debug_selector(|| "header-more".into()))
                     .on_click(cx.listener(|this, _, window, cx| {
