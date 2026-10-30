@@ -47,7 +47,9 @@ pub struct MarkdownSpan {
 /// What a whole line is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum MarkdownLineKind {
-    Heading { level: u8 },
+    Heading {
+        level: u8,
+    },
     Quote,
     /// A fenced code block's line, the fences included.
     CodeBlock,
@@ -314,7 +316,8 @@ impl<'a> Styler<'a> {
     }
 
     fn finish(mut self) -> MarkdownStyling {
-        self.spans.sort_by_key(|span| (span.range.start, span.range.end));
+        self.spans
+            .sort_by_key(|span| (span.range.start, span.range.end));
         MarkdownStyling {
             spans: self.spans,
             lines: self.lines,
@@ -507,7 +510,11 @@ mod tests {
     fn an_unclosed_fence_runs_to_the_end() {
         let lines = styling("~~~~\ncode\n~~~\nstill code").lines;
         assert_eq!(lines.len(), 4);
-        assert!(lines.iter().all(|line| line.kind == MarkdownLineKind::CodeBlock));
+        assert!(
+            lines
+                .iter()
+                .all(|line| line.kind == MarkdownLineKind::CodeBlock)
+        );
     }
 
     #[test]
@@ -534,7 +541,10 @@ mod tests {
 
     #[test]
     fn plain_text_has_no_spans() {
-        assert_eq!(styling("Анна Смирнова 🏠 pays rent."), MarkdownStyling::default());
+        assert_eq!(
+            styling("Анна Смирнова 🏠 pays rent."),
+            MarkdownStyling::default()
+        );
     }
 
     #[test]
