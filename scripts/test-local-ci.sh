@@ -124,7 +124,7 @@ echo doc >"$tmp/work/docs/a.md"
 mkdir -p "$tmp/work/scripts"
 cat >"$tmp/work/scripts/setup.sh" <<'EOF'
 #!/usr/bin/env bash
-# Setup can prompt (WiX on Windows): the runner closes its stdin.
+# Setup must never wait on a prompt: the runner closes its stdin.
 ! read -r -t 1 _ || exit 5
 echo "$(cat ci-behavior 2>/dev/null || echo none) setup" >>"$FAKE/just.log"
 EOF

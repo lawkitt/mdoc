@@ -557,9 +557,10 @@ notes = "Only the platform-neutral crates build here; a Linux build of the app i
 ## Releasing
 
 Releases ship only for Apple Silicon macOS (`.dmg`) and Windows x64 (NSIS
-`.exe`; `.msi` for stable versions). The repository version is the source of
-truth: `just release 0.1.0-beta.1` checks that `main` is clean and current, runs
-the checks (optionally `check-all`), sets the version in `Cargo.toml`,
+`.exe` only, no `.msi`: [ADR 0083](adr/0083-fewer-release-candidates.md)). The
+repository version is the source of truth: `just release 0.1.0-beta.1` checks
+that `main` is clean and current, runs the checks (optionally `check-all`),
+sets the version in `Cargo.toml`,
 `Cargo.lock` and `Info.plist`, moves the `changes/` fragments into the
 CHANGELOG's Unreleased section, names that section for stable versions,
 commits `release: v…`, tags, and pushes after confirmation. The tag runs
