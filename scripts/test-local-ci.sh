@@ -204,7 +204,9 @@ case "$(platform)" in
 esac
 export FAKE_CONTEXT
 export LOCAL_CI_REPO=example/mdoc LOCAL_CI_URL=https://ci.example/ci
-export LOCAL_CI_POLL=1 LOCAL_CI_TICK=1 LOCAL_CI_TEST_TIMEOUT=3
+# A 15 s test limit: room for a passing fake step while just test runs this
+# beside nextest (scripts/test.sh); the slow one sleeps 60 s.
+export LOCAL_CI_POLL=1 LOCAL_CI_TICK=1 LOCAL_CI_TEST_TIMEOUT=15
 export LOCAL_CI_MIN_FREE_GB=0 LOCAL_CI_MAX_SWAP_MB=999999999
 export CARGO_TARGET_DIR="$tmp/shared-target"
 # As in hosted CI: only the runner's test step may name the renders folder.
@@ -230,7 +232,8 @@ echo log >"$LOCAL_CI_HOME/out/pr-1/0000000/log.txt"
 # A previous runner's lock and job pid, now an unrelated process: the
 # runner takes the lock over and leaves that process alone.
 mkdir -p "$LOCAL_CI_HOME/state/lock"
-sleep 120 &
+# Outlives the runner's 3-minute allowance; killed below.
+sleep 600 &
 unrelated=$!
 echo "$unrelated" >"$LOCAL_CI_HOME/state/lock/pid"
 echo "$unrelated" >"$LOCAL_CI_HOME/state/job.pid"
@@ -282,7 +285,7 @@ for skipped in "$draft" "$fork" "$bot"; do
   check "drafts, forks and bots get no status (${skipped:0:7})" eval "! grep -q '^$skipped' \"\$FAKE/statuses.tsv\""
 done
 check "a failing test fails, naming the step" has "$fail" "failure	Failed in just test on main@$short_base	*"
-check "a test over its limit times out" has "$slow" "failure	Timed out in just test after 0m03s on main@$short_base	*"
+check "a test over its limit times out" has "$slow" "failure	Timed out in just test after 0m15s on main@$short_base	*"
 check "a newer head supersedes a running job" has "$old" "error	Superseded by ${new:0:7}	*"
 check "the newer head is tested" has "$new" "success	Passed on main@$short_base in *"
 check "a tested head is not re-run" has "$done_before" "success	Passed earlier	"
