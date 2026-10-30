@@ -31,6 +31,7 @@ struct MdocSpikeApp: App {
 }
 
 enum Harness {
+    @MainActor
     static func measure() async -> String {
         let thermal = ThermalRecorder()
         let availableAtStart = os_proc_available_memory()
