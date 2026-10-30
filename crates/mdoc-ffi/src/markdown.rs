@@ -11,8 +11,8 @@
 use std::ops::Range;
 
 use mdoc_markdown::{
-    lines::{blockquote_prefix, heading_level, thematic_break},
-    spans::{Background, Color, Span, scan_line},
+    lines::{blockquote_prefix, heading_level, list_prefix, task_prefix, thematic_break},
+    spans::{Background, Color, Span, is_backslash_escaped, scan_line},
     tables::{table_cell_ranges, table_regions},
 };
 
@@ -163,7 +163,7 @@ pub(crate) fn styling(text: &str) -> MarkdownStyling {
             out.marker(trimmed(text, range));
             continue;
         }
-        if let Some(level) = heading_level(line) {
+        if let Some(level) = line_heading(line) {
             out.line(range, MarkdownLineKind::Heading { level });
         } else if blockquote_prefix(line).is_some() {
             out.line(range, MarkdownLineKind::Quote);
@@ -171,6 +171,17 @@ pub(crate) fn styling(text: &str) -> MarkdownStyling {
         out.scan(range.clone());
     }
     out.finish()
+}
+
+/// A line's heading level: an ATX heading, or one right after a list or task
+/// marker (`- ## Notes`), which `scan_line` styles as a heading too.
+fn line_heading(line: &str) -> Option<u8> {
+    heading_level(line).or_else(|| {
+        let prefix = task_prefix(line)
+            .map(|(prefix, ..)| prefix)
+            .or_else(|| list_prefix(line).map(|(prefix, ..)| prefix))?;
+        heading_level(&line[prefix..])
+    })
 }
 
 /// A line's range without its leading and trailing whitespace.
@@ -256,12 +267,22 @@ impl<'a> Styler<'a> {
     /// and the pipes between cells are markers.
     fn table_row(&mut self, range: &Range<usize>) {
         let line = &self.text[range.clone()];
-        let cells = table_cell_ranges(line);
+        let mut cells = table_cell_ranges(line);
+        // The closing pipe is optional (`| a | b`): the text after the last
+        // pipe is a cell too, as the desktop's `table_cells` reads it.
+        if let Some(last) = line.rfind('|') {
+            let after = &line[last + 1..];
+            let content = after.trim();
+            if !content.is_empty() {
+                let start = last + 1 + (after.len() - after.trim_start().len());
+                cells.push(start..start + content.len());
+            }
+        }
         let bytes = line.as_bytes();
         let mut pipes = Vec::new();
         for (index, &byte) in bytes.iter().enumerate() {
             let in_cell = cells.iter().any(|cell| cell.contains(&index));
-            if byte == b'|' && !in_cell {
+            if byte == b'|' && !in_cell && !is_backslash_escaped(bytes, index) {
                 pipes.push(range.start + index..range.start + index + 1);
             }
         }
@@ -487,6 +508,47 @@ mod tests {
                 MarkdownLineKind::TableRow
             ]
         );
+    }
+
+    #[test]
+    fn a_row_without_its_closing_pipe_styles_its_last_cell() {
+        let text = "| A | B |\n| --- | --- |\n| left | **right**\n| `one`";
+        assert_eq!(
+            described(text),
+            pairs(&[
+                ("|", "marker"),
+                ("|", "marker"),
+                ("|", "marker"),
+                ("| --- | --- |", "marker"),
+                ("|", "marker"),
+                ("|", "marker"),
+                ("**", "marker"),
+                ("right", "strong"),
+                ("**", "marker"),
+                ("|", "marker"),
+                ("`", "marker"),
+                ("one", "code"),
+                ("`", "marker"),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_heading_in_a_list_item_is_a_heading_line() {
+        for (text, level) in [("- ## Notes", 2), ("1. ### Steps", 3), ("- [x] # Done", 1)] {
+            assert_eq!(
+                styling(text).lines,
+                vec![MarkdownLine {
+                    range: TextRange {
+                        start: 0,
+                        end: text.len() as u64,
+                    },
+                    kind: MarkdownLineKind::Heading { level },
+                }],
+                "{text}"
+            );
+        }
+        assert!(styling("- #hashtag").lines.is_empty());
     }
 
     #[test]

@@ -136,6 +136,19 @@ final class MarkdownStylingTests: XCTestCase {
         }
     }
 
+    /// A heading after a list marker (`- ## Notes`) is a heading: its size
+    /// and VoiceOver's heading level, as on the desktop.
+    func testAHeadingInAListItemIsAHeading() {
+        let text = "Plain\n- ## Notes"
+        let styled = styler.attributedText(markdown: text, styling: MarkdownStyling(markdown: text), candidates: [])
+        let heading = (text as NSString).range(of: "Notes").location
+        let font = styled.attribute(.font, at: heading, effectiveRange: nil) as? UIFont
+        let body = styled.attribute(.font, at: 0, effectiveRange: nil) as? UIFont
+        XCTAssertGreaterThan(font?.pointSize ?? 0, body?.pointSize ?? 0)
+        XCTAssertEqual(styled.attribute(.accessibilityTextHeadingLevel, at: heading, effectiveRange: nil) as? Int, 2)
+        XCTAssertNil(styled.attribute(.accessibilityTextHeadingLevel, at: 0, effectiveRange: nil))
+    }
+
     func testDocumentColoursAreReadAsRGBA() {
         let colour = UIColor(rgba: 0xC039_2BFF)
         var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
