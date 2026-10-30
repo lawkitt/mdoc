@@ -77,6 +77,20 @@ pub fn set_next_save_prompt_message(message: Option<String>) {
     NEXT_SAVE_PROMPT_MESSAGE.with_borrow_mut(|next| *next = message);
 }
 
+// mdoc patch (MDOC-PATCH.md): asked before AppKit terminates the app.
+thread_local! {
+    static SHOULD_TERMINATE: std::cell::RefCell<Option<Box<dyn FnMut() -> bool>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// mdoc patch: AppKit calls `handler` from `applicationShouldTerminate:`
+/// (the Dock's Quit, a quit Apple Event, logout, and `Platform::quit`).
+/// `true` terminates now; `false` cancels the termination. Without a
+/// handler the app terminates now, as upstream. `None` clears it.
+pub fn set_should_terminate_handler(handler: Option<Box<dyn FnMut() -> bool>>) {
+    SHOULD_TERMINATE.with_borrow_mut(|slot| *slot = handler);
+}
+
 const MAC_PLATFORM_IVAR: &str = "platform";
 static mut APP_CLASS: *const Class = ptr::null();
 static mut APP_DELEGATE_CLASS: *const Class = ptr::null();
@@ -105,6 +119,11 @@ unsafe fn build_classes() {
             decl.add_method(
                 sel!(applicationShouldHandleReopen:hasVisibleWindows:),
                 should_handle_reopen as extern "C" fn(&mut Object, Sel, id, bool),
+            );
+            // mdoc patch: lets the app answer a quit from outside it.
+            decl.add_method(
+                sel!(applicationShouldTerminate:),
+                should_terminate as extern "C" fn(&mut Object, Sel, id) -> NSUInteger,
             );
             decl.add_method(
                 sel!(applicationWillTerminate:),
@@ -1359,6 +1378,26 @@ extern "C" fn should_handle_reopen(this: &mut Object, _: Sel, _: id, has_open_wi
             callback();
             platform.0.lock().reopen.get_or_insert(callback);
         }
+    }
+}
+
+/// mdoc patch: `applicationShouldTerminate:`, answered by the handler from
+/// `set_should_terminate_handler`.
+extern "C" fn should_terminate(_: &mut Object, _: Sel, _: id) -> NSUInteger {
+    const NS_TERMINATE_CANCEL: NSUInteger = 0;
+    const NS_TERMINATE_NOW: NSUInteger = 1;
+    // Taken out while it runs, so the handler may replace itself.
+    let Some(mut handler) = SHOULD_TERMINATE.with_borrow_mut(Option::take) else {
+        return NS_TERMINATE_NOW;
+    };
+    let terminate = handler();
+    SHOULD_TERMINATE.with_borrow_mut(|slot| {
+        slot.get_or_insert(handler);
+    });
+    if terminate {
+        NS_TERMINATE_NOW
+    } else {
+        NS_TERMINATE_CANCEL
     }
 }
 

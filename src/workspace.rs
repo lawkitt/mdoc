@@ -1740,6 +1740,18 @@ impl Workspace {
         .detach();
     }
 
+    /// A quit from outside the app (macOS: the Dock, an Apple Event,
+    /// logout): Quit's questions, in front, since mdoc may be in the
+    /// background.
+    #[cfg(any(target_os = "macos", test))]
+    pub(crate) fn quit_from_system(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.quit(window, cx);
+        if !self.quit_flow.finishing() {
+            cx.activate(true);
+            window.activate_window();
+        }
+    }
+
     /// Tabs a quit would lose something from, in sidebar order: unsaved
     /// changes, an unsaved mapping, or both (ADR 0071).
     fn at_risk_tabs(&mut self, cx: &mut Context<Self>) -> VecDeque<u64> {

@@ -108,3 +108,56 @@ fn failed_final_checkpoint_can_cancel_quit_without_losing_tabs(cx: &mut TestAppC
     });
     assert_eq!(std::fs::read_to_string(parent_file).unwrap(), "preserve");
 }
+
+/// The workspace window behind `cx`, as the macOS terminate hook sees it.
+fn system_quit_target(
+    cx: &mut VisualTestContext,
+) -> (gpui::WindowHandle<Workspace>, gpui::AsyncApp) {
+    cx.update(|window, cx| {
+        (
+            window.window_handle().downcast::<Workspace>().unwrap(),
+            cx.to_async(),
+        )
+    })
+}
+
+#[gpui::test]
+fn system_quit_asks_like_quit_and_terminates_only_after(cx: &mut TestAppContext) {
+    use crate::system_quit::QuitGate;
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_input("unsaved");
+    let gate = QuitGate::default();
+    // The Dock's Quit: AppKit is told no, and Quit's question comes up.
+    assert!(!gate.should_terminate(Some(system_quit_target(cx))));
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert!(!tabs.read(cx).quit_flow.quitting());
+        assert!(view.read(cx).dirty(cx), "Cancel keeps the edit");
+    });
+    assert!(!cx.cx.read(|cx| cx.windows().is_empty()));
+    // Again, and Discard: the quit flow closes the window.
+    assert!(!gate.should_terminate(Some(system_quit_target(cx))));
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    // mdoc's own quit then opens the gate, so its terminate goes through.
+    gate.open();
+    assert!(gate.should_terminate(None));
+}
+
+#[gpui::test]
+fn system_quit_without_changes_closes_without_asking(cx: &mut TestAppContext) {
+    let (_tabs, cx) = boot(cx, Session::default());
+    let gate = crate::system_quit::QuitGate::default();
+    assert!(!gate.should_terminate(Some(system_quit_target(cx))));
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    // Before the window opens there is nothing to lose.
+    assert!(crate::system_quit::QuitGate::default().should_terminate(None));
+}
