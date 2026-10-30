@@ -586,8 +586,6 @@ impl DocumentView {
                                 .map(|identity| {
                                     self.category_menu(
                                         identity,
-                                        selected_count,
-                                        mentions.len(),
                                         ownable.then(|| owner.clone()),
                                         enabled,
                                         cx,
@@ -908,18 +906,15 @@ impl DocumentView {
             .text_color(self.theme.get().pdf_style().header_muted)
             .child(text)
     }
-    /// Category correction: each category with the alias it would give.
+    /// Category correction: each category with the alias choosing it gives,
+    /// or none where the alias stays (#179).
     fn category_menu(
         &self,
         identity: &mdoc_pii::Identity,
-        selected_count: usize,
-        mentions: usize,
         owner: Option<Option<String>>,
         enabled: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let review = &self.pii.review;
-        let custom = identity.custom_alias;
         let palette = self.theme.get().pdf_style();
         let back = self.pii.popup_control_focus("direct-category", cx);
         let menu = self.menu_surface("direct-category-menu");
@@ -938,15 +933,10 @@ impl DocumentView {
         )
         .children(Category::ALL.into_iter().map(|category| {
             let current = identity.category == category;
-            let alias = if (custom || current) && selected_count == mentions {
-                identity.alias.clone()
-            } else {
-                review.next_alias(category)
-            };
             self.menu_row(
                 SharedString::from(format!("direct-category-{}", category.token())),
                 category.label(),
-                alias,
+                self.category_choice_alias(category).unwrap_or_default(),
                 Some(current),
                 enabled,
                 cx,

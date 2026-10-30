@@ -691,6 +691,25 @@ impl Review {
         self.sync_identity_variants();
         Ok(())
     }
+    /// The alias choosing `category` for `identity` gives (#179). `whole`:
+    /// the choice covers all of its mentions and recategorizes it, which keeps
+    /// a custom alias; otherwise the chosen mentions split off under a new
+    /// alias. `None` when the alias stays as it is.
+    pub fn category_choice_alias(
+        &self,
+        identity: u64,
+        category: Category,
+        whole: bool,
+    ) -> Option<String> {
+        let current = self.identity(identity)?;
+        if !whole {
+            Some(self.next_alias(category))
+        } else if current.category == category || current.custom_alias {
+            None
+        } else {
+            Some(self.next_alias(category))
+        }
+    }
     /// Preview without reserving a token or mutating policy on every render.
     pub fn next_alias(&self, category: Category) -> String {
         let mut count = self.counters.get(&category).copied().unwrap_or(0);
