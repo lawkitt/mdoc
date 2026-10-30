@@ -969,6 +969,8 @@ impl Workspace {
             Flush::Prompting => return false,
             Flush::Collect => {}
             Flush::Ask(error) => {
+                // A hidden window (ADR 0084) shows before it asks.
+                crate::menu_bar::reveal_if_hidden(window, cx);
                 let answer = window.prompt(
                 PromptLevel::Warning,
                 "Could not save replacement mappings",

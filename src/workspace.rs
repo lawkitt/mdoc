@@ -1709,6 +1709,18 @@ impl Workspace {
         }
     }
 
+    /// Files opened from Finder or another app: a window hidden by the
+    /// menu bar item (ADR 0084) shows them.
+    pub(crate) fn open_paths_from_os(
+        &mut self,
+        paths: Vec<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        crate::menu_bar::reveal_if_hidden(window, cx);
+        self.open_paths(paths, window, cx);
+    }
+
     /// The window's close button: quit, or with the menu bar item on, hide
     /// the window with every tab kept in memory (ADR 0084). A quit already
     /// asking goes on.
@@ -1737,8 +1749,8 @@ impl Workspace {
         }
         let at_risk = self.at_risk_tabs(cx);
         // A hidden window (ADR 0084) shows before it asks anything.
-        if !at_risk.is_empty() && crate::menu_bar::window_hidden(cx) {
-            crate::menu_bar::reveal_window(window, cx);
+        if !at_risk.is_empty() {
+            crate::menu_bar::reveal_if_hidden(window, cx);
         }
         if at_risk.len() < 2 {
             self.start_quit(at_risk, window, cx);
@@ -1828,6 +1840,7 @@ impl Workspace {
     fn carry_out_quit(&mut self, effect: QuitEffect, window: &mut Window, cx: &mut Context<Self>) {
         match effect {
             QuitEffect::Resolve(id) => {
+                crate::menu_bar::reveal_if_hidden(window, cx);
                 if self.quit_flow.quitting() && self.ask_quit_mapping(id, window, cx) {
                     return;
                 }
