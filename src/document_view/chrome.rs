@@ -176,7 +176,14 @@ impl DocumentView {
             Primary::None => return None,
             Primary::Scanning => self.scan_status(cx)?,
             Primary::Convert => {
-                ui::filled_button("primary-action", "Convert to Markdown", theme, true)
+                // After a failed conversion the same action is a retry; say so,
+                // since a click that fails again changes nothing on screen.
+                let label = if self.error.is_some() {
+                    "Try again"
+                } else {
+                    "Convert to Markdown"
+                };
+                ui::filled_button("primary-action", label, theme, true)
                     .when(cfg!(test), |v| {
                         v.debug_selector(|| "primary-convert".into())
                     })
