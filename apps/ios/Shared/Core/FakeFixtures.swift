@@ -115,6 +115,9 @@ enum FakeFixtures {
 
     static let notePrefix = "Note from a client"
 
+    /// The fake's import warning for PDFs, like the core's partial results.
+    static let importWarning = "Page 2 has no text layer and was skipped."
+
     /// Text "recognized" from a file the user imported.
     static func importedText(title: String) -> String {
         """

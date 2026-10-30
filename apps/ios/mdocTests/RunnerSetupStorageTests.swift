@@ -61,14 +61,14 @@ final class LongJobRunnerTests: XCTestCase {
         let gate = TestObserver()
         let run = Task {
             await jobs.run(.scan, documentID: nil, title: "job") { observer in
-                observer.progress(fraction: 0.5, page: nil, pageCount: nil)
+                observer.progress(JobUpdate(stage: .scanning, fraction: 0.5))
                 while !gate.isCancelled() {
                     Thread.sleep(forTimeInterval: 0.01)
                 }
                 return 0
             }
         }
-        while jobs.current?.progress.fraction != 0.5 { await Task.yield() }
+        while jobs.current?.progress?.fraction != 0.5 { await Task.yield() }
         gate.cancel()
         _ = await run.value
     }
@@ -109,7 +109,6 @@ final class SetupViewModelTests: XCTestCase {
             downloader: FakeModelDownloader(seconds: downloadSeconds),
             network: FakeNetwork(isExpensive: expensive),
             jobs: LongJobRunner(background: NoBackgroundContinuation()),
-            physicalMemory: memory,
             defaults: defaults)
         return (model, defaults)
     }
@@ -180,7 +179,7 @@ final class StorageTests: XCTestCase {
             let values = try storage.url(area).resourceValues(forKeys: [.isExcludedFromBackupKey])
             XCTAssertEqual(values.isExcludedFromBackup, true, "\(area) is in backups")
         }
-        let file = try storage.write(Data("text".utf8), named: "a.md", in: .markdown)
+        let file = try storage.write(Data("text".utf8), named: "a.md", in: .documents)
         let values = try file.resourceValues(forKeys: [.isExcludedFromBackupKey, .fileProtectionKey])
         XCTAssertEqual(values.isExcludedFromBackup, true)
         #if !targetEnvironment(simulator)
@@ -198,9 +197,10 @@ final class StorageTests: XCTestCase {
         let storage = try Fixture.temporaryStorage()
         let source = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).pdf")
         try Data("%PDF".utf8).write(to: source)
-        let copy = try storage.importCopy(of: source, in: .documents)
+        let copy = try storage.importCopy(of: source, in: .originals, named: "Contract")
         XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
-        XCTAssertTrue(copy.path.hasPrefix(storage.url(.documents).path))
+        XCTAssertTrue(copy.path.hasPrefix(storage.url(.originals).path))
+        XCTAssertEqual(copy.lastPathComponent, "Contract.pdf")
     }
 
     func testClearEmptiesTheHandOffFolder() throws {

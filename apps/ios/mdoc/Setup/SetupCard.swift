@@ -75,7 +75,7 @@ struct SetupCard: View {
         case .detector:
             String(localized: "mdoc downloads its name detector and text recognition once (\(size)). After that, documents are read and checked on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.")
         case .rulesOnly:
-            String(localized: "This device has too little memory for the name detector. mdoc finds emails, phone numbers, IBANs and other structured details, and you mark names by selecting them. Text recognition is a \(size) download.")
+            String(localized: "This device has too little memory for the name detector. mdoc finds emails, phone numbers, IBANs and other structured details, and you mark names by selecting them. Text recognition downloads once (\(size)).")
         }
     }
 }

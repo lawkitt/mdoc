@@ -108,14 +108,29 @@ struct DocumentScreen: View {
                 systemImage: "text.viewfinder",
                 description: Text("mdoc reads the text when recognition runs."))
         } else {
-            MarkdownTextView(
-                snapshot: model.snapshot,
-                selected: model.reviewing,
-                onCandidate: { model.open($0) },
-                onReplace: { model.beginReplace($0) },
-                onReviewNext: { model.reviewNext() })
-            .ignoresSafeArea(.container, edges: .bottom)
+            VStack(spacing: 0) {
+                if let warning = model.snapshot.warning {
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                        .background(Color.orange.opacity(0.15))
+                        .accessibilityIdentifier("import-warning")
+                }
+                markdownText
+            }
         }
+    }
+
+    private var markdownText: some View {
+        MarkdownTextView(
+            snapshot: model.snapshot,
+            selected: model.reviewing,
+            onCandidate: { model.open($0) },
+            onReplace: { model.beginReplace($0) },
+            onReviewNext: { model.reviewNext() })
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     /// The panes a picker offers: on iPhone all of them, on iPad the right side.
@@ -180,7 +195,7 @@ struct DocumentScreen: View {
             }
             if model.needsSetup && setup.snapshot.needsSetup {
                 SetupCard(model: setup, dismissible: false) {
-                    await model.findNames()
+                    await model.continueAfterSetup()
                 }
             }
             if let interruption = model.interruption {
@@ -224,12 +239,13 @@ private struct InterruptionBanner: View {
 
     var body: some View {
         HStack {
+            // The core cannot resume OCR part-way yet, so both start again.
             Text(kind == .recognize
-                ? "Recognition stopped when mdoc left the screen. Finished pages are kept."
+                ? "Recognition stopped when mdoc left the screen."
                 : "Finding names stopped when mdoc left the screen.")
                 .font(.footnote)
             Spacer()
-            Button(kind == .recognize ? "Resume" : "Start again", action: resume)
+            Button("Start again", action: resume)
                 .buttonStyle(.bordered)
         }
     }
@@ -253,9 +269,22 @@ private struct ActionBar: View {
             }
         case .running(let kind, let progress):
             HStack(spacing: 12) {
-                ProgressView(value: progress.fraction) {
-                    Text(Self.progressLabel(kind, progress))
-                        .font(.footnote)
+                Group {
+                    // The core reports stages; a fraction only when it knows one.
+                    if let fraction = progress?.fraction {
+                        ProgressView(value: fraction) {
+                            Text(Self.progressLabel(kind, progress))
+                                .font(.footnote)
+                        }
+                    } else {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text(Self.progressLabel(kind, progress))
+                                .font(.footnote)
+                            Spacer(minLength: 0)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
                 }
                 .accessibilityIdentifier("job-progress")
                 Button("Cancel", role: .cancel) {
@@ -337,17 +366,22 @@ private struct ActionBar: View {
         .accessibilityIdentifier("primary-action")
     }
 
-    static func progressLabel(_ kind: JobKind, _ progress: JobProgress) -> String {
-        switch kind {
-        case .recognize:
-            if let page = progress.page, let count = progress.pageCount {
-                return String(localized: "Recognizing page \(min(page + 1, count)) of \(count)")
+    static func progressLabel(_ kind: JobKind, _ progress: JobUpdate?) -> String {
+        if let page = progress?.page, let count = progress?.pageCount, count > 0 {
+            return String(localized: "Recognizing page \(min(page + 1, count)) of \(count)")
+        }
+        switch progress?.stage {
+        case .reading: return String(localized: "Reading the file")
+        case .converting: return String(localized: "Converting")
+        case .recognizing: return String(localized: "Recognizing text")
+        case .scanning: return String(localized: "Finding names")
+        case .installing: return String(localized: "Installing")
+        case nil:
+            switch kind {
+            case .recognize: return String(localized: "Reading the file")
+            case .scan: return String(localized: "Finding names")
+            case .install: return String(localized: "Installing")
             }
-            return String(localized: "Recognizing text")
-        case .scan:
-            return String(localized: "Finding names")
-        case .install:
-            return String(localized: "Installing")
         }
     }
 }

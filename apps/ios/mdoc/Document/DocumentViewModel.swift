@@ -15,7 +15,7 @@ final class DocumentViewModel {
     enum PrimaryAction: Equatable {
         case recognize(resume: Bool)
         case findNames
-        case running(JobKind, JobProgress)
+        case running(JobKind, JobUpdate?)
         /// Another document's job holds the one slot.
         case waiting
         case replaceAll(Int)
@@ -39,8 +39,10 @@ final class DocumentViewModel {
     var errorMessage: String?
     /// A short confirmation such as "Copied for AI".
     private(set) var notice: String?
-    /// The scan needs a model the device has not downloaded.
-    private(set) var needsSetup = false
+    /// Recognition or the scan needs a model the device has not downloaded.
+    var needsSetup: Bool { waitingForSetup != nil }
+    /// The job that asked for setup, run again once the models are in.
+    private(set) var waitingForSetup: JobKind?
 
     init(session: any DocumentSession, jobs: LongJobRunner, storage: MdocStorage, onChange: @escaping () -> Void = {}) {
         self.session = session
@@ -86,24 +88,39 @@ final class DocumentViewModel {
     // MARK: Jobs
 
     func recognize() async {
+        waitingForSetup = nil
         let session = session
         let outcome = await jobs.run(.recognize, documentID: id, title: String(localized: "Recognizing \(snapshot.title)")) { observer in
             try session.recognize(observer: observer)
+        }
+        if case .failed(CoreError.modelMissing) = outcome {
+            // Scans, photos and text-less PDFs need OCR.
+            waitingForSetup = .recognize
+            return
         }
         finish(outcome)
     }
 
     func findNames() async {
-        needsSetup = false
+        waitingForSetup = nil
         let session = session
         let outcome = await jobs.run(.scan, documentID: id, title: String(localized: "Finding names in \(snapshot.title)")) { observer in
             try session.scan(observer: observer)
         }
         if case .failed(CoreError.modelMissing) = outcome {
-            needsSetup = true
+            waitingForSetup = .scan
             return
         }
         finish(outcome)
+    }
+
+    /// Download & continue: the job that asked for setup runs again.
+    func continueAfterSetup() async {
+        switch waitingForSetup {
+        case .recognize: await recognize()
+        case .scan: await findNames()
+        case .install, nil: break
+        }
     }
 
     /// Resume after mdoc left the screen: OCR keeps its finished pages, the

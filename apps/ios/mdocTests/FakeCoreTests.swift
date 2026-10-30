@@ -11,7 +11,7 @@ final class FakeCoreTests: XCTestCase {
         let letter = try library.session(for: Fixture.letter).snapshot()
         XCTAssertEqual(letter.phase, .reviewing)
         XCTAssertGreaterThan(letter.pendingCount, 5)
-        XCTAssertEqual(snapshot.lastSharedCase, Fixture.ellison)
+        XCTAssertEqual(snapshot.currentCase, Fixture.ellison)
     }
 
     func testCandidateRangesPointAtTheirWording() throws {
@@ -26,7 +26,7 @@ final class FakeCoreTests: XCTestCase {
     func testReplaceAllOccurrencesPutsTheAliasInTheText() throws {
         let session = try Fixture.core().library.session(for: Fixture.letter)
         let maya = try XCTUnwrap(session.snapshot().candidates.first { $0.original == "Maya Ellison" })
-        let after = try session.decide(maya.id, .replace(alias: maya.alias), scope: .allOccurrences)
+        let after = try session.decide(maya.id, .replace, scope: .allOccurrences)
         XCTAssertFalse(after.markdown.contains("Maya Ellison"))
         XCTAssertTrue(after.markdown.contains("PERSON_1"))
         XCTAssertTrue(after.mentions(of: maya.identityID).allSatisfy { $0.state == .replaced })
@@ -52,7 +52,7 @@ final class FakeCoreTests: XCTestCase {
         XCTAssertTrue(handOff.text.hasPrefix("Note: names and other identifying details"))
         XCTAssertFalse(handOff.text.contains("Maya Ellison"))
         XCTAssertEqual(handOff.fileName, "Letter before claim.md")
-        XCTAssertEqual(library.snapshot().lastSharedDocument, Fixture.letter)
+        XCTAssertEqual(library.snapshot().currentCase, Fixture.ellison)
     }
 
     func testRestorePutsBackKnownAliasesAndFlagsUnknownOnes() throws {
@@ -63,27 +63,6 @@ final class FakeCoreTests: XCTestCase {
         XCTAssertEqual(result.unresolvedCount, 1)
     }
 
-    func testCustomAliasRoundTrips() throws {
-        let library = Fixture.core().library
-        let session = try library.session(for: Fixture.letter)
-        let maya = try XCTUnwrap(session.snapshot().candidates.first { $0.original == "Maya Ellison" })
-        _ = try session.decide(maya.id, .replace(alias: "CLIENT_A"), scope: .allOccurrences)
-        _ = try session.replaceAllPending()
-        XCTAssertTrue(try session.copyForAI().text.contains("CLIENT_A"))
-        let result = try library.restore(reply: "client_a agrees; CLIENT_AB does not.", in: Fixture.ellison)
-        XCTAssertEqual(result.text, "Maya Ellison agrees; CLIENT_AB does not.")
-        XCTAssertEqual(result.restoredCount, 1)
-    }
-
-    func testJustThisOneAliasRestores() throws {
-        let library = Fixture.core().library
-        let session = try library.session(for: Fixture.letter)
-        let okafor = try XCTUnwrap(session.snapshot().candidates.first { $0.original == "Mr Okafor" })
-        _ = try session.decide(okafor.id, .replace(alias: "SUPPLIER"), scope: .justThisOne)
-        let result = try library.restore(reply: "SUPPLIER replied.", in: Fixture.ellison)
-        XCTAssertEqual(result.text, "Daniel Okafor replied.")
-    }
-
     func testBelowTheFloorTheRulesRunWithoutAModel() throws {
         let core = Fixture.core(modelsInstalled: false, memory: 4 * Fixture.gigabyte)
         let session = try core.library.session(for: Fixture.quotation)
@@ -92,6 +71,12 @@ final class FakeCoreTests: XCTestCase {
         XCTAssertFalse(scanned.candidates.isEmpty)
         XCTAssertTrue(scanned.candidates.allSatisfy { [.email, .phone, .bank].contains($0.category) })
         XCTAssertNoThrow(try session.scan(observer: TestObserver()))
+    }
+
+    func testRestoreCountsDistinctValues() throws {
+        let result = try Fixture.core().library.restore(reply: "PERSON_1, PERSON_1, ORG_9, ORG_9.", in: Fixture.ellison)
+        XCTAssertEqual(result.restoredCount, 1)
+        XCTAssertEqual(result.unresolvedCount, 1)
     }
 
     func testRestoreNeverUsesAnotherCase() throws {
@@ -140,11 +125,10 @@ final class FakeCoreTests: XCTestCase {
     }
 
     func testSetupOffersOnlyWhatFitsTheMemory() {
-        let setup = Fixture.core(modelsInstalled: false).setup
-        let small = setup.snapshot(physicalMemory: 4 * 1_073_741_824)
+        let small = Fixture.core(modelsInstalled: false, memory: 4 * Fixture.gigabyte).setup.snapshot()
         XCTAssertEqual(small.tier, .rulesOnly)
         XCTAssertFalse(small.offers.contains { $0.purpose == .detector })
-        let large = setup.snapshot(physicalMemory: 8 * 1_073_741_824)
+        let large = Fixture.core(modelsInstalled: false, memory: 8 * Fixture.gigabyte).setup.snapshot()
         XCTAssertEqual(large.tier, .detector)
         XCTAssertTrue(large.offers.contains { $0.purpose == .detector })
     }

@@ -3,16 +3,21 @@
 The iPhone and iPad app ([ADR 0085](../../docs/adr/0085-mobile-apps.md)):
 scan or open a document, review the names mdoc finds, share the
 pseudonymized text to an AI app and restore its reply. SwiftUI on iOS 17
-and later; no third-party Swift packages.
+and later over the Rust core (`crates/mdoc-ffi`); no third-party Swift
+packages.
 
 ```sh
-just ios-app    # build the app, extension and test targets for the Simulator
-just ios-test   # unit tests and the UI test on an iOS 26.1 Simulator
+just ios-app    # the core, then the app, extension and test targets for the Simulator
+just ios-test   # unit, parity and UI tests on an iOS 26.1 Simulator
 just ios-test "<Simulator name>"   # another device, such as an iPad
+just mobile     # what local CI runs on the Mac, the iOS job included
 ```
 
-Both need Xcode with the iOS 26.1 platform; builds go to
-`target/ios/DerivedData` and are unsigned.
+They need Xcode with the iOS 26.1 platform. Both build the core first
+(`just ios-core`: `target/ios/MdocCore.xcframework`, its Swift bindings and
+`pdfium.xcframework`; a few seconds when nothing changed). Builds go to
+`target/ios/DerivedData` and are unsigned. The core is arm64 only, so the
+Simulator builds exclude x86_64.
 
 ## Layout
 
@@ -21,30 +26,50 @@ synchronized group, so adding a file needs no project edit.
 
 | Folder | Target | What it holds |
 | --- | --- | --- |
-| `Shared/` | app and extension | `Core/`: the Swift protocols mirroring `mdoc-ffi`'s `Library`, `DocumentSession` and `Setup`, their value types, and `FakeCore`; `Storage/`; the restore view and view model; `Localizable.xcstrings` |
-| `mdoc/` | app | Home, the document screen, hand-off, setup, Settings and the long-job runner |
+| `MdocFFI/` | `MdocFFI` framework | Compiles the generated bindings (`target/ios/swift/mdoc_ffi.swift`) over `MdocCore.xcframework`, plus `CoreFailure`, a public form of the core's error |
+| `Shared/` | app and extension | `Core/`: the app's `Library`, `DocumentSession` and `Setup` protocols and value types, `RealCore` over the bindings, `FakeCore`, `CoreFactory`; `Storage/` (folders, the case key); the restore view and view model; `Localizable.xcstrings` |
+| `mdoc/` | app | Home, the document screen, hand-off, setup and the background model downloader, Settings, the long-job runner |
 | `RestoreExtension/` | Restore with mdoc | The share extension's entry point |
-| `mdocTests/`, `mdocUITests/` | tests | View models against `FakeCore`; one open → review → share → restore walk |
+| `mdocTests/`, `mdocUITests/` | tests | View models against `FakeCore`; `RealCore`, the downloader and the Keychain store; parity with the desktop's goldens; one open → review → share → restore walk and the screenshots on the core |
 | `Config/` | — | Info.plist additions and entitlements |
+
+The app embeds `MdocFFI.framework` and `pdfium.framework`; the extension
+links the app's copy of `MdocFFI`. The core reaches ONNX Runtime through
+`OrtGetApiBase` in the image that holds it, so `MdocFFI` keeps that symbol
+(`-u _OrtGetApiBase`), strips local symbols only and builds no debug dylib.
 
 ## Rules
 
 - **Rust owns state.** View models keep the snapshots the core returns and
-  view state only; every change is a core call. `CoreFactory` is the one
-  place that picks the core: `FakeCore` (fictional fixtures, in memory)
-  until `mdoc-ffi` is wired in.
-- **Offsets are source bytes.** Candidate and span ranges are UTF-8 offsets
-  into the Markdown source; `TextOffsets` converts them for UIKit.
-  `MarkdownSpanKind` is filled from `mdoc-markdown` later.
+  view state only; every change is a core call, and a document saves into
+  its case after each one. `CoreFactory` picks the core: `RealCore` in the
+  app and the extension, `FakeCore` (fictional fixtures, in memory) only in
+  the view-model tests.
+- **Offsets are source bytes.** Mention ranges are UTF-8 offsets into the
+  Markdown source; `TextOffsets` converts them for UIKit. Markdown spans are
+  still recognized in Swift (`MarkdownSpanRecognizer`) until `mdoc-markdown`
+  is exposed through `mdoc-ffi`.
 - **One long job at a time**, with progress and cancel. iOS 26 keeps it
   running in the background through `BGContinuedProcessingTask`; earlier
   versions get the short grace, then cancel and offer to resume.
 - **Storage.** Everything lives in the App Group container
-  (`group.io.github.lawkitt.mdoc`), excluded from backups; documents,
-  Markdown and cases use Data Protection Complete.
-- **The extension loads no model.** It only restores with a case's mapping.
+  (`group.io.github.lawkitt.mdoc`), excluded from backups: the core's
+  `documents/` and `cases/`, the source files in `originals/`, models and
+  their downloads. All but models use Data Protection Complete. The case key
+  is 32 random bytes in the Keychain (the shared access group, this device
+  only, readable while unlocked).
+- **Intake.** PDF, DOCX and pasted text go to the core as they are; camera
+  and photo pages become upright JPEGs, and several pages one image-only
+  PDF, which the core reads with OCR.
+- **Models.** `Setup` offers what the device's RAM allows; the files
+  download in a background `URLSession` (Wi-Fi unless the user allows
+  cellular), and the core checks and installs each one.
+- **The extension loads no model.** It restores with the library's current
+  case or one the user picks.
 - **Strings** live in `Shared/Localizable.xcstrings` (Info.plist strings in
   each target's `InfoPlist.xcstrings`); every visible string goes there.
 
-The UI test launches the app with `-mdoc-ui-testing`: instant jobs, models
-installed, a fresh fixture library.
+UI tests launch the app with `-mdoc-ui-testing`: a fresh library of its own
+in the App Group (the extension follows it), its own case key, and the
+structured rules instead of the detector, so no model is needed. The app
+imports the file in `MDOC_SEED_FILE` (the demo DOCX) and scans it at launch.

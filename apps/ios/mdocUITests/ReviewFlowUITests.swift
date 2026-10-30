@@ -1,7 +1,8 @@
 import XCTest
 
-/// Open → review → share → restore with the fake core (ADR 0085's short
-/// XCUITest).
+/// Open → review → share → restore on the Rust core (ADR 0085's short
+/// XCUITest). The app imports the demo DOCX at launch and scans it with the
+/// structured rules, so no model is needed.
 final class ReviewFlowUITests: XCTestCase {
     override func setUp() {
         continueAfterFailure = false
@@ -9,68 +10,94 @@ final class ReviewFlowUITests: XCTestCase {
 
     @MainActor
     func testOpenReviewShareRestore() throws {
-        let app = XCUIApplication()
-        app.launchArguments = ["-mdoc-ui-testing"]
-        app.launch()
+        let app = MdocUITest.launch()
 
-        // Open: the fixture letter from Home.
-        let letter = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH 'Letter before claim'"))
-            .firstMatch
-        XCTAssertTrue(letter.waitForExistence(timeout: 10))
-        letter.tap()
+        // Open: the imported document from Home.
+        let document = MdocUITest.documentRow(app)
+        XCTAssertTrue(document.waitForExistence(timeout: 60))
+        document.tap()
 
-        // Review: tap an underlined name, replace every occurrence.
+        // Review: tap the email the rules found and replace every occurrence.
         let text = app.textViews["document-text"]
-        XCTAssertTrue(text.waitForExistence(timeout: 5))
-        let candidate = text.links["Maya Ellison"].firstMatch
-        XCTAssertTrue(candidate.waitForExistence(timeout: 5))
-        candidate.tap()
+        XCTAssertTrue(text.waitForExistence(timeout: 10))
+        let email = text.links[MdocUITest.email].firstMatch
+        XCTAssertTrue(email.waitForExistence(timeout: 30))
+        email.tap()
         let done = app.buttons["candidate-done"]
         XCTAssertTrue(done.waitForExistence(timeout: 5))
-        XCTAssertTrue(app.textFields["candidate-alias"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["candidate-alias"].exists)
         done.tap()
-        XCTAssertTrue(text.links["PERSON_1"].firstMatch.waitForExistence(timeout: 5))
-        XCTAssertFalse(text.links["Maya Ellison"].exists)
+        // The text view rebuilds its elements after a change; ask the app.
+        XCTAssertTrue(app.links["EMAIL_1"].firstMatch.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.links[MdocUITest.email].exists)
 
-        // Replace the remaining proposals, as reviewed.
+        // Replace any remaining proposals, as reviewed.
         let primary = app.buttons["primary-action"]
-        XCTAssertTrue(primary.label.hasPrefix("Replace"))
-        primary.tap()
+        XCTAssertTrue(primary.waitForExistence(timeout: 5))
+        if primary.label.hasPrefix("Replace") {
+            primary.tap()
+        }
 
         // Share: the share sheet opens with the pseudonymized text.
-        XCTAssertTrue(primary.waitForExistence(timeout: 5))
         XCTAssertTrue(primary.label.hasPrefix("Share"))
         primary.tap()
         app.buttons["Share text"].tap()
-        let shareSheet = app.otherElements["ActivityListView"].firstMatch
-        XCTAssertTrue(shareSheet.waitForExistence(timeout: 10))
-        closeShareSheet(app)
+        let sheet = app.otherElements["ActivityListView"].firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 10))
+        MdocUITest.closeShareSheet(app)
 
         // Restore: paste the AI's reply into the document.
         app.buttons["paste-reply"].tap()
         let editor = app.textViews["reply-editor"]
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
-        editor.typeText("PERSON_1 should hear from ORG_1 by Friday. ORG_9 is new.")
+        editor.typeText("Write to EMAIL_1 today. EMAIL_9 is new.")
         app.buttons["reply-restore"].tap()
 
         let restored = app.staticTexts["restored-text"]
-        XCTAssertTrue(restored.waitForExistence(timeout: 5))
-        XCTAssertTrue(restored.label.contains("Maya Ellison should hear from Brightwater Joinery Ltd by Friday."))
+        XCTAssertTrue(restored.waitForExistence(timeout: 10))
+        XCTAssertTrue(restored.label.contains("Write to \(MdocUITest.email) today."))
         let summary = app.staticTexts["restore-summary"]
-        XCTAssertTrue(summary.label.contains("2 values restored"))
+        XCTAssertTrue(summary.label.contains("1 value restored"))
         XCTAssertTrue(summary.label.contains("1 unrecognised"))
+    }
+}
+
+/// What the UI tests share: the launch with a fixture import, and lookups.
+enum MdocUITest {
+    static let email = "maya.bennett@example.com"
+    static let title = "Settlement agreement"
+
+    /// The repository, from this file's path (the Simulator reads the Mac's files).
+    static let repo = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+
+    @MainActor
+    static func launch() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-mdoc-ui-testing"]
+        app.launchEnvironment["MDOC_SEED_FILE"] = repo.appendingPathComponent("docs/product-media/Settlement agreement.docx").path
+        app.launch()
+        return app
     }
 
     @MainActor
-    private func closeShareSheet(_ app: XCUIApplication) {
+    static func documentRow(_ app: XCUIApplication) -> XCUIElement {
+        // Rows read "<title>, <status>"; the row is ready to open once it
+        // has candidates to review.
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH %@ AND label CONTAINS 'to review'", title))
+            .firstMatch
+    }
+
+    @MainActor
+    static func closeShareSheet(_ app: XCUIApplication) {
         let close = app.buttons["Close"].firstMatch
         if close.waitForExistence(timeout: 2) {
             close.tap()
         } else {
             app.otherElements["ActivityListView"].firstMatch.swipeDown(velocity: .fast)
         }
-        XCTAssertTrue(app.buttons["paste-reply"].waitForExistence(timeout: 5))
+        _ = app.buttons["paste-reply"].waitForExistence(timeout: 5)
     }
 }

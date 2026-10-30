@@ -61,9 +61,12 @@ config() {
     macos) steps=${LOCAL_CI_STEPS:-setup lint test mobile} ;;
     *) steps=${LOCAL_CI_STEPS:-setup lint test} ;;
   esac
-  # The hosted job limits (ADR 0082): clippy 20 min, test 30 min.
+  # The hosted job limits (ADR 0082): clippy 20 min, test 30 min. The
+  # mobile step also builds the iOS core and app and runs the Simulator
+  # tests when a PR changes them (ADR 0085): 40 min.
   lint_s=${LOCAL_CI_LINT_TIMEOUT:-1200}
   test_s=${LOCAL_CI_TEST_TIMEOUT:-1800}
+  mobile_s=${LOCAL_CI_MOBILE_TIMEOUT:-2400}
   keep_days=${LOCAL_CI_KEEP_DAYS:-7}
   # The Mac is a build slot beside two agent builders (ADR 0082).
   min_free_gb=${LOCAL_CI_MIN_FREE_GB:-40}
@@ -248,7 +251,8 @@ capacity_ok() {
 
 timeout_for() {
   case "$1" in
-    setup | lint | mobile) echo "$lint_s" ;;
+    setup | lint) echo "$lint_s" ;;
+    mobile) echo "$mobile_s" ;;
     *) echo "$test_s" ;;
   esac
 }

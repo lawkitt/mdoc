@@ -20,7 +20,7 @@ final class RestoreViewModel {
         self.library = library
         self.reply = reply
         snapshot = library.snapshot()
-        selectedCase = snapshot.lastSharedCase ?? snapshot.cases.first?.id
+        selectedCase = snapshot.currentCase ?? snapshot.cases.first?.id
         restore()
     }
 
@@ -35,11 +35,9 @@ final class RestoreViewModel {
         return snapshot.documents(in: selectedCase)
     }
 
-    /// Save to document's default: the document shared last when it is in
-    /// this case, else the case's most recent one.
+    /// Save to document's default: the case's most recently changed document.
     var defaultSaveTarget: DocumentSummary? {
-        let documents = documentsInCase
-        return documents.first { $0.id == snapshot.lastSharedDocument } ?? documents.first
+        documentsInCase.first
     }
 
     func selectCase(_ id: CaseID) {

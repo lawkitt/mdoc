@@ -32,7 +32,16 @@ struct IdentitiesView: View {
             }
         }
         .listStyle(.insetGrouped)
-        .navigationTitle("Identities")
+        // Its own title row: a navigation title here would replace the
+        // document's in the bar on iPhone, where the inspector is a sheet.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Text("Identities")
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(.bar)
+                .accessibilityAddTraits(.isHeader)
+        }
     }
 
     private func row(_ identity: Identity) -> some View {
@@ -55,7 +64,7 @@ struct IdentitiesView: View {
         .accessibilityLabel(Text(Self.spoken(identity)))
         .accessibilityHint(Text("Opens the first mention."))
         .accessibilityAction(named: Text("Replace all")) {
-            onDecide(identity.id, .replace(alias: identity.alias))
+            onDecide(identity.id, .replace)
         }
         .accessibilityAction(named: Text("Keep all")) {
             onDecide(identity.id, .keep)
@@ -66,7 +75,7 @@ struct IdentitiesView: View {
             }
             .tint(.gray)
             Button("Replace") {
-                onDecide(identity.id, .replace(alias: identity.alias))
+                onDecide(identity.id, .replace)
             }
             .tint(identity.category.color)
         }
