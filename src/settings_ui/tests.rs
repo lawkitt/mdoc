@@ -474,6 +474,31 @@ fn tab_list_keys_show_categories_and_tab_enters_content(cx: &mut TestAppContext)
     }
 }
 
+/// Settings › General › "Show mdoc in the menu bar" (ADR 0084): macOS
+/// only, off by default, saved on change.
+#[gpui::test]
+fn the_menu_bar_switch_is_off_by_default_and_saves_at_once(cx: &mut TestAppContext) {
+    let shared = Store::in_memory();
+    let (panel, cx) = cx.add_window_view(|_, cx| {
+        Panel::new(shared.clone(), Rc::new(Cell::new(Theme::default())), cx)
+    });
+    cx.simulate_resize(size(px(800.), px(2400.)));
+    panel.update(cx, |panel, cx| {
+        panel.open = true;
+        cx.notify();
+    });
+    cx.run_until_parked();
+    let switch = cx.debug_bounds("general-menu-bar");
+    if !cfg!(target_os = "macos") {
+        assert!(switch.is_none(), "no tray outside macOS yet");
+        return;
+    }
+    assert!(!shared.borrow().snapshot().unwrap().general.menu_bar);
+    cx.simulate_click(switch.unwrap().center(), gpui::Modifiers::none());
+    cx.run_until_parked();
+    assert!(shared.borrow().snapshot().unwrap().general.menu_bar);
+}
+
 #[gpui::test]
 fn update_choices_save_immediately_and_an_update_offers_its_release(cx: &mut TestAppContext) {
     let shared = Store::in_memory();
@@ -697,6 +722,7 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
     custom.updates.check_automatically = false;
     custom.cases.ask_before_closing = false;
     custom.categories.set(mdoc_pii::Category::Person, false);
+    custom.general.menu_bar = true;
     for category in Category::ALL {
         shared.borrow_mut().current = Some(custom.clone());
         let (panel, cx) = cx.add_window_view(|_, cx| {
@@ -710,7 +736,10 @@ fn reset_is_per_category_and_preserves_dictionary(cx: &mut TestAppContext) {
         let mut expected = custom.clone();
         let defaults = Preferences::default();
         match category {
-            Category::General => expected.updates = defaults.updates,
+            Category::General => {
+                expected.updates = defaults.updates;
+                expected.general = defaults.general;
+            }
             Category::Detection => {
                 expected.pseudonymization = defaults.pseudonymization;
                 // Reset ticks every category again (ADR 0076).

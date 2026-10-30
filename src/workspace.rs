@@ -304,6 +304,20 @@ pub(super) struct Workspace {
 }
 
 impl Workspace {
+    /// The theme, shared with the shelf's window (ADR 0084).
+    pub(crate) fn theme_cell(&self) -> Rc<std::cell::Cell<style::Theme>> {
+        self.theme.clone()
+    }
+
+    /// Settings › General › "Show mdoc in the menu bar" (ADR 0084).
+    pub(crate) fn menu_bar_setting(&self) -> bool {
+        self.preferences
+            .borrow()
+            .current
+            .as_ref()
+            .is_some_and(|preferences| preferences.general.menu_bar)
+    }
+
     /// Every prompt in the app is mdoc's own confirm dialog (ADR 0064).
     pub(crate) fn install_prompts(&self, cx: &mut App) {
         crate::confirm_dialog::install(self.theme.clone(), cx);
@@ -315,11 +329,17 @@ impl Workspace {
         let weak = cx.entity().downgrade();
         window.on_window_should_close(cx, move |window, cx| {
             weak.update(cx, |this, cx| {
-                this.quit(window, cx);
+                this.close_requested(window, cx);
                 false
             })
             .unwrap_or(true)
         });
+        cx.observe_window_activation(window, |_, window, cx| {
+            if window.is_window_active() {
+                crate::menu_bar::window_activated(cx);
+            }
+        })
+        .detach();
         if !cfg!(test) {
             this.notices.load_crash(crate::crash::pending());
         }
@@ -479,6 +499,7 @@ impl Workspace {
                     }
                     settings_ui::Event::Applied | settings_ui::Event::Checked => {
                         this.refresh_model_settings(cx);
+                        crate::menu_bar::set_enabled(this.menu_bar_setting(), cx);
                         // Spelling choices apply at once; views re-read them on render.
                         for view in this.tabs.iter().filter_map(|tab| tab.view()) {
                             view.update(cx, |_, cx| cx.notify());
@@ -1688,6 +1709,17 @@ impl Workspace {
         }
     }
 
+    /// The window's close button: quit, or with the menu bar item on, hide
+    /// the window with every tab kept in memory (ADR 0084). A quit already
+    /// asking goes on.
+    pub(super) fn close_requested(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if crate::menu_bar::keeps_running(cx) && self.quit_flow.may_quit() && !self.quit_summary {
+            crate::menu_bar::close_window(window, cx);
+        } else {
+            self.quit(window, cx);
+        }
+    }
+
     pub(super) fn quit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.ready || !self.quit_flow.may_quit() {
             return;
@@ -1704,6 +1736,10 @@ impl Workspace {
             return;
         }
         let at_risk = self.at_risk_tabs(cx);
+        // A hidden window (ADR 0084) shows before it asks anything.
+        if !at_risk.is_empty() && crate::menu_bar::window_hidden(cx) {
+            crate::menu_bar::reveal_window(window, cx);
+        }
         if at_risk.len() < 2 {
             self.start_quit(at_risk, window, cx);
             return;
