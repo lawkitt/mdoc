@@ -37,16 +37,16 @@ check only; rc.2 follows the shelf and gets the full acceptance
 ([ADR 0083](docs/adr/0083-fewer-release-candidates.md), amended). Each item
 merges to `main` on its own when green.
 
-- **[Shelf] Menu bar shelf** ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)),
-  macOS: an optional menu bar item listing pseudonymized documents to open,
-  drag out or Copy for AI, with Pseudonymize Clipboard and Restore
-  Clipboard. *Done when:* platform acceptance section 12 passes on rc.2,
-  Windows is unchanged (no tray), and a test drags and copies ready,
-  not-ready and changed-since-review documents and finds no original in any
-  export.
+1. **[Shelf] Menu bar shelf** ([ADR 0084](docs/adr/0084-menu-bar-shelf.md)),
+   macOS: an optional menu bar item listing pseudonymized documents to open,
+   drag out or Copy for AI, with Pseudonymize Clipboard and Restore
+   Clipboard. *Done when:* platform acceptance section 12 passes on rc.2,
+   Windows is unchanged (no tray), and a test drags and copies ready,
+   not-ready and changed-since-review documents and finds no original in any
+   export.
 
 Records: [2026-10-29 grill](docs/design/roadmap-grill-2026-10-29.md),
-[2026-10-30 grill](docs/design/roadmap-grill-2026-10-30.md). One RC is the
+[2026-10-30 grill](docs/design/roadmap-grill-2026-10-30.md), [shelf grill](docs/design/menu-bar-grill-2026-10-31.md). One RC is the
 default ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)): a must-fix
 fix after rc.1 to the installer, signing, updates or the keychain forces
 another, so such work lands first.
