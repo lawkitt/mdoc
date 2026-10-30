@@ -333,7 +333,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         guard let review else {
             return DocumentSnapshot(
                 id: id, title: title, caseID: caseID.map(CaseID.init), caseName: library.caseName(caseID),
-                kind: kind, phase: .recognizing, markdown: "", spans: [], candidates: [], identities: [],
+                kind: kind, phase: .recognizing, markdown: "", styling: .empty, candidates: [], identities: [],
                 original: original, pagesDone: 0, pageCount: 0, reply: nil)
         }
         let candidates = review.mentions.map { mention in
@@ -363,7 +363,7 @@ final class RealSession: DocumentSession, @unchecked Sendable {
         return DocumentSnapshot(
             id: id, title: review.title, caseID: (review.caseId ?? caseID).map(CaseID.init),
             caseName: library.caseName(review.caseId ?? caseID), kind: kind, phase: phase,
-            markdown: review.text, spans: MarkdownSpanRecognizer.spans(in: review.text),
+            markdown: review.text, styling: MarkdownStyling(markdown: review.text),
             candidates: candidates, identities: identities, original: original,
             pagesDone: 0, pageCount: 0, reply: reply, warning: review.warning)
     }

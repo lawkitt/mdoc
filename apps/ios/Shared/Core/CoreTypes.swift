@@ -249,7 +249,7 @@ struct DocumentSnapshot: Equatable, Sendable {
     var kind: SourceKind
     var phase: DocumentPhase
     var markdown: String
-    var spans: [MarkdownSpan]
+    var styling: MarkdownStyling
     var candidates: [Candidate]
     var identities: [Identity]
     var original: OriginalSource

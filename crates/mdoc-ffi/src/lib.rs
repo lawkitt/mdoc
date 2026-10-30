@@ -12,6 +12,7 @@ uniffi::setup_scaffolding!();
 pub mod document_session;
 mod error;
 pub mod library;
+pub mod markdown;
 pub mod memory;
 pub mod setup;
 pub mod spike;

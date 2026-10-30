@@ -72,17 +72,24 @@ enum MdocUITest {
     static let repo = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
+    /// The Markdown-rich fixture (`tests/fixtures/mobile-markdown`): its
+    /// title, and the email the rules find in it.
+    static let markdownFixture = "tests/fixtures/mobile-markdown/review.md"
+    static let markdownTitle = "review"
+    static let markdownEmail = "anna.smirnova@example.com"
+
+    /// Launches with a fresh library that imports `seed` from the repository.
     @MainActor
-    static func launch() -> XCUIApplication {
+    static func launch(seed: String = "docs/product-media/Settlement agreement.docx") -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-mdoc-ui-testing"]
-        app.launchEnvironment["MDOC_SEED_FILE"] = repo.appendingPathComponent("docs/product-media/Settlement agreement.docx").path
+        app.launchEnvironment["MDOC_SEED_FILE"] = repo.appendingPathComponent(seed).path
         app.launch()
         return app
     }
 
     @MainActor
-    static func documentRow(_ app: XCUIApplication) -> XCUIElement {
+    static func documentRow(_ app: XCUIApplication, title: String = title) -> XCUIElement {
         // Rows read "<title>, <status>"; the row is ready to open once it
         // has candidates to review.
         app.descendants(matching: .any)
