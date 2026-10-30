@@ -196,14 +196,7 @@ impl ReplyBox {
 
     /// Distinct unresolved tokens in the restored text.
     pub(crate) fn unrecognised(&self) -> usize {
-        let text = &self.restored.text;
-        let tokens: std::collections::HashSet<_> = self
-            .restored
-            .unresolved
-            .iter()
-            .filter_map(|range| text.get(range.clone()))
-            .collect();
-        tokens.len()
+        self.restored.unrecognised()
     }
 
     /// The unresolved token Next unrecognised last moved to.

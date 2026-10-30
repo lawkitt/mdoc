@@ -481,6 +481,16 @@ pub struct WindowTiming {
     pub inference: Duration,
 }
 
+/// The structured rules alone (emails, phones, IBAN, INN/SNILS and the
+/// rest), with no model: what devices below the mobile detector floor scan
+/// with (ADR 0085). Full scans add these same detections.
+pub fn scan_rules(source: &str) -> Result<Vec<Detection>, DetectError> {
+    if source.len() > MAX_SOURCE_BYTES {
+        return Err(DetectError::TooLarge);
+    }
+    Ok(structured::scan(source))
+}
+
 /// [`scan_reserved`] on explicit model and runtime paths, with its timings.
 /// The mobile core passes the runtime linked into the app
 /// (`mdoc_import::ocr::linked_runtimes`). Takes the model work permit.

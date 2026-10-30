@@ -575,7 +575,9 @@ impl Review {
         });
         id
     }
-    pub(crate) fn validate_manual(source: &str, range: Range<usize>) -> Result<&str, String> {
+    /// Whether `range` of `source` can be a manual addition: plain text,
+    /// crossing no Markdown syntax. Returns the wording.
+    pub fn validate_manual(source: &str, range: Range<usize>) -> Result<&str, String> {
         let protected = protected_syntax(source);
         source
             .get(range.clone())

@@ -193,6 +193,41 @@ fn fixture_replies_restore_as_expected() {
     }
 }
 
+#[test]
+fn ai_notice_names_aliases_only() {
+    let notice = ai_notice(&["PERSON_1", "ORG_2"]);
+    assert!(notice.contains("such as PERSON_1 or ORG_2."));
+    assert!(notice.ends_with("---\n\n"));
+    assert!(ai_notice(&[]).contains("PERSON_1"));
+}
+
+#[test]
+fn copy_for_ai_names_the_first_two_applied_aliases() {
+    let source = "Ann Lee met Bob Stone and Ann Lee.";
+    let mut review = Review::default();
+    assert_eq!(
+        review.copy_for_ai(source),
+        source,
+        "nothing applied: no note"
+    );
+    review.add_manual(source, 0..7, Category::Person).unwrap();
+    review.add_manual(source, 12..21, Category::Person).unwrap();
+    let text = apply_pending(&mut review, source, 1);
+    assert_eq!(text, "PERSON_1 met PERSON_2 and PERSON_1.");
+    assert_eq!(
+        review.copy_for_ai(&text),
+        ai_notice(&["PERSON_1", "PERSON_2"]) + &text
+    );
+}
+
+#[test]
+fn unrecognised_counts_distinct_unresolved_tokens() {
+    let map = RestoreMap::new(vec![identity("PERSON_1", Category::Person, &["Ann"])]);
+    let restored = map.restore_in_place("PERSON_1, PERSON_9 and PERSON_9 met ORG_4.");
+    assert_eq!(restored.unresolved.len(), 3);
+    assert_eq!(restored.unrecognised(), 2);
+}
+
 fn apply_pending(review: &mut Review, source: &str, revision: u64) -> String {
     let plans = review.pending_plans(source, &HashMap::new()).unwrap();
     let added = review.prepare_replacements(&plans);
