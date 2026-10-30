@@ -101,14 +101,15 @@ impl SpanStyle {
 }
 
 /// One classified piece of a line: a source byte range and its style. Spans
-/// from one scan don't overlap.
+/// from one scan don't overlap; see [`scan_line`] for their order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Span {
     pub range: Range<usize>,
     pub style: SpanStyle,
 }
 
-/// Scan the whole document line by line for inline markdown constructs.
+/// Scan the whole document line by line for inline markdown constructs; lines
+/// come in order, spans within a line as [`scan_line`] leaves them.
 pub fn scan(text: &str) -> Vec<Span> {
     let mut out = Vec::new();
     let bytes = text.as_bytes();
@@ -224,9 +225,11 @@ fn apply_heading(text: &str, from: usize, end: usize, out: &mut Vec<Span>) -> bo
     true
 }
 
-/// Scan one line `text[start..end]` into `out`, in source order except that a
-/// construct's markers may follow its nested body spans. Markers are ASCII, so byte scanning is
-/// UTF-8-safe (an ASCII byte never appears inside a multi-byte char).
+/// Scan one line `text[start..end]`, appending its spans to `out`. The spans
+/// don't overlap but are NOT in source order: a construct's plain-text gaps
+/// are appended after its nested constructs, so sort by `range.start` before
+/// walking them in order. Markers are ASCII, so byte scanning is UTF-8-safe
+/// (an ASCII byte never appears inside a multi-byte char).
 pub fn scan_line(text: &str, start: usize, end: usize, out: &mut Vec<Span>) {
     let b = text.as_bytes();
     if apply_heading(text, start, end, out) {
