@@ -112,6 +112,12 @@ fn desktop_apply_all(review: &mut Review, source: &str, history: u64) -> String 
     text
 }
 
+/// Desktop Copy for AI (`src/pii/ui/restore.rs` `copy_for_ai`): the note
+/// naming the first two distinct applied aliases, then the editor text.
+fn desktop_copy_for_ai(review: &Review, text: &str) -> String {
+    mdoc_pii::handoff::for_ai(text, review.applied().iter().map(|a| a.step.after.as_ref()))
+}
+
 // ---- Goldens --------------------------------------------------------------
 
 fn golden(name: &str, actual: &str) {
@@ -199,7 +205,7 @@ fn the_captured_claude_round_trip_matches_desktop() {
     let mut review = Review::default();
     review.seed(&case.exported(), &source);
     let text = desktop_apply_all(&mut review, &source, 1);
-    assert_eq!(review.copy_for_ai(&text), copied);
+    assert_eq!(desktop_copy_for_ai(&review, &text), copied);
 
     let reply = read(&capture.join("reply.md"));
     let expected = read(&capture.join("expected.md"));
@@ -300,7 +306,7 @@ fn the_demo_docx_with_injected_candidates_matches_desktop_and_goldens() {
     assert_eq!(review.remaining(), snapshot.proposed as usize);
     let text = desktop_apply_all(&mut review, &markdown, 1);
     assert_eq!(text, replaced.text);
-    assert_eq!(review.copy_for_ai(&text), copied);
+    assert_eq!(desktop_copy_for_ai(&review, &text), copied);
 
     // An AI that answers with the document itself gets every original back.
     let (_, body) = copied.split_once("\n\n---\n\n").unwrap();

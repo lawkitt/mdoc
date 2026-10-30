@@ -109,7 +109,12 @@ impl RestoredReply {
                 .collect(),
             unresolved: restored.unresolved.iter().map(TextRange::of).collect(),
             values: restored.values as u64,
-            unrecognised: restored.unrecognised() as u64,
+            unrecognised: restored
+                .unresolved
+                .iter()
+                .filter_map(|range| restored.text.get(range.clone()))
+                .collect::<std::collections::HashSet<_>>()
+                .len() as u64,
             restorable: !map.is_empty(),
             text: restored.text,
         }
@@ -573,12 +578,17 @@ mod tests {
             ))
             .unwrap();
         let reply = "PERSON_1 agrees; PERSON_2 does not.";
-        let restored = library.restore(ivanov.id, reply.into()).unwrap();
+        let restored = library.restore(ivanov.id.clone(), reply.into()).unwrap();
         assert_eq!(restored.text, "Ivan Ivanov agrees; PERSON_2 does not.");
         assert_eq!(restored.restored, [TextRange { start: 0, end: 11 }]);
         assert_eq!(restored.unresolved, [TextRange { start: 20, end: 28 }]);
         assert_eq!((restored.values, restored.unrecognised), (1, 1));
         assert!(restored.restorable);
+        // Unrecognised counts distinct tokens; every occurrence is listed.
+        let twice = library
+            .restore(ivanov.id.clone(), "PERSON_2, PERSON_2 and ORG_4.".into())
+            .unwrap();
+        assert_eq!((twice.unresolved.len(), twice.unrecognised), (3, 2));
         let restored = library.restore(petrov.id, reply.into()).unwrap();
         assert_eq!(restored.text, "Petr Petrov agrees; PERSON_2 does not.");
         let empty = library.create_case("Empty".into()).unwrap();

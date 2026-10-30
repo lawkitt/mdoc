@@ -1745,6 +1745,14 @@ fn unrecognized_placeholders_are_assigned_or_left_never_guessed(cx: &mut gpui::T
     });
 }
 
+#[test]
+fn ai_notice_names_aliases_only() {
+    let notice = restore::ai_notice(&["PERSON_1", "ORG_2"]);
+    assert!(notice.contains("such as PERSON_1 or ORG_2."));
+    assert!(notice.ends_with("---\n\n"));
+    assert!(restore::ai_notice(&[]).contains("PERSON_1"));
+}
+
 #[gpui::test]
 fn homonyms_keep_their_own_aliases_through_restore_and_apply(cx: &mut gpui::TestAppContext) {
     use mdoc_pii::restore::ExportedIdentity;

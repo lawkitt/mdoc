@@ -273,7 +273,7 @@ impl DocumentSession {
     /// Copy for AI: the alias-only note, then the text, byte for byte what
     /// desktop Copy for AI copies.
     pub fn copy_for_ai(&self) -> Result<String, CoreError> {
-        self.read_document(|document| document.review.review.copy_for_ai(&document.review.text))
+        self.read_document(|document| document.review.copy_for_ai())
     }
 
     /// What Share sends: the same text as Copy for AI (ADR 0085).

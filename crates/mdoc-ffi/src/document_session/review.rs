@@ -188,6 +188,15 @@ impl ReviewText {
         self.review.refresh(&text);
     }
 
+    /// Copy for AI's text: the note naming the first applied aliases,
+    /// then the text, built by `mdoc_pii::handoff` as desktop builds it.
+    pub fn copy_for_ai(&self) -> String {
+        mdoc_pii::handoff::for_ai(
+            &self.text,
+            self.review.applied().iter().map(|a| a.step.after.as_ref()),
+        )
+    }
+
     // ---- Lookups ------------------------------------------------------------
 
     /// The pending, applied or kept mention at exactly `range`.
@@ -662,12 +671,7 @@ mod tests {
         assert_eq!(document.review.remaining(), 1);
         document.replace_all().unwrap();
         assert_eq!(document.text, "PERSON_1 wrote to PERSON_1.");
-        assert!(
-            document
-                .review
-                .copy_for_ai(&document.text)
-                .starts_with("Note:")
-        );
+        assert!(document.copy_for_ai().starts_with("Note:"));
     }
 
     #[test]

@@ -3,6 +3,7 @@
 mod candidates;
 pub mod decisions;
 mod discovery;
+pub mod handoff;
 mod identities;
 mod manual;
 pub mod merge_hints;

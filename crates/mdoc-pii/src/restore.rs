@@ -300,34 +300,6 @@ pub struct RestoredText {
     /// Unresolved alias-shaped tokens' spans in `text`, in order.
     pub unresolved: Vec<Range<usize>>,
 }
-impl RestoredText {
-    /// Distinct unresolved tokens, as the summary line counts them (ADR
-    /// 0078); Next unrecognised still visits every occurrence.
-    pub fn unrecognised(&self) -> usize {
-        self.unresolved
-            .iter()
-            .filter_map(|range| self.text.get(range.clone()))
-            .collect::<HashSet<_>>()
-            .len()
-    }
-}
-
-/// Prepended by Copy for AI (ADR 0041). It names aliases only, never
-/// original values.
-pub fn ai_notice(examples: &[&str]) -> String {
-    let examples = match examples {
-        [] => "PERSON_1".to_string(),
-        [one] => one.to_string(),
-        [first, second, ..] => format!("{first} or {second}"),
-    };
-    format!(
-        "Note: names and other identifying details in this document were replaced \
-         with placeholders such as {examples}. Keep every placeholder exactly as \
-         written, with the same capitals, underscore and number. Do not invent new \
-         placeholders or guess the real values; they are restored locally after \
-         your reply.\n\n---\n\n"
-    )
-}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Token {
@@ -452,26 +424,6 @@ impl Review {
                 let counter = self.counters.entry(category).or_default();
                 *counter = (*counter).max(number as usize);
             }
-        }
-    }
-    /// Copy for AI's text for `text`, this review's document: the note
-    /// naming its first two applied aliases, then `text`; just `text` while
-    /// nothing is applied. Every platform's Copy and Share use it (ADR 0085).
-    pub fn copy_for_ai(&self, text: &str) -> String {
-        let mut examples = Vec::new();
-        for applied in self.applied() {
-            let alias = applied.step.after.as_ref();
-            if !examples.contains(&alias) {
-                examples.push(alias);
-            }
-            if examples.len() == 2 {
-                break;
-            }
-        }
-        if examples.is_empty() {
-            text.to_owned()
-        } else {
-            ai_notice(&examples) + text
         }
     }
     /// This document's identities with the aliases its text contains, for
