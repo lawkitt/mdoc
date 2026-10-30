@@ -2333,7 +2333,7 @@ impl Element for EditorElement {
             }) = prepaint.marks.get(i).copied().flatten()
             {
                 let glyph: SharedString = if ordered {
-                    crate::syntax::ordered_marker(level, num).into()
+                    mdoc_markdown::syntax::ordered_marker(level, num).into()
                 } else {
                     "•".into()
                 };
@@ -3521,7 +3521,7 @@ fn shape_document(
     for (idx, list) in scan.ordered_lists.iter().enumerate() {
         let Some(list) = list else { continue };
         let (num, level) = ordered_nums[idx];
-        let marker = crate::syntax::ordered_marker(level, num);
+        let marker = mdoc_markdown::syntax::ordered_marker(level, num);
         let w = glyph_widths.width(window, &marker, base_font, base_font_size);
         let widest = list_marker_w.entry(*list).or_insert(w);
         *widest = (*widest).max(w);
@@ -3829,7 +3829,7 @@ fn shape_document(
                     // Word-style depth markers (1. -> a. -> i.), shared with
                     // the reader. The level is structural (from the
                     // renumbering pass), not an indent-width guess.
-                    crate::syntax::ordered_marker(level, num)
+                    mdoc_markdown::syntax::ordered_marker(level, num)
                 } else {
                     "\u{2022}".to_string()
                 };
@@ -4276,7 +4276,7 @@ fn shape_document(
             // ponytail: it inherits from ABOVE, so an alert whose title follows
             // English text but whose body is Persian still splits. Looking ahead
             // to the body would fix it; no one has hit that yet.
-            let line_rtl = match crate::syntax::content_direction_opt(line) {
+            let line_rtl = match mdoc_markdown::syntax::content_direction_opt(line) {
                 Some(d) => {
                     last_strong_rtl = d.is_rtl();
                     d.is_rtl()
@@ -4290,7 +4290,7 @@ fn shape_document(
                 None if !line.trim().is_empty() => lines
                     .get(idx + 1)
                     .filter(|next| !next.trim().is_empty())
-                    .and_then(|next| crate::syntax::content_direction_opt(next))
+                    .and_then(|next| mdoc_markdown::syntax::content_direction_opt(next))
                     .map_or(last_strong_rtl, |d| d.is_rtl()),
                 None => last_strong_rtl,
             };
@@ -4303,7 +4303,7 @@ fn shape_document(
             // ponytail: word breaking is space-based, so a line mixing RTL with
             // unspaced CJK would wrap poorly. Lines without any RTL keep gpui's
             // wrapping, so plain CJK is untouched.
-            let has_rtl = line_rtl || crate::syntax::contains_rtl(line);
+            let has_rtl = line_rtl || mdoc_markdown::syntax::contains_rtl(line);
             let rtl_rows = (bg.is_none() && widget.is_none() && table.is_none() && has_rtl)
                 .then(|| gpui_bidi::layout_rows(&shaped_text, &runs, line_wrap, fs, window))
                 .filter(|rows| !rows.is_empty());

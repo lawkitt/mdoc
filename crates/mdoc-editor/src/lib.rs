@@ -16,7 +16,7 @@
 //! feature milestones by code:
 //!
 //! - **W1** — inline styling: bold/italic/strike/code/links/wiki-links/tags,
-//!   markers dimmed in place (`markdown_syntax::scan_line`).
+//!   markers dimmed in place (`mdoc_markdown::spans::scan_line`).
 //! - **W2** — heading font sizes (variable per-line heights).
 //! - **W4** — block widgets: **W4a** inline images, **W4b** fenced code
 //!   blocks, **W4c** tables (Word-style editing); mermaid + `$$math$$`
@@ -40,7 +40,6 @@ use gpui::{
 use unicode_segmentation::UnicodeSegmentation;
 
 mod markdown_syntax;
-mod syntax;
 pub use markdown_syntax::{Heading, SyntaxStyle, headings};
 
 mod search;
@@ -2113,7 +2112,7 @@ impl EditorState {
         {
             let start = self.line_starts()[row];
             let line = &self.content[start..self.line_end(row)];
-            if let Some((at, folded)) = crate::syntax::alert_fold_char(line) {
+            if let Some((at, folded)) = mdoc_markdown::syntax::alert_fold_char(line) {
                 let range = start + at..start + at + 1;
                 let repl = if folded { "+" } else { "-" };
                 self.record_edit(&range, repl);
@@ -4002,7 +4001,7 @@ impl EditorState {
     /// pair goes too (deleting bold's last char deletes the bold). `None` =
     /// no hidden markers involved (the plain grapheme deletion applies).
     fn fmt_delete_range(&self, off: usize, back: bool) -> Option<Range<usize>> {
-        let st = self.markdown_style.as_ref()?;
+        self.markdown_style.as_ref()?;
         let (row, col) = self.row_col(off);
         let line_start = self.line_starts()[row];
         let line_end = self.line_end(row);
@@ -4013,7 +4012,7 @@ impl EditorState {
         {
             return None;
         }
-        let pairs = markdown_syntax::fmt_marker_pairs(line, st);
+        let pairs = markdown_syntax::fmt_marker_pairs(line);
         if pairs.is_empty() {
             return None;
         }
@@ -5337,7 +5336,7 @@ fn line_index_at(line: &WrappedLine, rtl: Option<&RtlRow>, p: Point<Pixels>, lh:
 
 /// A right-to-left row's editor-side geometry, built in prepaint (#66).
 ///
-/// Only rows whose source reads RTL ([`crate::syntax::base_direction`])
+/// Only rows whose source reads RTL ([`mdoc_markdown::syntax::base_direction`])
 /// get one — the flag *is* `Option::is_some`, so an LTR document allocates
 /// nothing and keeps taking gpui's own (cheaper) lookups.
 pub(crate) struct RtlRow {

@@ -1,9 +1,12 @@
 //! Inline-markdown styling for live-preview ("WYSIWYG") editing — W1.
 //!
-//! A fast, line-scoped scanner that turns markdown source into styled text runs
-//! **without changing the byte buffer**: syntax markers (`**`, `` ` ``, `[` …)
-//! are kept in the text and merely dimmed, so the displayed characters still
-//! match the buffer one-to-one and the caret/offset model is untouched.
+//! Recognition lives in the GUI-free `mdoc-markdown` crate, which classifies
+//! the source into spans **without changing the byte buffer**: syntax markers
+//! (`**`, `` ` ``, `[` …) are kept in the text and merely dimmed, so the
+//! displayed characters still match the buffer one-to-one and the
+//! caret/offset model is untouched. This module maps those spans to GPUI text
+//! runs in the host's [`SyntaxStyle`], and keeps the editor-only Markdown
+//! helpers (folding, list numbering, images, math).
 //!
 //! Scope (W1): inline constructs at the editor's normal text size — bold,
 //! italic, strikethrough, inline code, links, wiki-links, and tags. Heading
@@ -13,11 +16,22 @@
 use std::ops::Range;
 
 use gpui::{
-    Font, FontStyle, FontWeight, Hsla, SharedString, StrikethroughStyle, TextRun, UnderlineStyle,
-    hsla, px,
+    Font, FontStyle, FontWeight, Hsla, StrikethroughStyle, TextRun, UnderlineStyle, hsla, px,
 };
+use mdoc_markdown::spans::{Background, Color, Span, SpanStyle, scan, scan_line};
 
 use crate::Diagnostic;
+
+// Recognition shared with the mobile apps (ADR 0085), re-exported under the
+// names the editor's modules already use.
+pub(crate) use mdoc_markdown::lines::{
+    blockquote_prefix, heading_level, list_prefix, task_prefix, thematic_break,
+};
+pub(crate) use mdoc_markdown::spans::is_backslash_escaped;
+pub(crate) use mdoc_markdown::syntax::{TableStyle, table_style_marker};
+pub(crate) use mdoc_markdown::tables::{
+    Align, TableRegion, is_table_separator, table_cell_ranges, table_cells, table_regions,
+};
 
 /// Colors + monospace font for inline markdown styling, supplied by the host so
 /// the editor stays theme-agnostic. Install via
@@ -62,64 +76,30 @@ pub struct SyntaxStyle {
     pub mono: Font,
 }
 
-impl Style {
-    /// `self` layered over `base` (the enclosing construct's style): the
-    /// booleans OR, the options prefer `self`'s — so `code` inside bold keeps
-    /// its color/tint while inheriting the bold weight.
-    fn over(mut self, base: &Style) -> Style {
-        self.bold |= base.bold;
-        self.italic |= base.italic;
-        self.strike |= base.strike;
-        self.underline |= base.underline;
-        self.mono |= base.mono;
-        self.code |= base.code;
-        if self.color.is_none() {
-            self.color = base.color;
+impl SyntaxStyle {
+    /// The themed color for a span's [`Color`].
+    fn color(&self, color: Color) -> Hsla {
+        match color {
+            Color::Marker => self.marker,
+            Color::Code => self.code,
+            Color::Link => self.link,
+            Color::Rgba(rgba) => hsla_of(rgba),
         }
-        if self.bg.is_none() {
-            self.bg = base.bg;
+    }
+
+    /// The themed background for a span's [`Background`].
+    fn background(&self, bg: Background) -> Hsla {
+        match bg {
+            Background::Code => self.code_bg,
+            Background::Mark => self.mark_bg,
+            Background::Rgba(rgba) => hsla_of(rgba),
         }
-        self
     }
 }
 
-/// Styling a scanned span adds on top of the editor's base run.
-#[derive(Clone, Default)]
-struct Style {
-    bold: bool,
-    italic: bool,
-    strike: bool,
-    underline: bool,
-    mono: bool,
-    /// Inline code body; no visual effect, read by semantic consumers
-    /// (spell exclusions).
-    code: bool,
-    color: Option<Hsla>,
-    bg: Option<Hsla>,
-    /// A syntax marker (`**`, `#`, `[`, …) — dimmed when shown, and removed
-    /// entirely when the line's markers are hidden (W6, reveal-on-caret).
-    hide: bool,
-    /// A formatting marker (`**`, `*`, `~~`, `` ` ``, `<mark>`, `<u>`) stays
-    /// hidden even with the caret inside its construct — Cditor-style: the
-    /// styling IS the feedback, and the toggles (⌘B/I/U/…, the selection
-    /// format bar) edit it. Structural markers (links, headings, math) keep
-    /// the reveal, since their raw text is the only way to edit them.
-    always_hide: bool,
-    /// Non-zero on a formatting marker: the opener and closer of one construct
-    /// share an id, so `fmt_marker_pairs` can pair them even with NESTED
-    /// constructs between (adjacency no longer identifies the pair).
-    pair_id: u16,
-    /// What a hidden marker paints in its place (e.g. a block link's `#^`
-    /// shows ` → `): every replacement byte maps back to the span's start, so
-    /// the display↔source maps stay consistent. `None` = plain removal.
-    replace: Option<SharedString>,
-    /// Decoded source text, unlike generated replacement labels.
-    decoded: bool,
-}
-
-struct Span {
-    range: Range<usize>,
-    style: Style,
+/// `0xRRGGBBAA` (from `syntax::css_color`) as a gpui color.
+fn hsla_of(rgba: u32) -> Hsla {
+    gpui::rgba(rgba).into()
 }
 
 /// Build the editor's text runs: the base style, plus inline-markdown styling
@@ -134,7 +114,7 @@ pub(crate) fn styled_runs(
     diagnostics: &[Diagnostic],
     md: Option<&SyntaxStyle>,
 ) -> Vec<TextRun> {
-    let spans = md.map(|s| scan(text, s)).unwrap_or_default();
+    let spans = md.map(|_| scan(text)).unwrap_or_default();
     let squiggle = UnderlineStyle {
         color: Some(hsla(0., 0.8, 0.55, 1.)),
         thickness: px(1.5),
@@ -171,56 +151,29 @@ pub(crate) fn styled_runs(
         let underline = diagnostics
             .iter()
             .any(|d| d.range.start <= a && a < d.range.end && d.range.end <= text.len());
-
-        let mut font = match style {
-            Some(s) if s.mono => md.map_or_else(|| base_font.clone(), |m| m.mono.clone()),
-            _ => base_font.clone(),
-        };
-        if let Some(s) = style {
-            if s.bold {
-                font.weight = FontWeight::BOLD;
-            }
-            if s.italic {
-                font.style = FontStyle::Italic;
-            }
-        }
-        runs.push(TextRun {
-            len: b - a,
-            font,
-            color: style.and_then(|s| s.color).unwrap_or(base_color),
-            background_color: style.and_then(|s| s.bg),
-            underline: if underline {
-                Some(squiggle)
-            } else {
-                style.filter(|s| s.underline).map(|_| UnderlineStyle {
-                    thickness: px(1.0),
-                    color: None,
-                    wavy: false,
-                })
-            },
-            strikethrough: style.filter(|s| s.strike).map(|_| StrikethroughStyle {
-                thickness: px(1.5),
-                color: None,
-            }),
-        });
+        runs.push(run_for(
+            b - a,
+            style.zip(md),
+            base_font,
+            base_color,
+            underline.then_some(squiggle),
+        ));
     }
     runs
 }
 
-/// Build a `TextRun` of byte length `len` from a scanned span's style (or the
-/// base style when `None`). Shared by the hidden-line renderer.
+/// Build a `TextRun` of byte length `len` from a scanned span's style in the
+/// host's theme (or the base style when `None`); `underline` (a diagnostic's
+/// squiggle) wins over the span's own. Shared with the hidden-line renderer.
 fn run_for(
     len: usize,
-    style: Option<&Style>,
+    styled: Option<(&SpanStyle, &SyntaxStyle)>,
     base_font: &Font,
     base_color: Hsla,
-    md: Option<&SyntaxStyle>,
     underline: Option<UnderlineStyle>,
 ) -> TextRun {
-    let mut font = match style {
-        Some(s) if s.mono => md.map_or_else(|| base_font.clone(), |m| m.mono.clone()),
-        _ => base_font.clone(),
-    };
+    let style = styled.map(|(s, _)| s);
+    let mut font = base_font.clone();
     if let Some(s) = style {
         if s.bold {
             font.weight = FontWeight::BOLD;
@@ -232,8 +185,10 @@ fn run_for(
     TextRun {
         len,
         font,
-        color: style.and_then(|s| s.color).unwrap_or(base_color),
-        background_color: style.and_then(|s| s.bg),
+        color: styled
+            .and_then(|(s, md)| s.color.map(|c| md.color(c)))
+            .unwrap_or(base_color),
+        background_color: styled.and_then(|(s, md)| s.bg.map(|b| md.background(b))),
         underline: underline.or_else(|| {
             style.filter(|s| s.underline).map(|_| UnderlineStyle {
                 thickness: px(1.0),
@@ -296,7 +251,7 @@ pub(crate) fn hidden_runs(
     reveal_inline: bool,
     md: &SyntaxStyle,
 ) -> (String, Vec<TextRun>, Vec<usize>) {
-    let mut spans = scan(line, md);
+    let mut spans = scan(line);
     spans.sort_by_key(|s| s.range.start);
 
     // The construct (a maximal run of adjacent spans: its markers + body) the
@@ -309,7 +264,7 @@ pub(crate) fn hidden_runs(
     // place). A visible segment is copied verbatim, so source↔display is 1:1
     // within it — which lets a diagnostic (source coords) map straight onto
     // the display.
-    let mut segs: Vec<(Range<usize>, Option<&Style>, Option<SharedString>)> = Vec::new();
+    let mut segs: Vec<(Range<usize>, Option<&SpanStyle>, Option<&str>)> = Vec::new();
     let mut pos = 0;
     for span in &spans {
         if span.range.start > pos {
@@ -325,7 +280,7 @@ pub(crate) fn hidden_runs(
             && (span.style.always_hide || force || (!reveal_inline && !in_construct && !in_prefix));
         if !hidden {
             segs.push((span.range.clone(), Some(&span.style), None));
-        } else if let Some(rep) = span.style.replace.clone() {
+        } else if let Some(rep) = span.style.replace.as_deref() {
             segs.push((span.range.clone(), Some(&span.style), Some(rep)));
         }
         pos = span.range.end;
@@ -347,14 +302,13 @@ pub(crate) fn hidden_runs(
         // back to the span's start (so caret/click math lands on the marker),
         // and it takes one run in the marker's own style.
         if let Some(rep) = replace {
-            display.push_str(rep.as_ref());
+            display.push_str(rep);
             map.extend(std::iter::repeat_n(src.start, rep.len()));
             runs.push(run_for(
                 rep.len(),
-                *style,
+                style.map(|s| (s, md)),
                 base_font,
                 base_color,
-                Some(md),
                 None,
             ));
             continue;
@@ -381,10 +335,9 @@ pub(crate) fn hidden_runs(
                 .any(|d| d.range.start <= a && a < d.range.end);
             runs.push(run_for(
                 b - a,
-                *style,
+                style.map(|s| (s, md)),
                 base_font,
                 base_color,
-                Some(md),
                 under.then_some(squiggle),
             ));
         }
@@ -410,32 +363,23 @@ pub(crate) struct SemanticSpan {
 /// only the visibility decisions needed by the search index. Keeping this
 /// beside `scan_line` prevents the search projection from growing a second,
 /// subtly different inline-Markdown grammar.
-pub(crate) fn semantic_spans_with(
-    text: &str,
-    start: usize,
-    end: usize,
-    style: &SyntaxStyle,
-) -> Vec<SemanticSpan> {
+pub(crate) fn semantic_spans_with(text: &str, start: usize, end: usize) -> Vec<SemanticSpan> {
     let mut spans = Vec::new();
-    scan_line(text, start, end, style, &mut spans);
+    scan_line(text, start, end, &mut spans);
     spans
         .into_iter()
         .map(|span| SemanticSpan {
             range: span.range,
             hidden: span.style.hide,
-            decoded: span
-                .style
-                .decoded
-                .then(|| span.style.replace.as_ref().unwrap().to_string()),
             replacement: span.style.replace.is_some(),
+            decoded: span.style.replace.filter(|_| span.style.decoded),
             code: span.style.code,
         })
         .collect()
 }
 
-/// A color/font-neutral style is enough for `scan_line`: search only consumes
-/// its hidden/replacement flags. Keeping the constructor here also means the
-/// search module cannot accidentally depend on a host theme.
+/// A color/font-neutral style, for tests and for widgets that need a style
+/// before the host installs its theme.
 pub(crate) fn search_style() -> SyntaxStyle {
     SyntaxStyle {
         marker: Hsla::default(),
@@ -460,25 +404,11 @@ pub(crate) fn search_style() -> SyntaxStyle {
     }
 }
 
-/// Scan the whole document line by line for inline markdown constructs.
-fn scan(text: &str, st: &SyntaxStyle) -> Vec<Span> {
-    let mut out = Vec::new();
-    let bytes = text.as_bytes();
-    let mut line_start = 0;
-    for i in 0..=bytes.len() {
-        if i == bytes.len() || bytes[i] == b'\n' {
-            scan_line(text, line_start, i, st, &mut out);
-            line_start = i + 1;
-        }
-    }
-    out
-}
-
 /// The always-hidden formatting-marker PAIRS on a line, as
 /// `(opening range, closing range)` per construct — for the editor's
 /// Cditor-style delete (skip the invisible bytes; collapse an emptied pair).
-pub(crate) fn fmt_marker_pairs(line: &str, st: &SyntaxStyle) -> Vec<(Range<usize>, Range<usize>)> {
-    let mut spans = scan(line, st);
+pub(crate) fn fmt_marker_pairs(line: &str) -> Vec<(Range<usize>, Range<usize>)> {
+    let mut spans = scan(line);
     spans.sort_by_key(|s| s.range.start);
     // The scanner stamps each construct's opener + closer with a shared
     // `pair_id`, so pairing survives NESTED constructs between them (the old
@@ -502,689 +432,10 @@ pub(crate) fn fmt_marker_pairs(line: &str, st: &SyntaxStyle) -> Vec<(Range<usize
     pairs
 }
 
-fn marker(out: &mut Vec<Span>, range: Range<usize>, color: Hsla) {
-    out.push(Span {
-        range,
-        style: Style {
-            color: Some(color),
-            hide: true,
-            ..Default::default()
-        },
-    });
-}
-
-/// `0xRRGGBBAA` (from `syntax::css_color`) as a gpui color.
-fn hsla_of(rgba: u32) -> Hsla {
-    gpui::rgba(rgba).into()
-}
-
-/// A formatting marker that NEVER reveals (not even with the caret inside its
-/// construct) — see [`Style::always_hide`]. The construct's opener and closer
-/// share `pair_id` (see [`fmt_marker_pairs`]).
-fn fmt_marker(out: &mut Vec<Span>, range: Range<usize>, color: Hsla, pair_id: u16) {
-    out.push(Span {
-        range,
-        style: Style {
-            color: Some(color),
-            hide: true,
-            always_hide: true,
-            pair_id,
-            ..Default::default()
-        },
-    });
-}
-
-/// Recursively scan a formatting construct's body: inner constructs nest
-/// (bold inside italic, code inside bold, …) with `style` layered under them,
-/// and the gaps — the construct's own plain text — carry `style` itself.
-/// Depth-capped; at the cap the body is one flat styled span.
-#[allow(clippy::too_many_arguments)]
-fn scan_styled_body(
-    text: &str,
-    s: usize,
-    e: usize,
-    st: &SyntaxStyle,
-    out: &mut Vec<Span>,
-    style: Style,
-    depth: u8,
-    next_id: &mut u16,
-) {
-    if s >= e {
-        return;
-    }
-    if depth >= 3 {
-        push(out, s..e, style);
-        return;
-    }
-    let before = out.len();
-    scan_inline(text, s, e, st, out, &style, depth + 1, next_id);
-    // Fill the gaps between the inner constructs with the body style.
-    let mut covered: Vec<Range<usize>> = out[before..].iter().map(|sp| sp.range.clone()).collect();
-    covered.sort_by_key(|r| r.start);
-    let mut pos = s;
-    let mut fills: Vec<Range<usize>> = Vec::new();
-    for r in covered {
-        if r.start > pos {
-            fills.push(pos..r.start);
-        }
-        pos = pos.max(r.end);
-    }
-    if pos < e {
-        fills.push(pos..e);
-    }
-    for f in fills {
-        push(out, f, style.clone());
-    }
-}
-
-/// Heading styling (`#`..`######` + a space) for `text[from..end]`: dim the
-/// marker, bold the rest. The larger heading SIZE is applied per line at
-/// layout time (variable line heights), not here — so the rest of the line
-/// isn't scanned for inline constructs in W2. (W2) Returns whether it matched,
-/// so callers can `return` and skip inline scanning the same as a bare
-/// heading line. Shared by the line-start check and the post-list-marker
-/// check (`- ### Heading` nests like the reading view's AST does).
-fn apply_heading(
-    text: &str,
-    from: usize,
-    end: usize,
-    st: &SyntaxStyle,
-    out: &mut Vec<Span>,
-) -> bool {
-    let Some(level) = heading_level(&text[from..end]) else {
-        return false;
-    };
-    let b = text.as_bytes();
-    let mut marker_end = from + level as usize;
-    if marker_end < end && b[marker_end] == b' ' {
-        marker_end += 1;
-    }
-    marker(out, from..marker_end, st.marker);
-    let mut next_id = 1;
-    scan_styled_body(
-        text,
-        marker_end,
-        end,
-        st,
-        out,
-        Style {
-            bold: true,
-            ..Default::default()
-        },
-        0,
-        &mut next_id,
-    );
-    true
-}
-
-/// Scan one line `text[start..end]`. Markers are ASCII, so byte scanning is
-/// UTF-8-safe (an ASCII byte never appears inside a multi-byte char).
-fn scan_line(text: &str, start: usize, end: usize, st: &SyntaxStyle, out: &mut Vec<Span>) {
-    let b = text.as_bytes();
-    if apply_heading(text, start, end, st, out) {
-        return;
-    }
-    // Blockquote: leading `>` (GFM nesting) + optional spaces. Hide the markers;
-    // the body keeps inline styling over a muted base color (set by the caller).
-    let mut i = start;
-    if b.get(start) == Some(&b'>') {
-        let mut p = start;
-        while p < end && b[p] == b'>' {
-            p += 1;
-            if p < end && b[p] == b' ' {
-                p += 1;
-            }
-        }
-        // A GitHub alert's `[!NOTE]`-style marker hides with the quote prefix —
-        // the paint draws a bold colored label in its place (LineMark::Alert).
-        if let Some((_, mlen, _)) = alert_prefix(&text[p..end]) {
-            p += mlen;
-        }
-        marker(out, start..p, st.marker);
-        i = p;
-    } else if let Some(prefix_len) = task_prefix(&text[start..end])
-        .map(|(p, ..)| p)
-        .or_else(|| list_prefix(&text[start..end]).map(|(p, ..)| p))
-    {
-        // List / task item: hide the leading whitespace + marker (+ checkbox); a
-        // bullet/number/box is painted in its place, body keeps inline styling.
-        marker(out, start..start + prefix_len, st.marker);
-        i = start + prefix_len;
-        // A heading right after the marker (`- ### Notes`) — same treatment as
-        // a top-level heading, skipping inline scanning past it.
-        if apply_heading(text, i, end, st, out) {
-            return;
-        }
-    }
-    let mut next_id = 1u16;
-    scan_inline(text, i, end, st, out, &Style::default(), 0, &mut next_id);
-}
-
-/// The inline scanning loop, recursive so formatting constructs NEST: a
-/// construct's body re-scans with the construct's style as `base` (layered by
-/// [`Style::over`]), matching the reader's CommonMark nesting — `**bold
-/// *italic* bold**` styles the inner run bold+italic. `start` is the segment
-/// start (word-boundary and image-bang checks are segment-local).
-#[allow(clippy::too_many_arguments)]
-fn scan_inline(
-    text: &str,
-    start: usize,
-    end: usize,
-    st: &SyntaxStyle,
-    out: &mut Vec<Span>,
-    base: &Style,
-    depth: u8,
-    next_id: &mut u16,
-) {
-    let b = text.as_bytes();
-    let mut i = start;
-    while i < end {
-        let c = b[i];
-        // A backslash escape (`\*`, `\|`, `\\`, … — any ASCII punctuation):
-        // the backslash is a hideable marker (the reader consumes it), the
-        // escaped character is literal content — skip it so no construct
-        // opens on it. Reveal-on-caret shows the backslash for editing.
-        if c == b'\\'
-            && i + 1 < end
-            && b[i + 1].is_ascii_punctuation()
-            && !is_backslash_escaped(b, i)
-        {
-            push(
-                out,
-                i..i + 2,
-                Style {
-                    hide: true,
-                    replace: Some(text[i + 1..i + 2].to_owned().into()),
-                    decoded: true,
-                    ..Default::default()
-                }
-                .over(base),
-            );
-            i += 2;
-            continue;
-        }
-        // A hard line break (`\` ending a line with text before it, as ⇧Enter
-        // writes, ADR 0060): the reader consumes the backslash, so it hides
-        // like any marker and the caret reveals it.
-        if c == b'\\'
-            && b.get(i + 1).is_none_or(|&n| n == b'\n')
-            && !is_backslash_escaped(b, i)
-            && text[..i]
-                .rsplit('\n')
-                .next()
-                .is_some_and(|before| !before.trim().is_empty())
-        {
-            push(
-                out,
-                i..i + 1,
-                Style {
-                    hide: true,
-                    ..Default::default()
-                }
-                .over(base),
-            );
-            i += 1;
-            continue;
-        }
-        // Entities share one decoded replacement and source map with search.
-        if c == b'&'
-            && let Some((len, decoded)) = decode_entity(&text[i..end])
-        {
-            push(
-                out,
-                i..i + len,
-                Style {
-                    hide: true,
-                    replace: Some(decoded.into()),
-                    decoded: true,
-                    ..Default::default()
-                }
-                .over(base),
-            );
-            i += len;
-            continue;
-        }
-        // Inline code: `code` — backticks are hideable markers, the body a
-        // highlight (code color on a tint, body font) matching the reading
-        // view. CommonMark run matching: an opening run of N backticks closes
-        // at the next run of EXACTLY N, so ``a`b`` keeps its inner backtick
-        // (backslashes are literal INSIDE a span; only the opener can be
-        // escaped).
-        if c == b'`' && !is_backslash_escaped(b, i) {
-            let mut n = 1;
-            while i + n < end && b[i + n] == b'`' {
-                n += 1;
-            }
-            let mut j = i + n;
-            let mut close = None;
-            while j < end {
-                if b[j] == b'`' {
-                    let mut m = 1;
-                    while j + m < end && b[j + m] == b'`' {
-                        m += 1;
-                    }
-                    if m == n {
-                        close = Some(j);
-                        break;
-                    }
-                    j += m;
-                } else {
-                    j += 1;
-                }
-            }
-            if let Some(close) = close {
-                let id = *next_id;
-                *next_id += 1;
-                fmt_marker(out, i..i + n, st.marker, id);
-                push(
-                    out,
-                    i + n..close,
-                    Style {
-                        color: Some(st.code),
-                        bg: Some(st.code_bg),
-                        code: true,
-                        ..Default::default()
-                    }
-                    .over(base),
-                );
-                fmt_marker(out, close..close + n, st.marker, id);
-                i = close + n;
-                continue;
-            }
-            // No matching run: the whole backtick STRING is one token
-            // (CommonMark) — skip past it so a shorter run inside it can't
-            // start a span the reader wouldn't.
-            i += n;
-            continue;
-        }
-        // Bold: **text** (check before single-* italic). A `\*` (escaped)
-        // opener or closer is literal text, matching the reader's CommonMark.
-        if c == b'*'
-            && !is_backslash_escaped(b, i)
-            && i + 1 < end
-            && b[i + 1] == b'*'
-            && let Some(close) = find2_unescaped(b, i + 2, end, b'*', b'*')
-        {
-            let id = *next_id;
-            *next_id += 1;
-            fmt_marker(out, i..i + 2, st.marker, id);
-            scan_styled_body(
-                text,
-                i + 2,
-                close,
-                st,
-                out,
-                Style {
-                    bold: true,
-                    ..Default::default()
-                }
-                .over(base),
-                depth,
-                next_id,
-            );
-            fmt_marker(out, close..close + 2, st.marker, id);
-            i = close + 2;
-            continue;
-        }
-        // Italic: *text* — escaped `\*` stays literal.
-        if c == b'*'
-            && !is_backslash_escaped(b, i)
-            && let Some(close) = find1_unescaped(b, i + 1, end, b'*')
-            && close > i + 1
-        {
-            let id = *next_id;
-            *next_id += 1;
-            fmt_marker(out, i..i + 1, st.marker, id);
-            scan_styled_body(
-                text,
-                i + 1,
-                close,
-                st,
-                out,
-                Style {
-                    italic: true,
-                    ..Default::default()
-                }
-                .over(base),
-                depth,
-                next_id,
-            );
-            fmt_marker(out, close..close + 1, st.marker, id);
-            i = close + 1;
-            continue;
-        }
-        // Underscore emphasis (__bold__ / _italic_), CommonMark's flanking
-        // rules so snake_case identifiers never light up: `_` only opens
-        // after a non-word character (or the segment start) and only closes
-        // before one, and a backslash-escaped `\_` (the shruggie's arms)
-        // stays literal. The reader's CommonMark parser applies the same
-        // word-boundary rule, so the views agree.
-        if c == b'_' && (i == start || (!is_word_byte(b[i - 1]) && b[i - 1] != b'\\')) {
-            // __bold__ (check before single-_ italic).
-            if i + 1 < end
-                && b[i + 1] == b'_'
-                && i + 2 < end
-                && b[i + 2] != b' '
-                && let Some(close) = find_underscore_close(b, i + 2, end, true)
-            {
-                let id = *next_id;
-                *next_id += 1;
-                fmt_marker(out, i..i + 2, st.marker, id);
-                scan_styled_body(
-                    text,
-                    i + 2,
-                    close,
-                    st,
-                    out,
-                    Style {
-                        bold: true,
-                        ..Default::default()
-                    }
-                    .over(base),
-                    depth,
-                    next_id,
-                );
-                fmt_marker(out, close..close + 2, st.marker, id);
-                i = close + 2;
-                continue;
-            }
-            if i + 1 < end
-                && b[i + 1] != b'_'
-                && b[i + 1] != b' '
-                && let Some(close) = find_underscore_close(b, i + 1, end, false)
-            {
-                let id = *next_id;
-                *next_id += 1;
-                fmt_marker(out, i..i + 1, st.marker, id);
-                scan_styled_body(
-                    text,
-                    i + 1,
-                    close,
-                    st,
-                    out,
-                    Style {
-                        italic: true,
-                        ..Default::default()
-                    }
-                    .over(base),
-                    depth,
-                    next_id,
-                );
-                fmt_marker(out, close..close + 1, st.marker, id);
-                i = close + 1;
-                continue;
-            }
-        }
-        // Highlight: ==text== — the pairing rules are the reading view's
-        // (`syntax::highlight_close`), so `a == b == c` stays literal in both.
-        if c == b'='
-            && !is_backslash_escaped(b, i)
-            && i + 1 < end
-            && b[i + 1] == b'='
-            && let Some(close) = crate::syntax::highlight_close(&text[..end], i)
-        {
-            let id = *next_id;
-            *next_id += 1;
-            fmt_marker(out, i..i + 2, st.marker, id);
-            scan_styled_body(
-                text,
-                i + 2,
-                close,
-                st,
-                out,
-                Style {
-                    bg: Some(st.mark_bg),
-                    ..Default::default()
-                }
-                .over(base),
-                depth,
-                next_id,
-            );
-            fmt_marker(out, close..close + 2, st.marker, id);
-            i = close + 2;
-            continue;
-        }
-        // Strikethrough: ~~text~~
-        if c == b'~'
-            && !is_backslash_escaped(b, i)
-            && i + 1 < end
-            && b[i + 1] == b'~'
-            && let Some(close) = find2_unescaped(b, i + 2, end, b'~', b'~')
-        {
-            let id = *next_id;
-            *next_id += 1;
-            fmt_marker(out, i..i + 2, st.marker, id);
-            scan_styled_body(
-                text,
-                i + 2,
-                close,
-                st,
-                out,
-                Style {
-                    strike: true,
-                    ..Default::default()
-                }
-                .over(base),
-                depth,
-                next_id,
-            );
-            fmt_marker(out, close..close + 2, st.marker, id);
-            i = close + 2;
-            continue;
-        }
-        // Footnote reference: [^label] — rendered `[label]` in link color (the
-        // `^` hidden), matching the reading view's resolved marker.
-        if c == b'['
-            && !is_backslash_escaped(b, i)
-            && i + 1 < end
-            && b[i + 1] == b'^'
-            && let Some(rb) = find1(b, i + 2, end, b']')
-            && rb > i + 2
-        {
-            push(
-                out,
-                i..i + 1,
-                Style {
-                    color: Some(st.link),
-                    ..Default::default()
-                }
-                .over(base),
-            );
-            marker(out, i + 1..i + 2, st.marker); // hide the `^`
-            push(
-                out,
-                i + 2..rb + 1,
-                Style {
-                    color: Some(st.link),
-                    ..Default::default()
-                }
-                .over(base),
-            );
-            i = rb + 1;
-            continue;
-        }
-        // Link: [text](url) — or an image `![alt](src)` (the caret's own line
-        // falls through to this generic scan, since the block-image widget is
-        // suppressed there — W4's image_row() only handles other lines). Treated
-        // the same: `text`/`alt` colored, brackets dimmed — plus the `!` for an
-        // image, so an empty-alt `![](src)` hides cleanly instead of leaving a
-        // bare unhidden `!`.
-        if c == b'['
-            && !is_backslash_escaped(b, i)
-            && let Some(rb) = find1(b, i + 1, end, b']')
-            && rb + 1 < end
-            && b[rb + 1] == b'('
-            && let Some(rp) = find1(b, rb + 2, end, b')')
-        {
-            let marker_start = if i > start && b[i - 1] == b'!' {
-                i - 1
-            } else {
-                i
-            };
-            marker(out, marker_start..i + 1, st.marker);
-            push(
-                out,
-                i + 1..rb,
-                Style {
-                    color: Some(st.link),
-                    ..Default::default()
-                }
-                .over(base),
-            );
-            marker(out, rb..rp + 1, st.marker);
-            i = rp + 1;
-            continue;
-        }
-        // Reference link: [text][id] — `text` colored, brackets + `[id]` dimmed.
-        // (Inline `[text](url)` is handled just above; this is the `][` form.)
-        if c == b'['
-            && !is_backslash_escaped(b, i)
-            && let Some(rb) = find1(b, i + 1, end, b']')
-            && rb + 1 < end
-            && b[rb + 1] == b'['
-            && let Some(rb2) = find1(b, rb + 2, end, b']')
-        {
-            marker(out, i..i + 1, st.marker);
-            push(
-                out,
-                i + 1..rb,
-                Style {
-                    color: Some(st.link),
-                    ..Default::default()
-                }
-                .over(base),
-            );
-            marker(out, rb..rb2 + 1, st.marker);
-            i = rb2 + 1;
-            continue;
-        }
-        // Styled inline HTML — `<mark>` / `<mark style="background:…">`,
-        // `<span style="color:…">`, `<u>` — the tags hidden, the body styled.
-        // Recognition is the reading view's (`syntax::styled_tag`), so the two
-        // views can't disagree about which tags count.
-        if c == b'<'
-            && let Some(len) = crate::syntax::inline_tag_len(&text[i..end])
-            && let Some(tag) = crate::syntax::styled_tag(&text[i..i + len])
-            && let Some((rel, close_len)) =
-                crate::syntax::matching_styled_close(&text[i + len..end], tag.kind)
-        {
-            use crate::syntax::StyledKind;
-            let body = i + len;
-            let close = body + rel;
-            let id = *next_id;
-            *next_id += 1;
-            fmt_marker(out, i..body, st.marker, id);
-            let style = match tag.kind {
-                StyledKind::Mark => Style {
-                    bg: Some(tag.background.map_or(st.mark_bg, hsla_of)),
-                    ..Default::default()
-                },
-                StyledKind::Span => Style {
-                    color: tag.color.map(hsla_of),
-                    bg: tag.background.map(hsla_of),
-                    ..Default::default()
-                },
-                StyledKind::Underline => Style {
-                    underline: true,
-                    ..Default::default()
-                },
-            };
-            scan_styled_body(text, body, close, st, out, style.over(base), depth, next_id);
-            fmt_marker(out, close..close + close_len, st.marker, id);
-            i = close + close_len;
-            continue;
-        }
-        // Bare URL: colored like a link (it clicks like one — see the shared
-        // `links()` grammar; `url_end` keeps styling and hit-tests identical).
-        // Compare BYTES: `i` walks bytes, so a str slice here would panic
-        // mid-char on any non-ASCII text (`¯\_(ツ)_/¯` did, v0.5.0 dev).
-        if (b[i..end].starts_with(b"http://") || b[i..end].starts_with(b"https://"))
-            && (i == start || !is_word(b[i - 1]))
-        {
-            let j = i + crate::syntax::url_end(&text[i..end], 0);
-            if j > i + 8 {
-                push(
-                    out,
-                    i..j,
-                    Style {
-                        color: Some(st.link),
-                        ..Default::default()
-                    }
-                    .over(base),
-                );
-                i = j;
-                continue;
-            }
-        }
-        i += 1;
-    }
-}
-
-fn push(out: &mut Vec<Span>, range: Range<usize>, style: Style) {
-    out.push(Span { range, style });
-}
-
-/// First index of byte `c` in `b[from..end]`.
-fn find1(b: &[u8], from: usize, end: usize, c: u8) -> Option<usize> {
-    (from..end).find(|&k| b[k] == c)
-}
-
-/// First UNESCAPED index of byte `c` — a `\`-escaped occurrence (odd
-/// preceding backslash run) is literal text, not a marker (CommonMark).
-fn find1_unescaped(b: &[u8], from: usize, end: usize, c: u8) -> Option<usize> {
-    (from..end).find(|&k| b[k] == c && !is_backslash_escaped(b, k))
-}
-
-/// First UNESCAPED index of the pair — see [`find1_unescaped`].
-fn find2_unescaped(b: &[u8], from: usize, end: usize, c1: u8, c2: u8) -> Option<usize> {
-    (from..end.saturating_sub(1))
-        .find(|&k| b[k] == c1 && b[k + 1] == c2 && !is_backslash_escaped(b, k))
-}
-
-/// A "word" byte for `_`-emphasis flanking: ASCII alphanumerics, plus any
-/// non-ASCII byte — accented/CJK letters count as word characters, so
-/// intraword underscores stay literal (CommonMark's rule for `_`).
-fn is_word_byte(x: u8) -> bool {
-    x.is_ascii_alphanumeric() || x >= 0x80
-}
-
-/// The closing `_` (or `__`) for an underscore-emphasis span whose content
-/// starts at `from`: the first candidate with non-empty content that doesn't
-/// end in a space, that isn't backslash-escaped, and whose following
-/// character is not a word character (CommonMark right-flank). `None` if the
-/// span never closes.
-fn find_underscore_close(b: &[u8], from: usize, end: usize, double: bool) -> Option<usize> {
-    let width = if double { 2 } else { 1 };
-    let mut j = from + 1; // content is at least one byte
-    while j + width <= end {
-        if b[j] == b'_'
-            && (!double || b[j + 1] == b'_')
-            && b[j - 1] != b' '
-            && b[j - 1] != b'\\'
-            && (j + width >= end || !is_word_byte(b[j + width]))
-        {
-            return Some(j);
-        }
-        j += 1;
-    }
-    None
-}
-
 // Linkables (wiki/tag/url/bare-url) are shared with the reader
-// (`crate::syntax`) — one grammar for clicks, hover cursors, and
+// (`mdoc_markdown::syntax`) — one grammar for clicks, hover cursors, and
 // styling in every renderer.
-pub(crate) use crate::syntax::{link_at, links};
-
-/// ATX heading depth (1–6) if `line` is a heading: 1–6 leading `#` followed by
-/// a space or end-of-line. `None` otherwise.
-pub(crate) fn heading_level(line: &str) -> Option<u8> {
-    let b = line.as_bytes();
-    let mut n = 0;
-    while n < b.len() && b[n] == b'#' {
-        n += 1;
-    }
-    ((1..=6).contains(&n) && (n == b.len() || b[n] == b' ')).then_some(n as u8)
-}
+pub(crate) use mdoc_markdown::syntax::{link_at, links};
 
 /// One ATX heading of a document: its depth, its text without the `#`
 /// markers, and the byte offset where its line starts.
@@ -1276,7 +527,7 @@ pub(crate) fn line_heading_level(line: &str) -> Option<(u8, Option<usize>)> {
 /// sections: `folded` holds the trimmed source lines of folded headings
 /// (`## Goals`). A top-level section runs from its heading to the next
 /// heading of the same or a higher level, fence-aware — mirrors
-/// [`crate::syntax::extract_section`]. A LIST heading's section
+/// [`mdoc_markdown::syntax::extract_section`]. A LIST heading's section
 /// (`- ### Notes`) is its indented children: it runs while lines sit deeper
 /// than the heading's own indent (blank lines included). Every line matching
 /// a folded key folds (duplicate headings fold together; the key is the line
@@ -1330,28 +581,6 @@ pub(crate) fn heading_fold_regions(
     out
 }
 
-/// True if `line` is a thematic break (horizontal rule): three or more of the
-/// same `-`, `*`, or `_`, separated only by optional spaces — e.g. `---`, `***`,
-/// `- - -`. The editor paints a divider in its place (reveal-on-caret). Matches
-/// CommonMark, ignoring the rare setext-underline ambiguity this app doesn't use.
-pub(crate) fn thematic_break(line: &str) -> bool {
-    let mut chars = line.bytes().filter(|b| !b.is_ascii_whitespace());
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    if !matches!(first, b'-' | b'*' | b'_') {
-        return false;
-    }
-    let mut count = 1;
-    for b in chars {
-        if b != first {
-            return false;
-        }
-        count += 1;
-    }
-    count >= 3
-}
-
 /// Byte length of the `[^label]:` prefix if `line` is a footnote definition, so
 /// the editor can render the whole line muted (the reading view does the same).
 /// `None` otherwise.
@@ -1374,10 +603,10 @@ pub(crate) fn html_block(line: &str) -> bool {
 /// each with an optional trailing space — if `line` is a blockquote. `None`
 /// otherwise. The editor hides this marker (reveal-on-caret) and renders the line
 /// with a muted color + a left border.
-// Alert recognition is shared with the reader (`crate::syntax`) —
+// Alert recognition is shared with the reader (`mdoc_markdown::syntax`) —
 // what a marker IS lives in one place; this crate only decides how to paint
 // it (hide the prefix, label + colored bar, reveal on caret).
-pub(crate) use crate::syntax::{AlertKind, alert_prefix};
+pub(crate) use mdoc_markdown::syntax::{AlertKind, alert_prefix};
 
 impl SyntaxStyle {
     /// The themed color for one alert kind.
@@ -1393,7 +622,7 @@ impl SyntaxStyle {
 }
 
 /// The alert kind if `body` — a blockquote line's text after its `>` prefix —
-/// starts with an alert marker (see [`crate::syntax::alert_prefix`]).
+/// starts with an alert marker (see [`mdoc_markdown::syntax::alert_prefix`]).
 pub(crate) fn alert_kind(body: &str) -> Option<AlertKind> {
     alert_prefix(body).map(|(kind, ..)| kind)
 }
@@ -1428,50 +657,6 @@ pub(crate) fn alert_fold_regions(content: &str) -> Vec<(Range<usize>, bool)> {
         }
     }
     out
-}
-
-pub(crate) fn blockquote_prefix(line: &str) -> Option<usize> {
-    let b = line.as_bytes();
-    if b.first() != Some(&b'>') {
-        return None;
-    }
-    let mut p = 0;
-    while p < b.len() && b[p] == b'>' {
-        p += 1;
-        if p < b.len() && b[p] == b' ' {
-            p += 1;
-        }
-    }
-    Some(p)
-}
-
-/// If `line` is a list item, return `(prefix_len, indent, ordered, number)`.
-/// `prefix_len` is the byte length of the leading whitespace plus the marker
-/// (a bullet `-`/`*`/`+`, or digits then `.`/`)`) plus one space; `indent` is the
-/// leading-whitespace length (nesting depth); `ordered`/`number` describe an
-/// ordered item. The editor hides this prefix and paints a bullet/number,
-/// revealing the raw prefix on caret.
-pub(crate) fn list_prefix(line: &str) -> Option<(usize, usize, bool, u32)> {
-    let b = line.as_bytes();
-    let mut i = 0;
-    while i < b.len() && (b[i] == b' ' || b[i] == b'\t') {
-        i += 1;
-    }
-    let indent = i;
-    // Unordered: `-`/`*`/`+` then a space.
-    if i < b.len() && matches!(b[i], b'-' | b'*' | b'+') && b.get(i + 1) == Some(&b' ') {
-        return Some((i + 2, indent, false, 0));
-    }
-    // Ordered: one or more digits, then `.` or `)`, then a space.
-    let ds = i;
-    while i < b.len() && b[i].is_ascii_digit() {
-        i += 1;
-    }
-    if i > ds && matches!(b.get(i), Some(b'.') | Some(b')')) && b.get(i + 1) == Some(&b' ') {
-        let num = line[ds..i].parse::<u32>().unwrap_or(1);
-        return Some((i + 2, indent, true, num));
-    }
-    None
 }
 
 /// `(position, nesting level)` of every ordered list item, both 0-based-
@@ -1586,24 +771,6 @@ pub(crate) fn renumber_copy(content: &str, range: std::ops::Range<usize>) -> Str
         line_start = line_end + 1;
     }
     out
-}
-
-/// If `line` is a GFM task item — a list item whose body starts with `[ ]`,
-/// `[x]`, or `[X]` then a space — return `(prefix_len, indent, checked)`, where
-/// `prefix_len` covers the list marker plus the checkbox. The editor hides this
-/// prefix and paints a ☐/☑ box (parity with the reading view).
-pub(crate) fn task_prefix(line: &str) -> Option<(usize, usize, bool)> {
-    let (list_len, indent, ..) = list_prefix(line)?;
-    let rest = &line.as_bytes()[list_len..];
-    if rest.len() >= 4
-        && rest[0] == b'['
-        && rest[2] == b']'
-        && rest[3] == b' '
-        && matches!(rest[1], b' ' | b'x' | b'X')
-    {
-        return Some((list_len + 4, indent, matches!(rest[1], b'x' | b'X')));
-    }
-    None
 }
 
 /// Toggle a GFM task item's checkbox in `line` — flip the char between the
@@ -2019,240 +1186,6 @@ pub(crate) fn splice_inline_math(
     (nd, nr, nm, places)
 }
 
-/// Per-column text alignment of a GFM table.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub(crate) enum Align {
-    Left,
-    Center,
-    Right,
-}
-
-/// The shared table-style enum — recognition lives in `crate::syntax`
-/// (the sanctioned dependency), including the marker's `cols=` widths.
-pub(crate) use crate::syntax::TableStyle;
-
-/// Parse a `<!-- table:STYLE -->` marker line into its [`TableStyle`]. `None` if
-/// the line isn't a recognized table-style marker (so an unknown marker stays a
-/// plain HTML comment).
-pub(crate) fn table_style_marker(line: &str) -> Option<TableStyle> {
-    crate::syntax::table_style_marker(line)
-}
-
-/// A detected GFM table region: the half-open range of logical line indices it
-/// spans (header, separator, then body rows) and its per-column alignment, plus
-/// an optional `<!-- table:STYLE -->` marker line directly above it.
-#[derive(Clone)]
-pub(crate) struct TableRegion {
-    pub lines: Range<usize>,
-    pub aligns: Vec<Align>,
-    pub style: TableStyle,
-    /// Index of the style-marker comment line above the header, if present — the
-    /// editor hides it (revealed only when the caret lands on it).
-    pub marker_line: Option<usize>,
-    /// Explicit column widths (logical px) from the marker's `cols=` attribute
-    /// — written by drag-to-resize; `None` = content-measured.
-    pub col_widths_attr: Option<Vec<f32>>,
-    /// The table reads right-to-left (#66), so its grid hugs the note column's
-    /// RIGHT edge with the 22px gutter on the other side — the reader's
-    /// `.mr(22).ml_auto()`. Column ORDER is not mirrored; see [`EditorState::table_left`].
-    pub rtl: bool,
-}
-
-/// Detect GFM table regions in `content` (W4c). A region is a row line (trimmed
-/// text starts with `|`) immediately followed by a separator row
-/// (`| --- | :--: |`), then any further row lines. Returns regions in order.
-pub(crate) fn table_regions(content: &str) -> Vec<TableRegion> {
-    let lines: Vec<&str> = content.split('\n').collect();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i + 1 < lines.len() {
-        if is_table_row(lines[i])
-            && let Some(aligns) = separator_aligns(lines[i + 1])
-        {
-            let start = i;
-            let mut end = i + 2; // header + separator
-            // Stop before a new table jammed directly below: a row that is itself
-            // immediately followed by a `|---|` separator is the next table's
-            // header, not a body row of this one — otherwise adjacent tables (no
-            // blank line between) merge into one grid and the second separator
-            // shows up as `---` cells.
-            while end < lines.len()
-                && is_table_row(lines[end])
-                && separator_aligns(lines.get(end + 1).copied().unwrap_or("")).is_none()
-            {
-                end += 1;
-            }
-            // A `<!-- table:STYLE -->` comment on the line directly above sets the
-            // table's visual style (and is hidden by the editor).
-            let (style, marker_line) = match start
-                .checked_sub(1)
-                .map(|m| (m, table_style_marker(lines[m])))
-            {
-                Some((m, Some(s))) => (s, Some(m)),
-                _ => (TableStyle::Grid, None),
-            };
-            let col_widths_attr =
-                marker_line.and_then(|m| crate::syntax::table_col_widths(lines[m]));
-            // Writing direction of the whole table (#66) — the reader runs
-            // `base_direction` over the table's byte span, so join the region's
-            // lines and ask the same question: the first strong character
-            // anywhere in the table decides (pipes, dashes and digits are
-            // neutral under UAX #9). Once per scan, not per frame.
-            let rtl = crate::syntax::base_direction(&lines[start..end].join("\n")).is_rtl();
-            out.push(TableRegion {
-                lines: start..end,
-                aligns,
-                style,
-                marker_line,
-                col_widths_attr,
-                rtl,
-            });
-            i = end;
-        } else {
-            i += 1;
-        }
-    }
-    out
-}
-
-/// A table row is a line whose trimmed text starts with `|`.
-pub(crate) fn is_table_row(line: &str) -> bool {
-    line.trim_start().starts_with('|')
-}
-
-/// Split a `| a | b |` row into trimmed cell strings (the bounding pipes drop the
-/// empty leading/trailing cells they'd otherwise create).
-pub(crate) fn table_cells(line: &str) -> Vec<&str> {
-    let t = line.trim();
-    let t = t.strip_prefix('|').unwrap_or(t);
-    let t = t.strip_suffix('|').unwrap_or(t);
-    split_unescaped_pipes(t).map(str::trim).collect()
-}
-
-/// Split `s` at its UNESCAPED `|` bytes — a `\|` (odd run of preceding
-/// backslashes) is literal cell content per GFM, not a cell separator. The
-/// escape stays in the returned slices (cells are verbatim source), so cell
-/// ranges and caret math keep their exact source mapping, and a rewrite that
-/// re-joins the cells round-trips the escape.
-fn split_unescaped_pipes(s: &str) -> impl Iterator<Item = &str> {
-    let b = s.as_bytes();
-    let mut cuts = vec![0usize];
-    for (i, &c) in b.iter().enumerate() {
-        if c == b'|' && !is_backslash_escaped(b, i) {
-            cuts.push(i + 1);
-        }
-    }
-    cuts.push(s.len() + 1);
-    (0..cuts.len() - 1).map(move |k| &s[cuts[k]..cuts[k + 1] - 1])
-}
-
-/// Whether the byte at `i` is escaped: preceded by an ODD number of `\`s.
-fn is_backslash_escaped(b: &[u8], i: usize) -> bool {
-    let mut n = 0;
-    while n < i && b[i - 1 - n] == b'\\' {
-        n += 1;
-    }
-    n % 2 == 1
-}
-
-/// The byte range of each cell's *trimmed content* within `line` (line-local), in
-/// the same order as [`table_cells`]. Lets the editor place the caret inside a
-/// rendered cell and hit-test a click back to a source offset. An empty cell is a
-/// zero-width range at its content position.
-pub(crate) fn table_cell_ranges(line: &str) -> Vec<Range<usize>> {
-    let (Some(first), Some(last)) = (line.find('|'), line.rfind('|')) else {
-        return Vec::new();
-    };
-    if last <= first {
-        return Vec::new();
-    }
-    let base = first + 1; // start of the inter-pipe region in `line`
-    let inner = &line[base..last];
-    let mut out = Vec::new();
-    let mut seg = 0; // offset of the current cell within `inner`
-    for piece in split_unescaped_pipes(inner) {
-        let lead = piece.len() - piece.trim_start().len();
-        let trail = piece.len() - piece.trim_end().len();
-        let start = base + seg + lead;
-        out.push(start..(base + seg + piece.len() - trail).max(start));
-        seg += piece.len() + 1; // + the `|`
-    }
-    out
-}
-
-/// If `line` is a table separator row (every cell is dashes with optional
-/// alignment colons), return its per-column alignment, else `None`.
-fn separator_aligns(line: &str) -> Option<Vec<Align>> {
-    if !is_table_row(line) {
-        return None;
-    }
-    let cells = table_cells(line);
-    if cells.is_empty() {
-        return None;
-    }
-    cells
-        .iter()
-        .map(|c| {
-            let left = c.starts_with(':');
-            let right = c.ends_with(':');
-            let dashes = c.trim_matches(':');
-            (!dashes.is_empty() && dashes.bytes().all(|b| b == b'-')).then_some(
-                match (left, right) {
-                    (true, true) => Align::Center,
-                    (false, true) => Align::Right,
-                    _ => Align::Left,
-                },
-            )
-        })
-        .collect()
-}
-
-/// Whether a table row is the Markdown alignment/separator row. Search treats
-/// it as structural chrome, just as the WYSIWYG table renderer does.
-pub(crate) fn is_table_separator(line: &str) -> bool {
-    separator_aligns(line).is_some()
-}
-
-fn is_word(c: u8) -> bool {
-    c.is_ascii_alphanumeric() || c == b'_'
-}
-
-// One tag grammar with the reader (namespaced `#a/b` included).
-
-fn decode_entity(source: &str) -> Option<(usize, String)> {
-    if source.as_bytes().first() != Some(&b'&') {
-        return None;
-    }
-    let relative_end = source
-        .as_bytes()
-        .iter()
-        .take(33)
-        .position(|byte| *byte == b';')?;
-    let entity_end = relative_end + 1;
-    let token = &source[..entity_end];
-    if let Some(value) = decode_numeric_entity(token) {
-        return Some((token.len(), value.to_string()));
-    }
-    entities::ENTITIES
-        .iter()
-        .find(|entity| entity.entity == token)
-        .map(|entity| (token.len(), entity.characters.to_owned()))
-}
-
-fn decode_numeric_entity(token: &str) -> Option<char> {
-    let digits = token
-        .strip_prefix("&#x")
-        .or_else(|| token.strip_prefix("&#X"))
-        .map(|digits| digits.strip_suffix(';').unwrap_or(digits))
-        .and_then(|digits| u32::from_str_radix(digits, 16).ok())
-        .or_else(|| {
-            token
-                .strip_prefix("&#")
-                .and_then(|digits| digits.strip_suffix(';').unwrap_or(digits).parse().ok())
-        })?;
-    char::from_u32(digits)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2296,143 +1229,6 @@ mod tests {
         // Same line unselected: everything hidden.
         let (disp, _, _) = hidden_runs("- a **b** c", &font, c, &[], None, 0, 2, false, &st);
         assert_eq!(disp, "a b c");
-    }
-
-    /// The styled substrings a line scans to, as `(text, bold, italic)` —
-    /// markers excluded (they carry a color, not bold/italic).
-    fn emphasis_spans(line: &str) -> Vec<(String, bool, bool)> {
-        let st = test_style();
-        let mut out = Vec::new();
-        scan_line(line, 0, line.len(), &st, &mut out);
-        out.iter()
-            .filter(|sp| sp.style.bold || sp.style.italic)
-            .map(|sp| {
-                (
-                    line[sp.range.clone()].to_string(),
-                    sp.style.bold,
-                    sp.style.italic,
-                )
-            })
-            .collect()
-    }
-
-    #[test]
-    fn underscore_emphasis_at_word_boundaries() {
-        assert_eq!(
-            emphasis_spans("_italic_ and __bold__"),
-            vec![
-                ("italic".to_string(), false, true),
-                ("bold".to_string(), true, false)
-            ]
-        );
-        assert_eq!(
-            emphasis_spans("mid _span here_ end"),
-            vec![("span here".to_string(), false, true)]
-        );
-    }
-
-    #[test]
-    fn underscores_inside_words_stay_plain() {
-        // The reason `_` was originally skipped — identifiers must not light up.
-        assert_eq!(emphasis_spans("snake_case_name"), vec![]);
-        assert_eq!(emphasis_spans("a foo_bar_baz b"), vec![]);
-        assert_eq!(emphasis_spans("CONST_MAX_VALUE = 3"), vec![]);
-        // Closing candidate followed by a word character doesn't close.
-        assert_eq!(emphasis_spans("_a_b"), vec![]);
-        // Space-adjacent content never opens/closes.
-        assert_eq!(emphasis_spans("_ nope_"), vec![]);
-        assert_eq!(emphasis_spans("_nope _"), vec![]);
-    }
-
-    #[test]
-    fn escaped_underscores_stay_literal() {
-        // The shruggie's arms are backslash-escaped underscores.
-        assert_eq!(emphasis_spans(r"¯\_(ツ)_/¯"), vec![]);
-        assert_eq!(emphasis_spans(r"\_not italic\_"), vec![]);
-    }
-
-    #[test]
-    fn double_equals_highlight_hides_markers_and_tints_the_body() {
-        let text = "an ==important== word, a == b == c";
-        let st = test_style();
-        let mut out = Vec::new();
-        scan_line(text, 0, text.len(), &st, &mut out);
-        let open = 3;
-        let body = open + 2;
-        let close = text.find("== word").unwrap();
-        assert!(out.iter().any(|s| s.range == (open..body) && s.style.hide));
-        assert!(
-            out.iter()
-                .any(|s| s.range == (close..close + 2) && s.style.hide)
-        );
-        assert!(
-            out.iter()
-                .any(|s| s.range.start == body && s.style.bg == Some(st.mark_bg))
-        );
-        // The spaced `==`s after it are prose: nothing hidden past the closer.
-        assert!(
-            !out.iter()
-                .any(|s| s.range.start > close + 2 && s.style.hide)
-        );
-    }
-
-    #[test]
-    fn colored_mark_and_span_tags_style_their_body() {
-        let text =
-            r#"a <mark style="background:#ff0000">hi</mark> <span style="color:#00ff00">go</span>"#;
-        let st = test_style();
-        let mut out = Vec::new();
-        scan_line(text, 0, text.len(), &st, &mut out);
-        let hi = text.find("hi<").unwrap();
-        let go = text.find("go<").unwrap();
-        assert!(
-            out.iter()
-                .any(|s| s.range.start == hi && s.style.bg == Some(hsla_of(0xff0000ff)))
-        );
-        assert!(
-            out.iter()
-                .any(|s| s.range.start == go && s.style.color == Some(hsla_of(0x00ff00ff)))
-        );
-        // Both tag pairs are hidden markers.
-        assert!(
-            out.iter()
-                .any(|s| s.range.start == 2 && s.range.end == hi && s.style.hide)
-        );
-        assert!(
-            out.iter()
-                .any(|s| s.range == (hi + 2..hi + 9) && s.style.hide)
-        );
-    }
-
-    #[test]
-    fn underline_tags_hide_and_style_the_body() {
-        let text = "an <u>underlined</u> word";
-        let st = test_style();
-        let mut out = Vec::new();
-        scan_line(text, 0, text.len(), &st, &mut out);
-        // Tags are hidden markers; the body span carries the underline.
-        let open = text.find("<u>").unwrap();
-        let body = open + 3;
-        assert!(out.iter().any(|s| s.range == (open..body) && s.style.hide));
-        assert!(
-            out.iter()
-                .any(|s| s.range.start == body && s.style.underline)
-        );
-    }
-
-    #[test]
-    fn scan_line_survives_multibyte_text() {
-        // Regression: byte-wise scanning once str-sliced at continuation
-        // bytes and panicked on this exact line.
-        let text = "- I don't know what is wrong ¯\\_(ツ)_/¯ https://a.io";
-        let st = test_style();
-        let mut out = Vec::new();
-        scan_line(text, 0, text.len(), &st, &mut out);
-        // The trailing URL still gets recognized (spans cover it).
-        assert!(
-            out.iter()
-                .any(|s| s.range.start == text.find("https").unwrap())
-        );
     }
 
     /// Helper: the substrings the spans cover, for readable assertions.
@@ -2609,15 +1405,6 @@ mod tests {
     }
 
     #[test]
-    fn detects_a_gfm_table() {
-        let md = "intro\n\n| A | B |\n| --- | :-: |\n| 1 | 2 |\n| 3 | 4 |\n\nafter";
-        let regions = table_regions(md);
-        assert_eq!(regions.len(), 1);
-        assert_eq!(regions[0].lines, 2..6); // header, separator, 2 body rows
-        assert_eq!(regions[0].aligns, vec![Align::Left, Align::Center]);
-    }
-
-    #[test]
     fn mermaid_block_extraction() {
         let md = "intro\n\n```mermaid\ngraph TD\nA --> B\n```\n\nafter";
         let blocks = mermaid_blocks(md);
@@ -2631,86 +1418,7 @@ mod tests {
     }
 
     #[test]
-    fn cells_split_and_trim() {
-        assert_eq!(table_cells("| a | b |"), vec!["a", "b"]);
-        assert_eq!(table_cells("|  |  |"), vec!["", ""]);
-    }
-
-    #[test]
-    fn escaped_pipes_are_cell_content() {
-        // GFM: `\|` is a literal pipe in the cell, not a separator — the
-        // reader (GFM parser) agrees; a blind split miscounted cells and
-        // column rewrites then corrupted the row.
-        assert_eq!(
-            table_cells(r"| left \| right | ok |"),
-            vec![r"left \| right", "ok"]
-        );
-        // A double backslash escapes the backslash — that pipe IS a separator.
-        assert_eq!(table_cells(r"| a \\| b |"), vec![r"a \\", "b"]);
-        // Ranges walk the same split: two ranges, first spans the escape.
-        let line = r"| left \| right | ok |";
-        let ranges = table_cell_ranges(line);
-        assert_eq!(ranges.len(), 2);
-        assert_eq!(&line[ranges[0].clone()], r"left \| right");
-        assert_eq!(&line[ranges[1].clone()], "ok");
-    }
-
-    #[test]
-    fn separator_required_and_alignment() {
-        // Pipes in prose without a separator row are not a table.
-        assert!(table_regions("a | b\nc | d").is_empty());
-        assert!(table_regions("| not a table\njust text").is_empty());
-        // Right alignment from `---:`.
-        assert_eq!(
-            table_regions("| h |\n| ---: |\n| x |")[0].aligns,
-            vec![Align::Right]
-        );
-    }
-
-    #[test]
-    fn table_style_marker_and_region() {
-        assert_eq!(
-            table_style_marker("<!-- table:striped -->"),
-            Some(TableStyle::Striped)
-        );
-        assert_eq!(
-            table_style_marker("<!--table:minimal-->"),
-            Some(TableStyle::Minimal)
-        );
-        assert_eq!(table_style_marker("<!-- table:bogus -->"), None);
-        assert_eq!(table_style_marker("<!-- a comment -->"), None);
-        assert_eq!(table_style_marker("| a | b |"), None);
-
-        // The marker above a table sets its style + is recorded (not in `lines`).
-        let r = table_regions("<!-- table:header -->\n| h |\n| --- |\n| x |");
-        assert_eq!(r.len(), 1);
-        assert_eq!(r[0].style, TableStyle::Header);
-        assert_eq!(r[0].marker_line, Some(0));
-        assert_eq!(r[0].lines, 1..4);
-
-        // No marker → default Grid.
-        let g = table_regions("| h |\n| --- |\n| x |");
-        assert_eq!(g[0].style, TableStyle::Grid);
-        assert_eq!(g[0].marker_line, None);
-    }
-
-    #[test]
-    fn adjacent_tables_split_into_two_regions() {
-        // Two tables jammed together with no blank line between must not merge: the
-        // second table's header + `|---|` start a new region (otherwise the second
-        // separator rendered as `---` cells in one merged grid).
-        let r = table_regions(
-            "| a | b |\n| --- | --- |\n| 1 | 2 |\n| c | d |\n| --- | --- |\n| 3 | 4 |",
-        );
-        assert_eq!(r.len(), 2);
-        assert_eq!(r[0].lines, 0..3);
-        assert_eq!(r[1].lines, 3..6);
-    }
-
-    #[test]
-    fn heading_and_image_line() {
-        assert_eq!(heading_level("## Hi"), Some(2));
-        assert_eq!(heading_level("#notaheading"), None);
+    fn image_line_and_row() {
         assert_eq!(image_line("![a](b.png)"), Some(("b.png", None)));
         assert_eq!(
             image_line("![a](b.png){width=320}"),
@@ -2800,16 +1508,6 @@ mod tests {
             popover_divider: c,
             popover_danger: c,
             mono: gpui::font("monospace"),
-        }
-    }
-
-    #[test]
-    fn thematic_break_detection() {
-        for s in ["---", "***", "___", "- - -", "  ---  ", "----"] {
-            assert!(thematic_break(s), "{s:?} should be a rule");
-        }
-        for s in ["--", "**", "", "text", "---x", "- -- text", "===", "> ---"] {
-            assert!(!thematic_break(s), "{s:?} should not be a rule");
         }
     }
 
@@ -3106,12 +1804,7 @@ mod tests {
     }
 
     #[test]
-    fn blockquote_prefix_and_hidden() {
-        assert_eq!(blockquote_prefix("> quote"), Some(2));
-        assert_eq!(blockquote_prefix(">no space"), Some(1));
-        assert_eq!(blockquote_prefix(">> nested"), Some(3));
-        assert_eq!(blockquote_prefix("not a quote"), None);
-
+    fn blockquote_prefix_hides() {
         // The `> ` marker hides; inline styling in the body still applies.
         let font = gpui::font("Helvetica");
         let c = hsla(0., 0., 0., 1.);
@@ -3124,57 +1817,6 @@ mod tests {
         // the caret isn't in it; inline markers still hide unless under the caret.
         let (disp, _, _) = hidden_runs("> a **b**", &font, c, &[], Some(3), 2, 0, false, &st);
         assert_eq!(disp, "> a b");
-    }
-
-    #[test]
-    fn backtick_runs_match_commonmark() {
-        let st = test_style();
-        // ``a`b`` — a double-backtick span keeps its inner backtick as body.
-        let line = "``a`b`` x";
-        let mut out = Vec::new();
-        scan_line(line, 0, line.len(), &st, &mut out);
-        assert!(
-            out.iter()
-                .any(|s| s.range == (2..5) && s.style.bg.is_some()),
-            "body a`b styled as code"
-        );
-        // An unclosed run stays plain (no half-matched span).
-        let mut out = Vec::new();
-        scan_line("``a` x", 0, 6, &st, &mut out);
-        assert!(out.iter().all(|s| s.style.bg.is_none()));
-    }
-
-    #[test]
-    fn backslash_escapes_stay_literal() {
-        let st = test_style();
-        // \*text\* must NOT style — the reader shows literal asterisks.
-        for line in [
-            r"\*text\*",
-            r"a \`x\` b",
-            r"\~~s\~~",
-            r"\[[Page]]",
-            r"\[t](u)",
-        ] {
-            let mut out = Vec::new();
-            scan_line(line, 0, line.len(), &st, &mut out);
-            // Escape backslashes become (hidden) marker spans; nothing may
-            // carry actual STYLING.
-            assert!(
-                out.iter().all(|s| !s.style.bold
-                    && !s.style.italic
-                    && !s.style.strike
-                    && s.style.bg.is_none()
-                    && (s.style.hide || s.style.color.is_none())),
-                "{line:?} styled: {:?}",
-                out.iter().map(|s| s.range.clone()).collect::<Vec<_>>()
-            );
-        }
-        // An escaped closer doesn't close: **a \** stays unstyled (no pair),
-        // while the reader treats it the same.
-        let mut out = Vec::new();
-        let line = r"**a \** x";
-        scan_line(line, 0, line.len(), &st, &mut out);
-        assert!(out.iter().all(|s| !s.style.bold), "escaped closer ignored");
     }
 
     #[test]
@@ -3195,51 +1837,31 @@ mod tests {
     }
 
     #[test]
-    fn nested_inline_styles_layer() {
+    fn nested_inline_markers_hide_and_pair() {
         let st = test_style();
-        // **bold *italic* bold** — the inner run carries BOTH styles, the
-        // gaps around it stay bold (the reader nests the same way).
-        let line = "**bold *it* bold**";
-        let mut out = Vec::new();
-        scan_line(line, 0, line.len(), &st, &mut out);
-        let styled = |s: usize, e: usize| out.iter().find(|sp| sp.range == (s..e)).unwrap();
-        let inner = styled(8, 10); // "it"
-        assert!(inner.style.bold && inner.style.italic);
-        let gap = styled(2, 7); // "bold " before the italic
-        assert!(gap.style.bold && !gap.style.italic);
-        // Inline code inside bold keeps its tint and inherits the weight.
-        let line = "**b `c` d**";
-        let mut out = Vec::new();
-        scan_line(line, 0, line.len(), &st, &mut out);
-        let code = out
-            .iter()
-            .find(|sp| sp.range == (5..6))
-            .expect("code body span");
-        assert!(code.style.bold && code.style.bg.is_some());
         // Display hides every marker, nested included.
         let font = gpui::font("Helvetica");
         let c = hsla(0., 0., 0., 1.);
         let (disp, _, _) = hidden_runs("**bold *it* bold**", &font, c, &[], None, 0, 0, false, &st);
         assert_eq!(disp, "bold it bold");
         // Pairing survives nesting: two pairs, outer first.
-        let pairs = fmt_marker_pairs("**bold *it* bold**", &st);
+        let pairs = fmt_marker_pairs("**bold *it* bold**");
         assert_eq!(pairs, vec![(0..2, 16..18), (7..8, 10..11)]);
     }
 
     #[test]
     fn fmt_marker_pairs_stay_per_construct() {
-        let st = test_style();
         // Adjacent constructs pair up separately — a delete between them must
         // never fuse one's closer with the other's opener.
         assert_eq!(
-            fmt_marker_pairs("**a**~~b~~", &st),
+            fmt_marker_pairs("**a**~~b~~"),
             vec![(0..2, 3..5), (5..7, 8..10)]
         );
         // An empty pair (post-delete state) is still a pair.
-        assert_eq!(fmt_marker_pairs("****", &st), vec![(0..2, 2..4)]);
+        assert_eq!(fmt_marker_pairs("****"), vec![(0..2, 2..4)]);
         // Structural markers (links) aren't formatting pairs.
-        assert_eq!(fmt_marker_pairs("[t](u)", &st), vec![]);
-        assert_eq!(fmt_marker_pairs("<u>x</u>", &st), vec![(0..3, 4..8)]);
+        assert_eq!(fmt_marker_pairs("[t](u)"), vec![]);
+        assert_eq!(fmt_marker_pairs("<u>x</u>"), vec![(0..3, 4..8)]);
     }
 
     #[test]
@@ -3322,18 +1944,7 @@ mod tests {
     }
 
     #[test]
-    fn list_prefix_detection() {
-        assert_eq!(list_prefix("- item"), Some((2, 0, false, 0)));
-        assert_eq!(list_prefix("* item"), Some((2, 0, false, 0)));
-        assert_eq!(list_prefix("+ item"), Some((2, 0, false, 0)));
-        assert_eq!(list_prefix("  - nested"), Some((4, 2, false, 0)));
-        assert_eq!(list_prefix("3. third"), Some((3, 0, true, 3)));
-        assert_eq!(list_prefix("  10) tenth"), Some((6, 2, true, 10)));
-        // Not lists: italic, a bare dash, indented prose.
-        assert_eq!(list_prefix("*italic*"), None);
-        assert_eq!(list_prefix("-no space"), None);
-        assert_eq!(list_prefix("  just indented"), None);
-
+    fn list_prefix_hides() {
         // The marker hides; a nested item maps the body back past the prefix.
         let font = gpui::font("Helvetica");
         let c = hsla(0., 0., 0., 1.);
@@ -3344,14 +1955,7 @@ mod tests {
     }
 
     #[test]
-    fn task_prefix_detection() {
-        assert_eq!(task_prefix("- [ ] todo"), Some((6, 0, false)));
-        assert_eq!(task_prefix("- [x] done"), Some((6, 0, true)));
-        assert_eq!(task_prefix("- [X] done"), Some((6, 0, true)));
-        assert_eq!(task_prefix("  - [ ] nested"), Some((8, 2, false)));
-        // A plain list item is not a task.
-        assert_eq!(task_prefix("- item"), None);
-
+    fn task_prefix_hides() {
         // The `- [ ] ` prefix hides entirely; body maps back past it.
         let font = gpui::font("Helvetica");
         let c = hsla(0., 0., 0., 1.);

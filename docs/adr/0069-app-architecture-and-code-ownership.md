@@ -99,8 +99,8 @@ compared pixel for pixel against the pre-phase output; every difference is
 explained. After P4 the next RC runs full native platform acceptance on both
 shipped targets. `just lint` enforces `clippy::wildcard_imports`, no
 `#[path]` under `src/`, and no `gpui` in the dependency tree of `mdoc-store`,
-`mdoc-import`, `mdoc-detect`, `mdoc-pii`, `mdoc-history` or `mdoc-spell`,
-each from the phase that makes it true.
+`mdoc-import`, `mdoc-detect`, `mdoc-pii`, `mdoc-history`, `mdoc-spell` or
+`mdoc-markdown`, each from the phase that makes it true.
 
 ## Consequences
 

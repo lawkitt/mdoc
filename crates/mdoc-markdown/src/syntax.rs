@@ -23,7 +23,7 @@ pub const ALERT_MARKERS: [(AlertKind, &str); 5] = [
 
 impl AlertKind {
     /// The title rendered in place of the marker ("Note", "Tip", …).
-    pub(crate) fn label(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
             Self::Note => "Note",
             Self::Tip => "Tip",
@@ -39,7 +39,7 @@ impl AlertKind {
 /// consumed within `body` (spaces, marker, fold char, one separator space) —
 /// what a line-oriented editor hides before painting the label — and the fold
 /// state (`Some(true)` = folded).
-pub(crate) fn alert_prefix(body: &str) -> Option<(AlertKind, usize, Option<bool>)> {
+pub fn alert_prefix(body: &str) -> Option<(AlertKind, usize, Option<bool>)> {
     let trimmed = body.trim_start();
     let ws = body.len() - trimmed.len();
     for (kind, m) in ALERT_MARKERS {
@@ -64,7 +64,7 @@ pub(crate) fn alert_prefix(body: &str) -> Option<(AlertKind, usize, Option<bool>
 /// The fold char of the alert marker on `line` (a full source line, `>` prefix
 /// included): its byte offset within the line and the current state
 /// (`true` = `-`/folded). `None` when the line isn't a foldable alert marker.
-pub(crate) fn alert_fold_char(line: &str) -> Option<(usize, bool)> {
+pub fn alert_fold_char(line: &str) -> Option<(usize, bool)> {
     let b = line.as_bytes();
     let mut p = 0;
     while p < b.len() && (b[p] == b'>' || b[p] == b' ') {
@@ -94,7 +94,7 @@ pub enum TableStyle {
 }
 
 impl TableStyle {
-    pub(crate) fn from_name(name: &str) -> Option<Self> {
+    pub fn from_name(name: &str) -> Option<Self> {
         match name {
             "grid" => Some(Self::Grid),
             "striped" => Some(Self::Striped),
@@ -108,7 +108,7 @@ impl TableStyle {
 /// Parse a `<!-- table:STYLE -->` marker (a whole line or an HTML comment's
 /// value) into its [`TableStyle`]. `None` for anything unrecognized, so an
 /// unknown marker stays a plain HTML comment.
-pub(crate) fn table_style_marker(text: &str) -> Option<TableStyle> {
+pub fn table_style_marker(text: &str) -> Option<TableStyle> {
     let body = table_marker_body(text)?;
     // The style name is the first token; later tokens are attributes
     // (`cols=…` column widths).
@@ -130,7 +130,7 @@ fn table_marker_body(text: &str) -> Option<&str> {
 /// — `<!-- table:grid cols=120,80,200 -->` — written by the editor's
 /// drag-to-resize. `None` when absent or malformed (the table stays
 /// content-measured).
-pub(crate) fn table_col_widths(text: &str) -> Option<Vec<f32>> {
+pub fn table_col_widths(text: &str) -> Option<Vec<f32>> {
     let body = table_marker_body(text)?;
     let attr = body
         .split_whitespace()
@@ -146,7 +146,7 @@ pub(crate) fn table_col_widths(text: &str) -> Option<Vec<f32>> {
 /// A table marker line for `style` (+ optional explicit column widths) — the
 /// inverse of the parsers above. `None` when the marker would say nothing
 /// (Grid, no widths): the default needs no marker.
-pub(crate) fn table_marker_text(style: TableStyle, widths: Option<&[f32]>) -> Option<String> {
+pub fn table_marker_text(style: TableStyle, widths: Option<&[f32]>) -> Option<String> {
     let name = match style {
         TableStyle::Grid => "grid",
         TableStyle::Striped => "striped",
@@ -171,7 +171,7 @@ pub(crate) fn table_marker_text(style: TableStyle, widths: Option<&[f32]>) -> Op
 /// `1.` -> `a.` -> `i.`, cycling for deeper levels. Both views paint ordered
 /// lists with this scheme (a deliberate divergence from CommonMark's
 /// digits-everywhere), so nesting is readable at a glance.
-pub(crate) fn ordered_marker(depth: usize, n: u32) -> String {
+pub fn ordered_marker(depth: usize, n: u32) -> String {
     match depth % 3 {
         0 => format!("{n}."),
         1 => format!("{}.", letters(n)),
@@ -227,7 +227,7 @@ pub enum Direction {
 }
 
 impl Direction {
-    pub(crate) fn is_rtl(self) -> bool {
+    pub fn is_rtl(self) -> bool {
         self == Direction::Rtl
     }
 }
@@ -242,7 +242,7 @@ impl Direction {
 /// contiguous and stable (Hebrew, Arabic and its supplements, Syriac, Thaana,
 /// N'Ko, Samaritan, Mandaic, plus the Arabic presentation forms), and pulling
 /// a bidi-class table in for one predicate isn't worth the dependency.
-pub(crate) fn base_direction(text: &str) -> Direction {
+pub fn base_direction(text: &str) -> Direction {
     for c in text.chars() {
         if is_strong_rtl(c) {
             return Direction::Rtl;
@@ -261,7 +261,7 @@ pub(crate) fn base_direction(text: &str) -> Direction {
 /// marker and nothing is left, so the line has no direction of its own and must
 /// take the surrounding text's. Answering `Ltr` there put a Persian callout's
 /// title on one side and its body on the other.
-pub(crate) fn content_direction_opt(line: &str) -> Option<Direction> {
+pub fn content_direction_opt(line: &str) -> Option<Direction> {
     let mut rest = line.trim_start();
     loop {
         let before = rest;
@@ -333,7 +333,7 @@ pub(crate) fn content_direction_opt(line: &str) -> Option<Direction> {
 /// A line can read left-to-right and still hold a Persian name in the middle,
 /// and that run needs the same logical↔visual mapping an RTL line does — the
 /// caret misplaces inside it otherwise.
-pub(crate) fn contains_rtl(text: &str) -> bool {
+pub fn contains_rtl(text: &str) -> bool {
     text.chars().any(is_strong_rtl)
 }
 
@@ -363,13 +363,13 @@ fn is_strong_ltr(c: char) -> bool {
 }
 
 /// A word character for boundary checks (a URL glued to a word isn't a link).
-pub(crate) fn is_word_char(c: u8) -> bool {
+pub fn is_word_char(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
 }
 
 /// Where a bare URL starting at `start` ends: consumes to whitespace or a
 /// wrapping delimiter, then backs off trailing punctuation (GFM-ish).
-pub(crate) fn url_end(line: &str, start: usize) -> usize {
+pub fn url_end(line: &str, start: usize) -> usize {
     let b = line.as_bytes();
     let mut j = start;
     while j < line.len()
@@ -396,7 +396,7 @@ pub(crate) fn url_end(line: &str, start: usize) -> usize {
 /// cursors, and styling.
 /// Targets are inline or bare URLs; hosts open http(s) externally and
 /// resolve files themselves.
-pub(crate) fn links(line: &str) -> Vec<(std::ops::Range<usize>, String)> {
+pub fn links(line: &str) -> Vec<(std::ops::Range<usize>, String)> {
     let b = line.as_bytes();
     let end = line.len();
     let mut out = Vec::new();
@@ -455,7 +455,7 @@ pub(crate) fn links(line: &str) -> Vec<(std::ops::Range<usize>, String)> {
 }
 
 /// The link under byte `col` of `line`, if any (see [`links`]).
-pub(crate) fn link_at(line: &str, col: usize) -> Option<String> {
+pub fn link_at(line: &str, col: usize) -> Option<String> {
     links(line)
         .into_iter()
         .find(|(r, _)| r.contains(&col))
@@ -472,7 +472,7 @@ fn find1(b: &[u8], from: usize, end: usize, c: u8) -> Option<usize> {
 /// (`words $$` — the `$$` trails), `Some(false)` for a closer (`$$ words` —
 /// the `$$` leads). A bare `$$` (the strict form) and lines whose `$$` pairs
 /// up on the same line classify as neither.
-pub(crate) fn math_fence_words(line: &str) -> Option<bool> {
+pub fn math_fence_words(line: &str) -> Option<bool> {
     let t = line.trim();
     if t == "$$" || t.len() <= 2 {
         return None;
@@ -490,7 +490,7 @@ pub(crate) fn math_fence_words(line: &str) -> Option<bool> {
 /// strict inner rules (non-empty, no interior `$$`, no delimiter-adjacent
 /// whitespace), so prose about prices (`$$5 and $$10`) never matches. Table
 /// rows keep their cells.
-pub(crate) fn embedded_math(line: &str) -> Option<(usize, usize)> {
+pub fn embedded_math(line: &str) -> Option<(usize, usize)> {
     let t = line.trim_start();
     if t.starts_with('|') {
         return None;
@@ -514,7 +514,7 @@ pub(crate) fn embedded_math(line: &str) -> Option<(usize, usize)> {
 /// its own line (`text $$x$$ text` → three lines), so a math parser sees
 /// well-formed display blocks. Code fences are left alone; unpaired `$$`s
 /// (prose, prices) pass through untouched. Borrowed when nothing changes.
-pub(crate) fn normalize_math_fences(source: &str) -> std::borrow::Cow<'_, str> {
+pub fn normalize_math_fences(source: &str) -> std::borrow::Cow<'_, str> {
     if !source.contains("$$") {
         return std::borrow::Cow::Borrowed(source);
     }
@@ -591,7 +591,7 @@ pub(crate) fn normalize_math_fences(source: &str) -> std::borrow::Cow<'_, str> {
 /// `a == b == c` and `====` stay literal: the opener is followed by a
 /// non-space that isn't `=`, the closer is preceded by a non-space and is
 /// exactly two `=`, and the body is non-empty.
-pub(crate) fn highlight_close(line: &str, open: usize) -> Option<usize> {
+pub fn highlight_close(line: &str, open: usize) -> Option<usize> {
     let b = line.as_bytes();
     let body = open.checked_add(2)?;
     if !line.is_char_boundary(open)
@@ -680,7 +680,7 @@ pub struct StyledTag {
 /// `<span style="color:#e11">`, `<u>`), the tag text including its angle
 /// brackets. A `<span>` that sets neither color is not styled — `None`, and
 /// it prints literally like any other HTML.
-pub(crate) fn styled_tag(tag: &str) -> Option<StyledTag> {
+pub fn styled_tag(tag: &str) -> Option<StyledTag> {
     let inner = tag.trim().strip_prefix('<')?.strip_suffix('>')?;
     let (name, attrs) = match inner.find(|c: char| c.is_ascii_whitespace()) {
         Some(i) => (&inner[..i], inner[i..].trim()),
@@ -715,7 +715,7 @@ pub(crate) fn styled_tag(tag: &str) -> Option<StyledTag> {
 }
 
 /// The kind a closing tag (`</mark>`, `</span>`, `</u>`) closes.
-pub(crate) fn styled_close(tag: &str) -> Option<StyledKind> {
+pub fn styled_close(tag: &str) -> Option<StyledKind> {
     match tag.trim().to_ascii_lowercase().as_str() {
         "</mark>" => Some(StyledKind::Mark),
         "</span>" => Some(StyledKind::Span),
@@ -726,7 +726,7 @@ pub(crate) fn styled_close(tag: &str) -> Option<StyledKind> {
 
 /// Find the matching closing tag, retaining nested styles of the same kind.
 /// Offsets are relative to the source after the opening tag.
-pub(crate) fn matching_styled_close(body: &str, kind: StyledKind) -> Option<(usize, usize)> {
+pub fn matching_styled_close(body: &str, kind: StyledKind) -> Option<(usize, usize)> {
     let mut depth = 0;
     let mut at = 0;
     while at < body.len() {
@@ -756,7 +756,7 @@ pub(crate) fn matching_styled_close(body: &str, kind: StyledKind) -> Option<(usi
 }
 
 /// An inline tag ends at an unquoted `>`; quoted attribute contents are literal.
-pub(crate) fn inline_tag_len(source: &str) -> Option<usize> {
+pub fn inline_tag_len(source: &str) -> Option<usize> {
     if !source.starts_with('<') {
         return None;
     }
@@ -775,7 +775,7 @@ pub(crate) fn inline_tag_len(source: &str) -> Option<usize> {
 
 /// Tag identity even when its styling is unsupported. Such a tag stays literal,
 /// but its closer must not consume a supported enclosing tag's style.
-pub(crate) fn styled_kind(tag: &str) -> Option<StyledKind> {
+pub fn styled_kind(tag: &str) -> Option<StyledKind> {
     let inner = tag.trim().strip_prefix('<')?.strip_suffix('>')?;
     match inner
         .split_ascii_whitespace()
@@ -826,7 +826,7 @@ fn attr_value<'a>(attrs: &'a str, name: &str) -> Option<&'a str> {
 
 /// A CSS color as `0xRRGGBBAA`: `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`,
 /// `rgb(r, g, b)` / `rgba(r, g, b, a)`, and the basic named colors.
-pub(crate) fn css_color(s: &str) -> Option<u32> {
+pub fn css_color(s: &str) -> Option<u32> {
     let s = s.trim();
     if let Some(hex) = s.strip_prefix('#') {
         let d: Vec<u32> = hex.chars().map(|c| c.to_digit(16)).collect::<Option<_>>()?;

@@ -143,7 +143,6 @@ impl SearchIndex {
     /// offsets used by the editor.
     pub fn from_markdown(source: &str) -> Self {
         let lines = split_lines(source);
-        let syntax_style = markdown_syntax::search_style();
         let table_regions = markdown_syntax::table_regions(source);
         let math_regions = markdown_syntax::math_regions(source);
         let mut table_rows = vec![false; lines.len()];
@@ -201,7 +200,7 @@ impl SearchIndex {
                     for cell in markdown_syntax::table_cell_ranges(text) {
                         let start = line.start + cell.start;
                         let end = line.start + cell.end;
-                        index.add_projected_line(source, line, start..end, &syntax_style);
+                        index.add_projected_line(source, line, start..end);
                     }
                 }
                 row += 1;
@@ -225,7 +224,7 @@ impl SearchIndex {
                 row,
                 kind,
             );
-            index.add_text_block(source, &lines, row..end_row, kind, &syntax_style);
+            index.add_text_block(source, &lines, row..end_row, kind);
             row = end_row;
         }
         index
@@ -318,7 +317,6 @@ impl SearchIndex {
         lines: &[Line],
         rows: Range<usize>,
         _kind: BlockKind,
-        syntax_style: &markdown_syntax::SyntaxStyle,
     ) {
         let mut current = SegmentBuilder::default();
         let mut previous_hard_break = false;
@@ -327,7 +325,7 @@ impl SearchIndex {
             let line = lines[row];
             let text = line.text(source);
             let hard_break = has_hard_break(text);
-            let pieces = self.projected_line(source, line, line.start..line.end, syntax_style);
+            let pieces = self.projected_line(source, line, line.start..line.end);
             if pieces.is_empty() {
                 self.push_builder(std::mem::take(&mut current));
                 previous_hard_break = true;
@@ -355,14 +353,8 @@ impl SearchIndex {
         self.push_builder(current);
     }
 
-    fn add_projected_line(
-        &mut self,
-        source: &str,
-        line: Line,
-        range: Range<usize>,
-        syntax_style: &markdown_syntax::SyntaxStyle,
-    ) {
-        let pieces = self.projected_line(source, line, range, syntax_style);
+    fn add_projected_line(&mut self, source: &str, line: Line, range: Range<usize>) {
+        let pieces = self.projected_line(source, line, range);
         let mut current = SegmentBuilder::default();
         for (piece, boundary) in pieces {
             if boundary {
@@ -378,7 +370,6 @@ impl SearchIndex {
         source: &str,
         line: Line,
         range: Range<usize>,
-        syntax_style: &markdown_syntax::SyntaxStyle,
     ) -> Vec<(SegmentBuilder, bool)> {
         if range.start >= range.end {
             return Vec::new();
@@ -394,8 +385,7 @@ impl SearchIndex {
 
         let mut visible = Vec::new();
         let mut cursor = line.start;
-        let mut spans =
-            markdown_syntax::semantic_spans_with(source, line.start, line.end, syntax_style);
+        let mut spans = markdown_syntax::semantic_spans_with(source, line.start, line.end);
         spans.sort_by_key(|span| span.range.start);
         for span in spans {
             if span.range.end <= line.start || span.range.start >= line.end {

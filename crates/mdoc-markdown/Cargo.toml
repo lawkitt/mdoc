@@ -1,0 +1,18 @@
+[package]
+name = "mdoc-markdown"
+version = "0.1.0"
+edition = "2024"
+description = "GUI-free Markdown recognition shared by mdoc's desktop editor and its mobile apps: inline spans over source byte ranges, line prefixes and tables."
+license = "MIT"
+publish = false
+repository = "https://github.com/lawkitt/mdoc"
+
+# No GUI framework: the desktop editor and the mobile apps each map span
+# kinds to their own colours and fonts (ADR 0085). `just lint` keeps gpui out
+# of this crate's tree (ADR 0069).
+[dependencies]
+# HTML named-entity data for decoding `&amp;`-style entities in spans.
+entities = "1"
+
+[lints]
+workspace = true
