@@ -14,7 +14,9 @@ final class ReviewFlowUITests: XCTestCase {
         app.launch()
 
         // Open: the fixture letter from Home.
-        let letter = app.staticTexts["Letter before claim"].firstMatch
+        let letter = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'document-row' AND label BEGINSWITH 'Letter before claim'"))
+            .firstMatch
         XCTAssertTrue(letter.waitForExistence(timeout: 10))
         letter.tap()
 
