@@ -28,9 +28,7 @@ pub(super) fn import_file(
         }
     };
     stage(JobStage::Reading);
-    let title = path
-        .file_stem()
-        .map_or_else(|| "Document".into(), |s| s.to_string_lossy().into_owned());
+    let title = title(path);
     let extension = path
         .extension()
         .map(|e| e.to_string_lossy().to_ascii_lowercase())
@@ -39,6 +37,9 @@ pub(super) fn import_file(
         let markdown = std::fs::read_to_string(path).map_err(|error| CoreError::Import {
             message: format!("Could not read document: {error}"),
         })?;
+        if cancel.load(Ordering::Relaxed) {
+            return Err(CoreError::Cancelled);
+        }
         return Ok(Imported {
             title,
             markdown,
@@ -92,6 +93,12 @@ pub(super) fn import_file(
         markdown: imported.markdown,
         warning: imported.warning,
     })
+}
+
+/// A document's title: its file name without the extension.
+pub(super) fn title(path: &Path) -> String {
+    path.file_stem()
+        .map_or_else(|| "Document".into(), |s| s.to_string_lossy().into_owned())
 }
 
 /// A one-page PDF showing `jpeg` (baseline or progressive) at its own

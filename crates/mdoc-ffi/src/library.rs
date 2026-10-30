@@ -15,6 +15,14 @@ const CASES: &str = "cases";
 const DOCUMENTS: &str = "documents";
 /// The case of the most recently shared document: an id, no names.
 const CURRENT_CASE: &str = "current-case.json";
+/// Locked while a case is written, in the cases folder.
+const LOCK: &str = ".lock";
+
+/// The library's write lock (`Library::lock`).
+pub(crate) struct WriteLock<'a> {
+    _file: std::fs::File,
+    _guard: std::sync::MutexGuard<'a, ()>,
+}
 
 #[derive(uniffi::Object)]
 pub struct Library {
@@ -264,13 +272,42 @@ impl Library {
 }
 
 impl Library {
+    /// Every readable case.
+    pub(crate) fn cases_raw(&self) -> Vec<Case> {
+        self.store.list().0
+    }
+
     pub(crate) fn load(&self, id: &str) -> Result<Case, CoreError> {
         Ok(self.store.load(id)?)
     }
 
+    /// Hold the library's write lock until the guard drops: one load,
+    /// change and save at a time, across processes too, since the app and
+    /// its Restore extension share the folder. Held only for a write, never
+    /// across a suspension.
+    pub(crate) fn lock(&self) -> Result<WriteLock<'_>, CoreError> {
+        let guard = self.writes.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = self.root.join(CASES);
+        std::fs::create_dir_all(&dir)?;
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(dir.join(LOCK))?;
+        file.lock()?;
+        Ok(WriteLock {
+            _file: file,
+            _guard: guard,
+        })
+    }
+
     /// Save a new case.
     pub(crate) fn create(&self, case: Case) -> Result<CaseInfo, CoreError> {
-        let _write = self.writes.lock().unwrap_or_else(|e| e.into_inner());
+        let lock = self.lock()?;
+        self.create_locked(&lock, case)
+    }
+
+    pub(crate) fn create_locked(&self, _: &WriteLock, case: Case) -> Result<CaseInfo, CoreError> {
         self.store.save(&case)?;
         Ok(self.info(&case))
     }
@@ -282,9 +319,20 @@ impl Library {
         id: &str,
         change: impl FnOnce(&mut Case) -> bool,
     ) -> Result<CaseInfo, CoreError> {
-        let _write = self.writes.lock().unwrap_or_else(|e| e.into_inner());
+        let lock = self.lock()?;
+        self.edit_locked(&lock, id, |case| Ok(change(case)))
+    }
+
+    /// [`Self::edit`] under a lock the caller holds, with a change that may
+    /// fail; a failed change saves nothing.
+    pub(crate) fn edit_locked(
+        &self,
+        _: &WriteLock,
+        id: &str,
+        change: impl FnOnce(&mut Case) -> Result<bool, CoreError>,
+    ) -> Result<CaseInfo, CoreError> {
         let mut case = self.load(id)?;
-        if change(&mut case) {
+        if change(&mut case)? {
             case.revision += 1;
             self.store.save(&case)?;
         }
@@ -317,6 +365,24 @@ impl Library {
         let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
         path.strip_prefix(&self.root)
             .map_or_else(|_| path.clone(), Path::to_path_buf)
+    }
+
+    /// A new, empty file in the documents folder for a document titled
+    /// `title`, created exclusively so two saves never share a path.
+    pub(crate) fn reserve_document_path(&self, title: &str) -> Result<PathBuf, CoreError> {
+        std::fs::create_dir_all(self.documents_dir())?;
+        loop {
+            let path = self.new_document_path(title);
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(_) => return Ok(path),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.into()),
+            }
+        }
     }
 
     /// A free path in the documents folder for a document titled `title`.
@@ -517,6 +583,51 @@ mod tests {
         assert_eq!(restored.text, "Petr Petrov agrees; PERSON_2 does not.");
         let empty = library.create_case("Empty".into()).unwrap();
         assert!(!library.restore(empty.id, reply.into()).unwrap().restorable);
+    }
+
+    /// The app and its extension are two libraries on one folder: their
+    /// overlapping writes all land.
+    #[test]
+    fn writes_from_two_libraries_never_lose_each_other() {
+        let scratch = Scratch::new();
+        let case = library(&scratch).create_case("Shared".into()).unwrap();
+        let writers: Vec<_> = (0..2)
+            .map(|writer| {
+                let library = library(&scratch);
+                let id = case.id.clone();
+                std::thread::spawn(move || {
+                    for n in 0..15 {
+                        library
+                            .edit(&id, |case| {
+                                case.members.push(format!("{writer}-{n}.md").into());
+                                true
+                            })
+                            .unwrap();
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        assert_eq!(
+            library(&scratch)
+                .case_info(case.id)
+                .unwrap()
+                .documents
+                .len(),
+            30
+        );
+    }
+
+    #[test]
+    fn reserved_paths_are_never_shared() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let first = library.reserve_document_path("Document").unwrap();
+        let second = library.reserve_document_path("Document").unwrap();
+        assert_ne!(first, second);
+        assert!(first.exists() && second.exists());
     }
 
     #[test]

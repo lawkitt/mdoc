@@ -268,15 +268,17 @@ impl ReviewText {
         Ok(())
     }
 
-    /// Replace the proposals in scope (`apply_scope`). A kept mention is
-    /// proposed again first (`toggle_replace`); an applied one stays.
+    /// Replace the proposals in scope (`apply_scope`): this mention, or
+    /// every proposal of its identity, whatever state the mention picked
+    /// is in. A kept mention is proposed again first, with its identity's
+    /// other kept mentions under All (`toggle_replace`).
     pub fn replace(&mut self, range: Range<usize>, scope: Scope) -> Result<(), CoreError> {
-        let (identity, kept) = match self.mention(&range)? {
-            At::Proposed { identity, .. } => (identity, false),
-            At::Kept { identity } => (identity, true),
-            At::Replaced { .. } => return Ok(()),
+        let at = self.mention(&range)?;
+        let mut identity = match at {
+            At::Proposed { identity, .. } | At::Kept { identity } => identity,
+            At::Replaced { identity, .. } => Some(identity),
         };
-        if kept {
+        if let At::Kept { .. } = at {
             let ranges: Vec<_> = match (scope, identity) {
                 (Scope::All, Some(identity)) => self
                     .review
@@ -289,12 +291,11 @@ impl ReviewText {
             };
             let source = self.text.clone();
             self.checkpoint(|review| review.propose_kept_mentions(&source, &ranges))?;
+            // Proposed again, a mention without an identity has one now.
+            if let Some(At::Proposed { identity: now, .. }) = self.at(&range) {
+                identity = identity.or(now);
+            }
         }
-        // Proposed again, the mention may have a new identity.
-        let identity = match self.at(&range) {
-            Some(At::Proposed { identity, .. }) => identity,
-            _ => return Err(CoreError::review("This text can't be replaced here.")),
-        };
         let ranges: HashSet<_> = match (scope, identity) {
             (Scope::All, Some(identity)) => self
                 .occurrences(identity)
@@ -302,6 +303,7 @@ impl ReviewText {
                 .into_iter()
                 .map(|(_, r)| (r.start, r.end))
                 .collect(),
+            (Scope::This, _) if matches!(at, At::Replaced { .. }) => return Ok(()),
             _ => HashSet::from([(range.start, range.end)]),
         };
         let plans: Vec<_> = self
@@ -346,8 +348,13 @@ impl ReviewText {
     /// (`keep_originals`, `keep_mentions_now`).
     pub fn keep(&mut self, range: Range<usize>, scope: Scope) -> Result<(), CoreError> {
         let (pending, applied) = match (self.mention(&range)?, scope) {
-            (At::Kept { .. }, _) => return Ok(()),
             (
+                At::Kept {
+                    identity: Some(identity),
+                },
+                Scope::All,
+            )
+            | (
                 At::Proposed {
                     identity: Some(identity),
                     ..
@@ -355,9 +362,13 @@ impl ReviewText {
                 Scope::All,
             )
             | (At::Replaced { identity, .. }, Scope::All) => self.occurrences(identity),
+            (At::Kept { .. }, _) => return Ok(()),
             (At::Proposed { variant, .. }, _) => (vec![(variant, range)], Vec::new()),
             (At::Replaced { id, .. }, Scope::This) => (Vec::new(), vec![id]),
         };
+        if pending.is_empty() && applied.is_empty() {
+            return Ok(());
+        }
         if applied.is_empty() {
             self.checkpoint(|review| review.keep_mentions(pending))?;
             return Ok(());
@@ -462,20 +473,38 @@ impl ReviewText {
         let history = self.history;
         let old = self.review.identity_snapshot();
         self.retag(&plan.changes)?;
-        if !plan.unmatched.is_empty() {
+        // Joining again (each save does, against the case as stored now)
+        // seeds only names this review does not know yet, as a case-wide
+        // sync does (`sync_case_identities`).
+        let unmatched: Vec<_> = plan
+            .unmatched
+            .into_iter()
+            .filter(|c| self.review.identity_by_alias(&c.alias).is_none())
+            .collect();
+        if !unmatched.is_empty() {
             if plan.changes.is_empty() {
                 self.checkpoint(|_| ())?;
             }
             let text = self.text.clone();
             if self.history == history {
-                self.review.seed(&plan.unmatched, &text);
+                self.review.seed(&unmatched, &text);
             } else {
-                self.review.seed_on_step(&plan.unmatched, &text);
+                self.review.seed_on_step(&unmatched, &text);
                 self.review
                     .commit_identity_snapshot(history, self.history, old);
             }
         }
         Ok(())
+    }
+
+    /// A saved member reopened (`open_case_mapping`): the case's names are
+    /// proposed, and alias tokens already in the text become their applied
+    /// replacements, so Copy for AI and restore know them.
+    pub fn open_case(&mut self, case: &[ExportedIdentity], reserved: &[String]) {
+        let text = self.text.clone();
+        self.review.reserve_aliases(reserved);
+        let ids = self.review.seed(case, &text);
+        self.review.relink(&text, case, &ids, self.history);
     }
 
     /// Retag identities and rewrite their applied aliases as one step
@@ -583,6 +612,62 @@ mod tests {
             .replace(range(text, "Ann Lee", 2), Scope::This)
             .unwrap();
         assert_eq!(document.text, "Ann Lee met Ann Lee and PERSON_1.");
+    }
+
+    /// All reaches the identity's other mentions from a mention in any
+    /// state: replaced, kept or proposed.
+    #[test]
+    fn all_works_from_a_mention_in_any_state() {
+        let text = "Ann Lee met Ann Lee and Ann Lee.";
+        let mut document = document(text, &[("Ann Lee", Category::Person)]);
+        document
+            .replace(range(text, "Ann Lee", 0), Scope::This)
+            .unwrap();
+        let replaced = range(&document.text.clone(), "PERSON_1", 0);
+        document.replace(replaced.clone(), Scope::This).unwrap();
+        assert_eq!(
+            document.review.remaining(),
+            2,
+            "This on a replaced one: no change"
+        );
+        document.replace(replaced, Scope::All).unwrap();
+        assert_eq!(document.text, "PERSON_1 met PERSON_1 and PERSON_1.");
+        // Keep one, then Keep all from that kept mention.
+        let last = range(&document.text.clone(), "PERSON_1", 2);
+        document.keep(last, Scope::This).unwrap();
+        assert_eq!(document.text, "PERSON_1 met PERSON_1 and Ann Lee.");
+        let kept = range(&document.text.clone(), "Ann Lee", 0);
+        document.keep(kept, Scope::All).unwrap();
+        assert_eq!(document.text, text);
+        assert_eq!(document.review.kept_mentions().len(), 3);
+        // Replace all from a kept mention proposes and replaces them all.
+        document
+            .replace(range(text, "Ann Lee", 1), Scope::All)
+            .unwrap();
+        assert_eq!(document.text, "PERSON_1 met PERSON_1 and PERSON_1.");
+    }
+
+    #[test]
+    fn a_reopened_member_relinks_its_aliases() {
+        let case = [ExportedIdentity {
+            alias: "PERSON_1".into(),
+            previous: Vec::new(),
+            category: Category::Person,
+            custom: false,
+            originals: vec![Arc::from("Ann Lee")],
+        }];
+        let mut document = ReviewText::new("PERSON_1 wrote to Ann Lee.".into());
+        document.open_case(&case, &[]);
+        assert_eq!(document.review.applied().len(), 1);
+        assert_eq!(document.review.remaining(), 1);
+        document.replace_all().unwrap();
+        assert_eq!(document.text, "PERSON_1 wrote to PERSON_1.");
+        assert!(
+            document
+                .review
+                .copy_for_ai(&document.text)
+                .starts_with("Note:")
+        );
     }
 
     #[test]
