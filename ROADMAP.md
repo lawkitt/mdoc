@@ -47,23 +47,7 @@ another, so such work lands first.
    *From Anoni 0.86.1.* The Replace pill splits into "Replace · Person ▾".
    *Done when:* a mouse and a keyboard-only run add a selection in a picked
    category, and ⌘⌥P still adds with the guess.
-2. **[Windows] `.exe` only** ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)).
-   *From the 0.2.1 smoke run*, where the `.msi` and the `.exe` sat side by
-   side. Remove the `.msi` and its WiX build; ADR 0037, development.md's
-   Releasing and CONTEXT.md's Pre-release say `.exe` only; the fragment tells
-   `.msi` users to remove it first. *Done when:* a Windows release build
-   carries no `.msi`, and `just setup` no longer installs WiX.
-3. **[Cases] Save As says why it opens.** *From the 2026-10-26 Windows run
-   (E4).* Save mapping as case on an unsaved conversion opens Save As with
-   "Save the document first so the case can find it" (macOS message line,
-   Windows title). *Done when:* both platforms show it, and nothing else
-   changes in the flow.
-4. **[A11y] F6 lands on the active tab** ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
-   *From the rc.4 acceptance run.* F6 into the sidebar lands on the active
-   tab, not the last control (often Settings). *Done when:* F6 from the
-   editor after visiting Settings lands on the active tab on both platforms,
-   in the expanded sidebar and the collapsed rail.
-5. **[A11y] ⌃↩ opens a tab's menu** ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
+2. **[A11y] ⌃↩ opens a tab's menu** ([ADR 0062](docs/adr/0062-keyboard-reach.md)).
    *From the rc.4 acceptance run:* ⇧F10 needs fn on MacBook keyboards.
    *Done when:* a keyboard-only run opens a sidebar tab's menu with ⌃↩ on
    both platforms (on a MacBook without fn), and the shortcuts panel lists it.
