@@ -15,8 +15,9 @@ ship through the App Store and Google Play.
   GPLv3 section 7: the program may be distributed through app stores whose
   terms add usage restrictions, provided the corresponding source stays
   available under the GPL.
-- The permission text goes in `LICENSE` beside the GPL and in the mobile
-  apps' about screens.
+- The permission text is `LICENSE-APP-STORES.md`, beside the unchanged GPL
+  text in `LICENSE` (so GitHub still detects GPL-3.0), linked from the README
+  and shown on the mobile apps' About screens.
 - Outside contributions need a sign-off (DCO) that agrees to the
   permission. Until the permission lands, all non-bot commits are the
   maintainer's.
