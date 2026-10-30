@@ -72,6 +72,22 @@ impl DocumentSession {
         self.document.directory()
     }
 
+    /// Where Save As starts (#180): the document's folder, or its source's
+    /// for an unsaved conversion. A document with neither (Untitled, pasted
+    /// text, an AI reply), or whose folder is gone, starts in the first of
+    /// `recent_folders` that exists (Recents, most recent first), then
+    /// Documents, then home: never the process's working directory, which
+    /// for a launched app is its install folder.
+    pub fn save_as_directory(&self, recent_folders: &[PathBuf]) -> PathBuf {
+        let own = (self.document.path.is_some() || self.source.is_some()).then(|| self.directory());
+        own.into_iter()
+            .chain(recent_folders.iter().cloned())
+            .chain(dirs::document_dir())
+            .chain(dirs::home_dir())
+            .find(|dir| dir.is_dir())
+            .unwrap_or_else(|| self.directory())
+    }
+
     pub fn save(&mut self, path: PathBuf, text: &str) -> io::Result<()> {
         if let Some(source) = &self.source
             && (std::path::absolute(&path).ok().as_ref() == Some(source)
@@ -88,6 +104,51 @@ impl DocumentSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Where Save As starts with no folder of its own and no Recents.
+    fn fallback() -> PathBuf {
+        dirs::document_dir()
+            .filter(|dir| dir.is_dir())
+            .or_else(dirs::home_dir)
+            .unwrap()
+    }
+
+    #[test]
+    fn save_as_starts_in_the_document_or_source_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let recent = tempfile::tempdir().unwrap();
+        let recents = [recent.path().to_path_buf()];
+        let mut session = DocumentSession::default();
+        session.import(dir.path().join("scan.pdf"), None);
+        assert_eq!(session.save_as_directory(&recents), dir.path());
+        session.save(dir.path().join("scan.md"), "text").unwrap();
+        assert_eq!(session.save_as_directory(&recents), dir.path());
+    }
+
+    #[test]
+    fn untitled_save_as_starts_in_a_recent_folder_then_documents() {
+        let recent = tempfile::tempdir().unwrap();
+        let gone = recent.path().join("gone");
+        let session = DocumentSession::default();
+        let recents = [gone.clone(), recent.path().to_path_buf()];
+        assert_eq!(session.save_as_directory(&recents), recent.path());
+        assert_eq!(session.save_as_directory(&[gone]), fallback());
+        assert_eq!(session.save_as_directory(&[]), fallback());
+        assert_ne!(
+            session.save_as_directory(&[]),
+            std::env::current_dir().unwrap()
+        );
+    }
+
+    #[test]
+    fn a_conversion_whose_source_folder_is_gone_starts_in_a_recent_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let recent = tempfile::tempdir().unwrap();
+        let mut session = DocumentSession::default();
+        session.import(dir.path().join("gone").join("scan.pdf"), None);
+        let recents = [recent.path().to_path_buf()];
+        assert_eq!(session.save_as_directory(&recents), recent.path());
+    }
 
     #[test]
     fn saved_untitled_tab_suggests_its_current_filename() {

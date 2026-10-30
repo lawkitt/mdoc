@@ -504,6 +504,7 @@ impl Workspace {
                     settings_ui::Event::RestartToUpdate => this.restart_to_update(window, cx),
                     settings_ui::Event::ClearRecents => {
                         this.shell.recents.clear();
+                        crate::document_view::RecentFolders::share(Vec::new(), cx);
                         cx.notify();
                     }
                     settings_ui::Event::Shortcuts => this.toggle_shortcuts(window, cx),

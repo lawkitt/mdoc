@@ -83,6 +83,18 @@ impl Recents {
         true
     }
 
+    /// The recent files' folders, most recent first: where Save As starts for
+    /// a document with no folder of its own (#180).
+    pub fn folders(&self) -> Vec<PathBuf> {
+        let mut folders: Vec<PathBuf> = Vec::new();
+        for folder in self.files.iter().filter_map(|recent| recent.path.parent()) {
+            if !folders.iter().any(|known| known == folder) {
+                folders.push(folder.to_path_buf());
+            }
+        }
+        folders
+    }
+
     pub fn clear(&mut self) {
         self.files.clear();
         self.save();
@@ -116,6 +128,20 @@ mod tests {
         let paths: Vec<_> = recents.files.iter().map(|r| r.path.clone()).collect();
         assert_eq!(paths, [PathBuf::from("/a.pdf"), PathBuf::from("/b.docx")]);
         assert!(recents.files[0].pseudonymized);
+    }
+
+    #[test]
+    fn folders_are_most_recent_first_without_repeats() {
+        let mut recents = Recents::default();
+        recents.touch(Path::new("/a/1.pdf"), false);
+        recents.touch(Path::new("/b/2.md"), false);
+        recents.touch(Path::new("/a/3.docx"), false);
+        assert_eq!(
+            recents.folders(),
+            [PathBuf::from("/a"), PathBuf::from("/b")]
+        );
+        recents.clear();
+        assert!(recents.folders().is_empty());
     }
 
     #[test]

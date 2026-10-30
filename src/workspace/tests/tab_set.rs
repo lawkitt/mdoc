@@ -620,3 +620,26 @@ fn the_window_title_names_the_document_and_only_mdoc_on_home(cx: &mut TestAppCon
     draw(cx);
     cx.update(|_, cx| assert_eq!(tabs.read(cx).window_title, "mdoc"));
 }
+
+#[gpui::test]
+fn untitled_save_as_starts_in_the_last_used_folder(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("notes.md");
+    std::fs::write(&file, "notes").unwrap();
+    let (tabs, cx) = boot_home(cx, Session::default());
+    tabs.update_in(cx, |tabs, window, cx| tabs.open_path(file, window, cx));
+    cx.run_until_parked();
+    // An Untitled tab has no folder of its own: the last file's folder, not
+    // the process's working directory (#180).
+    cx.dispatch_action(New);
+    cx.run_until_parked();
+    cx.dispatch_action(SaveAs);
+    cx.run_until_parked();
+    let mut start = None;
+    cx.simulate_new_path_selection(|directory| {
+        start = Some(directory.to_path_buf());
+        None
+    });
+    cx.run_until_parked();
+    assert_eq!(start, Some(session_store::identity(dir.path())));
+}
