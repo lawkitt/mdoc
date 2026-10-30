@@ -1,0 +1,246 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "%@ (%lld)": {
+      "shouldTranslate": false
+    },
+    "%@ · %lld": {
+      "shouldTranslate": false
+    },
+    "%@, kept": {},
+    "%@, proposed as %@": {},
+    "%@, replaced; was %@": {},
+    "%lld mentions": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mention"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mentions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld to review": {},
+    "%lld unrecognised": {},
+    "%lld values restored": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld value restored"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld values restored"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "A case keeps the names and their aliases together, so an AI reply about any of its documents can be restored.": {},
+    "AI reply": {},
+    "About mdoc": {},
+    "Add": {},
+    "Add document": {},
+    "Additional permission under GNU GPL version 3 section 7: mdoc may be distributed through app stores whose terms add usage restrictions, provided the corresponding source stays available under the GPL.": {},
+    "Address": {},
+    "Alias": {},
+    "Aliases are restored with the names in “%@”.": {},
+    "Aliases are restored with this document's names.": {},
+    "All %lld occurrences": {},
+    "Another job is running. Try again when it finishes.": {},
+    "Apply to": {},
+    "Bank details": {},
+    "Cancel": {},
+    "Candidates": {},
+    "Case": {},
+    "Case %@": {},
+    "Case: %@": {},
+    "Category": {},
+    "Checking and installing": {},
+    "Choose a document, or add one with +.": {},
+    "Copied": {},
+    "Copied for AI": {},
+    "Copies the text for an AI app, with the note about placeholders.": {},
+    "Copy": {},
+    "Copy reply": {},
+    "DOCX files and pasted text show their text only.": {},
+    "Date": {},
+    "Decision": {},
+    "Delete": {},
+    "Done": {},
+    "Download %@": {},
+    "Download %@ over cellular?": {},
+    "Download the name detector first.": {},
+    "Downloading": {},
+    "Email": {},
+    "Every exact repeat in this document is replaced too.": {},
+    "Files": {},
+    "Find names": {},
+    "Find names, or select words in the text and choose Replace….": {},
+    "Finding names": {},
+    "Finding names in %@": {},
+    "Finding names stopped when mdoc left the screen.": {},
+    "Found": {},
+    "Identities": {},
+    "Identity": {},
+    "Installed": {},
+    "Installing": {},
+    "Installing %@": {},
+    "Just this one": {},
+    "Keep": {},
+    "Keep all": {},
+    "Keeps the reply with %@.": {},
+    "Kept": {},
+    "Licence": {},
+    "Memory": {},
+    "Models": {},
+    "Models download once, on Wi-Fi unless you allow cellular, and then run on this device.": {},
+    "Name detector (GLiNER2)": {},
+    "New case": {},
+    "Next": {},
+    "Next proposal": {},
+    "No cases yet": {},
+    "No document open": {},
+    "No documents yet": {},
+    "No names yet": {},
+    "No original page": {},
+    "No text yet": {},
+    "Not downloaded": {},
+    "Not now": {},
+    "Not restored": {},
+    "Nothing to restore": {},
+    "OK": {},
+    "Opens the first mention.": {},
+    "Organization": {},
+    "Original": {},
+    "Original PDF": {},
+    "Original page %lld of %lld": {},
+    "Other": {},
+    "Paste": {},
+    "Paste AI reply": {},
+    "Paste reply": {},
+    "Paste text": {},
+    "Pasted text": {},
+    "Permission text (LICENSE-APP-STORES.md)": {},
+    "Person": {},
+    "Phone": {},
+    "Photo": {},
+    "Photos": {},
+    "Proposed": {},
+    "Ready to find names": {},
+    "Ready to share": {},
+    "Recognition stopped when mdoc left the screen. Finished pages are kept.": {},
+    "Recognize text": {},
+    "Recognizing %@": {},
+    "Recognizing page %lld of %lld": {},
+    "Recognizing text": {},
+    "Remove reply": {},
+    "Replace": {},
+    "Replace %lld": {},
+    "Replace all": {},
+    "Replaced": {},
+    "Replace…": {},
+    "Reply": {},
+    "Restore": {},
+    "Restore with mdoc": {},
+    "Restores the reply with another case's names.": {},
+    "Resume": {},
+    "Resume recognition": {},
+    "Review": {},
+    "Review %lld proposals before sharing.": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Review %lld proposal before sharing."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Review %lld proposals before sharing."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Review next proposal": {},
+    "Save to document": {},
+    "Saved": {},
+    "Scan": {},
+    "Scan a letter, or add a PDF, Word file, photo or text. mdoc finds the names in it so you can share it with an AI without them.": {},
+    "Select the words to replace first.": {},
+    "Selected text": {},
+    "Set up name finding": {},
+    "Set up text recognition": {},
+    "Settings": {},
+    "Share": {},
+    "Share a document from mdoc first; replies restore with its case.": {},
+    "Share as Markdown file": {},
+    "Share reply": {},
+    "Share text": {},
+    "Share the AI's reply as text to restore it.": {},
+    "Something went wrong": {},
+    "Source code": {},
+    "Start again": {},
+    "Stopped.": {},
+    "Tax identifier": {},
+    "Text": {},
+    "Text not recognized yet": {},
+    "Text recognition (PP-OCR)": {},
+    "The AI sees the alias; mdoc puts the original back when you restore its reply.": {},
+    "The original stays in the text you share.": {},
+    "This device has too little memory for the name detector. Emails, phone numbers, IBANs and other structured details are still found, and you can mark names by hand.": {},
+    "This device has too little memory for the name detector. mdoc finds emails, phone numbers, IBANs and other structured details, and you mark names by selecting them. Text recognition is a %@ download.": {},
+    "This document is no longer in mdoc.": {},
+    "Title": {},
+    "Underlined words are names mdoc found. Use the Candidates rotor to move between them.": {},
+    "Use Cellular": {},
+    "Version": {},
+    "View": {},
+    "Wait for Wi-Fi": {},
+    "Waiting for another document to finish.": {},
+    "Your carrier may charge for the data.": {},
+    "kept": {},
+    "mdoc": {
+      "shouldTranslate": false
+    },
+    "mdoc could not open this file: %@": {},
+    "mdoc downloads its name detector and text recognition once (%@). After that, documents are read and checked on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.": {},
+    "mdoc is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.": {},
+    "mdoc is free, has no accounts and collects no data. Nothing you open leaves this device unless you share it.": {},
+    "mdoc keeps working while you use other apps.": {},
+    "mdoc opens PDF, DOCX and image files.": {},
+    "mdoc reads the text when recognition runs.": {},
+    "mdoc's documents stay on this iPad and are not in backups.": {},
+    "mdoc's documents stay on this iPhone and are not in backups.": {},
+    "proposed": {},
+    "replaced": {}
+  },
+  "version": "1.0"
+}
