@@ -34,7 +34,7 @@ config() {
   esac
   if [ -z "${LOCAL_CI_HOME:-}" ]; then
     case "$default_os" in
-      windows) LOCAL_CI_HOME=/d/ci ;;
+      windows) LOCAL_CI_HOME=/e/ci ;;
       *) LOCAL_CI_HOME=$HOME/ci ;;
     esac
   fi
