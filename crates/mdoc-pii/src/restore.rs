@@ -167,6 +167,30 @@ impl RestoreMap {
     /// first). Returns the text and how many names were replaced. Names this
     /// map doesn't know stay as they are; no detection runs.
     pub fn pseudonymize(&self, text: &str) -> (String, usize) {
+        let found = self.originals_in(text);
+        let mut out = String::with_capacity(text.len());
+        let mut last = 0;
+        for (range, owner) in &found {
+            out.push_str(&text[last..range.start]);
+            out.push_str(&self.identities[*owner].alias);
+            last = range.end;
+        }
+        out.push_str(&text[last..]);
+        (out, found.len())
+    }
+    /// How many identities of this map still appear in `text` by an
+    /// original wording (exact, whole words): names a pseudonymized text
+    /// did not replace (ADR 0084).
+    pub fn known_names(&self, text: &str) -> usize {
+        self.originals_in(text)
+            .into_iter()
+            .map(|(_, owner)| owner)
+            .collect::<HashSet<_>>()
+            .len()
+    }
+    /// Known originals in `text` with their identity index: exact wording,
+    /// whole words, then the leftmost and longest of those, non-overlapping.
+    fn originals_in(&self, text: &str) -> Vec<(Range<usize>, usize)> {
         let mut patterns = Vec::new();
         let mut owners = Vec::new();
         for (index, identity) in self.identities.iter().enumerate() {
@@ -178,10 +202,10 @@ impl RestoreMap {
             }
         }
         if patterns.is_empty() {
-            return (text.to_string(), 0);
+            return Vec::new();
         }
         let Ok(matcher) = aho_corasick::AhoCorasick::new(&patterns) else {
-            return (text.to_string(), 0);
+            return Vec::new();
         };
         // Whole words first, then the leftmost and longest of those: a longer
         // match that is not a whole word must not hide a shorter one that is.
@@ -191,20 +215,15 @@ impl RestoreMap {
             .filter(|(range, _)| super::exact_boundary(text, range, &text[range.clone()]))
             .collect();
         found.sort_by_key(|(r, _)| (r.start, std::cmp::Reverse(r.end)));
-        let mut out = String::with_capacity(text.len());
         let mut last = 0;
-        let mut count = 0;
-        for (range, owner) in found {
-            if range.start < last {
-                continue;
+        found.retain(|(range, _)| {
+            let keep = range.start >= last;
+            if keep {
+                last = range.end;
             }
-            out.push_str(&text[last..range.start]);
-            out.push_str(&self.identities[owner].alias);
-            last = range.end;
-            count += 1;
-        }
-        out.push_str(&text[last..]);
-        (out, count)
+            keep
+        });
+        found
     }
     /// Alias-shaped tokens that name no identity of this map.
     pub fn unresolved(&self, text: &str) -> Vec<Range<usize>> {

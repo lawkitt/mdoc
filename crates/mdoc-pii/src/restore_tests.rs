@@ -505,6 +505,17 @@ fn pseudonymizing_replaces_known_whole_names_longest_first() {
 }
 
 #[test]
+fn known_names_counts_identities_still_written_as_originals() {
+    let map = RestoreMap::new(vec![
+        identity("PERSON_1", Category::Person, &["Anna Petrova", "Anna"]),
+        identity("ORG_1", Category::Organization, &["Northwind Ltd"]),
+    ]);
+    assert_eq!(map.known_names("Anna Petrova and Anna met PERSON_2."), 1);
+    assert_eq!(map.known_names("Anna met Northwind Ltd."), 2);
+    assert_eq!(map.known_names("PERSON_1 met ORG_1; Annabel did not."), 0);
+}
+
+#[test]
 fn a_partial_longer_match_does_not_hide_a_whole_shorter_name() {
     let map = RestoreMap::new(vec![
         identity("PERSON_1", Category::Person, &["Anna Petrova"]),

@@ -63,47 +63,27 @@ impl ClipboardNotice {
     }
 }
 
-/// Prepended by Copy for AI. It names aliases only, never original values.
-pub(crate) fn ai_notice(examples: &[&str]) -> String {
-    let examples = match examples {
-        [] => "PERSON_1".to_string(),
-        [one] => one.to_string(),
-        [first, second, ..] => format!("{first} or {second}"),
-    };
-    format!(
-        "Note: names and other identifying details in this document were replaced \
-         with placeholders such as {examples}. Keep every placeholder exactly as \
-         written, with the same capitals, underscore and number. Do not invent new \
-         placeholders or guess the real values; they are restored locally after \
-         your reply.\n\n---\n\n"
-    )
-}
-
 impl DocumentView {
     /// Applied aliases are in the text, so Copy for AI and Paste AI Response apply.
     pub(crate) fn has_applied_aliases(&self) -> bool {
         !self.pii.review.applied().is_empty()
     }
+    /// What Copy for AI copies: the current text after the placeholder note
+    /// (ADR 0041). The shelf copies and drags the same bytes (ADR 0084).
+    pub(crate) fn text_for_ai(&self, cx: &App) -> String {
+        let aliases = self
+            .pii
+            .review
+            .applied()
+            .iter()
+            .map(|applied| applied.step.after.as_ref());
+        mdoc_pii::handoff::for_ai(self.editor.read(cx).text(), aliases)
+    }
     pub(crate) fn copy_for_ai(&mut self, _: &CopyForAi, _: &mut Window, cx: &mut Context<Self>) {
         if !self.can_copy_markdown() {
             return;
         }
-        let mut examples = Vec::new();
-        for applied in self.pii.review.applied() {
-            let alias = applied.step.after.as_ref();
-            if !examples.contains(&alias) {
-                examples.push(alias);
-            }
-            if examples.len() == 2 {
-                break;
-            }
-        }
-        let text = self.editor.read(cx).text();
-        let copied = if examples.is_empty() {
-            text.to_owned()
-        } else {
-            ai_notice(&examples) + text
-        };
+        let copied = self.text_for_ai(cx);
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(copied));
         self.copied_for_ai = true;
         self.copied_reply = false;

@@ -20,6 +20,9 @@ mod preview;
 mod search_session;
 mod self_test;
 mod settings_ui;
+// The shelf's view uses it from the next layer of ADR 0084's stack.
+#[allow(dead_code, unused_imports)]
+mod shelf;
 mod shortcuts;
 mod single_instance;
 mod spelling;
