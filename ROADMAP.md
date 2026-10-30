@@ -59,7 +59,6 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   whether to center is still open, and either way it must not undo #102's
   keep-visible-in-place behavior.
 - **[OCR]** Recover page structure on clean scans, in the AnyDoc/pdf-inspector forks.
-- **[DOCX]** Pseudonymized DOCX export with rdocx, then rdocx for the preview.
 - **[Cases]** System-wide Pseudonymize Clipboard hotkey, via the `global-hotkey`
   crate as in Panoply.
 - **[L10n]** Localized UI, Russian first; mdoc is to become multilingual.
@@ -148,9 +147,12 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
 - Exporting or sharing a case key (encrypted file plus passphrase), a
   cross-case dictionary, deliberate forgetting of originals, and stronger
   anonymization claims.
-- Format-preserving pseudonymized PDF export and restoring an AI reply into
-  DOCX (DOCX export is in Later); an audit journal and compliance report of
-  replacements; a re-identification risk hint. For PDF, Panoply's `pdf.redact`
+- Format-preserving pseudonymized DOCX and PDF export, and restoring an AI
+  reply into DOCX. DOCX export with rdocx (and rdocx for the preview) was
+  grilled and deferred on 2026-10-31
+  ([record](docs/design/docx-export-grill-2026-10-31.md): Anoni's export, an
+  rdocx prototype, 17 open questions). An audit journal and compliance
+  report of replacements; a re-identification risk hint. For PDF, Panoply's `pdf.redact`
   shape fits: redraw only matched pages with aliases painted in, an invisible
   text layer, matched metadata dropped, and a leak check before saving.
 - Agent access (CLI or MCP, as in Panoply and MiaoYan) only where the agent
