@@ -5,6 +5,10 @@ version: 2
 # resolved through the root Cargo.lock) and the GitHub
 # Actions in the workflows. Paths are explicit so renaming a directory surfaces
 # as a Dependabot error instead of silently dropping coverage.
+#
+# The evaluation tooling under tools/pseudonymization/ (three lockfiles outside
+# the workspace) is left out on purpose: security alerts still cover it, and
+# its locks are bumped by hand when an alert or a run needs it.
 
 updates:
   # The app + its workspace crates. The root Cargo.toml / Cargo.lock are the
