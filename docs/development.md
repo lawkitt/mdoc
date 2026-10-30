@@ -216,6 +216,8 @@ same recipes, and the tool versions in `scripts/tools.env` are shared by CI and
 | `just smoke-package` | OCR from the packaged artifact: the `.dmg`'s signed app, or the release `mdoc.exe` (release gate) |
 | `just smoke-update [dmg]` | An older Developer ID signed `.dmg` updates itself to the latest release through `--mdoc-self-update` (manual, before releases that change the updater) |
 | `just release <version>` | Release commit and tag (below) |
+| `just ios-core` | macOS: the iOS core into `target/ios` (`MdocCore.xcframework`, Swift bindings, PDFium) |
+| `just mobile` | macOS: `cargo check` of `mdoc-ffi` for iOS and Android; the Mac's local CI runs it after `test` |
 | `just local-ci [command]` | The [local CI](#local-ci) runner: `install`, `status`, `stop`, `start`, `uninstall` (macOS), or `run` / `once` in the foreground |
 | `just icon`, `just actionlint` | Icon assets; workflow lint |
 | `just disk` | Size of each worktree's `target/` |

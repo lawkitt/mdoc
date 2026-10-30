@@ -56,7 +56,11 @@ config() {
   poll_s=${LOCAL_CI_POLL:-60}
   tick_s=${LOCAL_CI_TICK:-5}
   # setup installs the merge ref's pinned tools, as hosted CI's setup step does.
-  steps=${LOCAL_CI_STEPS:-setup lint test}
+  # The Mac also checks the mobile core (ADR 0085).
+  case "$os" in
+    macos) steps=${LOCAL_CI_STEPS:-setup lint test mobile} ;;
+    *) steps=${LOCAL_CI_STEPS:-setup lint test} ;;
+  esac
   # The hosted job limits (ADR 0082): clippy 20 min, test 30 min.
   lint_s=${LOCAL_CI_LINT_TIMEOUT:-1200}
   test_s=${LOCAL_CI_TEST_TIMEOUT:-1800}
@@ -244,7 +248,7 @@ capacity_ok() {
 
 timeout_for() {
   case "$1" in
-    setup | lint) echo "$lint_s" ;;
+    setup | lint | mobile) echo "$lint_s" ;;
     *) echo "$test_s" ;;
   esac
 }
