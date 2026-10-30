@@ -236,7 +236,7 @@ impl Workspace {
 
     /// A shelf row's click: the tab comes forward in its current view, a
     /// closed member opens as a tab, and a document that is not ready
-    /// shows its first pending proposal.
+    /// shows its first pending proposal once it has loaded.
     pub(crate) fn open_from_shelf(
         &mut self,
         key: &ShelfKey,
@@ -244,45 +244,45 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let id = match key {
+        let (tab, path) = match key {
             ShelfKey::Tab(id) => {
                 if !self.tabs.contains(*id) {
                     return;
                 }
                 self.activate_as(*id, Arrival::Visit, window, cx);
-                *id
+                (Some(*id), None)
             }
             ShelfKey::Member { path, .. } => {
                 self.open_paths(vec![path.clone()], window, cx);
-                let Some(id) = self.find_path(path, None, cx) else {
-                    return;
-                };
-                id
+                (None, Some(path.clone()))
             }
         };
         if ready {
-            self.focus_active(window, cx);
+            if tab.is_some() {
+                self.focus_active(window, cx);
+            }
             return;
         }
-        // A closed member's proposals appear once it loads and joins its
-        // case; wait a little for them.
-        let Some(view) = self.tabs.get(id).and_then(|tab| tab.view().cloned()) else {
-            return;
-        };
-        cx.spawn_in(window, async move |_, cx| {
+        // A closed member opens and loads asynchronously, and its proposals
+        // appear once it joins its case: wait a little for them.
+        cx.spawn_in(window, async move |this, cx| {
             for _ in 0..50 {
-                let found = view
-                    .update_in(cx, |view, window, cx| {
-                        if !view.lifecycle.ready() || view.pii.review().remaining() == 0 {
+                let shown = this
+                    .update_in(cx, |this, window, cx| {
+                        let id = tab.or_else(|| this.find_path(path.as_deref()?, None, cx));
+                        let Some(view) = id
+                            .and_then(|id| this.tabs.get(id))
+                            .and_then(|tab| tab.view().cloned())
+                        else {
+                            return false;
+                        };
+                        if !view.read(cx).lifecycle.ready() {
                             return false;
                         }
-                        view.editor
-                            .update(cx, |editor, cx| editor.set_cursor(0, cx));
-                        view.step_pii_highlight(false, true, window, cx);
-                        true
+                        view.update(cx, |view, cx| view.select_first_proposal(window, cx))
                     })
                     .unwrap_or(true);
-                if found {
+                if shown {
                     return;
                 }
                 cx.background_executor()

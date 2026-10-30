@@ -493,4 +493,153 @@ fn the_shelf_copies_drags_restores_and_opens(cx: &mut TestAppContext) {
             .any(|w| w.window_id() == shelf.window_id())),
         "the shelf closes"
     );
+    assert_first_proposal_shown(&tabs, cx);
+}
+
+/// The active tab shows its earliest pending proposal in the popup.
+fn assert_first_proposal_shown(tabs: &Entity<Workspace>, cx: &mut VisualTestContext) {
+    cx.update(|_, cx| {
+        let view = tabs.read(cx).active_view().unwrap();
+        let view = view.read(cx);
+        let first = view
+            .pii
+            .review()
+            .candidates()
+            .iter()
+            .map(|c| c.range.start)
+            .min()
+            .expect("a pending proposal");
+        assert!(view.pii.popup().is_some(), "the proposal's popup is open");
+        assert_eq!(view.editor.read(cx).cursor(), first);
+    });
+}
+
+/// Review of #265: a closed member that is not ready opens as a tab and,
+/// once loaded, shows its first pending proposal.
+#[gpui::test]
+fn a_closed_member_that_is_not_ready_opens_at_its_first_proposal(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    let id = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "letter.md",
+        "Northwind Ltd wrote to PERSON_9.",
+        &[("Northwind Ltd", Organization)],
+    );
+    save(&tabs, id, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(id, window, cx));
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_tab(id, window, cx));
+    cx.run_until_parked();
+    let path = session_store::identity(&dir.path().join("letter.md"));
+    std::fs::write(&path, "ORG_1 wrote again. Copy to Northwind Ltd.").unwrap();
+    let row = cx
+        .update(|_, cx| tabs.read(cx).shelf_documents(cx))
+        .into_iter()
+        .find(|row| matches!(&row.key, ShelfKey::Member { path: p, .. } if *p == path))
+        .unwrap();
+    assert_eq!(row.readiness, Readiness::NamesNotReplaced(1));
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_from_shelf(&row.key, false, window, cx)
+    });
+    for _ in 0..20 {
+        wait(cx, 100);
+        cx.run_until_parked();
+    }
+    assert!(
+        cx.update(|_, cx| tabs.read(cx).find_path(&path, None, cx))
+            .is_some()
+    );
+    assert_first_proposal_shown(&tabs, cx);
+}
+
+/// Review of #265: every shelf control is reachable by keyboard, and the
+/// picker keeps focus inside the shelf.
+#[gpui::test]
+fn the_shelf_is_reachable_by_keyboard_and_the_picker_keeps_focus(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.use_case_store(mdoc_store::cases::Store::with_key(
+            dir.path().join("cases"),
+            &[3; 32],
+        ))
+    });
+    // Two sources: a case, and a tab without one through its mapping.
+    let cased = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "a.md",
+        "Anna Petrova met Northwind Ltd.",
+        &[("Anna Petrova", Person), ("Northwind Ltd", Organization)],
+    );
+    save(&tabs, cased, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.create_case(cased, window, cx));
+    cx.run_until_parked();
+    open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Clara Moss wrote.",
+        &[("Clara Moss", Person)],
+    );
+    cx.update(|_, cx| crate::shelf_ui::bind_keys(cx));
+    let shelf = open_shelf(cx);
+    let mut shelf_cx = VisualTestContext::from_window(shelf.into(), cx);
+    let focus = |cx: &mut VisualTestContext| {
+        cx.update(|window, cx| {
+            assert!(
+                window.context_stack().iter().any(|c| c.contains("Shelf")),
+                "focus stays in the shelf"
+            );
+            window.focused(cx)
+        })
+    };
+    // Tab walks every control and comes back round.
+    let mut seen = Vec::new();
+    for _ in 0..24 {
+        shelf_cx.simulate_keystrokes("tab");
+        let now = focus(&mut shelf_cx);
+        if !seen.contains(&now) {
+            seen.push(now);
+        }
+    }
+    // 2 rows, 2 Copy for AI, Show all, 2 clipboard rows, 2 pickers, Quit.
+    assert!(seen.len() >= 10, "{} stops", seen.len());
+
+    // The picker takes focus, ↑↓ move in it, Esc gives focus back to the ▾
+    // that opened it, which still shows; the shelf keeps its keys.
+    let before = focus(&mut shelf_cx);
+    shelf
+        .update(&mut shelf_cx, |view, window, cx| {
+            view.toggle_picker(crate::shelf_ui::ClipboardRow::Restore, window, cx)
+        })
+        .unwrap();
+    draw(&mut shelf_cx);
+    let first = focus(&mut shelf_cx);
+    assert_ne!(first, before);
+    shelf_cx.simulate_keystrokes("down");
+    let second = focus(&mut shelf_cx);
+    assert_ne!(second, first);
+    shelf_cx.simulate_keystrokes("escape");
+    let back = focus(&mut shelf_cx);
+    assert!(back.is_some() && back != first && back != second);
+    // Tab still moves on from there, and Esc now closes the shelf.
+    shelf_cx.simulate_keystrokes("tab");
+    assert_ne!(focus(&mut shelf_cx), back);
+    assert!(
+        shelf
+            .read_with(&shelf_cx, |view, _| view.content().source.is_some())
+            .unwrap()
+    );
 }

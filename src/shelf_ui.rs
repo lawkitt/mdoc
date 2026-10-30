@@ -161,6 +161,11 @@ pub(crate) struct ShelfView {
     copied: Option<usize>,
     /// The case picker replaces the list while open.
     picking: bool,
+    /// One focus handle per picker entry, for ↑↓.
+    picker_rows: Vec<FocusHandle>,
+    /// The two ▾ that open the picker; focus returns to the one used.
+    pick_buttons: [FocusHandle; 2],
+    picker_return: Option<ClipboardRow>,
     /// The last clipboard action's result, on its row.
     result: Option<(ClipboardRow, String)>,
     /// The last drag's payload, for tests (no native drag runs there).
@@ -179,7 +184,12 @@ impl ShelfView {
             .read(cx)
             .map(|workspace| workspace.theme_cell())
             .unwrap_or_default();
-        let focus = cx.focus_handle();
+        let focus = cx.focus_handle().tab_stop(false);
+        let picker_rows = content
+            .sources
+            .iter()
+            .map(|_| cx.focus_handle().tab_stop(true))
+            .collect();
         let rows: Vec<_> = content
             .documents
             .iter()
@@ -204,6 +214,12 @@ impl ShelfView {
             press: None,
             copied: None,
             picking: false,
+            picker_rows,
+            pick_buttons: [
+                cx.focus_handle().tab_stop(true),
+                cx.focus_handle().tab_stop(true),
+            ],
+            picker_return: None,
             result: None,
             #[cfg(test)]
             dragged: None,
@@ -235,7 +251,13 @@ impl ShelfView {
         then: impl FnOnce(&mut Workspace, &mut Window, &mut gpui::Context<Workspace>) + 'static,
     ) {
         self.close(window, cx);
-        cx.defer(move |cx| menu_bar::reveal(cx, then));
+        let workspace = self.workspace;
+        cx.defer(move |cx| {
+            let _ = workspace.update(cx, |workspace, window, cx| {
+                menu_bar::reveal_window(window, cx);
+                then(workspace, window, cx);
+            });
+        });
     }
 
     pub(crate) fn open(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -288,17 +310,65 @@ impl ShelfView {
     }
 
     fn focused_row(&self, window: &Window) -> Option<usize> {
+        if self.picking {
+            return None;
+        }
         self.rows.iter().position(|row| row.is_focused(window))
     }
 
+    /// ↑↓ move within the list that shows: the documents, or the picker.
     fn move_focus(&mut self, by: isize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.rows.is_empty() {
+        let targets = if self.picking {
+            &self.picker_rows
+        } else {
+            &self.rows
+        };
+        if targets.is_empty() {
             return;
         }
-        let at = self.focused_row(window).map_or(0, |at| {
-            (at as isize + by).clamp(0, self.rows.len() as isize - 1) as usize
-        });
-        window.focus(&self.rows[at], cx);
+        let at = targets
+            .iter()
+            .position(|target| target.is_focused(window))
+            .map_or(0, |at| {
+                (at as isize + by).clamp(0, targets.len() as isize - 1) as usize
+            });
+        window.focus(&targets[at], cx);
+    }
+
+    /// Open the picker from `row`'s ▾ on the current case, or close it,
+    /// returning focus to that ▾.
+    pub(crate) fn toggle_picker(
+        &mut self,
+        row: ClipboardRow,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.picking {
+            self.close_picker(window, cx);
+            return;
+        }
+        self.picking = true;
+        self.picker_return = Some(row);
+        let at = self
+            .content
+            .sources
+            .iter()
+            .position(|source| Some(source) == self.content.source.as_ref())
+            .unwrap_or(0);
+        if let Some(target) = self.picker_rows.get(at) {
+            window.focus(target, cx);
+        }
+        cx.notify();
+    }
+
+    fn close_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.picking = false;
+        let target = match self.picker_return.take() {
+            Some(row) => &self.pick_buttons[row as usize],
+            None => &self.focus,
+        };
+        window.focus(target, cx);
+        cx.notify();
     }
 
     fn mouse_down(&mut self, index: usize, event: &MouseDownEvent) {
@@ -357,8 +427,13 @@ impl ShelfView {
         }
         cx.set_global(PickedSource(Some(source.clone())));
         self.content.source = Some(source);
-        self.picking = false;
         cx.notify();
+    }
+
+    /// A picker entry: use its names, and close the picker.
+    fn choose(&mut self, source: ClipboardSource, window: &mut Window, cx: &mut Context<Self>) {
+        self.pick(source, cx);
+        self.close_picker(window, cx);
     }
 
     /// Run a clipboard row with the current case's names.
@@ -689,11 +764,11 @@ impl ShelfView {
             .when(self.content.sources.len() > 1, |v| {
                 v.child(
                     ui::control(("shelf-pick", row as usize), "▾", theme, true)
+                        .track_focus(&self.pick_buttons[row as usize])
                         .aria_label("Choose the case")
                         .text_color(p.header_muted)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.picking = !this.picking;
-                            cx.notify();
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.toggle_picker(row, window, cx)
                         })),
                 )
             })
@@ -718,6 +793,7 @@ impl ShelfView {
                 let chosen = self.content.source.as_ref() == Some(source);
                 let picked = source.clone();
                 ui::control(("shelf-source", i), source.name().to_string(), theme, true)
+                    .track_focus(&self.picker_rows[i])
                     .w_full()
                     .h(px(ACTION_ROW))
                     .flex()
@@ -729,7 +805,9 @@ impl ShelfView {
                         gpui::Toggled::False
                     })
                     .when(chosen, |v| v.bg(theme.sidebar_selected()))
-                    .on_click(cx.listener(move |this, _, _, cx| this.pick(picked.clone(), cx)))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.choose(picked.clone(), window, cx)
+                    }))
             }))
             .into_any_element()
     }
@@ -775,11 +853,20 @@ impl Render for ShelfView {
             .track_focus(&self.focus)
             .on_action(cx.listener(|this, _: &CloseShelf, window, cx| {
                 if this.picking {
-                    this.picking = false;
-                    cx.notify();
+                    this.close_picker(window, cx);
                 } else {
                     this.close(window, cx)
                 }
+            }))
+            // Tab reaches every control: rows, Copy for AI, Show all, the
+            // clipboard rows and their picker, Restart and Quit.
+            .on_action(
+                cx.listener(|_, _: &ui::NextControl, window, cx| {
+                    ui::cycle(window, cx, None, false)
+                }),
+            )
+            .on_action(cx.listener(|_, _: &ui::PreviousControl, window, cx| {
+                ui::cycle(window, cx, None, true)
             }))
             .on_action(cx.listener(|this, _: &ShelfUp, window, cx| this.move_focus(-1, window, cx)))
             .on_action(
