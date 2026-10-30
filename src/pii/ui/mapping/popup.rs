@@ -434,11 +434,7 @@ impl DocumentView {
             false
         }
     }
-    pub(in crate::pii::ui) fn correct_category(
-        &mut self,
-        category: Category,
-        cx: &mut Context<Self>,
-    ) {
+    pub(super) fn correct_category(&mut self, category: Category, cx: &mut Context<Self>) {
         if let Some(id) = self.selected_entity() {
             if self.scoped_ranges(self.pii.mapping.scope).len()
                 == self.pii.review.identity_count(id)

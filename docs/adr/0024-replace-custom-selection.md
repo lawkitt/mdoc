@@ -27,8 +27,9 @@ beforehand, and reports invalid selections only after the click.
   as the mention bar's category control: ⇧⌘⌥P (Ctrl+Alt+Shift+P) opens the
   list on the guess, ↑ ↓ and Tab move, Enter adds, Esc returns to the
   text. Each row shows the alias the addition would get; the guess is
-  ticked. A selection that is exactly a proposed wording shows that
-  wording's category, and a pick of another corrects it in the popup's scope.
+  ticked. A proposed wording keeps its category (`add_manual` keeps its
+  variant), so its pill shows that category without ▾ and the popup's
+  category control corrects it.
 - **One action, correct after**: add with a guessed category (ADR 0025); the
   popup opens on the new mention with Apply as the Enter default, and its
   category control fixes a wrong guess.

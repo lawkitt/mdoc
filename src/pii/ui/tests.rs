@@ -2612,6 +2612,13 @@ fn the_split_pill_adds_in_a_category_picked_with_the_keyboard(cx: &mut gpui::Tes
     app.update_in(cx, |app, window, _| {
         assert!(app.pii.popup.is_some() && app.pii.focus.is_focused(window));
     });
+    // Esc closes the popup back to the text, not to the closed menu.
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    app.update_in(cx, |app, window, cx| {
+        assert!(app.pii.popup.is_none());
+        assert!(app.editor.read(cx).focus_handle(cx).is_focused(window));
+    });
     // One undo step removes the addition.
     app.update_in(cx, |app, window, cx| {
         window.focus(&app.editor.read(cx).focus_handle(cx), cx)
@@ -2640,23 +2647,21 @@ fn mod_alt_p_still_adds_with_the_guess(cx: &mut gpui::TestAppContext) {
 }
 
 #[gpui::test]
-fn picking_another_category_for_a_proposed_wording_corrects_it(cx: &mut gpui::TestAppContext) {
-    // The whole proposal is selected: Replace shows its category, and a
-    // pick of another one corrects it as the popup's category control does.
+fn a_proposed_wording_offers_no_category_menu(cx: &mut gpui::TestAppContext) {
+    // The whole proposal is selected: Replace keeps its category, and the
+    // popup's category control corrects it after (ADR 0024).
     let source = "Acme signed. Acme paid.";
     let (app, cx) = split_pill_fixture(cx, source, "Acme", "Acme");
-    let choice = app.read_with(cx, |app, cx| {
-        app.editor
-            .read(cx)
-            .selection_action()
-            .cloned()
-            .unwrap()
-            .choice
+    let action = app.read_with(cx, |app, cx| {
+        app.editor.read(cx).selection_action().cloned()
     });
-    assert_eq!(choice.unwrap().label.as_ref(), "Person");
+    assert!(action.unwrap().choice.is_none(), "no ▾");
+    cx.simulate_keystrokes("secondary-alt-shift-p");
+    cx.run_until_parked();
     app.update_in(cx, |app, window, cx| {
+        assert!(app.pii.selection_menu.is_none());
         app.add_manual_candidate(Some(Category::Organization), window, cx);
         let (_, category) = app.selected_name().unwrap();
-        assert_eq!(category, Category::Organization);
+        assert_eq!(category, Category::Person, "a pick never recategorizes");
     });
 }

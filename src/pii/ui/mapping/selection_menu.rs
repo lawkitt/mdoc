@@ -28,7 +28,11 @@ impl DocumentView {
             return;
         };
         let editor = self.editor.read(cx);
-        let guess = self.manual_guess(editor.text(), range);
+        // A proposed wording keeps its category; the popup corrects it.
+        let (guess, pickable) = self.manual_category(editor.text(), range);
+        if !pickable {
+            return;
+        }
         self.pii.selection_menu = Some(editor.selection());
         let row = self.selection_menu_row(guess, cx);
         window.focus(&row, cx);
@@ -71,7 +75,10 @@ impl DocumentView {
         };
         let source = editor.text();
         let original = source[range.clone()].to_owned();
-        let guess = self.manual_guess(source, range);
+        let (guess, pickable) = self.manual_category(source, range);
+        if !pickable {
+            return None;
+        }
         let review = &self.pii.review;
         let enabled = !self.pii.scanning();
         let back = editor.focus_handle(cx);
@@ -102,6 +109,10 @@ impl DocumentView {
                     cx,
                 )
                 .on_click(cx.listener(move |this, _, window, cx| {
+                    // The popup returns focus to the text, not to this
+                    // menu, which closes now.
+                    let editor = this.editor.read(cx).focus_handle(cx);
+                    window.focus(&editor, cx);
                     this.add_manual_candidate(Some(category), window, cx);
                 }))
             }));

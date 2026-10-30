@@ -707,11 +707,18 @@ impl DocumentView {
             && self.can_copy_markdown())
         .then(|| self.pii.review.manual_target(editor.text(), selection))
     }
-    /// The category Replace uses for `range` before one is picked: the
-    /// wording's own when it is proposed already, else a guess (ADR 0025).
-    fn manual_guess(&self, source: &str, range: Range<usize>) -> Category {
-        let guess = mdoc_detect::guess_category(source, range.clone());
-        self.pii.review.manual_category(&source[range], guess)
+    /// The category Replace gives `range`, and whether another can be
+    /// picked: a proposed wording keeps its own (the popup corrects it),
+    /// new wording takes a guess (ADR 0024, ADR 0025).
+    fn manual_category(&self, source: &str, range: Range<usize>) -> (Category, bool) {
+        match self
+            .pii
+            .review
+            .proposed_wording_category(&source[range.clone()])
+        {
+            Some(category) => (category, false),
+            None => (mdoc_detect::guess_category(source, range), true),
+        }
     }
     /// Offer "Replace · Person ▾" beside the settled editor selection
     /// (ADR 0024).
@@ -722,12 +729,15 @@ impl DocumentView {
             .then(|| self.manual_target(cx))
             .flatten();
         let selection = editor.selection();
-        let guess = match &target {
-            Some(Ok(range)) => Some(self.manual_guess(editor.text(), range.clone())),
-            _ => None,
+        let (category, pickable) = match &target {
+            Some(Ok(range)) => {
+                let (category, pickable) = self.manual_category(editor.text(), range.clone());
+                (Some(category), pickable)
+            }
+            _ => (None, false),
         };
         // The menu belongs to the selection it opened for.
-        if guess.is_none() || self.pii.selection_menu.as_ref() != Some(&selection) {
+        if !pickable || self.pii.selection_menu.as_ref() != Some(&selection) {
             self.pii.selection_menu = None;
         }
         let theme = self.theme.get();
@@ -743,12 +753,14 @@ impl DocumentView {
             }
             .into(),
             disabled: target.err().map(Into::into),
-            accent: guess.map_or(theme.proposed(), |c| theme.category(c)),
-            choice: guess.map(|category| mdoc_editor::SelectionChoice {
-                label: category.label().into(),
-                accent: theme.category(category),
-                open,
-            }),
+            accent: category.map_or(theme.proposed(), |c| theme.category(c)),
+            choice: category
+                .filter(|_| pickable)
+                .map(|category| mdoc_editor::SelectionChoice {
+                    label: category.label().into(),
+                    accent: theme.category(category),
+                    open,
+                }),
         });
         self.editor
             .update(cx, |editor, cx| editor.set_selection_action(action, cx));
@@ -764,7 +776,8 @@ impl DocumentView {
         self.add_manual_candidate(None, window, cx);
     }
     /// Add the editor selection in `picked`, or the guessed category, and
-    /// open the popup on it (ADR 0024).
+    /// open the popup on it as one undo step (ADR 0024). A proposed wording
+    /// keeps its own category, so only new wording takes a pick.
     pub(crate) fn add_manual_candidate(
         &mut self,
         picked: Option<Category>,
@@ -776,13 +789,10 @@ impl DocumentView {
         };
         self.pii.selection_menu = None;
         let source = self.editor.read(cx).text().to_owned();
-        let guess = self.manual_guess(&source, range.clone());
+        let guess = mdoc_detect::guess_category(&source, range.clone());
+        let (_, pickable) = self.manual_category(&source, range.clone());
+        let picked = picked.filter(|_| pickable);
         let category = picked.unwrap_or(guess);
-        // A wording proposed already keeps its own category in `add_manual`.
-        let kept = self
-            .pii
-            .review
-            .manual_category(&source[range.clone()], category);
         let before = self.editor.read(cx).history_id();
         let Some(id) = self.checkpoint_review(cx, |review| {
             review
@@ -811,11 +821,6 @@ impl DocumentView {
             self.activate_annotation(annotation, window, cx);
             self.pii.manual_activation = false;
             self.pii.enter_applies = self.pii.popup.is_some();
-            // A proposed wording keeps its category; a pick of another one
-            // corrects it in the popup's scope, as its category control does.
-            if kept != category {
-                self.correct_category(category, cx);
-            }
             // A fallback guess also cues the category chip; a pick does not.
             self.pii.mapping.request_cue(
                 true,

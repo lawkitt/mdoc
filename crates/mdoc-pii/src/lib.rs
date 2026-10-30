@@ -608,29 +608,19 @@ impl Review {
         self.refresh(source);
         Ok(id)
     }
-    /// The category a manual addition of `original` keeps: its variant's,
-    /// when the wording is proposed already, else `guess`.
-    pub fn manual_category(&self, original: &str, guess: Category) -> Category {
-        self.candidates
-            .by_original(original)
-            .and_then(|id| self.variant_identity(id))
-            .and_then(|id| self.identity(id))
-            .map_or(guess, |identity| identity.category)
+    /// The category of `original`'s variant when the wording is proposed
+    /// already. `add_manual` then keeps that variant and its category, so
+    /// a category is picked only for new wording (ADR 0024).
+    pub fn proposed_wording_category(&self, original: &str) -> Option<Category> {
+        let id = self.candidates.by_original(original)?;
+        self.variant(id).map(|variant| variant.category)
     }
-    /// The alias adding `original` in `category` gives: its variant's when
-    /// that is in `category`, else the identity it normalizes to there, else
-    /// the next free one.
+    /// The alias adding new wording `original` in `category` gives: the
+    /// identity it normalizes to there, else the next free one.
     pub fn manual_alias(&self, original: &str, category: Category) -> String {
-        let in_category = |id: u64| self.identity(id).filter(|i| i.category == category);
-        self.candidates
-            .by_original(original)
-            .and_then(|id| self.variant_identity(id))
-            .and_then(in_category)
-            .or_else(|| {
-                self.identities
-                    .normalized_identity(original, category)
-                    .and_then(in_category)
-            })
+        self.identities
+            .normalized_identity(original, category)
+            .and_then(|id| self.identity(id))
             .map_or_else(|| self.next_alias(category), |i| i.alias.clone())
     }
     #[cfg(test)]
