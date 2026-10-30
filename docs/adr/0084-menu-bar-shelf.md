@@ -83,8 +83,11 @@ window.
   pseudonymized text with alias chips, last edit time and word count. Never
   originals or source pages: the menu bar shows in screen shares.
 - **Rendering.** An `NSStatusItem` opens a borderless GPUI `PopUp` window
-  anchored under it, closed by a click outside. Only the status item, the
-  anchoring and the text drag are native patches in `vendor/gpui-pre-macos`.
+  anchored under it, closed by a click outside. The native patches in
+  `vendor/gpui-pre-macos`, each listed in its `MDOC-PATCH.md`, are the status
+  item, the anchoring, the text drag, hiding and showing a window (so its
+  tabs and undo survive), and the activation policy (Regular / Accessory).
+  The app crate takes no Objective-C dependency.
 
 ## Invariants
 
