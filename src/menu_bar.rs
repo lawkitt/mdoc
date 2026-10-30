@@ -23,6 +23,8 @@ pub(crate) const SHELF_WIDTH: f32 = 360.;
 const MARGIN: f32 = 6.;
 /// A click on the item this soon after the shelf closed was the click that
 /// closed it: the item toggles instead of reopening.
+// Only the macOS status item clicks; elsewhere the setting stays off.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const REOPEN_GUARD: Duration = Duration::from_millis(300);
 
 /// What the app carries out for a menu bar transition.
@@ -30,6 +32,7 @@ const REOPEN_GUARD: Duration = Duration::from_millis(300);
 pub(crate) enum MenuBarEffect {
     ShowItem,
     RemoveItem,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     OpenShelf,
     CloseShelf,
     /// Hide the workspace window without closing it.
@@ -109,6 +112,7 @@ impl MenuBarState {
         }
     }
 
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub(crate) fn item_clicked(&mut self, now: Instant) -> Vec<MenuBarEffect> {
         if !self.enabled {
             return Vec::new();
@@ -226,6 +230,8 @@ pub(crate) fn window_activated(cx: &mut App) {
 }
 
 /// The item was clicked: open or close the shelf.
+// Only the macOS status item clicks; elsewhere the setting stays off.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn item_clicked(cx: &mut App) {
     update(cx, |state| state.item_clicked(Instant::now()));
 }

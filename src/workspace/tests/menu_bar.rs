@@ -1,7 +1,7 @@
 //! Staying in the menu bar (ADR 0084): with the item on, closing the window
 //! hides it with every tab kept; Quit still asks; off, closing quits.
 use super::*;
-use crate::{menu_bar, shelf_ui::ShelfView};
+use crate::menu_bar;
 
 fn install(tabs: &Entity<Workspace>, enabled: bool, cx: &mut VisualTestContext) {
     let handle = cx.window_handle().downcast::<Workspace>().unwrap();
@@ -9,11 +9,12 @@ fn install(tabs: &Entity<Workspace>, enabled: bool, cx: &mut VisualTestContext) 
     cx.cx.update(|cx| menu_bar::install(handle, enabled, cx));
 }
 
+#[cfg(target_os = "macos")]
 fn shelf_open(cx: &mut VisualTestContext) -> bool {
     cx.update(|_, cx| {
         cx.windows()
             .iter()
-            .any(|window| window.downcast::<ShelfView>().is_some())
+            .any(|window| window.downcast::<crate::shelf_ui::ShelfView>().is_some())
     })
 }
 
