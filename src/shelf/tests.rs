@@ -30,6 +30,7 @@ fn tab<'a>(id: u64, title: &'a str, text: &'a str, pending: usize) -> OpenTab<'a
         text,
         aliases: vec!["PERSON_1", "ORG_1"],
         pending,
+        checking: false,
         names: names(),
         case: None,
         edited: at(id),
@@ -77,6 +78,45 @@ fn a_tab_without_aliases_is_not_listed_and_one_with_proposals_is_not_ready() {
     assert_eq!(row.title, "PERSON_2.md");
     assert_eq!(row.text_for_ai(), None);
     assert!(row.preview.is_empty(), "no text of a document not ready");
+}
+
+#[test]
+fn a_kept_original_or_a_scan_in_progress_keeps_an_open_tab_from_leaving() {
+    // Anna applied once and kept once: nothing pending, an original left.
+    let kept = ShelfDocument::of_tab(tab(1, "a.md", "PERSON_1 thanks Anna Petrova.", 0)).unwrap();
+    assert_eq!(kept.readiness, Readiness::NamesNotReplaced(1));
+    assert_eq!(kept.text_for_ai(), None);
+    assert!(kept.preview.is_empty());
+    // Just edited: pending mentions are being found again.
+    let mut checking = tab(2, "b.md", "PERSON_1 met ORG_1.", 0);
+    checking.checking = true;
+    let row = ShelfDocument::of_tab(checking).unwrap();
+    assert_eq!(row.readiness, Readiness::Checking);
+    assert_eq!(row.text_for_ai(), None);
+    // A kept name stays masked in the title of a row that is not ready.
+    let mut titled = tab(3, "Boris Ivanov.md", "PERSON_1 met ORG_1.", 1);
+    titled
+        .names
+        .push(identity("PERSON_2", Category::Person, &["Boris Ivanov"]));
+    assert_eq!(ShelfDocument::of_tab(titled).unwrap().title, "PERSON_2.md");
+}
+
+#[test]
+fn a_closed_member_names_the_aliases_its_editor_would() {
+    let path = Path::new("/docs/a.md");
+    // Only the exact alias is relinked as applied when it reopens.
+    let text = "person 1 met PERSON_1 and ORG_1.";
+    let case = case_with(path, Some(text));
+    let row = ShelfDocument::of_member(ClosedMember {
+        case: &case,
+        path,
+        text: Some(text),
+        edited: at(1),
+    });
+    assert_eq!(
+        row.text_for_ai(),
+        Some(mdoc_pii::handoff::for_ai(text, ["PERSON_1", "ORG_1"]).as_str())
+    );
 }
 
 #[test]

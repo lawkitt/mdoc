@@ -64,7 +64,7 @@ impl Workspace {
                     .path
                     .as_deref()
                     .map(session_store::identity),
-                if !ready(v) {
+                if !ready(v, cx) {
                     Some(None)
                 } else if v.lifecycle.dirty() {
                     // The saved text is the reviewed one only while nothing
@@ -90,10 +90,10 @@ impl Workspace {
     }
 }
 
-/// A tab is ready: at least one applied alias and nothing pending.
-fn ready(view: &DocumentView) -> bool {
-    let review = view.pii.review();
-    !review.applied().is_empty() && review.remaining() == 0
+/// A tab is ready as the shelf counts it (ADR 0084): an applied alias,
+/// nothing pending or still being found, and no known name left as written.
+fn ready(view: &DocumentView, cx: &App) -> bool {
+    shelf_tab(0, view, cx).is_some_and(|row| row.readiness.is_ready())
 }
 
 /// An open tab's shelf row; `None` without an applied alias.
@@ -102,21 +102,17 @@ fn shelf_tab(id: u64, view: &DocumentView, cx: &App) -> Option<ShelfDocument> {
     if review.applied().is_empty() || !view.lifecycle.ready() {
         return None;
     }
-    // Every name the tab knows masks the title and preview: its mapping,
-    // its case's names and its pending proposals.
+    // Every name the tab knows: its mapping, its case's names and every
+    // variant, pending and kept ones included.
     let mut names = review.export_identities();
     names.extend(view.case.names().iter().cloned());
-    for candidate in review.candidates() {
-        if let Some(variant) = review.variant(candidate.variant) {
-            names.push(ExportedIdentity {
-                alias: variant.replacement.clone(),
-                previous: Vec::new(),
-                category: variant.category,
-                custom: false,
-                originals: vec![variant.original.clone()],
-            });
-        }
-    }
+    names.extend(review.variants().iter().map(|variant| ExportedIdentity {
+        alias: variant.replacement.clone(),
+        previous: Vec::new(),
+        category: variant.category,
+        custom: false,
+        originals: vec![variant.original.clone()],
+    }));
     let edited = view
         .lifecycle
         .edited_at()
@@ -133,6 +129,7 @@ fn shelf_tab(id: u64, view: &DocumentView, cx: &App) -> Option<ShelfDocument> {
             .map(|applied| applied.step.after.as_ref())
             .collect(),
         pending: review.remaining(),
+        checking: review.awaiting_discovery(),
         names,
         case: view.case.link().cloned(),
         edited,

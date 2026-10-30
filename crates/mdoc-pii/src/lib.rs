@@ -138,6 +138,9 @@ pub struct Review {
     /// Last manual-addition priority handed out; see `Variant::priority`.
     manual_priority: u64,
     revision: Revision,
+    /// An edit cleared the pending mentions; discovery has not found them
+    /// again yet, so `remaining` may undercount.
+    awaiting_discovery: bool,
 }
 
 /// Advanced by every `&mut` method, so data derived from a review can be keyed
@@ -255,6 +258,7 @@ impl Review {
                 self.candidates.follow(&change.edits);
             }
             self.candidates.await_discovery();
+            self.awaiting_discovery = true;
             if unchanged_source {
                 self.refresh(source);
             }
@@ -283,6 +287,11 @@ impl Review {
     }
     pub fn remaining(&self) -> usize {
         self.candidates.remaining()
+    }
+    /// Whether an edit's pending mentions wait for discovery: until then
+    /// `remaining` may miss some, so nothing counts as fully reviewed.
+    pub fn awaiting_discovery(&self) -> bool {
+        self.awaiting_discovery
     }
     /// Applied replacements in source order.
     pub fn applied(&self) -> &[Applied] {
@@ -432,6 +441,7 @@ impl Review {
             mentions.retain(|range| self.occurrence_identity(variant.id, range).is_some());
         }
         self.candidates.matcher = result.matcher;
+        self.awaiting_discovery = false;
         self.occupied_tokens = result.tokens;
         self.occupied_tokens
             .extend(self.reserved_tokens.iter().cloned());

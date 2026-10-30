@@ -38,11 +38,14 @@ pub(crate) enum Readiness {
     Ready,
     /// An open tab with this many proposals still to review.
     LeftToReview(usize),
+    /// An open tab just edited: its proposals are being found again.
+    Checking,
+    /// A document whose text still holds this many known names by an
+    /// original wording: a kept mention in an open tab, or a closed member
+    /// that gained one.
+    NamesNotReplaced(usize),
     /// A closed member whose file is not the text it saved while ready.
     ChangedSinceReview,
-    /// A closed member whose file still holds this many of the case's
-    /// known names by an original wording.
-    NamesNotReplaced(usize),
 }
 
 impl Readiness {
@@ -55,6 +58,7 @@ impl Readiness {
         match self {
             Self::Ready => "ready".into(),
             Self::LeftToReview(n) => format!("{n} left to review"),
+            Self::Checking => "Checking names".into(),
             Self::ChangedSinceReview => "Changed since review".into(),
             Self::NamesNotReplaced(1) => "1 name not replaced".into(),
             Self::NamesNotReplaced(n) => format!("{n} names not replaced"),
@@ -103,8 +107,12 @@ pub(crate) struct OpenTab<'a> {
     pub aliases: Vec<&'a str>,
     /// Proposals still to review.
     pub pending: usize,
-    /// Every name the tab knows, pending proposals included, to mask the
-    /// title and preview.
+    /// An edit's proposals are still being found again, so `pending` may
+    /// undercount.
+    pub checking: bool,
+    /// Every name the tab knows, pending and kept ones included: they mask
+    /// the title and preview, and any left in the text keeps it from
+    /// leaving.
     pub names: Vec<ExportedIdentity>,
     pub case: Option<CaseLink>,
     pub edited: SystemTime,
@@ -134,12 +142,17 @@ impl ShelfDocument {
         if tab.aliases.is_empty() {
             return None;
         }
-        let readiness = if tab.pending == 0 {
-            Readiness::Ready
-        } else {
-            Readiness::LeftToReview(tab.pending)
-        };
         let names = RestoreMap::new(tab.names);
+        let readiness = if tab.pending > 0 {
+            Readiness::LeftToReview(tab.pending)
+        } else if tab.checking {
+            Readiness::Checking
+        } else {
+            match names.known_names(tab.text) {
+                0 => Readiness::Ready,
+                missed => Readiness::NamesNotReplaced(missed),
+            }
+        };
         let for_ai = readiness
             .is_ready()
             .then(|| mdoc_pii::handoff::for_ai(tab.text, tab.aliases.iter().copied()));
@@ -186,12 +199,9 @@ impl ShelfDocument {
             Readiness::ChangedSinceReview
         };
         let for_ai = readiness.is_ready().then(|| {
-            let tokens = names.tokens(text);
-            let aliases = tokens
-                .iter()
-                .filter(|t| t.identity.is_some())
-                .map(|t| &text[t.range.clone()]);
-            mdoc_pii::handoff::for_ai(text, aliases)
+            // The aliases reopening it relinks as applied, as the editor's
+            // Copy for AI would name them.
+            mdoc_pii::handoff::for_ai(text, names.exact_aliases(text))
         });
         Self::new(
             key,

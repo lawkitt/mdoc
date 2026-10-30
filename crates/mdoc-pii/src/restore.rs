@@ -225,6 +225,20 @@ impl RestoreMap {
         });
         found
     }
+    /// Alias tokens of `text` written exactly as an identity's current or
+    /// earlier alias, in source order: the ones a reopened document relinks
+    /// as applied (see `Review::relink`), so Copy for AI names the same.
+    pub fn exact_aliases<'t>(&self, text: &'t str) -> Vec<&'t str> {
+        self.tokens(text)
+            .into_iter()
+            .filter_map(|token| {
+                let identity = &self.identities[token.identity?];
+                let written = &text[token.range];
+                (written == identity.alias || identity.previous.iter().any(|p| p == written))
+                    .then_some(written)
+            })
+            .collect()
+    }
     /// Alias-shaped tokens that name no identity of this map.
     pub fn unresolved(&self, text: &str) -> Vec<Range<usize>> {
         self.tokens(text)

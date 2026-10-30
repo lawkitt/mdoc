@@ -265,3 +265,87 @@ fn saving_records_the_ready_fingerprint_in_the_case(cx: &mut TestAppContext) {
     save(&tabs, id, cx);
     assert_eq!(reviewed(cx), None);
 }
+
+/// Review findings on #263: a kept original and a scan still finding
+/// proposals after an edit each keep an open tab from leaving the shelf,
+/// and a kept name stays masked in the title.
+#[gpui::test]
+fn kept_names_and_scans_in_flight_keep_an_open_tab_on_the_shelf(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    let path = dir.path().join("Clara Moss.md");
+    let source = "Anna Petrova met Clara Moss.";
+    std::fs::write(&path, source).unwrap();
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.open_paths(vec![path], window, cx)
+    });
+    cx.run_until_parked();
+    let view = active(&tabs, cx);
+    let id = cx.update(|_, cx| tabs.read(cx).tabs.active());
+    view.update_in(cx, |view, window, cx| {
+        view.pii.set_reviewing(true);
+        view.pii
+            .review_mut()
+            .add_manual(source, 0..12, Person)
+            .unwrap();
+        let clara = view
+            .pii
+            .review_mut()
+            .add_manual(source, 17..27, Person)
+            .unwrap();
+        view.pii.review_mut().keep(clara, None);
+        view.apply_all_pii(&PiiApplyAll, window, cx);
+    });
+    cx.run_until_parked();
+    let kept = row_of(&tabs, id, cx);
+    assert_eq!(
+        cx.update(|_, cx| view.read(cx).editor.read(cx).text().to_owned()),
+        "PERSON_1 met Clara Moss."
+    );
+    assert_eq!(kept.readiness, Readiness::NamesNotReplaced(1));
+    assert_eq!(kept.text_for_ai(), None);
+    assert!(!kept.title.contains("Clara Moss"), "{}", kept.title);
+
+    // A ready document gets a new proposal, then an unrelated edit: until
+    // the scan finds the proposal again, it is not ready.
+    let id = open_applied(
+        &tabs,
+        cx,
+        dir.path(),
+        "b.md",
+        "Anna Petrova met Boris.",
+        &[("Anna Petrova", Person)],
+    );
+    let view = active(&tabs, cx);
+    assert_eq!(row_of(&tabs, id, cx).readiness, Readiness::Ready);
+    view.update(cx, |view, cx| {
+        let text = view.editor.read(cx).text().to_owned();
+        let start = text.find("Boris").unwrap();
+        view.pii
+            .review_mut()
+            .add_manual(&text, start..start + 5, Person)
+            .unwrap();
+        view.editor.update(cx, |editor, cx| {
+            let end = editor.text().len();
+            editor.replace_range(end..end, " Later.", cx);
+        });
+    });
+    let checking = row_of(&tabs, id, cx).readiness;
+    assert_eq!(checking, Readiness::Checking);
+    cx.run_until_parked();
+    assert_eq!(row_of(&tabs, id, cx).readiness, Readiness::LeftToReview(1));
+}
+
+fn row_of(
+    tabs: &Entity<Workspace>,
+    id: u64,
+    cx: &mut VisualTestContext,
+) -> crate::shelf::ShelfDocument {
+    cx.update(|_, cx| {
+        tabs.read(cx)
+            .shelf_documents(cx)
+            .into_iter()
+            .find(|row| row.key == ShelfKey::Tab(id))
+            .unwrap()
+    })
+}

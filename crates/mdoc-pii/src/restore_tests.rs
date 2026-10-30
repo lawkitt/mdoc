@@ -505,6 +505,17 @@ fn pseudonymizing_replaces_known_whole_names_longest_first() {
 }
 
 #[test]
+fn exact_aliases_are_the_tokens_a_reopened_document_relinks() {
+    let mut anna = identity("PERSON_1", Category::Person, &["Anna Petrova"]);
+    anna.previous = vec!["PERSON_7".into()];
+    let map = RestoreMap::new(vec![anna]);
+    assert_eq!(
+        map.exact_aliases("person 1 met PERSON_1, then PERSON_7 and PERSON_9."),
+        ["PERSON_1", "PERSON_7"]
+    );
+}
+
+#[test]
 fn known_names_counts_identities_still_written_as_originals() {
     let map = RestoreMap::new(vec![
         identity("PERSON_1", Category::Person, &["Anna Petrova", "Anna"]),
