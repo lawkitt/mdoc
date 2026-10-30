@@ -1,17 +1,19 @@
-# Usage: powershell -ExecutionPolicy Bypass -File scripts\local-ci-setup.ps1 [-Uninstall] [-Root D:\ci]
+# Usage: powershell -ExecutionPolicy Bypass -File scripts\local-ci-setup.ps1 [-Uninstall] [-Root E:\ci]
 #
 # Local CI on Windows (ADR 0082). Makes the CI checkout (its own clone at
-# D:\ci\mdoc), copies the runner from this repository to D:\ci\runner, writes
-# D:\ci\runner.env and registers two Task Scheduler tasks (at logon, this user,
-# no window): "mdoc local CI" runs `scripts/local-ci.sh run` in Git Bash, and
-# "mdoc local CI web" serves D:\ci\out on 127.0.0.1 with Python's http.server,
-# which `tailscale serve` proxies to the tailnet at /ci (serving a folder
-# directly needs a Windows admin). Re-run it from an updated checkout to update
-# the runner. -Uninstall stops and removes the tasks and the tailnet path and
-# keeps D:\ci.
+# E:\ci\mdoc, on the Dev Drive), copies the runner from this repository to
+# E:\ci\runner, writes E:\ci\runner.env and registers two Task Scheduler tasks
+# (at logon, this user, no window): "mdoc local CI" runs
+# `scripts/local-ci.sh run` in Git Bash, and "mdoc local CI web" serves
+# E:\ci\out on 127.0.0.1 with Python's http.server, which `tailscale serve`
+# proxies to the tailnet at /ci (serving a folder directly needs a Windows
+# admin). Re-run it from an updated checkout to update the runner, or with a
+# new -Root to move it (copy out\ first to keep old status links working).
+# -Uninstall stops and removes the tasks and the tailnet path and keeps the
+# runner home.
 [CmdletBinding()]
 param(
-    [string] $Root = 'D:\ci',
+    [string] $Root = 'E:\ci',
     [string] $Repo = 'lawkitt/mdoc',
     [int] $Port = 8787,
     [switch] $Uninstall
@@ -57,8 +59,10 @@ function Stop-Runner {
     }
     # Stopping a task ends its bash but not the native processes under it (a
     # job's cargo, rustc and test binaries; the web server's python): end each
-    # runner bash's tree and this runner's web server.
-    $web = "*http.server --bind 127.0.0.1 $Port --directory $([WildcardPattern]::Escape($outArg))"
+    # runner bash's tree and every web server on this port, whatever folder it
+    # serves. http.server sets SO_REUSEADDR, so on Windows a server left over
+    # from an older -Root keeps answering on the same port beside the new one.
+    $web = "*http.server --bind 127.0.0.1 $Port --directory *"
     Get-CimInstance Win32_Process -Filter "Name = 'bash.exe' OR Name = 'python.exe'" |
         Where-Object { $_.CommandLine -like '*local-ci.sh*run*' -or $_.CommandLine -like $web } |
         ForEach-Object { Invoke-Quietly taskkill.exe '/F', '/T', '/PID', $_.ProcessId }

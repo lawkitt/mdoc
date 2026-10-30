@@ -424,11 +424,11 @@ runs again when it starts. On the Mac a job starts only while swap is under
 
 | | Mac | Windows PC |
 |---|---|---|
-| Runner home | `~/ci` | `D:\ci` |
-| CI checkout | `~/ci/mdoc` | `D:\ci\mdoc` |
-| Runner (a copy, never the checkout it tests) | `~/ci/runner/scripts/` | `D:\ci\runner\scripts\` |
-| Results, kept 7 days | `~/ci/out/pr-N/<head>/` | `D:\ci\out\pr-N\<head>\` |
-| Runner log | `~/ci/state/runner.log` | `D:\ci\state\runner.log` (start-up errors: `task.log`) |
+| Runner home | `~/ci` | `E:\ci` (the Dev Drive) |
+| CI checkout | `~/ci/mdoc` | `E:\ci\mdoc` |
+| Runner (a copy, never the checkout it tests) | `~/ci/runner/scripts/` | `E:\ci\runner\scripts\` |
+| Results, kept 7 days | `~/ci/out/pr-N/<head>/` | `E:\ci\out\pr-N\<head>\` |
+| Runner log | `~/ci/state/runner.log` | `E:\ci\state\runner.log` (start-up errors: `task.log`) |
 | Started by | launchd agents `com.lawkitt.mdoc.local-ci` and `com.lawkitt.mdoc.local-ci-web` | Task Scheduler tasks `mdoc local CI` and `mdoc local CI web`, at logon, normal priority |
 
 Each machine serves its `out` folder to the tailnet only, at
@@ -503,16 +503,18 @@ skill) read this section for mdoc's needs.
   runs detection on CPU.
 - **Lane worktrees.** A worktree's `target/` reaches about 30 GiB and a cold
   `just lint` + `just test` takes about 4.5 minutes on `windows`, so workers
-  reuse lanes instead of a new worktree per task: `windows-lane-1`,
-  `windows-lane-2` and `windows-lane-3` on `windows`, `wsl-lane-1` on `wsl`.
+  reuse lanes instead of a new worktree per task: `windows-lane-1` to
+  `windows-lane-4` on `windows`, `wsl-lane-1` on `wsl`.
   Each task starts with `git switch -c <machine>/<topic> origin/main`.
   Retire other worktrees with `just retire-worktree <path>` once merged.
-  `C:` has about 20 GB free, so Windows lanes move to `D:` beside the CI
-  checkout (`D:\t3\worktrees\mdoc\windows-lane-N`): `windows-lane-3` is
-  there (a worktree of the root checkout, idle on branch `windows/lane-3`);
-  lanes 1 and 2 move when they are free, and the profile names each lane's
-  folder and the drive to check. Claude Desktop SSH sessions use these lane
-  folders too (`use_worktree: false`), one session or T3 thread per lane.
+  On `windows` everything mdoc builds lives on `E:`, a 400 GB ReFS Dev Drive
+  (a dynamic VHDX at `D:\DevDrive\dev.vhdx`, attached at startup by the
+  `SYSTEM` task `Mount Dev Drive`; fleet ADR 0019): the root checkout
+  `E:\Developer\lawkitt\mdoc`, the lanes `E:\t3\worktrees\mdoc\windows-lane-N`
+  (worktrees of the root checkout) and the local CI home `E:\ci`.
+  `CARGO_HOME` and `RUSTUP_HOME` stay on `C:`. Claude Desktop SSH sessions
+  use these lane folders too (`use_worktree: false`), one session or T3
+  thread per lane.
 - **Design tripwire.** A lane stops and reports to the hub before adding a
   dependency, vendoring code, patching `vendor/` or a GPUI platform crate, or
   editing outside its item's area (fleet ADR 0019).
@@ -593,8 +595,9 @@ fragment = "add `changes/{slug}.md` (format in `changes/README.md`)"
 setup = "Never set `CARGO_TARGET_DIR`: this worktree builds into its own `target/` (a shared one gives stale builds). First build is cold."
 
 [machines.windows]
-disk_check = "`Get-PSDrive C` for `windows-lane-1` and `windows-lane-2`, `Get-PSDrive D` for `windows-lane-3` (not `just disk`, which fails while another lane builds)"
-lanes = { windows-lane-1 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'C:\Users\tebri\.t3\worktrees\mdoc\windows-lane-2', windows-lane-3 = 'D:\t3\worktrees\mdoc\windows-lane-3' }
+disk_check = "`Get-PSDrive E` (not `just disk`, which fails while another lane builds)"
+lanes = { windows-lane-1 = 'E:\t3\worktrees\mdoc\windows-lane-1', windows-lane-2 = 'E:\t3\worktrees\mdoc\windows-lane-2', windows-lane-3 = 'E:\t3\worktrees\mdoc\windows-lane-3', windows-lane-4 = 'E:\t3\worktrees\mdoc\windows-lane-4' }
+notes = "Every lane, the root checkout and local CI's home are on `E:`, a ReFS Dev Drive (a VHDX on `D:`); `CARGO_HOME` and `RUSTUP_HOME` stay on `C:`."
 
 [machines.wsl]
 disk_check = "`df -h ~`"
