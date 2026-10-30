@@ -183,7 +183,10 @@ final class StorageTests: XCTestCase {
         let file = try storage.write(Data("text".utf8), named: "a.md", in: .markdown)
         let values = try file.resourceValues(forKeys: [.isExcludedFromBackupKey, .fileProtectionKey])
         XCTAssertEqual(values.isExcludedFromBackup, true)
+        #if !targetEnvironment(simulator)
+        // The Simulator reports every file as complete until first unlock.
         XCTAssertEqual(values.fileProtection, .complete)
+        #endif
     }
 
     func testModelsKeepTheDefaultProtection() {

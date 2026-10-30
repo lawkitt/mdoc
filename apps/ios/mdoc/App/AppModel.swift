@@ -136,7 +136,8 @@ final class AppModel {
             suggestedTitle: title.isEmpty ? String(localized: "Pasted text") : String(title))
     }
 
-    static let docx = UTType(importedAs: "org.openxmlformats.wordprocessingml.document")
+    /// The system declares DOCX; the extension lookup never needs an import.
+    static let docx = UTType("org.openxmlformats.wordprocessingml.document") ?? UTType(filenameExtension: "docx") ?? .data
     static let importTypes: [UTType] = [.pdf, docx, .image]
 
     static func kind(of url: URL) -> SourceKind? {

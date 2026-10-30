@@ -670,9 +670,14 @@ private final class FakeSession: DocumentSession {
     }
 
     func restoreReply(_ reply: String) throws -> DocumentSnapshot {
-        try mutate { document in
-            _ = try state.restore(reply, caseID: document.caseID)
-            document.reply = reply
+        try state.locked {
+            guard let index = state.index(of: id) else { throw CoreError.notFound }
+            // Restore reads every document of the case, so it runs before
+            // this document is written.
+            _ = try state.restore(reply, caseID: state.documents[index].caseID)
+            state.documents[index].reply = reply
+            state.documents[index].updated = Date()
+            return try state.snapshot(id)
         }
     }
 

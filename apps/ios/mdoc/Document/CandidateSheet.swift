@@ -69,6 +69,13 @@ struct CandidateSheet: View {
                         Text("Apply to")
                     }
                 }
+                Section {
+                    Button("Next proposal") {
+                        onDone(replace ? .replace(alias: alias) : .keep, scope)
+                        onNext()
+                    }
+                    .accessibilityHint(Text("Applies this decision and opens the next proposal."))
+                }
             }
             .navigationTitle(candidate.original)
             .navigationBarTitleDisplayMode(.inline)
@@ -82,12 +89,6 @@ struct CandidateSheet: View {
                         dismiss()
                     }
                     .accessibilityIdentifier("candidate-done")
-                }
-                ToolbarItem(placement: .bottomBar) {
-                    Button("Next proposal") {
-                        onDone(replace ? .replace(alias: alias) : .keep, scope)
-                        onNext()
-                    }
                 }
             }
         }
