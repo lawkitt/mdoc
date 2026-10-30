@@ -123,6 +123,31 @@ impl DocumentSession {
             &options,
             &cancel,
             progress.as_deref(),
+            None,
+        )?;
+        self.open(imported, &cancel, None)
+    }
+
+    /// `import_file`, with a PDF's OCR keeping its finished pages under
+    /// `library`'s root (ADR 0085 Long jobs): after a cancel, or mdoc
+    /// stopping, importing the same file with the same OCR model again
+    /// recognizes only the pages left, and gives the Markdown an
+    /// uninterrupted run gives. The kept pages are removed when the import
+    /// completes, or by `Library::discard_import`.
+    pub fn import_file_in(
+        &self,
+        library: Arc<Library>,
+        path: String,
+        options: ImportOptions,
+        progress: Option<Box<dyn JobProgress>>,
+    ) -> Result<ReviewSnapshot, CoreError> {
+        let cancel = self.start_job();
+        let imported = intake::import_file(
+            std::path::Path::new(&path),
+            &options,
+            &cancel,
+            progress.as_deref(),
+            Some(&library.kept_pages()),
         )?;
         self.open(imported, &cancel, None)
     }
@@ -639,6 +664,124 @@ mod tests {
             std::fs::read_to_string(&saved.path).unwrap(),
             "PERSON_1 wrote to PERSON_2."
         );
+    }
+
+    fn fixture(name: &str) -> String {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/fixtures")
+            .join(name)
+            .display()
+            .to_string()
+    }
+
+    /// Without OCR, importing into a library is `import_file`, and keeps
+    /// nothing.
+    #[test]
+    fn importing_into_a_library_without_ocr_is_import_file() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        for (name, options) in [
+            ("import/text.docx", ImportOptions::default()),
+            (
+                "import/handmade-partly-scanned.pdf",
+                ImportOptions {
+                    native_text_only: true,
+                    ..ImportOptions::default()
+                },
+            ),
+        ] {
+            let kept = DocumentSession::new()
+                .import_file_in(library.clone(), fixture(name), options.clone(), None)
+                .unwrap();
+            let plain = DocumentSession::new()
+                .import_file(fixture(name), options, None)
+                .unwrap();
+            assert_eq!(kept, plain, "{name}");
+        }
+        assert!(matches!(
+            DocumentSession::new().import_file_in(
+                library.clone(),
+                fixture("import/handmade-partly-scanned.pdf"),
+                ImportOptions::default(),
+                None
+            ),
+            Err(CoreError::NeedsOcr { .. })
+        ));
+        assert!(!scratch.path().join("imports").exists());
+        // Nothing kept: discarding is a no-op.
+        library
+            .discard_import(fixture("import/handmade-partly-scanned.pdf"))
+            .unwrap();
+    }
+
+    /// With the OCR runtime: an import stopped after two pages resumes
+    /// through the session with the pages left, and gives an uninterrupted
+    /// import's document; a dropped import's pages are discarded.
+    #[test]
+    #[ignore = "downloads OCR runtimes/models; requires Apple Silicon macOS or Windows x64"]
+    #[cfg(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "windows", target_arch = "x86_64")
+    ))]
+    fn a_stopped_ocr_import_resumes_with_the_pages_left() {
+        let scratch = Scratch::new();
+        let library = library(&scratch);
+        let models = scratch.path().join("models");
+        let installed = mdoc_import::ocr::install_config_in(
+            &models,
+            &mdoc_store::settings::OcrConfig {
+                model: mdoc_store::settings::OcrModel::Cyrillic,
+                ..Default::default()
+            },
+            &mdoc_import::model_download::Progress::default(),
+        )
+        .unwrap();
+        let paths = OcrPaths {
+            root: models.display().to_string(),
+            model: crate::setup::ModelId::OcrEnglishRussian,
+            pdfium: installed.pdfium.display().to_string(),
+            onnx: installed.onnx.display().to_string(),
+        };
+        let options = ImportOptions {
+            ocr: Some(paths.clone()),
+            native_text_only: false,
+        };
+        let pdf = fixture("import/handmade-partly-scanned.pdf");
+        let uninterrupted = DocumentSession::new()
+            .import_file(pdf.clone(), options.clone(), None)
+            .unwrap();
+        let imports = scratch.path().join("imports");
+        let kept_pages = || std::fs::read_dir(&imports).map_or(0, |dir| dir.count());
+        // Stop after page 2, as a cancel or mdoc stopping would.
+        let stop = || {
+            let cancel = AtomicBool::new(false);
+            let stopped = mdoc_import::resume::prepare_resumable(
+                Path::new(&pdf),
+                Some(&paths.installed().unwrap()),
+                false,
+                &cancel,
+                &library.kept_pages(),
+                &|page, _| {
+                    if page == 2 {
+                        cancel.store(true, Ordering::Relaxed);
+                    }
+                },
+            );
+            assert!(matches!(
+                stopped,
+                Err(mdoc_import::import::ImportError::Cancelled)
+            ));
+            assert_eq!(kept_pages(), 1);
+        };
+        stop();
+        let resumed = DocumentSession::new()
+            .import_file_in(library.clone(), pdf.clone(), options.clone(), None)
+            .unwrap();
+        assert_eq!(resumed, uninterrupted);
+        assert_eq!(kept_pages(), 0);
+        stop();
+        library.discard_import(pdf).unwrap();
+        assert_eq!(kept_pages(), 0);
     }
 
     #[test]

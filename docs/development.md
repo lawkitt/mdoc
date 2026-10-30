@@ -119,7 +119,7 @@ dependency forks.
 | `src/document_view/document_lifecycle.rs` | The tab's lifecycle owner: loading, availability, source-only, unsaved changes, untouched conversions and placeholders, and its open dialog |
 | `src/document_view/import_flow.rs` | The tab's conversion owner: the import job and slot, automatic conversion, OCR consent, recognition languages and setup |
 | `crates/mdoc-store` | GUI-free storage: app paths, atomic document saves and document identity, the session manifest, recents, settings types and files, encrypted saved cases, crash-report masking |
-| `crates/mdoc-import` | GUI-free import: library integration and pending jobs (`import`, `import_session`), explicit verified setup and offline OCR (`ocr`), model downloads and the one-at-a-time model permit, and the supervised DOCX preview worker (`docx_preview`; its entry point stays in `src/main.rs`) |
+| `crates/mdoc-import` | GUI-free import: library integration and pending jobs (`import`, `import_session`), explicit verified setup and offline OCR (`ocr`), OCR that keeps finished pages for the mobile apps (`resume`), model downloads and the one-at-a-time model permit, and the supervised DOCX preview worker (`docx_preview`; its entry point stays in `src/main.rs`) |
 | `src/models.rs` | What setup and Settings show for each downloadable model, from the engine that owns it |
 | `crates/mdoc-import/src/recognition.rs` | Recognition languages: a document's default list, its reason and the keyboard input-source signal ([ADR 0066](adr/0066-recognition-language-defaults.md)) |
 | `src/preview.rs` | Preview ownership |

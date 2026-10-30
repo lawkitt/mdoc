@@ -16,11 +16,14 @@ pub(super) struct Imported {
     pub warning: Option<String>,
 }
 
+/// Import `path`; with `kept`, a PDF's OCR keeps its finished pages there
+/// and resumes with the rest.
 pub(super) fn import_file(
     path: &Path,
     options: &ImportOptions,
     cancel: &AtomicBool,
     progress: Option<&dyn JobProgress>,
+    kept: Option<&mdoc_import::resume::KeptPages>,
 ) -> Result<Imported, CoreError> {
     let stage = |stage| {
         if let Some(progress) = progress {
@@ -78,12 +81,23 @@ pub(super) fn import_file(
         } else {
             JobStage::Converting
         });
-        mdoc_import::import::prepare_cancellable(
-            path,
-            installed.as_ref().filter(|_| ocr),
-            options.native_text_only,
-            cancel,
-        )?
+        let installed = installed.as_ref().filter(|_| ocr);
+        match kept {
+            Some(kept) => mdoc_import::resume::prepare_resumable(
+                path,
+                installed,
+                options.native_text_only,
+                cancel,
+                kept,
+                &|_, _| {},
+            )?,
+            None => mdoc_import::import::prepare_cancellable(
+                path,
+                installed,
+                options.native_text_only,
+                cancel,
+            )?,
+        }
     };
     if cancel.load(Ordering::Relaxed) {
         return Err(CoreError::Cancelled);
@@ -296,6 +310,7 @@ mod tests {
             &ImportOptions::default(),
             &AtomicBool::new(false),
             None,
+            None,
         );
         match result {
             Err(CoreError::NeedsOcr { page_count, .. }) => assert_eq!(page_count, 1),
@@ -313,6 +328,7 @@ mod tests {
             &path,
             &ImportOptions::default(),
             &AtomicBool::new(false),
+            None,
             None,
         );
         assert!(matches!(result, Err(CoreError::Import { .. })));
