@@ -3120,3 +3120,45 @@ fn popup_wider_keep_keys_leave_the_segment_as_shown(cx: &mut gpui::TestAppContex
         assert_eq!(app.pii.mapping.scope, Scope::Mention);
     });
 }
+
+/// #179: each category row shows the alias choosing it gives, or none where
+/// the alias stays, in every scope, for generated and custom aliases.
+#[gpui::test]
+fn category_rows_show_the_alias_choosing_them_gives(cx: &mut gpui::TestAppContext) {
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = "Павлова Марина Сергеевна · Павлова М.С. · Павлова М.С.";
+    for custom in [false, true] {
+        for scope in [Scope::Mention, Scope::Wording, Scope::Entity] {
+            for category in Category::ALL {
+                app.update_in(cx, |app, window, cx| {
+                    let (full, initials) = seed(app, source, cx);
+                    let identity = app.pii.review.variant_identity(full).unwrap();
+                    app.change_mapping(MappingAction::AssignVariant(initials, identity), cx);
+                    if custom {
+                        app.change_mapping(MappingAction::Rename(identity, "Client".into()), cx);
+                    }
+                    let range = app.pii.review.variant(initials).unwrap().mentions[0].clone();
+                    let annotation = app.pii.review.annotation_id(initials, &range).unwrap();
+                    app.activate_annotation(annotation, window, cx);
+                    app.pii.mapping.set_scope(scope);
+                    let alias = |app: &DocumentView| {
+                        let id = app
+                            .pii
+                            .review
+                            .occurrence_identity(initials, &range)
+                            .unwrap();
+                        let identity = app.pii.review.identity(id).unwrap();
+                        (identity.alias.clone(), identity.category)
+                    };
+                    let (before, _) = alias(app);
+                    let shown = app.category_choice_alias(category);
+                    app.correct_category(category, cx);
+                    let (after, now) = alias(app);
+                    let case = format!("custom {custom}, {scope:?}, {category:?}");
+                    assert_eq!(now, category, "{case}");
+                    assert_eq!(after, shown.unwrap_or(before), "{case}");
+                });
+            }
+        }
+    }
+}

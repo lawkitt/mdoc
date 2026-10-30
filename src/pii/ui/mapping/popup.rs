@@ -434,11 +434,22 @@ impl DocumentView {
             false
         }
     }
+    /// The scope covers all of the selected entity's mentions, so a
+    /// category choice recategorizes it rather than splitting them off.
+    fn scope_is_whole_entity(&self, id: u64) -> bool {
+        self.scoped_ranges(self.pii.mapping.scope).len() == self.pii.review.identity_count(id)
+    }
+    /// What the category menu's row for `category` shows: the alias choosing
+    /// it gives, or `None` when the alias stays (#179).
+    pub(super) fn category_choice_alias(&self, category: Category) -> Option<String> {
+        let id = self.selected_entity()?;
+        self.pii
+            .review
+            .category_choice_alias(id, category, self.scope_is_whole_entity(id))
+    }
     pub(super) fn correct_category(&mut self, category: Category, cx: &mut Context<Self>) {
         if let Some(id) = self.selected_entity() {
-            if self.scoped_ranges(self.pii.mapping.scope).len()
-                == self.pii.review.identity_count(id)
-            {
+            if self.scope_is_whole_entity(id) {
                 self.change_mapping(MappingAction::Category(id, category), cx);
             } else if let Some(action) = self.scoped_mapping_action(None, None, Some(category)) {
                 self.change_mapping(action, cx);
