@@ -79,6 +79,10 @@ check-all: check smoke-ocr smoke-models
 ios-core:
     scripts/build-ios-core.sh
 
+# cargo check of mdoc-ffi for iOS and Android; the Mac's local CI runs it (ADR 0085)
+mobile:
+    scripts/mobile-check.sh
+
 # Build this machine's installers into dist/
 package:
     scripts/package.sh

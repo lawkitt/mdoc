@@ -22,9 +22,9 @@ already lives in GUI-free Rust crates (ADR 0069).
 - **Platforms: iOS first, then Android.** Both apps use the same core;
   neither is a port of the other. Android starts after iOS 0.1 is on the
   App Store and its first feedback has shaped the review screen; it is
-  tested on a borrowed recent Android phone. Until then local CI runs
-  `cargo check --target aarch64-linux-android -p mdoc-ffi` so desktop-only
-  code does not creep into the core.
+  tested on a borrowed recent Android phone. Until then the Mac's local
+  CI runs `just mobile`, a `cargo check` of `mdoc-ffi` for iOS and Android,
+  so desktop-only code does not creep into the core.
 - **iPhone and iPad** in one app from v1. "Designed for iPad" on Apple
   silicon Macs is off; the desktop app covers the Mac.
 - **Shared Rust core, native UI.** The mobile apps call the existing

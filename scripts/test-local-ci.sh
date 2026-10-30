@@ -274,6 +274,12 @@ check "it was queued, then ran" grep -q "^$pass	pending	Running on main@$short_b
 check "queued statuses link the runner's status" grep -q "^$pass	pending	Queued	https://ci.example/ci/status.txt" "$FAKE/statuses.tsv"
 steps_run() { grep "^$1 " "$FAKE/just.log" | head -3 | cut -d' ' -f2 | tr '\n' ' '; }
 check "setup, lint, then test" [ "$(steps_run pass)" = "setup lint test " ]
+case "$FAKE_CONTEXT" in
+  local/macos) last_step="mobile" ;;
+  *) last_step="test" ;;
+esac
+check "the Mac ends with the mobile check, other runners with test" \
+  [ "$(grep "^pass " "$FAKE/just.log" | tail -1 | cut -d' ' -f2)" = "$last_step" ]
 check "lint gets no renders" grep -qx "pass lint renders=" "$FAKE/just.log"
 check "the test step gets MDOC_HEADLESS_ARTIFACTS" grep -qx "pass test renders=set" "$FAKE/just.log"
 check "the job's log and summary are kept" [ -s "$LOCAL_CI_HOME/out/pr-1/${pass:0:7}/log.txt" ]

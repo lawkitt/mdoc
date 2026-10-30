@@ -19,7 +19,8 @@ hub wait on CI.
 - **Local CI is the pre-merge test gate.** A runner on the Windows PC and one
   on the Mac test PR heads from branches in `lawkitt/mdoc`, never from forks
   or Dependabot, at the exact commit, and post the commit statuses
-  `local/windows` and `local/macos`. Each runs `just lint` and `just test`.
+  `local/windows` and `local/macos`. Each runs `just lint` and `just test`;
+  the Mac then runs `just mobile` ([ADR 0085](0085-mobile-apps.md)).
   No self-hosted GitHub Actions runners and no paid larger runners (this
   replaces ADR 0070's runner rule: on a public repository a fork PR can route
   jobs to self-hosted machines, guarded only by the approval click).
