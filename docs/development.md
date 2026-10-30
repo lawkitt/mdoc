@@ -22,6 +22,15 @@ just check-all  # plus the OCR and installed-model smoke tests (downloads)
 
 The full list is under [Recipes](#recipes).
 
+Before a PR is ready, run `just lint` and the tests of the crates it changes
+(`cargo nextest run -p <crate>`, the app's with `-p mdoc --features
+headless-renders`, a script's suite with `bash scripts/test-<suite>.sh`;
+`just test` for a change to `Cargo.lock`, the toolchain or
+`.config/nextest.toml`). The checks a code PR needs green run the
+full suite on both shipped OSes: `local/windows` and `local/macos` from
+[local CI](#local-ci), and hosted `lint (ubuntu)`. A PR from a fork, or opened
+by a bot, gets the full hosted matrix instead.
+
 ## Project documentation
 
 - [Roadmap](../ROADMAP.md): open work by milestone; bugs are [Issues](https://github.com/lawkitt/mdoc/issues).
@@ -386,6 +395,14 @@ and on the Windows PC and posts the `local/macos` and `local/windows` commit
 statuses on each PR head. `scripts/test-local-ci.sh` (part of `just test`)
 checks it against a fake `gh` and `just`.
 
+**Hosted CI on PRs.** A PR from a branch in `lawkitt/mdoc` opened by a user
+runs only `lint (ubuntu)` on `pull_request`; its `clippy` and `test` jobs show
+as skipped. A merge needs `local/windows`, `local/macos` and `lint (ubuntu)`
+green. Fork and bot (Dependabot) PRs, which the runners never test, run the
+full hosted matrix, so third-party code is never compiled on the maintainer's
+machines before review. `main` runs the full matrix after each merge, and
+`release.yml` calls the full `ci.yml`.
+
 **What a runner does.** Every 60 s it lists the open PRs with the machine's
 `gh` login, skipping drafts, forks and bot PRs (Dependabot). A head without
 this machine's status gets `pending` "Queued", linked to the runner's
@@ -453,6 +470,22 @@ pending head it is not running:
 gh api -X POST repos/lawkitt/mdoc/statuses/<sha> -f state=pending -f context=local/macos -f description=Queued
 ```
 
+**A machine off.** With the PC off, the hub runs the full hosted matrix on
+the PR branch, and a green `test (windows-latest)` at the PR head stands in
+for `local/windows`. With the Mac off nothing merges. A dispatched run is not
+in the PR's checks (`gh pr checks`, `statusCheckRollup`, checked on #253), so
+read it from the head commit's check runs, which only a full run names
+`test (windows-latest)`:
+
+```sh
+gh workflow run ci.yml --repo lawkitt/mdoc --ref <branch>
+head=$(gh pr view <PR> --repo lawkitt/mdoc --json headRefOid -q .headRefOid)
+gh api "repos/lawkitt/mdoc/commits/$head/check-runs?check_name=test%20(windows-latest)" \
+  --jq '.check_runs[] | [.status, .conclusion, .html_url] | @tsv'
+```
+
+A new head needs a new dispatch.
+
 Runners execute PR code under the maintainer's account with their `gh`
 login; only branches pushed to `lawkitt/mdoc` by someone with write access
 are tested, and the results are reachable only inside the tailnet.
@@ -495,6 +528,13 @@ skill) read this section for mdoc's needs.
   runner is a build slot beside the two agent builders. Preflight: each
   machine's `/ci/status.txt` updated within the last 3 minutes. UI items'
   renders are in the `local/macos` and `local/windows` status links.
+- **Required checks:** `local/windows`, `local/macos` and `lint (ubuntu)`;
+  the lane waits for them and fixes failures, and the hub merges on the same
+  three. They run the full suite on both shipped OSes, so a lane's gate is
+  the fast subset under [Build from source](#build-from-source): `just lint`
+  and the changed crates' tests (`wsl` keeps its own gate). With the PC off,
+  a dispatched hosted run stands in for `local/windows`
+  ([Local CI](#local-ci)).
 - **Native checks.** The [acceptance](platform-acceptance.md) checklist runs
   by computer use (see [ADR 0057](adr/0057-native-platform-acceptance.md));
   rows that need a physical keyboard, speech, passwords or system settings
@@ -520,7 +560,11 @@ read_first = [
   "`docs/development.md` (Fleet, Code layout, repository gate)",
   "`CONTEXT.md` (the terms the item uses)",
 ]
-gate = ["just lint", "just test"]
+# A fast subset (Build from source): the app is `-p mdoc --features
+# headless-renders`, a script's suite `bash scripts/test-<suite>.sh`, and a
+# change to Cargo.lock, the toolchain or .config/nextest.toml runs `just test`.
+gate = ["just lint", "cargo nextest run -p <each changed crate>"]
+checks = ["local/windows", "local/macos", "lint (ubuntu)"]
 rules = [
   "Never run the app against the real profile (`~/Library/Application Support/mdoc`, `%LOCALAPPDATA%\\mdoc`) or touch the real Keychain key; tests use injected stores.",
 ]

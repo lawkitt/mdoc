@@ -87,7 +87,9 @@ hub wait on CI.
   cleanup, retention), render speed and render files, and the runner, in
   parallel; then the cutover of PR CI to `lint (ubuntu)`, only after local
   statuses have agreed with hosted CI on five PRs and failed a deliberately
-  broken test branch.
+  broken test branch. Trial result: local and hosted agreed on six PRs
+  (#237, #238, #241, #244, #245, #246), and both runners failed the
+  deliberately failing #239; PR CI cut over on 2026-10-30 (#252).
 
 ## Consequences
 
