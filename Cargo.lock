@@ -285,7 +285,7 @@ dependencies = [
 [[package]]
 name = "anydoc"
 version = "0.2.4"
-source = "git+https://github.com/lawkitt/anydoc.git?rev=cd905101e2d8322e0f249dafd78cc782402bcce5#cd905101e2d8322e0f249dafd78cc782402bcce5"
+source = "git+https://github.com/lawkitt/anydoc.git?rev=d01cce0dda4a8918fc4b603c4afe9c329102371c#d01cce0dda4a8918fc4b603c4afe9c329102371c"
 dependencies = [
  "cfb",
  "csv",
@@ -294,7 +294,7 @@ dependencies = [
  "log",
  "pdf-inspector 1.14.2",
  "quick-xml",
- "zip 8.6.0",
+ "zip 9.1.2",
 ]
 
 [[package]]
@@ -9682,6 +9682,7 @@ dependencies = [
  "nix",
  "typed-path 0.13.0",
  "windows-sys 0.61.2",
+ "zopfli",
 ]
 
 [[package]]

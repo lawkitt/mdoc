@@ -17,9 +17,23 @@ ignore = [
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained (no safe upgrade). Transitive via fontdb, whose parents are all upstream: usvg (gpui + gpui-component), mermaid-rs-renderer (Zed), and ratex-render/-svg. Clears when upstreams move to skrifa; revisit at each gpui/ratex pull." },
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz unmaintained (no safe upgrade; maintainer points at harfrust). Transitive via usvg <- gpui and gpui-component. Clears when upstream usvg/Zed migrate shapers; revisit at each gpui pull." },
     # zip 8.x: all three affect only `ZipArchive::extract` / `ZipStreamReader::extract`
-    # writing an archive to disk. Neither mdoc nor anydoc/docxide-pdf calls them —
-    # every use reads entries into memory. Fixed in zip 9, but docxide-pdf (0.18.4
-    # latest) still requires zip ^8; clears when it and anydoc move to zip 9.
+    # writing an archive to disk. mdoc and anydoc are on zip 9; zip 8 comes only
+    # from docxide-pdf, which reads entries into memory through `ZipArchive::by_name`.
+    # docxide-pdf 0.20.1 (latest, 2026-10-30) still requires zip ^8. We wait for
+    # a release on zip 9 and take it with the next planned docxide-pdf upgrade
+    # (docs/design/dependabot-grill-2026-10-31.md); then all zip-8 entries go.
+    #
+    # GitHub also reports these zip-8 advisories, which RustSec has not imported
+    # yet. cargo-deny matches only primary ids, not GHSA aliases, so they cannot
+    # be ignored in advance: when `just deny` names one, add its RUSTSEC id here
+    # with the reason below. GitHub's alerts for them are dismissed as unused code.
+    #   GHSA-m665-v7pm-7grj: ZipArchive vs ZipStreamReader header differential;
+    #     nothing uses ZipStreamReader, and every reader trusts the central directory.
+    #   GHSA-hjqx-j4rw-g7xv, GHSA-q7v9-x93c-xqv3: symlink handling in extract();
+    #     zip 8 never extracts to disk.
+    #   GHSA-9hj8-73fh-9963: Shrink decoder; the `legacy-zip` feature is off.
+    #   GHSA-8hxf-qr8p-62x4: AES HMAC skipped on early EOF; nothing decrypts with
+    #     a password, and mdoc rejects encrypted packages before docxide-pdf.
     { id = "RUSTSEC-2026-0367", reason = "zip extract() keeps SUID/SGID bits. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
     { id = "RUSTSEC-2026-0368", reason = "zip extract() writes symlinks outside the destination. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
     { id = "RUSTSEC-2026-0369", reason = "zip extract() applies permissions through symlinks. We never extract to disk; blocked on docxide-pdf requiring zip ^8." },
