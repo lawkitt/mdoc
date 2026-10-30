@@ -65,15 +65,16 @@ impl<H: Clone + PartialEq> FocusRegions<H> {
     }
 
     /// F6 / Shift+F6 from region `current` (none: from outside every
-    /// region): the next region, wrapping. `remembered` maps a remembered
-    /// control to the one to use now (the same tab's row in the layout
-    /// drawn now).
+    /// region): the next region, wrapping. The sidebar lands on
+    /// `sidebar_landing` (the active tab's row in the layout drawn now),
+    /// never on the control last focused there; other regions return to
+    /// their remembered control.
     pub(super) fn cycle(
         &self,
         regions: &[(H, bool)],
         current: Option<usize>,
         backwards: bool,
-        remembered: impl FnOnce(&H) -> H,
+        sidebar_landing: impl FnOnce() -> Option<H>,
     ) -> Option<FocusEffect<H>> {
         let n = regions.len();
         if n == 0 {
@@ -89,12 +90,15 @@ impl<H: Clone + PartialEq> FocusRegions<H> {
         if single {
             return Some(FocusEffect::Focus(region));
         }
-        let last = self
-            .last
-            .iter()
-            .find(|(r, _)| *r == region)
-            .map(|(_, focus)| remembered(focus))
-            .filter(|focus| *focus != region);
+        let last = if region == self.sidebar {
+            sidebar_landing()
+        } else {
+            self.last
+                .iter()
+                .find(|(r, _)| *r == region)
+                .map(|(_, focus)| focus.clone())
+        }
+        .filter(|focus| *focus != region);
         Some(FocusEffect::Enter { region, last })
     }
 
@@ -161,42 +165,55 @@ mod tests {
         let mut regions = FocusRegions::new(0, 9);
         let order = document(&regions);
         let enter = |region, last| Some(FocusEffect::Enter { region, last });
+        let none = || None;
         // From outside every region: the first, or backwards the last.
-        assert_eq!(regions.cycle(&order, None, false, |h| *h), enter(0, None));
-        assert_eq!(regions.cycle(&order, None, true, |h| *h), enter(3, None));
+        assert_eq!(regions.cycle(&order, None, false, none), enter(0, None));
+        assert_eq!(regions.cycle(&order, None, true, none), enter(3, None));
         // The editor is a single target.
         assert_eq!(
-            regions.cycle(&order, Some(1), false, |h| *h),
+            regions.cycle(&order, Some(1), false, none),
             Some(FocusEffect::Focus(2))
         );
-        assert_eq!(
-            regions.cycle(&order, Some(3), false, |h| *h),
-            enter(0, None)
-        );
-        // A remembered control, mapped to the layout drawn now.
-        regions.note(&0, &40);
-        regions.note(&0, &41);
+        // A remembered control.
+        regions.note(&1, &10);
+        regions.note(&1, &11);
         regions.note(&3, &3);
         assert_eq!(
-            regions.cycle(&order, Some(3), false, |h| *h),
+            regions.cycle(&order, Some(0), false, none),
+            enter(1, Some(11))
+        );
+        // The region's own handle is never a remembered control.
+        assert_eq!(regions.cycle(&order, Some(2), false, none), enter(3, None));
+        regions.forget();
+        assert_eq!(regions.cycle(&order, Some(0), false, none), enter(1, None));
+        assert_eq!(regions.cycle(&[], None, false, none), None);
+    }
+
+    #[test]
+    fn f6_into_the_sidebar_lands_on_its_landing_not_the_last_control() {
+        let mut regions = FocusRegions::new(0, 9);
+        let order = document(&regions);
+        let enter = |region, last| Some(FocusEffect::Enter { region, last });
+        // Settings (40) was the sidebar's last control; the active tab's row
+        // (41) wins.
+        regions.note(&0, &40);
+        assert_eq!(
+            regions.cycle(&order, Some(3), false, || Some(41)),
             enter(0, Some(41))
         );
         assert_eq!(
-            regions.cycle(&order, Some(3), false, |h| h + 100),
-            enter(0, Some(141))
+            regions.cycle(&order, Some(1), true, || Some(41)),
+            enter(0, Some(41))
         );
-        // The region's own handle is never a remembered control.
+        // No row to land on: the region's first control.
         assert_eq!(
-            regions.cycle(&order, Some(2), false, |h| *h),
-            enter(3, None)
-        );
-        assert_eq!(regions.cycle(&order, Some(3), false, |_| 0), enter(0, None));
-        regions.forget();
-        assert_eq!(
-            regions.cycle(&order, Some(3), false, |h| *h),
+            regions.cycle(&order, Some(3), false, || None),
             enter(0, None)
         );
-        assert_eq!(regions.cycle(&[], None, false, |h: &u32| *h), None);
+        assert_eq!(
+            regions.cycle(&order, Some(3), false, || Some(0)),
+            enter(0, None)
+        );
     }
 
     #[test]
