@@ -21,7 +21,7 @@ runs:
       run: rustup toolchain install && rustc --version
 
     - name: Cache cargo registry + target
-      uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31 # v2
       with:
         shared-key: ${{ inputs.cache-key }}
         # Only main saves (ADR 0070): every other ref restores main's cache, so
@@ -52,6 +52,6 @@ runs:
         echo "spec=$(IFS=,; echo "${spec[*]}")" >> "$GITHUB_OUTPUT"
 
     - name: Install tools
-      uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+      uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
       with:
         tool: ${{ steps.tools.outputs.spec }}
