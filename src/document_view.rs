@@ -157,8 +157,8 @@ pub(crate) struct DocumentView {
     case_save: Option<gpui::Task<()>>,
     pub(crate) case_names_open: bool,
     pub(crate) case_term: Option<Entity<markdown_search::SearchInput>>,
-    /// The result of Pseudonymize Clipboard, until dismissed.
-    pub(crate) clipboard_notice: Option<String>,
+    /// The result of Pseudonymize Clipboard, for a few seconds.
+    pub(crate) clipboard_notice: pii::ui::restore::ClipboardNotice,
     /// The before/after view replaces the editor while open.
     pub(crate) compare: Option<pii::ui::CompareState>,
     /// The floating view pill fades when idle (README media decision 9).
@@ -272,6 +272,7 @@ impl DocumentView {
                 EditorEvent::Transaction(transaction) => this.pii_transaction(transaction, cx),
                 EditorEvent::Changed => {
                     this.copy_feedback = None;
+                    this.clipboard_notice.clear();
                     this.pii_edited(cx);
                     this.schedule_spellcheck(true, cx);
                     this.schedule_case_save(cx);
@@ -363,7 +364,7 @@ impl DocumentView {
             case_save: None,
             case_names_open: false,
             case_term: None,
-            clipboard_notice: None,
+            clipboard_notice: Default::default(),
             compare: None,
             switcher: Default::default(),
             view_bounds: Rc::new(Cell::new(gpui::Bounds::default())),
@@ -444,6 +445,8 @@ impl DocumentView {
     }
     pub(crate) fn show_copy_feedback(&mut self, cx: &mut Context<Self>) {
         // Replacing the task restarts feedback; typing and document transitions cancel it.
+        // The copy replaces the clipboard a Pseudonymize Clipboard notice described.
+        self.clipboard_notice.clear();
         self.copy_feedback = Some(cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(std::time::Duration::from_secs(2))
@@ -1335,6 +1338,7 @@ impl DocumentView {
         div()
             .id(id)
             .flex()
+            .when(cfg!(test), |v| v.debug_selector(move || id.into()))
             .flex_col()
             .flex_shrink_0()
             .text_size(px(12.))
@@ -1383,6 +1387,9 @@ impl DocumentView {
                             .key_context("UiControl")
                             .tab_index(0)
                             .aria_label("Dismiss notice")
+                            .when(cfg!(test), |v| {
+                                v.debug_selector(move || format!("{id}-dismiss"))
+                            })
                             .flex_shrink_0()
                             .cursor_pointer()
                             .px_2()
@@ -1396,7 +1403,7 @@ impl DocumentView {
                                     "ocr-notice" => this.import.dismiss_ocr_notice(),
                                     "preview-notice" => this.preview.clear_message(),
                                     "setup-notice" => this.import.dismiss_setup_error(),
-                                    "clipboard-notice" => this.clipboard_notice = None,
+                                    "clipboard-notice" => this.clipboard_notice.clear(),
                                     _ => this.error = None,
                                 }
                                 cx.notify();
@@ -2021,7 +2028,8 @@ impl Render for DocumentView {
         };
         let clipboard_notice = self
             .clipboard_notice
-            .clone()
+            .text()
+            .map(str::to_owned)
             .map(|detail| self.notice("clipboard-notice", "Clipboard", detail, false, cx));
         let width = self.chrome_width(window);
         let content_width = (width - f32::from(self.replacements_panel_width(window))).max(1.);

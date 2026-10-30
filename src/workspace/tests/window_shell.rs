@@ -1384,7 +1384,7 @@ fn home_clipboard_actions_use_the_active_documents_mapping(cx: &mut TestAppConte
             cx.read_from_clipboard().unwrap().text().as_deref(),
             Some("Call PERSON_1.")
         );
-        assert!(source.read(cx).clipboard_notice.is_some());
+        assert!(source.read(cx).clipboard_notice.text().is_some());
     });
     click_toolbar(cx, "sidebar-home");
     cx.write_to_clipboard(gpui::ClipboardItem::new_string(

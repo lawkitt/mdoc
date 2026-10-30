@@ -802,7 +802,7 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
         assert!(
             view.read(cx)
                 .clipboard_notice
-                .as_deref()
+                .text()
                 .unwrap()
                 .contains("Replaced 2 names")
         );
@@ -834,6 +834,68 @@ fn clipboard_names_and_case_categories_follow_the_tab(cx: &mut TestAppContext) {
     view.update_in(cx, |view, window, cx| view.toggle_compare(window, cx));
     draw(cx);
     assert!(cx.debug_bounds("compare-view").is_some());
+}
+
+/// The clipboard notice is transient (issue #181): it times out, and an
+/// edit, a copy or its × clears it sooner.
+#[gpui::test]
+fn the_clipboard_notice_times_out_or_clears_on_the_next_action(cx: &mut TestAppContext) {
+    use crate::pii::ui::restore::CLIPBOARD_NOTICE_TIMEOUT;
+    let dir = tempfile::tempdir().unwrap();
+    let (tabs, cx, _) = applied_document(cx, dir.path(), Session::default());
+    let view = active(&tabs, cx);
+    let pseudonymize = |cx: &mut VisualTestContext| {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string("Call Anna Petrova.".into()));
+        view.update_in(cx, |view, window, cx| {
+            view.pseudonymize_clipboard(&PseudonymizeClipboard, window, cx)
+        });
+        draw(cx);
+        assert!(cx.debug_bounds("clipboard-notice").is_some());
+    };
+    let gone = |cx: &mut VisualTestContext| {
+        draw(cx);
+        assert!(cx.debug_bounds("clipboard-notice").is_none());
+        assert!(cx.update(|_, cx| view.read(cx).clipboard_notice.text().is_none()));
+    };
+
+    // Shown, then gone once the timeout passes; a second run restarts it.
+    pseudonymize(cx);
+    cx.executor().advance_clock(CLIPBOARD_NOTICE_TIMEOUT / 2);
+    pseudonymize(cx);
+    cx.executor()
+        .advance_clock(CLIPBOARD_NOTICE_TIMEOUT / 2 + CLIPBOARD_NOTICE_TIMEOUT / 4);
+    cx.run_until_parked();
+    draw(cx);
+    assert!(cx.debug_bounds("clipboard-notice").is_some(), "restarted");
+    cx.executor().advance_clock(CLIPBOARD_NOTICE_TIMEOUT);
+    cx.run_until_parked();
+    gone(cx);
+
+    // Editing the document clears it.
+    pseudonymize(cx);
+    view.update_in(cx, |view, window, cx| {
+        window.focus(&view.editor.read(cx).focus_handle(cx), cx)
+    });
+    cx.simulate_input(" ");
+    cx.run_until_parked();
+    gone(cx);
+
+    // So does a copy, which replaces the clipboard the notice describes.
+    pseudonymize(cx);
+    view.update_in(cx, |view, window, cx| {
+        view.copy_markdown(&crate::document_view::CopyMarkdown, window, cx)
+    });
+    gone(cx);
+
+    // And its ×, as before.
+    pseudonymize(cx);
+    let dismiss = cx
+        .debug_bounds("clipboard-notice-dismiss")
+        .unwrap()
+        .center();
+    cx.simulate_click(dismiss, Default::default());
+    cx.run_until_parked();
+    gone(cx);
 }
 
 #[gpui::test]
