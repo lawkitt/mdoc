@@ -24,6 +24,8 @@ mod shortcuts;
 mod single_instance;
 mod spelling;
 mod style;
+#[cfg(any(target_os = "macos", test))]
+mod system_quit;
 #[cfg(test)]
 mod test_support;
 mod ui;
@@ -132,6 +134,13 @@ fn main() {
             }
         }
     });
+    // macOS: a quit from the Dock, an Apple Event or logout asks first.
+    #[cfg(target_os = "macos")]
+    let quit_gate = {
+        let gate = system_quit::QuitGate::new(gpui_macos::reply_to_should_terminate);
+        system_quit::install(&gate, open_context.clone());
+        gate
+    };
     application.run(move |cx: &mut App| {
         cx.on_app_quit(|cx| {
             mdoc_import::model_work::shutdown();
@@ -148,6 +157,8 @@ fn main() {
             }
         })
         .detach();
+        #[cfg(target_os = "macos")]
+        cx.set_global(quit_gate.clone());
         updater::init(cx);
         bind_all_keys(cx);
         workspace::bind_app_actions(cx);
@@ -209,8 +220,13 @@ fn main() {
             })
             .detach();
         }
-        cx.on_window_closed(|cx, _| {
+        cx.on_window_closed(move |cx, _| {
             if cx.windows().is_empty() {
+                // A system quit waiting on the quit flow terminates now.
+                #[cfg(target_os = "macos")]
+                if quit_gate.last_window_closed() {
+                    return;
+                }
                 // Restart now (ADR 0040): relaunch after the swap at quit.
                 if updater::restart_requested(cx) {
                     cx.restart();

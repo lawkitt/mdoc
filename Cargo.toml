@@ -27,8 +27,8 @@ headless-renders = ["mdoc-store/headless-renders", "gpui/test-support", "gpui_pl
 # Preserve the current GPUI family; see vendor/gpui-pre-wgpu/ZORITE-PATCH.md.
 [patch.crates-io]
 gpui-pre-wgpu = { path = "vendor/gpui-pre-wgpu" }
-# Save dialog reasons, and on Windows the test-only WARP adapter; see each
-# MDOC-PATCH.md.
+# Save dialog reasons, on macOS the quit question, and on Windows the
+# test-only WARP adapter; see each MDOC-PATCH.md.
 gpui-pre-macos = { path = "vendor/gpui-pre-macos" }
 gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
 
@@ -68,7 +68,8 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 unicode-segmentation = "1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# The save dialog's reason (src/save_prompt.rs).
+# The save dialog's reason (src/save_prompt.rs) and the quit question
+# (src/system_quit.rs).
 gpui_macos = { package = "gpui-pre-macos", version = "=0.3.2" }
 
 [target.'cfg(windows)'.dependencies]

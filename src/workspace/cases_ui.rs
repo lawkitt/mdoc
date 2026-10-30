@@ -991,7 +991,7 @@ impl Workspace {
                             _ => {
                                 this.cancel_case_quit();
                                 this.quit_flow.abandon();
-                                crate::updater::cancel_restart(cx);
+                                Self::quit_cancelled(cx);
                                 cx.notify();
                             }
                         }

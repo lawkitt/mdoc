@@ -1,5 +1,6 @@
 //! Closing and quitting with unsaved changes (`QuitFlow`).
 use super::*;
+use std::cell::RefCell;
 
 #[gpui::test]
 fn ocr_quit_during_setup_download(cx: &mut TestAppContext) {
@@ -107,4 +108,142 @@ fn failed_final_checkpoint_can_cancel_quit_without_losing_tabs(cx: &mut TestAppC
         assert!(tabs.read(cx).notices.message().is_some());
     });
     assert_eq!(std::fs::read_to_string(parent_file).unwrap(), "preserve");
+}
+
+/// The workspace window behind `cx`, as the macOS terminate hook sees it.
+fn system_quit_target(cx: &mut VisualTestContext) -> crate::system_quit::QuitTarget {
+    cx.update(|window, cx| {
+        (
+            window.window_handle().downcast::<Workspace>().unwrap(),
+            cx.to_async(),
+        )
+    })
+}
+
+/// A gate installed as the app's, recording AppKit's deferred answers, and
+/// closing the app's last window answers it as main.rs does.
+fn system_quit_gate(
+    cx: &mut VisualTestContext,
+) -> (crate::system_quit::QuitGate, Rc<RefCell<Vec<bool>>>) {
+    let replies = Rc::new(RefCell::new(Vec::new()));
+    let gate = crate::system_quit::QuitGate::new({
+        let replies = replies.clone();
+        move |terminate| replies.borrow_mut().push(terminate)
+    });
+    cx.update(|_, cx| {
+        cx.set_global(gate.clone());
+        let gate = gate.clone();
+        cx.on_window_closed(move |cx, _| {
+            if cx.windows().is_empty() {
+                gate.last_window_closed();
+            }
+        })
+        .detach();
+    });
+    (gate, replies)
+}
+
+#[gpui::test]
+fn system_quit_asks_like_quit_and_answers_appkit(cx: &mut TestAppContext) {
+    use crate::system_quit::Answer;
+    let (tabs, cx) = boot(cx, Session::default());
+    cx.simulate_input("unsaved");
+    let (gate, replies) = system_quit_gate(cx);
+    // The Dock's Quit: AppKit waits, and Quit's question comes up.
+    assert_eq!(
+        gate.should_terminate(Some(system_quit_target(cx))),
+        Answer::Later
+    );
+    cx.run_until_parked();
+    assert!(cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
+    assert!(gate.waiting());
+    // Cancel refuses the terminate and keeps the edit.
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert_eq!(*replies.borrow(), [false]);
+    let view = active(&tabs, cx);
+    cx.update(|_, cx| {
+        assert!(!tabs.read(cx).quit_flow.quitting());
+        assert!(view.read(cx).dirty(cx), "Cancel keeps the edit");
+    });
+    assert!(!cx.cx.read(|cx| cx.windows().is_empty()));
+    // Again, and Discard: the quit flow closes the window, which answers yes.
+    assert_eq!(
+        gate.should_terminate(Some(system_quit_target(cx))),
+        Answer::Later
+    );
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Discard");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    assert_eq!(*replies.borrow(), [false, true]);
+    assert!(!gate.waiting());
+}
+
+#[gpui::test]
+fn system_quit_without_changes_closes_without_asking(cx: &mut TestAppContext) {
+    use crate::system_quit::{Answer, QuitGate};
+    let (_tabs, cx) = boot(cx, Session::default());
+    let (gate, replies) = system_quit_gate(cx);
+    assert_eq!(
+        gate.should_terminate(Some(system_quit_target(cx))),
+        Answer::Later
+    );
+    cx.run_until_parked();
+    assert!(!cx.has_pending_prompt());
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    // A clean session lets a logout or shutdown that asked go on.
+    assert_eq!(*replies.borrow(), [true]);
+    // Before the window opens there is nothing to lose.
+    assert_eq!(QuitGate::new(|_| {}).should_terminate(None), Answer::Now);
+}
+
+#[gpui::test]
+fn own_quit_opens_the_gate(cx: &mut TestAppContext) {
+    use crate::system_quit::{Answer, QuitGate};
+    let (_tabs, cx) = boot(cx, Session::default());
+    let gate = QuitGate::new(|_| panic!("nothing deferred"));
+    // ⌘Q closes the last window: main.rs then quits, and that terminate
+    // goes through at once.
+    assert!(!gate.last_window_closed());
+    assert_eq!(
+        gate.should_terminate(Some(system_quit_target(cx))),
+        Answer::Now
+    );
+}
+
+#[gpui::test]
+fn system_quit_waits_through_a_failed_final_save(cx: &mut TestAppContext) {
+    use crate::system_quit::Answer;
+    let dir = tempfile::tempdir().unwrap();
+    let parent_file = dir.path().join("not-a-directory");
+    std::fs::write(&parent_file, "preserve").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    tabs.update(cx, |tabs, _| {
+        tabs.session_writer
+            .set_path(Some(parent_file.join("session.json")))
+    });
+    let (gate, replies) = system_quit_gate(cx);
+    // Nothing to ask about, but the final save fails: its question shows
+    // while AppKit still waits, so it comes to the front (confirm_dialog).
+    assert_eq!(
+        gate.should_terminate(Some(system_quit_target(cx))),
+        Answer::Later
+    );
+    cx.run_until_parked();
+    assert!(cx.has_pending_prompt());
+    assert!(cx.update(|_, cx| crate::system_quit::waiting(cx)));
+    cx.simulate_prompt_answer("Cancel");
+    cx.run_until_parked();
+    assert_eq!(*replies.borrow(), [false]);
+    // Again, and quit with the previous session list: the terminate goes on.
+    assert_eq!(
+        gate.should_terminate(Some(system_quit_target(cx))),
+        Answer::Later
+    );
+    cx.run_until_parked();
+    cx.simulate_prompt_answer("Quit without updating session");
+    cx.run_until_parked();
+    assert!(cx.cx.read(|cx| cx.windows().is_empty()));
+    assert_eq!(*replies.borrow(), [false, true]);
 }

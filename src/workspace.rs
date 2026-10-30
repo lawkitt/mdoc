@@ -1487,7 +1487,7 @@ impl Workspace {
             }
             TabEvent::Close(CloseEvent::Cancelled) => {
                 self.cases.closing_members.cancel();
-                crate::updater::cancel_restart(cx);
+                Self::quit_cancelled(cx);
                 self.quit_flow.cancel();
                 self.mapping_close_cancelled(id);
                 self.cancel_case_quit();
@@ -1733,11 +1733,33 @@ impl Workspace {
                         this.start_quit(at_risk, window, cx);
                     }
                     Some(1) => this.start_quit(VecDeque::new(), window, cx),
-                    _ => crate::updater::cancel_restart(cx),
+                    _ => Self::quit_cancelled(cx),
                 }
             });
         })
         .detach();
+    }
+
+    /// A quit from outside the app (macOS: the Dock, an Apple Event,
+    /// logout): Quit's questions. Returns whether a quit is underway; when
+    /// another question blocks it, mdoc comes to the front to show it.
+    #[cfg(any(target_os = "macos", test))]
+    pub(crate) fn quit_from_system(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.quit(window, cx);
+        let underway = !self.quit_flow.may_quit() || self.quit_summary;
+        if !underway {
+            cx.activate(true);
+            window.activate_window();
+        }
+        underway
+    }
+
+    /// The user cancelled a quit: no relaunch, and a system quit waiting on
+    /// it is refused.
+    pub(super) fn quit_cancelled(cx: &mut App) {
+        crate::updater::cancel_restart(cx);
+        #[cfg(any(target_os = "macos", test))]
+        crate::system_quit::cancelled(cx);
     }
 
     /// Tabs a quit would lose something from, in sidebar order: unsaved
@@ -1957,7 +1979,7 @@ impl Workspace {
                                 if answer.await.ok() == Some(1) {
                                     let _ = this.update_in(cx, |this, window, cx| this.finish_quit(window, cx));
                                 } else {
-                                    let _ = this.update(cx, |_, cx| crate::updater::cancel_restart(cx));
+                                    let _ = this.update(cx, |_, cx| Self::quit_cancelled(cx));
                                 }
                             }).detach();
                         }
