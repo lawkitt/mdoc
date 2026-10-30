@@ -601,13 +601,17 @@ impl DocumentView {
     fn filter_control(&self, cx: &mut Context<Self>) -> gpui::Div {
         let theme = self.theme.get();
         let filter = self.pii.mapping.filter;
-        let button = ui::header_icon(
+        let open = self.pii.mapping.panel_menu == Some(PanelMenu::Filter);
+        let label = format!("Show: {}", filter.label());
+        let button = ui::header_icon_untipped(
             "replacement-filter",
-            format!("Show: {}", filter.label()),
+            label.clone(),
             ui::Icon::Filter,
             theme,
             filter != PanelFilter::All,
         )
+        // No tooltip over its own open menu.
+        .when(!open, |v| v.tooltip(crate::style::tooltip(label, theme)))
         .track_focus(&self.pii.mapping.filter_focus)
         .when(cfg!(test), |v| {
             v.debug_selector(|| "replacement-filter".into())
