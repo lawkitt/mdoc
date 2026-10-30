@@ -49,16 +49,18 @@ final class ScreenshotUITests: XCTestCase {
         app.buttons["Share text"].tap()
         let sheet = app.otherElements["ActivityListView"].firstMatch
         XCTAssertTrue(sheet.waitForExistence(timeout: 10))
+        // The app row names a share extension after its app.
         let restore = sheet.descendants(matching: .any)
-            .matching(NSPredicate(format: "label == 'Restore with mdoc'"))
+            .matching(NSPredicate(format: "label IN {'Restore with mdoc', 'mdoc'}"))
             .firstMatch
         if !restore.waitForExistence(timeout: 3) {
             keep("share-sheet-\(name)")
             throw XCTSkip("Restore with mdoc is not in the share sheet's app row")
         }
         restore.tap()
-        let summary = XCUIApplication(bundleIdentifier: "io.github.lawkitt.mdoc").staticTexts["restore-summary"]
-        _ = summary.waitForExistence(timeout: 10)
+        // The extension runs in its own process; give its sheet time to show.
+        _ = app.staticTexts["Restore with mdoc"].waitForExistence(timeout: 10)
+        sleep(2)
         keep("restore-extension-\(name)")
     }
 

@@ -10,7 +10,6 @@ struct RestoreExtensionView: View {
 
     @State private var share: ShareItems?
     @State private var copied = false
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         NavigationStack {
@@ -92,49 +91,54 @@ struct RestoreExtensionView: View {
         .padding()
     }
 
+    /// One row when the labels fit on one line each, else stacked.
     private func actions(_ model: RestoreViewModel, result: RestoreResult) -> some View {
-        let layout = dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(spacing: 12))
-            : AnyLayout(HStackLayout(spacing: 12))
-        return layout {
-            Button {
-                UIPasteboard.general.string = result.text
-                copied = true
-            } label: {
-                Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                    .frame(maxWidth: .infinity)
-            }
-            Button {
-                share = ShareItems(items: [result.text])
-            } label: {
-                Label("Share", systemImage: "square.and.arrow.up")
-                    .frame(maxWidth: .infinity)
-            }
-            Menu {
-                ForEach(model.documentsInCase) { document in
-                    Button {
-                        model.save(to: document.id)
-                    } label: {
-                        if document.id == model.defaultSaveTarget?.id {
-                            Label(document.title, systemImage: "star")
-                        } else {
-                            Text(document.title)
-                        }
-                    }
-                }
-            } label: {
-                Label(model.savedTo == nil ? "Save to document" : "Saved", systemImage: model.savedTo == nil ? "tray.and.arrow.down" : "checkmark")
-                    .frame(maxWidth: .infinity)
-            } primaryAction: {
-                if let target = model.defaultSaveTarget {
-                    model.save(to: target.id)
-                }
-            }
-            .disabled(model.documentsInCase.isEmpty)
-            .accessibilityHint(Text("Keeps the reply with \(model.defaultSaveTarget?.title ?? "")."))
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { buttons(model, result: result) }
+            VStack(spacing: 12) { buttons(model, result: result) }
         }
         .buttonStyle(.bordered)
         .labelStyle(.titleAndIcon)
+        .lineLimit(1)
         .padding()
+    }
+
+    @ViewBuilder
+    private func buttons(_ model: RestoreViewModel, result: RestoreResult) -> some View {
+        Button {
+            UIPasteboard.general.string = result.text
+            copied = true
+        } label: {
+            Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                .frame(maxWidth: .infinity)
+        }
+        Button {
+            share = ShareItems(items: [result.text])
+        } label: {
+            Label("Share", systemImage: "square.and.arrow.up")
+                .frame(maxWidth: .infinity)
+        }
+        Menu {
+            ForEach(model.documentsInCase) { document in
+                Button {
+                    model.save(to: document.id)
+                } label: {
+                    if document.id == model.defaultSaveTarget?.id {
+                        Label(document.title, systemImage: "star")
+                    } else {
+                        Text(document.title)
+                    }
+                }
+            }
+        } label: {
+            Label(model.savedTo == nil ? "Save to document" : "Saved", systemImage: model.savedTo == nil ? "tray.and.arrow.down" : "checkmark")
+                .frame(maxWidth: .infinity)
+        } primaryAction: {
+            if let target = model.defaultSaveTarget {
+                model.save(to: target.id)
+            }
+        }
+        .disabled(model.documentsInCase.isEmpty)
+        .accessibilityHint(Text("Keeps the reply with \(model.defaultSaveTarget?.title ?? "")."))
     }
 }
