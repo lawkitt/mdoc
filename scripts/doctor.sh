@@ -36,10 +36,6 @@ else
   printf '  %-16s missing (any version)\n' shellcheck
   problems=$((problems + 1))
 fi
-if [ "$(platform)" = windows-x64 ]; then
-  check cargo-wix "$CARGO_WIX_VERSION" "$(out cargo wix --version)"
-  check "WiX (candle)" "${WIX_VERSION}" "$(out candle -?)"
-fi
 
 if [ "$problems" -gt 0 ]; then
   echo "$problems problem(s); run \`just setup\`"

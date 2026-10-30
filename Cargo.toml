@@ -230,15 +230,6 @@ signing-identity = "-"
 # libraries (see the plist); scripts/package.sh checks it is applied.
 entitlements = "resources/entitlements.plist"
 
-# cargo-wix config for the x64 .msi (built by `cargo wix` in scripts/package.sh,
-# for stable versions only — MSI ProductVersion rejects alphanumeric prereleases).
-[package.metadata.wix]
-# Stable per-app GUID. MUST match the UpgradeCode in packaging/windows/wix/main.wxs.
-# Distinct from every other lawkitt app. Never change once an installer ships.
-upgrade-guid = "3D50EAE8-D339-41B6-82BC-126389601487"
-include = ["packaging/windows/wix/main.wxs"]
-
-
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
 # tests/docx_worker.rs inspects the worker's DOCX package.

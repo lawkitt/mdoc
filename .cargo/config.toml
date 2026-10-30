@@ -8,7 +8,7 @@
 # launched and exited immediately with -1073741515 = 0xC0000135 =
 # STATUS_DLL_NOT_FOUND, raised by the Windows loader before any Rust code
 # runs. The same trap hits any user on a clean Windows install who runs the
-# installer or .msi directly — a "VCRUNTIME140.dll was not found" dialog with
+# installer directly — a "VCRUNTIME140.dll was not found" dialog with
 # no recovery hint.
 #
 # `+crt-static` rolls the CRT into mdoc.exe (~200 KB binary growth), making
