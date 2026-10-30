@@ -99,6 +99,16 @@ smoke-update *args:
 release version *flags:
     scripts/release.sh {{version}} {{flags}}
 
+# Build the iOS app, its extension and test targets for the Simulator, unsigned (ADR 0085)
+[macos]
+ios-app:
+    xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination 'generic/platform=iOS Simulator' -derivedDataPath target/ios/DerivedData -quiet build-for-testing
+
+# Run the iOS unit and UI tests on an iOS 26.1 Simulator device
+[macos]
+ios-test device="iPhone 17":
+    xcodebuild -project apps/ios/mdoc.xcodeproj -scheme mdoc -destination 'platform=iOS Simulator,OS=26.1,name={{device}}' -derivedDataPath target/ios/DerivedData -quiet test
+
 # Regenerate the icon set from build/appicon.svg (macOS)
 icon:
     scripts/make-icon.sh
