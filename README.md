@@ -86,6 +86,7 @@ select **More info**, then **Run anyway**.
 
 <sup>
 Licensed under the <a href="LICENSE">GNU General Public License, Version 3.0
-or later</a>. Third-party licenses and attribution:
+or later</a>, with an <a href="LICENSE-APP-STORES.md">additional permission for
+app stores</a>. Third-party licenses and attribution:
 <a href="THIRD-PARTY-LICENSES.html">THIRD-PARTY-LICENSES.html</a>.
 </sup>
