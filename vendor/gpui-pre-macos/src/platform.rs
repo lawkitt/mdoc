@@ -79,16 +79,37 @@ pub fn set_next_save_prompt_message(message: Option<String>) {
 
 // mdoc patch (MDOC-PATCH.md): asked before AppKit terminates the app.
 thread_local! {
-    static SHOULD_TERMINATE: std::cell::RefCell<Option<Box<dyn FnMut() -> bool>>> =
+    static SHOULD_TERMINATE: std::cell::RefCell<Option<Box<dyn FnMut() -> TerminateReply>>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// mdoc patch: the answer to `applicationShouldTerminate:`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TerminateReply {
+    /// Terminate now (`NSTerminateNow`).
+    Now,
+    /// Don't terminate (`NSTerminateCancel`).
+    Cancel,
+    /// Decide later with `reply_to_should_terminate` (`NSTerminateLater`).
+    Later,
 }
 
 /// mdoc patch: AppKit calls `handler` from `applicationShouldTerminate:`
 /// (the Dock's Quit, a quit Apple Event, logout, and `Platform::quit`).
-/// `true` terminates now; `false` cancels the termination. Without a
-/// handler the app terminates now, as upstream. `None` clears it.
-pub fn set_should_terminate_handler(handler: Option<Box<dyn FnMut() -> bool>>) {
+/// Without a handler the app terminates now, as upstream. `None` clears it.
+pub fn set_should_terminate_handler(handler: Option<Box<dyn FnMut() -> TerminateReply>>) {
     SHOULD_TERMINATE.with_borrow_mut(|slot| *slot = handler);
+}
+
+/// mdoc patch: answer a `TerminateReply::Later`: `true` terminates the app,
+/// `false` cancels (and lets a logout or shutdown that asked go on only
+/// with `true`).
+pub fn reply_to_should_terminate(terminate: bool) {
+    unsafe {
+        let app = NSApplication::sharedApplication(nil);
+        let _: () =
+            msg_send![app, replyToApplicationShouldTerminate: if terminate { YES } else { NO }];
+    }
 }
 
 const MAC_PLATFORM_IVAR: &str = "platform";
@@ -1386,18 +1407,19 @@ extern "C" fn should_handle_reopen(this: &mut Object, _: Sel, _: id, has_open_wi
 extern "C" fn should_terminate(_: &mut Object, _: Sel, _: id) -> NSUInteger {
     const NS_TERMINATE_CANCEL: NSUInteger = 0;
     const NS_TERMINATE_NOW: NSUInteger = 1;
+    const NS_TERMINATE_LATER: NSUInteger = 2;
     // Taken out while it runs, so the handler may replace itself.
     let Some(mut handler) = SHOULD_TERMINATE.with_borrow_mut(Option::take) else {
         return NS_TERMINATE_NOW;
     };
-    let terminate = handler();
+    let reply = handler();
     SHOULD_TERMINATE.with_borrow_mut(|slot| {
         slot.get_or_insert(handler);
     });
-    if terminate {
-        NS_TERMINATE_NOW
-    } else {
-        NS_TERMINATE_CANCEL
+    match reply {
+        TerminateReply::Now => NS_TERMINATE_NOW,
+        TerminateReply::Cancel => NS_TERMINATE_CANCEL,
+        TerminateReply::Later => NS_TERMINATE_LATER,
     }
 }
 

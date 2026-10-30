@@ -55,7 +55,10 @@ pub(crate) use window::*;
 #[cfg(feature = "font-kit")]
 pub(crate) use text_system::*;
 
-pub use platform::{MacPlatform, set_next_save_prompt_message, set_should_terminate_handler};
+pub use platform::{
+    MacPlatform, TerminateReply, reply_to_should_terminate, set_next_save_prompt_message,
+    set_should_terminate_handler,
+};
 
 trait BoolExt {
     fn to_objc(self) -> BOOL;

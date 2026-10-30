@@ -29,6 +29,13 @@ pub fn install(theme: Rc<Cell<Theme>>, cx: &mut App) {
             .first()
             .map(|(_, focus)| focus.clone());
         let handle = handle.with_view(view, window, cx);
+        // A system quit's questions, and any failure while it saves, come
+        // to the front: mdoc may be in the background.
+        #[cfg(any(target_os = "macos", test))]
+        if crate::system_quit::waiting(cx) {
+            cx.activate(true);
+            window.activate_window();
+        }
         // Focus starts on the first button, the default: Enter takes it.
         if let Some(first) = first {
             window.focus(&first, cx);

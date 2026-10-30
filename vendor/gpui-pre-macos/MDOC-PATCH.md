@@ -15,10 +15,11 @@ Local changes, marked `mdoc patch`:
   `src/document_view/save_prompt.rs`, so a Save As on the way to a new case
   says why it opens.
 - `platform.rs`: the app delegate answers `applicationShouldTerminate:`
-  with the handler from `set_should_terminate_handler` (exported from
-  `gpui_macos.rs`): `true` terminates now, `false` cancels. Without a
-  handler it terminates now, as upstream. mdoc sets it in `src/main.rs`
-  (`src/system_quit.rs`), so a quit from the Dock, an Apple Event or logout
+  with the `TerminateReply` of the handler from
+  `set_should_terminate_handler` (Now, Cancel, or Later, answered by
+  `reply_to_should_terminate`); all three are exported from `gpui_macos.rs`.
+  Without a handler it terminates now, as upstream. mdoc sets it in
+  `src/system_quit.rs`, so a quit from the Dock, an Apple Event or logout
   asks about unsaved work like ⌘Q (ADR 0071).
 
 Drop this directory, the patch entry and the `gpui_macos` dependency once the

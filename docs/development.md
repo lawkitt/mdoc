@@ -133,7 +133,7 @@ dependency forks.
 | `crates/mdoc-editor` | Host-agnostic WYSIWYG, rendered-text search, and Markdown recognition |
 | `crates/mdoc-pii`, `crates/mdoc-history` | GUI-free pseudonymization review model and the plain edit transactions it follows |
 | `crates/gpui-pdf`, `crates/gpui-bidi` | Virtualized PDF preview and bidirectional text layout |
-| `src/system_quit.rs` | macOS: a quit from the Dock, an Apple Event or logout runs Quit's questions first, through the vendored `applicationShouldTerminate:` hook ([ADR 0071](adr/0071-one-close-and-quit-prompt.md)) |
+| `src/system_quit.rs` | macOS: a quit from the Dock, an Apple Event or logout runs Quit's questions first and answers the vendored `applicationShouldTerminate:` hook when they end ([ADR 0071](adr/0071-one-close-and-quit-prompt.md)) |
 | `src/updater.rs` | Detection-only GitHub Releases update check ([ADR 0038](adr/0038-update-check.md)) |
 | `src/spelling.rs`, `crates/mdoc-spell` | Spellcheck: background checks, toolbar indicator and navigation; GUI-free EN/RU engine with bundled dictionaries ([ADR 0036](adr/0036-bundled-spellcheck.md)) |
 
