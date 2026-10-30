@@ -4,7 +4,8 @@ Measurements for [ADR 0085](../../../adr/0085-mobile-apps.md)'s feasibility
 spike: GLiNER2 FP16 and PP-OCR through the shared Rust core
 (`crates/mdoc-ffi`) on the iOS targets. **No physical device has been
 measured yet**: the device rows are Pending (maintainer), and every number
-below is a stand-in that does not decide what ships.
+below (the Apple M4 Mac and the iOS Simulator) is a stand-in that does not
+decide what ships.
 
 ## Budgets (ADR 0085)
 
@@ -95,7 +96,46 @@ first run.
 
 ## Stand-in: iOS Simulator
 
-Pending: the iOS 26.1 Simulator runtime was still downloading.
+The harness in an iPhone 17 Pro Simulator (iOS 26.1, `iPhone18,1`) on the
+same M4, core at `bce0bcc` built by `just ios-core` (`mobile` profile,
+Microsoft's static ONNX Runtime 1.27.0 for iOS, PDFium 7988 as
+`pdfium.framework`), run by `scripts/ios-spike-device.sh --simulator`. The
+Simulator runs arm64 code natively but has neither the phone's CPU, its RAM
+nor its thermals, and the Mac was overloaded during both runs (load average
+420–490), so these times say nothing about a phone. Raw reports:
+[run 1](simulator-iphone17pro-run1.json),
+[run 2](simulator-iphone17pro-run2.json).
+
+| Measurement | Run 1 | Run 2 | Budget |
+| --- | ---: | ---: | --- |
+| Cold load | 1.47 s | 1.29 s | ≤ 10 s |
+| – ONNX Runtime into ort | 0.002 s | 0.002 s | |
+| – GLiNER2 sessions | 1.47 s | 1.29 s | |
+| Seconds per 512-token window (median) | 0.582 s | 0.539 s | |
+| 20-page scan | 40.4 s | 39.9 s | ≤ 60 s |
+| – windows / mean tokens / detections | 131 / 269 / 380 | 131 / 269 / 380 | |
+| – inference | 38.2 s | 37.7 s | |
+| – digest check, engine load | 0.37 s, 1.37 s | 0.34 s, 1.46 s | |
+| Detector peak memory | 1.66 GiB | 1.66 GiB | ≤ 2 GiB |
+| OCR `english.pdf` (PP-OCRv6 Small) | 0.75 s, exact | 0.62 s, exact | |
+| OCR `russian.pdf` (Cyrillic) | 0.78 s, exact | 0.43 s, exact | |
+| App executable (Release, stripped non-global) | 53 MB | | |
+
+What the Simulator does establish:
+
+- **The iOS runtime loading works.** ort found `OrtGetApiBase` in the app's
+  own executable (`linked_runtimes` reported `<app>/MdocSpike`), and PDFium
+  loaded from `<app>/Frameworks/pdfium.framework`, with the build settings
+  in `tools/ios-spike/MdocSpike/Spike.xcconfig`. Loading ONNX Runtime costs
+  2 ms, as it is already mapped.
+- **The core gives the same result as desktop**: 131 windows and 380
+  detections on the 20-page document, as on the Mac, and both OCR fixtures
+  recognized exactly. AnyDoc converts the DOCX in-process.
+- **Peak memory is higher than the Mac run** (1.66 against 1.41–1.48 GiB)
+  with a SwiftUI app around it (106 MiB at start); the iPhone 12 Pro row
+  decides whether that fits its limit.
+- `os_proc_available_memory` reads 0 in the Simulator, so the headroom
+  figure exists only on a device.
 
 ## Findings for the hub
 
@@ -117,14 +157,15 @@ Pending: the iOS 26.1 Simulator runtime was still downloading.
   So on iOS the core passes ort the path of its own image (found with
   `dladdr`), whose `OrtGetApiBase` the app must export and keep:
   `-Wl,-exported_symbol,_OrtGetApiBase`, `STRIP_STYLE = non-global` and
-  `ENABLE_DEBUG_DYLIB = NO` (tested on macOS: default stripping removes the
-  export). `apps/ios` needs the same settings.
+  `ENABLE_DEBUG_DYLIB = NO` (on macOS, default stripping removed the
+  export; the Simulator run loaded it with these settings). `apps/ios` needs
+  the same settings.
 - **CoreML EP is available, unmeasured.** Microsoft's iOS ONNX Runtime
   includes the CoreML execution provider, and gliner2-rs can select it; ADR
   0002 keeps detection on CPU, and every number here is CPU. If a phone
   misses the scan budget, CoreML is the next thing to measure before INT8.
 - **Peak memory is session build, not inference**: 1.4–1.5 GiB peak against
-  115 MiB after the scan on the Mac. The phone rows decide; if the iPhone 12
+  115 MiB after the scan on the Mac, and 1.66 GiB in the Simulator app. The phone rows decide; if the iPhone 12
   Pro's jetsam limit is close, the harness's `available_memory_at_start`
   shows the headroom, and the increased-memory-limit entitlement is an
   option.
