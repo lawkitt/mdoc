@@ -44,6 +44,10 @@ final class ScreenshotUITests: XCTestCase {
         XCTAssertTrue(text.waitForExistence(timeout: 10))
         XCTAssertTrue(text.links[MdocUITest.markdownEmail].firstMatch.waitForExistence(timeout: 30))
         keep("markdown-review-\(name)")
+        // The end: the fenced block, the rule and the document's own colour.
+        text.swipeUp(velocity: .fast)
+        sleep(1)
+        keep("markdown-review-end-\(name)")
     }
 
     @MainActor
