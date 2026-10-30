@@ -1824,11 +1824,17 @@ impl PdfView {
                 .on_click(cx.listener(action))
                 .tooltip(self.tip("Fit width"))
                 .into_any_element(),
-            Tool::FitPage => on(self.control("pdf-fit-page", "⤢"))
-                .aria_label("Fit page")
-                .on_click(cx.listener(action))
-                .tooltip(self.tip("Fit page"))
-                .into_any_element(),
+            // "⤢" drew at about half the size of its neighbours.
+            Tool::FitPage => on(self.control("pdf-fit-page", "").child(
+                gpui::svg()
+                    .data(include_bytes!("../resources/fit-page.svg"))
+                    .size(px(13.0))
+                    .text_color(style.header_fg),
+            ))
+            .aria_label("Fit page")
+            .on_click(cx.listener(action))
+            .tooltip(self.tip("Fit page"))
+            .into_any_element(),
             Tool::Tone => on(self.control("pdf-page-tone", "◐"))
                 .aria_label(self.tone_label())
                 .on_click(cx.listener(action))

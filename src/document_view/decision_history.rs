@@ -170,7 +170,12 @@ impl DocumentView {
                             .flex_shrink_0()
                             .text_size(px(12.))
                             .text_color(p.header_muted)
-                            .child(format!("· {time}")),
+                            // The dot separates the time from a note; alone,
+                            // at the row's end, it read as a stray mark.
+                            .child(match note {
+                                Some(_) => format!("· {time}"),
+                                None => time.to_string(),
+                            }),
                     )
                     .track_focus(&focus);
                 // Tab past the list's edge scrolls the row into view.
