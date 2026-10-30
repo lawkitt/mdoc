@@ -276,7 +276,9 @@ other variants. One scope governs alias, category, Apply, Undo and Keep actions.
 
 **Manual addition**: selected missed text becomes a proposal with a correctable
 category; exact repeats are proposed together, except inside a longer
-mention, which stays whole. UI label: **Replace** ([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
+mention, which stays whole. UI label: **Replace · Person ▾**, the split
+pill: Replace adds with the guess, ▾ picks the category first
+([ADR 0024](docs/adr/0024-replace-custom-selection.md)).
 
 **Other category**: manual-only neutral category with a `REDACTED_n` alias;
 the detector never emits it.

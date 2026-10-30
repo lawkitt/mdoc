@@ -42,6 +42,7 @@ actions!(
         CloseCompare,
         Pseudonymize,
         PiiAddCandidate,
+        PiiAddCandidateAs,
         PiiReviewCandidate,
         PiiNextCandidate,
         PiiPreviousCandidate,
@@ -101,6 +102,10 @@ pub(crate) struct ReviewUi {
     enter_applies: bool,
     /// The next activation comes from a manual addition (alias cue choice).
     manual_activation: bool,
+    /// The selection pill's category menu is open for this selection
+    /// (ADR 0024); it closes when the selection changes.
+    selection_menu: Option<Range<usize>>,
+    selection_menu_focus: FocusHandle,
     focus: FocusHandle,
     job: Option<ScanJob>,
     /// When the running scan started, for the toolbar stage label.
@@ -148,6 +153,8 @@ impl ReviewUi {
             popup: None,
             enter_applies: false,
             manual_activation: false,
+            selection_menu: None,
+            selection_menu_focus: cx.focus_handle(),
             focus: cx.focus_handle(),
             job: None,
             scan_started: std::time::Instant::now(),
@@ -700,26 +707,49 @@ impl DocumentView {
             && self.can_copy_markdown())
         .then(|| self.pii.review.manual_target(editor.text(), selection))
     }
-    /// Offer Replace beside the settled editor selection (ADR 0024).
+    /// The category Replace uses for `range` before one is picked: the
+    /// wording's own when it is proposed already, else a guess (ADR 0025).
+    fn manual_guess(&self, source: &str, range: Range<usize>) -> Category {
+        let guess = mdoc_detect::guess_category(source, range.clone());
+        self.pii.review.manual_category(&source[range], guess)
+    }
+    /// Offer "Replace · Person ▾" beside the settled editor selection
+    /// (ADR 0024).
     pub(crate) fn sync_selection_action(&mut self, cx: &mut Context<Self>) {
         let editor = self.editor.read(cx);
         // The editor hides the pill while the popup holds focus.
-        let action = (!editor.is_selecting())
+        let target = (!editor.is_selecting())
             .then(|| self.manual_target(cx))
-            .flatten()
-            .map(|target| mdoc_editor::SelectionAction {
-                range: editor.selection(),
-                label: "Replace".into(),
-                menu_label: "Replace with placeholder".into(),
-                shortcut: if cfg!(target_os = "macos") {
-                    "⌘⌥P"
-                } else {
-                    "Ctrl+Alt+P"
-                }
-                .into(),
-                disabled: target.err().map(Into::into),
-                accent: self.theme.get().proposed(),
-            });
+            .flatten();
+        let selection = editor.selection();
+        let guess = match &target {
+            Some(Ok(range)) => Some(self.manual_guess(editor.text(), range.clone())),
+            _ => None,
+        };
+        // The menu belongs to the selection it opened for.
+        if guess.is_none() || self.pii.selection_menu.as_ref() != Some(&selection) {
+            self.pii.selection_menu = None;
+        }
+        let theme = self.theme.get();
+        let open = self.pii.selection_menu.is_some();
+        let action = target.map(|target| mdoc_editor::SelectionAction {
+            range: selection,
+            label: "Replace".into(),
+            menu_label: "Replace with placeholder".into(),
+            shortcut: if cfg!(target_os = "macos") {
+                "⌘⌥P"
+            } else {
+                "Ctrl+Alt+P"
+            }
+            .into(),
+            disabled: target.err().map(Into::into),
+            accent: guess.map_or(theme.proposed(), |c| theme.category(c)),
+            choice: guess.map(|category| mdoc_editor::SelectionChoice {
+                label: category.label().into(),
+                accent: theme.category(category),
+                open,
+            }),
+        });
         self.editor
             .update(cx, |editor, cx| editor.set_selection_action(action, cx));
     }
@@ -731,11 +761,28 @@ impl DocumentView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.add_manual_candidate(None, window, cx);
+    }
+    /// Add the editor selection in `picked`, or the guessed category, and
+    /// open the popup on it (ADR 0024).
+    pub(crate) fn add_manual_candidate(
+        &mut self,
+        picked: Option<Category>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(Ok(range)) = self.manual_target(cx) else {
             return;
         };
+        self.pii.selection_menu = None;
         let source = self.editor.read(cx).text().to_owned();
-        let category = mdoc_detect::guess_category(&source, range.clone());
+        let guess = self.manual_guess(&source, range.clone());
+        let category = picked.unwrap_or(guess);
+        // A wording proposed already keeps its own category in `add_manual`.
+        let kept = self
+            .pii
+            .review
+            .manual_category(&source[range.clone()], category);
         let before = self.editor.read(cx).history_id();
         let Some(id) = self.checkpoint_review(cx, |review| {
             review
@@ -764,10 +811,16 @@ impl DocumentView {
             self.activate_annotation(annotation, window, cx);
             self.pii.manual_activation = false;
             self.pii.enter_applies = self.pii.popup.is_some();
-            // A fallback guess also cues the category chip.
-            self.pii
-                .mapping
-                .request_cue(true, matches!(category, Category::Person | Category::Other));
+            // A proposed wording keeps its category; a pick of another one
+            // corrects it in the popup's scope, as its category control does.
+            if kept != category {
+                self.correct_category(category, cx);
+            }
+            // A fallback guess also cues the category chip; a pick does not.
+            self.pii.mapping.request_cue(
+                true,
+                picked.is_none() && matches!(category, Category::Person | Category::Other),
+            );
         }
         self.sync_selection_action(cx);
         cx.notify();

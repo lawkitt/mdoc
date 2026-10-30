@@ -156,6 +156,7 @@ impl DocumentView {
                 .top_0()
                 .left_0()
                 .children(self.replacement_popup(window, cx))
+                .children(self.selection_menu(window, cx))
                 .into_any_element(),
         ]
     }

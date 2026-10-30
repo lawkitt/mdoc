@@ -24,7 +24,11 @@ beforehand, and reports invalid selections only after the click.
 - **Split pill.** The pill reads "Replace · Person ▾": the main part adds
   with the guessed category (as ⌘⌥P does); ▾ opens the category list, with
   Other, and adds in the picked one. One line high; the same keyboard reach
-  as the mention bar's category control.
+  as the mention bar's category control: ⇧⌘⌥P (Ctrl+Alt+Shift+P) opens the
+  list on the guess, ↑ ↓ and Tab move, Enter adds, Esc returns to the
+  text. Each row shows the alias the addition would get; the guess is
+  ticked. A selection that is exactly a proposed wording shows that
+  wording's category, and a pick of another corrects it in the popup's scope.
 - **One action, correct after**: add with a guessed category (ADR 0025); the
   popup opens on the new mention with Apply as the Enter default, and its
   category control fixes a wrong guess.
