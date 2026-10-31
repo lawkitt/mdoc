@@ -36,6 +36,8 @@ final class MarkdownStylingTests: XCTestCase {
         XCTAssertTrue(spans(.strikethrough).contains("old"))
         XCTAssertTrue(spans(.highlight).contains("check"))
         XCTAssertTrue(spans(.marker).contains("| --- | ---: |"))
+        // A converter's `1\.`: only the backslash is a marker.
+        XCTAssertTrue(spans(.marker).contains("\\"))
         XCTAssertEqual(styling.spans.compactMap(\.color), [0xC039_2BFF])
         let kinds = styling.lines.map(\.kind)
         for kind: MarkdownLine.Kind in [.heading(level: 1), .heading(level: 2), .quote, .tableHeader, .tableRow, .codeBlock, .rule] {
