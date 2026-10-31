@@ -53,4 +53,8 @@ shelf-copied
 shelf-note
 shelf-empty
 shelf-locked
+narrow-sidebar-names
+sidebar-wide
+narrow-minimum
+narrow-minimum-sidebar
 review-scanning

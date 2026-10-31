@@ -1,8 +1,8 @@
 # Chrome-style vertical document sidebar
 
 Status: Accepted, 2026-10-09. Supersedes the sidebar of
-[ADR 0012](0012-document-preparation-ui.md). Widths, header and toggle animation
-superseded by [ADR 0048](0048-workspace-shell-redesign.md).
+[ADR 0012](0012-document-preparation-ui.md). Default widths, header and toggle
+animation superseded by [ADR 0048](0048-workspace-shell-redesign.md).
 
 ## Problem
 
@@ -21,11 +21,21 @@ collapsed rail that slides the full list out on hover.
   activate directly.
 - **Keyboard**: focus in the rail reveals immediately; Escape dismisses and
   restores focus to the originating rail control.
-- Sidebar width is fixed; resizing is out of scope.
+- **Width**: the expanded sidebar's edge drags between 160 and 320 pt (240
+  until dragged); the width is saved in settings (`general.sidebar_width`)
+  when the drag ends. Collapsing and expanding keep it.
+- **Narrow windows**: below a 900 pt window width the sidebar collapses to the
+  rail by itself, without the slide and without changing the saved choice,
+  and expands again when the window widens, unless the user collapsed it.
+  Expanded by the user in a narrow window, it stays until the window has
+  widened; narrowing again collapses it by itself.
+- **Names** truncate in the middle and keep their extension, so names that
+  share a start still differ.
 
 ## Consequences
 
 Popup-specific state and tests are replaced by hover-reveal state, timers and
 equivalent tests. Rendering gains hover-intent timers and width animations.
 
-References: [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/sidebar-vertical-tabs.md).
+References: [narrow windows](../design/ui-polish-grill-2026-11-01.md)
+(decision 12), [interview](https://github.com/lawkitt/mdoc/blob/faa2c5e22a7eb85d4dc598c8f1f21eb125140044/docs/design/sidebar-vertical-tabs.md).

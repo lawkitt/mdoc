@@ -12,6 +12,7 @@ mod decisions;
 mod encoder;
 mod folder_sheet;
 mod import;
+mod narrow;
 mod navigation;
 mod restore;
 mod review;
@@ -103,6 +104,17 @@ impl Driver {
         Ok(())
     }
 
+    /// Resize the window as the platform would; captures record its size.
+    fn resize(&mut self, width: f32, height: f32) -> Result<()> {
+        self.cx
+            .update_window(self.window, |_, window, cx| {
+                window.resize(size(px(width), px(height)));
+                window.bounds_changed(cx);
+            })
+            .map_err(|e| e.to_string())?;
+        self.settle()
+    }
+
     fn key(&mut self, key: &str) -> Result<()> {
         self.cx
             .update_window(self.window, |_, window, cx| {
@@ -150,6 +162,8 @@ impl Driver {
                     }).collect::<Vec<_>>());
                 json!({
                     "home": w.showing_home(cx),
+                    "sidebar_expanded": w.sidebar.visible(),
+                    "sidebar_width": w.sidebar.width(),
                     "back_enabled": w.navigation_target(true, cx).is_some(),
                     "forward_enabled": w.navigation_target(false, cx).is_some(),
                     "back_label": w.navigation_label(true, cx),
@@ -211,6 +225,10 @@ impl Driver {
         } else {
             json!({"model_comparison": true})
         };
+        let viewport = self
+            .cx
+            .update_window(self.window, |_, window, _| window.viewport_size())
+            .map_err(|e| e.to_string())?;
         let raster_ms = self.png(&out.join(format!("{name}.png")))?;
         let tab_dir = out.join(name);
         std::fs::create_dir(&tab_dir).map_err(|e| e.to_string())?;
@@ -245,6 +263,7 @@ impl Driver {
         }
         self.records.push(
             json!({"screen": name, "state": state, "png": format!("{name}.png"), "raster_readback_ms": raster_ms,
+            "viewport": [(viewport.width / px(1.)).round() as u32, (viewport.height / px(1.)).round() as u32],
             "tab_order": sequence, "cycle_to": cycle, "truncated": cycle.is_none(), "frames": self.frames}),
         );
         Ok(())
@@ -322,6 +341,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     comments::scenes(d)?;
     review::merge_hint(d)?;
     review::scanning(d)?;
+    narrow::scenes(d, &view, path.parent().ok_or("fixture folder")?)?;
     // Last: it leaves cases locked.
     shelf::scenes(d)
 }

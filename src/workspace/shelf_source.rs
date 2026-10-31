@@ -360,7 +360,7 @@ impl Workspace {
     }
 
     /// Change a Settings › General choice from outside the panel (the
-    /// shelf's notes): saved at once, kept in memory if the save fails (the
+    /// shelf's notes, the sidebar's dragged width): saved at once, kept in memory if the save fails (the
     /// error is returned), and made in the panel's draft too, so its next
     /// save keeps it beside any choice still saving. Only flags and
     /// switches; never document text.
@@ -389,7 +389,7 @@ impl Workspace {
             None => Ok(()),
         };
         if let Err(error) = &saved {
-            eprintln!("mdoc: could not save a menu bar choice: {error}");
+            eprintln!("mdoc: could not save a General choice: {error}");
         }
         self.preferences.borrow_mut().current = Some(changed);
         self.settings

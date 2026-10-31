@@ -26,15 +26,31 @@ fn screens() -> Vec<&'static str> {
     screens
 }
 
-fn png(path: &Path) {
+/// Screens of a resized window (ADR 0027) and the size they show, in
+/// points; every other screen is 1100 × 760.
+const RESIZED: [(&str, [u32; 2]); 4] = [
+    ("narrow-sidebar-names", [1000, 700]),
+    ("sidebar-wide", [1000, 700]),
+    ("narrow-minimum", [720, 480]),
+    ("narrow-minimum-sidebar", [720, 480]),
+];
+
+/// A PNG of a `[width, height]` point window at 2×.
+fn png(path: &Path, [width, height]: [u32; 2]) {
     let mut header = [0; 24];
     std::fs::File::open(path)
         .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
         .read_exact(&mut header)
         .unwrap();
     assert_eq!(&header[..8], b"\x89PNG\r\n\x1a\n", "{}", path.display());
-    assert_eq!(u32::from_be_bytes(header[16..20].try_into().unwrap()), 2200);
-    assert_eq!(u32::from_be_bytes(header[20..24].try_into().unwrap()), 1520);
+    assert_eq!(
+        u32::from_be_bytes(header[16..20].try_into().unwrap()),
+        width * 2
+    );
+    assert_eq!(
+        u32::from_be_bytes(header[20..24].try_into().unwrap()),
+        height * 2
+    );
 }
 
 #[cfg(target_os = "macos")]
@@ -182,6 +198,28 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 .collect();
             assert_eq!(matches.len(), 1, "{theme}/{name}");
             let record = matches[0];
+            let viewport = RESIZED
+                .iter()
+                .find(|(screen, _)| screen == name)
+                .map_or([1100, 760], |(_, size)| *size);
+            assert_eq!(
+                record["viewport"],
+                serde_json::json!(viewport),
+                "{theme}/{name}"
+            );
+            // Below 900 points the sidebar collapses by itself; expanded by
+            // the user it stays; a drag widens it up to 320 (ADR 0027).
+            match *name {
+                "narrow-minimum" => assert_eq!(record["state"]["sidebar_expanded"], false),
+                "narrow-sidebar-names" | "narrow-minimum-sidebar" => {
+                    assert_eq!(record["state"]["sidebar_expanded"], true, "{theme}/{name}");
+                    assert_eq!(record["state"]["sidebar_width"], 240.0, "{theme}/{name}");
+                }
+                "sidebar-wide" => {
+                    assert_eq!(record["state"]["sidebar_width"], 320.0, "{theme}/{name}")
+                }
+                _ => {}
+            }
             assert_eq!(
                 record["state"]["scanning"] == true,
                 *name == "review-scanning",
@@ -401,7 +439,10 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                     );
                 }
             }
-            png(&out.join(theme).join(record["png"].as_str().unwrap()));
+            png(
+                &out.join(theme).join(record["png"].as_str().unwrap()),
+                viewport,
+            );
             let tabs = record["tab_order"].as_array().unwrap();
             assert!(!tabs.is_empty());
             assert_eq!(record["truncated"], false, "{theme}/{name}");
@@ -415,7 +456,10 @@ fn writes_both_themes_tab_walk_and_frame_costs_without_real_profile_access() {
                 assert!(!step["key_contexts"].as_str().unwrap().is_empty());
                 assert!(step["input_ms"].as_f64().unwrap() >= 0.);
                 assert!(step["raster_readback_ms"].as_f64().unwrap() > 0.);
-                png(&out.join(theme).join(step["png"].as_str().unwrap()));
+                png(
+                    &out.join(theme).join(step["png"].as_str().unwrap()),
+                    viewport,
+                );
             }
             let frames = record["frames"].as_array().unwrap();
             assert_eq!(frames.len(), tabs.len() * 4 + 3);
