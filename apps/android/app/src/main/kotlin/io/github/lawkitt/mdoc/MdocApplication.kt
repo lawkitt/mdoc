@@ -3,6 +3,8 @@ package io.github.lawkitt.mdoc
 import android.app.Application
 import io.github.lawkitt.mdoc.core.AppCore
 import io.github.lawkitt.mdoc.jobs.Jobs
+import io.github.lawkitt.mdoc.setup.NetworkWatch
+import io.github.lawkitt.mdoc.setup.SetupController
 
 class MdocApplication : Application() {
     /**
@@ -15,4 +17,9 @@ class MdocApplication : Application() {
 
     /** The one long job (ADR 0006, 0089). */
     val jobs: Jobs by lazy { Jobs(this) }
+
+    val network: NetworkWatch by lazy { NetworkWatch(this) }
+
+    /** Model setup, shared by Home and the documents. */
+    val setup: SetupController by lazy { SetupController(this, { core.models }, { core.storage }, jobs, network) }
 }

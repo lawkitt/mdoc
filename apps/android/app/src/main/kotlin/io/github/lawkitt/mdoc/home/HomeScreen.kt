@@ -70,6 +70,7 @@ fun HomeScreen(
     onAdd: (AddOption) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    setupCard: (@Composable () -> Unit)? = null,
 ) {
     var menu by rememberSaveable { mutableStateOf(false) }
     Scaffold(
@@ -101,8 +102,12 @@ fun HomeScreen(
         when {
             state.error != null -> CoreFailed(state.error, onRetry, inner)
             !state.loaded -> Box(inner.fillMaxSize())
-            state.documents.isEmpty() -> EmptyHome(state.canFindNames, inner)
+            state.documents.isEmpty() -> Column(inner) {
+                setupCard?.let { Box(Modifier.padding(16.dp)) { it() } }
+                EmptyHome(state.canFindNames, Modifier.weight(1f))
+            }
             else -> LazyColumn(inner) {
+                setupCard?.let { card -> item(key = "setup") { Box(Modifier.padding(16.dp)) { card() } } }
                 items(state.documents, key = { it.id.raw }) { document ->
                     DocumentRow(document, state.cases.firstOrNull { it.id == document.caseId }, state.canFindNames) {
                         onOpen(document.id)

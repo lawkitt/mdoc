@@ -46,6 +46,10 @@ android {
             kotlin.directories += core.resolve("kotlin").path
             jniLibs.directories += core.resolve("jniLibs").path
         }
+        // The OCR qualification fixtures, for the instrumented setup test.
+        getByName("androidTest") {
+            assets.directories += repo.resolve("tests/fixtures/ocr-qualification").path
+        }
     }
 
     // The core opens PDFium and ONNX Runtime by file path beside itself

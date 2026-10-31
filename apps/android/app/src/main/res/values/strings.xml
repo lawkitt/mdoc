@@ -127,6 +127,28 @@
     <string name="unrecognised">%1$d unrecognised</string>
     <string name="nothing_to_restore">Nothing to restore</string>
 
+    <!-- Setup -->
+    <string name="setup_names_title">Set up name finding</string>
+    <string name="setup_ocr_title">Set up text recognition</string>
+    <string name="setup_names_body">mdoc downloads its name detector and text recognition once (%1$s). After that, documents are read and checked on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.</string>
+    <string name="setup_ocr_body">mdoc downloads text recognition once (%1$s). After that, scans and photos are read on this device, offline. Uses Wi-Fi; on cellular, mdoc asks first.</string>
+    <string name="name_detector">Name detector</string>
+    <string name="ocr_english_russian">Text recognition, English and Russian</string>
+    <string name="installed">Installed</string>
+    <string name="not_downloaded">Not downloaded</string>
+    <string name="downloading">Downloading</string>
+    <string name="checking_and_installing">Checking and installing</string>
+    <string name="waiting_for_wifi">Waiting for Wi-Fi</string>
+    <string name="use_cellular">Use cellular</string>
+    <string name="wait_for_wifi">Wait for Wi-Fi</string>
+    <string name="download_over_cellular">Download %1$s over cellular?</string>
+    <string name="carrier_may_charge">Your carrier may charge for the data.</string>
+    <string name="download_size">Download %1$s</string>
+    <string name="download_and_continue">Download %1$s &amp; continue</string>
+    <string name="cancel_download">Cancel download</string>
+    <string name="not_now">Not now</string>
+    <string name="downloading_models">Downloading models</string>
+
     <!-- Long jobs -->
     <string name="jobs_channel">Long jobs</string>
 </resources>

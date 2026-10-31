@@ -38,6 +38,8 @@ import io.github.lawkitt.mdoc.home.AddOption
 import io.github.lawkitt.mdoc.home.AddSheet
 import io.github.lawkitt.mdoc.home.HomeScreen
 import io.github.lawkitt.mdoc.home.HomeViewModel
+import io.github.lawkitt.mdoc.setup.CellularQuestion
+import io.github.lawkitt.mdoc.setup.SetupCard
 import io.github.lawkitt.mdoc.storage.MdocStorage
 import io.github.lawkitt.mdoc.ui.MdocTheme
 import java.io.File
@@ -71,6 +73,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by home.state.collectAsStateWithLifecycle()
+    val setupState by app.setup.state.collectAsStateWithLifecycle()
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     var readAfterOpen by rememberSaveable { mutableStateOf(false) }
 
@@ -122,6 +125,22 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
                 }
             },
             onRetry = home::refresh,
+            setupCard = if (setupState.showsCard || (setupState.working && state.loaded)) {
+                {
+                    SetupCard(
+                        state = setupState,
+                        onDownload = {
+                            beforeJob()
+                            app.setup.download { home.refresh() }
+                        },
+                        onNotNow = app.setup::dismissCard,
+                        onCancel = app.setup::cancel,
+                        onUseCellular = app.setup::askCellular,
+                    )
+                }
+            } else {
+                null
+            },
         )
     } else {
         BackHandler { open = null }
@@ -146,6 +165,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
             DocumentScreen(
                 model = model,
                 beforeJob = ::beforeJob,
+                setup = app.setup,
                 onBack = {
                     open = null
                     home.refresh()
@@ -170,6 +190,7 @@ private fun App(app: MdocApplication, home: HomeViewModel) {
             onDismiss = home::cancelAdd,
         )
     }
+    CellularQuestion(setupState, app.setup::answerCellular)
     if (askNextPage) {
         AlertDialog(
             onDismissRequest = {},

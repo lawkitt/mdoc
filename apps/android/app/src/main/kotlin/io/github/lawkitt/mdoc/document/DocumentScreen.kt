@@ -78,6 +78,8 @@ import io.github.lawkitt.mdoc.core.ReplySnapshot
 import io.github.lawkitt.mdoc.core.RestoredSegment
 import io.github.lawkitt.mdoc.core.Scope
 import io.github.lawkitt.mdoc.jobs.JobKind
+import io.github.lawkitt.mdoc.setup.SetupCard
+import io.github.lawkitt.mdoc.setup.SetupController
 import io.github.lawkitt.mdoc.ui.Palette
 import io.github.lawkitt.mdoc.ui.ReviewText
 import kotlinx.coroutines.launch
@@ -90,7 +92,13 @@ import uniffi.mdoc_ffi.JobStage
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DocumentScreen(model: DocumentViewModel, onBack: () -> Unit, modifier: Modifier = Modifier, beforeJob: () -> Unit = {}) {
+fun DocumentScreen(
+    model: DocumentViewModel,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    beforeJob: () -> Unit = {},
+    setup: SetupController? = null,
+) {
     val state by model.state.collectAsStateWithLifecycle()
     val job by model.running.collectAsStateWithLifecycle()
     val interrupted by model.interrupted.collectAsStateWithLifecycle()
@@ -187,7 +195,31 @@ fun DocumentScreen(model: DocumentViewModel, onBack: () -> Unit, modifier: Modif
             }
             if (!model.findsNames && snapshot.phase == DocumentPhase.Unscanned) Notice(stringResource(R.string.below_floor_note))
             snapshot.warning?.let { Notice(it) }
-            if (state.needsSetup != null) Notice(stringResource(R.string.download_models_first))
+            val needs = state.needsSetup
+            if (needs != null && setup != null) {
+                val setupState by setup.state.collectAsStateWithLifecycle()
+                // Download & continue: the job that asked for setup runs again (ADR 0085).
+                SetupCard(
+                    state = setupState,
+                    continues = true,
+                    onDownload = {
+                        beforeJob()
+                        setup.download {
+                            if (needs == JobKind.Scan) {
+                                model.findNames(context.getString(R.string.finding_names_in, snapshot.title))
+                            } else {
+                                model.recognize(context.getString(R.string.recognizing_title, snapshot.title))
+                            }
+                        }
+                    },
+                    onNotNow = model::skipSetup,
+                    onCancel = setup::cancel,
+                    onUseCellular = setup::askCellular,
+                    modifier = Modifier.padding(16.dp),
+                )
+            } else if (needs != null) {
+                Notice(stringResource(R.string.download_models_first))
+            }
             when {
                 state.showsReply && snapshot.reply != null -> ReplyPane(snapshot.reply, onRemove = model::clearReply)
                 snapshot.phase == DocumentPhase.Recognizing -> RecognizingPane(
