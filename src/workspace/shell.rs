@@ -1028,6 +1028,7 @@ impl Workspace {
             .gap_2()
             .child(
                 ui::primary_button("home-paste", "Paste text", theme, true)
+                    .when(cfg!(test), |v| v.debug_selector(|| "home-paste".into()))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(PasteAsNewTab), cx)),
             )
             .child(
@@ -1272,14 +1273,30 @@ impl Workspace {
     }
 
     pub(super) fn paste_as_new_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let text = cx.read_from_clipboard().and_then(|item| item.text());
-        if text.as_deref().is_none_or(|t| t.trim().is_empty()) {
+        let item = cx.read_from_clipboard();
+        // A copied file carries its path as text; the editor's Paste skips it.
+        let has_files = item.as_ref().is_some_and(|item| {
+            item.entries()
+                .iter()
+                .any(|entry| matches!(entry, gpui::ClipboardEntry::ExternalPaths(_)))
+        });
+        let Some(text) = item
+            .and_then(|item| item.text())
+            .filter(|text| !has_files && !text.trim().is_empty())
+        else {
             self.notices.post("The clipboard has no text to paste.");
             cx.notify();
             return;
+        };
+        // Straight into the new buffer: a dispatched Paste would arrive before
+        // the new editor holds focus and reach nothing (issue #300).
+        let id = self.new_tab(window, cx);
+        if let Some(view) = self.tabs.get(id).and_then(|tab| tab.view()).cloned() {
+            view.update(cx, |view, cx| {
+                view.editor
+                    .update(cx, |editor, cx| editor.insert_pasted(text, window, cx))
+            });
         }
-        self.new_tab(window, cx);
-        window.dispatch_action(Box::new(mdoc_editor::Paste), cx);
     }
 
     /// Home's clipboard actions belong to a document; with none open, say so.
