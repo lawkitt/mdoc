@@ -486,5 +486,18 @@ Copy and Paste reply; it replaces the review actions once nothing is left
 to decide.
 
 **UI survey**: light and dark screenshots of every mobile screen, taken by
-`ScreenshotUITests` and kept under `docs/evidence/ios-app` as before and
+`ScreenshotUITests` on iOS and `just android-survey` on Android, and kept
+under `docs/evidence/ios-app` and `docs/evidence/android-app` as before and
 after sets.
+
+**Device UI tests**: the review flow and long jobs run on a real phone
+(`just ios-device-test`, `just android-device-test`), by hand before each
+release after the first, to catch what simulators and emulators miss.
+
+**Real-device tiers** (Android): the emulator daily, the maintainer's own
+phone by USB, Firebase Test Lab phones by RAM class, and a friend's phone
+weekly by hand ([ADR 0089](docs/adr/0089-android-app.md)).
+
+**Android job**: the part of a `local/windows` run that builds the Android
+core and app and runs the JVM parity tests and the emulator tests, when a
+PR touches the core or `apps/android` ([ADR 0089](docs/adr/0089-android-app.md)).

@@ -3,7 +3,8 @@
 Status: Accepted, 2026-10-31. Amended 2026-10-31: core-crate changes merge
 when green, UI work runs beside the spike, native runtimes ship inside the
 app bundle, statically linked or as an embedded framework, and the minimum is
-iOS 26.
+iOS 26. Android's start, minimum, scanner and testing are replaced by
+[ADR 0089](0089-android-app.md).
 
 ## Problem
 
@@ -21,11 +22,11 @@ already lives in GUI-free Rust crates (ADR 0069).
   full Markdown editor. It is not a companion to the desktop app, so it
   needs no sync to be useful.
 - **Platforms: iOS first, then Android.** Both apps use the same core;
-  neither is a port of the other. Android starts after iOS 0.1 is on the
-  App Store and its first feedback has shaped the review screen; it is
-  tested on a borrowed recent Android phone. Until then the Mac's local
-  CI runs `just mobile`, a `cargo check` of `mdoc-ffi` for iOS and Android,
-  so desktop-only code does not creep into the core.
+  neither is a port of the other. Android starts beside iOS 0.1 and is
+  tested on real phones as [ADR 0089](0089-android-app.md) says (which
+  replaces "after iOS 0.1 ships", 2026-10-31). The Mac's
+  local CI runs `just mobile`, a `cargo check` of `mdoc-ffi` for iOS and
+  Android, so desktop-only code does not creep into the core.
 - **iPhone and iPad** in one app from v1. "Designed for iPad" on Apple
   silicon Macs is off; the desktop app covers the Mac.
 - **Shared Rust core, native UI.** The mobile apps call the existing
