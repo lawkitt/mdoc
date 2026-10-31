@@ -214,6 +214,11 @@ and the design tree. Hub: the Windows PC (`windows`).
 
 ### Found in round 2
 
+- **The iOS floor is 8 GB, set by speed** (lawkitt/mdoc#292): the iPhone
+  12 Pro (6 GB) met the memory, load and thermal budgets but took about two
+  minutes for the 20-page scan (budget 60 s). On Android, RAM predicts CPU
+  speed far less than on iPhones, so an 8 GB mid-range phone may also miss
+  the scan budget.
 - No official way around the device check: it needs a non-rooted physical
   phone on Android 10 or later; an emulator does not count. Third-party
   guides suggest borrowing or buying one.
