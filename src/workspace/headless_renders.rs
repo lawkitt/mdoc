@@ -13,6 +13,7 @@ mod encoder;
 mod folder_sheet;
 mod import;
 mod navigation;
+mod recents;
 mod restore;
 mod review;
 mod search;
@@ -322,6 +323,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     comments::scenes(d)?;
     review::merge_hint(d)?;
     review::scanning(d)?;
+    recents::scenes(d, path)?;
     // Last: it leaves cases locked.
     shelf::scenes(d)
 }

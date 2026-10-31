@@ -636,9 +636,11 @@ fn automatic_conversion_is_disposable_until_edited_but_can_be_saved(cx: &mut Tes
             std::fs::read_to_string(&saved).unwrap(),
             view.read(cx).editor.read(cx).text()
         );
-        // Recents now leads with the saved file (#76).
+        // Recents now leads with the saved file (#76), and the source's own
+        // row folded into it (#306).
         let recents = &tabs.read(cx).shell.recents.files;
         assert_eq!(recents[0].path, session_store::identity(&saved));
+        assert_eq!(recents.len(), 1, "{recents:?}");
     });
 }
 
