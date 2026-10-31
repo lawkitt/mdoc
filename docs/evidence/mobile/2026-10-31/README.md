@@ -2,9 +2,10 @@
 
 Measurements for [ADR 0085](../../../adr/0085-mobile-apps.md)'s feasibility
 spike: GLiNER2 FP16 and PP-OCR through the shared Rust core
-(`crates/mdoc-ffi`) on the iOS targets. The iPhone 17 Pro row is measured
-(below); the iPhone 12 Pro row is Pending (maintainer). The Apple M4 Mac and
-iOS Simulator sections are stand-ins that do not decide what ships.
+(`crates/mdoc-ffi`) on the iOS targets. Both device rows are measured: the
+iPhone 17 Pro passes, the iPhone 12 Pro fails the 20-page scan budget, so the
+detector floor is 8 GB (below). The Apple M4 Mac and iOS Simulator sections
+are stand-ins that do not decide what ships.
 
 ## Budgets (ADR 0085)
 
@@ -17,16 +18,22 @@ GLiNER2 FP16 ships on a device class when it meets all of:
 | A 20-page document scanned | ≤ 60 s |
 | Thermal state | no serious throttling |
 
-If FP16 fails, an INT8 export is tried; devices below the RAM floor (6 GB if
-the iPhone 12 Pro passes every budget, otherwise 8 GB) get OCR, the
-structured rules and manual marking.
+The floor was to be 6 GB if the iPhone 12 Pro passed every budget, otherwise
+8 GB ([ADR 0088](../../../adr/0088-ios-on-real-devices.md)).
 
 ## Device classes
 
-| Device | RAM | Result | Report |
+| Device | RAM | Result | Reports |
 | --- | --- | --- | --- |
-| iPhone 17 Pro (top) | 12 GB | **Pass** (memory 1.97 of 2 GiB) | [iphone-17-pro.json](iphone-17-pro.json) |
-| iPhone 12 Pro (floor) | 6 GB | **Pending (maintainer)** | — |
+| iPhone 17 Pro (top) | 12 GB | **Pass** (memory 1.96–1.97 of 2 GiB, scan 35–43 s) | [run 1](iphone-17-pro.json), [run 2](iphone-17-pro-run2.json) |
+| iPhone 12 Pro | 6 GB | **Fail**: the 20-page scan exceeded two minutes (budget 60 s) | [iphone-12-pro.json](iphone-12-pro.json) |
+
+**Floor: 8 GB.** The iPhone 12 Pro meets the memory, load and thermal budgets
+but scans about 3.5 times slower than the iPhone 17 Pro, so a 20-page document
+takes about two minutes against the 60 s budget. INT8 was not tried, by the
+maintainer's choice: it would need 2 to 2.3 times FP16's speed on that phone.
+`DETECTOR_FLOOR_BYTES` (7 GiB) already sits between the 6 GB class (the 12 Pro
+reports 5.58 GiB) and the 8 GB class (about 7.5 GiB), so it stays.
 
 To measure a device, on the Apple Silicon Mac with both OCR bundles and the
 GLiNER2 FP16 model set up in mdoc, the phone on iOS 26 or later, unlocked,
@@ -49,28 +56,58 @@ so delete the app, restart the phone and reinstall), then rerun the script.
 
 ## iPhone 17 Pro
 
-`iPhone18,1`, 12 GB, iOS 27.0.1, core `a41003f` (`mobile` profile, ONNX
-Runtime 1.27.0 CPU, PDFium 7988), measured 2026-10-31 on the phone's own
-screen, launched by hand after the certificate check, the phone on its USB-C
-cable (charging) and at 100 %. Raw report: [iphone-17-pro.json](iphone-17-pro.json).
+`iPhone18,1`, 12 GB, iOS 27.0.1, `mobile` profile, ONNX Runtime 1.27.0 CPU,
+PDFium 7988, both runs 2026-10-31 with the phone on its USB-C cable
+(charging). Run 1: core `a41003f`, launched by hand on the phone after the
+certificate check, at 100 %. Run 2: core `0ba7486`, launched by
+`scripts/ios-spike-device.sh` three minutes after the iPhone 12 Pro run. Raw
+reports: [run 1](iphone-17-pro.json), [run 2](iphone-17-pro-run2.json).
 
-| Measurement | iPhone 17 Pro | Budget |
+| Measurement | Run 1 | Run 2 | Budget |
+| --- | ---: | ---: | --- |
+| Cold load (runtime + GLiNER2 sessions) | 0.91 s | 0.75 s | ≤ 10 s |
+| Seconds per 512-token window (median of 5) | 0.489 s | 0.433 s | |
+| 20-page scan | 43.2 s | 35.0 s | ≤ 60 s |
+| – windows / detections / inference | | 131 / 380 / 33.8 s | |
+| Detector peak memory (`phys_footprint`) | 2,116,783,624 bytes: 1.97 GiB | 2,103,594,504 bytes: 1.96 GiB | ≤ 2 GiB |
+| Memory available to the app at start | 3.29 GiB | 3.29 GiB | |
+| Thermal state | nominal, then fair from 20 s | fair from the start | below serious |
+| OCR `english.pdf` / `russian.pdf` | 0.46 s / 0.40 s, both exact | 0.43 s / 0.39 s, both exact | |
+
+All four budgets pass in both runs. Load, scan time and heat have room to
+spare; memory is 1.5–2 % under the limit, which the maintainer set as 2 GiB
+after the peak fell between 2 GB and 2 GiB (ADR 0085 says GiB). The app may
+use only about 3.3 GiB of the phone's 12 GB without the
+increased-memory-limit entitlement.
+
+## iPhone 12 Pro
+
+`iPhone13,3`, 6 GB (reports 5,993,512,960 bytes: 5.58 GiB), iOS 27.2, core
+`0ba7486` (`mobile` profile, ONNX Runtime 1.27.0 CPU, PDFium 7988), measured
+2026-10-31 by `scripts/ios-spike-device.sh` with the phone on its USB-C cable
+(charging) and unlocked, its thermal state nominal at the start. Raw report:
+[iphone-12-pro.json](iphone-12-pro.json).
+
+| Measurement | iPhone 12 Pro | Budget |
 | --- | ---: | --- |
-| Cold load (runtime + GLiNER2 sessions) | 0.91 s | ≤ 10 s |
-| Seconds per 512-token window (median of 5) | 0.489 s | |
-| 20-page scan | 43.2 s | ≤ 60 s |
-| Detector peak memory (`phys_footprint`) | 2,116,783,624 bytes: 1.97 GiB (2.12 GB) | ≤ 2 GiB |
-| Memory available to the app at start | 3.29 GiB | |
-| Thermal state | nominal, then fair from 20 s | below serious |
-| OCR `english.pdf` / `russian.pdf` | 0.46 s / 0.40 s, both exact | |
+| Cold load (runtime + GLiNER2 sessions) | 1.75 s | ≤ 10 s |
+| Seconds per 512-token window (median of 5) | 1.525 s (1.48–1.57) | |
+| 20-page scan | **over 120 s**: stopped by the scan deadline | ≤ 60 s |
+| Detector peak memory (`phys_footprint`) | 2,116,898,312 bytes: 1.97 GiB | ≤ 2 GiB |
+| Memory available to the app at start | 2.99 GiB | |
+| Thermal state | nominal, then fair from 80 s | below serious |
+| OCR `english.pdf` / `russian.pdf` | 0.76 s / 0.73 s, both exact | |
 
-All four budgets pass. Load, scan time and heat have room to spare; memory
-is 1.5 % under the limit, which the maintainer set as 2 GiB after the peak
-fell between 2 GB and 2 GiB (ADR 0085 now says GiB). The app may use only
-about 3.3 GiB of the phone's 12 GB without the increased-memory-limit
-entitlement. On the 6 GB iPhone 12 Pro the same 1.97 GiB peak is likely to
-exceed what the app may use, which points the floor at 8 GB with INT8 for
-smaller phones; the 12 Pro row decides.
+The scan budget fails; the other three pass. ADR 0002's two-minute deadline
+stopped the scan (`scan_error`: "Scan exceeded two minutes"), so the report
+has no scan time. A window takes 3.5 times as long as on the iPhone 17 Pro
+(1.525 s against 0.433 s on the same core), which puts the whole scan at
+about 3.5 × 35.0 s ≈ 123 s, twice the budget. Memory fits: the peak is the
+same 1.97 GiB as on the 17 Pro, and the app may use 2.99 GiB. Meeting 60 s
+would need 2 to 2.3 times FP16's speed (the scan projected from 17 Pro run 2
+or run 1: 123 s or 135 s), which the maintainer judged too far for INT8 to
+be worth an export, a new pinned model and a qualification run; the floor
+is 8 GB.
 
 ## What is measured
 
@@ -162,8 +199,9 @@ What the Simulator does establish:
   detections on the 20-page document, as on the Mac, and both OCR fixtures
   recognized exactly. AnyDoc converts the DOCX in-process.
 - **Peak memory is higher than the Mac run** (1.66 against 1.41–1.48 GiB)
-  with a SwiftUI app around it (106 MiB at start); the iPhone 12 Pro row
-  decides whether that fits its limit.
+  with a SwiftUI app around it (106 MiB at start); on both phones the
+  device peak was 1.96–1.97 GiB, within what the app may use (2.99 GiB on
+  the iPhone 12 Pro, 3.29 GiB on the iPhone 17 Pro).
 - `os_proc_available_memory` reads 0 in the Simulator, so the headroom
   figure exists only on a device.
 
@@ -193,15 +231,17 @@ What the Simulator does establish:
 - **CoreML EP is available, unmeasured.** Microsoft's iOS ONNX Runtime
   includes the CoreML execution provider, and gliner2-rs can select it; ADR
   0002 keeps detection on CPU, and every number here is CPU. If a phone
-  misses the scan budget, CoreML is the next thing to measure before INT8.
+  misses the scan budget, CoreML is the next thing to measure before INT8;
+  the maintainer kept the 8 GB floor rather than measure either on the
+  iPhone 12 Pro.
 - **Peak memory is session build, not inference**: 1.4–1.5 GiB peak against
-  115 MiB after the scan on the Mac, and 1.66 GiB in the Simulator app. The phone rows decide; if the iPhone 12
-  Pro's jetsam limit is close, the harness's `available_memory_at_start`
-  shows the headroom, and the increased-memory-limit entitlement is an
-  option.
+  115 MiB after the scan on the Mac, and 1.66 GiB in the Simulator app.
+  On the phones memory was not what failed: the iPhone 12 Pro's 1.97 GiB
+  peak left about 1 GiB of the 2.99 GiB the app may use.
 - **The 2-minute scan deadline (ADR 0002) caps the measurement.** A phone
   slower than 120 s for 20 pages reports `scan_error` ("Scan exceeded two
-  minutes") instead of a time; that is a budget fail either way.
+  minutes") instead of a time; that is a budget fail either way. The
+  iPhone 12 Pro hit it.
 - **Open for later items**, not changed here: `ocr::SUPPORTED` stays false on
   iOS (the runtime download table is desktop's; `Setup` defines iOS's), and
   saved cases report no key store on iOS until `Library` adds the Keychain.

@@ -1,0 +1,170 @@
+{
+  "budgets" : [
+    {
+      "limit" : 2,
+      "measured" : 1.9715151861310005,
+      "name" : "detector peak memory (GiB)",
+      "pass" : true
+    },
+    {
+      "limit" : 10,
+      "measured" : 1.7532692910000001,
+      "name" : "cold load (s)",
+      "pass" : true
+    },
+    {
+      "limit" : 60,
+      "measured" : null,
+      "name" : "20-page scan (s)",
+      "pass" : false
+    },
+    {
+      "limit" : "fair",
+      "measured" : "fair",
+      "name" : "thermal state below serious",
+      "pass" : true
+    }
+  ],
+  "core_version" : "0.1.0",
+  "document" : {
+    "conversion_seconds" : 0.040241499999999999,
+    "page_bytes" : 63354,
+    "page_words" : 9589,
+    "pages" : 20,
+    "source" : "\/private\/var\/containers\/Bundle\/Application\/53E0BD7A-A1B5-4506-BFA4-87849A97EDEE\/MdocSpike.app\/data\/fixtures\/legal-opinion.docx",
+    "words" : 17698
+  },
+  "memory_after_probe" : {
+    "footprint_bytes" : 260901520,
+    "peak_footprint_bytes" : 2116898312
+  },
+  "memory_after_scan" : {
+    "footprint_bytes" : 270338920,
+    "peak_footprint_bytes" : 2116898312
+  },
+  "memory_end" : {
+    "footprint_bytes" : 347736960,
+    "peak_footprint_bytes" : 2116898312
+  },
+  "memory_start" : {
+    "footprint_bytes" : 12699320,
+    "peak_footprint_bytes" : 12699320
+  },
+  "ocr" : [
+    {
+      "bundle" : "PP-OCRv6 Small",
+      "error" : null,
+      "fixture" : "english.pdf",
+      "markdown" : "## LOCAL OCR ACCEPTANCE TEST\n\n## This document contains printed English text.\n\nThe agreement was signed on 19 September 2026.\n\nPayment must arrive within thirty working days.\n\n## Reference number: 1234567890.\n",
+      "matches_expected" : true,
+      "seconds" : 0.76410416699999995,
+      "warning" : null
+    },
+    {
+      "bundle" : "PP-OCRv5 Cyrillic + v6 detector",
+      "error" : null,
+      "fixture" : "russian.pdf",
+      "markdown" : "ПРОВЕРКА РАСПОЗНАВАНИЯ ТЕКСТА\n\nЭтот документ содержит печатный русский текст.\n\nДоговор подписан 19 сентября 2026 года.\n\nОплата должна поступить в течение тридцати дней.\n\nНомер документа: 1234567890.\n\nСъёмка, объём, ёжик, щука, юрист, заявление.\n",
+      "matches_expected" : true,
+      "seconds" : 0.73167745900000003,
+      "warning" : null
+    }
+  ],
+  "platform" : {
+    "available_memory_at_start_bytes" : 3208673608,
+    "device" : "iPhone13,3",
+    "physical_memory_bytes" : 5993512960,
+    "simulator" : false,
+    "system" : "iOS 27.2",
+    "thermal_samples" : [
+      {
+        "state" : "nominal",
+        "t" : 9.5367431640625e-07
+      },
+      {
+        "state" : "nominal",
+        "t" : 10.079055905342102
+      },
+      {
+        "state" : "nominal",
+        "t" : 20.073552966117859
+      },
+      {
+        "state" : "nominal",
+        "t" : 30.052104949951172
+      },
+      {
+        "state" : "nominal",
+        "t" : 40.000837922096252
+      },
+      {
+        "state" : "nominal",
+        "t" : 50.000823020935059
+      },
+      {
+        "state" : "nominal",
+        "t" : 60.000716924667358
+      },
+      {
+        "state" : "nominal",
+        "t" : 70.000522017478943
+      },
+      {
+        "state" : "nominal",
+        "t" : 80.000423908233643
+      },
+      {
+        "state" : "fair",
+        "t" : 80.53665292263031
+      },
+      {
+        "state" : "fair",
+        "t" : 90.000340938568115
+      },
+      {
+        "state" : "fair",
+        "t" : 100.00014793872833
+      },
+      {
+        "state" : "fair",
+        "t" : 110.01112699508667
+      },
+      {
+        "state" : "fair",
+        "t" : 120.00001001358032
+      },
+      {
+        "state" : "fair",
+        "t" : 120.99999094009399
+      },
+      {
+        "state" : "fair",
+        "t" : 130.99947392940521
+      }
+    ],
+    "thermal_worst" : "fair",
+    "wall_seconds" : 132.20866096019745
+  },
+  "probe" : {
+    "bytes" : 1058,
+    "cold_load_seconds" : 1.7532692910000001,
+    "engine_load_seconds" : 1.7529926250000001,
+    "median_seconds" : 1.525476625,
+    "run_seconds" : [
+      1.570951875,
+      1.510462959,
+      1.525476625,
+      1.4815970410000001,
+      1.5469520000000001
+    ],
+    "runtime_seconds" : 0.00027666600000000001,
+    "tokens" : 502
+  },
+  "probe_error" : null,
+  "runtimes" : {
+    "onnx" : "\/private\/var\/containers\/Bundle\/Application\/53E0BD7A-A1B5-4506-BFA4-87849A97EDEE\/MdocSpike.app\/MdocSpike",
+    "pdfium" : "\/private\/var\/containers\/Bundle\/Application\/53E0BD7A-A1B5-4506-BFA4-87849A97EDEE\/MdocSpike.app\/Frameworks\/pdfium.framework\/pdfium"
+  },
+  "scan" : null,
+  "scan_error" : "Scan exceeded two minutes. Review a smaller document or add selections manually."
+}
