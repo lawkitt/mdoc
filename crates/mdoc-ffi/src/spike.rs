@@ -40,8 +40,11 @@ pub struct Runtimes {
     pub onnx: String,
 }
 
-/// iOS: the runtimes linked into the app. Elsewhere there are none, and
-/// callers pass the desktop's downloaded libraries instead.
+/// The runtimes that ship inside the app. iOS: linked into it. Android: the
+/// APK's own `libpdfium.so` and `libonnxruntime.so`, opened by name, which
+/// the dynamic linker finds in the app's library path whether or not they
+/// are extracted (ADR 0089). Elsewhere there are none, and callers pass the
+/// desktop's downloaded libraries instead.
 #[uniffi::export]
 pub fn linked_runtimes() -> Result<Runtimes, CoreError> {
     #[cfg(target_os = "ios")]
@@ -52,9 +55,16 @@ pub fn linked_runtimes() -> Result<Runtimes, CoreError> {
             onnx: linked.onnx.display().to_string(),
         })
     }
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(target_os = "android")]
+    {
+        Ok(Runtimes {
+            pdfium: "libpdfium.so".into(),
+            onnx: "libonnxruntime.so".into(),
+        })
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     Err(CoreError::Ocr {
-        message: "Runtimes are linked into the app only on iOS.".into(),
+        message: "Runtimes ship inside the app only on iOS and Android.".into(),
     })
 }
 

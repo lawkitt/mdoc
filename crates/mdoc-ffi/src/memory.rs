@@ -1,5 +1,8 @@
 //! The process's memory footprint as iOS counts it against the app's limit
-//! (`task_vm_info.phys_footprint`, the figure Xcode's memory gauge shows).
+//! (`task_vm_info.phys_footprint`, the figure Xcode's memory gauge shows); on
+//! Android and Linux, the resident set and its high-water mark
+//! (`/proc/self/status` `VmRSS` and `VmHWM`), which ADR 0089 measures the
+//! detector budget against.
 
 /// Bytes; zero where the platform has no footprint ledger.
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, uniffi::Record)]
@@ -56,7 +59,34 @@ mod imp {
     }
 }
 
-#[cfg(not(target_vendor = "apple"))]
+#[cfg(any(target_os = "android", target_os = "linux"))]
+mod imp {
+    pub fn memory() -> super::Memory {
+        std::fs::read_to_string("/proc/self/status")
+            .map(|status| super::parse_proc_status(&status))
+            .unwrap_or_default()
+    }
+}
+
+/// `VmRSS` and `VmHWM` from a `/proc/<pid>/status`, given in kB. Tested on
+/// every platform; read only on Android and Linux.
+#[cfg_attr(not(any(target_os = "android", target_os = "linux")), allow(dead_code))]
+fn parse_proc_status(status: &str) -> Memory {
+    let field = |name: &str| {
+        status
+            .lines()
+            .find_map(|line| line.strip_prefix(name)?.strip_prefix(':'))
+            .and_then(|value| value.trim().strip_suffix("kB"))
+            .and_then(|kb| kb.trim().parse::<u64>().ok())
+            .map_or(0, |kb| kb * 1024)
+    };
+    Memory {
+        footprint_bytes: field("VmRSS"),
+        peak_footprint_bytes: field("VmHWM"),
+    }
+}
+
+#[cfg(not(any(target_vendor = "apple", target_os = "android", target_os = "linux")))]
 mod imp {
     pub fn memory() -> super::Memory {
         super::Memory::default()
@@ -65,6 +95,16 @@ mod imp {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reads_resident_set_and_its_peak() {
+        let status = "Name:\tmdoc\nVmHWM:\t  204800 kB\nVmRSS:\t  102400 kB\nThreads:\t4\n";
+        let memory = super::parse_proc_status(status);
+        assert_eq!(memory.footprint_bytes, 100 * 1024 * 1024);
+        assert_eq!(memory.peak_footprint_bytes, 200 * 1024 * 1024);
+        let empty = super::parse_proc_status("Name:\tmdoc\n");
+        assert_eq!(empty, super::Memory::default());
+    }
+
     #[test]
     #[cfg(target_vendor = "apple")]
     fn footprint_grows_with_touched_memory() {
