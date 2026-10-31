@@ -3257,7 +3257,7 @@ impl Render for Workspace {
             }))
             // Home's clipboard actions need a document; documents handle them first.
             .on_action(cx.listener(|this, action: &PasteAiResponse, window, cx| {
-                if let Some(view) = this.clipboard_document("Restore AI reply", window, cx) {
+                if let Some(view) = this.clipboard_document("Paste AI reply", window, cx) {
                     view.update(cx, |view, cx| view.paste_ai_response(action, window, cx));
                 }
             }))

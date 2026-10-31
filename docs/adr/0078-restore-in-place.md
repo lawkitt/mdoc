@@ -21,19 +21,19 @@ reply box beside the export controls, live, in the same document.
   (Edit · Original · Pseudonymized · Side by side · Reply), shown while a
   reply exists; filling the box switches to it: any change that leaves a
   reply while another view shows, a paste over an earlier reply included. It is read-only and follows
-  mapping changes live, as Before / after does (ADR 0042). Unknown alias-shaped
+  mapping changes live, as Side by side does (ADR 0042). Unknown alias-shaped
   tokens are highlighted as unresolved; nothing is guessed.
-- **Summary line** under the box: "N values restored · M unrecognised", with
-  **Next unrecognised** when M > 0. N counts distinct identities restored and
-  M distinct unknown tokens, as Anoni does; Next unrecognised still visits
+- **Summary line** under the box: "N values restored · M unrecognized", with
+  **Next unrecognized** when M > 0. N counts distinct identities restored and
+  M distinct unknown tokens, as Anoni does; Next unrecognized still visits
   every occurrence.
 - **Actions:** **Copy reply** (the restored text) and **Open as tab**, which
   makes today's restore tab: restored values as proposals keeping their
   aliases. No save-to-file action; Open as tab, then Save, covers it. When
   nothing can be restored (a reply kept after its aliases were removed), both
-  are off and a line says why; Open as tab has Paste AI Response's
+  are off and a line says why; Open as tab has Paste AI Reply's
   no-identities guard and message.
-- **Paste AI Response stays.** The File menu item, ⌥⇧⌘V and case actions keep
+- **Paste AI Reply stays.** The File menu item, ⌥⇧⌘V and case actions keep
   opening a restore tab as in ADR 0041. The box replaces Share's old
   "Paste AI reply" button.
 - **Plain text box.** The box keeps exactly what is pasted or typed: no

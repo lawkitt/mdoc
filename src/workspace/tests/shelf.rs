@@ -786,7 +786,7 @@ fn copied_closes_the_shelf_and_hints_and_results_come_and_go(cx: &mut TestAppCon
             .unwrap()
     };
     assert!(
-        line(cx).ends_with(" restored · 0 unrecognised"),
+        line(cx).ends_with(" restored · 0 unrecognized"),
         "{}",
         line(cx)
     );

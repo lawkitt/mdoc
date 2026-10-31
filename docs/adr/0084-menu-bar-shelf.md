@@ -84,7 +84,7 @@ window.
   through its live mapping, named without `.md`). The ▾ picks another source.
   Cases are never mixed, since aliases repeat across them. After a run the
   source line shows the result for a few seconds ("7 names restored ·
-  1 unrecognised"); unrecognised tokens cannot be highlighted in a
+  1 unrecognized"); unrecognized tokens cannot be highlighted in a
   clipboard. No Paste AI reply row: Restore covers it.
 - **Footer.** One row: **Open mdoc** (opens Home) at the left, a Settings
   gear and **Quit** at the right.

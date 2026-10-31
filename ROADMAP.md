@@ -60,6 +60,71 @@ default ([ADR 0083](docs/adr/0083-fewer-release-candidates.md)): a must-fix
 fix after rc.1 to the installer, signing, updates or the keychain forces
 another, so such work lands first.
 
+## UI polish
+
+Desktop polish from the 2026-10-31 UI/UX survey, run overnight by a hub on
+2026-11-01; decisions and lanes in the
+[grill record](docs/design/ui-polish-grill-2026-11-01.md). Each item is one
+PR; a lane runs its items in order. *Done when* for every item: headless
+renders of what it changes in light and dark, tests where behavior changes,
+and the ADR it touches amended.
+
+1. **[UI] One name per action.** Restore AI reply / Paste AI Response / Paste
+   AI reply…; Save as case / Save mapping as case; Before / After / Side by
+   side; UK and US spelling mixed ("unrecognised", "licence", "organisations"
+   beside "Organization", "License"). Pick one name and one spelling
+   ([CONTEXT.md](CONTEXT.md)) and use it in menus, palette and buttons.
+   ([U14](docs/evidence/ui-ux-survey/2026-10-31/README.md#u14-one-action-several-names))
+   Lane A, decisions 8–9.
+2. **[UI] Menus and copy shortcuts.** No File › Open Recent, no Restore
+   Clipboard beside Pseudonymize Clipboard, no View items for Home, Search,
+   Original / Pseudonymized / Side by side or the Replacements panel, no mdoc
+   Help in Help, no Check for Updates…; Copy for AI and Copy Markdown have no
+   shortcut. Fits the 0.3.0 shortcut-discovery theme.
+   ([U15](docs/evidence/ui-ux-survey/2026-10-31/README.md#u15-menus)) Lane A,
+   decision 10; after item 1.
+3. **[UI] Shortcuts in tooltips.** Sidebar tooltips (Collapse sidebar, Back,
+   Forward, New tab) show none though ⌃⌘S, ⌘[ and ⌘] exist; the toolbar's
+   Pseudonymize (⇧⌘P) and the popup's alias field have no tooltip; "Documents
+   stay on this Mac" opens its tooltip over the button beside it; "Switch
+   theme (Light)" in the palette reads as current or next.
+   ([U16](docs/evidence/ui-ux-survey/2026-10-31/README.md#u16-tooltips)) Lane
+   A, after item 2.
+4. **[Settings] States that look alike.** An enabled "Remove…" looks like the
+   active model's disabled one; toggles don't share a column and off toggles
+   stay accent-tinted; the selected and the focused Appearance segment look
+   the same; About ends with a disabled Reset that has nothing to reset; long
+   pages cut a row with no scroll cue.
+   ([U17](docs/evidence/ui-ux-survey/2026-10-31/README.md#u17-settings)) Lane
+   B.
+5. **[UI] Dialogs.** Save changes rings Save but doesn't fill it, orders Save
+   · Discard · Cancel unlike macOS, and has no scrim in Dark; the Quit summary
+   says "3 documents have unsaved changes or mappings" without naming them.
+   ([U22](docs/evidence/ui-ux-survey/2026-10-31/README.md#u22-dialogs)) Lane
+   C, decision 11.
+6. **[UI] Native panels follow the app theme.** With Appearance on Light under
+   a Dark macOS, the Save panel, its alerts and the menus stay dark; set the
+   app's `NSAppearance` from the setting.
+   ([U20](docs/evidence/ui-ux-survey/2026-10-31/README.md#u20-native-panels-ignore-the-app-theme))
+   Lane C, after item 5.
+7. **[UI] Small alignment items.** "Open a case…" ends 7 pt short of the line
+   above it; "Next unrecognised" is borderless beside bordered buttons; the
+   Reply view's chip and Close don't align; Home's first Tab stop is the
+   toolbar bell.
+   ([U25](docs/evidence/ui-ux-survey/2026-10-31/README.md#u25-small-alignment-and-style-items))
+   Lane D.
+8. **[UI] A fuller tab menu.** Reveal in Finder, Copy path, Close others
+   beside Save mapping as case and Close tab.
+   ([U31](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas)) Lane D,
+   decision 13; after item 7.
+9. **[UI] Narrow windows.** At 720×480 with the sidebar and Replacements open
+   the editor is about 270 pt (three or four words a line); the sidebar is a
+   fixed 180 pt, so names truncate early and shared prefixes look alike.
+   Collapse the sidebar below a width, let it be dragged, and truncate names
+   in the middle.
+   ([U21](docs/evidence/ui-ux-survey/2026-10-31/README.md#u21-narrow-windows))
+   Lane E, decision 12.
+
 ## iOS 0.1
 
 The review-first iPhone and iPad app on the shared Rust core
@@ -203,7 +268,16 @@ detail: [ROADMAP.md before ADR 0059](https://github.com/lawkitt/mdoc/blob/c40085
   as an identifier), and the role word "Employer" is replaced as an
   organisation (ORG_2), which garbles the terms. The demos are the first thing
   a new user scans; worth a grill on identifier coverage and role words.
-  *From the 2026-10-31 shelf GUI run.*
+  *From the 2026-10-31 shelf GUI run.* The same grill takes street addresses
+  and dates of birth, which neither demo's Copy for AI replaces (Date is in
+  the popup's category menu but not in Settings › Detection); the readiness
+  and Share-line parts of [#301](https://github.com/lawkitt/mdoc/issues/301)
+  land in the 2026-11-01 fix run.
+- **[Cases]** Desktop copy of a restored reply and Restore Clipboard mark the
+  clipboard as transient or concealed, so Universal Clipboard and clipboard
+  managers don't carry originals off the Mac, as iOS does from
+  [#321](https://github.com/lawkitt/mdoc/issues/321). *From the 2026-11-01
+  fix run.*
 - **[Spelling]** Russian name forms such as "Маришей" get a misspelling
   underline; names, detected mentions and aliases shouldn't be spell-checked.
   *From the 2026-10-31 shelf GUI run.*
@@ -245,34 +319,6 @@ steps and screenshots: [evidence](docs/evidence/ui-ux-survey/2026-10-31/README.m
   against the alias. Add a hairline of outside spacing, slanted for italics.
   ([U13](docs/evidence/ui-ux-survey/2026-10-31/README.md#u13-alias-chips-touch-or-cover-the-next-character))
   *From the 2026-10-31 UI/UX survey.*
-- **[UI] Polish: one action, several names.** Restore AI reply / Paste AI
-  Response / Paste AI reply…; Save as case / Save mapping as case; Before /
-  After / Side by side; UK and US spelling mixed ("unrecognised", "licence",
-  "organisations" beside "Organization", "License"). Pick one name and one
-  spelling ([CONTEXT.md](CONTEXT.md)) and use it in menus, palette and
-  buttons. ([U14](docs/evidence/ui-ux-survey/2026-10-31/README.md#u14-one-action-several-names))
-  *From the 2026-10-31 UI/UX survey.*
-- **[UI] Polish: the menus miss common items.** No File › Open Recent, no
-  Restore Clipboard beside Pseudonymize Clipboard, no View items for Home,
-  Search, Original / Pseudonymized / Side by side or the Replacements panel,
-  no mdoc Help in Help, no Check for Updates…; Copy for AI and Copy Markdown
-  have no shortcut. Fits the 0.3.0 shortcut-discovery theme.
-  ([U15](docs/evidence/ui-ux-survey/2026-10-31/README.md#u15-menus))
-  *From the 2026-10-31 UI/UX survey.*
-- **[UI] Polish: tooltips leave out shortcuts.** Sidebar tooltips (Collapse
-  sidebar, Back, Forward, New tab) show none though ⌃⌘S, ⌘[ and ⌘] exist;
-  the toolbar's Pseudonymize (⇧⌘P) and the popup's alias field have no
-  tooltip; "Documents stay on this Mac" opens its tooltip over the button
-  beside it; "Switch theme (Light)" in the palette reads as current or next.
-  ([U16](docs/evidence/ui-ux-survey/2026-10-31/README.md#u16-tooltips))
-  *From the 2026-10-31 UI/UX survey.*
-- **[Settings] Polish: states that look alike.** An enabled "Remove…" looks
-  like the active model's disabled one; toggles don't share a column and off
-  toggles stay accent-tinted; the selected and the focused Appearance segment
-  look the same; About ends with a disabled Reset that has nothing to reset;
-  long pages cut a row with no scroll cue.
-  ([U17](docs/evidence/ui-ux-survey/2026-10-31/README.md#u17-settings))
-  *From the 2026-10-31 UI/UX survey.*
 - **[Import] Polish: error and OCR cards offer the wrong next step.** Damaged
   and password-protected files offer only "Try again" while the Source pane
   takes 60% to say there is no preview; the all-scanned card offers "Use
@@ -287,23 +333,6 @@ steps and screenshots: [evidence](docs/evidence/ui-ux-survey/2026-10-31/README.m
   leaves the file saved, no case and no message. Show the explainer first, or
   say what happened. ([U19](docs/evidence/ui-ux-survey/2026-10-31/README.md#u19-save-as-case-asks-for-a-file-first-then-for-the-keychain))
   *From the 2026-10-31 UI/UX survey.*
-- **[UI] Polish: native panels ignore the app theme.** With Appearance on
-  Light under a Dark macOS, the Save panel, its alerts and the menus stay
-  dark; set the app's `NSAppearance` from the setting.
-  ([U20](docs/evidence/ui-ux-survey/2026-10-31/README.md#u20-native-panels-ignore-the-app-theme))
-  *From the 2026-10-31 UI/UX survey.*
-- **[UI] Polish: narrow windows.** At 720×480 with the sidebar and
-  Replacements open the editor is about 270 pt (three or four words a line);
-  the sidebar is a fixed 180 pt, so names truncate early and shared prefixes
-  look alike. Collapse the sidebar below a width, let it be dragged, and
-  truncate names in the middle.
-  ([U21](docs/evidence/ui-ux-survey/2026-10-31/README.md#u21-narrow-windows))
-  *From the 2026-10-31 UI/UX survey.*
-- **[UI] Polish: dialogs.** Save changes rings Save but doesn't fill it,
-  orders Save · Discard · Cancel unlike macOS, and has no scrim in Dark; the
-  Quit summary says "3 documents have unsaved changes or mappings" without
-  naming them. ([U22](docs/evidence/ui-ux-survey/2026-10-31/README.md#u22-dialogs))
-  *From the 2026-10-31 UI/UX survey.*
 - **[Shelf] Polish: small shelf details.** A converted document's preview
   ends "1...."; the gear's tooltip is clipped at the shelf edge; the "Names
   from … ▾" chooser replaces the document list at the top, far from its
@@ -314,12 +343,6 @@ steps and screenshots: [evidence](docs/evidence/ui-ux-survey/2026-10-31/README.m
   edge or while scrolling, its zoom pill covers the line beneath, and a
   hovered segment looks selected.
   ([U24](docs/evidence/ui-ux-survey/2026-10-31/README.md#u24-the-floating-view-bar))
-  *From the 2026-10-31 UI/UX survey.*
-- **[UI] Polish: small alignment and style items.** "Open a case…" ends 7 pt
-  short of the line above it; "Next unrecognised" is borderless beside
-  bordered buttons; the Reply view's chip and Close don't align; Home's
-  first Tab stop is the toolbar bell.
-  ([U25](docs/evidence/ui-ux-survey/2026-10-31/README.md#u25-small-alignment-and-style-items))
   *From the 2026-10-31 UI/UX survey.*
 - **[UI] Polish: Pseudonymize clipboard on Home looks broken.** It jumps to
   the last document tab and replaces only that document's names, so new text
@@ -345,10 +368,6 @@ steps and screenshots: [evidence](docs/evidence/ui-ux-survey/2026-10-31/README.m
 - **[A11y] Idea: zoom the whole window.** View › Zoom scales only the editor;
   the sidebar, the 11–12 pt panel, dialogs and the shelf stay small.
   ([U30](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
-  *From the 2026-10-31 UI/UX survey.*
-- **[UI] Idea: a fuller tab menu.** Reveal in Finder, Copy path, Close
-  others beside Save mapping as case and Close tab.
-  ([U31](docs/evidence/ui-ux-survey/2026-10-31/README.md#ideas))
   *From the 2026-10-31 UI/UX survey.*
 
 Ideas from the [2026-10-31 competitor scan](docs/design/competitor-scan-2026-10-31.md),

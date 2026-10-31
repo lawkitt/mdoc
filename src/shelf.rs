@@ -1138,10 +1138,10 @@ pub(crate) struct ClipboardRestore {
 }
 
 impl ClipboardRestore {
-    /// "7 names restored · 1 unrecognised".
+    /// "7 names restored · 1 unrecognized".
     pub(crate) fn summary(&self) -> String {
         format!(
-            "{} {} restored · {} unrecognised",
+            "{} {} restored · {} unrecognized",
             self.restored,
             if self.restored == 1 { "name" } else { "names" },
             self.unrecognised

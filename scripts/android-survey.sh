@@ -20,7 +20,7 @@ adb=("$home/Sdk/platform-tools/adb" -s "$serial")
 files=/data/local/tmp/mdoc-survey
 
 "${adb[@]}" shell rm -rf "$files" >/dev/null 2>&1 || true
-(cd apps/android && ANDROID_SERIAL=$serial ./gradlew --console=plain connectedDebugAndroidTest \
+(cd apps/android && ANDROID_SERIAL=$serial ./gradlew --console=plain :app:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=io.github.lawkitt.mdoc.SurveyTest \
   -Pandroid.testInstrumentationRunnerArguments.mdoc.survey=1)
 mkdir -p "$out"

@@ -623,7 +623,7 @@ impl Workspace {
                                 .when(cfg!(test), |v| {
                                     v.debug_selector(|| "case-page-color".into())
                                 })
-                                .aria_label("Case colour")
+                                .aria_label("Case color")
                                 .p_2()
                                 .child(div().size(px(16.)).rounded_full().bg(color))
                                 .on_click(cx.listener(|this, _, _, cx| {

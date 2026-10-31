@@ -95,7 +95,7 @@ fn menus() -> Vec<Menu> {
             MenuItem::separator(),
             MenuItem::action("Copy Markdown", CopyMarkdown),
             MenuItem::action("Copy for AI", CopyForAi),
-            MenuItem::action("Paste AI Response", PasteAiResponse),
+            MenuItem::action("Paste AI Reply", PasteAiResponse),
             MenuItem::separator(),
             MenuItem::action("Close Tab", Close),
         ]),
@@ -118,7 +118,7 @@ fn menus() -> Vec<Menu> {
         ]),
         Menu::new("View").items([
             MenuItem::action("Toggle Sidebar", ToggleSidebar),
-            MenuItem::action("Before / After", ToggleCompare),
+            MenuItem::action("Side by Side", ToggleCompare),
             MenuItem::separator(),
             MenuItem::action("Zoom In", ZoomIn),
             MenuItem::action("Zoom Out", ZoomOut),

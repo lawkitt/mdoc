@@ -362,7 +362,7 @@ impl Panel {
             ),
             (
                 "about-licence",
-                "App licence",
+                "App license",
                 "GNU General Public License, version 3 or later.",
                 "https://github.com/lawkitt/mdoc/blob/main/LICENSE",
             ),
