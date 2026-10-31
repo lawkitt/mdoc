@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <package android:name="io.github.lawkitt.mdoc" />
+    </queries>
+    <application>
+        <!-- The long scans the test shares into mdoc, as another app would. -->
+        <provider
+            android:name="io.github.lawkitt.mdoc.longjobs.SharedFiles"
+            android:authorities="io.github.lawkitt.mdoc.longjobs.files"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

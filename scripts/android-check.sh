@@ -58,4 +58,4 @@ trap stop EXIT
 scripts/android-emulator.sh ci >/dev/null
 
 echo "android-check: instrumented tests on $serial"
-(cd apps/android && ANDROID_SERIAL=$serial ./gradlew --no-daemon --console=plain connectedDebugAndroidTest)
+(cd apps/android && ANDROID_SERIAL=$serial ./gradlew --no-daemon --console=plain :app:connectedDebugAndroidTest)

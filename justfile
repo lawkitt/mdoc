@@ -97,7 +97,7 @@ android:
 android-survey out kind="phone":
     scripts/android-survey.sh "{{out}}" "{{kind}}"
 
-# The app's instrumented tests on Test Lab phones, one per RAM class unless named as model:api (ADR 0089)
+# The app's tests and the long-job test on a phone by adb serial, or on Test Lab phones named model:api (default: one per RAM class) (ADR 0089)
 android-device-test *devices:
     scripts/android-device-test.sh {{devices}}
 
