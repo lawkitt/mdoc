@@ -228,6 +228,55 @@ pub(super) fn merge_hint(d: &mut Driver) -> Result<()> {
     d.capture("merge-hint")
 }
 
+/// Three- and four-digit mention counts beside a two-digit one (#308): every
+/// chevron keeps its width and the counts share one column.
+pub(super) fn long_counts(d: &mut Driver) -> Result<()> {
+    let text = [
+        ("Ms Bennett agreed. ", 1200),
+        ("Harrow & Finch Ltd signed. ", 160),
+        ("Northbridge Legal Ltd witnessed. ", 12),
+    ]
+    .map(|(sentence, n)| sentence.repeat(n))
+    .concat();
+    d.change(|w, window, cx| {
+        w.new_tab(window, cx);
+        w.active_view().unwrap().update(cx, |v, cx| {
+            v.editor.update(cx, |e, cx| e.set_text(text.clone(), cx));
+        });
+    })?;
+    d.settle()?;
+    d.change(|w, window, cx| {
+        w.active_view().unwrap().update(cx, |v, cx| {
+            let detections = [
+                ("Ms Bennett", mdoc_pii::Category::Person),
+                ("Harrow & Finch Ltd", mdoc_pii::Category::Organization),
+                ("Northbridge Legal Ltd", mdoc_pii::Category::Organization),
+            ]
+            .into_iter()
+            .flat_map(|(name, category)| {
+                text.match_indices(name)
+                    .map(move |(at, _)| mdoc_pii::Detection {
+                        range: at..at + name.len(),
+                        category,
+                        score: 1.,
+                        recognizer: mdoc_pii::Recognizer::Model,
+                    })
+            })
+            .collect();
+            v.pii
+                .review_mut()
+                .ingest(&text, detections)
+                .expect("long counts fixture");
+            v.review_changed(cx);
+            if !v.replacements_open() {
+                v.toggle_replacements_panel(window, cx);
+            }
+            window.focus(&v.replacements_focus(), cx);
+        });
+    })?;
+    d.capture("review-long-counts")
+}
+
 /// A scan of a long document under way (#309): skeleton rows, "Scanning…"
 /// in the footer, Rescan off and the toolbar's window count. No detector
 /// runs; the scan is stopped after the capture.

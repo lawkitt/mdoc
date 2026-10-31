@@ -83,6 +83,10 @@ impl RowColors {
 /// starts [`MENTION_INSET`] after (one indent level, ADR 0044).
 const ROW_INSET: f32 = 12.;
 pub(super) const MENTION_INSET: f32 = ROW_INSET + 22.;
+/// An entity row's mention count fits four digits; a longer one widens the
+/// cell rather than squeezing the chevron beside it (#308).
+pub(super) const COUNT_WIDTH: f32 = 28.;
+pub(super) const CHEVRON_SIZE: f32 = 12.;
 
 /// The vertical line left of a group's mention rows.
 fn guide(color: Hsla) -> gpui::Div {
@@ -373,7 +377,7 @@ impl DocumentView {
                 "Show mentions"
             })
             .flex_shrink_0()
-            .w(px(28.))
+            .min_w(px(COUNT_WIDTH + 2. + CHEVRON_SIZE))
             .h(px(20.))
             .flex()
             .items_center()
@@ -383,16 +387,32 @@ impl DocumentView {
             .text_size(px(11.))
             .text_color(palette.header_muted)
             .hover(move |s| s.bg(palette.placeholder_bg))
-            .when(total > 1, |v| v.child(total.to_string()))
+            .when(total > 1, |v| {
+                v.child(
+                    div()
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(move || format!("entity-count-{id}"))
+                        })
+                        .flex_shrink_0()
+                        .min_w(px(COUNT_WIDTH))
+                        .flex()
+                        .justify_end()
+                        .child(total.to_string()),
+                )
+            })
             .when(total > 0, |v| {
                 v.child(
                     gpui::svg()
+                        .when(cfg!(test), |v| {
+                            v.debug_selector(move || format!("entity-chevron-{id}"))
+                        })
                         .data(if expanded {
                             ui::Icon::ChevronDown.data()
                         } else {
                             ui::Icon::ChevronRight.data()
                         })
-                        .size(px(12.))
+                        .flex_shrink_0()
+                        .size(px(CHEVRON_SIZE))
                         .text_color(palette.header_muted),
                 )
             })

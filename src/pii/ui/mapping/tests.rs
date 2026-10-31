@@ -1,4 +1,8 @@
-use super::{popup::Step, *};
+use super::{
+    panel_rows::{CHEVRON_SIZE, COUNT_WIDTH},
+    popup::Step,
+    *,
+};
 use crate::{
     document_view::DocumentView,
     pii::ui::{APPLIED_ID, KEPT_ID, PiiApplyAll},
@@ -1222,6 +1226,53 @@ fn entity_rows_jump_chevrons_expand_and_selection_survives_collapse(cx: &mut gpu
         assert!(!app.pii.mapping.expanded.contains(&identity));
         assert_eq!(app.selected_entity(), Some(identity));
     });
+}
+
+#[gpui::test]
+fn long_mention_counts_keep_the_chevron_and_its_column(cx: &mut gpui::TestAppContext) {
+    // #308: three- and four-digit counts squeezed the chevron to a dot.
+    let (app, cx) = crate::document_view::tests::boot(cx);
+    let source = format!(
+        "{}{}{}",
+        "Павлова Марина Сергеевна · ".repeat(1200),
+        "Павлова М.С. · ".repeat(160),
+        "marina@example.invalid · ".repeat(2),
+    );
+    let ids = app.update(cx, |app, cx| {
+        seed(app, &source, cx);
+        let review = &app.pii.review;
+        review
+            .variants()
+            .iter()
+            .map(|v| (review.variant_identity(v.id).unwrap(), v.mentions.len()))
+            .collect::<Vec<_>>()
+    });
+    let mut counts: Vec<_> = ids.iter().map(|&(_, n)| n).collect();
+    counts.sort_unstable();
+    assert_eq!(counts, [2, 160, 1200]);
+    cx.run_until_parked();
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    let bounds = |cx: &mut gpui::VisualTestContext, selector: String| {
+        let selector: &'static str = Box::leak(selector.into_boxed_str());
+        cx.debug_bounds(selector)
+            .unwrap_or_else(|| panic!("{selector} drawn"))
+    };
+    let chevrons: Vec<_> = ids
+        .iter()
+        .map(|&(id, _)| bounds(cx, format!("entity-chevron-{id}")))
+        .collect();
+    for chevron in &chevrons {
+        assert_eq!(chevron.size, gpui::size(px(CHEVRON_SIZE), px(CHEVRON_SIZE)));
+        assert_eq!(chevron.right(), chevrons[0].right(), "chevrons line up");
+    }
+    for &(id, _) in &ids {
+        let count = bounds(cx, format!("entity-count-{id}"));
+        assert_eq!(
+            count.size.width,
+            px(COUNT_WIDTH),
+            "four digits fit the column"
+        );
+    }
 }
 
 #[gpui::test]

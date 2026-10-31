@@ -321,6 +321,7 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     restore::restored_reply(d)?;
     comments::scenes(d)?;
     review::merge_hint(d)?;
+    review::long_counts(d)?;
     review::scanning(d)?;
     // Last: it leaves cases locked.
     shelf::scenes(d)
