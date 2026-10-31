@@ -1,7 +1,7 @@
 //! Settings categories, categories to detect and the Spelling dictionary
 //! (ADR 0076).
 use super::{Driver, Result};
-use crate::settings_ui::Category;
+use crate::settings_ui::{Category, Status};
 
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
     // show_settings activates native windows. Call the panel's state flow
@@ -21,6 +21,57 @@ pub(super) fn scenes(d: &mut Driver) -> Result<()> {
         // Each baseline precedes its Tab walk, including Appearance in General.
         d.capture(name)?;
     }
+    // ADR 0076: switches share one column and an off switch is grey. General
+    // with the switches off, unsaved; Include pre-releases stays on in a
+    // pre-release build.
+    d.change(|w, window, cx| {
+        w.settings.update(cx, |p, cx| {
+            p.show_category(Category::General, window, cx);
+            p.render_draft(
+                |p| {
+                    p.updates.check_automatically = false;
+                    p.general.menu_bar = false;
+                },
+                cx,
+            );
+        });
+    })?;
+    d.capture("settings-general-off")?;
+    d.change(|w, _, cx| w.settings.update(cx, |p, cx| p.render_draft(|_| {}, cx)))?;
+    // The selected Appearance segment is filled; focus on another adds only
+    // its ring. Neither run selects System.
+    d.change(|w, window, cx| {
+        w.settings
+            .update(cx, |p, cx| p.show_category(Category::General, window, cx));
+    })?;
+    d.settle()?;
+    let system = d
+        .change(|w, _, cx| w.settings.read(cx).control_focus("settings-theme-system"))?
+        .ok_or("System segment has no focus handle")?;
+    d.focus_pair("settings-appearance", system)?;
+    // Installed models: the active and an inactive model each offer a
+    // bordered Remove….
+    let before = d.change(|w, window, cx| {
+        w.settings.update(cx, |p, cx| {
+            p.show_category(Category::Detection, window, cx);
+            p.render_statuses(vec![Status::Ready; p.statuses.len()], cx)
+        })
+    })?;
+    d.capture("settings-models-installed")?;
+    d.change(|w, _, cx| {
+        w.settings.update(cx, |p, cx| {
+            p.render_statuses(before, cx);
+        })
+    })?;
+    // A long page at the end of its scroll: the thumb at the bottom and the
+    // fade above, where rows continue.
+    d.change(|w, window, cx| {
+        w.settings
+            .update(cx, |p, cx| p.show_category(Category::Detection, window, cx));
+    })?;
+    d.settle()?;
+    d.change(|w, _, cx| w.settings.update(cx, |p, cx| p.render_scroll_to_end(cx)))?;
+    d.capture("settings-detection-end")?;
     // Categories to detect with Address and Email off; focus on a chip
     // scrolls the row into view and shows its ring (ADR 0076).
     d.change(|w, window, cx| {

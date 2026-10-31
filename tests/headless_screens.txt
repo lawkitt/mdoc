@@ -1,4 +1,5 @@
 home
+home-local-note
 document
 navigation-disabled
 navigation-enabled
@@ -18,11 +19,15 @@ settings-spelling
 settings-cases
 settings-about
 settings-detection-categories
+settings-general-off
+settings-models-installed
+settings-detection-end
 dictionary
 command-palette
 keyboard-shortcuts
 find-replace
 before-after
+applied-alias-selected
 reply-view
 share-reply
 decision-history
@@ -61,3 +66,4 @@ sidebar-wide
 narrow-minimum
 narrow-minimum-sidebar
 review-scanning
+review-long-counts

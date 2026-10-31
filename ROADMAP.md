@@ -69,32 +69,6 @@ PR; a lane runs its items in order. *Done when* for every item: headless
 renders of what it changes in light and dark, tests where behavior changes,
 and the ADR it touches amended.
 
-2. **[UI] Menus and copy shortcuts.** No File › Open Recent, no Restore
-   Clipboard beside Pseudonymize Clipboard, no View items for Home, Search,
-   Original / Pseudonymized / Side by side or the Replacements panel, no mdoc
-   Help in Help, no Check for Updates…; Copy for AI and Copy Markdown have no
-   shortcut. Fits the 0.3.0 shortcut-discovery theme.
-   ([U15](docs/evidence/ui-ux-survey/2026-10-31/README.md#u15-menus)) Lane A,
-   decision 10; after item 1.
-3. **[UI] Shortcuts in tooltips.** Sidebar tooltips (Collapse sidebar, Back,
-   Forward, New tab) show none though ⌃⌘S, ⌘[ and ⌘] exist; the toolbar's
-   Pseudonymize (⇧⌘P) and the popup's alias field have no tooltip; "Documents
-   stay on this Mac" opens its tooltip over the button beside it; "Switch
-   theme (Light)" in the palette reads as current or next.
-   ([U16](docs/evidence/ui-ux-survey/2026-10-31/README.md#u16-tooltips)) Lane
-   A, after item 2.
-4. **[Settings] States that look alike.** An enabled "Remove…" looks like the
-   active model's disabled one; toggles don't share a column and off toggles
-   stay accent-tinted; the selected and the focused Appearance segment look
-   the same; About ends with a disabled Reset that has nothing to reset; long
-   pages cut a row with no scroll cue.
-   ([U17](docs/evidence/ui-ux-survey/2026-10-31/README.md#u17-settings)) Lane
-   B.
-6. **[UI] Native panels follow the app theme.** With Appearance on Light under
-   a Dark macOS, the Save panel, its alerts and the menus stay dark; set the
-   app's `NSAppearance` from the setting.
-   ([U20](docs/evidence/ui-ux-survey/2026-10-31/README.md#u20-native-panels-ignore-the-app-theme))
-   Lane C, after item 5.
 7. **[UI] Small alignment items.** "Open a case…" ends 7 pt short of the line
    above it; "Next unrecognised" is borderless beside bordered buttons; the
    Reply view's chip and Close don't align; Home's first Tab stop is the

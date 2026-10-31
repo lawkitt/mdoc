@@ -304,4 +304,10 @@ fn the_palette_and_hints_read_keys_from_the_table() {
     );
     // Restore Clipboard has none.
     assert_eq!(label(&workspace::RestoreClipboard), None);
+    // A tooltip names its key, or only its label when there is none.
+    assert_eq!(
+        tip("New Markdown tab", &workspace::New),
+        format!("New Markdown tab ({mod_}N)")
+    );
+    assert_eq!(tip("Restore", &workspace::RestoreClipboard), "Restore");
 }

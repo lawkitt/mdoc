@@ -127,7 +127,14 @@ impl Workspace {
                     .when(!enabled, |v| {
                         v.a11y_synthetic_children(|tree| tree.parent_node().set_disabled())
                     })
-                    .tooltip(style::tooltip(label, theme))
+                    .tooltip(style::tooltip(
+                        if backwards {
+                            crate::shortcuts::tip(label, &Back)
+                        } else {
+                            crate::shortcuts::tip(label, &Forward)
+                        },
+                        theme,
+                    ))
                     .p_0()
                     .size(px(28.))
                     .text_size(px(18.))
