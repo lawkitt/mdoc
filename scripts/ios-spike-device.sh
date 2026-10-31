@@ -8,7 +8,9 @@
 # models from this Mac's mdoc profile (scripts/ios-spike-data.sh) first;
 # MDOC_SPIKE_PROFILE names another profile, MDOC_SPIKE_SKIP_BUILD=1 reuses
 # both. A device needs Developer Mode on and the Mac's Apple ID team signed
-# in to Xcode: xcodebuild -allowProvisioningUpdates makes the profile.
+# in to Xcode: xcodebuild -allowProvisioningUpdates makes the profile and
+# registers the phone with the team. [device-id] is the hardware UDID
+# (00008150-…, as xcodebuild lists it), not devicectl's CoreDevice identifier.
 source "$(dirname "$0")/lib.sh"
 [ "$(platform)" = macos-arm64 ] || die "the harness builds only on Apple Silicon macOS"
 
@@ -51,12 +53,12 @@ for d in json.load(sys.stdin):
     p = d.get("connectionProperties", {})
     h = d.get("hardwareProperties", {})
     if p.get("pairingState") == "paired" and h.get("platform") == "iOS":
-        print(d["identifier"]); break')
+        print(h["udid"]); break')
     [ -n "$device" ] || die "no paired iPhone or iPad is connected (xcrun devicectl list devices)"
   fi
   xcodebuild -project "$project" -scheme MdocSpike -configuration Release \
     -destination "id=$device" -derivedDataPath "$derived" -allowProvisioningUpdates \
-    DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" build -quiet
+    -allowProvisioningDeviceRegistration DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" build -quiet
   app=$derived/Build/Products/Release-iphoneos/MdocSpike.app
   xcrun devicectl device install app --device "$device" "$app"
   # --console waits for the harness to exit and shows its output.

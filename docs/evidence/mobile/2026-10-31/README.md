@@ -2,10 +2,9 @@
 
 Measurements for [ADR 0085](../../../adr/0085-mobile-apps.md)'s feasibility
 spike: GLiNER2 FP16 and PP-OCR through the shared Rust core
-(`crates/mdoc-ffi`) on the iOS targets. **No physical device has been
-measured yet**: the device rows are Pending (maintainer), and every number
-below (the Apple M4 Mac and the iOS Simulator) is a stand-in that does not
-decide what ships.
+(`crates/mdoc-ffi`) on the iOS targets. The iPhone 17 Pro row is measured
+(below); the iPhone 12 Pro row is Pending (maintainer). The Apple M4 Mac and
+iOS Simulator sections are stand-ins that do not decide what ships.
 
 ## Budgets (ADR 0085)
 
@@ -26,12 +25,12 @@ structured rules and manual marking.
 
 | Device | RAM | Result | Report |
 | --- | --- | --- | --- |
-| iPhone 17 Pro (top) | 12 GB | **Pending (maintainer)** | — |
+| iPhone 17 Pro (top) | 12 GB | **Pass** (memory at the limit: 1.97 of 2 GiB) | [iphone-17-pro.json](iphone-17-pro.json) |
 | iPhone 12 Pro (floor) | 6 GB | **Pending (maintainer)** | — |
 
 To measure a device, on the Apple Silicon Mac with both OCR bundles and the
 GLiNER2 FP16 model set up in mdoc, the phone on iOS 26 or later, unlocked,
-paired, in Developer Mode, cooled to room temperature and off its charger:
+paired, in Developer Mode and cooled to room temperature:
 
 ```sh
 DEVELOPMENT_TEAM=<team-id> scripts/ios-spike-device.sh
@@ -41,6 +40,35 @@ The script builds the core and the harness, installs it, waits for the run
 (a few minutes) and prints the path of the JSON report it copied back
 (`target/ios-spike/reports/device-<id>-<time>.json`). Run it once per phone
 and hand the two reports to the hub, which fills the rows above.
+
+The first run on a phone also registers it with the team and makes the
+signing certificate. iOS then has to verify that certificate online before
+the app may launch: tap the installed **mdoc spike** icon once with a working
+connection to `ppq.apple.com` (a VPN can block it; a failed check is cached,
+so delete the app, restart the phone and reinstall), then rerun the script.
+
+## iPhone 17 Pro
+
+`iPhone18,1`, 12 GB, iOS 27.0.1, core `a41003f` (`mobile` profile, ONNX
+Runtime 1.27.0 CPU, PDFium 7988), measured 2026-10-31 on the phone's own
+screen, launched by hand after the certificate check, the phone on its USB-C
+cable (charging) and at 100 %. Raw report: [iphone-17-pro.json](iphone-17-pro.json).
+
+| Measurement | iPhone 17 Pro | Budget |
+| --- | ---: | --- |
+| Cold load (runtime + GLiNER2 sessions) | 0.91 s | ≤ 10 s |
+| Seconds per 512-token window (median of 5) | 0.489 s | |
+| 20-page scan | 43.2 s | ≤ 60 s |
+| Detector peak memory (`phys_footprint`) | 1.97 GiB | ≤ 2 GiB |
+| Memory available to the app at start | 3.29 GiB | |
+| Thermal state | nominal, then fair from 20 s | below serious |
+| OCR `english.pdf` / `russian.pdf` | 0.46 s / 0.40 s, both exact | |
+
+All four budgets pass, but peak memory has 3 % headroom, and the app may use
+only about 3.3 GiB of the phone's 12 GB without the increased-memory-limit
+entitlement. On the 6 GB iPhone 12 Pro the same 1.97 GiB peak is likely to
+exceed what the app may use, which points the floor at 8 GB with INT8 for
+smaller phones; the 12 Pro row decides.
 
 ## What is measured
 
