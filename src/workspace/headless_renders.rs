@@ -320,8 +320,9 @@ fn scenarios(d: &mut Driver, path: &Path, detections: &[mdoc_pii::Detection]) ->
     restore::restored_reply(d)?;
     comments::scenes(d)?;
     review::merge_hint(d)?;
-    // Last: it leaves cases locked.
-    shelf::scenes(d)
+    // Last: they leave cases locked.
+    shelf::scenes(d)?;
+    cases::locked_home(d)
 }
 
 pub(crate) fn run(out: &Path) -> Result<()> {

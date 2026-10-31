@@ -81,6 +81,9 @@ pub(super) struct CaseCoordinator<W> {
     /// Case members wait for an explicit unlock: the key was not read at
     /// launch because reading it may ask for the Mac password.
     locked: bool,
+    /// How many case files the folder held when members were left locked,
+    /// counted by name without the key.
+    locked_files: Option<usize>,
     /// The last macOS Keychain dialog was declined.
     denied: bool,
 }
@@ -102,6 +105,7 @@ impl<W> Default for CaseCoordinator<W> {
             quit_error: None,
             quit_prompting: false,
             locked: false,
+            locked_files: None,
             denied: false,
         }
     }
@@ -165,6 +169,19 @@ impl<W: Clone> CaseCoordinator<W> {
     /// Launch left members locked: reading the key may ask.
     pub(super) fn lock(&mut self) {
         self.locked = true;
+    }
+
+    /// The number of case files counted while members wait for the key.
+    pub(super) fn count_locked(&mut self, files: Option<usize>) {
+        self.locked_files = files;
+    }
+
+    /// How many saved cases wait for the key, when that is known: the files
+    /// counted in the cases folder, else the cases the session remembers.
+    pub(super) fn locked_count(&self) -> Option<usize> {
+        self.key_wait()?;
+        self.locked_files
+            .or_else(|| Some(self.summaries.len()).filter(|&n| n > 0))
     }
 
     /// The key is open: members left locked at launch load now.
@@ -616,6 +633,25 @@ mod tests {
         cases.finish_load(vec![early, case("Stored")]);
         assert!(cases.loaded());
         assert_eq!(cases.cases().len(), 2);
+    }
+
+    #[test]
+    fn the_locked_count_prefers_the_counted_files_and_ends_with_the_key() {
+        let mut cases = CaseCoordinator::<u8>::default();
+        cases.count_locked(Some(4));
+        // Not locked: nothing is waiting.
+        assert_eq!(cases.locked_count(), None);
+        cases.lock();
+        assert_eq!(cases.locked_count(), Some(4));
+        cases.count_locked(None);
+        assert_eq!(cases.locked_count(), None);
+        cases.restore_summaries(vec![CaseSummary::of(&case("Remembered"))]);
+        assert_eq!(cases.locked_count(), Some(1));
+        cases.open(Arc::new(Store::with_key(
+            "/nonexistent/cases".into(),
+            &[3; 32],
+        )));
+        assert_eq!(cases.locked_count(), None);
     }
 
     #[test]

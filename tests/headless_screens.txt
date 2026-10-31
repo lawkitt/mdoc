@@ -36,6 +36,8 @@ folder-sheet
 folder-sheet-over-cap
 folder-sheet-add-to-case
 confirm-delete-case
+home-locked-notice
+home-locked-open-case
 confirm-keep-mapping
 confirm-unsaved
 confirm-remove-model

@@ -1086,9 +1086,25 @@ impl Workspace {
                     .child(home_label("Cases", theme).pt_0())
                     .child(div().flex_1())
                     .child(
-                        ui::link_button("home-open-case", "Open a case…", theme, true).on_click(
-                            |_, window, cx| window.dispatch_action(Box::new(OpenCase), cx),
-                        ),
+                        // The list opens below this link (#307).
+                        div()
+                            .relative()
+                            .child({
+                                let bounds = self.cases.home_link.clone();
+                                gpui::canvas(move |b, _, _| bounds.set(Some(b)), |_, _, _, _| {})
+                                    .absolute()
+                                    .inset_0()
+                            })
+                            .child(
+                                ui::link_button("home-open-case", "Open a case…", theme, true)
+                                    .when(cfg!(test), |v| {
+                                        v.debug_selector(|| "home-open-case".into())
+                                    })
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        let link = this.cases.home_link.get();
+                                        this.show_case_list_at(link, window, cx);
+                                    })),
+                            ),
                     )
                     .into_any_element(),
             );

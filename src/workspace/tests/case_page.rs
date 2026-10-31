@@ -1230,3 +1230,54 @@ fn leaving_the_rename_field_saves_and_escape_still_cancels(cx: &mut TestAppConte
     assert!(!renaming(cx));
     assert_eq!(name(cx), "Saved by going Home");
 }
+
+#[gpui::test]
+fn locked_cases_are_counted_and_the_list_hangs_from_homes_link(cx: &mut TestAppContext) {
+    let (tabs, cx) = boot_home(cx, Session::default());
+    draw(cx);
+    // Unlocked and empty: the hint names both ways to save a case.
+    tabs.update_in(cx, |tabs, window, cx| tabs.show_case_list(window, cx));
+    draw(cx);
+    assert!(cx.debug_bounds("case-list-empty").is_some());
+    assert!(cx.debug_bounds("case-list-locked").is_none());
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_case_list(window, cx));
+    tabs.update_in(cx, |tabs, _, cx| {
+        tabs.case_coordinator.lock();
+        tabs.case_coordinator.count_locked(Some(4));
+        cx.notify();
+    });
+    cx.update(|_, cx| {
+        let (text, _) = tabs.read(cx).case_key_banner().unwrap();
+        assert!(text.starts_with("4 saved cases are locked."), "{text}");
+    });
+    draw(cx);
+    let link = cx.debug_bounds("home-open-case").unwrap();
+    cx.simulate_click(link.center(), Default::default());
+    draw(cx);
+    // Locked cases are never "no saved cases"; the line sits above Unlock.
+    assert!(cx.debug_bounds("case-list-empty").is_none());
+    let locked = cx.debug_bounds("case-list-locked").unwrap();
+    let unlock = cx.debug_bounds("case-list-unlock").unwrap();
+    assert!(locked.bottom() <= unlock.top(), "{locked:?} above {unlock:?}");
+    let list = cx.debug_bounds("case-list").unwrap();
+    assert!(
+        list.top() >= link.bottom() && list.top() <= link.bottom() + px(12.),
+        "the list {list:?} opens just below its link {link:?}"
+    );
+    assert!(
+        (list.right() - link.right()).abs() <= px(1.),
+        "the list {list:?} lines up with its link {link:?}"
+    );
+    // From anywhere else it stays centered.
+    tabs.update_in(cx, |tabs, window, cx| {
+        tabs.close_case_list(window, cx);
+        tabs.show_case_list(window, cx);
+    });
+    draw(cx);
+    let centered = cx.debug_bounds("case-list").unwrap();
+    let width = cx.update(|window, _| window.viewport_size().width);
+    assert!(
+        (centered.center().x - width / 2.).abs() <= px(1.),
+        "{centered:?} is centered in {width:?}"
+    );
+}
