@@ -455,6 +455,9 @@ impl DocumentView {
         )
         .child(
             div()
+                .when(cfg!(test), |v| {
+                    v.debug_selector(move || format!("header-original-{id}"))
+                })
                 .min_w_0()
                 .flex_1()
                 .truncate()

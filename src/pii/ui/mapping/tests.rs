@@ -562,8 +562,12 @@ fn panel_click_reveals_exact_word_and_editor_popup_retains_workspace(
             cx.run_until_parked();
             cx.update(|window, cx| window.draw(cx).clear(cx));
             // The header expands its group; the mention row selects (ADR 0033).
+            // Its original is clicked: in a narrow panel the row's middle is
+            // the alias, which edits in place.
             let row = cx
-                .debug_bounds(Box::leak(format!("identity-{identity}").into_boxed_str()))
+                .debug_bounds(Box::leak(
+                    format!("header-original-{identity}").into_boxed_str(),
+                ))
                 .unwrap();
             cx.simulate_click(row.center(), Default::default());
             cx.run_until_parked();
