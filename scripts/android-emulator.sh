@@ -5,7 +5,8 @@
 # until Android has booted and prints its adb serial (ADR 0089). The virtual
 # devices live in $(android_home)/avd and are written here on first use: a
 # Pixel 8-sized phone (emulator-5554) and a Pixel Tablet-sized tablet
-# (emulator-5556). Already running, it only prints the serial.
+# (emulator-5556). Already running, it checks the device is that AVD with
+# 16 KB pages and prints the serial.
 # `adb -s <serial> emu kill` stops it. Windows x64.
 source "$(dirname "$0")/lib.sh"
 
@@ -38,7 +39,19 @@ ANDROID_AVD_HOME=$(native_path "$home/avd")
 booted() {
   [ "$("${adb[@]}" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ]
 }
+# A device on this port counts only if it is this AVD with 16 KB pages:
+# another one (Android Studio's, say, with 4 KB pages) would quietly skip
+# the 16 KB check.
+ours() {
+  local running pages
+  running=$("${adb[@]}" emu avd name 2>/dev/null | tr -d '\r' | head -n 1)
+  pages=$("${adb[@]}" shell getconf PAGESIZE 2>/dev/null | tr -d '\r')
+  [ "$running" = "$name" ] ||
+    die "$serial is ${running:-another device}, not $name: stop it (adb -s $serial emu kill) and run this again"
+  [ "$pages" = 16384 ] || die "$serial has ${pages:-unknown}-byte pages, not 16 KB"
+}
 if booted; then
+  ours
   echo "$serial"
   exit
 fi
@@ -89,6 +102,7 @@ echo "android-emulator: booting $name ($serial); log in $log" >&2
 "$sdk/platform-tools/adb" start-server >/dev/null 2>&1
 for _ in $(seq 1 180); do
   if booted; then
+    ours
     "${adb[@]}" shell settings put global window_animation_scale 0 >/dev/null
     "${adb[@]}" shell settings put global transition_animation_scale 0 >/dev/null
     "${adb[@]}" shell settings put global animator_duration_scale 0 >/dev/null
