@@ -295,7 +295,7 @@ fixtures only.
 | P8 | *Simulator*: selecting missed text and choosing Replace… adds it to the review | | |
 | P9 | *Device*: Share to the ChatGPT or Claude app sends aliases only, with the placeholder note; Copy puts the same bytes as desktop Copy for AI | | |
 | P10 | *Device*: "Restore with mdoc" from the AI app's share sheet restores the names of the last shared document's case, the picker switches cases, and Save to document stores the reply | | |
-| P11 | *Device*: a 20-page scan finishes within ADR 0085's budget; leaving the app on iOS 26 keeps it running with system progress, on earlier iOS it offers to resume on return | | |
+| P11 | *Device*: a 20-page scan finishes within ADR 0085's budget; leaving the app keeps it running with system progress, and if iOS refuses or ends that, the app offers to resume on return | | |
 | P12 | *iPad*: Text and Original sit side by side and the Identities list sits beside the text | | |
 | P13 | *Simulator*: light and dark mode, and the largest Dynamic Type size, keep every screen readable with nothing clipped | | |
 | P14 | *Device*: VoiceOver reads each underlined candidate with its alias, and its actions (Keep, Replace) work from the rotor; the sheets announce their title and buttons | | |

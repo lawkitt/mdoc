@@ -34,5 +34,5 @@ run takes a few minutes and the phone must stay unlocked.
   `ENABLE_DEBUG_DYLIB = NO`: ONNX Runtime is linked into the executable, and
   ort's loader looks `OrtGetApiBase` up in the image that holds the core.
 - PDFium is `pdfium.xcframework`, embedded and signed. Its build (bblanchon
-  7988) has a minimum iOS of 26.0, so the harness needs iOS 26 even though
-  it targets 17.0.
+  7988) has a minimum iOS of 26.0, which is also the app's minimum
+  (ADR 0085).

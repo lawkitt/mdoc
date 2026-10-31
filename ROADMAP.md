@@ -70,10 +70,9 @@ green and leave desktop unchanged. Record:
 1. **[Mobile] Device measurements.** *From the feasibility spike
    ([report](docs/evidence/mobile/2026-10-31/README.md)).* The core, harness
    and Mac stand-in numbers are merged; run `scripts/ios-spike-device.sh` on
-   the iPhone 17 Pro and iPhone 12 Pro, then decide the minimum iOS: the only
-   approved iOS PDFium build needs iOS 26 (raise the minimum, or build PDFium
-   for iOS 17). *Done when:* both device rows have pass or fail and the
-   minimum iOS is settled in ADR 0085.
+   the iPhone 17 Pro and iPhone 12 Pro (both on iOS 26, the minimum).
+   *Done when:* both device rows have pass or fail and ADR 0085's device
+   floor is set from them.
 2. **[Mobile] TestFlight and acceptance.** *From the iOS build-out
    (#269, #272, #275–#278).* The app runs on the real core in the Simulator
    with parity, unit and UI tests in local CI; it has never been signed or

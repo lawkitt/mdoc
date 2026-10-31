@@ -1,8 +1,9 @@
 # Mobile apps
 
 Status: Accepted, 2026-10-31. Amended 2026-10-31: core-crate changes merge
-when green, UI work runs beside the spike, and native runtimes ship inside
-the app bundle, statically linked or as an embedded framework.
+when green, UI work runs beside the spike, native runtimes ship inside the
+app bundle, statically linked or as an embedded framework, and the minimum is
+iOS 26.
 
 ## Problem
 
@@ -33,7 +34,10 @@ already lives in GUI-free Rust crates (ADR 0069).
   SwiftUI; the Android UI is Jetpack Compose. No Kotlin Multiplatform, no
   Compose Multiplatform, and no reimplementation of detection, replacement,
   case or restoration logic in Swift or Kotlin.
-- **Minimum OS: iOS 17 and Android 10 (API 29).**
+- **Minimum OS: iOS 26 and Android 10 (API 29).** iOS 26 because the
+  approved iOS PDFium build (bblanchon chromium/7988) requires it. This
+  drops the 2018 iPhones (XR, XS, XS Max), which run iOS 17 but not iOS 26;
+  iPhone 11 and later are supported.
 - **State across the bridge.** Rust owns document, review, case and restore
   state as ADR 0069 owners. UniFFI exposes three coarse objects:
   `Library` (cases, stored documents, storage paths), `DocumentSession`
@@ -54,8 +58,8 @@ already lives in GUI-free Rust crates (ADR 0069).
   switches Text / Original; iPad shows them side by side.
 - **Long jobs.** One model job at a time (ADR 0006), off the main thread,
   with progress and cooperative cancellation. Leaving the app continues a
-  user-started job through `BGContinuedProcessingTask` on iOS 26 and later;
-  on iOS 17–25 the job gets the short background grace, then cancels, and
+  user-started job through `BGContinuedProcessingTask`; when the system
+  refuses one, the job gets the short background grace, then cancels, and
   the app offers to resume on return (OCR keeps finished pages, the scan
   reruns). Nothing starts in the background on its own.
 - **Feasibility spike first.** Before any UI work, `mdoc-detect` and
