@@ -3,8 +3,9 @@
 #        scripts/android-spike-device.sh --test-lab <model>:<api> [<model>:<api> ...]
 # Runs the Android feasibility spike (ADR 0089) and copies each report to
 # target/android-spike/reports/. Builds the core (scripts/build-android-core.sh),
-# stages the data once (scripts/android-spike-data.sh) and builds the harness
-# (tools/android-spike) first.
+# stages the fixtures (scripts/android-spike-data.sh) and builds the harness
+# (tools/android-spike) first. The phone downloads the models itself (about
+# 680 MB), so it needs a network.
 #   --adb       a connected phone or a booted emulator, by its adb serial
 #   --test-lab  Firebase Test Lab phones, e.g. shiba:36 (Pixel 8); needs gcloud
 #               signed in with the Test Lab project set (see the Android grill's
@@ -22,6 +23,9 @@ case "$mode" in
   *) die "usage: $0 --adb <serial> | --test-lab <model>:<api> ..." ;;
 esac
 
+# adb and gcloud take device paths: Git Bash must not rewrite /sdcard/... as
+# a Windows path (the rest still converts, which gcloud's own script needs).
+export MSYS2_ARG_CONV_EXCL=/sdcard
 home=$(android_home)
 sdk=$home/Sdk
 export JAVA_HOME ANDROID_HOME
@@ -34,7 +38,7 @@ mkdir -p "$reports"
 stamp=$(date +%Y%m%d-%H%M%S)
 
 scripts/build-android-core.sh >/dev/null
-[ -d target/android-spike/assets/data/pseudonymization ] || scripts/android-spike-data.sh >/dev/null
+scripts/android-spike-data.sh >/dev/null
 (cd tools/android-spike && ./gradlew --quiet assembleDebug assembleDebugAndroidTest)
 apk=tools/android-spike/app/build/outputs/apk/debug/app-debug.apk
 test_apk=tools/android-spike/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk

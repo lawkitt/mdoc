@@ -23,15 +23,23 @@ android {
 
     sourceSets {
         getByName("main") {
-            kotlin.srcDir(repo.resolve("target/android/kotlin"))
-            jniLibs.srcDir(repo.resolve("target/android/jniLibs"))
-            assets.srcDir(repo.resolve("target/android-spike/assets"))
+            kotlin.directories += repo.resolve("target/android/kotlin").path
+            jniLibs.directories += repo.resolve("target/android/jniLibs").path
+            assets.directories += repo.resolve("target/android-spike/assets").path
         }
     }
 
-    // The models are large and already compressed; the app copies them out once.
+    // The fixtures are copied out of the APK once.
     androidResources {
-        noCompress += listOf("onnx", "bin", "json", "pdf", "docx", "txt")
+        noCompress += listOf("pdf", "docx", "txt")
+    }
+
+    // The core opens PDFium and ONNX Runtime by file path beside itself
+    // (`linked_runtimes`), so the APK's libraries are extracted on install.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     compileOptions {
