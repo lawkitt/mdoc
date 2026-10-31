@@ -476,6 +476,14 @@ fn is_prose(text: &str) -> bool {
     words >= PROSE_WORDS && text.chars().filter(|c| c.is_alphabetic()).count() >= PROSE_LETTERS
 }
 
+/// `line` without its blockquote markers (`>`, nested `>>` too).
+fn unquoted(mut line: &str) -> &str {
+    while let Some(prefix) = lines::blockquote_prefix(line) {
+        line = line[prefix..].trim_start();
+    }
+    line
+}
+
 /// `line` without its containers' markers: blockquotes (`>`, nested `>>`
 /// too, and an alert's `[!NOTE]`), list items (`-`, `1.`) and task boxes,
 /// however they nest.
@@ -538,9 +546,35 @@ fn fence(line: &str) -> Option<(u8, usize)> {
 /// text goes on. `None` without prose. Never an original: a name the
 /// syntax split, which only shows once it is hidden, is replaced too.
 pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
+    let names = &preview_names(names);
     let mut styled = Styled::default();
+    let mut paragraph = Styled::default();
     let mut fenced: Option<(u8, usize)> = None;
     let mut more = false;
+    // A paragraph's lines read as one (Markdown joins them), so it is
+    // masked whole before it is judged: a name split over two lines, or
+    // written with an entity, is never left half shown.
+    let finish = |paragraph: &mut Styled, styled: &mut Styled| -> bool {
+        let mut done = std::mem::take(paragraph);
+        if done.text.is_empty() {
+            return false;
+        }
+        let (masked, _) = names.pseudonymize(&done.text);
+        if masked != done.text {
+            done = Styled {
+                text: masked,
+                ..Styled::default()
+            };
+        }
+        if !is_prose(&done.text) {
+            return false;
+        }
+        if styled.text.chars().count() >= PREVIEW_CHARS {
+            return true;
+        }
+        styled.append(done);
+        false
+    };
     for line in text.lines() {
         let trimmed = line.trim();
         // A block inside quotes or list items is what it is without them.
@@ -555,33 +589,38 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
             }
             continue;
         }
-        if let Some(open) = fence(block) {
-            fenced = Some(open);
-            continue;
-        }
-        if lines::heading_level(block).is_some()
+        let structure = fence(block).is_some()
+            || block.is_empty()
+            || lines::heading_level(block).is_some()
             || lines::thematic_break(trimmed)
             || lines::thematic_break(block)
             || tables::is_table_row(block)
             || block.starts_with("<!--")
-            || block.starts_with("![")
-        {
+            || block.starts_with("![");
+        // A structure line ends a paragraph, and a list item starts one;
+        // a quote's lines run on.
+        let item = lines::list_prefix(unquoted(trimmed)).is_some();
+        if structure || item {
+            more = finish(&mut paragraph, &mut styled);
+            if more {
+                break;
+            }
+        }
+        if let Some(open) = fence(block) {
+            fenced = Some(open);
             continue;
         }
-        let plain = plain_line(block);
-        if !is_prose(&plain.text) {
+        if structure {
             continue;
         }
-        if styled.text.chars().count() >= PREVIEW_CHARS {
-            more = true;
-            break;
-        }
-        styled.append(plain);
+        paragraph.append(plain_line(block));
+    }
+    if !more {
+        more = finish(&mut paragraph, &mut styled);
     }
     if styled.text.is_empty() {
         return None;
     }
-    let names = &preview_names(names);
     let (masked, _) = names.pseudonymize(&styled.text);
     if masked != styled.text {
         // Lengths moved: the masked text wins over bold and italic.

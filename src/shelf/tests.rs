@@ -493,3 +493,27 @@ fn a_preview_masks_an_original_stored_with_odd_spacing() {
         assert!(preview.text.contains("PERSON_1"), "{}", preview.text);
     }
 }
+
+/// Review of #280: a name written over two lines of one paragraph, or with
+/// an entity, is masked whole: the paragraph is masked before short lines
+/// could be judged on their own.
+#[test]
+fn a_preview_masks_a_name_split_over_the_lines_of_a_paragraph() {
+    for text in [
+        "PERSON_1 signed the agreement for Ann&#97;\nPetrova today.",
+        "PERSON_1 signed for Anna\nPetrova",
+        "> PERSON_1 signed the agreement for Anna\n> Petrova today.",
+    ] {
+        let preview = preview_of(text).unwrap();
+        for part in ["Anna", "Petrova"] {
+            assert!(!preview.text.contains(part), "{text:?}: {}", preview.text);
+        }
+    }
+    // Page furniture in its own paragraph is still skipped.
+    assert_eq!(
+        preview_of("Page 1 of 5\n\nPERSON_1 signed the agreement today.")
+            .unwrap()
+            .text,
+        "PERSON_1 signed the agreement today."
+    );
+}
