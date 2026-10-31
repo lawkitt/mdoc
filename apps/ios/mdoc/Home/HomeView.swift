@@ -158,18 +158,22 @@ private struct DocumentRow: View {
     let document: DocumentSummary
     let caseSummary: CaseSummary?
     let findsNames: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var status: String { HomeViewModel.status(of: document, findsNames: findsNames) }
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol)
-                .foregroundStyle(.secondary)
-                .frame(width: 24)
-                .accessibilityHidden(true)
+            // At accessibility sizes the title takes the icon's room too.
+            if !dynamicTypeSize.isAccessibilitySize {
+                Image(systemName: symbol)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 24)
+                    .accessibilityHidden(true)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(document.title)
-                    .lineLimit(2)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
                 // The case only when its name says something the title does not.
                 if let caseSummary, caseSummary.name != document.title {
                     HStack(spacing: 6) {
