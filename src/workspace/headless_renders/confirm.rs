@@ -1,5 +1,5 @@
-//! The shared confirm component (ADR 0064): closing a tab with unsaved
-//! changes and a mapping, with only a mapping, with only changes; the Quit
+//! The shared confirm component (ADR 0064): the close questions for
+//! unsaved changes and a mapping, only a mapping, only changes; the Quit
 //! summary over several documents; removing a model. Each is cancelled.
 use super::{Driver, Result};
 use gpui::{Focusable, PromptLevel};
@@ -24,15 +24,15 @@ fn type_in_active(d: &mut Driver, key: &str) -> Result<()> {
 }
 
 pub(super) fn scenes(d: &mut Driver) -> Result<()> {
-    // The pseudonymized tab, edited: one question for both (ADR 0071).
-    type_in_active(d, "x")?;
-    d.change(|w, window, cx| w.close_tab(w.tabs.active(), window, cx))?;
+    // The edited, pseudonymized tab is already in a case, so its mapping
+    // questions are asked directly (ADR 0071).
+    d.change(|w, window, cx| {
+        w.ask_changes_and_mapping(w.tabs.active(), false, window, cx);
+    })?;
     d.capture("confirm-save-and-mapping")?;
     d.key("escape")?;
-    type_in_active(d, "backspace")?;
     d.change(|w, window, cx| {
-        w.case_coordinator.forget_asked(w.tabs.active());
-        w.close_tab(w.tabs.active(), window, cx);
+        w.ask_mapping(w.tabs.active(), false, window, cx);
     })?;
     d.capture("confirm-keep-mapping")?;
     d.key("escape")?;

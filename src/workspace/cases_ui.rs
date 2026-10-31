@@ -1877,7 +1877,7 @@ impl Workspace {
         true
     }
 
-    fn ask_mapping(
+    pub(super) fn ask_mapping(
         &mut self,
         id: u64,
         quitting: bool,
@@ -1912,7 +1912,7 @@ impl Workspace {
     }
 
     /// Unsaved changes and an unsaved mapping: one question for both.
-    fn ask_changes_and_mapping(
+    pub(super) fn ask_changes_and_mapping(
         &mut self,
         id: u64,
         quitting: bool,

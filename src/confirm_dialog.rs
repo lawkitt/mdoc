@@ -112,7 +112,11 @@ impl ConfirmDialog {
         let control = if index == 0 {
             ui::filled_button(("confirm-button", index), label, theme, true)
         } else {
+            // As tall as the filled default, so the row lines up.
             ui::action_control(("confirm-button", index), label, theme, true, false)
+                .h(px(28.))
+                .flex()
+                .items_center()
         };
         control
             .paint_in_place()
@@ -204,15 +208,23 @@ impl Render for ConfirmDialog {
                     })
                     .child({
                         let (leading, trailing) = self.order();
-                        let button = |index: usize| self.button(index, theme, cx);
+                        let leading: Vec<_> = leading
+                            .into_iter()
+                            .map(|i| self.button(i, theme, cx))
+                            .collect();
+                        let trailing: Vec<_> = trailing
+                            .into_iter()
+                            .map(|i| self.button(i, theme, cx))
+                            .collect();
                         div()
                             .flex()
                             .justify_end()
+                            .items_center()
                             .gap_2()
                             .pt_1()
-                            .children(leading.into_iter().map(button))
+                            .children(leading)
                             .when(cfg!(target_os = "macos"), |v| v.child(div().flex_1()))
-                            .children(trailing.into_iter().map(button))
+                            .children(trailing)
                     })
                     .text_color(palette.header_fg),
             )
