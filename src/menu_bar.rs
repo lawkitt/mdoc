@@ -277,8 +277,10 @@ pub(crate) fn reveal(
     });
 }
 
-/// The workspace window became active; mdoc is back in the Dock.
+/// The workspace window became active (by any path, Settings included);
+/// mdoc is back in the Dock and the first-close note goes.
 pub(crate) fn window_activated(cx: &mut App) {
+    close_note(cx);
     update(cx, MenuBarState::window_activated);
 }
 

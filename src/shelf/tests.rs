@@ -363,6 +363,13 @@ fn a_preview_skips_code_in_fences_of_any_kind_and_length() {
         preview_of(quoted).unwrap().text,
         "PERSON_1 signed the agreement today."
     );
+    // Review of #280: a fence inside a list item, too.
+    let listed = "- ```\n  example code long enough to read as prose\n  ```\n\n\
+                  PERSON_1 signed the agreement today.\n";
+    assert_eq!(
+        preview_of(listed).unwrap().text,
+        "PERSON_1 signed the agreement today."
+    );
     // An unclosed fence hides the rest.
     assert!(preview_of("```\nPERSON_1 signed the agreement today.\n").is_none());
 }

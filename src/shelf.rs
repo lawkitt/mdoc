@@ -472,12 +472,18 @@ fn is_prose(text: &str) -> bool {
     words >= PROSE_WORDS && text.chars().filter(|c| c.is_alphabetic()).count() >= PROSE_LETTERS
 }
 
-/// `line` without its blockquote markers (`>`, nested `>>` too).
-fn unquoted(mut line: &str) -> &str {
-    while let Some(prefix) = lines::blockquote_prefix(line) {
-        line = line[prefix..].trim_start();
+/// `line` without its containers' markers: blockquotes (`>`, nested `>>`
+/// too) and list items (`-`, `1.`), however they nest.
+fn block_content(mut line: &str) -> &str {
+    loop {
+        if let Some(prefix) = lines::blockquote_prefix(line) {
+            line = line[prefix..].trim_start();
+        } else if let Some((prefix, ..)) = lines::list_prefix(line) {
+            line = line[prefix..].trim_start();
+        } else {
+            return line;
+        }
     }
-    line
 }
 
 /// A code fence's character and length: three or more of `` ` `` or `~`.
@@ -502,8 +508,8 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
     let mut more = false;
     for line in text.lines() {
         let trimmed = line.trim();
-        // A block inside quotes is what it is without them.
-        let block = unquoted(trimmed);
+        // A block inside quotes or list items is what it is without them.
+        let block = block_content(trimmed);
         if let Some(open) = fenced {
             // Only a fence of the same character, at least as long, with
             // nothing after it, closes the block.
@@ -519,6 +525,7 @@ pub(crate) fn preview_lines(text: &str, names: &RestoreMap) -> Option<Preview> {
             continue;
         }
         if lines::heading_level(block).is_some()
+            || lines::thematic_break(trimmed)
             || lines::thematic_break(block)
             || tables::is_table_row(block)
             || block.starts_with("<!--")

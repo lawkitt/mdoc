@@ -267,3 +267,55 @@ fn a_failed_save_after_quit_when_windows_close_shows_the_window(cx: &mut TestApp
     cx.run_until_parked();
     assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
 }
+
+/// Review of #280: Quit when windows close whose setting cannot be saved
+/// does not quit (the next launch would bring the item back with no note):
+/// the window shows and says so.
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn quit_when_windows_close_that_cannot_save_shows_the_window(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let blocked = dir.path().join("not-a-directory");
+    std::fs::write(&blocked, "preserve").unwrap();
+    let (tabs, cx) = boot(cx, Session::default());
+    install_noting(&tabs, true, false, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
+    cx.run_until_parked();
+    let shown = note(cx).unwrap();
+    // The settings file cannot be written from here on.
+    tabs.update(cx, |tabs, _| {
+        tabs.preferences.borrow_mut().path = Some(blocked.join("settings.json"))
+    });
+    shown
+        .update(cx, |view, window, cx| {
+            view.quit_when_windows_close(window, cx)
+        })
+        .unwrap();
+    cx.run_until_parked();
+    assert!(!cx.update(|_, cx| tabs.read(cx).quit_flow.quitting()));
+    assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
+    assert!(!cx.update(|_, cx| menu_bar::keeps_running(cx)));
+    assert!(cx.update(|_, cx| {
+        tabs.read(cx)
+            .notices
+            .message()
+            .is_some_and(|text| text.contains("Could not save"))
+    }),);
+}
+
+/// Review of #280: the window returning by any path, Settings included,
+/// takes the first-close note away.
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn the_note_goes_when_the_window_returns_by_any_path(cx: &mut TestAppContext) {
+    let (tabs, cx) = unsaved(cx);
+    install_noting(&tabs, true, false, cx);
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
+    cx.run_until_parked();
+    assert!(note(cx).is_some());
+    // As when ⌘, activates the window directly.
+    cx.cx.update(menu_bar::window_activated);
+    cx.run_until_parked();
+    assert!(note(cx).is_none());
+    assert!(!cx.update(|_, cx| menu_bar::window_hidden(cx)));
+}

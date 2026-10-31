@@ -308,8 +308,19 @@ impl Workspace {
     /// closed. The hidden window shows only if the quit asks something; a
     /// quit that cannot start brings it back, since no item is left to.
     pub(crate) fn quit_when_windows_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.update_general(|general| general.menu_bar = false, cx);
+        let saved = self.update_general(|general| general.menu_bar = false, cx);
         crate::menu_bar::quit_when_windows_close(cx);
+        if let Err(error) = saved {
+            // Quitting now would bring the item back at the next launch with
+            // no note: show the window and say so instead.
+            crate::menu_bar::reveal_if_hidden(window, cx);
+            self.notices.post(format!(
+                "Could not save \u{201c}Quit when windows close\u{201d}: {error}. \
+                 Turn off Settings \u{203a} General \u{203a} Show mdoc in the menu bar to try again."
+            ));
+            cx.notify();
+            return;
+        }
         self.quit(window, cx);
         if !self.quit_flow.quitting() {
             crate::menu_bar::reveal_if_hidden(window, cx);
@@ -337,34 +348,40 @@ impl Workspace {
     }
 
     /// Change a Settings › General choice from outside the panel (the
-    /// shelf's notes): saved at once, kept in memory if the save fails, and
-    /// made in the panel's draft too, so its next save keeps it beside any
-    /// choice still saving. Only flags and switches; never document text.
+    /// shelf's notes): saved at once, kept in memory if the save fails (the
+    /// error is returned), and made in the panel's draft too, so its next
+    /// save keeps it beside any choice still saving. Only flags and
+    /// switches; never document text.
     pub(crate) fn update_general(
         &mut self,
         change: impl Fn(&mut settings::GeneralConfig) + 'static,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Result<(), settings::SettingsError> {
         let (prefs, path) = {
             let store = self.preferences.borrow();
             let Some(current) = store.current.clone() else {
-                return;
+                return Ok(());
             };
             (current, store.path.clone())
         };
         let mut changed = prefs.clone();
         change(&mut changed.general);
         if changed == prefs {
-            return;
+            return Ok(());
         }
-        if let Some(path) = path
-            && let Err(error) = settings::save_in_order(&path, &changed, settings::next_write())
-        {
+        let saved = match path {
+            Some(path) => {
+                settings::save_in_order(&path, &changed, settings::next_write()).map(|_| ())
+            }
+            None => Ok(()),
+        };
+        if let Err(error) = &saved {
             eprintln!("mdoc: could not save a menu bar choice: {error}");
         }
         self.preferences.borrow_mut().current = Some(changed);
         self.settings
             .update(cx, |panel, cx| panel.general_changed(change, cx));
+        saved
     }
 
     /// "Unlock cases in mdoc…": the Keychain explainer, in the window.
