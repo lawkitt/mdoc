@@ -210,6 +210,28 @@ fn the_first_close_shows_the_note_once(cx: &mut TestAppContext) {
     assert!(note(cx).is_none());
 }
 
+/// Review of #280: a note that cannot open is not recorded as shown; the
+/// next close tries again.
+#[cfg(target_os = "macos")]
+#[gpui::test]
+fn a_note_that_cannot_open_shows_on_a_later_close(cx: &mut TestAppContext) {
+    let (tabs, cx) = unsaved(cx);
+    install_noting(&tabs, true, false, cx);
+    cx.cx.update(|cx| cx.set_global(menu_bar::NoItemForTests));
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
+    cx.run_until_parked();
+    assert!(note(cx).is_none());
+    assert!(!cx.update(|_, cx| tabs.read(cx).menu_bar_note_shown()));
+    cx.cx
+        .update(|cx| cx.remove_global::<menu_bar::NoItemForTests>());
+    cx.cx.update(|cx| menu_bar::reveal(cx, |_, _, _| {}));
+    cx.run_until_parked();
+    tabs.update_in(cx, |tabs, window, cx| tabs.close_requested(window, cx));
+    cx.run_until_parked();
+    assert!(note(cx).is_some(), "the note shows on the next close");
+    assert!(cx.update(|_, cx| tabs.read(cx).menu_bar_note_shown()));
+}
+
 /// "Quit when windows close" turns the switch off and runs the ordinary
 /// quit: unsaved work shows the window and asks.
 #[cfg(target_os = "macos")]

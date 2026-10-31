@@ -444,21 +444,32 @@ fn popup_bounds(
 }
 
 /// The status item's display and bounds.
+/// Set in tests: the menu bar item has no place on screen.
+#[cfg(test)]
+pub(crate) struct NoItemForTests;
+
+#[cfg(test)]
+impl Global for NoItemForTests {}
+
 fn item_anchor(cx: &App) -> Option<(DisplayId, Bounds<Pixels>)> {
     #[cfg(all(target_os = "macos", not(test)))]
     let anchor = {
         let _ = cx;
         gpui_macos::status_item_bounds()
     };
-    // Tests open popups under a pretend item on the primary display.
+    // Tests open popups under a pretend item on the primary display, unless
+    // they took the item away.
     #[cfg(test)]
-    let anchor = cx.primary_display().map(|display| {
-        let item = Bounds {
-            origin: point(px(1000.), px(0.)),
-            size: size(px(30.), px(24.)),
-        };
-        (display.id(), item)
-    });
+    let anchor = (!cx.has_global::<NoItemForTests>())
+        .then(|| cx.primary_display())
+        .flatten()
+        .map(|display| {
+            let item = Bounds {
+                origin: point(px(1000.), px(0.)),
+                size: size(px(30.), px(24.)),
+            };
+            (display.id(), item)
+        });
     #[cfg(all(not(target_os = "macos"), not(test)))]
     let anchor = {
         let _ = cx;
@@ -485,31 +496,44 @@ fn popup_options(bounds: Bounds<Pixels>, display_id: DisplayId) -> WindowOptions
     }
 }
 
-/// The first-close note under the item; recorded as shown at once, so it
-/// never shows again.
+/// The first-close note under the item. Once it shows it is recorded, so
+/// it never shows again; if it cannot open, the next close tries again.
 fn open_note(cx: &mut App) {
     let Some(workspace) = cx.try_global::<MenuBar>().map(|bar| bar.workspace) else {
         return;
     };
-    let _ = workspace.update(cx, |workspace, _, cx| {
-        workspace.update_general(|general| general.menu_bar_note_shown = true, cx)
-    });
+    let opened = try_open_note(workspace, cx);
+    if opened {
+        let _ = workspace.update(cx, |workspace, _, cx| {
+            workspace.update_general(|general| general.menu_bar_note_shown = true, cx)
+        });
+    } else {
+        cx.global_mut::<MenuBar>().state.note_pending(true);
+    }
+}
+
+/// Open the note window; whether it opened.
+fn try_open_note(workspace: WindowHandle<Workspace>, cx: &mut App) -> bool {
     let Some((display_id, anchor)) = item_anchor(cx) else {
-        return;
+        return false;
     };
     let Some(display) = cx.find_display(display_id) else {
-        return;
+        return false;
     };
     let Ok(theme) = workspace.read(cx).map(|workspace| workspace.theme_cell()) else {
-        return;
+        return false;
     };
     close_note(cx);
     let bounds = popup_bounds(anchor, display.bounds(), NOTE_WIDTH, NOTE_HEIGHT);
     let note = cx.open_window(popup_options(bounds, display_id), |window, cx| {
         cx.new(|cx| NoteView::new(workspace, theme, window, cx))
     });
-    if let Ok(note) = note {
-        cx.global_mut::<MenuBar>().note = Some(note);
+    match note {
+        Ok(note) => {
+            cx.global_mut::<MenuBar>().note = Some(note);
+            true
+        }
+        Err(_) => false,
     }
 }
 

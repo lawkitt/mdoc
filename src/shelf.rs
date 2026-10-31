@@ -465,9 +465,9 @@ impl Styled {
 const LINE_MARK: char = '\u{1f}';
 
 /// One paragraph's text with its lines' furniture dropped: a line that
-/// is not prose and holds no word of a known name (page numbers, "Page 1
-/// of 5"). A short line with such a word stays, so a name split over lines
-/// is still masked whole.
+/// is not prose and holds no word of a known name, initials included (page
+/// numbers, "Page 1 of 5"). A short line with such a word stays, so a name
+/// split over lines is still masked whole.
 fn drop_furniture(mut paragraph: Styled, names: &RestoreMap) -> Styled {
     let words: std::collections::HashSet<String> = names
         .identities()
@@ -476,7 +476,8 @@ fn drop_furniture(mut paragraph: Styled, names: &RestoreMap) -> Styled {
         .flat_map(|original| {
             original
                 .split(|c: char| !c.is_alphanumeric())
-                .filter(|word| word.chars().count() > 1)
+                // An initial counts too: "J." above "Smith" is half a name.
+                .filter(|word| !word.is_empty())
                 .map(str::to_lowercase)
                 .collect::<Vec<_>>()
         })

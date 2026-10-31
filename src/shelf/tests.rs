@@ -638,3 +638,21 @@ fn a_single_huge_line_is_read_only_up_to_the_limit() {
     );
     assert!(preview.text.ends_with('…'));
 }
+
+/// Review of #280: an initial on its own line is half a name, not page
+/// furniture, so the name is still masked whole.
+#[test]
+fn an_initial_on_its_own_line_keeps_the_name_masked() {
+    let names = RestoreMap::new(vec![identity("PERSON_2", Category::Person, &["J. Smith"])]);
+    let preview = preview_lines(
+        "J.\nSmith signed the agreement with the employer today.\n",
+        &names,
+    )
+    .unwrap();
+    assert!(!preview.text.contains("Smith"), "{}", preview.text);
+    assert!(
+        preview.text.starts_with("PERSON_2 signed"),
+        "{}",
+        preview.text
+    );
+}
